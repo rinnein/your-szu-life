@@ -1,0 +1,11 @@
+[default]
+description = "Allows the local application UI to use its authentication commands."
+permissions = [
+  "allow-get-auth-state",
+  "allow-get-account-profile",
+  "allow-get-user-data",
+  "allow-begin-authentication",
+  "allow-capture-auth-credentials",
+  "allow-confirm-profile",
+  "allow-logout",
+]
