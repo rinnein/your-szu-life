@@ -1,0 +1,305 @@
+@import "tailwindcss";
+@import "@heroui/styles";
+
+:root {
+  --szu-brand: #5d5fef;
+  --szu-brand-soft: #eef0ff;
+  --szu-ink: #1f2340;
+  --szu-muted: #69708f;
+  --szu-surface: #ffffff;
+  --szu-page: #f5f6fb;
+  font-family: Inter, "Noto Sans SC", sans-serif;
+  color: var(--szu-ink);
+  background: var(--szu-page);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--szu-page);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: 36px clamp(20px, 7vw, 112px) 64px;
+  background: radial-gradient(circle at 86% 0, #e9eaff 0, transparent 34%), var(--szu-page);
+}
+
+.app-shell-centered {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 14px;
+  padding: 24px;
+}
+
+.auth-card,
+.profile-card,
+.status-card {
+  width: min(480px, 100%);
+  box-shadow: 0 20px 70px #25285814;
+}
+
+.auth-card-content {
+  display: grid;
+  gap: 16px;
+  padding: 40px;
+  text-align: center;
+}
+
+.auth-card-content [data-slot="card-description"] {
+  color: var(--szu-muted);
+  line-height: 1.65;
+}
+
+.brand-mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  object-fit: cover;
+  background: var(--szu-surface);
+}
+
+.brand-mark-large {
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  margin: 0 auto 4px;
+}
+
+.status-card {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 40px;
+  text-align: center;
+}
+
+.auth-alert {
+  text-align: left;
+}
+
+.auth-progress {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--szu-muted);
+  font-size: 14px;
+}
+
+.profile-card {
+  padding: 6px;
+}
+
+.profile-card [data-slot="card-header"] {
+  padding: 28px 30px 18px;
+}
+
+.profile-card [data-slot="card-content"] {
+  padding: 0 30px 30px;
+}
+
+.field {
+  margin-bottom: 16px;
+}
+
+.form-error {
+  margin: 4px 0 14px;
+}
+
+.back-button {
+  margin-top: 2px;
+}
+
+.app-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.brand-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.eyebrow {
+  color: #6971ae;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+
+.app-header h1 {
+  margin-bottom: 0;
+  font-size: clamp(26px, 3vw, 34px);
+  letter-spacing: -0.04em;
+}
+
+.account-trigger {
+  min-width: 0;
+}
+
+.hero-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 138px;
+  margin-top: 28px;
+  overflow: hidden;
+  border: 0;
+  background: linear-gradient(120deg, #5559dc, #8189f5);
+  color: white;
+  box-shadow: 0 12px 28px #5559dc2b;
+}
+
+.hero-card [data-slot="card-content"] {
+  position: relative;
+  z-index: 1;
+  padding: 24px 30px;
+}
+
+.hero-card [data-slot="card-title"] {
+  margin-top: 8px;
+  color: white;
+  font-size: clamp(22px, 2.6vw, 29px);
+}
+
+.hero-card [data-slot="card-description"] {
+  margin-top: 6px;
+  color: #e8eaff;
+}
+
+.hero-eyebrow {
+  color: #e1e4ff;
+}
+
+.hero-orb {
+  margin-right: 26px;
+  color: #ffffff30;
+  font-size: 76px;
+  font-weight: 800;
+  line-height: 1;
+  transform: rotate(12deg);
+}
+
+.section-heading {
+  margin: 34px 0 16px;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+}
+
+.feature-button {
+  display: flex;
+  min-height: 82px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 13px;
+  padding: 18px;
+  text-align: left;
+}
+
+.feature-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--szu-brand-soft);
+  color: var(--szu-brand);
+}
+
+.feature-copy {
+  display: grid;
+  gap: 3px;
+}
+
+.feature-copy small {
+  color: #8990aa;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.feature-arrow {
+  margin-left: auto;
+  color: #9298b3;
+  font-size: 18px;
+}
+
+.placeholder-alert {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 10;
+  width: min(420px, calc(100vw - 48px));
+  box-shadow: 0 14px 35px #25285826;
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    padding: 24px 20px 44px;
+  }
+
+  .app-header {
+    align-items: center;
+  }
+
+  .app-header h1 {
+    font-size: 27px;
+  }
+
+  .account-trigger {
+    padding-inline: 12px;
+  }
+
+  .hero-card [data-slot="card-content"] {
+    padding: 22px;
+  }
+
+  .hero-orb {
+    margin-right: 10px;
+    font-size: 54px;
+  }
+}
+
+.dialog-cancel {
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 14px;
+  background: transparent;
+  color: var(--szu-muted);
+  cursor: pointer;
+}
+
+.dialog-cancel:hover {
+  background: #f2f3f9;
+}
