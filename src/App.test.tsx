@@ -180,6 +180,143 @@ describe("HeroUI frontend smoke tests", () => {
     expect(document.querySelectorAll(".feature-icon svg")).toHaveLength(6);
   });
 
+  it("defaults the region tab to staff when the network overview identifies SZU_WLAN", async () => {
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_auth_state")
+        return { Authenticated: { studentId: "1234567890", name: "测试同学" } };
+      if (command === "get_account_profile")
+        return {
+          studentId: "1234567890",
+          campusCardNumber: "123456",
+          hasPassword: true,
+          name: "测试同学",
+        };
+      if (command === "get_user_data") return { studentId: "1234567890", name: "测试同学" };
+      if (command === "get_network_overview")
+        return {
+          state: "notLoggedIn",
+          region: "staff",
+          ssid: "SZU_WLAN",
+          portalReachable: false,
+          staffHostReachable: true,
+        };
+      if (command === "get_dorm_network_settings")
+        return { enabled: false, credentialMode: "currentAccount", customConfigured: false };
+      if (command === "get_dorm_login_status")
+        return {
+          state: "disabled",
+          connected: false,
+          portalReachable: false,
+          consecutiveFailures: 0,
+        };
+      if (command === "get_dorm_login_logs") return [];
+      if (command === "consume_dorm_login_failure_notice") return null;
+      return undefined;
+    });
+
+    renderRouterApp("/campus-network");
+    expect(await screen.findByText("教工区认证功能暂未支持。")).toBeInTheDocument();
+    expect(screen.getByText("当前推测网络状态：未登录(教工区)")).toBeInTheDocument();
+  });
+
+  it("renders the campus network zones and dormitory controls", async () => {
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_auth_state")
+        return { Authenticated: { studentId: "1234567890", name: "测试同学" } };
+      if (command === "get_account_profile")
+        return {
+          studentId: "1234567890",
+          campusCardNumber: "123456",
+          hasPassword: true,
+          name: "测试同学",
+        };
+      if (command === "get_user_data") return { studentId: "1234567890", name: "测试同学" };
+      if (command === "get_network_overview")
+        return {
+          state: "noNetwork",
+          region: "none",
+          portalReachable: false,
+          staffHostReachable: false,
+        };
+      if (command === "get_dorm_network_settings")
+        return { enabled: false, credentialMode: "currentAccount", customConfigured: false };
+      if (command === "get_dorm_login_status")
+        return {
+          state: "disabled",
+          connected: false,
+          portalReachable: false,
+          consecutiveFailures: 0,
+        };
+      if (command === "get_dorm_login_logs") return [];
+      if (command === "consume_dorm_login_failure_notice") return null;
+      if (command === "save_dorm_network_settings")
+        return { enabled: true, credentialMode: "currentAccount", customConfigured: false };
+      return undefined;
+    });
+
+    const { testRouter } = renderRouterApp("/campus-network");
+    expect(await screen.findByRole("heading", { name: "校园网登录" })).toBeInTheDocument();
+    expect(document.querySelectorAll(".tabs--secondary")).toHaveLength(0);
+    expect(screen.getByRole("tab", { name: "教工区" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "宿舍区" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "教工区" }));
+    expect(screen.getByText("教工区认证功能暂未支持。")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "宿舍区" }));
+    const toggle = screen.getByRole("switch", { name: "开启宿舍区自动登录" });
+    fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("save_dorm_network_settings", expect.anything()),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "返回上一级" }));
+    await waitFor(() => expect(testRouter.state.location.pathname).toBe("/"));
+  });
+
+  it("shows gateway online details when the dorm portal confirms an active session", async () => {
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_auth_state")
+        return { Authenticated: { studentId: "1234567890", name: "测试同学" } };
+      if (command === "get_account_profile")
+        return {
+          studentId: "1234567890",
+          campusCardNumber: "123456",
+          hasPassword: true,
+          name: "测试同学",
+        };
+      if (command === "get_user_data") return { studentId: "1234567890", name: "测试同学" };
+      if (command === "get_network_overview")
+        return {
+          state: "connected",
+          region: "dormitory",
+          ssid: "SZU_CTC&CMCC",
+          portalReachable: true,
+          staffHostReachable: false,
+          portalSession: {
+            onlineUsername: "张三",
+            onlineDuration: 4294967295,
+            onlineFlow: 4294967295,
+            loginIp: "172.24.111.161",
+            loginStartedAt: "2026-09-05 09:06:33",
+            loginExpiresAt: "2026-09-07 19:30:49",
+            charset: "gb2312",
+          },
+        };
+      if (command === "get_dorm_network_settings")
+        return { enabled: false, credentialMode: "currentAccount", customConfigured: false };
+      if (command === "get_dorm_login_status")
+        return { state: "online", connected: true, portalReachable: true, consecutiveFailures: 0 };
+      if (command === "get_dorm_login_logs") return [];
+      if (command === "consume_dorm_login_failure_notice") return null;
+      return undefined;
+    });
+
+    renderRouterApp("/campus-network");
+    expect(await screen.findByText("当前推测网络状态：已连接(宿舍区)")).toBeInTheDocument();
+    expect(screen.getByText("张三")).toBeInTheDocument();
+    expect(screen.getByText("172.24.111.161")).toBeInTheDocument();
+    expect(screen.getAllByText("未知/不限")).toHaveLength(2);
+  });
+
   it("renders settings as a real route and navigates back to the workbench", async () => {
     vi.mocked(invoke).mockImplementation(async (command) => {
       if (command === "get_auth_state")

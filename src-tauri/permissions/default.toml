@@ -8,4 +8,11 @@ permissions = [
   "allow-capture-auth-credentials",
   "allow-confirm-profile",
   "allow-logout",
+  "allow-get-network-overview",
+  "allow-get-dorm-network-settings",
+  "allow-save-dorm-network-settings",
+  "allow-get-dorm-login-status",
+  "allow-trigger-dorm-login",
+  "allow-get-dorm-login-logs",
+  "allow-consume-dorm-login-failure-notice",
 ]

@@ -1,5 +1,14 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, sync::Mutex, thread, time::Duration};
+use std::{
+    collections::{HashSet, VecDeque},
+    fs::{self, OpenOptions},
+    io::{Read, Write},
+    net::{Shutdown, TcpStream, ToSocketAddrs},
+    process::Command,
+    sync::{mpsc, Mutex},
+    thread,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 use tauri::{webview::cookie::Cookie, Emitter, Manager, State};
 #[cfg(target_os = "android")]
 use tauri_plugin_keyring_store::KeyringStore;
@@ -9,6 +18,10 @@ const AUTH_LOGIN_URL: &str = "https://authserver.szu.edu.cn/authserver/login";
 const AUTH_PROFILE_URL: &str =
     "https://authserver.szu.edu.cn/personalInfo/personCenter/index.html#/accountsecurity";
 const AUTH_HOST: &str = "authserver.szu.edu.cn";
+const DORM_PORTAL_HOST: &str = "172.30.255.42";
+const STAFF_NETWORK_HOST: &str = "net.szu.edu.cn";
+const DORM_LOG_FILE: &str = "dorm-network-login.jsonl";
+const DORM_MONITOR_TICK: Duration = Duration::from_secs(10);
 #[cfg(any(target_os = "windows", target_os = "android"))]
 const LOCAL_ENTRY_URL: &str = "http://tauri.localhost/";
 #[cfg(not(any(target_os = "windows", target_os = "android")))]
@@ -40,6 +53,166 @@ pub struct AccountProfileInput {
     pub campus_card_number: String,
     pub name: Option<String>,
     pub password: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum DormCredentialMode {
+    CurrentAccount,
+    Custom,
+}
+
+impl Default for DormCredentialMode {
+    fn default() -> Self {
+        Self::CurrentAccount
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct DormFailureNotice {
+    message: String,
+    timestamp_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+struct DormNetworkSettings {
+    enabled: bool,
+    credential_mode: DormCredentialMode,
+    pending_failure_notice: Option<DormFailureNotice>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+struct DormCustomCredentials {
+    campus_card_number: String,
+    password: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DormNetworkSettingsView {
+    pub enabled: bool,
+    pub credential_mode: DormCredentialMode,
+    pub custom_configured: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DormNetworkSettingsInput {
+    pub enabled: bool,
+    pub credential_mode: DormCredentialMode,
+    pub campus_card_number: Option<String>,
+    pub password: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum DormLoginState {
+    Disabled,
+    Monitoring,
+    Probing,
+    LoggingIn,
+    Online,
+    Paused,
+    Error,
+}
+
+impl Default for DormLoginState {
+    fn default() -> Self {
+        Self::Disabled
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DormLoginResultView {
+    pub ok: bool,
+    pub already_online: bool,
+    pub message: Option<String>,
+    pub result: Option<i64>,
+    pub ret_code: Option<i64>,
+    pub http_status: Option<u16>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DormLoginStatusView {
+    pub state: DormLoginState,
+    pub ssid: Option<String>,
+    pub connected: bool,
+    pub portal_reachable: bool,
+    pub consecutive_failures: u32,
+    pub next_probe_at_ms: Option<u64>,
+    pub last_result: Option<DormLoginResultView>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DormLoginLogView {
+    pub timestamp_ms: u64,
+    pub stage: String,
+    pub outcome: String,
+    pub portal_reachable: bool,
+    pub http_status: Option<u16>,
+    pub result: Option<i64>,
+    pub message: Option<String>,
+    pub ret_code: Option<i64>,
+    pub consecutive_failures: u32,
+    pub next_probe_at_ms: Option<u64>,
+    pub response: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum NetworkRegion {
+    None,
+    Staff,
+    Dormitory,
+}
+
+impl Default for NetworkRegion {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum NetworkConnectionState {
+    NoNetwork,
+    NotLoggedIn,
+    Connected,
+}
+
+impl Default for NetworkConnectionState {
+    fn default() -> Self {
+        Self::NoNetwork
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DormPortalSessionInfo {
+    pub online_username: Option<String>,
+    #[serde(skip_serializing, skip_deserializing)]
+    pub campus_card_number: Option<String>,
+    pub online_duration: Option<u64>,
+    pub online_flow: Option<u64>,
+    pub login_ip: Option<String>,
+    pub login_started_at: Option<String>,
+    pub login_expires_at: Option<String>,
+    pub charset: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkOverviewView {
+    pub state: NetworkConnectionState,
+    pub region: NetworkRegion,
+    pub ssid: Option<String>,
+    pub portal_reachable: bool,
+    pub staff_host_reachable: bool,
+    pub portal_session: Option<DormPortalSessionInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -208,6 +381,8 @@ enum SecretKey {
     Profile,
     PendingAuth,
     AuthSession,
+    DormNetworkSettings,
+    DormNetworkCredentials,
 }
 
 trait CredentialStore: Send + Sync {
@@ -220,6 +395,10 @@ trait CredentialStore: Send + Sync {
     fn load_session(&self) -> Result<Option<AuthSessionSecret>, String>;
     fn save_session(&self, session: &AuthSessionSecret) -> Result<(), String>;
     fn delete_session(&self) -> Result<(), String>;
+    fn load_dorm_settings(&self) -> Result<Option<DormNetworkSettings>, String>;
+    fn save_dorm_settings(&self, settings: &DormNetworkSettings) -> Result<(), String>;
+    fn load_dorm_credentials(&self) -> Result<Option<DormCustomCredentials>, String>;
+    fn save_dorm_credentials(&self, credentials: &DormCustomCredentials) -> Result<(), String>;
 }
 
 struct PlatformCredentialStore;
@@ -231,6 +410,8 @@ impl PlatformCredentialStore {
             SecretKey::Profile => "profile",
             SecretKey::PendingAuth => "pending-auth",
             SecretKey::AuthSession => "auth-session",
+            SecretKey::DormNetworkSettings => "dorm-network-settings",
+            SecretKey::DormNetworkCredentials => "dorm-network-credentials",
         };
         keyring::Entry::new("in.rinne.your-szu-life", name).map_err(|e| e.to_string())
     }
@@ -271,6 +452,8 @@ fn android_secret_name(key: SecretKey) -> &'static str {
         SecretKey::Profile => "profile",
         SecretKey::PendingAuth => "pending-auth",
         SecretKey::AuthSession => "auth-session",
+        SecretKey::DormNetworkSettings => "dorm-network-settings",
+        SecretKey::DormNetworkCredentials => "dorm-network-credentials",
     }
 }
 
@@ -312,6 +495,23 @@ impl CredentialStore for PlatformCredentialStore {
         Self::delete(SecretKey::AuthSession)
     }
 
+    #[cfg(not(target_os = "android"))]
+    fn load_dorm_settings(&self) -> Result<Option<DormNetworkSettings>, String> {
+        Self::load(SecretKey::DormNetworkSettings)
+    }
+    #[cfg(not(target_os = "android"))]
+    fn save_dorm_settings(&self, settings: &DormNetworkSettings) -> Result<(), String> {
+        Self::save(SecretKey::DormNetworkSettings, settings)
+    }
+    #[cfg(not(target_os = "android"))]
+    fn load_dorm_credentials(&self) -> Result<Option<DormCustomCredentials>, String> {
+        Self::load(SecretKey::DormNetworkCredentials)
+    }
+    #[cfg(not(target_os = "android"))]
+    fn save_dorm_credentials(&self, credentials: &DormCustomCredentials) -> Result<(), String> {
+        Self::save(SecretKey::DormNetworkCredentials, credentials)
+    }
+
     #[cfg(target_os = "android")]
     fn load_profile(&self) -> Result<Option<StoredAccountProfile>, String> {
         load_android_secret(SecretKey::Profile)
@@ -347,6 +547,22 @@ impl CredentialStore for PlatformCredentialStore {
     #[cfg(target_os = "android")]
     fn delete_session(&self) -> Result<(), String> {
         delete_android_secret(SecretKey::AuthSession)
+    }
+    #[cfg(target_os = "android")]
+    fn load_dorm_settings(&self) -> Result<Option<DormNetworkSettings>, String> {
+        load_android_secret(SecretKey::DormNetworkSettings)
+    }
+    #[cfg(target_os = "android")]
+    fn save_dorm_settings(&self, settings: &DormNetworkSettings) -> Result<(), String> {
+        save_android_secret(SecretKey::DormNetworkSettings, settings)
+    }
+    #[cfg(target_os = "android")]
+    fn load_dorm_credentials(&self) -> Result<Option<DormCustomCredentials>, String> {
+        load_android_secret(SecretKey::DormNetworkCredentials)
+    }
+    #[cfg(target_os = "android")]
+    fn save_dorm_credentials(&self, credentials: &DormCustomCredentials) -> Result<(), String> {
+        save_android_secret(SecretKey::DormNetworkCredentials, credentials)
     }
 }
 
@@ -386,6 +602,13 @@ pub struct AuthStore {
     login_prefill: Mutex<Option<LoginFormPrefill>>,
     resume_url: Mutex<Option<tauri::Url>>,
     credentials: PlatformCredentialStore,
+    dorm_settings: Mutex<Option<DormNetworkSettings>>,
+    dorm_status: Mutex<DormLoginStatusView>,
+    dorm_logs: Mutex<VecDeque<DormLoginLogView>>,
+    dorm_login_in_flight: Mutex<bool>,
+    dorm_monitor: Mutex<Option<mpsc::Sender<()>>>,
+    dorm_last_fingerprint: Mutex<Option<String>>,
+    network_overview: Mutex<NetworkOverviewView>,
 }
 
 fn profile_view(profile: &StoredAccountProfile) -> AccountProfileView {
@@ -1395,6 +1618,1016 @@ fn logout(app: tauri::AppHandle, store: State<'_, AuthStore>) -> Result<(), Stri
     Ok(())
 }
 
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or_default()
+}
+
+fn dorm_settings(store: &AuthStore) -> Result<DormNetworkSettings, String> {
+    if let Some(settings) = store
+        .dorm_settings
+        .lock()
+        .map_err(|_| "状态锁失败")?
+        .clone()
+    {
+        return Ok(settings);
+    }
+    let loaded = store.credentials.load_dorm_settings()?.unwrap_or_default();
+    *store.dorm_settings.lock().map_err(|_| "状态锁失败")? = Some(loaded.clone());
+    Ok(loaded)
+}
+
+fn dorm_settings_view(
+    store: &AuthStore,
+    settings: &DormNetworkSettings,
+) -> Result<DormNetworkSettingsView, String> {
+    Ok(DormNetworkSettingsView {
+        enabled: settings.enabled,
+        credential_mode: settings.credential_mode.clone(),
+        custom_configured: store
+            .credentials
+            .load_dorm_credentials()?
+            .is_some_and(|value| {
+                is_campus_card_number(&value.campus_card_number) && !value.password.is_empty()
+            }),
+    })
+}
+
+fn dorm_log_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    Ok(app
+        .path()
+        .app_log_dir()
+        .map_err(|error| error.to_string())?
+        .join(DORM_LOG_FILE))
+}
+
+fn append_dorm_log(app: &tauri::AppHandle, log: DormLoginLogView) {
+    let Ok(path) = dorm_log_path(app) else { return };
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) else {
+        return;
+    };
+    let Ok(line) = serde_json::to_string(&log) else {
+        return;
+    };
+    let _ = writeln!(file, "{line}");
+    // Keep the file bounded without retaining secrets in application state.
+    if let Ok(content) = fs::read_to_string(&path) {
+        let mut lines: Vec<&str> = content.lines().collect();
+        if lines.len() > 1000 {
+            lines = lines.split_off(lines.len() - 1000);
+            let _ = fs::write(path, format!("{}\n", lines.join("\n")));
+        }
+    }
+    if let Some(store) = app.try_state::<AuthStore>() {
+        if let Ok(mut logs) = store.dorm_logs.lock() {
+            logs.push_back(log.clone());
+            while logs.len() > 1000 {
+                logs.pop_front();
+            }
+        }
+        let _ = app.emit("dorm-login-log-added", &log);
+    }
+}
+
+fn load_dorm_logs(app: &tauri::AppHandle) -> Vec<DormLoginLogView> {
+    let Ok(path) = dorm_log_path(app) else {
+        return Vec::new();
+    };
+    let Ok(content) = fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    content
+        .lines()
+        .rev()
+        .take(1000)
+        .filter_map(|line| serde_json::from_str::<DormLoginLogView>(line).ok())
+        .collect()
+}
+
+fn set_dorm_status(app: &tauri::AppHandle, update: impl FnOnce(&mut DormLoginStatusView)) {
+    let Some(store) = app.try_state::<AuthStore>() else {
+        return;
+    };
+    let Ok(mut status) = store.dorm_status.lock() else {
+        return;
+    };
+    update(&mut status);
+    let next = status.clone();
+    drop(status);
+    let _ = app.emit("dorm-login-status-changed", next);
+}
+
+fn dorm_notify_failure(app: &tauri::AppHandle, message: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    let _ = app
+        .notification()
+        .builder()
+        .title("校园网登录失败")
+        .body(message)
+        .show();
+}
+
+fn save_dorm_failure_notice(app: &tauri::AppHandle, message: &str) {
+    let Some(store) = app.try_state::<AuthStore>() else {
+        return;
+    };
+    let Ok(mut settings) = dorm_settings(&store) else {
+        return;
+    };
+    settings.pending_failure_notice = Some(DormFailureNotice {
+        message: message.to_owned(),
+        timestamp_ms: now_ms(),
+    });
+    let _ = store.credentials.save_dorm_settings(&settings);
+    {
+        if let Ok(mut cached) = store.dorm_settings.lock() {
+            *cached = Some(settings);
+        };
+    }
+}
+
+fn encode_query_component(value: &str) -> String {
+    let mut output = String::new();
+    for byte in value.as_bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            output.push(*byte as char);
+        } else {
+            output.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    output
+}
+
+fn read_http_response_bytes(host: &str, port: u16, path: &str) -> Result<(u16, Vec<u8>), String> {
+    let address = format!("{host}:{port}")
+        .to_socket_addrs()
+        .map_err(|error| error.to_string())?
+        .next()
+        .ok_or("网关地址不可解析")?;
+    let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(3))
+        .map_err(|error| error.to_string())?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .map_err(|error| error.to_string())?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(3)))
+        .map_err(|error| error.to_string())?;
+    let request = format!(
+        "GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\nUser-Agent: your-szu-life/0.1\r\nAccept: */*\r\n\r\n"
+    );
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|error| error.to_string())?;
+    let _ = stream.shutdown(Shutdown::Write);
+    let mut bytes = Vec::new();
+    stream
+        .read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    let separator = b"\r\n\r\n";
+    let split = bytes
+        .windows(separator.len())
+        .position(|window| window == separator)
+        .ok_or("网关响应格式无效")?;
+    let header = String::from_utf8_lossy(&bytes[..split]);
+    let status = header
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|value| value.parse().ok())
+        .ok_or("网关 HTTP 状态无效")?;
+    Ok((status, bytes[split + separator.len()..].to_vec()))
+}
+
+fn read_http_response(host: &str, port: u16, path: &str) -> Result<(u16, String), String> {
+    let (status, body) = read_http_response_bytes(host, port, path)?;
+    Ok((status, String::from_utf8_lossy(&body).into_owned()))
+}
+
+fn decode_portal_html(bytes: &[u8]) -> String {
+    let raw = String::from_utf8_lossy(bytes);
+    let charset = extract_portal_value(&raw, "charset").unwrap_or_default();
+    if charset.eq_ignore_ascii_case("gb2312") || charset.eq_ignore_ascii_case("gbk") {
+        let (decoded, _, _) = encoding_rs::GB18030.decode(bytes);
+        return decoded.into_owned();
+    }
+    String::from_utf8(bytes.to_vec())
+        .unwrap_or_else(|_| String::from_utf8_lossy(bytes).into_owned())
+}
+
+fn extract_portal_value(html: &str, name: &str) -> Option<String> {
+    let start = html.find(name)?;
+    let rest = &html[start + name.len()..];
+    let equals = rest.find('=')?;
+    let rest = rest[equals + 1..].trim_start();
+    let quote = rest.chars().next()?;
+    if quote != '\'' && quote != '"' {
+        return None;
+    }
+    let end = rest[1..].find(quote)? + 1;
+    let value = rest[1..end].trim();
+    (!value.is_empty()).then(|| value.to_owned())
+}
+
+fn extract_portal_numeric(html: &str, name: &str) -> Option<u64> {
+    let start = html.find(name)?;
+    let rest = &html[start + name.len()..];
+    let equals = rest.find('=')?;
+    let rest = rest[equals + 1..].trim_start();
+    if let Some(quote) = rest
+        .chars()
+        .next()
+        .filter(|quote| *quote == '\'' || *quote == '"')
+    {
+        let end = rest[1..].find(quote)? + 1;
+        return rest[1..end].trim().parse().ok();
+    }
+    let end = rest
+        .find(|character: char| !character.is_ascii_digit())
+        .unwrap_or(rest.len());
+    (end > 0).then(|| rest[..end].parse().ok()).flatten()
+}
+
+fn extract_portal_session_info(html: &str) -> DormPortalSessionInfo {
+    DormPortalSessionInfo {
+        online_username: extract_portal_value(html, "NID"),
+        campus_card_number: extract_portal_value(html, "uid"),
+        online_duration: extract_portal_numeric(html, "oltime"),
+        online_flow: extract_portal_numeric(html, "olflow"),
+        login_ip: extract_portal_value(html, "lip"),
+        login_started_at: extract_portal_value(html, "stime"),
+        login_expires_at: extract_portal_value(html, "etime"),
+        charset: extract_portal_value(html, "charset"),
+    }
+}
+
+fn has_online_portal_marker(html: &str) -> bool {
+    html.contains("Dr.COMWebLoginID_1.htm")
+}
+
+fn has_login_portal_marker(html: &str) -> bool {
+    html.contains("Dr.COMWebLoginID_0.htm")
+}
+
+fn has_online_session_fields(session: &DormPortalSessionInfo) -> bool {
+    session.online_username.is_some()
+        || session.login_ip.is_some()
+        || session.login_started_at.is_some()
+        || session.login_expires_at.is_some()
+}
+
+fn valid_ipv4(value: &str) -> bool {
+    let parts: Vec<_> = value.trim().split('.').collect();
+    parts.len() == 4
+        && parts.iter().all(|part| part.parse::<u8>().is_ok())
+        && value != "000.000.000.000"
+        && value != "0.0.0.0"
+}
+
+fn extract_terminal_ip(html: &str) -> Option<String> {
+    ["v4ip", "v46ip", "ss5"]
+        .into_iter()
+        .filter_map(|key| extract_portal_value(html, key))
+        .find(|value| valid_ipv4(value))
+}
+
+#[derive(Debug, Clone, Default)]
+struct NetworkSnapshot {
+    connected: bool,
+    ssid: Option<String>,
+    ip: Option<String>,
+}
+
+#[cfg(not(target_os = "android"))]
+fn command_text(command: &str, args: &[&str]) -> Option<String> {
+    Command::new(command)
+        .args(args)
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+fn network_snapshot() -> NetworkSnapshot {
+    #[cfg(target_os = "linux")]
+    {
+        let ssid =
+            command_text("nmcli", &["-t", "-f", "active,ssid", "dev", "wifi"]).and_then(|text| {
+                text.lines().find_map(|line| {
+                    let (active, ssid) = line.split_once(':')?;
+                    (active == "yes" && !ssid.is_empty()).then(|| ssid.to_owned())
+                })
+            });
+        let ip = command_text("hostname", &["-I"]).and_then(|text| {
+            text.split_whitespace()
+                .find(|value| valid_ipv4(value))
+                .map(str::to_owned)
+        });
+        return NetworkSnapshot {
+            connected: ip.is_some() || ssid.is_some(),
+            ssid,
+            ip,
+        };
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let ssid = command_text("networksetup", &["-getairportnetwork", "en0"])
+            .and_then(|text| {
+                text.split_once(": ")
+                    .map(|(_, value)| value.trim().to_owned())
+            })
+            .filter(|value| !value.is_empty() && !value.contains("not associated"));
+        let ip = command_text("ipconfig", &["getifaddr", "en0"])
+            .and_then(|text| text.trim().parse::<std::net::Ipv4Addr>().ok())
+            .map(|value| value.to_string());
+        return NetworkSnapshot {
+            connected: ip.is_some() || ssid.is_some(),
+            ssid,
+            ip,
+        };
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let ssid = command_text("netsh", &["wlan", "show", "interfaces"]).and_then(|text| {
+            text.lines().find_map(|line| {
+                let (key, value) = line.split_once(':')?;
+                (key.trim().eq_ignore_ascii_case("SSID") && !value.trim().is_empty())
+                    .then(|| value.trim().to_owned())
+            })
+        });
+        return NetworkSnapshot {
+            connected: ssid.is_some(),
+            ssid,
+            ip: None,
+        };
+    }
+    #[cfg(target_os = "android")]
+    {
+        NetworkSnapshot::default()
+    }
+}
+
+fn tcp_host_reachable(host: &str, port: u16) -> bool {
+    format!("{host}:{port}")
+        .to_socket_addrs()
+        .ok()
+        .into_iter()
+        .flatten()
+        .any(|address| TcpStream::connect_timeout(&address, Duration::from_secs(2)).is_ok())
+}
+
+fn staff_host_reachable() -> bool {
+    tcp_host_reachable(STAFF_NETWORK_HOST, 80) || tcp_host_reachable(STAFF_NETWORK_HOST, 443)
+}
+
+#[derive(Debug, Clone, Default)]
+struct DormPortalProbe {
+    reachable: bool,
+    authenticated: bool,
+    session: Option<DormPortalSessionInfo>,
+}
+
+fn probe_dorm_portal() -> DormPortalProbe {
+    let Ok((status, body)) = read_http_response_bytes(DORM_PORTAL_HOST, 80, "/") else {
+        return DormPortalProbe::default();
+    };
+    if !(200..300).contains(&status) {
+        return DormPortalProbe {
+            reachable: false,
+            ..DormPortalProbe::default()
+        };
+    }
+    let decoded = decode_portal_html(&body);
+    let session = extract_portal_session_info(&decoded);
+    let marker_authenticated = has_online_portal_marker(&decoded);
+    let marker_logged_out = has_login_portal_marker(&decoded);
+    let status_authenticated =
+        read_http_response(DORM_PORTAL_HOST, 80, "/drcom/chkstatus?callback=dr1003")
+            .ok()
+            .and_then(|(_, response)| parse_jsonp_response(&response).ok())
+            .and_then(|value| value.get("result").and_then(|value| value.as_i64()))
+            .is_some_and(|result| result == 1);
+    DormPortalProbe {
+        reachable: true,
+        authenticated: !marker_logged_out
+            && (marker_authenticated
+                || (status_authenticated && has_online_session_fields(&session))),
+        session: has_online_session_fields(&session).then_some(session),
+    }
+}
+
+fn classify_network_overview(
+    snapshot: &NetworkSnapshot,
+    portal_reachable: bool,
+    staff_reachable: bool,
+    dorm_connected: bool,
+    portal_session: Option<DormPortalSessionInfo>,
+) -> NetworkOverviewView {
+    let region = if snapshot.ssid.as_deref() == Some("SZU_WLAN") {
+        NetworkRegion::Staff
+    } else if portal_reachable {
+        NetworkRegion::Dormitory
+    } else if staff_reachable {
+        NetworkRegion::Staff
+    } else {
+        NetworkRegion::None
+    };
+    let state = match region {
+        NetworkRegion::None => NetworkConnectionState::NoNetwork,
+        NetworkRegion::Staff => NetworkConnectionState::NotLoggedIn,
+        NetworkRegion::Dormitory => {
+            if dorm_connected {
+                NetworkConnectionState::Connected
+            } else {
+                NetworkConnectionState::NotLoggedIn
+            }
+        }
+    };
+    NetworkOverviewView {
+        state,
+        region,
+        ssid: snapshot.ssid.clone(),
+        portal_reachable,
+        staff_host_reachable: staff_reachable,
+        portal_session,
+    }
+}
+
+fn probe_network_overview(snapshot: &NetworkSnapshot) -> (NetworkOverviewView, DormPortalProbe) {
+    let portal = probe_dorm_portal();
+    let staff_reachable = if snapshot.ssid.as_deref() == Some("SZU_WLAN") {
+        true
+    } else {
+        staff_host_reachable()
+    };
+    let overview = classify_network_overview(
+        snapshot,
+        portal.reachable,
+        staff_reachable,
+        portal.authenticated,
+        portal.session.clone(),
+    );
+    (overview, portal)
+}
+
+fn update_network_overview(app: &tauri::AppHandle, overview: NetworkOverviewView) {
+    let Some(store) = app.try_state::<AuthStore>() else {
+        return;
+    };
+    let changed = store
+        .network_overview
+        .lock()
+        .map(|mut current| {
+            let changed = *current != overview;
+            if changed {
+                *current = overview.clone();
+            }
+            changed
+        })
+        .unwrap_or(false);
+    if changed {
+        let _ = app.emit("network-overview-changed", &overview);
+    }
+}
+
+fn parse_jsonp_response(body: &str) -> Result<serde_json::Value, String> {
+    let body = body.trim();
+    let start = body.find('(').ok_or("登录响应不是 JSONP")?;
+    let end = body.rfind(')').ok_or("登录响应不是 JSONP")?;
+    serde_json::from_str(body[start + 1..end].trim()).map_err(|error| error.to_string())
+}
+
+fn sanitized_response(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => serde_json::Value::Object(
+            map.iter()
+                .filter(|(key, _)| {
+                    let key = key.to_ascii_lowercase();
+                    !key.contains("password")
+                        && !key.contains("passwd")
+                        && !key.contains("token")
+                        && !key.contains("cookie")
+                        && !key.contains("secret")
+                })
+                .map(|(key, value)| (key.clone(), sanitized_response(value)))
+                .collect(),
+        ),
+        serde_json::Value::Array(values) => {
+            serde_json::Value::Array(values.iter().map(sanitized_response).collect())
+        }
+        other => other.clone(),
+    }
+}
+
+fn backoff_delay(failures: u32) -> Duration {
+    if failures <= 5 {
+        Duration::from_secs(10)
+    } else if failures <= 10 {
+        Duration::from_secs(120)
+    } else {
+        Duration::from_secs(600)
+    }
+}
+
+fn dormant_credentials(
+    store: &AuthStore,
+    settings: &DormNetworkSettings,
+) -> Result<(String, String), String> {
+    let (card, password) = match settings.credential_mode {
+        DormCredentialMode::CurrentAccount => {
+            let profile = store
+                .profile
+                .lock()
+                .map_err(|_| "状态锁失败")?
+                .clone()
+                .or(store.credentials.load_profile()?)
+                .ok_or("当前账户尚未保存校园卡号和密码")?;
+            (profile.campus_card_number, profile.password)
+        }
+        DormCredentialMode::Custom => {
+            let value = store
+                .credentials
+                .load_dorm_credentials()?
+                .ok_or("尚未配置宿舍区校园网凭据")?;
+            (value.campus_card_number, value.password)
+        }
+    };
+    if !is_campus_card_number(&card) || password.is_empty() {
+        return Err("校园卡号必须是 6 位数字且密码不能为空".into());
+    }
+    Ok((card, password))
+}
+
+fn record_dorm_transport_failure(
+    app: &tauri::AppHandle,
+    error: String,
+    portal_reachable: bool,
+    http_status: Option<u16>,
+) -> String {
+    let failures = app
+        .try_state::<AuthStore>()
+        .and_then(|store| {
+            let mut status = store.dorm_status.lock().ok()?;
+            status.portal_reachable = portal_reachable;
+            status.consecutive_failures = status.consecutive_failures.saturating_add(1);
+            let next = now_ms() + backoff_delay(status.consecutive_failures).as_millis() as u64;
+            status.next_probe_at_ms = Some(next);
+            status.state = DormLoginState::Monitoring;
+            Some((status.consecutive_failures, next))
+        })
+        .unwrap_or((0, now_ms() + 600_000));
+    set_dorm_status(app, |status| {
+        status.consecutive_failures = failures.0;
+        status.next_probe_at_ms = Some(failures.1);
+        status.state = DormLoginState::Monitoring;
+    });
+    append_dorm_log(
+        app,
+        DormLoginLogView {
+            timestamp_ms: now_ms(),
+            stage: "probe".into(),
+            outcome: "error".into(),
+            portal_reachable,
+            http_status,
+            result: None,
+            message: Some(error.clone()),
+            ret_code: None,
+            consecutive_failures: failures.0,
+            next_probe_at_ms: Some(failures.1),
+            response: None,
+        },
+    );
+    error
+}
+
+fn perform_dorm_login(app: tauri::AppHandle, manual: bool) -> Result<DormLoginResultView, String> {
+    let store = app.try_state::<AuthStore>().ok_or("校园网状态不可用")?;
+    if !manual && !dorm_settings(&store)?.enabled {
+        return Err("自动登录未开启".into());
+    }
+    let settings = dorm_settings(&store)?;
+    let (card, password) = dormant_credentials(&store, &settings)?;
+    let snapshot = network_snapshot();
+    set_dorm_status(&app, |status| {
+        status.state = DormLoginState::Probing;
+        status.ssid = snapshot.ssid.clone();
+        status.connected = snapshot.connected;
+    });
+    let portal = read_http_response_bytes(DORM_PORTAL_HOST, 80, "/");
+    let (http_status, portal_body) = match portal {
+        Ok(value) => value,
+        Err(error) => {
+            let failures = {
+                let mut status = store.dorm_status.lock().map_err(|_| "状态锁失败")?;
+                status.portal_reachable = false;
+                status.consecutive_failures = status.consecutive_failures.saturating_add(1);
+                status.next_probe_at_ms =
+                    Some(now_ms() + backoff_delay(status.consecutive_failures).as_millis() as u64);
+                status.state = DormLoginState::Monitoring;
+                status.consecutive_failures
+            };
+            let next = now_ms() + backoff_delay(failures).as_millis() as u64;
+            set_dorm_status(&app, |status| status.next_probe_at_ms = Some(next));
+            append_dorm_log(
+                &app,
+                DormLoginLogView {
+                    timestamp_ms: now_ms(),
+                    stage: "probe".into(),
+                    outcome: "unreachable".into(),
+                    portal_reachable: false,
+                    http_status: None,
+                    result: None,
+                    message: Some(error.clone()),
+                    ret_code: None,
+                    consecutive_failures: failures,
+                    next_probe_at_ms: Some(next),
+                    response: None,
+                },
+            );
+            return Err(error);
+        }
+    };
+    let html = decode_portal_html(&portal_body);
+    if !(200..300).contains(&http_status) {
+        return Err(record_dorm_transport_failure(
+            &app,
+            format!("门户返回 HTTP {http_status}"),
+            false,
+            Some(http_status),
+        ));
+    }
+    let ip = extract_terminal_ip(&html)
+        .or(snapshot.ip.clone())
+        .ok_or("未能从门户页面读取终端 IP")?;
+    let callback = format!("dr{}", 1000 + (now_ms() % 9000));
+    let desktop_terminal = cfg!(target_os = "windows") || cfg!(target_os = "macos");
+    let prefix = if desktop_terminal { ",0," } else { ",1," };
+    let terminal_type = if cfg!(target_os = "android") || cfg!(target_os = "linux") {
+        2
+    } else {
+        1
+    };
+    let account = format!("{prefix}{card}");
+    let path = format!(
+        "/eportal/portal/login?callback={}&login_method=1&user_account={}&user_password={}&wlan_user_ip={}&wlan_user_ipv6=&wlan_user_mac=000000000000&wlan_ac_ip=&wlan_ac_name=&jsVersion=4.1.3&terminal_type={}&lang=zh-cn&v={}",
+        encode_query_component(&callback), encode_query_component(&account), encode_query_component(&password),
+        encode_query_component(&ip), terminal_type, now_ms() % 10000 + 500
+    );
+    set_dorm_status(&app, |status| {
+        status.state = DormLoginState::LoggingIn;
+        status.portal_reachable = true;
+    });
+    let (login_status, body) = match read_http_response(DORM_PORTAL_HOST, 801, &path) {
+        Ok(value) => value,
+        Err(error) => return Err(record_dorm_transport_failure(&app, error, true, None)),
+    };
+    let parsed = match parse_jsonp_response(&body) {
+        Ok(value) => value,
+        Err(error) => {
+            return Err(record_dorm_transport_failure(
+                &app,
+                error,
+                true,
+                Some(login_status),
+            ))
+        }
+    };
+    let result = parsed.get("result").and_then(|v| v.as_i64());
+    let ret_code = parsed.get("ret_code").and_then(|v| v.as_i64());
+    let message = parsed
+        .get("msg")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned);
+    let success = result == Some(1) || (result == Some(0) && ret_code == Some(2));
+    let already_online = result == Some(0) && ret_code == Some(2);
+    let view = DormLoginResultView {
+        ok: success,
+        already_online,
+        message: message.clone(),
+        result,
+        ret_code,
+        http_status: Some(login_status),
+    };
+    if success {
+        set_dorm_status(&app, |status| {
+            status.state = DormLoginState::Online;
+            status.portal_reachable = true;
+            status.consecutive_failures = 0;
+            status.next_probe_at_ms = Some(now_ms() + 600_000);
+            status.last_result = Some(view.clone());
+        });
+        update_network_overview(
+            &app,
+            classify_network_overview(&snapshot, true, false, true, None),
+        );
+        append_dorm_log(
+            &app,
+            DormLoginLogView {
+                timestamp_ms: now_ms(),
+                stage: "login".into(),
+                outcome: if already_online {
+                    "already-online".into()
+                } else {
+                    "success".into()
+                },
+                portal_reachable: true,
+                http_status: Some(login_status),
+                result,
+                message,
+                ret_code,
+                consecutive_failures: 0,
+                next_probe_at_ms: Some(now_ms() + 600_000),
+                response: Some(sanitized_response(&parsed)),
+            },
+        );
+        Ok(view)
+    } else {
+        set_dorm_status(&app, |status| {
+            status.state = DormLoginState::Paused;
+            status.portal_reachable = true;
+            status.last_result = Some(view.clone());
+        });
+        update_network_overview(
+            &app,
+            classify_network_overview(&snapshot, true, false, false, None),
+        );
+        let notice = view
+            .message
+            .clone()
+            .unwrap_or_else(|| "宿舍区校园网认证失败".into());
+        save_dorm_failure_notice(&app, &notice);
+        dorm_notify_failure(&app, &notice);
+        append_dorm_log(
+            &app,
+            DormLoginLogView {
+                timestamp_ms: now_ms(),
+                stage: "login".into(),
+                outcome: "business-failure".into(),
+                portal_reachable: true,
+                http_status: Some(login_status),
+                result,
+                message: view.message.clone(),
+                ret_code,
+                consecutive_failures: 0,
+                next_probe_at_ms: None,
+                response: Some(sanitized_response(&parsed)),
+            },
+        );
+        Err(notice)
+    }
+}
+
+fn start_dorm_login(app: tauri::AppHandle, manual: bool) -> Result<(), String> {
+    let store = app.try_state::<AuthStore>().ok_or("校园网状态不可用")?;
+    if !manual && !dorm_settings(&store)?.enabled {
+        return Err("自动登录未开启".into());
+    }
+    let settings = dorm_settings(&store)?;
+    let _ = dormant_credentials(&store, &settings)?;
+    {
+        let mut busy = store
+            .dorm_login_in_flight
+            .lock()
+            .map_err(|_| "状态锁失败")?;
+        if *busy {
+            return Err("校园网登录正在进行中".into());
+        }
+        *busy = true;
+    }
+    thread::spawn(move || {
+        let result = perform_dorm_login(app.clone(), manual);
+        if let Some(store) = app.try_state::<AuthStore>() {
+            if let Ok(mut busy) = store.dorm_login_in_flight.lock() {
+                *busy = false;
+            }
+        }
+        if let Err(error) = result {
+            set_dorm_status(&app, |status| {
+                if !matches!(status.state, DormLoginState::Paused) {
+                    status.state = DormLoginState::Monitoring;
+                }
+                if !error.is_empty() {
+                    status.last_result.get_or_insert_with(Default::default);
+                }
+            });
+        }
+    });
+    Ok(())
+}
+
+fn monitor_dorm_network(app: tauri::AppHandle, stop: mpsc::Receiver<()>) {
+    loop {
+        if stop.recv_timeout(DORM_MONITOR_TICK).is_ok() {
+            break;
+        }
+        let Some(store) = app.try_state::<AuthStore>() else {
+            break;
+        };
+        let snapshot = network_snapshot();
+        let (overview, _portal_probe) = probe_network_overview(&snapshot);
+        update_network_overview(&app, overview.clone());
+        let Ok(settings) = dorm_settings(&store) else {
+            continue;
+        };
+        if !settings.enabled || !matches!(overview.region, NetworkRegion::Dormitory) {
+            set_dorm_status(&app, |status| {
+                if !settings.enabled {
+                    status.state = DormLoginState::Disabled;
+                } else if !matches!(overview.region, NetworkRegion::Dormitory)
+                    && !matches!(status.state, DormLoginState::Online)
+                {
+                    status.state = DormLoginState::Monitoring;
+                }
+            });
+            continue;
+        }
+        let fingerprint = format!(
+            "{}|{}|{}",
+            snapshot.ssid.as_deref().unwrap_or(""),
+            snapshot.ip.as_deref().unwrap_or(""),
+            snapshot.connected
+        );
+        let changed = store
+            .dorm_last_fingerprint
+            .lock()
+            .ok()
+            .and_then(|mut last| {
+                let changed = last.as_deref() != Some(fingerprint.as_str());
+                *last = Some(fingerprint);
+                Some(changed)
+            })
+            .unwrap_or(false);
+        if changed {
+            set_dorm_status(&app, |status| {
+                status.consecutive_failures = 0;
+                status.next_probe_at_ms = Some(now_ms());
+                if matches!(status.state, DormLoginState::Paused | DormLoginState::Error) {
+                    status.state = DormLoginState::Monitoring;
+                }
+            });
+        }
+        let due = store
+            .dorm_status
+            .lock()
+            .ok()
+            .and_then(|status| status.next_probe_at_ms)
+            .is_none_or(|next| next <= now_ms());
+        let paused = store
+            .dorm_status
+            .lock()
+            .ok()
+            .is_some_and(|status| matches!(status.state, DormLoginState::Paused));
+        if due
+            && !paused
+            && !store
+                .dorm_login_in_flight
+                .lock()
+                .ok()
+                .is_some_and(|busy| *busy)
+        {
+            let _ = start_dorm_login(app.clone(), false);
+        }
+    }
+}
+
+fn start_dorm_monitor(app: tauri::AppHandle) {
+    let app_for_state = app.clone();
+    let Some(store) = app_for_state.try_state::<AuthStore>() else {
+        return;
+    };
+    let Ok(mut monitor) = store.dorm_monitor.lock() else {
+        return;
+    };
+    if monitor.is_some() {
+        return;
+    }
+    let (sender, receiver) = mpsc::channel();
+    *monitor = Some(sender);
+    drop(monitor);
+    thread::spawn(move || monitor_dorm_network(app, receiver));
+}
+
+#[tauri::command]
+fn get_network_overview(store: State<'_, AuthStore>) -> Result<NetworkOverviewView, String> {
+    Ok(store
+        .network_overview
+        .lock()
+        .map_err(|_| "状态锁失败")?
+        .clone())
+}
+
+#[tauri::command]
+fn get_dorm_network_settings(
+    app: tauri::AppHandle,
+    store: State<'_, AuthStore>,
+) -> Result<DormNetworkSettingsView, String> {
+    let settings = dorm_settings(&store)?;
+    let view = dorm_settings_view(&store, &settings)?;
+    start_dorm_monitor(app);
+    Ok(view)
+}
+
+#[tauri::command]
+fn save_dorm_network_settings(
+    app: tauri::AppHandle,
+    input: DormNetworkSettingsInput,
+    store: State<'_, AuthStore>,
+) -> Result<DormNetworkSettingsView, String> {
+    if input.enabled && input.credential_mode == DormCredentialMode::CurrentAccount {
+        let profile = store
+            .profile
+            .lock()
+            .map_err(|_| "状态锁失败")?
+            .clone()
+            .or(store.credentials.load_profile()?)
+            .ok_or("当前账户尚未保存校园卡号和密码")?;
+        if !is_campus_card_number(&profile.campus_card_number) || profile.password.is_empty() {
+            return Err("当前账户尚未保存完整校园网凭据".into());
+        }
+    }
+    if input.credential_mode == DormCredentialMode::Custom {
+        let existing = store.credentials.load_dorm_credentials()?;
+        let card = input
+            .campus_card_number
+            .or_else(|| existing.as_ref().map(|v| v.campus_card_number.clone()))
+            .unwrap_or_default();
+        let password = input
+            .password
+            .or_else(|| existing.as_ref().map(|v| v.password.clone()))
+            .unwrap_or_default();
+        if !is_campus_card_number(&card) || password.is_empty() {
+            return Err("校园卡号必须是 6 位数字且密码不能为空".into());
+        }
+        store
+            .credentials
+            .save_dorm_credentials(&DormCustomCredentials {
+                campus_card_number: card,
+                password,
+            })?;
+    }
+    let settings = DormNetworkSettings {
+        enabled: input.enabled,
+        credential_mode: input.credential_mode,
+        pending_failure_notice: dorm_settings(&store)?.pending_failure_notice,
+    };
+    store.credentials.save_dorm_settings(&settings)?;
+    *store.dorm_settings.lock().map_err(|_| "状态锁失败")? = Some(settings.clone());
+    set_dorm_status(&app, |status| {
+        status.state = if settings.enabled {
+            DormLoginState::Monitoring
+        } else {
+            DormLoginState::Disabled
+        };
+        status.next_probe_at_ms = if settings.enabled {
+            Some(now_ms())
+        } else {
+            None
+        };
+    });
+    start_dorm_monitor(app.clone());
+    dorm_settings_view(&store, &settings)
+}
+
+#[tauri::command]
+fn get_dorm_login_status(store: State<'_, AuthStore>) -> Result<DormLoginStatusView, String> {
+    Ok(store.dorm_status.lock().map_err(|_| "状态锁失败")?.clone())
+}
+
+#[tauri::command]
+fn trigger_dorm_login(app: tauri::AppHandle) -> Result<(), String> {
+    start_dorm_login(app, true)
+}
+
+#[tauri::command]
+fn get_dorm_login_logs(
+    app: tauri::AppHandle,
+    store: State<'_, AuthStore>,
+) -> Result<Vec<DormLoginLogView>, String> {
+    let mut logs = load_dorm_logs(&app);
+    logs.reverse();
+    if let Ok(mut cached) = store.dorm_logs.lock() {
+        *cached = logs.iter().cloned().collect();
+    }
+    Ok(logs)
+}
+
+#[tauri::command]
+fn consume_dorm_login_failure_notice(
+    app: tauri::AppHandle,
+    store: State<'_, AuthStore>,
+) -> Result<Option<DormFailureNotice>, String> {
+    let mut settings = dorm_settings(&store)?;
+    let notice = settings.pending_failure_notice.take();
+    store.credentials.save_dorm_settings(&settings)?;
+    *store.dorm_settings.lock().map_err(|_| "状态锁失败")? = Some(settings);
+    let _ = app;
+    Ok(notice)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1407,8 +2640,56 @@ pub fn run() {
             login_prefill: Mutex::new(None),
             resume_url: Mutex::new(None),
             credentials: PlatformCredentialStore,
+            dorm_settings: Mutex::new(None),
+            dorm_status: Mutex::new(DormLoginStatusView::default()),
+            dorm_logs: Mutex::new(VecDeque::new()),
+            dorm_login_in_flight: Mutex::new(false),
+            dorm_monitor: Mutex::new(None),
+            dorm_last_fingerprint: Mutex::new(None),
+            network_overview: Mutex::new(NetworkOverviewView::default()),
         })
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
+        .setup(|app| {
+            start_dorm_monitor(app.handle().clone());
+            #[cfg(desktop)]
+            {
+                use tauri::menu::{Menu, MenuItem};
+                use tauri::tray::TrayIconBuilder;
+                let show = MenuItem::with_id(app, "show", "打开窗口", true, None::<&str>)?;
+                let exit = MenuItem::with_id(app, "exit", "退出", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&show, &exit])?;
+                TrayIconBuilder::new()
+                    .menu(&menu)
+                    .tooltip("深大生活")
+                    .on_menu_event(|app, event| match event.id().as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "exit" => app.exit(0),
+                        _ => {}
+                    })
+                    .build(app)?;
+            }
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            #[cfg(desktop)]
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if let Some(store) = window.app_handle().try_state::<AuthStore>() {
+                    if dorm_settings(&store)
+                        .map(|settings| settings.enabled)
+                        .unwrap_or(false)
+                    {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             get_auth_state,
             get_account_profile,
@@ -1416,7 +2697,14 @@ pub fn run() {
             begin_authentication,
             capture_auth_credentials,
             confirm_profile,
-            logout
+            logout,
+            get_network_overview,
+            get_dorm_network_settings,
+            save_dorm_network_settings,
+            get_dorm_login_status,
+            trigger_dorm_login,
+            get_dorm_login_logs,
+            consume_dorm_login_failure_notice
         ])
         .on_page_load(|window, payload| {
             if !matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
@@ -1729,6 +3017,128 @@ mod tests {
         .unwrap();
         assert_eq!(authenticated["authenticated"]["studentId"], "1234567890");
         assert!(authenticated["authenticated"].get("student_id").is_none());
+    }
+
+    #[test]
+    fn extracts_terminal_ip_by_portal_priority_and_rejects_invalid_values() {
+        let html =
+            "<script>v4ip='000.000.000.000';v46ip='172.24.75.190';ss5='172.24.1.1';</script>";
+        assert_eq!(extract_terminal_ip(html).as_deref(), Some("172.24.75.190"));
+        assert_eq!(extract_terminal_ip("v4ip='bad';v46ip='0.0.0.0';"), None);
+    }
+
+    #[test]
+    fn parses_portal_jsonp_and_classifies_success_and_already_online() {
+        let success = parse_jsonp_response("dr1003({\"result\":1,\"msg\":\"ok\"});").unwrap();
+        assert_eq!(success["result"], 1);
+        let online = parse_jsonp_response("dr1003({\"result\":0,\"ret_code\":2});").unwrap();
+        assert_eq!(online["ret_code"], 2);
+        assert!(parse_jsonp_response("not-jsonp").is_err());
+    }
+
+    #[test]
+    fn parses_portal_online_session_fields_and_gb2312_html() {
+        let html = "charset='gb2312';NID='张三';uid='123456';oltime='4294967295';olflow=4294967295;lip='172.24.111.161';stime='2026-09-05 09:06:33';etime='2026-09-07 19:30:49';<!--Dr.COMWebLoginID_1.htm-->";
+        let session = extract_portal_session_info(html);
+        assert_eq!(session.online_username.as_deref(), Some("张三"));
+        assert_eq!(session.campus_card_number.as_deref(), Some("123456"));
+        assert_eq!(session.online_duration, Some(4_294_967_295));
+        assert_eq!(session.online_flow, Some(4_294_967_295));
+        assert_eq!(session.login_ip.as_deref(), Some("172.24.111.161"));
+        assert!(has_online_portal_marker(html));
+        assert!(!has_login_portal_marker(html));
+
+        let (encoded, _, _) = encoding_rs::GB18030.encode("charset='gb2312';<title>注销页</title>");
+        let decoded = decode_portal_html(encoded.as_ref());
+        assert!(decoded.contains("注销页"));
+    }
+
+    #[test]
+    fn online_portal_session_drives_connected_state_without_cached_login_status() {
+        let snapshot = NetworkSnapshot {
+            connected: true,
+            ssid: Some("SZU_CTC&CMCC".into()),
+            ip: Some("172.24.111.161".into()),
+        };
+        let session = DormPortalSessionInfo {
+            online_username: Some("张三".into()),
+            campus_card_number: Some("123456".into()),
+            online_duration: Some(120),
+            online_flow: Some(4096),
+            login_ip: Some("172.24.111.161".into()),
+            login_started_at: Some("2026-09-05 09:06:33".into()),
+            login_expires_at: Some("2026-09-07 19:30:49".into()),
+            charset: Some("gb2312".into()),
+        };
+        let overview =
+            classify_network_overview(&snapshot, true, false, true, Some(session.clone()));
+        assert_eq!(overview.state, NetworkConnectionState::Connected);
+        assert_eq!(overview.portal_session, Some(session));
+    }
+
+    #[test]
+    fn classifies_network_regions_and_connection_states() {
+        let staff = NetworkSnapshot {
+            connected: true,
+            ssid: Some("SZU_WLAN".into()),
+            ip: Some("10.0.0.2".into()),
+        };
+        let overview = classify_network_overview(&staff, false, true, false, None);
+        assert_eq!(overview.region, NetworkRegion::Staff);
+        assert_eq!(overview.state, NetworkConnectionState::NotLoggedIn);
+
+        let dorm = NetworkSnapshot {
+            connected: true,
+            ssid: Some("SZU_CTC&CMCC".into()),
+            ip: Some("172.24.75.190".into()),
+        };
+        let online = classify_network_overview(&dorm, true, false, true, None);
+        assert_eq!(online.region, NetworkRegion::Dormitory);
+        assert_eq!(online.state, NetworkConnectionState::Connected);
+        let logged_out = classify_network_overview(&dorm, true, false, false, None);
+        assert_eq!(logged_out.state, NetworkConnectionState::NotLoggedIn);
+
+        let fallback_staff = classify_network_overview(&dorm, false, true, false, None);
+        assert_eq!(fallback_staff.region, NetworkRegion::Staff);
+        assert_eq!(fallback_staff.state, NetworkConnectionState::NotLoggedIn);
+
+        let offline = NetworkSnapshot::default();
+        let no_network = classify_network_overview(&offline, false, false, false, None);
+        assert_eq!(no_network.region, NetworkRegion::None);
+        assert_eq!(no_network.state, NetworkConnectionState::NoNetwork);
+    }
+
+    #[test]
+    fn backoff_has_the_requested_boundaries() {
+        assert_eq!(backoff_delay(1), Duration::from_secs(10));
+        assert_eq!(backoff_delay(5), Duration::from_secs(10));
+        assert_eq!(backoff_delay(6), Duration::from_secs(120));
+        assert_eq!(backoff_delay(10), Duration::from_secs(120));
+        assert_eq!(backoff_delay(11), Duration::from_secs(600));
+    }
+
+    #[test]
+    fn response_sanitization_removes_credentials_and_tokens() {
+        let value = serde_json::json!({
+            "result": 1,
+            "msg": "ok",
+            "user_password": "secret",
+            "token": "opaque",
+            "nested": {"cookie": "private", "safe": true}
+        });
+        let clean = sanitized_response(&value);
+        assert!(clean.get("user_password").is_none());
+        assert!(clean.get("token").is_none());
+        assert!(clean["nested"].get("cookie").is_none());
+        assert_eq!(clean["nested"]["safe"], true);
+    }
+
+    #[test]
+    fn dorm_settings_default_to_disabled_current_account() {
+        let settings = DormNetworkSettings::default();
+        assert!(!settings.enabled);
+        assert_eq!(settings.credential_mode, DormCredentialMode::CurrentAccount);
+        assert!(settings.pending_failure_notice.is_none());
     }
 
     #[test]

@@ -246,7 +246,11 @@ export default function App() {
               key={label}
               className="feature-button"
               variant="outline"
-              onPress={() => setPlaceholder(label)}
+              onPress={() =>
+                label === "校园网登录"
+                  ? void navigate({ to: "/campus-network" })
+                  : setPlaceholder(label)
+              }
             >
               <span className="feature-icon" aria-hidden="true">
                 <FeatureIcon size={19} focusable="false" />

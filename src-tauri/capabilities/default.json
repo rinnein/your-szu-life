@@ -3,5 +3,11 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": ["main"],
-  "permissions": ["default", "core:default", "opener:default", "keyring-store:default"]
+  "permissions": [
+    "default",
+    "core:default",
+    "opener:default",
+    "keyring-store:default",
+    "notification:default"
+  ]
 }

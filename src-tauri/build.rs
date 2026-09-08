@@ -9,6 +9,13 @@ fn main() {
             "capture_auth_credentials",
             "confirm_profile",
             "logout",
+            "get_network_overview",
+            "get_dorm_network_settings",
+            "save_dorm_network_settings",
+            "get_dorm_login_status",
+            "trigger_dorm_login",
+            "get_dorm_login_logs",
+            "consume_dorm_login_failure_notice",
         ]),
     ))
     .expect("failed to build Tauri ACL metadata");
