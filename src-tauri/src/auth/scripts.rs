@@ -32,23 +32,30 @@ pub(super) fn auth_login_capture_script(
 
   // The official page retains hidden templates with duplicated IDs. Only the
   // form copied into .login-main is live, so never fall back to global fields.
+  // Desktop uses .m-account while mobile uses .pwd_login; querying from the
+  // active form supports both layouts without crossing into hidden templates.
   const loginForm = () => document.querySelector('.login-main #pwdFromId');
-  const accountInput = () => document.querySelector('.login-main .m-account #username');
-  const passwordInput = () => document.querySelector('.login-main .m-account #password');
-  const loginButton = () => document.querySelector('.login-main #login_submit');
-  const rememberInput = () => document.querySelector('.login-main #rememberMe');
+  const formField = selector => loginForm()?.querySelector(selector);
+  const accountInput = () => formField('#username');
+  const passwordInput = () => formField('#password');
+  const loginButton = () => formField('#login_submit');
+  const rememberInput = () => formField('#rememberMe');
   const isActiveFormTarget = target => {{
     const form = loginForm();
     return !!form && target instanceof Node && form.contains(target);
   }};
   const isActiveLoginButton = target => {{
     if (!(target instanceof Element)) return false;
-    const button = target.closest('.login-main #login_submit');
+    const button = target.closest('.login-main #pwdFromId #login_submit');
     return !!button && button === loginButton();
   }};
   const setCaptureError = message => {{
-    const error = document.querySelector('.login-main #showErrorTip, .login-main #pwdErrorTip, .login-main .m-account .error-tip');
-    if (error) {{ error.textContent = message; error.style.display = 'block'; }}
+    const error = document.querySelector('.login-main #showErrorTip, .login-main #pwdErrorTip, .login-main #formErrorTip, .login-main .m-account .error-tip, .login-main .pwd_login .error-tip');
+    if (error) {{
+      error.textContent = message;
+      error.classList.remove('hide');
+      error.style.display = 'block';
+    }}
   }};
   const applySavedCredentials = () => {{
     if (!savedCredentials) return;
