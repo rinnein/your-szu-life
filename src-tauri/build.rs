@@ -14,6 +14,7 @@ fn main() {
             "save_dorm_network_settings",
             "get_dorm_login_status",
             "trigger_dorm_login",
+            "logout_campus_network",
             "get_dorm_login_logs",
             "consume_dorm_login_failure_notice",
         ]),

@@ -386,13 +386,15 @@ p {
 
 .network-status-grid {
   display: grid;
-  grid-template-columns: minmax(110px, 0.5fr) 1fr;
+  grid-template-columns: minmax(110px, 0.5fr) minmax(0, 1fr);
   gap: 10px 18px;
   color: var(--szu-muted);
   font-size: 14px;
 }
 
 .network-status-grid strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--szu-ink);
   font-weight: 600;
 }

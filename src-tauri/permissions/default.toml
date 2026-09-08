@@ -13,6 +13,7 @@ permissions = [
   "allow-save-dorm-network-settings",
   "allow-get-dorm-login-status",
   "allow-trigger-dorm-login",
+  "allow-logout-campus-network",
   "allow-get-dorm-login-logs",
   "allow-consume-dorm-login-failure-notice",
 ]

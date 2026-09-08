@@ -215,7 +215,9 @@ describe("HeroUI frontend smoke tests", () => {
     });
 
     renderRouterApp("/campus-network");
-    expect(await screen.findByText("教工区认证功能暂未支持。")).toBeInTheDocument();
+    expect(
+      await screen.findByText("教工区登录功能暂未支持，可查询在线信息并断开当前设备。"),
+    ).toBeInTheDocument();
     expect(screen.getByText("当前推测网络状态：未登录(教工区)")).toBeInTheDocument();
   });
 
@@ -260,7 +262,9 @@ describe("HeroUI frontend smoke tests", () => {
     expect(screen.getByRole("tab", { name: "教工区" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "宿舍区" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "教工区" }));
-    expect(screen.getByText("教工区认证功能暂未支持。")).toBeInTheDocument();
+    expect(
+      screen.getByText("教工区登录功能暂未支持，可查询在线信息并断开当前设备。"),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "宿舍区" }));
     const toggle = screen.getByRole("switch", { name: "开启宿舍区自动登录" });
     fireEvent.click(toggle);
@@ -292,6 +296,7 @@ describe("HeroUI frontend smoke tests", () => {
           portalReachable: true,
           staffHostReachable: false,
           portalSession: {
+            campusCardNumber: "654321",
             onlineUsername: "张三",
             onlineDuration: 4294967295,
             onlineFlow: 4294967295,
@@ -313,6 +318,7 @@ describe("HeroUI frontend smoke tests", () => {
     renderRouterApp("/campus-network");
     expect(await screen.findByText("当前推测网络状态：已连接(宿舍区)")).toBeInTheDocument();
     expect(screen.getByText("张三")).toBeInTheDocument();
+    expect(screen.getByText("654321")).toBeInTheDocument();
     expect(screen.getByText("172.24.111.161")).toBeInTheDocument();
     expect(screen.getAllByText("未知/不限")).toHaveLength(2);
   });

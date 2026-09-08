@@ -1,0 +1,34 @@
+use tauri::Manager;
+
+pub(crate) fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::TrayIconBuilder;
+    let show = MenuItem::with_id(app, "show", "打开窗口", true, None::<&str>)?;
+    let exit = MenuItem::with_id(app, "exit", "退出", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &exit])?;
+    TrayIconBuilder::new()
+        .menu(&menu)
+        .tooltip("深大生活")
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "show" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            "exit" => app.exit(0),
+            _ => {}
+        })
+        .build(app)?;
+
+    Ok(())
+}
+
+pub(crate) fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
+    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        if crate::campus_network::keep_running_in_background(window.app_handle()) {
+            api.prevent_close();
+            let _ = window.hide();
+        }
+    }
+}

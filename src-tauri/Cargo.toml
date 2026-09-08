@@ -21,6 +21,8 @@ time = { version = "0.3", features = ["formatting", "parsing"] }
 tauri-plugin-keyring-store = { version = "0.2.0", default-features = false }
 tauri-plugin-notification = "2.4.0"
 encoding_rs = "0.8"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls"] }
+sha1 = "0.10"
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 keyring = { version = "3", features = ["linux-native", "apple-native", "windows-native"] }
