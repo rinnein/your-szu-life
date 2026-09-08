@@ -25,6 +25,8 @@ pub(super) struct StaffPortalProbe {
     pub(super) config: Option<StaffPortalConfig>,
     pub(super) session: Option<StaffPortalSessionInfo>,
     pub(super) domain: String,
+    pub(super) page_url: Option<Url>,
+    pub(super) nas_ip: String,
 }
 
 pub(super) fn valid_ip(value: &str) -> Option<IpAddr> {
@@ -94,6 +96,13 @@ fn read_config(http: &dyn PortalHttp, probe: &mut StaffPortalProbe) -> Option<St
         }
         let html = decode_portal_html(&response.body, response.content_type.as_deref());
         if let Some(config) = parse_staff_config(&html) {
+            probe.page_url = Some(url.clone());
+            probe.nas_ip = config_literals(&html)
+                .and_then(|values| values.get("nas").and_then(Value::as_str).map(str::to_owned))
+                .unwrap_or_default();
+            if !probe.nas_ip.is_empty() && valid_ip(&probe.nas_ip).is_none() {
+                return None;
+            }
             return Some(config);
         }
         url = staff_redirect(&url, &meta_refresh_target(&html)?)?;

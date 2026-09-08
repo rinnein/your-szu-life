@@ -40,16 +40,20 @@ pub(super) trait PortalHttp: Sync {
 pub(super) struct PortalClient(Client);
 impl PortalClient {
     pub(super) fn new() -> Result<Self, HttpError> {
-        Client::builder()
-            .no_proxy()
-            .redirect(Policy::none())
-            .connect_timeout(Duration::from_secs(3))
-            .timeout(REQUEST_TIMEOUT)
-            .user_agent("your-szu-life/0.1")
+        client_builder()
             .build()
             .map(Self)
             .map_err(|_| HttpError::Unavailable)
     }
+}
+
+pub(super) fn client_builder() -> reqwest::blocking::ClientBuilder {
+    Client::builder()
+        .no_proxy()
+        .redirect(Policy::none())
+        .connect_timeout(Duration::from_secs(3))
+        .timeout(REQUEST_TIMEOUT)
+        .user_agent("your-szu-life/0.1")
 }
 
 pub(super) fn allowed_url(url: &Url) -> bool {

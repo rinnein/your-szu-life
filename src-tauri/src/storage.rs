@@ -3,7 +3,7 @@ use crate::{
         model::{PendingAuthCredentials, StoredAccountProfile},
         session::AuthSessionSecret,
     },
-    campus_network::model::{DormCustomCredentials, DormNetworkSettings},
+    campus_network::model::{DormCustomCredentials, DormNetworkSettings, StaffNetworkSettings},
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -21,6 +21,8 @@ enum SecretKey {
     AuthSession,
     DormNetworkSettings,
     DormNetworkCredentials,
+    StaffNetworkSettings,
+    StaffNetworkCredentials,
 }
 
 impl SecretKey {
@@ -31,6 +33,8 @@ impl SecretKey {
             Self::AuthSession => "auth-session",
             Self::DormNetworkSettings => "dorm-network-settings",
             Self::DormNetworkCredentials => "dorm-network-credentials",
+            Self::StaffNetworkSettings => "staff-network-settings",
+            Self::StaffNetworkCredentials => "staff-network-credentials",
         }
     }
 }
@@ -49,6 +53,10 @@ pub(crate) trait CredentialStore: Send + Sync {
     fn save_dorm_settings(&self, settings: &DormNetworkSettings) -> Result<(), String>;
     fn load_dorm_credentials(&self) -> Result<Option<DormCustomCredentials>, String>;
     fn save_dorm_credentials(&self, credentials: &DormCustomCredentials) -> Result<(), String>;
+    fn load_staff_settings(&self) -> Result<Option<StaffNetworkSettings>, String>;
+    fn save_staff_settings(&self, settings: &StaffNetworkSettings) -> Result<(), String>;
+    fn load_staff_credentials(&self) -> Result<Option<DormCustomCredentials>, String>;
+    fn save_staff_credentials(&self, credentials: &DormCustomCredentials) -> Result<(), String>;
 }
 
 pub(crate) struct PlatformCredentialStore;
@@ -90,6 +98,47 @@ fn keyring_store() -> KeyringStore {
 }
 
 impl CredentialStore for PlatformCredentialStore {
+    fn load_staff_settings(&self) -> Result<Option<StaffNetworkSettings>, String> {
+        #[cfg(not(target_os = "android"))]
+        {
+            Self::load(SecretKey::StaffNetworkSettings)
+        }
+        #[cfg(target_os = "android")]
+        {
+            load_android_secret(SecretKey::StaffNetworkSettings)
+        }
+    }
+    fn save_staff_settings(&self, settings: &StaffNetworkSettings) -> Result<(), String> {
+        #[cfg(not(target_os = "android"))]
+        {
+            Self::save(SecretKey::StaffNetworkSettings, settings)
+        }
+        #[cfg(target_os = "android")]
+        {
+            save_android_secret(SecretKey::StaffNetworkSettings, settings)
+        }
+    }
+    fn load_staff_credentials(&self) -> Result<Option<DormCustomCredentials>, String> {
+        #[cfg(not(target_os = "android"))]
+        {
+            Self::load(SecretKey::StaffNetworkCredentials)
+        }
+        #[cfg(target_os = "android")]
+        {
+            load_android_secret(SecretKey::StaffNetworkCredentials)
+        }
+    }
+    fn save_staff_credentials(&self, credentials: &DormCustomCredentials) -> Result<(), String> {
+        #[cfg(not(target_os = "android"))]
+        {
+            Self::save(SecretKey::StaffNetworkCredentials, credentials)
+        }
+        #[cfg(target_os = "android")]
+        {
+            save_android_secret(SecretKey::StaffNetworkCredentials, credentials)
+        }
+    }
+
     #[cfg(not(target_os = "android"))]
     fn load_profile(&self) -> Result<Option<StoredAccountProfile>, String> {
         Self::load(SecretKey::Profile)

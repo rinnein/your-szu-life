@@ -13,7 +13,8 @@ pub use campus_network::model::{
     DormCredentialMode, DormLoginLogView, DormLoginResultView, DormLoginState, DormLoginStatusView,
     DormNetworkSettingsInput, DormNetworkSettingsView, DormPortalSessionInfo,
     NetworkConnectionState, NetworkLogoutOutcome, NetworkLogoutResultView, NetworkOverviewView,
-    NetworkRegion, StaffPortalSessionInfo,
+    NetworkRegion, StaffApplyOutcome, StaffApplyResultView, StaffLoginMode, StaffLoginStatusView,
+    StaffNetworkSettingsInput, StaffNetworkSettingsView, StaffPortalSessionInfo,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

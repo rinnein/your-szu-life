@@ -64,6 +64,18 @@ macro_rules! stored_value {
     };
 }
 impl CredentialStore for MemoryCredentialStore {
+    stored_value!(
+        load_staff_settings,
+        save_staff_settings,
+        StaffNetworkSettings,
+        StaffNetworkSettings
+    );
+    stored_value!(
+        load_staff_credentials,
+        save_staff_credentials,
+        DormCustomCredentials,
+        StaffNetworkCredentials
+    );
     stored_value!(load_profile, save_profile, StoredAccountProfile, Profile);
     stored_value!(
         load_pending,

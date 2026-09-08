@@ -87,6 +87,16 @@ impl OperationGate {
         let state = self.state.lock().ok()?;
         Self::permits(&state, token).then(update)
     }
+    pub(super) fn configure<T>(
+        &self,
+        update: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
+        let state = self.state.lock().map_err(|_| "校园网操作锁失败")?;
+        if state.login.is_some() || state.logout.is_some() {
+            return Err("校园网操作正在进行中，请稍后保存教工区设置".into());
+        }
+        update()
+    }
     pub(super) fn settings<T>(
         &self,
         update: impl FnOnce() -> Result<T, String>,

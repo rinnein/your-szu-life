@@ -215,9 +215,7 @@ describe("HeroUI frontend smoke tests", () => {
     });
 
     renderRouterApp("/campus-network");
-    expect(
-      await screen.findByText("教工区登录功能暂未支持，可查询在线信息并断开当前设备。"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("教工区登录")).toBeInTheDocument();
     expect(screen.getByText("当前推测网络状态：未登录(教工区)")).toBeInTheDocument();
   });
 
@@ -262,9 +260,7 @@ describe("HeroUI frontend smoke tests", () => {
     expect(screen.getByRole("tab", { name: "教工区" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "宿舍区" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "教工区" }));
-    expect(
-      screen.getByText("教工区登录功能暂未支持，可查询在线信息并断开当前设备。"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("教工区登录")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "宿舍区" }));
     const toggle = screen.getByRole("switch", { name: "开启宿舍区自动登录" });
     fireEvent.click(toggle);

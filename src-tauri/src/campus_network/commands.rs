@@ -61,3 +61,43 @@ pub(crate) async fn logout_campus_network(
         .await
         .map_err(|_| "校园网注销任务异常结束，请检查当前网络状态".to_owned())?
 }
+
+#[tauri::command]
+pub(crate) fn get_staff_network_settings(
+    app: tauri::AppHandle,
+) -> Result<StaffNetworkSettingsView, String> {
+    super::staff_login::get_settings(app)
+}
+#[tauri::command]
+pub(crate) fn save_staff_network_settings(
+    app: tauri::AppHandle,
+    input: StaffNetworkSettingsInput,
+) -> Result<StaffNetworkSettingsView, String> {
+    super::staff_login::save_settings(app, input)
+}
+#[tauri::command]
+pub(crate) fn get_staff_login_status(
+    store: State<'_, CampusNetworkStore>,
+) -> Result<StaffLoginStatusView, String> {
+    store
+        .staff
+        .status
+        .lock()
+        .map(|status| status.clone())
+        .map_err(|_| "教工区状态锁失败".into())
+}
+#[tauri::command]
+pub(crate) async fn apply_staff_network_mode(
+    app: tauri::AppHandle,
+    confirmation_token: Option<String>,
+) -> Result<StaffApplyResultView, String> {
+    tauri::async_runtime::spawn_blocking(move || super::staff_login::apply(app, confirmation_token))
+        .await
+        .map_err(|_| "教工区模式应用任务异常结束，请检查当前网络状态".to_owned())?
+}
+#[tauri::command]
+pub(crate) fn consume_staff_login_failure_notice(
+    app: tauri::AppHandle,
+) -> Result<Option<DormFailureNotice>, String> {
+    super::staff_login::consume_failure(app)
+}

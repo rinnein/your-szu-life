@@ -23,7 +23,10 @@ pub(super) enum LogoutTarget {
     },
 }
 impl LogoutTarget {
-    fn from_observation(region: &NetworkRegion, observation: &NetworkObservation) -> Option<Self> {
+    pub(super) fn from_observation(
+        region: &NetworkRegion,
+        observation: &NetworkObservation,
+    ) -> Option<Self> {
         match region {
             NetworkRegion::Dormitory => Some(Self::Dorm(observation.dorm.context.clone()?)),
             NetworkRegion::Staff => Some(Self::Staff {
@@ -105,13 +108,13 @@ impl LogoutTarget {
         url.query_pairs_mut().append_pair("_", &now.to_string());
         (url, callback)
     }
-    fn state(&self, observation: &NetworkObservation) -> PortalOnlineState {
+    pub(super) fn state(&self, observation: &NetworkObservation) -> PortalOnlineState {
         match self {
             Self::Dorm(_) => observation.dorm.state,
             Self::Staff { .. } => observation.staff.state,
         }
     }
-    fn same_identity(&self, observation: &NetworkObservation) -> Option<bool> {
+    pub(super) fn same_identity(&self, observation: &NetworkObservation) -> Option<bool> {
         match self {
             Self::Dorm(target) => observation
                 .dorm
@@ -125,7 +128,12 @@ impl LogoutTarget {
                 .map(|current| current.ip == config.ip && current.acid == config.acid),
         }
     }
-    fn refresh(&self, http: &dyn PortalHttp, observation: &mut NetworkObservation, now: u64) {
+    pub(super) fn refresh(
+        &self,
+        http: &dyn PortalHttp,
+        observation: &mut NetworkObservation,
+        now: u64,
+    ) {
         match self {
             Self::Dorm(_) => observation.dorm = probe_dorm_portal(http, now),
             Self::Staff { .. } => observation.staff = probe_staff_portal(http, now),
@@ -179,6 +187,7 @@ pub(super) fn perform_network_logout(
     let disabled = guard
         .commit(|| {
             let saved = disable_auto_connection(store);
+            let staff_saved = super::staff_login::settings::disable(store, events);
             store.change_dorm_status(
                 |status| {
                     status.state = DormLoginState::Disabled;
@@ -190,7 +199,7 @@ pub(super) fn perform_network_logout(
             if let Ok(settings) = dorm_settings(store) {
                 events.settings_changed(&settings);
             }
-            saved
+            saved.and(staff_saved.map(|_| ())).map(|_| ())
         })
         .ok_or("注销操作已失效")?;
     disabled?;
@@ -246,46 +255,28 @@ pub(super) fn perform_network_logout(
             "门户未提供完整终端信息，未发送注销请求",
         ));
     };
-    let (url, callback) = target.request(environment.now_ms());
-    let acknowledged = checked
-        .get(&url)
-        .ok()
-        .filter(|response| (200..300).contains(&response.status))
-        .and_then(|response| {
-            parse_jsonp_callback(&String::from_utf8_lossy(&response.body), &callback).ok()
-        })
-        .is_some_and(|value| match &target {
-            LogoutTarget::Dorm(_) => value
-                .get("result")
-                .is_some_and(|result| result.as_u64() == Some(1) || result.as_str() == Some("ok")),
-            LogoutTarget::Staff { .. } => {
-                value.get("error").and_then(|value| value.as_str()) == Some("ok")
-            }
-        });
-    let mut last_state = PortalOnlineState::Unknown;
-    for _ in 0..3 {
-        environment.sleep(Duration::from_secs(1));
-        if !allowed() {
-            return Ok(network_changed(store, &guard, environment, events, region));
-        }
-        target.refresh(&checked, &mut observation, environment.now_ms());
-        if !allowed() || target.same_identity(&observation) == Some(false) {
-            return Ok(network_changed(store, &guard, environment, events, region));
-        }
-        store.apply_observation(guard.token(), &observation, events);
-        last_state = if target.same_identity(&observation) == Some(true) {
-            target.state(&observation)
-        } else {
-            PortalOnlineState::Unknown
-        };
-        if last_state == PortalOnlineState::Offline {
-            return Ok(result(
-                NetworkLogoutOutcome::Disconnected,
-                region,
-                "已确认当前设备断开校园网",
-            ));
-        }
+    let report = disconnect_target(
+        &target,
+        &checked,
+        environment,
+        &mut observation,
+        &allowed,
+        |observation| {
+            store.apply_observation(guard.token(), observation, events);
+        },
+    );
+    if report.changed {
+        return Ok(network_changed(store, &guard, environment, events, region));
     }
+    if report.state == PortalOnlineState::Offline {
+        return Ok(result(
+            NetworkLogoutOutcome::Disconnected,
+            region,
+            "已确认当前设备断开校园网",
+        ));
+    }
+    let last_state = report.state;
+    let acknowledged = report.acknowledged;
     Ok(if last_state == PortalOnlineState::Online {
         result(
             NetworkLogoutOutcome::Failed,
@@ -303,6 +294,71 @@ pub(super) fn perform_network_logout(
             "暂时无法确认是否已断开，请稍后检查网络状态",
         )
     })
+}
+
+pub(super) struct TargetLogoutReport {
+    pub(super) acknowledged: bool,
+    pub(super) state: PortalOnlineState,
+    pub(super) changed: bool,
+}
+/// Used by explicit logout and mode application. Does not change preferences or acquire another operation lock.
+pub(super) fn disconnect_target(
+    target: &LogoutTarget,
+    http: &dyn PortalHttp,
+    environment: &dyn NetworkEnvironment,
+    observation: &mut NetworkObservation,
+    allowed: &dyn Fn() -> bool,
+    mut observed: impl FnMut(&NetworkObservation),
+) -> TargetLogoutReport {
+    let mut report = TargetLogoutReport {
+        acknowledged: false,
+        state: PortalOnlineState::Unknown,
+        changed: false,
+    };
+    if !allowed() {
+        report.changed = true;
+        return report;
+    }
+    let (url, callback) = target.request(environment.now_ms());
+    report.acknowledged = http
+        .get(&url)
+        .ok()
+        .filter(|response| (200..300).contains(&response.status))
+        .and_then(|response| {
+            parse_jsonp_callback(&String::from_utf8_lossy(&response.body), &callback).ok()
+        })
+        .is_some_and(|value| match target {
+            LogoutTarget::Dorm(_) => value
+                .get("result")
+                .is_some_and(|v| v.as_u64() == Some(1) || v.as_str() == Some("ok")),
+            LogoutTarget::Staff { .. } => value.get("error").and_then(|v| v.as_str()) == Some("ok"),
+        });
+    for _ in 0..3 {
+        if !allowed() {
+            report.changed = true;
+            break;
+        }
+        environment.sleep(Duration::from_secs(1));
+        if !allowed() {
+            report.changed = true;
+            break;
+        }
+        target.refresh(http, observation, environment.now_ms());
+        if !allowed() || target.same_identity(observation) == Some(false) {
+            report.changed = true;
+            break;
+        }
+        observed(observation);
+        report.state = if target.same_identity(observation) == Some(true) {
+            target.state(observation)
+        } else {
+            PortalOnlineState::Unknown
+        };
+        if report.state == PortalOnlineState::Offline {
+            break;
+        }
+    }
+    report
 }
 
 #[cfg(test)]

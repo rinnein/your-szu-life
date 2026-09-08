@@ -15,6 +15,7 @@ use tauri::{Emitter, Manager};
 
 pub(crate) struct CampusNetworkStore {
     pub(super) credentials: SharedCredentialStore,
+    pub(super) staff: super::staff_login::StaffRuntime,
     pub(super) dorm_settings: Mutex<Option<DormNetworkSettings>>,
     pub(super) custom_configured: AtomicBool,
     pub(super) auto_connect_suspended: AtomicBool,
@@ -31,6 +32,7 @@ impl CampusNetworkStore {
     pub(crate) fn new(credentials: SharedCredentialStore) -> Self {
         Self {
             credentials,
+            staff: super::staff_login::StaffRuntime::default(),
             dorm_settings: Mutex::new(None),
             custom_configured: AtomicBool::new(false),
             auto_connect_suspended: AtomicBool::new(false),
@@ -76,6 +78,19 @@ impl CampusNetworkStore {
         drop(status);
         events.status_changed(&next);
     }
+    pub(super) fn change_staff_status(
+        &self,
+        update: impl FnOnce(&mut StaffLoginStatusView),
+        events: &dyn NetworkEvents,
+    ) {
+        let Ok(mut status) = self.staff.status.lock() else {
+            return;
+        };
+        update(&mut status);
+        let view = status.clone();
+        drop(status);
+        events.staff_status_changed(&view);
+    }
     pub(super) fn apply_observation(
         &self,
         token: OperationToken,
@@ -101,6 +116,10 @@ impl CampusNetworkStore {
 }
 
 pub(super) trait NetworkEvents {
+    fn staff_settings_changed(&self, _settings: &StaffNetworkSettingsView) {}
+    fn staff_status_changed(&self, _status: &StaffLoginStatusView) {}
+    fn staff_failure(&self, _message: &str) {}
+    fn log(&self, _log: &DormLoginLogView) {}
     fn status_changed(&self, _status: &DormLoginStatusView) {}
     fn overview_changed(&self, _overview: &NetworkOverviewView) {}
     fn settings_changed(&self, _settings: &DormNetworkSettings) {}
@@ -109,6 +128,19 @@ impl NetworkEvents for () {}
 
 pub(super) struct AppNetworkEvents<'a>(pub(super) &'a tauri::AppHandle);
 impl NetworkEvents for AppNetworkEvents<'_> {
+    fn staff_settings_changed(&self, view: &StaffNetworkSettingsView) {
+        let _ = self.0.emit("staff-network-settings-changed", view);
+    }
+    fn staff_status_changed(&self, view: &StaffLoginStatusView) {
+        let _ = self.0.emit("staff-login-status-changed", view);
+    }
+    fn staff_failure(&self, message: &str) {
+        super::logs::dorm_notify_failure(self.0, message);
+    }
+    fn log(&self, log: &DormLoginLogView) {
+        super::logs::append_dorm_log(self.0, log.clone());
+    }
+
     fn status_changed(&self, status: &DormLoginStatusView) {
         let _ = self.0.emit("dorm-login-status-changed", status);
     }

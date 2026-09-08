@@ -18,6 +18,15 @@ import {
 } from "@heroui/react";
 import { LuArrowLeft } from "react-icons/lu";
 import { PageShell } from "./components";
+import StaffNetworkPanel from "./StaffNetworkPanel";
+import {
+  initialStaffSettings,
+  initialStaffStatus,
+  type StaffSettings,
+  type StaffStatus,
+  type StaffSettingsInput,
+  type StaffApplyResult,
+} from "./staff-network";
 
 type CredentialMode = "currentAccount" | "custom";
 type RegionTab = "staff" | "dormitory";
@@ -160,6 +169,8 @@ export default function CampusNetworkPage() {
   const [settings, setSettings] = useState<Settings>();
   const [status, setStatus] = useState<Status>(initialStatus);
   const [logs, setLogs] = useState<Log[]>([]);
+  const [staffSettings, setStaffSettings] = useState<StaffSettings>(initialStaffSettings);
+  const [staffStatus, setStaffStatus] = useState<StaffStatus>(initialStaffStatus);
   const [regionTab, setRegionTab] = useState<RegionTab>("dormitory");
   const [mode, setMode] = useState<CredentialMode>("currentAccount");
   const [enabled, setEnabled] = useState(false);
@@ -169,12 +180,22 @@ export default function CampusNetworkPage() {
   const [error, setError] = useState("");
   const initializedTab = useRef(false);
   const mounted = useRef(false);
-  const revisions = useRef({ overview: 0, settings: 0, status: 0, logs: 0, refresh: 0 });
+  const revisions = useRef({
+    overview: 0,
+    settings: 0,
+    status: 0,
+    logs: 0,
+    staffSettings: 0,
+    staffStatus: 0,
+    refresh: 0,
+  });
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [disconnectBusy, setDisconnectBusy] = useState(false);
   const [logoutResult, setLogoutResult] = useState<LogoutResult>();
   const operationBusy = busy || disconnectBusy;
-  const loginInProgress = status.state === "probing" || status.state === "loggingIn";
+  const staffInProgress = staffStatus.state === "probing" || staffStatus.state === "loggingIn";
+  const loginInProgress =
+    status.state === "probing" || status.state === "loggingIn" || staffInProgress;
 
   const applyOverview = (next: NetworkOverview) => {
     setOverview(next);
@@ -192,17 +213,24 @@ export default function CampusNetworkPage() {
   const refresh = async () => {
     const request = ++revisions.current.refresh;
     const before = { ...revisions.current };
-    const [nextOverview, nextSettings, nextStatus, nextLogs] = await Promise.all([
-      invoke<NetworkOverview>("get_network_overview"),
-      invoke<Settings>("get_dorm_network_settings"),
-      invoke<Status>("get_dorm_login_status"),
-      invoke<Log[]>("get_dorm_login_logs"),
-    ]);
+    const [nextOverview, nextSettings, nextStatus, nextLogs, nextStaffSettings, nextStaffStatus] =
+      await Promise.all([
+        invoke<NetworkOverview>("get_network_overview"),
+        invoke<Settings>("get_dorm_network_settings"),
+        invoke<Status>("get_dorm_login_status"),
+        invoke<Log[]>("get_dorm_login_logs"),
+        invoke<StaffSettings>("get_staff_network_settings"),
+        invoke<StaffStatus>("get_staff_login_status"),
+      ]);
     if (!mounted.current || request !== revisions.current.refresh) return;
     if (before.overview === revisions.current.overview) applyOverview(nextOverview);
     if (before.settings === revisions.current.settings) applySettings(nextSettings);
     if (before.status === revisions.current.status) setStatus(nextStatus);
     if (before.logs === revisions.current.logs) setLogs(nextLogs);
+    if (before.staffSettings === revisions.current.staffSettings)
+      setStaffSettings(nextStaffSettings ?? initialStaffSettings);
+    if (before.staffStatus === revisions.current.staffStatus)
+      setStaffStatus(nextStaffStatus ?? initialStaffStatus);
   };
 
   useEffect(() => {
@@ -232,6 +260,14 @@ export default function CampusNetworkPage() {
       revisions.current.status++;
       setStatus(next);
     });
+    void subscribe<StaffSettings>("staff-network-settings-changed", (next) => {
+      revisions.current.staffSettings++;
+      setStaffSettings(next);
+    });
+    void subscribe<StaffStatus>("staff-login-status-changed", (next) => {
+      revisions.current.staffStatus++;
+      setStaffStatus(next);
+    });
     void subscribe<Log>("dorm-login-log-added", (next) => {
       revisions.current.logs++;
       setLogs((current) => [next, ...current].slice(0, 100));
@@ -245,6 +281,24 @@ export default function CampusNetworkPage() {
       for (const dispose of disposers) dispose();
     };
   }, []);
+
+  const saveStaff = async (input: StaffSettingsInput) => {
+    const revision = revisions.current.staffSettings;
+    const next = await invoke<StaffSettings>("save_staff_network_settings", { input });
+    if (mounted.current && revision === revisions.current.staffSettings) setStaffSettings(next);
+    return next;
+  };
+  const applyStaff = async (confirmationToken?: string) => {
+    try {
+      return await invoke<StaffApplyResult>("apply_staff_network_mode", {
+        confirmationToken: confirmationToken ?? null,
+      });
+    } finally {
+      await refresh().catch((cause) => {
+        if (mounted.current) setError(String(cause));
+      });
+    }
+  };
 
   const save = async () => {
     const settingsRevision = revisions.current.settings;
@@ -340,15 +394,13 @@ export default function CampusNetworkPage() {
             <Tabs.Tab id="dormitory">宿舍区</Tabs.Tab>
           </Tabs.List>
           <Tabs.Panel id="staff">
-            <Card className="network-zone network-zone-disabled" variant="default">
-              <Card.Header>
-                <Card.Title>教工区</Card.Title>
-                <Card.Description>
-                  网络状态：{overview.region === "staff" ? "已识别" : "未识别"}
-                </Card.Description>
-              </Card.Header>
-              <Card.Content>教工区登录功能暂未支持，可查询在线信息并断开当前设备。</Card.Content>
-            </Card>
+            <StaffNetworkPanel
+              settings={staffSettings}
+              status={staffStatus}
+              disabled={operationBusy}
+              onSave={saveStaff}
+              onApply={applyStaff}
+            />
           </Tabs.Panel>
           <Tabs.Panel id="dormitory">
             <Card className="network-zone" variant="default">
@@ -434,13 +486,22 @@ export default function CampusNetworkPage() {
         <Card className="network-status-card" variant="default">
           <Card.Header>
             <Card.Title>当前状态</Card.Title>
-            <Card.Description>{disconnectBusy ? "正在断开连接…" : status.state}</Card.Description>
+            <Card.Description>
+              {disconnectBusy
+                ? "正在断开连接…"
+                : overview.region === "staff"
+                  ? staffStatus.state
+                  : status.state}
+            </Card.Description>
             <div className="network-action-row">
               <Button
                 variant="danger"
                 isDisabled={
                   operationBusy ||
-                  (overview.region === "none" && !settings?.enabled && !loginInProgress)
+                  (overview.region === "none" &&
+                    !settings?.enabled &&
+                    !staffSettings.enabled &&
+                    !loginInProgress)
                 }
                 onPress={() => setLogoutOpen(true)}
               >
@@ -459,11 +520,23 @@ export default function CampusNetworkPage() {
             <span>教工区探测</span>
             <strong>{overview.staffHostReachable ? "可达" : "不可达"}</strong>
             <span>连续失败</span>
-            <strong>{status.consecutiveFailures} 次</strong>
+            <strong>
+              {overview.region === "staff"
+                ? staffStatus.consecutiveFailures
+                : status.consecutiveFailures}{" "}
+              次
+            </strong>
             <span>下次探测</span>
-            <strong>{formatTime(status.nextProbeAtMs)}</strong>
+            <strong>
+              {formatTime(
+                overview.region === "staff" ? staffStatus.nextProbeAtMs : status.nextProbeAtMs,
+              )}
+            </strong>
             <span>最近结果</span>
-            <strong>{status.lastResult?.message || "暂无"}</strong>
+            <strong>
+              {(overview.region === "staff" ? staffStatus.message : status.lastResult?.message) ||
+                "暂无"}
+            </strong>
             {overview.state === "connected" && overview.region === "dormitory" && (
               <>
                 <span className="network-session-heading">在线详情</span>
@@ -551,9 +624,7 @@ export default function CampusNetworkPage() {
                     aria-label="取消"
                     isDisabled={disconnectBusy}
                     className="dialog-cancel"
-                  >
-                    取消
-                  </AlertDialog.CloseTrigger>
+                  />
                   <Button
                     variant="danger"
                     isDisabled={disconnectBusy}

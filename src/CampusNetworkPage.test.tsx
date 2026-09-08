@@ -422,7 +422,7 @@ describe("campus network status and logout", () => {
     await act(async () => {
       for (const resolve of pending) resolve();
     });
-    expect(disposers).toHaveLength(4);
+    expect(disposers).toHaveLength(6);
     for (const dispose of disposers) expect(dispose).toHaveBeenCalledOnce();
   });
 

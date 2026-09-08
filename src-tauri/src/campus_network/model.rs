@@ -202,3 +202,71 @@ pub(crate) enum PortalOnlineState {
     Offline,
     Online,
 }
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum StaffLoginMode {
+    #[default]
+    MacAuth,
+    AppAuto,
+}
+
+#[derive(Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default)]
+pub(crate) struct StaffNetworkSettings {
+    pub(crate) mode: StaffLoginMode,
+    pub(crate) enabled: bool,
+    pub(crate) credential_mode: DormCredentialMode,
+    pub(crate) revision: u64,
+    pub(crate) applied_revision: Option<u64>,
+    pub(crate) applied_mode: Option<StaffLoginMode>,
+    // An equality stamp inside the keyring, not a password authentication/storage scheme.
+    pub(crate) applied_credentials: Option<String>,
+    pub(crate) pending_failure_notice: Option<DormFailureNotice>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StaffNetworkSettingsView {
+    pub revision: u64,
+    pub mode: StaffLoginMode,
+    pub enabled: bool,
+    pub credential_mode: DormCredentialMode,
+    pub custom_configured: bool,
+    pub needs_apply: bool,
+    pub applied_mode: Option<StaffLoginMode>,
+}
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StaffNetworkSettingsInput {
+    pub mode: StaffLoginMode,
+    pub enabled: bool,
+    pub credential_mode: DormCredentialMode,
+    pub campus_card_number: Option<String>,
+    pub password: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StaffLoginStatusView {
+    pub state: DormLoginState,
+    pub consecutive_failures: u32,
+    pub next_probe_at_ms: Option<u64>,
+    pub message: Option<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum StaffApplyOutcome {
+    Applied,
+    RequiresConfirmation,
+    AlreadyOnline,
+    Failed,
+    Unknown,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StaffApplyResultView {
+    pub outcome: StaffApplyOutcome,
+    pub message: String,
+    pub confirmation_token: Option<String>,
+}

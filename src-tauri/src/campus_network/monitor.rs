@@ -44,6 +44,23 @@ pub(super) fn monitor_dorm_network(app: tauri::AppHandle, stop: mpsc::Receiver<(
         let Some(overview) = store.apply_observation(token, &observation, &events) else {
             continue;
         };
+        let staff_handled = store.operations.commit(token, || {
+            let known = super::staff_login::trusted_network(
+                &store,
+                &observation.snapshot,
+                &observation.staff,
+            );
+            let current = || crate::auth::current_network_credentials(&app);
+            let due = known
+                && super::staff_login::auto_due(&store, &observation, now_ms(), &current, &events);
+            (known, due)
+        });
+        if let Some((true, due)) = staff_handled {
+            if due {
+                let _ = super::staff_login::start_auto(app.clone(), &observation);
+            }
+            continue;
+        }
         let Ok(settings) = dorm_settings(&store) else {
             continue;
         };

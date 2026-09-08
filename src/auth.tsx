@@ -141,13 +141,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     void refresh();
-    void invoke<{ message?: string } | null>("consume_dorm_login_failure_notice")
-      .then((notice) => {
-        if (notice?.message && typeof window !== "undefined") {
-          window.setTimeout(() => window.alert(`校园网自动登录失败：${notice.message}`), 0);
-        }
-      })
-      .catch(() => undefined);
+    for (const command of [
+      "consume_dorm_login_failure_notice",
+      "consume_staff_login_failure_notice",
+    ]) {
+      void invoke<{ message?: string } | null>(command)
+        .then((notice) => {
+          if (notice?.message && typeof window !== "undefined") {
+            window.setTimeout(() => window.alert(`校园网自动登录失败：${notice.message}`), 0);
+          }
+        })
+        .catch(() => undefined);
+    }
+
     let unlisten: (() => void) | undefined;
     void listen<unknown>("auth-state-changed", (event) => {
       const next = normalizeAuthState(event.payload);
