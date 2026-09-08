@@ -391,7 +391,7 @@ export default function CampusNetworkPage() {
         >
           <Tabs.List aria-label="校园网区域">
             <Tabs.Tab id="staff">教工区</Tabs.Tab>
-            <Tabs.Tab id="dormitory">宿舍区</Tabs.Tab>
+            <Tabs.Tab id="dormitory">宿舍区登录</Tabs.Tab>
           </Tabs.List>
           <Tabs.Panel id="staff">
             <StaffNetworkPanel
@@ -515,9 +515,9 @@ export default function CampusNetworkPage() {
             <strong>{overview.ssid || status.ssid || "未读取"}</strong>
             <span>网络连接</span>
             <strong>{overview.state === "noNetwork" ? "无网络" : "已连接网络"}</strong>
-            <span>宿舍门户</span>
+            <span>宿舍区门户</span>
             <strong>{overview.portalReachable ? "可达" : "不可达"}</strong>
-            <span>教工区探测</span>
+            <span>教工区门户</span>
             <strong>{overview.staffHostReachable ? "可达" : "不可达"}</strong>
             <span>连续失败</span>
             <strong>
@@ -565,7 +565,7 @@ export default function CampusNetworkPage() {
                 <strong>{overview.staffSession?.username || "网关未提供"}</strong>
                 <span>姓名</span>
                 <strong>{overview.staffSession?.realName || "网关未提供"}</strong>
-                <span>登录 IP</span>
+                <span>IPv4</span>
                 <strong>{overview.staffSession?.loginIp || "网关未提供"}</strong>
                 <span>IPv6</span>
                 <strong>{overview.staffSession?.loginIpv6 || "网关未提供"}</strong>

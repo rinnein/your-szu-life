@@ -186,16 +186,16 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
         >
           <Tabs.List aria-label="教工区凭据来源">
             <Tabs.Tab id="currentAccount" isDisabled={busy}>
-              复用应用账户
+              复用已登录账号
             </Tabs.Tab>
             <Tabs.Tab id="custom" isDisabled={busy}>
-              教工区单独配置
+              单独配置
             </Tabs.Tab>
           </Tabs.List>
           <Tabs.Panel id="custom">
             <div className="custom-network-form">
               <TextField className="field" name="staffCampusCard" isDisabled={busy}>
-                <Label>教工区校园卡号</Label>
+                <Label>校园卡号</Label>
                 <Input
                   inputMode="numeric"
                   value={card}
@@ -204,7 +204,7 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
                 />
               </TextField>
               <TextField className="field" name="staffPassword" isDisabled={busy}>
-                <Label>教工区密码</Label>
+                <Label>密码</Label>
                 <Input
                   type="password"
                   value={password}
