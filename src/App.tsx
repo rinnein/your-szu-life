@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useNavigate } from "@tanstack/react-router";
 import { Alert, AlertDialog, Button, Card, Dropdown, Spinner } from "@heroui/react";
 import { authFailureFor, useAuth } from "./auth";
 import { ProfileForm } from "./ProfileForm";
 import { BrandMark, PageShell } from "./components";
 import {
+  FaBug,
   FaCalendarDays,
   FaChartLine,
   FaClipboardList,
@@ -23,6 +25,12 @@ const features: ReadonlyArray<{ label: string; icon: IconType }> = [
   { label: "校园网登录", icon: FaWifi },
   { label: "网费与电费", icon: FaWallet },
 ];
+
+export function registerDebugTap(taps: number[], now: number) {
+  const recent = taps.filter((timestamp) => now - timestamp <= 2000);
+  recent.push(now);
+  return { activated: recent.length >= 5, taps: recent.length >= 5 ? [] : recent };
+}
 
 function AuthCard({
   title,
@@ -100,6 +108,41 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [logoutBusy, setLogoutBusy] = useState(false);
+  const [debugEnabled, setDebugEnabled] = useState(false);
+  const debugTapTimes = useRef<number[]>([]);
+
+  useEffect(() => {
+    if (!("Authenticated" in state)) return;
+    let active = true;
+    void invoke("get_debug_mode")
+      .then((value) => {
+        if (active) setDebugEnabled(Boolean((value as { enabled?: boolean })?.enabled));
+      })
+      .catch(() => undefined);
+    let unlisten: (() => void) | undefined;
+    void listen<{ enabled: boolean }>("debug-mode-changed", (event) => {
+      if (active) setDebugEnabled(event.payload.enabled);
+    }).then((stop) => {
+      if (active) unlisten = stop;
+      else stop();
+    });
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, [state]);
+
+  const handleBrandMarkTap = () => {
+    const result = registerDebugTap(debugTapTimes.current, Date.now());
+    if (result.activated) {
+      debugTapTimes.current = [];
+      void invoke("set_debug_mode", { enabled: true })
+        .then(() => setDebugEnabled(true))
+        .catch(() => undefined);
+      return;
+    }
+    debugTapTimes.current = result.taps;
+  };
 
   const beginAuthentication = async () => {
     setAuthBusy(true);
@@ -186,7 +229,14 @@ export default function App() {
       <header className="app-header">
         <div>
           <div className="brand-line">
-            <BrandMark />
+            <button
+              type="button"
+              className="brand-mark-trigger"
+              aria-label="应用图标，连续点击 5 次启用调试模式"
+              onClick={handleBrandMarkTap}
+            >
+              <BrandMark />
+            </button>
             <span className="eyebrow">YOUR SZU LIFE</span>
           </div>
           <h1>深大生活工作台</h1>
@@ -241,29 +291,33 @@ export default function App() {
           功能入口
         </h2>
         <div className="feature-grid">
-          {features.map(({ label, icon: FeatureIcon }) => (
-            <Button
-              key={label}
-              className="feature-button"
-              variant="outline"
-              onPress={() =>
-                label === "校园网登录"
-                  ? void navigate({ to: "/campus-network" })
-                  : setPlaceholder(label)
-              }
-            >
-              <span className="feature-icon" aria-hidden="true">
-                <FeatureIcon size={19} focusable="false" />
-              </span>
-              <span className="feature-copy">
-                <strong>{label}</strong>
-                <small>暂未实现 · 即将支持</small>
-              </span>
-              <span className="feature-arrow" aria-hidden="true">
-                →
-              </span>
-            </Button>
-          ))}
+          {[...features, ...(debugEnabled ? [{ label: "诊断日志", icon: FaBug }] : [])].map(
+            ({ label, icon: FeatureIcon }) => (
+              <Button
+                key={label}
+                className="feature-button"
+                variant="outline"
+                onPress={() =>
+                  label === "校园网登录"
+                    ? void navigate({ to: "/campus-network" })
+                    : label === "诊断日志"
+                      ? void navigate({ to: "/debug" })
+                      : setPlaceholder(label)
+                }
+              >
+                <span className="feature-icon" aria-hidden="true">
+                  <FeatureIcon size={19} focusable="false" />
+                </span>
+                <span className="feature-copy">
+                  <strong>{label}</strong>
+                  <small>{label === "诊断日志" ? "查看网络诊断记录" : "暂未实现 · 即将支持"}</small>
+                </span>
+                <span className="feature-arrow" aria-hidden="true">
+                  →
+                </span>
+              </Button>
+            ),
+          )}
         </div>
       </section>
       {placeholder && (

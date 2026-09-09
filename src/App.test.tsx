@@ -7,7 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 import { listen } from "@tauri-apps/api/event";
-import { authFailureFor, normalizeAuthState } from "./App";
+import { authFailureFor, normalizeAuthState, registerDebugTap } from "./App";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -88,6 +88,37 @@ describe("HeroUI frontend smoke tests", () => {
 
     expect(await screen.findByRole("heading", { name: "请完成统一认证" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "打开认证窗口" })).toBeInTheDocument();
+  });
+
+  it("requires five taps inside the two-second window", () => {
+    expect(registerDebugTap([], 0).activated).toBe(false);
+    expect(registerDebugTap([0, 100, 200, 300], 2_100).activated).toBe(false);
+    expect(registerDebugTap([0, 100, 200, 300], 1_900).activated).toBe(true);
+  });
+
+  it("enables the diagnostics entry after five rapid brand-mark taps", async () => {
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_auth_state")
+        return { Authenticated: { studentId: "1234567890", name: "测试同学" } };
+      if (command === "get_account_profile")
+        return {
+          studentId: "1234567890",
+          campusCardNumber: "123456",
+          hasPassword: true,
+          name: "测试同学",
+        };
+      if (command === "get_user_data") return { studentId: "1234567890", name: "测试同学" };
+      if (command === "get_debug_mode") return { enabled: false, logCount: 0 };
+      if (command === "set_debug_mode") return { enabled: true, logCount: 0 };
+      return undefined;
+    });
+
+    renderRouterApp();
+    const mark = await screen.findByRole("button", { name: /连续点击 5 次/ });
+    expect(screen.queryByRole("button", { name: /诊断日志/ })).not.toBeInTheDocument();
+    for (let index = 0; index < 5; index += 1) fireEvent.click(mark);
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("set_debug_mode", { enabled: true }));
+    expect(await screen.findByRole("button", { name: /诊断日志/ })).toBeInTheDocument();
   });
 
   it("shows an accessible placeholder alert when a feature is selected", async () => {
