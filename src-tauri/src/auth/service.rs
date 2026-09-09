@@ -20,10 +20,57 @@ pub(super) fn session_failure(app: &tauri::AppHandle, store: &AuthStore) {
     set_terminal_state(app, store, AuthState::SessionCaptureFailed);
 }
 
-pub(super) fn session_restore_expired(app: &tauri::AppHandle, store: &AuthStore) {
+/// A restored session can be redirected to the official login page after the
+/// app has been suspended for a long time.  Treat that redirect as a single
+/// transition into a fresh login attempt instead of repeatedly restoring the
+/// same stale cookies and producing a redirect loop.
+pub(super) fn recover_session_restore_redirect(
+    app: &tauri::AppHandle,
+    store: &AuthStore,
+) -> Result<bool, String> {
+    if !store.claim_session_restore_redirect() {
+        return Ok(false);
+    }
+
+    let profile = store
+        .profile
+        .lock()
+        .map_err(|_| "状态锁失败")?
+        .clone()
+        .or(store.credentials.load_profile()?);
+    let pending = store
+        .pending
+        .lock()
+        .map_err(|_| "状态锁失败")?
+        .clone()
+        .or(store.credentials.load_pending()?);
+    let attempt = match profile.as_ref() {
+        Some(profile) => AuthAttempt::ReauthenticateExisting {
+            student_id: profile.student_id.clone(),
+        },
+        None => AuthAttempt::InitialSetup,
+    };
+    let prefill = login_form_prefill(profile.as_ref(), pending.as_ref());
+
     let _ = store.credentials.delete_session();
     let _ = clear_webview_session(app);
-    set_terminal_state(app, store, AuthState::SessionExpired);
+    *store.profile.lock().map_err(|_| "状态锁失败")? = profile;
+    *store.pending.lock().map_err(|_| "状态锁失败")? = pending;
+    *store.attempt.lock().map_err(|_| "状态锁失败")? = attempt;
+    *store.captured.lock().map_err(|_| "状态锁失败")? = None;
+    *store.login_prefill.lock().map_err(|_| "状态锁失败")? = prefill;
+    *store.state.lock().map_err(|_| "状态锁失败")? = AuthState::Authenticating;
+
+    let window = app.get_webview_window("main").ok_or("主窗口不存在")?;
+    window
+        .navigate(
+            AUTH_LOGIN_URL
+                .parse::<tauri::Url>()
+                .map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())?;
+    emit_state(app, AuthState::Authenticating);
+    Ok(true)
 }
 
 pub(super) fn credential_capture_failure(app: &tauri::AppHandle, store: &AuthStore) {
@@ -45,14 +92,19 @@ pub(super) fn complete_authentication(app: tauri::AppHandle, payload: String) {
     {
         return;
     }
+    // A profile page can finish loading before its user-config request has
+    // settled.  Ignore that intermediate result and let the bounded probe
+    // loop try again instead of turning a transient response into a terminal
+    // login error.
     if !auth_probe_succeeded(&payload) {
-        credential_capture_failure(&app, &store);
         return;
     }
     let Some(identity) = probe_identity(&payload) else {
-        credential_capture_failure(&app, &store);
         return;
     };
+    if !store.claim_auth_completion() {
+        return;
+    }
     let student_id = identity.student_id;
     let authenticated_name = identity.name;
 
@@ -269,6 +321,7 @@ pub(super) fn start_session_restore(
     store: &AuthStore,
     session: AuthSessionSecret,
 ) -> Result<AuthState, String> {
+    store.reset_auth_flow_guards();
     *store.state.lock().map_err(|_| "状态锁失败")? = AuthState::Authenticating;
     *store.attempt.lock().map_err(|_| "状态锁失败")? = AuthAttempt::SessionRestore {
         student_id: session.student_id.clone(),
@@ -416,6 +469,7 @@ pub(super) fn navigate_to_authentication(app: tauri::AppHandle) -> Result<(), St
         .map_err(|_| "状态锁失败")?
         .clone()
         .or(store.credentials.load_pending()?);
+    store.reset_auth_flow_guards();
     let prefill = login_form_prefill(profile.as_ref(), pending.as_ref());
     let attempt = match profile.as_ref() {
         Some(profile) => AuthAttempt::ReauthenticateExisting {

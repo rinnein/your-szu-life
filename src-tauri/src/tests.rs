@@ -14,7 +14,7 @@ fn command_names_match_handlers_manifest_and_local_permissions() {
     })
     .filter_map(|line| line.split_once('(').map(|(name, _)| name.to_owned()))
     .collect();
-    assert_eq!(commands.len(), 20);
+    assert_eq!(commands.len(), 26);
     let handlers: BTreeSet<_> = include_str!("app.rs")
         .lines()
         .filter_map(|line| line.split_once("::commands::"))

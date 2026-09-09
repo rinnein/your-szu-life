@@ -139,6 +139,9 @@ fn remote_credential_capture_capability_matches_authserver_page_origin() {
 #[test]
 fn login_capture_script_requires_capture_before_official_submission() {
     let script = auth_login_capture_script(false, None);
+    assert!(script.contains("__SZU_LOGIN_CAPTURE_VERSION__ === '2'"));
+    assert!(script.contains("if (!document.documentElement) return;"));
+    assert!(script.contains("window.__SZU_LOGIN_CAPTURE_READY__ = true"));
     assert!(script.contains("const savedCredentials = null"));
     assert!(script.contains("const applySavedCredentials"));
     assert!(script.contains("autofilledForms = new WeakSet"));
@@ -180,6 +183,35 @@ fn login_capture_script_requires_capture_before_official_submission() {
     assert!(script.contains("未能读取当前账号密码表单，请刷新后重新输入"));
     let reauth = auth_login_capture_script(true, None);
     assert!(reauth.contains("const qrAllowed = true"));
+}
+
+#[test]
+fn probe_result_script_consumes_each_result_once() {
+    let script = auth_probe_result_script();
+    assert!(script.contains("window.__SZU_AUTH_PROBE__=null"));
+    assert!(script.contains("||null"));
+}
+
+#[test]
+fn auth_flow_guards_are_one_shot_and_resettable() {
+    use crate::storage::testing::MemoryCredentialStore;
+    use std::sync::Arc;
+
+    let store = super::AuthStore::new(Arc::new(MemoryCredentialStore::default()));
+    assert!(store.claim_session_restore_redirect());
+    assert!(!store.claim_session_restore_redirect());
+    let generation = store.try_start_auth_probe().expect("probe starts");
+    assert!(store.try_start_auth_probe().is_none());
+    assert!(store.auth_probe_is_current(generation));
+    store.cancel_auth_probe();
+    assert!(!store.auth_probe_is_current(generation));
+    let next_generation = store.try_start_auth_probe().expect("probe restarts");
+    store.finish_auth_probe(next_generation);
+    assert!(store.claim_auth_completion());
+    assert!(!store.claim_auth_completion());
+    store.reset_auth_flow_guards();
+    assert!(store.claim_session_restore_redirect());
+    assert!(store.claim_auth_completion());
 }
 
 #[test]

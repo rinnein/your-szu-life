@@ -5,7 +5,7 @@ pub(super) fn auth_probe_script() -> &'static str {
 }
 
 pub(super) fn auth_probe_result_script() -> &'static str {
-    "window.__SZU_AUTH_PROBE__"
+    "(()=>{const value=window.__SZU_AUTH_PROBE__||null;window.__SZU_AUTH_PROBE__=null;return value})()"
 }
 
 pub(super) fn auth_login_capture_script(
@@ -20,8 +20,9 @@ pub(super) fn auth_login_capture_script(
         r#"
 (() => {{
   if (location.protocol !== 'https:' || location.host !== '{AUTH_HOST}' ||
-      !location.pathname.startsWith('/authserver/login') || window.__SZU_LOGIN_CAPTURE_INSTALLED__) return;
-  window.__SZU_LOGIN_CAPTURE_INSTALLED__ = true;
+      !location.pathname.startsWith('/authserver/login') ||
+      window.__SZU_LOGIN_CAPTURE_VERSION__ === '2') return;
+  if (!document.documentElement) return;
 
   const qrAllowed = {allow_qr_login};
   const savedCredentials = {saved_credentials};
@@ -179,6 +180,8 @@ pub(super) fn auth_login_capture_script(
     }}
     if (event.target === loginForm()) intercept(event);
   }}, true);
+  window.__SZU_LOGIN_CAPTURE_VERSION__ = '2';
+  window.__SZU_LOGIN_CAPTURE_READY__ = true;
 }})()
 "#
     )

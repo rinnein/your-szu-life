@@ -3,6 +3,7 @@ use crate::{
     storage::{PlatformCredentialStore, SharedCredentialStore},
 };
 use std::sync::Arc;
+use tauri::Manager;
 
 pub(crate) fn run() {
     let credentials: SharedCredentialStore = Arc::new(PlatformCredentialStore);
@@ -12,6 +13,9 @@ pub(crate) fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            if let Some(store) = app.try_state::<campus_network::CampusNetworkStore>() {
+                campus_network::diagnostics::initialize(app.handle(), &store);
+            }
             campus_network::monitor::start_dorm_monitor(app.handle().clone());
             #[cfg(desktop)]
             crate::desktop::setup(app)?;
@@ -26,6 +30,12 @@ pub(crate) fn run() {
             auth::commands::begin_authentication,
             auth::commands::logout,
             campus_network::commands::get_network_overview,
+            campus_network::commands::refresh_campus_network,
+            campus_network::commands::request_campus_network_permissions,
+            campus_network::commands::get_debug_mode,
+            campus_network::commands::set_debug_mode,
+            campus_network::commands::get_debug_logs,
+            campus_network::commands::clear_debug_logs,
             campus_network::commands::get_staff_network_settings,
             campus_network::commands::save_staff_network_settings,
             campus_network::commands::get_staff_login_status,
