@@ -2,10 +2,50 @@ use super::{model::*, service, CampusNetworkStore};
 use tauri::State;
 
 #[tauri::command]
+pub(crate) fn request_campus_network_permissions() -> Result<(), String> {
+    super::android::request_permissions()
+}
+
+#[tauri::command]
+pub(crate) fn get_debug_mode(store: State<'_, CampusNetworkStore>) -> DebugModeView {
+    super::diagnostics::mode_view(&store)
+}
+
+#[tauri::command]
+pub(crate) fn set_debug_mode(
+    app: tauri::AppHandle,
+    store: State<'_, CampusNetworkStore>,
+    enabled: bool,
+) -> Result<DebugModeView, String> {
+    super::diagnostics::set_mode(&app, &store, enabled)
+}
+
+#[tauri::command]
+pub(crate) fn get_debug_logs(
+    app: tauri::AppHandle,
+    store: State<'_, CampusNetworkStore>,
+) -> Result<Vec<DebugLogEntry>, String> {
+    super::diagnostics::load_logs(&app, &store)
+}
+
+#[tauri::command]
+pub(crate) fn clear_debug_logs(
+    app: tauri::AppHandle,
+    store: State<'_, CampusNetworkStore>,
+) -> Result<(), String> {
+    super::diagnostics::clear_logs(&app, &store)
+}
+
+#[tauri::command]
 pub(crate) fn get_network_overview(
     store: State<'_, CampusNetworkStore>,
 ) -> Result<NetworkOverviewView, String> {
     service::get_network_overview(&store)
+}
+
+#[tauri::command]
+pub(crate) fn refresh_campus_network(app: tauri::AppHandle) -> Result<NetworkOverviewView, String> {
+    service::refresh_campus_network(app)
 }
 
 #[tauri::command]

@@ -18,6 +18,7 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 
 type Overview = {
   state: "connected" | "notLoggedIn" | "noNetwork" | "unknown";
+  connected?: boolean;
   region: "dormitory" | "staff" | "none";
   portalReachable: boolean;
   staffHostReachable: boolean;
@@ -44,6 +45,8 @@ let settings: {
   customConfigured: boolean;
 };
 let logoutHandler: () => Promise<unknown>;
+let permissionHandler: () => Promise<unknown>;
+let refreshHandler: () => Promise<unknown>;
 const listeners = new Map<string, EventCallback<unknown>>();
 const cardLabel = "校园卡号";
 const nameLabel = "用户姓名";
@@ -94,6 +97,8 @@ describe("campus network status and logout", () => {
     vi.clearAllMocks();
     listeners.clear();
     settings = { enabled: false, credentialMode: "currentAccount", customConfigured: false };
+    permissionHandler = async () => undefined;
+    refreshHandler = async () => overview;
     logoutHandler = async () => {
       settings = { ...settings, enabled: false };
       overview = { ...overview, state: "notLoggedIn", portalSession: null, staffSession: null };
@@ -128,7 +133,9 @@ describe("campus network status and logout", () => {
           hasPassword: true,
         };
       if (command === "get_user_data") return { studentId: "1234567890", name: "应用同学" };
+      if (command === "request_campus_network_permissions") return permissionHandler();
       if (command === "get_network_overview") return overview;
+      if (command === "refresh_campus_network") return refreshHandler();
       if (command === "get_dorm_network_settings") return { ...settings };
       if (command === "logout_campus_network") return logoutHandler();
       if (command === "get_dorm_login_status")
@@ -144,6 +151,82 @@ describe("campus network status and logout", () => {
     });
   });
   afterEach(cleanup);
+
+  it("requests Android network permissions without blocking the first refresh", async () => {
+    permissionHandler = async () => {
+      throw new Error("permission denied");
+    };
+    await renderPage();
+    expect(
+      vi.mocked(invoke).mock.calls.some(([name]) => name === "request_campus_network_permissions"),
+    ).toBe(true);
+    expect(valueFor(cardLabel)).toHaveTextContent("654321");
+  });
+
+  it("does not let a cached refresh overwrite a newer overview event", async () => {
+    let resolveRefresh!: (value: Overview) => void;
+    refreshHandler = () =>
+      new Promise<Overview>((resolve) => {
+        resolveRefresh = resolve;
+      });
+    await renderPage("校园网登录");
+    const latest: Overview = {
+      state: "unknown",
+      connected: true,
+      region: "none",
+      portalReachable: true,
+      staffHostReachable: true,
+      portalSession: null,
+      staffSession: null,
+    };
+    publish(latest);
+    resolveRefresh(overview);
+    await waitFor(() => expect(valueFor("网络连接")).toHaveTextContent("已连接网络"));
+    expect(screen.getByText("当前推测网络状态：已连接(未识别区域)")).toBeInTheDocument();
+  });
+
+  it("refreshes connection status from the status card", async () => {
+    overview = {
+      state: "noNetwork",
+      connected: false,
+      region: "none",
+      portalReachable: false,
+      staffHostReachable: false,
+      portalSession: null,
+      staffSession: null,
+    };
+    await renderPage("校园网登录");
+    overview = {
+      ...overview,
+      state: "unknown",
+      connected: true,
+      region: "none",
+      portalReachable: true,
+      staffHostReachable: false,
+    };
+    fireEvent.click(screen.getByRole("button", { name: "刷新连接状态" }));
+    await waitFor(() => expect(valueFor("网络连接")).toHaveTextContent("已连接网络"));
+    expect(vi.mocked(invoke).mock.calls.some(([name]) => name === "refresh_campus_network")).toBe(
+      true,
+    );
+  });
+
+  it("shows a connected but unclassified network when both portals are unavailable", async () => {
+    overview = {
+      state: "unknown",
+      connected: true,
+      region: "none",
+      portalReachable: false,
+      staffHostReachable: false,
+      portalSession: null,
+      staffSession: null,
+    };
+    await renderPage("校园网登录");
+    expect(screen.getByText("当前推测网络状态：已连接(未识别区域)")).toBeInTheDocument();
+    expect(valueFor("网络连接")).toHaveTextContent("已连接网络");
+    expect(valueFor("宿舍区门户")).toHaveTextContent("不可达");
+    expect(valueFor("教工区门户")).toHaveTextContent("不可达");
+  });
 
   it("shows the gateway uid and Chinese NID instead of the application profile", async () => {
     await renderPage();

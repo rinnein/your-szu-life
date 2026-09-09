@@ -16,6 +16,14 @@ pub(crate) struct NetworkSnapshot {
     pub(crate) connected: bool,
     pub(crate) ssid: Option<String>,
     pub(crate) ip: Option<String>,
+    pub(crate) transport: Option<String>,
+    pub(crate) capabilities_available: Option<bool>,
+    pub(crate) wifi_permission: Option<String>,
+    pub(crate) location_enabled: Option<bool>,
+    pub(crate) has_private_172_ipv4: bool,
+    pub(crate) wifi_connected: bool,
+    pub(crate) wifi_ip: Option<String>,
+    pub(crate) wifi_has_private_172_ipv4: bool,
 }
 
 #[cfg(not(target_os = "android"))]
@@ -47,6 +55,7 @@ pub(super) fn network_snapshot() -> NetworkSnapshot {
             connected: ip.is_some() || ssid.is_some(),
             ssid,
             ip,
+            ..Default::default()
         };
     }
     #[cfg(target_os = "macos")]
@@ -64,6 +73,7 @@ pub(super) fn network_snapshot() -> NetworkSnapshot {
             connected: ip.is_some() || ssid.is_some(),
             ssid,
             ip,
+            ..Default::default()
         };
     }
     #[cfg(target_os = "windows")]
@@ -79,17 +89,43 @@ pub(super) fn network_snapshot() -> NetworkSnapshot {
             connected: ssid.is_some(),
             ssid,
             ip: None,
+            ..Default::default()
         };
     }
     #[cfg(target_os = "android")]
     {
-        NetworkSnapshot::default()
+        super::android::network_snapshot()
     }
 }
 
 impl NetworkSnapshot {
+    pub(super) fn effective_connected(&self) -> bool {
+        self.connected || self.wifi_connected || self.ip.is_some() || self.wifi_ip.is_some()
+    }
+
     pub(super) fn fingerprint(&self) -> String {
-        format!("{:?}|{:?}|{}", self.ssid, self.ip, self.connected)
+        format!(
+            "{:?}|{:?}|{}|{:?}|{}|{}|{:?}|{}",
+            self.ssid,
+            self.ip,
+            self.connected,
+            self.transport,
+            self.has_private_172_ipv4,
+            self.wifi_connected,
+            self.wifi_ip,
+            self.wifi_has_private_172_ipv4
+        )
+    }
+}
+
+pub(super) fn network_snapshot_result() -> Result<NetworkSnapshot, String> {
+    #[cfg(target_os = "android")]
+    {
+        return super::android::network_snapshot_result();
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        Ok(network_snapshot())
     }
 }
 
@@ -325,12 +361,15 @@ pub(super) fn classify_network_overview(
             PortalOnlineState::Offline => NetworkConnectionState::NotLoggedIn,
             _ => NetworkConnectionState::Unknown,
         },
-        NetworkRegion::None if !snapshot.connected && !dorm.reachable && !staff.reachable => {
+        NetworkRegion::None
+            if !snapshot.effective_connected() && !dorm.reachable && !staff.reachable =>
+        {
             NetworkConnectionState::NoNetwork
         }
         NetworkRegion::None => NetworkConnectionState::Unknown,
     };
     NetworkOverviewView {
+        connected: snapshot.effective_connected(),
         portal_session: (region == NetworkRegion::Dormitory
             && state == NetworkConnectionState::Connected)
             .then(|| dorm.session.clone())

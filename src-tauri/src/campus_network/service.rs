@@ -21,6 +21,10 @@ pub(super) fn get_network_overview(
         .clone())
 }
 
+pub(super) fn refresh_campus_network(app: tauri::AppHandle) -> Result<NetworkOverviewView, String> {
+    super::monitor::refresh_now(app)
+}
+
 pub(super) fn get_dorm_network_settings(
     app: tauri::AppHandle,
     store: &CampusNetworkStore,

@@ -2,6 +2,65 @@ use super::{login::backoff_delay, logs::sanitized_log, model::*, network::*, por
 use std::time::Duration;
 
 #[test]
+fn parses_android_network_snapshot_and_keeps_connectivity_without_ssid() {
+    let snapshot = super::android::parse_network_snapshot_json(
+        r#"{"connected":true,"ssid":"SZU_WLAN","ip":"172.24.111.161","transport":"wifi","capabilitiesAvailable":false,"wifiPermission":"denied","locationEnabled":false}"#,
+    )
+    .expect("valid Android snapshot");
+    assert_eq!(snapshot.connected, true);
+    assert_eq!(snapshot.ssid.as_deref(), Some("SZU_WLAN"));
+    assert_eq!(snapshot.ip.as_deref(), Some("172.24.111.161"));
+    assert_eq!(snapshot.transport.as_deref(), Some("wifi"));
+    assert_eq!(snapshot.capabilities_available, Some(false));
+    assert_eq!(snapshot.wifi_permission.as_deref(), Some("denied"));
+    assert_eq!(snapshot.location_enabled, Some(false));
+    assert!(!snapshot.has_private_172_ipv4);
+    assert!(!snapshot.wifi_connected);
+
+    let campus = super::android::parse_network_snapshot_json(
+        r#"{"connected":true,"ip":"10.0.0.2","transport":"cellular","wifiConnected":true,"wifiIp":"172.30.1.2","wifiHasPrivate172Ipv4":true}"#,
+    )
+    .expect("valid campus snapshot");
+    assert!(campus.wifi_connected);
+    assert_eq!(campus.wifi_ip.as_deref(), Some("172.30.1.2"));
+    assert!(campus.wifi_has_private_172_ipv4);
+
+    let wifi_only = super::android::parse_network_snapshot_json(
+        r#"{"connected":false,"wifiConnected":true,"wifiIp":"192.168.1.10"}"#,
+    )
+    .expect("valid Wi-Fi-only snapshot");
+    assert!(wifi_only.connected);
+    assert!(wifi_only.effective_connected());
+    assert!(wifi_only.wifi_connected);
+
+    let wifi_ip_only =
+        super::android::parse_network_snapshot_json(r#"{"connected":false,"wifiIp":"172.30.9.8"}"#)
+            .expect("valid Wi-Fi IP snapshot");
+    assert!(wifi_ip_only.connected);
+    assert!(wifi_ip_only.effective_connected());
+
+    let without_ssid = super::android::parse_network_snapshot_json(
+        r#"{"connected":true,"ssid":"<unknown ssid>","ip":"172.24.111.161"}"#,
+    )
+    .expect("valid Android snapshot without SSID");
+    assert!(without_ssid.connected);
+    assert!(without_ssid.ssid.is_none());
+    assert_eq!(without_ssid.ip.as_deref(), Some("172.24.111.161"));
+}
+
+#[test]
+fn rejects_invalid_android_snapshot_values_without_panicking() {
+    assert!(super::android::parse_network_snapshot_json("not-json").is_none());
+    let snapshot = super::android::parse_network_snapshot_json(
+        r#"{"connected":false,"ssid":" ","ip":"not-an-ip"}"#,
+    )
+    .expect("valid snapshot envelope");
+    assert!(!snapshot.connected);
+    assert!(snapshot.ssid.is_none());
+    assert!(snapshot.ip.is_none());
+}
+
+#[test]
 fn extracts_terminal_ip_by_portal_priority_and_rejects_invalid_values() {
     let html = "<script>v4ip='000.000.000.000';v46ip='172.24.75.190';ss5='172.24.1.1';</script>";
     assert_eq!(extract_terminal_ip(html).as_deref(), Some("172.24.75.190"));
@@ -44,6 +103,7 @@ fn online_portal_session_drives_connected_state_without_cached_login_status() {
         connected: true,
         ssid: Some("SZU_CTC&CMCC".into()),
         ip: Some("172.24.111.161".into()),
+        ..Default::default()
     };
     let session = DormPortalSessionInfo {
         online_username: Some("张三".into()),
@@ -149,6 +209,39 @@ fn config_and_host_reachability_alone_never_override_dorm_or_create_staff_region
     let overview = classify_network_overview(&observation, &mut RegionEvidence::default());
     assert_eq!(overview.region, NetworkRegion::Staff);
     assert_eq!(overview.state, NetworkConnectionState::NotLoggedIn);
+    let connected_without_portal = classify_network_overview(
+        &NetworkObservation {
+            snapshot: NetworkSnapshot {
+                connected: true,
+                ssid: None,
+                ip: Some("192.0.2.10".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        &mut RegionEvidence::default(),
+    );
+    assert_eq!(connected_without_portal.region, NetworkRegion::None);
+    assert_eq!(
+        connected_without_portal.state,
+        NetworkConnectionState::Unknown
+    );
+
+    let wifi_without_portal = classify_network_overview(
+        &NetworkObservation {
+            snapshot: NetworkSnapshot {
+                connected: false,
+                wifi_connected: true,
+                wifi_ip: Some("172.30.10.2".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        &mut RegionEvidence::default(),
+    );
+    assert!(wifi_without_portal.connected);
+    assert_eq!(wifi_without_portal.state, NetworkConnectionState::Unknown);
+
     let offline = classify_network_overview(
         &NetworkObservation::default(),
         &mut RegionEvidence::default(),
@@ -281,12 +374,88 @@ fn credential_modes_are_independent_and_do_not_require_auth_for_custom_credentia
 }
 
 #[test]
+fn snapshot_connection_is_published_before_portal_probe_finishes() {
+    use super::{state::NetworkEvents, CampusNetworkStore};
+    use crate::storage::testing::MemoryCredentialStore;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Default)]
+    struct Capture(Mutex<Option<NetworkOverviewView>>);
+    impl NetworkEvents for Capture {
+        fn overview_changed(&self, overview: &NetworkOverviewView) {
+            *self.0.lock().unwrap() = Some(overview.clone());
+        }
+    }
+
+    let store = CampusNetworkStore::new(Arc::new(MemoryCredentialStore::default()));
+    let events = Capture::default();
+    store.apply_snapshot_connection(
+        &NetworkSnapshot {
+            connected: false,
+            wifi_connected: true,
+            wifi_ip: Some("172.30.10.2".into()),
+            ssid: None,
+            ..Default::default()
+        },
+        &events,
+    );
+    let overview = events.0.lock().unwrap().clone().expect("connection event");
+    assert!(overview.connected);
+    assert_eq!(overview.state, NetworkConnectionState::Unknown);
+    assert_eq!(overview.region, NetworkRegion::None);
+}
+
+#[test]
+fn monitor_probe_requests_are_coalesced_and_cleared_when_finished() {
+    use super::CampusNetworkStore;
+    use crate::storage::testing::MemoryCredentialStore;
+    use std::sync::Arc;
+    let store = CampusNetworkStore::new(Arc::new(MemoryCredentialStore::default()));
+    let (_generation, receiver) = store.reserve_monitor().expect("monitor reservation");
+    assert!(store.request_probe().expect("queue first probe"));
+    assert!(!store.request_probe().expect("coalesce second probe"));
+    assert!(matches!(
+        receiver.recv_timeout(Duration::from_millis(10)),
+        Ok(super::monitor::MonitorCommand::ProbeNow)
+    ));
+    store.probe_finished();
+    assert!(store.request_probe().expect("queue probe after completion"));
+}
+
+#[test]
+fn monitor_restart_budget_is_bounded_per_minute() {
+    use super::CampusNetworkStore;
+    use crate::storage::testing::MemoryCredentialStore;
+    use std::sync::Arc;
+    let store = CampusNetworkStore::new(Arc::new(MemoryCredentialStore::default()));
+    assert!(store.reserve_monitor_restart());
+    assert!(store.reserve_monitor_restart());
+    assert!(store.reserve_monitor_restart());
+    assert!(!store.reserve_monitor_restart());
+}
+
+#[test]
+fn stale_monitor_generation_cannot_clear_a_restarted_monitor() {
+    use super::CampusNetworkStore;
+    use crate::storage::testing::MemoryCredentialStore;
+    use std::sync::Arc;
+    let store = CampusNetworkStore::new(Arc::new(MemoryCredentialStore::default()));
+    let (first_generation, _first_receiver) = store.reserve_monitor().expect("first monitor");
+    store.finish_monitor(first_generation);
+    let (second_generation, _second_receiver) = store.reserve_monitor().expect("second monitor");
+    store.finish_monitor(first_generation);
+    assert!(store.monitor_running());
+    store.finish_monitor(second_generation);
+    assert!(!store.monitor_running());
+}
+
+#[test]
 fn monitor_is_reserved_once_and_login_gate_is_released_on_drop() {
     use super::CampusNetworkStore;
     use crate::storage::testing::MemoryCredentialStore;
     use std::sync::Arc;
     let store = CampusNetworkStore::new(Arc::new(MemoryCredentialStore::default()));
-    let receiver = store.reserve_monitor().expect("first monitor reservation");
+    let (_generation, receiver) = store.reserve_monitor().expect("first monitor reservation");
     assert!(store.reserve_monitor().is_none());
     let login = store.begin_login().unwrap();
     assert!(store.login_in_flight());

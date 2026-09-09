@@ -54,6 +54,7 @@ pub(super) fn snapshot() -> NetworkSnapshot {
         connected: true,
         ip: Some(TEST_IP.into()),
         ssid: Some("shared-campus-network".into()),
+        ..Default::default()
     }
 }
 pub(super) struct FakeEnvironment {

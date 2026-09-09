@@ -16,6 +16,9 @@ pub(super) struct HttpResponse {
 pub(super) enum HttpError {
     Unavailable,
     Timeout,
+    Dns,
+    Tls,
+    Connection,
     InvalidResponse,
     UnsafeUrl,
     Canceled,
@@ -26,6 +29,9 @@ impl fmt::Display for HttpError {
         f.write_str(match self {
             Self::Unavailable => "门户请求失败",
             Self::Timeout => "门户请求超时",
+            Self::Dns => "门户域名解析失败",
+            Self::Tls => "门户 TLS 握手失败",
+            Self::Connection => "门户连接失败",
             Self::InvalidResponse => "门户响应无效或过大",
             Self::UnsafeUrl => "已拒绝不受信任的门户地址",
             Self::Canceled => "操作已取消或网络已变化",
@@ -40,11 +46,34 @@ pub(super) trait PortalHttp: Sync {
 pub(super) struct PortalClient(Client);
 impl PortalClient {
     pub(super) fn new() -> Result<Self, HttpError> {
+        #[cfg(target_os = "android")]
+        super::android::initialize_platform_verifier().map_err(|_| HttpError::Unavailable)?;
         client_builder()
             .build()
             .map(Self)
             .map_err(|_| HttpError::Unavailable)
     }
+}
+
+fn classify_reqwest_error(error: reqwest::Error) -> HttpError {
+    if error.is_timeout() {
+        return HttpError::Timeout;
+    }
+    if error.is_connect() {
+        let text = error.to_string().to_ascii_lowercase();
+        if text.contains("dns")
+            || text.contains("resolve")
+            || text.contains("unknown host")
+            || text.contains("name or service")
+        {
+            return HttpError::Dns;
+        }
+        if text.contains("certificate") || text.contains("tls") || text.contains("handshake") {
+            return HttpError::Tls;
+        }
+        return HttpError::Connection;
+    }
+    HttpError::Unavailable
 }
 
 pub(super) fn client_builder() -> reqwest::blocking::ClientBuilder {
@@ -72,13 +101,11 @@ impl PortalHttp for PortalClient {
         if !allowed_url(url) {
             return Err(HttpError::UnsafeUrl);
         }
-        let response = self.0.get(url.clone()).send().map_err(|error| {
-            if error.is_timeout() {
-                HttpError::Timeout
-            } else {
-                HttpError::Unavailable
-            }
-        })?;
+        let response = self
+            .0
+            .get(url.clone())
+            .send()
+            .map_err(classify_reqwest_error)?;
         read_response(response)
     }
 }

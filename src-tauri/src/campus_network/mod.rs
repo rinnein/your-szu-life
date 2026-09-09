@@ -1,4 +1,6 @@
+mod android;
 pub(crate) mod commands;
+pub(crate) mod diagnostics;
 mod http;
 mod login;
 mod logout;

@@ -60,6 +60,7 @@ type LogoutResult = {
 };
 type NetworkOverview = {
   state: NetworkState;
+  connected?: boolean;
   region: NetworkRegion;
   ssid?: string | null;
   portalReachable: boolean;
@@ -88,6 +89,7 @@ type Log = {
 
 const initialOverview: NetworkOverview = {
   state: "noNetwork",
+  connected: false,
   region: "none",
   portalReachable: false,
   staffHostReachable: false,
@@ -107,7 +109,9 @@ function statusText(overview: NetworkOverview) {
       : overview.region === "dormitory"
         ? "宿舍区"
         : "未识别区域";
-  if (overview.state === "unknown") return "状态待确认(" + region + ")";
+  if (overview.state === "unknown") {
+    return overview.connected === true ? "已连接(" + region + ")" : "状态待确认(" + region + ")";
+  }
   return (overview.state === "connected" ? "已连接(" : "未登录(") + region + ")";
 }
 
@@ -180,6 +184,7 @@ export default function CampusNetworkPage() {
   const [error, setError] = useState("");
   const initializedTab = useRef(false);
   const mounted = useRef(false);
+  const refreshBusyRef = useRef(false);
   const revisions = useRef({
     overview: 0,
     settings: 0,
@@ -191,6 +196,7 @@ export default function CampusNetworkPage() {
   });
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [disconnectBusy, setDisconnectBusy] = useState(false);
+  const [refreshBusy, setRefreshBusy] = useState(false);
   const [logoutResult, setLogoutResult] = useState<LogoutResult>();
   const operationBusy = busy || disconnectBusy;
   const staffInProgress = staffStatus.state === "probing" || staffStatus.state === "loggingIn";
@@ -208,6 +214,29 @@ export default function CampusNetworkPage() {
     setSettings(next);
     setEnabled(next.enabled);
     setMode(next.credentialMode);
+  };
+
+  const refreshConnection = async (showError = true) => {
+    if (refreshBusyRef.current) return;
+    refreshBusyRef.current = true;
+    setRefreshBusy(true);
+    if (showError) setError("");
+    const overviewRevision = revisions.current.overview;
+    try {
+      const refreshed = await invoke<NetworkOverview | null>("refresh_campus_network");
+      // A probe result is delivered asynchronously through the event channel. Do not let the
+      // command's cached snapshot overwrite a newer event that arrived while it was queued.
+      if (mounted.current && overviewRevision === revisions.current.overview && refreshed) {
+        applyOverview(refreshed);
+      }
+      return refreshed;
+    } catch (cause) {
+      if (showError && mounted.current) setError(String(cause));
+      return null;
+    } finally {
+      refreshBusyRef.current = false;
+      if (mounted.current) setRefreshBusy(false);
+    }
   };
 
   const refresh = async () => {
@@ -237,6 +266,7 @@ export default function CampusNetworkPage() {
     mounted.current = true;
     let active = true;
     const disposers: (() => void)[] = [];
+    const delayedRefreshes: number[] = [];
     const subscribe = async <T,>(event: string, callback: (payload: T) => void) => {
       try {
         const dispose = await listen<T>(event, ({ payload }) => {
@@ -248,36 +278,63 @@ export default function CampusNetworkPage() {
         if (active) setError(String(cause));
       }
     };
-    void subscribe<NetworkOverview>("network-overview-changed", (next) => {
-      revisions.current.overview++;
-      applyOverview(next);
-    });
-    void subscribe<Settings>("dorm-network-settings-changed", (next) => {
-      revisions.current.settings++;
-      applySettings(next);
-    });
-    void subscribe<Status>("dorm-login-status-changed", (next) => {
-      revisions.current.status++;
-      setStatus(next);
-    });
-    void subscribe<StaffSettings>("staff-network-settings-changed", (next) => {
-      revisions.current.staffSettings++;
-      setStaffSettings(next);
-    });
-    void subscribe<StaffStatus>("staff-login-status-changed", (next) => {
-      revisions.current.staffStatus++;
-      setStaffStatus(next);
-    });
-    void subscribe<Log>("dorm-login-log-added", (next) => {
-      revisions.current.logs++;
-      setLogs((current) => [next, ...current].slice(0, 100));
-    });
+
+    // Load cached settings/status immediately; this read-only batch does not
+    // publish a probe result and must not wait for listener registration.
     void refresh().catch((cause) => {
       if (active) setError(String(cause));
     });
+
+    // Install all listeners before starting a probe. The first snapshot can be
+    // published immediately, so starting the monitor before `listen` resolves
+    // would otherwise lose the only fast connection event.
+    void (async () => {
+      await Promise.all([
+        subscribe<NetworkOverview>("network-overview-changed", (next) => {
+          revisions.current.overview++;
+          applyOverview(next);
+        }),
+        subscribe<Settings>("dorm-network-settings-changed", (next) => {
+          revisions.current.settings++;
+          applySettings(next);
+        }),
+        subscribe<Status>("dorm-login-status-changed", (next) => {
+          revisions.current.status++;
+          setStatus(next);
+        }),
+        subscribe<StaffSettings>("staff-network-settings-changed", (next) => {
+          revisions.current.staffSettings++;
+          setStaffSettings(next);
+        }),
+        subscribe<StaffStatus>("staff-login-status-changed", (next) => {
+          revisions.current.staffStatus++;
+          setStaffStatus(next);
+        }),
+        subscribe<Log>("dorm-login-log-added", (next) => {
+          revisions.current.logs++;
+          setLogs((current) => [next, ...current].slice(0, 100));
+        }),
+      ]);
+      if (!active) return;
+      void invoke("request_campus_network_permissions").catch(() => {
+        // Permission denial or unsupported platforms must not block network status refresh.
+      });
+      // Queue the portal probe independently from the initial metadata load. The command only
+      // enqueues background work, so a slow portal must never delay the rest of the page.
+      void refreshConnection(false);
+      [700, 1800].forEach((delay) => {
+        delayedRefreshes.push(
+          window.setTimeout(() => {
+            if (active) void refreshConnection(false);
+          }, delay),
+        );
+      });
+    })();
+
     return () => {
       active = false;
       mounted.current = false;
+      delayedRefreshes.forEach(window.clearTimeout);
       for (const dispose of disposers) dispose();
     };
   }, []);
@@ -391,7 +448,7 @@ export default function CampusNetworkPage() {
         >
           <Tabs.List aria-label="校园网区域">
             <Tabs.Tab id="staff">教工区</Tabs.Tab>
-            <Tabs.Tab id="dormitory">宿舍区登录</Tabs.Tab>
+            <Tabs.Tab id="dormitory">宿舍区</Tabs.Tab>
           </Tabs.List>
           <Tabs.Panel id="staff">
             <StaffNetworkPanel
@@ -495,6 +552,14 @@ export default function CampusNetworkPage() {
             </Card.Description>
             <div className="network-action-row">
               <Button
+                variant="outline"
+                isDisabled={operationBusy || refreshBusy}
+                onPress={() => void refreshConnection()}
+              >
+                {refreshBusy && <Spinner size="sm" color="current" />}
+                刷新连接状态
+              </Button>
+              <Button
                 variant="danger"
                 isDisabled={
                   operationBusy ||
@@ -514,7 +579,7 @@ export default function CampusNetworkPage() {
             <span>SSID</span>
             <strong>{overview.ssid || status.ssid || "未读取"}</strong>
             <span>网络连接</span>
-            <strong>{overview.state === "noNetwork" ? "无网络" : "已连接网络"}</strong>
+            <strong>{overview.connected === false ? "无网络" : "已连接网络"}</strong>
             <span>宿舍区门户</span>
             <strong>{overview.portalReachable ? "可达" : "不可达"}</strong>
             <span>教工区门户</span>

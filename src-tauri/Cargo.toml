@@ -37,3 +37,6 @@ keyring = { version = "3", features = ["linux-native", "apple-native", "windows-
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
+jni022 = { package = "jni", version = "0.22" }
+ndk-context = "0.1.1"
+rustls-platform-verifier = "0.7"

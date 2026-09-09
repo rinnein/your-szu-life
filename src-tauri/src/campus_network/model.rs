@@ -153,8 +153,42 @@ pub struct DormPortalSessionInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct DebugModeView {
+    pub enabled: bool,
+    pub log_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DebugLogEntry {
+    pub timestamp_ms: u64,
+    pub monitor_generation: Option<u64>,
+    pub level: String,
+    pub source: String,
+    pub stage: String,
+    pub connected: Option<bool>,
+    pub transport: Option<String>,
+    pub capabilities_available: Option<bool>,
+    pub wifi_permission: Option<String>,
+    pub location_enabled: Option<bool>,
+    pub wifi_connected: Option<bool>,
+    pub wifi_ip: Option<String>,
+    pub wifi_has_private_172_ipv4: Option<bool>,
+    pub ssid: Option<String>,
+    pub ip: Option<String>,
+    pub portal: Option<String>,
+    pub http_status: Option<u16>,
+    pub elapsed_ms: Option<u64>,
+    pub retry_after_ms: Option<u64>,
+    pub error_kind: Option<String>,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct NetworkOverviewView {
     pub state: NetworkConnectionState,
+    pub connected: bool,
     pub region: NetworkRegion,
     pub ssid: Option<String>,
     pub portal_reachable: bool,

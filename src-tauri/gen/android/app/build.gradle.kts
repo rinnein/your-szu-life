@@ -1,5 +1,37 @@
 import java.util.Properties
 
+private fun rustlsPlatformVerifierMavenDir(): File {
+    val manifestPath = project.rootDir.resolve("../../Cargo.toml")
+    val metadata = providers.exec {
+        workingDir(project.rootDir)
+        commandLine(
+            "cargo",
+            "metadata",
+            "--format-version",
+            "1",
+            "--filter-platform",
+            "aarch64-linux-android",
+            "--manifest-path",
+            manifestPath.absolutePath,
+        )
+    }.standardOutput.asText.get()
+    val path = Regex(
+        "\"manifest_path\"\\s*:\\s*\"([^\"]*rustls-platform-verifier-android[^\"]*)\"",
+    )
+        .find(metadata)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?: error("rustls-platform-verifier-android package was not found in cargo metadata")
+    return File(path).parentFile.resolve("maven")
+}
+
+repositories {
+    maven {
+        url = uri(rustlsPlatformVerifierMavenDir())
+        metadataSources { mavenPom(); artifact() }
+    }
+}
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -26,7 +58,7 @@ android {
     }
     buildTypes {
         getByName("debug") {
-            manifestPlaceholders["usesCleartextTraffic"] = "true"
+            manifestPlaceholders["usesCleartextTraffic"] = "false"
             isDebuggable = true
             isJniDebuggable = true
             isMinifyEnabled = false
@@ -63,6 +95,7 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.10.1")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.lifecycle:lifecycle-process:2.10.0")
+    implementation("rustls:rustls-platform-verifier:0.1.1")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.4")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.0")

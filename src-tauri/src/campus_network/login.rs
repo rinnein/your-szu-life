@@ -77,7 +77,7 @@ fn perform_dorm_login(
             set_dorm_status(&app, |status| {
                 status.state = DormLoginState::Probing;
                 status.ssid = snapshot.ssid.clone();
-                status.connected = snapshot.connected;
+                status.connected = snapshot.effective_connected();
             })
         })
         .ok_or("登录已取消")?;

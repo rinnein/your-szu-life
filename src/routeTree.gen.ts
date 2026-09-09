@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CampusNetworkRouteImport } from './routes/campus-network'
+import { Route as DebugRouteImport } from './routes/debug'
 import { Route as SettingsRouteImport } from './routes/settings'
 
 const IndexRoute = IndexRouteImport.update({
@@ -23,6 +24,11 @@ const CampusNetworkRoute = CampusNetworkRouteImport.update({
   path: '/campus-network',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DebugRoute = DebugRouteImport.update({
+  id: '/debug',
+  path: '/debug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -32,30 +38,34 @@ const SettingsRoute = SettingsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/campus-network': typeof CampusNetworkRoute
+  '/debug': typeof DebugRoute
   '/settings': typeof SettingsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/campus-network': typeof CampusNetworkRoute
+  '/debug': typeof DebugRoute
   '/settings': typeof SettingsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/campus-network': typeof CampusNetworkRoute
+  '/debug': typeof DebugRoute
   '/settings': typeof SettingsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/campus-network' | '/settings'
+  fullPaths: '/' | '/campus-network' | '/debug' | '/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/campus-network' | '/settings'
-  id: '__root__' | '/' | '/campus-network' | '/settings'
+  to: '/' | '/campus-network' | '/debug' | '/settings'
+  id: '__root__' | '/' | '/campus-network' | '/debug' | '/settings'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CampusNetworkRoute: typeof CampusNetworkRoute
+  DebugRoute: typeof DebugRoute
   SettingsRoute: typeof SettingsRoute
 }
 
@@ -75,6 +85,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CampusNetworkRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/debug': {
+      id: '/debug'
+      path: '/debug'
+      fullPath: '/debug'
+      preLoaderRoute: typeof DebugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -88,6 +105,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CampusNetworkRoute: CampusNetworkRoute,
+  DebugRoute: DebugRoute,
   SettingsRoute: SettingsRoute,
 }
 export const routeTree = rootRouteImport
