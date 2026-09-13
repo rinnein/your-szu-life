@@ -623,3 +623,152 @@ p {
     flex: 1 1 calc(50% - 10px);
   }
 }
+
+.payments-layout {
+  position: relative;
+  display: grid;
+  gap: 24px;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding-top: 22px;
+}
+
+.payments-back {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
+}
+
+.payments-header {
+  padding: 10px 52px 0;
+}
+
+.payments-header h1 {
+  margin: 8px 0 0;
+  font-size: clamp(26px, 3vw, 34px);
+  letter-spacing: -0.04em;
+}
+
+.payments-card {
+  min-width: 0;
+  box-shadow: 0 12px 35px #25285812;
+}
+
+.payments-card [data-slot="card-header"] {
+  padding: 24px 26px 12px;
+}
+
+.payments-card [data-slot="card-content"] {
+  padding: 10px 26px 26px;
+}
+
+.payments-card-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.payments-network-content,
+.payments-wechat-content {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+}
+
+.payments-network-content > button,
+.payments-wechat-content > button {
+  align-self: flex-start;
+}
+
+.payments-guidance {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: var(--szu-brand-soft);
+  color: var(--szu-ink);
+  line-height: 1.75;
+}
+
+.payments-guidance p,
+.payments-instruction,
+.payments-hint,
+.payments-copy-message {
+  margin: 0;
+}
+
+.payments-hint,
+.payments-copy-message {
+  color: var(--szu-muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.payments-wechat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.payments-instruction {
+  line-height: 1.65;
+}
+
+.payments-link {
+  display: block;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--szu-page);
+  color: var(--szu-ink);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.payments-qr {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  margin: auto 0 0;
+}
+
+.payments-qr svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  background: white;
+}
+
+.payments-qr figcaption {
+  color: var(--szu-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+@media (max-width: 700px) {
+  .payments-header {
+    padding-inline: 44px 0;
+  }
+
+  .payments-wechat-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .payments-card [data-slot="card-header"] {
+    padding: 20px 20px 10px;
+  }
+
+  .payments-card [data-slot="card-content"] {
+    padding: 8px 20px 20px;
+  }
+
+  .payments-network-content > button,
+  .payments-wechat-content > button {
+    align-self: stretch;
+  }
+}

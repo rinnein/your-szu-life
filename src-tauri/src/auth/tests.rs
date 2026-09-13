@@ -343,3 +343,54 @@ fn finishing_authentication_clears_transient_secrets_and_resumes_the_local_flow(
     #[cfg(not(any(target_os = "windows", target_os = "android")))]
     assert_eq!(fallback.as_str(), "tauri://localhost/");
 }
+
+#[test]
+fn payments_account_snapshot_requires_verified_matching_complete_profile_and_is_read_only() {
+    use crate::storage::testing::MemoryCredentialStore;
+    use std::sync::Arc;
+    let store = super::AuthStore::new(Arc::new(MemoryCredentialStore::default()));
+    *store.profile.lock().unwrap() = Some(StoredAccountProfile {
+        student_id: "1234567890".into(),
+        campus_card_number: "001234".into(),
+        password: "test-only-password".into(),
+        name: None,
+    });
+    for state in [
+        AuthState::Checking,
+        AuthState::Unauthenticated,
+        AuthState::Authenticating,
+        AuthState::SessionExpired,
+    ] {
+        *store.state.lock().unwrap() = state;
+        assert!(store.authenticated_campus_card_number().is_err());
+    }
+    let authenticated = AuthState::Authenticated {
+        student_id: "1234567890".into(),
+        name: None,
+    };
+    *store.state.lock().unwrap() = authenticated.clone();
+    let auth_return: tauri::Url = "http://tauri.localhost/settings".parse().unwrap();
+    *store.resume_url.lock().unwrap() = Some(auth_return.clone());
+    assert_eq!(store.authenticated_campus_card_number().unwrap(), "001234");
+    assert_eq!(*store.state.lock().unwrap(), authenticated);
+    assert_eq!(*store.resume_url.lock().unwrap(), Some(auth_return));
+    assert_eq!(
+        store.profile.lock().unwrap().as_ref().unwrap().password,
+        "test-only-password"
+    );
+    assert!(store.state.try_lock().is_ok());
+    assert!(store.profile.try_lock().is_ok());
+    store.profile.lock().unwrap().as_mut().unwrap().student_id = "9999999999".into();
+    assert!(store.authenticated_campus_card_number().is_err());
+    store.profile.lock().unwrap().as_mut().unwrap().student_id = "1234567890".into();
+    for invalid in ["", "12345", "1234567", "12345x"] {
+        store
+            .profile
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .campus_card_number = invalid.into();
+        assert!(store.authenticated_campus_card_number().is_err());
+    }
+}

@@ -8,6 +8,8 @@ permissions = [
   "allow-capture-auth-credentials",
   "allow-confirm-profile",
   "allow-logout",
+  "allow-open-network-fee-portal",
+  "allow-consume-network-fee-portal-notice",
   "allow-get-network-overview",
   "allow-refresh-campus-network",
   "allow-request-campus-network-permissions",

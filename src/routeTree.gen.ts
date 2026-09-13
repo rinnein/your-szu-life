@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CampusNetworkRouteImport } from './routes/campus-network'
+import { Route as CampusPaymentsRouteImport } from './routes/campus-payments'
 import { Route as DebugRouteImport } from './routes/debug'
 import { Route as SettingsRouteImport } from './routes/settings'
 
@@ -22,6 +23,11 @@ const IndexRoute = IndexRouteImport.update({
 const CampusNetworkRoute = CampusNetworkRouteImport.update({
   id: '/campus-network',
   path: '/campus-network',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CampusPaymentsRoute = CampusPaymentsRouteImport.update({
+  id: '/campus-payments',
+  path: '/campus-payments',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DebugRoute = DebugRouteImport.update({
@@ -38,12 +44,14 @@ const SettingsRoute = SettingsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/campus-network': typeof CampusNetworkRoute
+  '/campus-payments': typeof CampusPaymentsRoute
   '/debug': typeof DebugRoute
   '/settings': typeof SettingsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/campus-network': typeof CampusNetworkRoute
+  '/campus-payments': typeof CampusPaymentsRoute
   '/debug': typeof DebugRoute
   '/settings': typeof SettingsRoute
 }
@@ -51,20 +59,29 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/campus-network': typeof CampusNetworkRoute
+  '/campus-payments': typeof CampusPaymentsRoute
   '/debug': typeof DebugRoute
   '/settings': typeof SettingsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/campus-network' | '/debug' | '/settings'
+  fullPaths:
+    '/' | '/campus-network' | '/campus-payments' | '/debug' | '/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/campus-network' | '/debug' | '/settings'
-  id: '__root__' | '/' | '/campus-network' | '/debug' | '/settings'
+  to: '/' | '/campus-network' | '/campus-payments' | '/debug' | '/settings'
+  id:
+    | '__root__'
+    | '/'
+    | '/campus-network'
+    | '/campus-payments'
+    | '/debug'
+    | '/settings'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CampusNetworkRoute: typeof CampusNetworkRoute
+  CampusPaymentsRoute: typeof CampusPaymentsRoute
   DebugRoute: typeof DebugRoute
   SettingsRoute: typeof SettingsRoute
 }
@@ -83,6 +100,13 @@ declare module '@tanstack/react-router' {
       path: '/campus-network'
       fullPath: '/campus-network'
       preLoaderRoute: typeof CampusNetworkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/campus-payments': {
+      id: '/campus-payments'
+      path: '/campus-payments'
+      fullPath: '/campus-payments'
+      preLoaderRoute: typeof CampusPaymentsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/debug': {
@@ -105,6 +129,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CampusNetworkRoute: CampusNetworkRoute,
+  CampusPaymentsRoute: CampusPaymentsRoute,
   DebugRoute: DebugRoute,
   SettingsRoute: SettingsRoute,
 }

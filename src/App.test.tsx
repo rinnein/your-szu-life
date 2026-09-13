@@ -97,6 +97,7 @@ describe("HeroUI frontend smoke tests", () => {
   });
 
   it("enables the diagnostics entry after five rapid brand-mark taps", async () => {
+    let debugEnabled = false;
     vi.mocked(invoke).mockImplementation(async (command) => {
       if (command === "get_auth_state")
         return { Authenticated: { studentId: "1234567890", name: "测试同学" } };
@@ -108,8 +109,11 @@ describe("HeroUI frontend smoke tests", () => {
           name: "测试同学",
         };
       if (command === "get_user_data") return { studentId: "1234567890", name: "测试同学" };
-      if (command === "get_debug_mode") return { enabled: false, logCount: 0 };
-      if (command === "set_debug_mode") return { enabled: true, logCount: 0 };
+      if (command === "get_debug_mode") return { enabled: debugEnabled, logCount: 0 };
+      if (command === "set_debug_mode") {
+        debugEnabled = true;
+        return { enabled: true, logCount: 0 };
+      }
       return undefined;
     });
 
@@ -118,7 +122,11 @@ describe("HeroUI frontend smoke tests", () => {
     expect(screen.queryByRole("button", { name: /诊断日志/ })).not.toBeInTheDocument();
     for (let index = 0; index < 5; index += 1) fireEvent.click(mark);
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("set_debug_mode", { enabled: true }));
-    expect(await screen.findByRole("button", { name: /诊断日志/ })).toBeInTheDocument();
+    // Router startup may replace the matched DOM node between promise turns.
+    // Assert on a fresh query, and let the mock retain the backend setting.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /诊断日志/ })).toBeInTheDocument(),
+    );
   });
 
   it("shows an accessible placeholder alert when a feature is selected", async () => {

@@ -1,6 +1,7 @@
 mod app;
 mod auth;
 mod campus_network;
+mod campus_payments;
 #[cfg(desktop)]
 mod desktop;
 mod storage;

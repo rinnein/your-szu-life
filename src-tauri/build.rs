@@ -9,6 +9,8 @@ fn main() {
             "capture_auth_credentials",
             "confirm_profile",
             "logout",
+            "open_network_fee_portal",
+            "consume_network_fee_portal_notice",
             "get_network_overview",
             "refresh_campus_network",
             "request_campus_network_permissions",

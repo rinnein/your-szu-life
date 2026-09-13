@@ -106,6 +106,28 @@ impl AuthStore {
         self.auth_completion_claimed.store(false, Ordering::Release);
     }
 
+    /// A narrow, password-free account snapshot for authenticated service flows.
+    pub(super) fn authenticated_campus_card_number(&self) -> Result<String, String> {
+        let state = self.state.lock().map_err(|_| "认证状态不可用")?;
+        let AuthState::Authenticated { student_id, .. } = &*state else {
+            return Err("请先完成应用统一认证，再打开网费服务。".into());
+        };
+        let profile = self.profile.lock().map_err(|_| "账户资料不可用")?;
+        let profile = profile
+            .as_ref()
+            .filter(|profile| &profile.student_id == student_id)
+            .ok_or("当前账户资料不可用，请重新认证。")?;
+        if profile.campus_card_number.len() != 6
+            || !profile
+                .campus_card_number
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
+        {
+            return Err("校园卡号必须为 6 位数字，请先在设置中补全。".into());
+        }
+        Ok(profile.campus_card_number.clone())
+    }
+
     /// Take only the two required values; no auth lock escapes this boundary.
     pub(super) fn network_credentials(&self) -> Result<(String, String), String> {
         {

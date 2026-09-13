@@ -24,5 +24,13 @@ pub(crate) fn current_network_credentials(
         .network_credentials()
 }
 
+/// No auth mutex or password crosses this boundary.
+pub(crate) fn authenticated_campus_card_number(app: &tauri::AppHandle) -> Result<String, String> {
+    use tauri::Manager;
+    app.try_state::<AuthStore>()
+        .ok_or("认证状态不可用")?
+        .authenticated_campus_card_number()
+}
+
 #[cfg(test)]
 mod tests;

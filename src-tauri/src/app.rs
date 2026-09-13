@@ -1,5 +1,5 @@
 use crate::{
-    auth, campus_network,
+    auth, campus_network, campus_payments,
     storage::{PlatformCredentialStore, SharedCredentialStore},
 };
 use std::sync::Arc;
@@ -10,6 +10,7 @@ pub(crate) fn run() {
     let builder = tauri::Builder::default()
         .manage(auth::AuthStore::new(credentials.clone()))
         .manage(campus_network::CampusNetworkStore::new(credentials))
+        .manage(campus_payments::CampusPaymentsStore::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
@@ -29,6 +30,8 @@ pub(crate) fn run() {
             auth::commands::confirm_profile,
             auth::commands::begin_authentication,
             auth::commands::logout,
+            campus_payments::commands::open_network_fee_portal,
+            campus_payments::commands::consume_network_fee_portal_notice,
             campus_network::commands::get_network_overview,
             campus_network::commands::refresh_campus_network,
             campus_network::commands::request_campus_network_permissions,
@@ -49,7 +52,11 @@ pub(crate) fn run() {
             campus_network::commands::get_dorm_login_logs,
             campus_network::commands::consume_dorm_login_failure_notice,
         ])
-        .on_page_load(auth::webview::on_page_load);
+        .on_page_load(|window, payload| {
+            if !campus_payments::on_page_load(window, payload) {
+                auth::webview::on_page_load(window, payload);
+            }
+        });
     #[cfg(desktop)]
     let builder = builder.on_window_event(crate::desktop::on_window_event);
     builder

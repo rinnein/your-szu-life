@@ -23,7 +23,7 @@ const features: ReadonlyArray<{ label: string; icon: IconType }> = [
   { label: "培养方案检查", icon: FaGraduationCap },
   { label: "成绩查询", icon: FaChartLine },
   { label: "校园网登录", icon: FaWifi },
-  { label: "网费与电费", icon: FaWallet },
+  { label: "校园卡/电费/网费", icon: FaWallet },
 ];
 
 export function registerDebugTap(taps: number[], now: number) {
@@ -300,9 +300,11 @@ export default function App() {
                 onPress={() =>
                   label === "校园网登录"
                     ? void navigate({ to: "/campus-network" })
-                    : label === "诊断日志"
-                      ? void navigate({ to: "/debug" })
-                      : setPlaceholder(label)
+                    : label === "校园卡/电费/网费"
+                      ? void navigate({ to: "/campus-payments" })
+                      : label === "诊断日志"
+                        ? void navigate({ to: "/debug" })
+                        : setPlaceholder(label)
                 }
               >
                 <span className="feature-icon" aria-hidden="true">
@@ -310,7 +312,13 @@ export default function App() {
                 </span>
                 <span className="feature-copy">
                   <strong>{label}</strong>
-                  <small>{label === "诊断日志" ? "查看网络诊断记录" : "暂未实现 · 即将支持"}</small>
+                  <small>
+                    {label === "校园卡/电费/网费"
+                      ? "网费官网 · 微信服务"
+                      : label === "诊断日志"
+                        ? "查看网络诊断记录"
+                        : "暂未实现 · 即将支持"}
+                  </small>
                 </span>
                 <span className="feature-arrow" aria-hidden="true">
                   →

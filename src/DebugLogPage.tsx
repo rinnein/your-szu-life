@@ -5,6 +5,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Alert, Button, Card, CloseButton, Spinner } from "@heroui/react";
 import { LuArrowLeft, LuCopy, LuEraser, LuPower } from "react-icons/lu";
 import { PageShell } from "./components";
+import { copyText } from "./clipboard";
 
 type DebugMode = { enabled: boolean; logCount: number };
 type DebugLog = {
@@ -53,32 +54,6 @@ function formatLog(log: DebugLog) {
 
 function formatLogs(logs: DebugLog[]) {
   return logs.length ? logs.map(formatLog).join("\n") : "暂无诊断日志";
-}
-
-async function copyText(value: string) {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(value);
-      return true;
-    }
-  } catch {
-    // Fall through to the selection-based WebView fallback.
-  }
-  const textarea = document.createElement("textarea");
-  textarea.value = value;
-  textarea.setAttribute("readonly", "true");
-  textarea.style.position = "fixed";
-  textarea.style.opacity = "0";
-  document.body.appendChild(textarea);
-  textarea.select();
-  let copied = false;
-  try {
-    copied = document.execCommand("copy");
-  } catch {
-    copied = false;
-  }
-  textarea.remove();
-  return copied;
 }
 
 export default function DebugLogPage() {

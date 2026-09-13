@@ -421,6 +421,7 @@ pub(super) fn confirm_profile(
         .map(|profile| profile.password.as_str())
         .or_else(|| pending.as_ref().map(|pending| pending.password.as_str()));
     input.validate(current_password)?;
+    crate::campus_payments::cancel(&app);
     let profile = StoredAccountProfile {
         student_id: input.student_id,
         campus_card_number: input.campus_card_number,
@@ -449,7 +450,8 @@ pub(super) fn confirm_profile(
 pub(super) fn navigate_to_authentication(app: tauri::AppHandle) -> Result<(), String> {
     let window = app.get_webview_window("main").ok_or("主窗口不存在")?;
     let store = app.try_state::<AuthStore>().ok_or("认证状态不可用")?;
-    if let Ok(current_url) = window.url() {
+    let payments_return = crate::campus_payments::cancel(&app);
+    if let Some(current_url) = payments_return.or_else(|| window.url().ok()) {
         if current_url.host_str() != Some(AUTH_HOST) {
             *store.resume_url.lock().map_err(|_| "状态锁失败")? = Some(current_url);
         }
@@ -501,6 +503,7 @@ pub(super) fn begin_authentication(app: tauri::AppHandle) -> Result<(), String> 
 }
 
 pub(super) fn logout(app: tauri::AppHandle, store: &AuthStore) -> Result<(), String> {
+    crate::campus_payments::cancel(&app);
     store.credentials.delete_profile()?;
     store.credentials.delete_pending()?;
     store.credentials.delete_session()?;
