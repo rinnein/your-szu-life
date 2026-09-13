@@ -110,6 +110,7 @@ describe("HeroUI frontend smoke tests", () => {
         };
       if (command === "get_user_data") return { studentId: "1234567890", name: "测试同学" };
       if (command === "get_debug_mode") return { enabled: debugEnabled, logCount: 0 };
+      if (command === "get_debug_logs") return [];
       if (command === "set_debug_mode") {
         debugEnabled = true;
         return { enabled: true, logCount: 0 };
@@ -117,7 +118,7 @@ describe("HeroUI frontend smoke tests", () => {
       return undefined;
     });
 
-    renderRouterApp();
+    const { testRouter } = renderRouterApp();
     const mark = await screen.findByRole("button", { name: /连续点击 5 次/ });
     expect(screen.queryByRole("button", { name: /诊断日志/ })).not.toBeInTheDocument();
     for (let index = 0; index < 5; index += 1) fireEvent.click(mark);
@@ -125,33 +126,43 @@ describe("HeroUI frontend smoke tests", () => {
     // Router startup may replace the matched DOM node between promise turns.
     // Assert on a fresh query, and let the mock retain the backend setting.
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: /诊断日志/ })).toBeInTheDocument(),
+      expect(screen.getByRole("button", { name: /诊断日志/ })).toHaveTextContent(
+        "查看网络诊断记录",
+      ),
     );
+    fireEvent.click(screen.getByRole("button", { name: /诊断日志/ }));
+    await waitFor(() => expect(testRouter.state.location.pathname).toBe("/debug"));
+    expect(await screen.findByRole("heading", { name: "诊断日志" })).toBeInTheDocument();
   });
 
-  it("shows an accessible placeholder alert when a feature is selected", async () => {
-    vi.mocked(invoke).mockImplementation(async (command) => {
-      if (command === "get_auth_state")
-        return { Authenticated: { studentId: "1234567890", name: "测试同学" } };
-      if (command === "get_account_profile")
-        return {
-          studentId: "1234567890",
-          campusCardNumber: "123456",
-          hasPassword: true,
-          name: "测试同学",
-        };
-      if (command === "get_user_data") return { studentId: "1234567890", name: "测试同学" };
-      return undefined;
-    });
+  it.each(["课表", "选课", "培养方案检查", "成绩查询"])(
+    "keeps %s on the workbench with a dismissible placeholder alert",
+    async (label) => {
+      vi.mocked(invoke).mockImplementation(async (command) => {
+        if (command === "get_auth_state")
+          return { Authenticated: { studentId: "1234567890", name: "测试同学" } };
+        if (command === "get_account_profile")
+          return {
+            studentId: "1234567890",
+            campusCardNumber: "123456",
+            hasPassword: true,
+            name: "测试同学",
+          };
+        if (command === "get_user_data") return { studentId: "1234567890", name: "测试同学" };
+        return undefined;
+      });
 
-    renderRouterApp();
-    const feature = await screen.findByRole("button", { name: /课表/ });
-    fireEvent.click(feature);
+      const { testRouter } = renderRouterApp();
+      const feature = await screen.findByRole("button", { name: new RegExp(`^${label}`) });
+      expect(feature).toHaveTextContent("暂未实现 · 即将支持");
+      fireEvent.click(feature);
 
-    expect(await screen.findByRole("status")).toHaveTextContent("课表功能即将支持");
-    fireEvent.click(screen.getByRole("button", { name: "关闭提示" }));
-    await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
-  });
+      expect(await screen.findByRole("status")).toHaveTextContent(`${label}功能即将支持`);
+      expect(testRouter.state.location.pathname).toBe("/");
+      fireEvent.click(screen.getByRole("button", { name: "关闭提示" }));
+      await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+    },
+  );
   it("opens the accessible account menu and logout confirmation", async () => {
     vi.mocked(invoke).mockImplementation(async (command) => {
       if (command === "get_auth_state")
@@ -217,6 +228,19 @@ describe("HeroUI frontend smoke tests", () => {
     const accountTrigger = await screen.findByRole("button", { name: "打开账户菜单" });
     expect(accountTrigger.querySelector('[data-slot="avatar"]')).not.toBeInTheDocument();
     expect(document.querySelectorAll(".feature-icon svg")).toHaveLength(6);
+    for (const [label, description] of [
+      ["课表", "暂未实现 · 即将支持"],
+      ["选课", "暂未实现 · 即将支持"],
+      ["培养方案检查", "暂未实现 · 即将支持"],
+      ["成绩查询", "暂未实现 · 即将支持"],
+      ["校园网登录", "教工区 + 宿舍区 | 自动登录"],
+      ["校园卡/电费/网费", "快速导航入口"],
+    ]) {
+      expect(screen.getByRole("button", { name: new RegExp(`^${label}`) })).toHaveTextContent(
+        description,
+      );
+    }
+    expect(screen.queryByRole("button", { name: /诊断日志/ })).not.toBeInTheDocument();
   });
 
   it("defaults the region tab to staff when the network overview identifies SZU_WLAN", async () => {
@@ -258,7 +282,7 @@ describe("HeroUI frontend smoke tests", () => {
     expect(screen.getByText("当前推测网络状态：未登录(教工区)")).toBeInTheDocument();
   });
 
-  it("renders the campus network zones and dormitory controls", async () => {
+  it("navigates from the network entry to the campus network controls and back", async () => {
     vi.mocked(invoke).mockImplementation(async (command) => {
       if (command === "get_auth_state")
         return { Authenticated: { studentId: "1234567890", name: "测试同学" } };
@@ -293,7 +317,9 @@ describe("HeroUI frontend smoke tests", () => {
       return undefined;
     });
 
-    const { testRouter } = renderRouterApp("/campus-network");
+    const { testRouter } = renderRouterApp();
+    fireEvent.click(await screen.findByRole("button", { name: /校园网登录/ }));
+    await waitFor(() => expect(testRouter.state.location.pathname).toBe("/campus-network"));
     expect(await screen.findByRole("heading", { name: "校园网登录" })).toBeInTheDocument();
     expect(document.querySelectorAll(".tabs--secondary")).toHaveLength(0);
     expect(screen.getByRole("tab", { name: "教工区" })).toBeInTheDocument();

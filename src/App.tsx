@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, type NavigateOptions } from "@tanstack/react-router";
 import { Alert, AlertDialog, Button, Card, Dropdown, Spinner } from "@heroui/react";
 import { authFailureFor, useAuth } from "./auth";
 import { ProfileForm } from "./ProfileForm";
@@ -17,13 +17,38 @@ import {
 } from "react-icons/fa6";
 import type { IconType } from "react-icons";
 
-const features: ReadonlyArray<{ label: string; icon: IconType }> = [
-  { label: "课表", icon: FaCalendarDays },
-  { label: "选课", icon: FaClipboardList },
-  { label: "培养方案检查", icon: FaGraduationCap },
-  { label: "成绩查询", icon: FaChartLine },
-  { label: "校园网登录", icon: FaWifi },
-  { label: "校园卡/电费/网费", icon: FaWallet },
+type Feature = {
+  label: string;
+  icon: IconType;
+  description: string;
+  to?: NavigateOptions["to"];
+  debugOnly?: boolean;
+};
+
+const features: ReadonlyArray<Feature> = [
+  { label: "课表", icon: FaCalendarDays, description: "暂未实现 · 即将支持" },
+  { label: "选课", icon: FaClipboardList, description: "暂未实现 · 即将支持" },
+  { label: "培养方案检查", icon: FaGraduationCap, description: "暂未实现 · 即将支持" },
+  { label: "成绩查询", icon: FaChartLine, description: "暂未实现 · 即将支持" },
+  {
+    label: "校园网登录",
+    icon: FaWifi,
+    description: "教工区 + 宿舍区 | 自动登录",
+    to: "/campus-network",
+  },
+  {
+    label: "校园卡/电费/网费",
+    icon: FaWallet,
+    description: "快速导航入口",
+    to: "/campus-payments",
+  },
+  {
+    label: "诊断日志",
+    icon: FaBug,
+    description: "查看网络诊断记录",
+    to: "/debug",
+    debugOnly: true,
+  },
 ];
 
 export function registerDebugTap(taps: number[], now: number) {
@@ -291,41 +316,27 @@ export default function App() {
           功能入口
         </h2>
         <div className="feature-grid">
-          {[...features, ...(debugEnabled ? [{ label: "诊断日志", icon: FaBug }] : [])].map(
-            ({ label, icon: FeatureIcon }) => (
+          {features
+            .filter(({ debugOnly }) => !debugOnly || debugEnabled)
+            .map(({ label, icon: FeatureIcon, description, to }) => (
               <Button
                 key={label}
                 className="feature-button"
                 variant="outline"
-                onPress={() =>
-                  label === "校园网登录"
-                    ? void navigate({ to: "/campus-network" })
-                    : label === "校园卡/电费/网费"
-                      ? void navigate({ to: "/campus-payments" })
-                      : label === "诊断日志"
-                        ? void navigate({ to: "/debug" })
-                        : setPlaceholder(label)
-                }
+                onPress={() => (to ? void navigate({ to }) : setPlaceholder(label))}
               >
                 <span className="feature-icon" aria-hidden="true">
                   <FeatureIcon size={19} focusable="false" />
                 </span>
                 <span className="feature-copy">
                   <strong>{label}</strong>
-                  <small>
-                    {label === "校园卡/电费/网费"
-                      ? "网费官网 · 微信服务"
-                      : label === "诊断日志"
-                        ? "查看网络诊断记录"
-                        : "暂未实现 · 即将支持"}
-                  </small>
+                  <small>{description}</small>
                 </span>
                 <span className="feature-arrow" aria-hidden="true">
                   →
                 </span>
               </Button>
-            ),
-          )}
+            ))}
         </div>
       </section>
       {placeholder && (
