@@ -21,7 +21,7 @@ pub(super) fn auth_login_capture_script(
 (() => {{
   if (location.protocol !== 'https:' || location.host !== '{AUTH_HOST}' ||
       !location.pathname.startsWith('/authserver/login') ||
-      window.__SZU_LOGIN_CAPTURE_VERSION__ === '2') return;
+      window.__SZU_LOGIN_CAPTURE_VERSION__ === '3') return;
   if (!document.documentElement) return;
 
   const qrAllowed = {allow_qr_login};
@@ -41,6 +41,11 @@ pub(super) fn auth_login_capture_script(
   const passwordInput = () => formField('#password');
   const loginButton = () => formField('#login_submit');
   const rememberInput = () => formField('#rememberMe');
+  const isActiveLoginForm = target => {{
+    if (!(target instanceof HTMLFormElement)) return false;
+    const form = loginForm();
+    return !!form && target === form;
+  }};
   const isActiveFormTarget = target => {{
     const form = loginForm();
     return !!form && target instanceof Node && form.contains(target);
@@ -157,13 +162,36 @@ pub(super) fn auth_login_capture_script(
     event.stopImmediatePropagation();
     void bridgeSubmit();
   }};
+  const installStartLoginHook = () => {{
+    const officialStartLogin = window.startLogin;
+    if (typeof officialStartLogin !== 'function' || officialStartLogin.__SZU_LOGIN_CAPTURE_WRAPPED__) return;
+    const guardedStartLogin = function (...args) {{
+      const target = args[0]?.jquery ? args[0][0] : args[0];
+      const passwordFormActive = isActiveFormTarget(document.activeElement);
+      const passwordButtonTarget = isActiveLoginButton(target);
+      if (allowOfficialSubmit || (!passwordFormActive && !passwordButtonTarget)) {{
+        return officialStartLogin.apply(this, args);
+      }}
+      void bridgeSubmit();
+    }};
+    guardedStartLogin.__SZU_LOGIN_CAPTURE_WRAPPED__ = true;
+    window.startLogin = guardedStartLogin;
+  }};
   const interceptEnter = event => {{
-    if ((event.key === 'Enter' || event.keyCode === 13) && isActiveFormTarget(event.target)) intercept(event);
+    if (event.isComposing) return;
+    const isEnter = event.key === 'Enter' || event.code === 'Enter' || event.keyCode === 13 || event.which === 13;
+    const target = isActiveFormTarget(event.target) ? event.target : document.activeElement;
+    if (isEnter && isActiveFormTarget(target)) intercept(event);
   }};
 
   applySavedCredentials();
   prepare();
-  const refreshLoginForm = () => {{ applySavedCredentials(); prepare(); }};
+  installStartLoginHook();
+  const refreshLoginForm = () => {{
+    applySavedCredentials();
+    prepare();
+    installStartLoginHook();
+  }};
   new MutationObserver(refreshLoginForm).observe(document.documentElement, {{ childList: true, subtree: true }});
   setInterval(refreshLoginForm, 500);
   document.addEventListener('click', event => {{
@@ -173,14 +201,15 @@ pub(super) fn auth_login_capture_script(
     if (isActiveLoginButton(event.target)) intercept(event);
   }}, true);
   document.addEventListener('keydown', interceptEnter, true);
+  document.addEventListener('keypress', interceptEnter, true);
   document.addEventListener('keyup', interceptEnter, true);
   document.addEventListener('submit', event => {{
     if (!qrAllowed && event.target instanceof Element && event.target.matches('#qrLoginForm')) {{
       event.preventDefault(); event.stopImmediatePropagation(); return;
     }}
-    if (event.target === loginForm()) intercept(event);
+    if (isActiveLoginForm(event.target)) intercept(event);
   }}, true);
-  window.__SZU_LOGIN_CAPTURE_VERSION__ = '2';
+  window.__SZU_LOGIN_CAPTURE_VERSION__ = '3';
   window.__SZU_LOGIN_CAPTURE_READY__ = true;
 }})()
 "#

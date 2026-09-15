@@ -139,7 +139,7 @@ fn remote_credential_capture_capability_matches_authserver_page_origin() {
 #[test]
 fn login_capture_script_requires_capture_before_official_submission() {
     let script = auth_login_capture_script(false, None);
-    assert!(script.contains("__SZU_LOGIN_CAPTURE_VERSION__ === '2'"));
+    assert!(script.contains("__SZU_LOGIN_CAPTURE_VERSION__ === '3'"));
     assert!(script.contains("if (!document.documentElement) return;"));
     assert!(script.contains("window.__SZU_LOGIN_CAPTURE_READY__ = true"));
     assert!(script.contains("const savedCredentials = null"));
@@ -168,9 +168,17 @@ fn login_capture_script_requires_capture_before_official_submission() {
     assert!(!script.contains("document.querySelector('#password,"));
     assert!(!script.contains("button[type=\"submit\"]"));
     assert!(script.contains("if (isActiveLoginButton(event.target)) intercept(event)"));
+    assert!(script.contains("const isActiveLoginForm = target =>"));
+    assert!(script.contains("const installStartLoginHook = () =>"));
+    assert!(script.contains("__SZU_LOGIN_CAPTURE_WRAPPED__"));
+    assert!(script.contains("const target = args[0]?.jquery ? args[0][0] : args[0]"));
     assert!(script.contains("document.addEventListener('keydown', interceptEnter, true)"));
+    assert!(script.contains("document.addEventListener('keypress', interceptEnter, true)"));
     assert!(script.contains("document.addEventListener('keyup', interceptEnter, true)"));
-    assert!(script.contains("if (event.target === loginForm()) intercept(event)"));
+    assert!(script.contains("if (isActiveLoginForm(event.target)) intercept(event)"));
+    assert!(script.contains("event.code === 'Enter'"));
+    assert!(script.contains("document.activeElement"));
+    assert!(!script.contains("if (event.target === loginForm()) intercept(event)"));
     assert!(script.contains("await captureCandidate()"));
     let bridge = &script[script.find("const bridgeSubmit = async").unwrap()..];
     assert!(
