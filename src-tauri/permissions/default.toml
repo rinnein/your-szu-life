@@ -1,6 +1,10 @@
 [default]
-description = "Allows the local application UI to use its authentication commands."
+description = "Allows the local application UI to use application commands, including public content."
 permissions = [
+  "allow-get-app-content-snapshot",
+  "allow-refresh-app-content",
+  "allow-get-contributors",
+  "allow-load-announcement-image",
   "allow-get-auth-state",
   "allow-get-account-profile",
   "allow-get-user-data",

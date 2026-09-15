@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 #[test]
 fn command_names_match_handlers_manifest_and_local_permissions() {
     let commands: BTreeSet<_> = [
+        include_str!("app_content/commands.rs"),
         include_str!("auth/commands.rs"),
         include_str!("campus_network/commands.rs"),
         include_str!("campus_payments/commands.rs"),
@@ -15,7 +16,7 @@ fn command_names_match_handlers_manifest_and_local_permissions() {
     })
     .filter_map(|line| line.split_once('(').map(|(name, _)| name.to_owned()))
     .collect();
-    assert_eq!(commands.len(), 28);
+    assert_eq!(commands.len(), 32);
     let handlers: BTreeSet<_> = include_str!("app.rs")
         .lines()
         .filter_map(|line| line.split_once("::commands::"))

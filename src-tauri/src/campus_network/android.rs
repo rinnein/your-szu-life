@@ -75,38 +75,6 @@ fn normalize_text(value: String) -> Option<String> {
 }
 
 #[cfg(target_os = "android")]
-pub(super) fn initialize_platform_verifier() -> Result<(), String> {
-    use std::{
-        panic::{catch_unwind, AssertUnwindSafe},
-        sync::OnceLock,
-    };
-
-    static INITIALIZED: OnceLock<()> = OnceLock::new();
-    if INITIALIZED.get().is_some() {
-        return Ok(());
-    }
-    let result = catch_unwind(AssertUnwindSafe(|| {
-        let context = ndk_context::android_context();
-        let vm = unsafe { jni022::JavaVM::from_raw(context.vm().cast()) };
-        vm.attach_current_thread(|environment| {
-            let context_object = unsafe {
-                jni022::objects::JObject::from_raw(environment, context.context().cast())
-            };
-            rustls_platform_verifier::android::init_with_env(environment, context_object)
-        })
-        .map_err(|error: jni022::errors::Error| error.to_string())
-    }))
-    .unwrap_or_else(|_| Err("Android TLS 验证器初始化异常".to_owned()));
-    match result {
-        Ok(()) => {
-            let _ = INITIALIZED.set(());
-            Ok(())
-        }
-        Err(error) => Err(error),
-    }
-}
-
-#[cfg(target_os = "android")]
 fn with_bridge<T>(
     callback: impl FnOnce(&mut jni::JNIEnv<'_>, jni::objects::JClass<'_>) -> Result<T, String>,
 ) -> Result<T, String> {

@@ -1,7 +1,43 @@
+use std::{collections::HashMap, env, path::PathBuf};
+
+const CONTENT_ENV_VARS: [&str; 2] = ["SZU_LIFE_BASE_URL", "SZU_LIFE_FALLBACK_BASE_URL"];
+
+fn load_dotenv(path: &std::path::Path) -> HashMap<String, String> {
+    if !path.is_file() {
+        return HashMap::new();
+    }
+    dotenvy::from_path_iter(path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
+        .collect::<Result<HashMap<_, _>, _>>()
+        .unwrap_or_else(|error| panic!("failed to parse {}: {error}", path.display()))
+}
+
+fn configured_value(name: &str, dotenv: &HashMap<String, String>) -> Option<String> {
+    match env::var_os(name) {
+        Some(value) => value.into_string().ok(),
+        None => dotenv.get(name).cloned(),
+    }
+}
+
 fn main() {
+    let dotenv_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.env");
+    let dotenv = load_dotenv(&dotenv_path);
+    println!("cargo:rerun-if-changed={}", dotenv_path.display());
+    for name in CONTENT_ENV_VARS {
+        if let Some(value) = configured_value(name, &dotenv) {
+            println!("cargo:rustc-env={name}={value}");
+        }
+        println!("cargo:rerun-if-env-changed={name}");
+    }
+
+    println!("cargo:rerun-if-changed=../package.json");
     println!("cargo:rerun-if-changed=capabilities/authserver-credential-capture.json");
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
+            "get_app_content_snapshot",
+            "refresh_app_content",
+            "get_contributors",
+            "load_announcement_image",
             "get_auth_state",
             "get_account_profile",
             "get_user_data",

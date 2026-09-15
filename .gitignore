@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local build-time content source configuration
+.env
+.env.*
+!.env.example

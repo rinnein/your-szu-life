@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AboutRouteImport } from './routes/about'
 import { Route as CampusNetworkRouteImport } from './routes/campus-network'
 import { Route as CampusPaymentsRouteImport } from './routes/campus-payments'
 import { Route as DebugRouteImport } from './routes/debug'
@@ -18,6 +19,11 @@ import { Route as SettingsRouteImport } from './routes/settings'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CampusNetworkRoute = CampusNetworkRouteImport.update({
@@ -43,6 +49,7 @@ const SettingsRoute = SettingsRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/campus-network': typeof CampusNetworkRoute
   '/campus-payments': typeof CampusPaymentsRoute
   '/debug': typeof DebugRoute
@@ -50,6 +57,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/campus-network': typeof CampusNetworkRoute
   '/campus-payments': typeof CampusPaymentsRoute
   '/debug': typeof DebugRoute
@@ -58,6 +66,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/campus-network': typeof CampusNetworkRoute
   '/campus-payments': typeof CampusPaymentsRoute
   '/debug': typeof DebugRoute
@@ -66,12 +75,24 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/campus-network' | '/campus-payments' | '/debug' | '/settings'
+    | '/'
+    | '/about'
+    | '/campus-network'
+    | '/campus-payments'
+    | '/debug'
+    | '/settings'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/campus-network' | '/campus-payments' | '/debug' | '/settings'
+  to:
+    | '/'
+    | '/about'
+    | '/campus-network'
+    | '/campus-payments'
+    | '/debug'
+    | '/settings'
   id:
     | '__root__'
     | '/'
+    | '/about'
     | '/campus-network'
     | '/campus-payments'
     | '/debug'
@@ -80,6 +101,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AboutRoute: typeof AboutRoute
   CampusNetworkRoute: typeof CampusNetworkRoute
   CampusPaymentsRoute: typeof CampusPaymentsRoute
   DebugRoute: typeof DebugRoute
@@ -93,6 +115,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/campus-network': {
@@ -128,6 +157,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AboutRoute: AboutRoute,
   CampusNetworkRoute: CampusNetworkRoute,
   CampusPaymentsRoute: CampusPaymentsRoute,
   DebugRoute: DebugRoute,

@@ -6,6 +6,7 @@ import { Alert, AlertDialog, Button, Card, Dropdown, Spinner } from "@heroui/rea
 import { authFailureFor, useAuth } from "./auth";
 import { ProfileForm } from "./ProfileForm";
 import { BrandMark, PageShell } from "./components";
+import { AnnouncementBoard } from "./app-content/AnnouncementBoard";
 import {
   FaBug,
   FaCalendarDays,
@@ -180,7 +181,7 @@ export default function App() {
 
   if ("Checking" in state)
     return (
-      <PageShell centered>
+      <PageShell centered showAbout>
         <Card className="status-card" variant="default">
           <Spinner size="lg" />
           <Card.Title>正在检查统一认证状态…</Card.Title>
@@ -189,7 +190,7 @@ export default function App() {
     );
   if ("Unauthenticated" in state)
     return (
-      <PageShell centered>
+      <PageShell centered showAbout>
         <AuthCard
           title="请完成统一认证"
           detail="请在当前窗口完成深圳大学官方登录，登录成功后会自动返回工作台。"
@@ -203,7 +204,7 @@ export default function App() {
     );
   if ("Authenticating" in state)
     return (
-      <PageShell centered>
+      <PageShell centered showAbout>
         <AuthCard
           title="正在打开统一认证"
           detail="请在当前窗口完成深圳大学官方登录。验证成功且会话安全保存后，应用会自动返回后续设置或工作台。"
@@ -219,7 +220,7 @@ export default function App() {
   const failure = authFailureFor(state);
   if (failure)
     return (
-      <PageShell centered>
+      <PageShell centered showAbout>
         <AuthCard title={failure.title} detail={failure.detail} status="danger">
           <Button fullWidth variant="primary" onPress={beginAuthentication} isDisabled={authBusy}>
             {authBusy && <Spinner size="sm" color="current" />}
@@ -231,7 +232,7 @@ export default function App() {
   if ("AwaitingProfile" in state) {
     const studentId = state.AwaitingProfile.studentId ?? userData?.studentId ?? "";
     return (
-      <PageShell centered>
+      <PageShell centered showAbout>
         <ProfileForm
           onlyCampusCard
           name={state.AwaitingProfile.name ?? userData?.name}
@@ -250,7 +251,7 @@ export default function App() {
   const auth =
     "Authenticated" in state ? state.Authenticated : { studentId: profile?.studentId ?? "" };
   return (
-    <PageShell>
+    <PageShell showAbout>
       <header className="app-header">
         <div>
           <div className="brand-line">
@@ -301,16 +302,7 @@ export default function App() {
           </Dropdown.Popover>
         </Dropdown>
       </header>
-      <Card className="hero-card" variant="transparent" data-testid="hero-card">
-        <Card.Content>
-          <span className="eyebrow hero-eyebrow">WELCOME BACK</span>
-          <Card.Title>{auth.name ? `${auth.name}，欢迎回来` : "欢迎回来"}</Card.Title>
-          <Card.Description>从这里开始你的校园生活。</Card.Description>
-        </Card.Content>
-        <div className="hero-orb" aria-hidden="true">
-          深
-        </div>
-      </Card>
+      <AnnouncementBoard />
       <section aria-labelledby="feature-heading">
         <h2 id="feature-heading" className="section-heading">
           功能入口

@@ -47,7 +47,7 @@ pub(super) struct PortalClient(Client);
 impl PortalClient {
     pub(super) fn new() -> Result<Self, HttpError> {
         #[cfg(target_os = "android")]
-        super::android::initialize_platform_verifier().map_err(|_| HttpError::Unavailable)?;
+        crate::platform_tls::initialize_platform_verifier().map_err(|_| HttpError::Unavailable)?;
         client_builder()
             .build()
             .map(Self)

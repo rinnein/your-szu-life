@@ -1,5 +1,5 @@
 use crate::{
-    auth, campus_network, campus_payments,
+    app_content, auth, campus_network, campus_payments,
     storage::{PlatformCredentialStore, SharedCredentialStore},
 };
 use std::sync::Arc;
@@ -14,6 +14,7 @@ pub(crate) fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            app_content::initialize(app.handle())?;
             if let Some(store) = app.try_state::<campus_network::CampusNetworkStore>() {
                 campus_network::diagnostics::initialize(app.handle(), &store);
             }
@@ -23,6 +24,10 @@ pub(crate) fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            app_content::commands::get_app_content_snapshot,
+            app_content::commands::refresh_app_content,
+            app_content::commands::get_contributors,
+            app_content::commands::load_announcement_image,
             auth::commands::capture_auth_credentials,
             auth::commands::get_auth_state,
             auth::commands::get_account_profile,
