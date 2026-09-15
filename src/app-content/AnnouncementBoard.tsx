@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Accordion, Alert, Button, Card, Spinner } from "@heroui/react";
-import { LuArrowUpRight, LuImage, LuMegaphone } from "react-icons/lu";
+import { LuArrowLeft, LuArrowRight, LuArrowUpRight, LuImage, LuMegaphone } from "react-icons/lu";
 import { useAppContent } from "./context";
 import { contentTime, openPublicUrl } from "./external";
 import type { Announcement } from "./types";
@@ -112,6 +112,32 @@ export function AnnouncementBoard() {
   const feed = snapshot?.announcements;
   const units = feed?.data?.announcements;
   const unavailable = snapshot?.configuration.status !== "ready";
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [carouselPaused, setCarouselPaused] = useState(false);
+  const announcementCount = units?.length ?? 0;
+  const hasMultipleAnnouncements = announcementCount > 1;
+
+  useEffect(() => {
+    setCurrentIndex((index) =>
+      announcementCount === 0 ? 0 : Math.min(index, announcementCount - 1),
+    );
+  }, [announcementCount]);
+
+  useEffect(() => {
+    if (!hasMultipleAnnouncements || carouselPaused) return;
+    const timer = window.setInterval(() => {
+      setCurrentIndex((index) => (index + 1) % announcementCount);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [announcementCount, carouselPaused, hasMultipleAnnouncements]);
+
+  const showPrevious = () => {
+    setCurrentIndex((index) => (index - 1 + announcementCount) % announcementCount);
+  };
+  const showNext = () => {
+    setCurrentIndex((index) => (index + 1) % announcementCount);
+  };
+
   return (
     <section
       className="announcement-board"
@@ -150,10 +176,66 @@ export function AnnouncementBoard() {
         </Alert>
       )}
       {units?.length ? (
-        <div className="announcement-list">
-          {units.map((unit, index) => (
-            <AnnouncementCard key={index + ":" + unit.pic + ":" + unit.title} unit={unit} />
-          ))}
+        <div
+          className="announcement-carousel"
+          data-testid="announcement-carousel"
+          role="region"
+          aria-roledescription="carousel"
+          aria-label="校园公告轮播"
+          onMouseEnter={() => setCarouselPaused(true)}
+          onMouseLeave={() => setCarouselPaused(false)}
+          onFocus={() => setCarouselPaused(true)}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              setCarouselPaused(false);
+            }
+          }}
+        >
+          <div className="announcement-viewport">
+            <div
+              className="announcement-slide"
+              data-testid="announcement-slide"
+              role="group"
+              aria-roledescription="slide"
+              aria-label={`第 ${currentIndex + 1} 条公告，共 ${announcementCount} 条`}
+            >
+              <AnnouncementCard unit={units[currentIndex]} />
+            </div>
+            {hasMultipleAnnouncements && (
+              <>
+                <Button
+                  className="announcement-carousel-control announcement-carousel-control-previous"
+                  variant="secondary"
+                  aria-label="上一条公告"
+                  onPress={showPrevious}
+                >
+                  <LuArrowLeft aria-hidden="true" />
+                </Button>
+                <Button
+                  className="announcement-carousel-control announcement-carousel-control-next"
+                  variant="secondary"
+                  aria-label="下一条公告"
+                  onPress={showNext}
+                >
+                  <LuArrowRight aria-hidden="true" />
+                </Button>
+              </>
+            )}
+          </div>
+          {hasMultipleAnnouncements && (
+            <div className="announcement-carousel-indicators" aria-label="公告页码">
+              {units.map((unit, index) => (
+                <button
+                  key={index + ":" + unit.pic + ":" + unit.title}
+                  className="announcement-carousel-indicator"
+                  type="button"
+                  aria-label={`查看第 ${index + 1} 条公告`}
+                  aria-current={index === currentIndex ? "true" : undefined}
+                  onClick={() => setCurrentIndex(index)}
+                />
+              ))}
+            </div>
+          )}
         </div>
       ) : (
         <Card className="announcement-empty">

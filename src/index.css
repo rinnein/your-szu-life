@@ -769,11 +769,18 @@ p {
   gap: 8px;
 }
 
-.announcement-list {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+.announcement-carousel {
+  position: relative;
   margin-top: 12px;
+}
+
+.announcement-viewport {
+  position: relative;
+  min-width: 0;
+}
+
+.announcement-slide {
+  min-width: 0;
 }
 
 .announcement-card {
@@ -785,6 +792,73 @@ p {
 .announcement-card .accordion {
   padding: 0;
   width: 100%;
+}
+
+.announcement-carousel-control {
+  position: absolute;
+  top: clamp(60px, 14vw, 95px);
+  z-index: 1;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 1px solid #ffffffaa;
+  border-radius: 999px;
+  background: #ffffffed;
+  color: var(--szu-ink);
+  box-shadow: 0 4px 14px #25285825;
+  transform: translateY(-50%);
+}
+
+.announcement-carousel-control:hover {
+  background: #ffffff;
+}
+
+.announcement-carousel-control:focus-visible,
+.announcement-carousel-indicator:focus-visible {
+  outline: 2px solid var(--szu-brand);
+  outline-offset: 3px;
+}
+
+.announcement-carousel-control > svg {
+  width: 18px;
+  height: 18px;
+}
+
+.announcement-carousel-control-previous {
+  left: 14px;
+}
+
+.announcement-carousel-control-next {
+  right: 14px;
+}
+
+.announcement-carousel-indicators {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding-top: 10px;
+}
+
+.announcement-carousel-indicator {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: #c6cbe0;
+  cursor: pointer;
+  transition:
+    width 160ms ease,
+    background-color 160ms ease;
+}
+
+.announcement-carousel-indicator[aria-current="true"] {
+  width: 22px;
+  background: var(--szu-brand);
 }
 
 .announcement-trigger {
