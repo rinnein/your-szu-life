@@ -25,3 +25,6 @@ release. Add a tool name to select part of the graph. For example, run
 - [ ] If setup, runtime, or package-manager behavior looks wrong, run `vp env doctor` and include its output when asking for help.
 
 <!--VITE PLUS END-->
+
+前端实现过程中，尽量使用 TanStack、Heroui 等已有的库，最好不要自行通过写CSS和原生HTML来实现UI组件。
+后端实现过程中，所有数据处理如果有成熟的处理库与框架的，最好向我询问是否安装这些库来简化实现。
