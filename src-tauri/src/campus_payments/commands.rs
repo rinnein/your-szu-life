@@ -1,5 +1,5 @@
 use super::{electricity, model::NetworkFeePortalNotice, service, CampusPaymentsStore};
-use tauri::State;
+use tauri::{AppHandle, State};
 
 #[tauri::command]
 pub(crate) async fn open_network_fee_portal(window: tauri::WebviewWindow) -> Result<(), String> {
@@ -56,8 +56,32 @@ pub(crate) async fn save_electricity_settings(
 #[tauri::command]
 pub(crate) async fn query_electricity(
     input: super::ElectricityQueryInput,
+    app: AppHandle,
+    store: State<'_, CampusPaymentsStore>,
 ) -> Result<super::ElectricityQueryView, String> {
-    tauri::async_runtime::spawn_blocking(move || electricity::query(input))
+    let electricity_store = store.electricity.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        electricity::query_and_record(input, &electricity_store, &app)
+    })
+    .await
+    .map_err(|_| "电费查询任务未完成，请稍后重试。".to_owned())?
+}
+
+#[tauri::command]
+pub(crate) async fn get_electricity_status(
+    store: State<'_, CampusPaymentsStore>,
+) -> Result<super::ElectricityStatusView, String> {
+    let electricity_store = store.electricity.clone();
+    tauri::async_runtime::spawn_blocking(move || Ok(electricity::status(&electricity_store)))
         .await
-        .map_err(|_| "电费查询任务未完成，请稍后重试。".to_owned())?
+        .map_err(|_| "无法读取当前电量状态，请稍后重试。".to_owned())?
+}
+
+#[tauri::command]
+pub(crate) fn set_application_visibility(
+    visible: bool,
+    app: AppHandle,
+    store: State<'_, CampusPaymentsStore>,
+) {
+    electricity::set_background(app, store.electricity.clone(), !visible);
 }

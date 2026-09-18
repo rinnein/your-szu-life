@@ -1,0 +1,97 @@
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import type { PluginListener } from "@tauri-apps/api/core";
+import { useNavigate } from "@tanstack/react-router";
+
+export type ElectricityStatus = {
+  remaining: number | null;
+  observedDate: string | null;
+  expiresAtMs: number | null;
+  expired: boolean;
+  low: boolean;
+};
+
+export const EMPTY_ELECTRICITY_STATUS: ElectricityStatus = {
+  remaining: null,
+  observedDate: null,
+  expiresAtMs: null,
+  expired: false,
+  low: false,
+};
+
+const Context = createContext<ElectricityStatus>(EMPTY_ELECTRICITY_STATUS);
+
+function isStatus(value: unknown): value is ElectricityStatus {
+  return Boolean(value && typeof value === "object" && "low" in value && "expired" in value);
+}
+
+export function ElectricityMonitorProvider({ children }: { children: ReactNode }) {
+  const navigate = useNavigate();
+  const [status, setStatus] = useState<ElectricityStatus>(EMPTY_ELECTRICITY_STATUS);
+
+  useEffect(() => {
+    let active = true;
+    let stop: (() => void) | undefined;
+    void listen<ElectricityStatus>("electricity-status-changed", (event) => {
+      if (active && isStatus(event.payload)) setStatus(event.payload);
+    }).then((dispose) => {
+      if (active) stop = dispose;
+      else dispose();
+    });
+    void invoke<ElectricityStatus>("get_electricity_status")
+      .then((next) => {
+        if (active && isStatus(next)) setStatus(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+      stop?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    const reportVisibility = () => {
+      void invoke("set_application_visibility", {
+        visible: document.visibilityState === "visible",
+      }).catch(() => undefined);
+    };
+    reportVisibility();
+    document.addEventListener("visibilitychange", reportVisibility);
+    return () => document.removeEventListener("visibilitychange", reportVisibility);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    let stop: PluginListener | undefined;
+    void import("@tauri-apps/plugin-notification")
+      .then(async ({ onAction }) => {
+        const openRecharge = (notification: {
+          actionTypeId?: string;
+          extra?: { route?: string };
+        }) => {
+          if (
+            active &&
+            (notification.extra?.route === "/campus-payments/recharge" ||
+              notification.actionTypeId === "electricity-low")
+          ) {
+            void navigate({ to: "/campus-payments/recharge" });
+          }
+        };
+        const listener = await onAction(openRecharge);
+        if (active) stop = listener;
+        else await listener.unregister();
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+      void stop?.unregister();
+    };
+  }, [navigate]);
+
+  return <Context.Provider value={status}>{children}</Context.Provider>;
+}
+
+export function useElectricityMonitor() {
+  return useContext(Context) ?? EMPTY_ELECTRICITY_STATUS;
+}

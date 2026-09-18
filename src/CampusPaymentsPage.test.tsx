@@ -328,9 +328,8 @@ describe("campus payments route", () => {
 
     renderAt("/campus-payments/electricity");
     await screen.findByRole("heading", { name: "查电量" });
-    fireEvent.change(screen.getByRole("combobox", { name: "校区" }), {
-      target: { value: "yuehai" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: /校区/ }));
+    fireEvent.click(await screen.findByRole("option", { name: "北校区（粤海校区）" }));
     fireEvent.change(screen.getByRole("textbox", { name: "宿舍号" }), {
       target: { value: "601" },
     });
@@ -338,11 +337,11 @@ describe("campus payments route", () => {
 
     expect(await screen.findByRole("heading", { name: "用电记录" })).toBeInTheDocument();
     expect(screen.getByLabelText("当前电量")).toHaveTextContent("12.34 度");
-    expect(screen.queryByRole("combobox", { name: "校区" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /校区/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "修改宿舍配置" }));
-    expect(screen.getByRole("combobox", { name: "校区" })).toBeInTheDocument();
-    expect(screen.getByRole("table")).toHaveTextContent("2026-09-17");
-    expect(screen.getByRole("table")).toHaveTextContent("当日用电");
+    expect(document.querySelector('button[aria-label="校区"]')).toBeInTheDocument();
+    expect(screen.getByRole("grid", { name: "用电记录" })).toHaveTextContent("2026-09-17");
+    expect(screen.getByRole("grid", { name: "用电记录" })).toHaveTextContent("当日用电");
     expect(invoke).toHaveBeenCalledWith("query_electricity", {
       input: expect.objectContaining({ buildingId: "b1", roomName: "601" }),
     });
@@ -392,7 +391,7 @@ describe("campus payments route", () => {
 
     renderAt("/campus-payments/electricity");
     expect(await screen.findByLabelText("当前电量")).toHaveTextContent("9.87 度");
-    expect(screen.queryByRole("combobox", { name: "校区" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /校区/ })).not.toBeInTheDocument();
     expect(invoke).toHaveBeenCalledWith("query_electricity", {
       input: expect.objectContaining({ buildingId: "b1", roomName: "601" }),
     });
@@ -435,7 +434,7 @@ describe("campus payments route", () => {
 
     renderAt("/campus-payments/electricity", true);
     expect(await screen.findByRole("heading", { name: "查电量" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /查询中/ })).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("button", { name: /查询中/ })).toBeDisabled());
     expect(screen.queryByLabelText("当前电量")).not.toBeInTheDocument();
     expect(
       vi.mocked(invoke).mock.calls.filter(([command]) => command === "query_electricity"),

@@ -4,7 +4,7 @@ use crate::{
         session::AuthSessionSecret,
     },
     campus_network::model::{DormCustomCredentials, DormNetworkSettings, StaffNetworkSettings},
-    campus_payments::model::ElectricityLocationSettings,
+    campus_payments::model::{ElectricityLocationSettings, ElectricityMonitorRecord},
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -25,6 +25,7 @@ enum SecretKey {
     StaffNetworkSettings,
     StaffNetworkCredentials,
     ElectricitySettings,
+    ElectricityMonitor,
 }
 
 impl SecretKey {
@@ -38,6 +39,7 @@ impl SecretKey {
             Self::StaffNetworkSettings => "staff-network-settings",
             Self::StaffNetworkCredentials => "staff-network-credentials",
             Self::ElectricitySettings => "electricity-settings",
+            Self::ElectricityMonitor => "electricity-monitor",
         }
     }
 }
@@ -65,6 +67,8 @@ pub(crate) trait CredentialStore: Send + Sync {
         &self,
         settings: &ElectricityLocationSettings,
     ) -> Result<(), String>;
+    fn load_electricity_monitor(&self) -> Result<Option<ElectricityMonitorRecord>, String>;
+    fn save_electricity_monitor(&self, record: &ElectricityMonitorRecord) -> Result<(), String>;
 }
 
 pub(crate) struct PlatformCredentialStore;
@@ -156,6 +160,14 @@ impl CredentialStore for PlatformCredentialStore {
         settings: &ElectricityLocationSettings,
     ) -> Result<(), String> {
         Self::save(SecretKey::ElectricitySettings, settings)
+    }
+    #[cfg(not(target_os = "android"))]
+    fn load_electricity_monitor(&self) -> Result<Option<ElectricityMonitorRecord>, String> {
+        Self::load(SecretKey::ElectricityMonitor)
+    }
+    #[cfg(not(target_os = "android"))]
+    fn save_electricity_monitor(&self, record: &ElectricityMonitorRecord) -> Result<(), String> {
+        Self::save(SecretKey::ElectricityMonitor, record)
     }
 
     #[cfg(not(target_os = "android"))]
@@ -274,6 +286,14 @@ impl CredentialStore for PlatformCredentialStore {
         settings: &ElectricityLocationSettings,
     ) -> Result<(), String> {
         save_android_secret(SecretKey::ElectricitySettings, settings)
+    }
+    #[cfg(target_os = "android")]
+    fn load_electricity_monitor(&self) -> Result<Option<ElectricityMonitorRecord>, String> {
+        load_android_secret(SecretKey::ElectricityMonitor)
+    }
+    #[cfg(target_os = "android")]
+    fn save_electricity_monitor(&self, record: &ElectricityMonitorRecord) -> Result<(), String> {
+        save_android_secret(SecretKey::ElectricityMonitor, record)
     }
 }
 

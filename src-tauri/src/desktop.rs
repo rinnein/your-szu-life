@@ -25,10 +25,47 @@ pub(crate) fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
 }
 
 pub(crate) fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
-    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-        if crate::campus_network::keep_running_in_background(window.app_handle()) {
-            api.prevent_close();
-            let _ = window.hide();
+    match event {
+        tauri::WindowEvent::Focused(false) => {
+            if let Some(store) = window
+                .app_handle()
+                .try_state::<crate::campus_payments::CampusPaymentsStore>()
+            {
+                crate::campus_payments::electricity::set_background(
+                    window.app_handle().clone(),
+                    store.electricity.clone(),
+                    true,
+                );
+            }
         }
+        tauri::WindowEvent::Focused(true) => {
+            if let Some(store) = window
+                .app_handle()
+                .try_state::<crate::campus_payments::CampusPaymentsStore>()
+            {
+                crate::campus_payments::electricity::set_background(
+                    window.app_handle().clone(),
+                    store.electricity.clone(),
+                    false,
+                );
+            }
+        }
+        tauri::WindowEvent::CloseRequested { api, .. } => {
+            if crate::campus_network::keep_running_in_background(window.app_handle()) {
+                api.prevent_close();
+                let _ = window.hide();
+                if let Some(store) = window
+                    .app_handle()
+                    .try_state::<crate::campus_payments::CampusPaymentsStore>()
+                {
+                    crate::campus_payments::electricity::set_background(
+                        window.app_handle().clone(),
+                        store.electricity.clone(),
+                        true,
+                    );
+                }
+            }
+        }
+        _ => {}
     }
 }

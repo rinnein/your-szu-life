@@ -1,7 +1,24 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Alert, Button, Card, Input, Label, Spinner, TextField } from "@heroui/react";
+import {
+  Alert,
+  Button,
+  Card,
+  Form,
+  Input,
+  Label,
+  ListBox,
+  Popover,
+  RangeCalendar,
+  Select,
+  Spinner,
+  Table,
+  TextField,
+} from "@heroui/react";
+import { getLocalTimeZone, today, type CalendarDate } from "@internationalized/date";
+import type { RangeValue } from "react-aria-components";
 import { LuZap } from "react-icons/lu";
+import { EMPTY_ELECTRICITY_STATUS, useElectricityMonitor } from "./electricity-monitor";
 
 type Building = { id: string; name: string };
 type Area = { id: string; name: string; campusId: string; provider: string; buildings: Building[] };
@@ -33,13 +50,51 @@ type Result = {
   currentRemaining?: number;
 };
 
-function dateOffset(days: number) {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+function initialDateRange(): RangeValue<CalendarDate> {
+  const end = today(getLocalTimeZone());
+  return { start: end.subtract({ days: 6 }), end };
+}
+
+function LocationSelect({
+  label,
+  value,
+  options,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: { id: string; name: string }[];
+  disabled?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Select
+      aria-label={label}
+      selectedKey={value || null}
+      isDisabled={disabled}
+      onSelectionChange={(key) => onChange(String(key))}
+    >
+      <Label>{label}</Label>
+      <Select.Trigger>
+        <Select.Value />
+        <Select.Indicator />
+      </Select.Trigger>
+      <Select.Popover>
+        <ListBox aria-label={label} items={options}>
+          {(option) => (
+            <ListBox.Item id={option.id} textValue={option.name}>
+              {option.name}
+            </ListBox.Item>
+          )}
+        </ListBox>
+      </Select.Popover>
+    </Select>
+  );
 }
 
 export default function CampusPaymentsElectricityPage() {
+  const monitor = useElectricityMonitor() ?? EMPTY_ELECTRICITY_STATUS;
   const [campuses, setCampuses] = useState<Campus[]>([]);
   const [settings, setSettings] = useState<Settings>({
     campusId: "",
@@ -48,8 +103,7 @@ export default function CampusPaymentsElectricityPage() {
     buildingName: "",
     roomName: "",
   });
-  const [beginDate, setBeginDate] = useState(dateOffset(-6));
-  const [endDate, setEndDate] = useState(dateOffset(0));
+  const [dateRange, setDateRange] = useState<RangeValue<CalendarDate>>(initialDateRange);
   const [result, setResult] = useState<Result>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
@@ -76,7 +130,11 @@ export default function CampusPaymentsElectricityPage() {
         if (saved) {
           setBusy(true);
           void invoke<Result>("query_electricity", {
-            input: { ...saved, beginDate, endDate },
+            input: {
+              ...saved,
+              beginDate: dateRange.start.toString(),
+              endDate: dateRange.end.toString(),
+            },
           })
             .then((automatic) => {
               if (active) {
@@ -142,7 +200,7 @@ export default function CampusPaymentsElectricityPage() {
     const next = buildings.find((x) => x.id === buildingId);
     setSettings((s) => ({ ...s, buildingId, buildingName: next?.name ?? "" }));
   };
-  const submit = async (event: FormEvent) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canQuery) {
       setError("请先选择校区、宿舍区域、楼栋并填写宿舍号。");
@@ -153,7 +211,11 @@ export default function CampusPaymentsElectricityPage() {
     try {
       await invoke("save_electricity_settings", { settings });
       const next = await invoke<Result>("query_electricity", {
-        input: { ...settings, beginDate, endDate },
+        input: {
+          ...settings,
+          beginDate: dateRange.start.toString(),
+          endDate: dateRange.end.toString(),
+        },
       });
       setResult(next);
       setEditing(false);
@@ -163,7 +225,7 @@ export default function CampusPaymentsElectricityPage() {
       setBusy(false);
     }
   };
-  const currentRemaining = result?.currentRemaining ?? result?.readings.slice(-1)[0]?.remaining;
+  const currentRemaining = monitor.remaining ?? result?.currentRemaining;
   const formDisabled = loading || busy;
   return (
     <div className="electricity-page">
@@ -184,54 +246,30 @@ export default function CampusPaymentsElectricityPage() {
               <span>正在加载宿舍选项…</span>
             </div>
           )}
-          <form className="electricity-form" onSubmit={submit}>
+          <Form className="electricity-form" onSubmit={submit}>
             {(!result || editing) && (
               <div className="electricity-fields">
-                <label>
-                  校区
-                  <select
-                    value={settings.campusId}
-                    onChange={(e) => chooseCampus(e.target.value)}
-                    disabled={formDisabled}
-                  >
-                    <option value="">请选择校区</option>
-                    {campuses.map((x) => (
-                      <option key={x.id} value={x.id}>
-                        {x.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  宿舍区域
-                  <select
-                    value={settings.areaId}
-                    onChange={(e) => chooseArea(e.target.value)}
-                    disabled={formDisabled || !campus}
-                  >
-                    <option value="">请选择区域</option>
-                    {campus?.areas.map((x) => (
-                      <option key={x.id} value={x.id}>
-                        {x.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  楼栋
-                  <select
-                    value={settings.buildingId}
-                    onChange={(e) => chooseBuilding(e.target.value)}
-                    disabled={formDisabled || !area}
-                  >
-                    <option value="">请选择楼栋</option>
-                    {buildings.map((x) => (
-                      <option key={x.id} value={x.id}>
-                        {x.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <LocationSelect
+                  label="校区"
+                  value={settings.campusId}
+                  options={campuses}
+                  disabled={formDisabled}
+                  onChange={chooseCampus}
+                />
+                <LocationSelect
+                  label="宿舍区域"
+                  value={settings.areaId}
+                  options={campus?.areas ?? []}
+                  disabled={formDisabled || !campus}
+                  onChange={chooseArea}
+                />
+                <LocationSelect
+                  label="楼栋"
+                  value={settings.buildingId}
+                  options={buildings}
+                  disabled={formDisabled || !area}
+                  onChange={chooseBuilding}
+                />
                 <TextField name="roomName" isRequired>
                   <Label>宿舍号</Label>
                   <Input
@@ -252,24 +290,40 @@ export default function CampusPaymentsElectricityPage() {
               </div>
             )}
             <div className="electricity-dates">
-              <TextField name="beginDate" isRequired>
-                <Label>开始日期</Label>
-                <Input
-                  disabled={formDisabled}
-                  type="date"
-                  value={beginDate}
-                  onChange={(e) => setBeginDate(e.target.value)}
-                />
-              </TextField>
-              <TextField name="endDate" isRequired>
-                <Label>结束日期</Label>
-                <Input
-                  disabled={formDisabled}
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                />
-              </TextField>
+              <Popover>
+                <Popover.Trigger>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    isDisabled={formDisabled}
+                    aria-label="查询日期范围"
+                  >
+                    {dateRange.start.toString()} 至 {dateRange.end.toString()}
+                  </Button>
+                </Popover.Trigger>
+                <Popover.Content>
+                  <RangeCalendar
+                    aria-label="查询日期范围"
+                    value={dateRange}
+                    onChange={(next) => next && setDateRange(next)}
+                    firstDayOfWeek="mon"
+                  >
+                    <RangeCalendar.Header>
+                      <RangeCalendar.NavButton slot="previous" />
+                      <RangeCalendar.Heading />
+                      <RangeCalendar.NavButton slot="next" />
+                    </RangeCalendar.Header>
+                    <RangeCalendar.Grid>
+                      <RangeCalendar.GridHeader>
+                        {(_day) => <RangeCalendar.HeaderCell />}
+                      </RangeCalendar.GridHeader>
+                      <RangeCalendar.GridBody>
+                        {(date) => <RangeCalendar.Cell date={date} />}
+                      </RangeCalendar.GridBody>
+                    </RangeCalendar.Grid>
+                  </RangeCalendar>
+                </Popover.Content>
+              </Popover>
             </div>
             <div className="electricity-actions">
               <Button type="submit" variant="primary" isDisabled={formDisabled || !canQuery}>
@@ -282,7 +336,7 @@ export default function CampusPaymentsElectricityPage() {
                 </Button>
               )}
             </div>
-          </form>
+          </Form>
           {error && (
             <Alert status="danger" role="alert">
               <Alert.Indicator />
@@ -308,37 +362,42 @@ export default function CampusPaymentsElectricityPage() {
               <strong>
                 {currentRemaining == null ? "暂无数据" : `${currentRemaining.toFixed(2)} 度`}
               </strong>
+              {monitor.expired && currentRemaining != null && (
+                <small className="electricity-current-stale">数据将在下次查询后更新</small>
+              )}
             </div>
             <h3 className="electricity-section-title">用电记录</h3>
             {result.readings.length === 0 ? (
               <p className="payments-empty">该时间段没有查询到记录。</p>
             ) : (
-              <div className="electricity-table-wrap">
-                <table className="electricity-table">
-                  <thead>
-                    <tr>
-                      <th>日期</th>
-                      <th>剩余电量</th>
-                      <th>总用电量</th>
-                      <th>总购电量</th>
-                      <th>当日用电</th>
-                      <th>当日购电</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.readings.map((row) => (
-                      <tr key={row.date}>
-                        <td>{row.date}</td>
-                        <td>{row.remaining.toFixed(2)}</td>
-                        <td>{row.totalUsed.toFixed(2)}</td>
-                        <td>{row.totalPurchased.toFixed(2)}</td>
-                        <td>{row.dailyUsed == null ? "—" : row.dailyUsed.toFixed(2)}</td>
-                        <td>{row.dailyPurchased == null ? "—" : row.dailyPurchased.toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Table aria-label="用电记录">
+                <Table.ScrollContainer>
+                  <Table.Content aria-label="用电记录">
+                    <Table.Header>
+                      <Table.Column id="date" isRowHeader>
+                        日期
+                      </Table.Column>
+                      <Table.Column id="remaining">剩余电量</Table.Column>
+                      <Table.Column id="dailyUsed">当日用电</Table.Column>
+                      <Table.Column id="dailyPurchased">当日购电</Table.Column>
+                    </Table.Header>
+                    <Table.Body items={result.readings}>
+                      {(row) => (
+                        <Table.Row id={row.date}>
+                          <Table.Cell>{row.date}</Table.Cell>
+                          <Table.Cell>{row.remaining.toFixed(2)}</Table.Cell>
+                          <Table.Cell>
+                            {row.dailyUsed == null ? "—" : row.dailyUsed.toFixed(2)}
+                          </Table.Cell>
+                          <Table.Cell>
+                            {row.dailyPurchased == null ? "—" : row.dailyPurchased.toFixed(2)}
+                          </Table.Cell>
+                        </Table.Row>
+                      )}
+                    </Table.Body>
+                  </Table.Content>
+                </Table.ScrollContainer>
+              </Table>
             )}
           </Card.Content>
         </Card>

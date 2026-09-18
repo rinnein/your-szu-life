@@ -52,6 +52,8 @@ fn main() {
             "get_electricity_settings",
             "save_electricity_settings",
             "query_electricity",
+            "get_electricity_status",
+            "set_application_visibility",
             "get_network_overview",
             "refresh_campus_network",
             "request_campus_network_permissions",

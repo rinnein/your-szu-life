@@ -5,6 +5,14 @@ import { LuArrowLeft, LuArrowRight, LuArrowUpRight, LuImage, LuMegaphone } from 
 import { useAppContent } from "./context";
 import { contentTime, openPublicUrl } from "./external";
 import type { Announcement } from "./types";
+import { EMPTY_ELECTRICITY_STATUS, useElectricityMonitor } from "../electricity-monitor";
+
+type LocalAnnouncement = {
+  kind: "electricity-low";
+  title: string;
+  url: "/campus-payments/recharge";
+};
+type AnnouncementUnit = Announcement | LocalAnnouncement;
 
 export function AnnouncementImage({ url, title }: { url: string; title: string }) {
   const [image, setImage] = useState<{ url: string; src?: string; failed?: boolean }>();
@@ -55,8 +63,31 @@ export function AnnouncementImage({ url, title }: { url: string; title: string }
   );
 }
 
-function AnnouncementCard({ unit }: { unit: Announcement }) {
+function AnnouncementCard({ unit }: { unit: AnnouncementUnit }) {
   const [error, setError] = useState<string>();
+  if ("kind" in unit) {
+    return (
+      <Card className="announcement-card">
+        <Button
+          className="announcement-trigger announcement-link"
+          variant="tertiary"
+          aria-label={unit.title}
+          onPress={() => {
+            window.history.pushState({}, "", unit.url);
+            window.dispatchEvent(new PopStateEvent("popstate"));
+          }}
+        >
+          <span className="announcement-image-placeholder" aria-hidden="true">
+            <LuMegaphone />
+          </span>
+          <span className="announcement-title-row">
+            <span>{unit.title}</span>
+            <LuArrowUpRight aria-hidden="true" />
+          </span>
+        </Button>
+      </Card>
+    );
+  }
   if (unit.desc !== undefined) {
     return (
       <Card className="announcement-card">
@@ -109,12 +140,24 @@ function AnnouncementCard({ unit }: { unit: Announcement }) {
 
 export function AnnouncementBoard() {
   const { snapshot, error, refreshing } = useAppContent();
+  const electricity = useElectricityMonitor() ?? EMPTY_ELECTRICITY_STATUS;
   const feed = snapshot?.announcements;
   const units = feed?.data?.announcements;
+  const localUnit: LocalAnnouncement | undefined =
+    electricity.low && electricity.remaining != null
+      ? {
+          kind: "electricity-low",
+          title: `当前剩余电量：${electricity.remaining.toFixed(2)} 度`,
+          url: "/campus-payments/recharge",
+        }
+      : undefined;
+  const displayUnits: AnnouncementUnit[] = localUnit
+    ? [localUnit, ...(units ?? [])]
+    : (units ?? []);
   const unavailable = snapshot?.configuration.status !== "ready";
   const [currentIndex, setCurrentIndex] = useState(0);
   const [carouselPaused, setCarouselPaused] = useState(false);
-  const announcementCount = units?.length ?? 0;
+  const announcementCount = displayUnits.length;
   const hasMultipleAnnouncements = announcementCount > 1;
 
   useEffect(() => {
@@ -175,7 +218,7 @@ export function AnnouncementBoard() {
           </Alert.Content>
         </Alert>
       )}
-      {units?.length ? (
+      {displayUnits.length ? (
         <div
           className="announcement-carousel"
           data-testid="announcement-carousel"
@@ -199,7 +242,7 @@ export function AnnouncementBoard() {
               aria-roledescription="slide"
               aria-label={`第 ${currentIndex + 1} 条公告，共 ${announcementCount} 条`}
             >
-              <AnnouncementCard unit={units[currentIndex]} />
+              <AnnouncementCard unit={displayUnits[currentIndex]} />
             </div>
             {hasMultipleAnnouncements && (
               <>
@@ -224,9 +267,9 @@ export function AnnouncementBoard() {
           </div>
           {hasMultipleAnnouncements && (
             <div className="announcement-carousel-indicators" aria-label="公告页码">
-              {units.map((unit, index) => (
+              {displayUnits.map((unit, index) => (
                 <button
-                  key={index + ":" + unit.pic + ":" + unit.title}
+                  key={index + ":" + unit.title}
                   className="announcement-carousel-indicator"
                   type="button"
                   aria-label={`查看第 ${index + 1} 条公告`}

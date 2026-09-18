@@ -10,6 +10,36 @@ pub(crate) struct ElectricityLocationSettings {
     pub room_name: String,
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ElectricityCurrentCache {
+    pub location: ElectricityLocationSettings,
+    pub remaining: f64,
+    pub observed_date: String,
+    pub fetched_at_ms: i64,
+    pub expires_at_ms: i64,
+    pub warning_active: bool,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ElectricityMonitorRecord {
+    pub cache: Option<ElectricityCurrentCache>,
+    pub last_startup_attempt_date: Option<String>,
+    pub last_background_attempt_date: Option<String>,
+    pub last_notified_date: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ElectricityStatusView {
+    pub remaining: Option<f64>,
+    pub observed_date: Option<String>,
+    pub expires_at_ms: Option<i64>,
+    pub expired: bool,
+    pub low: bool,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum NoticeCode {

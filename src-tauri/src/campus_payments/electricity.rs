@@ -1,9 +1,23 @@
-use super::model::ElectricityLocationSettings;
+use super::model::{
+    ElectricityCurrentCache, ElectricityLocationSettings, ElectricityMonitorRecord,
+    ElectricityStatusView,
+};
 use crate::storage::SharedCredentialStore;
+use chrono::{DateTime, Duration as ChronoDuration, Local, NaiveDate, NaiveDateTime, TimeZone};
 use encoding_rs::GB18030;
 use reqwest::blocking::{Client, Response};
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+    thread,
+    time::Duration,
+};
+use tauri::{AppHandle, Emitter};
+use tauri_plugin_notification::NotificationExt;
+
+pub(crate) const ELECTRICITY_STATUS_EVENT: &str = "electricity-status-changed";
+pub(crate) const LOW_THRESHOLD: f64 = 5.0;
 
 const SIMS_BASE: &str = "http://192.168.84.3:9090";
 const LIHUO_BASE: &str = "http://172.25.100.105:8010";
@@ -74,12 +88,20 @@ pub(crate) struct ElectricityQueryInput {
 #[derive(Clone, Default)]
 pub(crate) struct ElectricityStore {
     pub(crate) credentials: Option<SharedCredentialStore>,
+    pub(crate) runtime: Arc<Mutex<ElectricityRuntime>>,
+}
+
+#[derive(Default)]
+pub(crate) struct ElectricityRuntime {
+    pub(crate) background: bool,
+    pub(crate) in_flight: bool,
 }
 
 impl ElectricityStore {
     pub(crate) fn new(credentials: SharedCredentialStore) -> Self {
         Self {
             credentials: Some(credentials),
+            runtime: Arc::new(Mutex::new(ElectricityRuntime::default())),
         }
     }
 }
@@ -273,24 +295,20 @@ pub(crate) fn options() -> Result<Vec<ElectricityCampus>, String> {
     Ok(campuses.into_values().collect())
 }
 
-fn valid_date(value: &str) -> bool {
-    value.len() == 10
-        && value.as_bytes()[4] == b'-'
-        && value.as_bytes()[7] == b'-'
-        && value
-            .bytes()
-            .enumerate()
-            .all(|(i, b)| i == 4 || i == 7 || b.is_ascii_digit())
+fn query_date(value: &str) -> Option<NaiveDate> {
+    NaiveDate::parse_from_str(value.trim(), "%Y-%m-%d").ok()
 }
 
 fn validate(input: &ElectricityQueryInput) -> Result<(), String> {
     if input.room_name.trim().is_empty() || input.room_name.len() > 32 {
         return Err("请输入有效的宿舍号".into());
     }
-    if !valid_date(&input.begin_date) || !valid_date(&input.end_date) {
+    let (Some(begin_date), Some(end_date)) =
+        (query_date(&input.begin_date), query_date(&input.end_date))
+    else {
         return Err("日期格式应为 YYYY-MM-DD".into());
-    }
-    if input.begin_date > input.end_date {
+    };
+    if begin_date > end_date {
         return Err("开始日期不能晚于结束日期".into());
     }
     Ok(())
@@ -432,7 +450,8 @@ fn parse_sims(html: &str, room: &str) -> Result<Vec<ElectricityReading>, String>
             daily_purchased: None,
         });
     }
-    result.sort_by(|a, b| a.date.cmp(&b.date));
+    let fallback = NaiveDate::MIN.and_hms_opt(0, 0, 0).unwrap();
+    result.sort_by_key(|row| reading_datetime(&row.date).unwrap_or(fallback));
     Ok(with_daily_changes(result))
 }
 
@@ -565,7 +584,7 @@ pub(crate) fn query(input: ElectricityQueryInput) -> Result<ElectricityQueryView
     } else {
         sims_query(&input)?
     };
-    let current_remaining = readings.last().map(|row| row.remaining);
+    let current_remaining = current_reading(&readings).map(|row| row.remaining);
     Ok(ElectricityQueryView {
         campus_id: input.campus_id,
         area_id: input.area_id,
@@ -576,6 +595,303 @@ pub(crate) fn query(input: ElectricityQueryInput) -> Result<ElectricityQueryView
         readings,
         current_remaining,
     })
+}
+
+fn now_ms() -> i64 {
+    Local::now().timestamp_millis()
+}
+
+fn local_now() -> DateTime<Local> {
+    Local::now()
+}
+
+fn local_date() -> String {
+    local_now().date_naive().format("%Y-%m-%d").to_string()
+}
+
+fn current_reading_date() -> NaiveDate {
+    // The meter backend publishes the previous day's 23:59 snapshot only.
+    local_now().date_naive() - ChronoDuration::days(1)
+}
+
+fn reading_datetime(value: &str) -> Option<NaiveDateTime> {
+    let value = value.trim();
+    for format in [
+        "%Y-%m-%d %H:%M:%S%.f",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y/%m/%d %H:%M:%S%.f",
+        "%Y/%m/%d %H:%M:%S",
+    ] {
+        if let Ok(parsed) = NaiveDateTime::parse_from_str(value, format) {
+            return Some(parsed);
+        }
+    }
+    for format in ["%Y-%m-%d", "%Y/%m/%d"] {
+        if let Ok(parsed) = NaiveDate::parse_from_str(value, format) {
+            return parsed.and_hms_opt(0, 0, 0);
+        }
+    }
+    None
+}
+
+fn reading_date(value: &str) -> Option<NaiveDate> {
+    reading_datetime(value).map(|value| value.date())
+}
+
+fn current_reading<'a>(readings: &'a [ElectricityReading]) -> Option<&'a ElectricityReading> {
+    let target = current_reading_date();
+    readings
+        .iter()
+        .rev()
+        .find(|row| reading_date(&row.date) == Some(target))
+        .or_else(|| {
+            readings
+                .iter()
+                .filter(|row| reading_date(&row.date).is_some_and(|date| date <= target))
+                .max_by_key(|row| reading_datetime(&row.date))
+        })
+}
+
+fn cache_expiry_ms(now: DateTime<Local>) -> i64 {
+    let next_midnight = now
+        .date_naive()
+        .succ_opt()
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    Local
+        .from_local_datetime(&next_midnight)
+        .single()
+        .unwrap_or(now + ChronoDuration::days(1))
+        .checked_sub_signed(ChronoDuration::minutes(2))
+        .unwrap_or(now)
+        .timestamp_millis()
+}
+
+fn location_for(input: &ElectricityQueryInput) -> ElectricityLocationSettings {
+    ElectricityLocationSettings {
+        campus_id: input.campus_id.clone(),
+        area_id: input.area_id.clone(),
+        building_id: input.building_id.clone(),
+        building_name: input.building_name.clone(),
+        room_name: input.room_name.trim().to_owned(),
+    }
+}
+
+fn cache_matches(cache: &ElectricityCurrentCache, location: &ElectricityLocationSettings) -> bool {
+    cache.location == *location
+}
+
+fn warning_state(previous: bool, remaining: f64) -> bool {
+    if remaining < LOW_THRESHOLD {
+        true
+    } else if remaining > LOW_THRESHOLD {
+        false
+    } else {
+        previous
+    }
+}
+
+fn load_monitor_record(store: &ElectricityStore) -> ElectricityMonitorRecord {
+    store
+        .credentials
+        .as_ref()
+        .and_then(|credentials| credentials.load_electricity_monitor().ok().flatten())
+        .unwrap_or_default()
+}
+
+fn save_monitor_record(store: &ElectricityStore, record: &ElectricityMonitorRecord) {
+    if let Some(credentials) = &store.credentials {
+        let _ = credentials.save_electricity_monitor(record);
+    }
+}
+
+pub(crate) fn status(store: &ElectricityStore) -> ElectricityStatusView {
+    let location = load_settings(store).ok().flatten();
+    let record = load_monitor_record(store);
+    let Some(cache) = record.cache.filter(|cache| {
+        location
+            .as_ref()
+            .is_some_and(|location| cache_matches(cache, location))
+    }) else {
+        return ElectricityStatusView {
+            remaining: None,
+            observed_date: None,
+            expires_at_ms: None,
+            expired: false,
+            low: false,
+        };
+    };
+    let expired = cache.expires_at_ms <= now_ms();
+    ElectricityStatusView {
+        remaining: Some(cache.remaining),
+        observed_date: Some(cache.observed_date),
+        expires_at_ms: Some(cache.expires_at_ms),
+        expired,
+        low: cache.warning_active,
+    }
+}
+
+fn emit_status(app: &AppHandle, store: &ElectricityStore) {
+    let _ = app.emit(ELECTRICITY_STATUS_EVENT, status(store));
+}
+
+fn notify_if_needed(app: &AppHandle, store: &ElectricityStore) {
+    let is_background = store
+        .runtime
+        .lock()
+        .map(|runtime| runtime.background)
+        .unwrap_or(false);
+    if !is_background {
+        return;
+    }
+    let today = local_date();
+    let mut record = load_monitor_record(store);
+    let Some(cache) = record.cache.as_ref() else {
+        return;
+    };
+    if !cache.warning_active || record.last_notified_date.as_deref() == Some(today.as_str()) {
+        return;
+    }
+    record.last_notified_date = Some(today);
+    save_monitor_record(store, &record);
+    let title = format!("当前剩余电量：{:.2} 度", cache.remaining);
+    let _ = app
+        .notification()
+        .builder()
+        .id(0x535a)
+        .title(title)
+        .body("宿舍剩余电量低于 5 度，请及时充值。")
+        .action_type_id("electricity-low")
+        .extra("route", "/campus-payments/recharge")
+        .auto_cancel()
+        .show();
+}
+
+fn begin_query(store: &ElectricityStore) -> Result<(), String> {
+    let mut runtime = store.runtime.lock().map_err(|_| "电费查询状态不可用")?;
+    if runtime.in_flight {
+        return Err("电费查询正在进行，请稍后重试。".into());
+    }
+    runtime.in_flight = true;
+    Ok(())
+}
+
+fn end_query(store: &ElectricityStore) {
+    if let Ok(mut runtime) = store.runtime.lock() {
+        runtime.in_flight = false;
+    }
+}
+
+pub(crate) fn query_and_record(
+    input: ElectricityQueryInput,
+    store: &ElectricityStore,
+    app: &AppHandle,
+) -> Result<ElectricityQueryView, String> {
+    begin_query(store)?;
+    let result = query(input.clone());
+    end_query(store);
+    let view = result?;
+    let Some(reading) = current_reading(&view.readings) else {
+        return Ok(view);
+    };
+    let current_date = reading_date(&reading.date).unwrap_or_else(current_reading_date);
+    let location = location_for(&input);
+    let mut record = load_monitor_record(store);
+    let previous_warning = record
+        .cache
+        .as_ref()
+        .filter(|cache| cache_matches(cache, &location))
+        .map(|cache| cache.warning_active)
+        .unwrap_or(false);
+    let warning_active = warning_state(previous_warning, reading.remaining);
+    record.cache = Some(ElectricityCurrentCache {
+        location,
+        remaining: reading.remaining,
+        observed_date: current_date.format("%Y-%m-%d").to_string(),
+        fetched_at_ms: now_ms(),
+        expires_at_ms: cache_expiry_ms(local_now()),
+        warning_active,
+    });
+    save_monitor_record(store, &record);
+    emit_status(app, store);
+    notify_if_needed(app, store);
+    Ok(view)
+}
+
+fn mark_attempt(store: &ElectricityStore, background: bool, date: &str) -> bool {
+    let mut record = load_monitor_record(store);
+    let target = if background {
+        &mut record.last_background_attempt_date
+    } else {
+        &mut record.last_startup_attempt_date
+    };
+    if target.as_deref() == Some(date) {
+        return false;
+    }
+    *target = Some(date.to_owned());
+    save_monitor_record(store, &record);
+    true
+}
+
+fn automatic_query(app: &AppHandle, store: &ElectricityStore, background: bool) {
+    let Some(settings) = load_settings(store).ok().flatten() else {
+        return;
+    };
+    let date = local_date();
+    let current = status(store);
+    if current.remaining.is_some() && !current.expired {
+        return;
+    }
+    if !mark_attempt(store, background, &date) {
+        return;
+    }
+    let input = ElectricityQueryInput {
+        campus_id: settings.campus_id.clone(),
+        area_id: settings.area_id.clone(),
+        building_id: settings.building_id.clone(),
+        building_name: settings.building_name.clone(),
+        room_name: settings.room_name.clone(),
+        begin_date: date_offset(-6),
+        end_date: date.clone(),
+    };
+    let _ = query_and_record(input, store, app);
+}
+
+fn date_offset(days: i64) -> String {
+    (local_now().date_naive() + ChronoDuration::days(days))
+        .format("%Y-%m-%d")
+        .to_string()
+}
+
+pub(crate) fn initialize(app: AppHandle, store: ElectricityStore) {
+    thread::spawn(move || {
+        automatic_query(&app, &store, false);
+        loop {
+            thread::sleep(Duration::from_secs(30));
+            let background = store
+                .runtime
+                .lock()
+                .map(|runtime| runtime.background)
+                .unwrap_or(false);
+            if background {
+                automatic_query(&app, &store, true);
+                notify_if_needed(&app, &store);
+            }
+        }
+    });
+}
+
+pub(crate) fn set_background(app: AppHandle, store: ElectricityStore, background: bool) {
+    if let Ok(mut runtime) = store.runtime.lock() {
+        runtime.background = background;
+    }
+    if background {
+        thread::spawn(move || {
+            automatic_query(&app, &store, true);
+            notify_if_needed(&app, &store);
+        });
+    }
 }
 
 pub(crate) fn load_settings(
@@ -601,6 +917,9 @@ pub(crate) fn save_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::testing::MemoryCredentialStore;
+    use chrono::NaiveDate;
+    use std::sync::Arc;
     #[test]
     fn normalizes_buildings_and_parses_options() {
         let html = r#"<select name="buildingId"><option value="1">  山茶斋   </option><option value="2">B3文韬楼#</option></select>"#;
@@ -612,6 +931,35 @@ mod tests {
         let rows = parse_sims(html, "101").unwrap();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[1].daily_used, Some(3.0));
+    }
+
+    #[test]
+    fn matches_meter_timestamp_to_previous_day_current_reading() {
+        assert_eq!(
+            reading_date(" 2026-09-17 23:59:01.0 "),
+            NaiveDate::from_ymd_opt(2026, 9, 17)
+        );
+        let rows = vec![
+            ElectricityReading {
+                date: "2026-09-16 23:59:01.0".into(),
+                room_name: "601".into(),
+                remaining: 8.0,
+                total_used: 1.0,
+                total_purchased: 0.0,
+                daily_used: None,
+                daily_purchased: None,
+            },
+            ElectricityReading {
+                date: format!("{} 23:59:01.0", current_reading_date()),
+                room_name: "601".into(),
+                remaining: 4.0,
+                total_used: 2.0,
+                total_purchased: 0.0,
+                daily_used: None,
+                daily_purchased: None,
+            },
+        ];
+        assert_eq!(current_reading(&rows).map(|row| row.remaining), Some(4.0));
     }
     #[test]
     fn validates_dates_and_room() {
@@ -628,6 +976,23 @@ mod tests {
     }
 
     #[test]
+    fn validates_calendar_dates_with_chrono() {
+        let mut input = ElectricityQueryInput {
+            campus_id: "x".into(),
+            area_id: "x".into(),
+            building_id: "x".into(),
+            building_name: "x".into(),
+            room_name: "101".into(),
+            begin_date: "2026-02-30".into(),
+            end_date: "2026-03-01".into(),
+        };
+        assert!(validate(&input).is_err());
+
+        input.begin_date = "2026-02-28".into();
+        assert!(validate(&input).is_ok());
+    }
+
+    #[test]
     fn encodes_sims_form_like_the_gb2312_page() {
         let encoded = encode_form_gb18030(&[
             ("client", "192.168.84.110"),
@@ -640,5 +1005,37 @@ mod tests {
             encoded,
             "client=192.168.84.110&buildingName=&buildingId=6878&roomName=648&select=+%B2%E9%D1%AF+"
         );
+    }
+
+    #[test]
+    fn current_cache_expires_at_2358_local_time() {
+        let now = Local
+            .with_ymd_and_hms(2026, 9, 18, 12, 0, 0)
+            .single()
+            .unwrap();
+        let expected = Local
+            .with_ymd_and_hms(2026, 9, 18, 23, 58, 0)
+            .single()
+            .unwrap();
+        assert_eq!(cache_expiry_ms(now), expected.timestamp_millis());
+    }
+
+    #[test]
+    fn low_battery_threshold_only_clears_above_five() {
+        assert!(warning_state(false, 4.99));
+        assert!(!warning_state(false, 5.0));
+        assert!(warning_state(true, 5.0));
+        assert!(!warning_state(true, 5.01));
+    }
+
+    #[test]
+    fn automatic_attempt_is_recorded_once_per_date_and_mode() {
+        let credentials = Arc::new(MemoryCredentialStore::default());
+        let store = ElectricityStore::new(credentials);
+        assert!(mark_attempt(&store, false, "2026-09-18"));
+        assert!(!mark_attempt(&store, false, "2026-09-18"));
+        assert!(mark_attempt(&store, true, "2026-09-18"));
+        assert!(!mark_attempt(&store, true, "2026-09-18"));
+        assert!(mark_attempt(&store, true, "2026-09-19"));
     }
 }

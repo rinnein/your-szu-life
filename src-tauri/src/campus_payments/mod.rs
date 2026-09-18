@@ -7,7 +7,7 @@ mod state;
 mod urls;
 
 pub(crate) use electricity::{ElectricityCampus, ElectricityQueryInput, ElectricityQueryView};
-pub(crate) use model::ElectricityLocationSettings;
+pub(crate) use model::{ElectricityLocationSettings, ElectricityStatusView};
 pub(crate) use service::{cancel, on_page_load};
 pub(crate) use state::CampusPaymentsStore;
 

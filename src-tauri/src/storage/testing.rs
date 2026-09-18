@@ -102,6 +102,12 @@ impl CredentialStore for MemoryCredentialStore {
         ElectricityLocationSettings,
         ElectricitySettings
     );
+    stored_value!(
+        load_electricity_monitor,
+        save_electricity_monitor,
+        ElectricityMonitorRecord,
+        ElectricityMonitor
+    );
     fn delete_profile(&self) -> Result<(), String> {
         self.delete(SecretKey::Profile)
     }

@@ -19,6 +19,8 @@ permissions = [
   "allow-get-electricity-settings",
   "allow-save-electricity-settings",
   "allow-query-electricity",
+  "allow-get-electricity-status",
+  "allow-set-application-visibility",
   "allow-get-network-overview",
   "allow-refresh-campus-network",
   "allow-request-campus-network-permissions",

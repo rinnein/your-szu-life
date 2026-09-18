@@ -17,9 +17,25 @@ pub(crate) fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            #[cfg(mobile)]
+            {
+                use tauri_plugin_notification::{Action, ActionType, NotificationExt};
+                app.notification()
+                    .register_action_types(vec![ActionType::builder("electricity-low")
+                        .actions(vec![Action::builder("open-recharge", "打开充电费")
+                            .foreground(true)
+                            .build()])
+                        .build()])?;
+            }
             app_content::initialize(app.handle())?;
             if let Some(store) = app.try_state::<campus_network::CampusNetworkStore>() {
                 campus_network::diagnostics::initialize(app.handle(), &store);
+            }
+            if let Some(store) = app.try_state::<campus_payments::CampusPaymentsStore>() {
+                campus_payments::electricity::initialize(
+                    app.handle().clone(),
+                    store.electricity.clone(),
+                );
             }
             campus_network::monitor::start_dorm_monitor(app.handle().clone());
             #[cfg(desktop)]
@@ -45,6 +61,8 @@ pub(crate) fn run() {
             campus_payments::commands::get_electricity_settings,
             campus_payments::commands::save_electricity_settings,
             campus_payments::commands::query_electricity,
+            campus_payments::commands::get_electricity_status,
+            campus_payments::commands::set_application_visibility,
             campus_network::commands::get_network_overview,
             campus_network::commands::refresh_campus_network,
             campus_network::commands::request_campus_network_permissions,
