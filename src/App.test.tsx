@@ -61,6 +61,10 @@ describe("auth state transport normalization", () => {
       Authenticated: { name: null, studentId: "1234567890" },
     });
   });
+
+  it("normalizes terminal event objects from Tauri", () => {
+    expect(normalizeAuthState({ sessionExpired: null })).toEqual({ SessionExpired: null });
+  });
 });
 
 function renderRouterApp(initialEntry = "/") {
@@ -88,6 +92,37 @@ describe("HeroUI frontend smoke tests", () => {
 
     expect(await screen.findByRole("heading", { name: "请完成统一认证" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "打开认证窗口" })).toBeInTheDocument();
+  });
+
+  it("enters the workbench immediately and refreshes the session in the background", async () => {
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_auth_state")
+        return { Authenticated: { studentId: "1234567890", name: "测试同学" } };
+      if (command === "get_account_profile")
+        return {
+          studentId: "1234567890",
+          campusCardNumber: "123456",
+          hasPassword: true,
+          name: "测试同学",
+        };
+      if (command === "get_user_data") return { studentId: "1234567890", name: "测试同学" };
+      return undefined;
+    });
+
+    renderRouterApp();
+    expect(await screen.findByRole("heading", { name: "深大生活工作台" })).toBeInTheDocument();
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("refresh_auth_session"));
+
+    const initialCalls = vi
+      .mocked(invoke)
+      .mock.calls.filter(([command]) => command === "refresh_auth_session").length;
+    fireEvent(window, new Event("focus"));
+    await waitFor(() =>
+      expect(
+        vi.mocked(invoke).mock.calls.filter(([command]) => command === "refresh_auth_session")
+          .length,
+      ).toBeGreaterThan(initialCalls),
+    );
   });
 
   it("requires five taps inside the two-second window", () => {

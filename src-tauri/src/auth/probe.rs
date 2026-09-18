@@ -6,7 +6,7 @@ pub(super) fn is_auth_login_url(raw: &str) -> bool {
     };
     url.scheme() == "https"
         && url.host_str() == Some(AUTH_HOST)
-        && url.path().starts_with("/authserver/login")
+        && url.path() == "/authserver/login"
 }
 
 pub(super) fn is_authserver_url(raw: &str) -> bool {

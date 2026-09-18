@@ -13,6 +13,30 @@ export const WECHAT_SERVICES = [
   },
 ] as const;
 
+export const CAMPUS_PAYMENTS_LAST_ROUTE_KEY = "your-szu-life.campus-payments.last-route";
+export const CAMPUS_PAYMENTS_ROUTES = [
+  "/campus-payments/network",
+  "/campus-payments/card",
+  "/campus-payments/electricity",
+  "/campus-payments/recharge",
+] as const;
+
+export function readLastCampusPaymentsRoute() {
+  try {
+    return globalThis.localStorage?.getItem(CAMPUS_PAYMENTS_LAST_ROUTE_KEY) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveLastCampusPaymentsRoute(pathname: string) {
+  try {
+    globalThis.localStorage?.setItem(CAMPUS_PAYMENTS_LAST_ROUTE_KEY, pathname);
+  } catch {
+    // Storage can be unavailable in private or native WebView contexts.
+  }
+}
+
 export type NetworkFeePortalNotice = {
   code:
     | "loadTimeout"

@@ -1,7 +1,4 @@
-use super::{
-    model::{PendingAuthCredentials, StoredAccountProfile},
-    AUTH_HOST, AUTH_LOGIN_URL, AUTH_PROFILE_URL,
-};
+use super::{AUTH_HOST, AUTH_LOGIN_URL, AUTH_PROFILE_URL};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 #[cfg(target_os = "android")]
@@ -123,22 +120,6 @@ pub(super) fn auth_cookie_url(cookie: &StoredAuthCookie) -> Result<tauri::Url, S
         .map_err(|_| "认证会话格式无效".into())
 }
 
-pub(super) fn session_matches_account(
-    session: &AuthSessionSecret,
-    profile: Option<&StoredAccountProfile>,
-    pending: Option<&PendingAuthCredentials>,
-) -> bool {
-    let expected_student_id = profile
-        .map(|profile| profile.student_id.as_str())
-        .or_else(|| pending.map(|pending| pending.student_id.as_str()));
-    expected_student_id == Some(session.student_id.as_str())
-        && !session.cookies.is_empty()
-        && !session
-            .cookies
-            .iter()
-            .all(|cookie| cookie.is_definitely_expired(OffsetDateTime::now_utc()))
-}
-
 pub(super) fn capture_auth_session(
     window: &tauri::WebviewWindow,
     student_id: String,
@@ -242,24 +223,17 @@ pub(super) fn install_auth_cookie(
         .map_err(|_| "写入 Android 认证会话超时".to_string())?
 }
 
-pub(super) fn restore_auth_session(
+/// Install persisted cookies without navigating or clearing the local app
+/// document. Startup refresh uses this path so the workbench remains visible.
+pub(super) fn install_auth_session_cookies(
     app: &tauri::AppHandle,
     session: &AuthSessionSecret,
 ) -> Result<(), String> {
     let window = app.get_webview_window("main").ok_or("主窗口不存在")?;
-    window
-        .clear_all_browsing_data()
-        .map_err(|error| error.to_string())?;
     for cookie in &session.cookies {
         install_auth_cookie(&window, cookie)?;
     }
-    window
-        .navigate(
-            AUTH_PROFILE_URL
-                .parse::<tauri::Url>()
-                .map_err(|error| error.to_string())?,
-        )
-        .map_err(|error| error.to_string())
+    Ok(())
 }
 
 pub(super) fn clear_webview_session(app: &tauri::AppHandle) -> Result<(), String> {

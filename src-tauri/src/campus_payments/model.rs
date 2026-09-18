@@ -1,5 +1,15 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ElectricityLocationSettings {
+    pub campus_id: String,
+    pub area_id: String,
+    pub building_id: String,
+    pub building_name: String,
+    pub room_name: String,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum NoticeCode {

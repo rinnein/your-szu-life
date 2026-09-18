@@ -19,6 +19,11 @@ pub(crate) fn get_auth_state(
 }
 
 #[tauri::command]
+pub(crate) fn refresh_auth_session(app: tauri::AppHandle) -> Result<(), String> {
+    service::refresh_auth_session(app)
+}
+
+#[tauri::command]
 pub(crate) fn get_account_profile(
     store: State<'_, AuthStore>,
 ) -> Result<Option<AccountProfileView>, String> {

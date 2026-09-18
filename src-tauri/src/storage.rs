@@ -4,6 +4,7 @@ use crate::{
         session::AuthSessionSecret,
     },
     campus_network::model::{DormCustomCredentials, DormNetworkSettings, StaffNetworkSettings},
+    campus_payments::model::ElectricityLocationSettings,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -23,6 +24,7 @@ enum SecretKey {
     DormNetworkCredentials,
     StaffNetworkSettings,
     StaffNetworkCredentials,
+    ElectricitySettings,
 }
 
 impl SecretKey {
@@ -35,6 +37,7 @@ impl SecretKey {
             Self::DormNetworkCredentials => "dorm-network-credentials",
             Self::StaffNetworkSettings => "staff-network-settings",
             Self::StaffNetworkCredentials => "staff-network-credentials",
+            Self::ElectricitySettings => "electricity-settings",
         }
     }
 }
@@ -57,6 +60,11 @@ pub(crate) trait CredentialStore: Send + Sync {
     fn save_staff_settings(&self, settings: &StaffNetworkSettings) -> Result<(), String>;
     fn load_staff_credentials(&self) -> Result<Option<DormCustomCredentials>, String>;
     fn save_staff_credentials(&self, credentials: &DormCustomCredentials) -> Result<(), String>;
+    fn load_electricity_settings(&self) -> Result<Option<ElectricityLocationSettings>, String>;
+    fn save_electricity_settings(
+        &self,
+        settings: &ElectricityLocationSettings,
+    ) -> Result<(), String>;
 }
 
 pub(crate) struct PlatformCredentialStore;
@@ -137,6 +145,17 @@ impl CredentialStore for PlatformCredentialStore {
         {
             save_android_secret(SecretKey::StaffNetworkCredentials, credentials)
         }
+    }
+    #[cfg(not(target_os = "android"))]
+    fn load_electricity_settings(&self) -> Result<Option<ElectricityLocationSettings>, String> {
+        Self::load(SecretKey::ElectricitySettings)
+    }
+    #[cfg(not(target_os = "android"))]
+    fn save_electricity_settings(
+        &self,
+        settings: &ElectricityLocationSettings,
+    ) -> Result<(), String> {
+        Self::save(SecretKey::ElectricitySettings, settings)
     }
 
     #[cfg(not(target_os = "android"))]
@@ -244,6 +263,17 @@ impl CredentialStore for PlatformCredentialStore {
     #[cfg(target_os = "android")]
     fn save_dorm_credentials(&self, credentials: &DormCustomCredentials) -> Result<(), String> {
         save_android_secret(SecretKey::DormNetworkCredentials, credentials)
+    }
+    #[cfg(target_os = "android")]
+    fn load_electricity_settings(&self) -> Result<Option<ElectricityLocationSettings>, String> {
+        load_android_secret(SecretKey::ElectricitySettings)
+    }
+    #[cfg(target_os = "android")]
+    fn save_electricity_settings(
+        &self,
+        settings: &ElectricityLocationSettings,
+    ) -> Result<(), String> {
+        save_android_secret(SecretKey::ElectricitySettings, settings)
     }
 }
 

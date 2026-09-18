@@ -12,9 +12,14 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as CampusNetworkRouteImport } from './routes/campus-network'
-import { Route as CampusPaymentsRouteImport } from './routes/campus-payments'
+import { Route as CampusPaymentsRouteRouteImport } from './routes/campus-payments/route'
 import { Route as DebugRouteImport } from './routes/debug'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as CampusPaymentsIndexRouteImport } from './routes/campus-payments/index'
+import { Route as CampusPaymentsCardRouteImport } from './routes/campus-payments/card'
+import { Route as CampusPaymentsElectricityRouteImport } from './routes/campus-payments/electricity'
+import { Route as CampusPaymentsNetworkRouteImport } from './routes/campus-payments/network'
+import { Route as CampusPaymentsRechargeRouteImport } from './routes/campus-payments/recharge'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -31,7 +36,7 @@ const CampusNetworkRoute = CampusNetworkRouteImport.update({
   path: '/campus-network',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CampusPaymentsRoute = CampusPaymentsRouteImport.update({
+const CampusPaymentsRouteRoute = CampusPaymentsRouteRouteImport.update({
   id: '/campus-payments',
   path: '/campus-payments',
   getParentRoute: () => rootRouteImport,
@@ -46,64 +51,118 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CampusPaymentsIndexRoute = CampusPaymentsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => CampusPaymentsRouteRoute,
+} as any)
+const CampusPaymentsCardRoute = CampusPaymentsCardRouteImport.update({
+  id: '/card',
+  path: '/card',
+  getParentRoute: () => CampusPaymentsRouteRoute,
+} as any)
+const CampusPaymentsElectricityRoute =
+  CampusPaymentsElectricityRouteImport.update({
+    id: '/electricity',
+    path: '/electricity',
+    getParentRoute: () => CampusPaymentsRouteRoute,
+  } as any)
+const CampusPaymentsNetworkRoute = CampusPaymentsNetworkRouteImport.update({
+  id: '/network',
+  path: '/network',
+  getParentRoute: () => CampusPaymentsRouteRoute,
+} as any)
+const CampusPaymentsRechargeRoute = CampusPaymentsRechargeRouteImport.update({
+  id: '/recharge',
+  path: '/recharge',
+  getParentRoute: () => CampusPaymentsRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/campus-payments': typeof CampusPaymentsRouteRouteWithChildren
   '/about': typeof AboutRoute
   '/campus-network': typeof CampusNetworkRoute
-  '/campus-payments': typeof CampusPaymentsRoute
   '/debug': typeof DebugRoute
   '/settings': typeof SettingsRoute
+  '/campus-payments/card': typeof CampusPaymentsCardRoute
+  '/campus-payments/electricity': typeof CampusPaymentsElectricityRoute
+  '/campus-payments/network': typeof CampusPaymentsNetworkRoute
+  '/campus-payments/recharge': typeof CampusPaymentsRechargeRoute
+  '/campus-payments/': typeof CampusPaymentsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/campus-network': typeof CampusNetworkRoute
-  '/campus-payments': typeof CampusPaymentsRoute
   '/debug': typeof DebugRoute
   '/settings': typeof SettingsRoute
+  '/campus-payments/card': typeof CampusPaymentsCardRoute
+  '/campus-payments/electricity': typeof CampusPaymentsElectricityRoute
+  '/campus-payments/network': typeof CampusPaymentsNetworkRoute
+  '/campus-payments/recharge': typeof CampusPaymentsRechargeRoute
+  '/campus-payments': typeof CampusPaymentsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/campus-payments': typeof CampusPaymentsRouteRouteWithChildren
   '/about': typeof AboutRoute
   '/campus-network': typeof CampusNetworkRoute
-  '/campus-payments': typeof CampusPaymentsRoute
   '/debug': typeof DebugRoute
   '/settings': typeof SettingsRoute
+  '/campus-payments/card': typeof CampusPaymentsCardRoute
+  '/campus-payments/electricity': typeof CampusPaymentsElectricityRoute
+  '/campus-payments/network': typeof CampusPaymentsNetworkRoute
+  '/campus-payments/recharge': typeof CampusPaymentsRechargeRoute
+  '/campus-payments/': typeof CampusPaymentsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/campus-payments'
     | '/about'
     | '/campus-network'
-    | '/campus-payments'
     | '/debug'
     | '/settings'
+    | '/campus-payments/card'
+    | '/campus-payments/electricity'
+    | '/campus-payments/network'
+    | '/campus-payments/recharge'
+    | '/campus-payments/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/about'
     | '/campus-network'
-    | '/campus-payments'
     | '/debug'
     | '/settings'
+    | '/campus-payments/card'
+    | '/campus-payments/electricity'
+    | '/campus-payments/network'
+    | '/campus-payments/recharge'
+    | '/campus-payments'
   id:
     | '__root__'
     | '/'
+    | '/campus-payments'
     | '/about'
     | '/campus-network'
-    | '/campus-payments'
     | '/debug'
     | '/settings'
+    | '/campus-payments/card'
+    | '/campus-payments/electricity'
+    | '/campus-payments/network'
+    | '/campus-payments/recharge'
+    | '/campus-payments/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CampusPaymentsRouteRoute: typeof CampusPaymentsRouteRouteWithChildren
   AboutRoute: typeof AboutRoute
   CampusNetworkRoute: typeof CampusNetworkRoute
-  CampusPaymentsRoute: typeof CampusPaymentsRoute
   DebugRoute: typeof DebugRoute
   SettingsRoute: typeof SettingsRoute
 }
@@ -135,7 +194,7 @@ declare module '@tanstack/react-router' {
       id: '/campus-payments'
       path: '/campus-payments'
       fullPath: '/campus-payments'
-      preLoaderRoute: typeof CampusPaymentsRouteImport
+      preLoaderRoute: typeof CampusPaymentsRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/debug': {
@@ -152,14 +211,68 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/campus-payments/': {
+      id: '/campus-payments/'
+      path: '/'
+      fullPath: '/campus-payments/'
+      preLoaderRoute: typeof CampusPaymentsIndexRouteImport
+      parentRoute: typeof CampusPaymentsRouteRoute
+    }
+    '/campus-payments/card': {
+      id: '/campus-payments/card'
+      path: '/card'
+      fullPath: '/campus-payments/card'
+      preLoaderRoute: typeof CampusPaymentsCardRouteImport
+      parentRoute: typeof CampusPaymentsRouteRoute
+    }
+    '/campus-payments/electricity': {
+      id: '/campus-payments/electricity'
+      path: '/electricity'
+      fullPath: '/campus-payments/electricity'
+      preLoaderRoute: typeof CampusPaymentsElectricityRouteImport
+      parentRoute: typeof CampusPaymentsRouteRoute
+    }
+    '/campus-payments/network': {
+      id: '/campus-payments/network'
+      path: '/network'
+      fullPath: '/campus-payments/network'
+      preLoaderRoute: typeof CampusPaymentsNetworkRouteImport
+      parentRoute: typeof CampusPaymentsRouteRoute
+    }
+    '/campus-payments/recharge': {
+      id: '/campus-payments/recharge'
+      path: '/recharge'
+      fullPath: '/campus-payments/recharge'
+      preLoaderRoute: typeof CampusPaymentsRechargeRouteImport
+      parentRoute: typeof CampusPaymentsRouteRoute
+    }
   }
 }
 
+interface CampusPaymentsRouteRouteChildren {
+  CampusPaymentsCardRoute: typeof CampusPaymentsCardRoute
+  CampusPaymentsElectricityRoute: typeof CampusPaymentsElectricityRoute
+  CampusPaymentsNetworkRoute: typeof CampusPaymentsNetworkRoute
+  CampusPaymentsRechargeRoute: typeof CampusPaymentsRechargeRoute
+  CampusPaymentsIndexRoute: typeof CampusPaymentsIndexRoute
+}
+
+const CampusPaymentsRouteRouteChildren: CampusPaymentsRouteRouteChildren = {
+  CampusPaymentsCardRoute: CampusPaymentsCardRoute,
+  CampusPaymentsElectricityRoute: CampusPaymentsElectricityRoute,
+  CampusPaymentsNetworkRoute: CampusPaymentsNetworkRoute,
+  CampusPaymentsRechargeRoute: CampusPaymentsRechargeRoute,
+  CampusPaymentsIndexRoute: CampusPaymentsIndexRoute,
+}
+
+const CampusPaymentsRouteRouteWithChildren =
+  CampusPaymentsRouteRoute._addFileChildren(CampusPaymentsRouteRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CampusPaymentsRouteRoute: CampusPaymentsRouteRouteWithChildren,
   AboutRoute: AboutRoute,
   CampusNetworkRoute: CampusNetworkRoute,
-  CampusPaymentsRoute: CampusPaymentsRoute,
   DebugRoute: DebugRoute,
   SettingsRoute: SettingsRoute,
 }

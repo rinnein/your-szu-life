@@ -1,10 +1,13 @@
 pub(crate) mod commands;
-mod model;
+pub(crate) mod electricity;
+pub(crate) mod model;
 mod scripts;
 mod service;
 mod state;
 mod urls;
 
+pub(crate) use electricity::{ElectricityCampus, ElectricityQueryInput, ElectricityQueryView};
+pub(crate) use model::ElectricityLocationSettings;
 pub(crate) use service::{cancel, on_page_load};
 pub(crate) use state::CampusPaymentsStore;
 

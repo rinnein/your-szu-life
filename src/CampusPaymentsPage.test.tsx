@@ -38,6 +38,8 @@ function defaultCommand(command: string) {
   if (command === "get_auth_state") return authState;
   if (command === "get_account_profile" || command === "get_user_data") return profile;
   if (command === "get_debug_mode") return { enabled: false, logCount: 0 };
+  if (command === "get_electricity_options") return [];
+  if (command === "get_electricity_settings") return null;
   return null;
 }
 
@@ -89,7 +91,7 @@ describe("campus payments route", () => {
     expect(screen.queryByRole("button", { name: /网费与电费/ })).not.toBeInTheDocument();
     fireEvent.click(entry);
     expect(await screen.findByRole("heading", { name: "校园卡/电费/网费" })).toBeInTheDocument();
-    expect(router.state.location.pathname).toBe("/campus-payments");
+    expect(router.state.location.pathname).toBe("/campus-payments/electricity");
     const back = screen.getByRole("button", { name: "返回工作台" });
     expect(back).toHaveAttribute("data-slot", "close-button");
     expect(back.querySelector("svg")).toBeInTheDocument();
@@ -133,8 +135,8 @@ describe("campus payments route", () => {
     expect(await screen.findByRole("heading", { name: "统一认证已过期" })).toBeInTheDocument();
   });
 
-  it("keeps general instructions above the network button and WeChat services below", async () => {
-    renderAt();
+  it("keeps network instructions on the network subroute", async () => {
+    renderAt("/campus-payments/network");
     const open = await screen.findByRole("button", { name: "打开网费官网" });
     const guidance = screen.getByRole("region", { name: "网费办理说明" });
     expect(guidance).toHaveTextContent("请先在校园卡「通用代扣费账户」充值足够金额。");
@@ -142,25 +144,18 @@ describe("campus payments route", () => {
       "若当前套餐仍剩余多个月，请在套餐剩余一个月内预订下个月套餐；只有无套餐或套餐剩余一个月内，才能修改或续费套餐。",
     );
     expect(guidance.compareDocumentPosition(open) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    const electricity = screen.getByRole("heading", { name: "电费" });
-    expect(
-      open.compareDocumentPosition(electricity) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(screen.getAllByText("复制链接后在微信内打开，或使用微信扫码")).toHaveLength(2);
-    expect(screen.getByText(/不查询余额或账单/)).toBeInTheDocument();
-    const grid = electricity.closest(".payments-wechat-grid");
-    expect(grid?.children).toHaveLength(2);
+    expect(screen.queryByText("复制链接后在微信内打开，或使用微信扫码")).not.toBeInTheDocument();
   });
 
-  it("locally renders permanent QR SVGs with the entire official URLs and query strings", async () => {
-    renderAt();
-    await screen.findByRole("heading", { name: "校园卡/电费/网费" });
-    expect(WECHAT_SERVICES.map(({ url }) => url)).toEqual([
-      "https://weixiao.qq.com/apps/public/service/index.html?hid=bf11210a3cc169eaa981beeb476596f6&media_id=gh_a280c83dc0be",
-      "https://ecardwx.szu.edu.cn/wechat/home/index.html",
-    ]);
-    for (const service of WECHAT_SERVICES) {
-      const qr = screen.getByRole("img", { name: service.title + "微信二维码" });
+  const routeForService = (service: (typeof WECHAT_SERVICES)[number]) =>
+    service.id === "electricity" ? "/campus-payments/recharge" : "/campus-payments/card";
+
+  it.each(WECHAT_SERVICES)(
+    "locally renders the %s QR SVG with the entire official URL",
+    async (service) => {
+      renderAt(routeForService(service));
+      await screen.findByRole("heading", { name: "校园卡/电费/网费" });
+      const qr = await screen.findByRole("img", { name: service.title + "微信二维码" });
       expect(qr.tagName.toLowerCase()).toBe("svg");
       expect(qr.querySelector("path")).toBeInTheDocument();
       expect(qrProps).toHaveBeenCalledWith(
@@ -169,15 +164,15 @@ describe("campus payments route", () => {
       const link = screen.getByLabelText(service.title + "完整链接");
       expect(link).toHaveTextContent(service.url);
       expect(link).toHaveAttribute("tabindex", "0");
-    }
-    expect(document.querySelector(".payments-layout img[src]")).toBeNull();
-  });
+      expect(document.querySelector(".payments-layout img[src]")).toBeNull();
+    },
+  );
 
   for (const service of WECHAT_SERVICES) {
     it("copies the full " + service.title + " URL using Clipboard API", async () => {
       const writeText = vi.fn().mockResolvedValue(undefined);
       clipboard({ writeText });
-      renderAt();
+      renderAt(routeForService(service));
       fireEvent.click(await screen.findByRole("button", { name: "复制" + service.title + "链接" }));
       expect(await screen.findByRole("status")).toHaveTextContent(
         "链接已复制，请在微信内粘贴打开。",
@@ -192,7 +187,7 @@ describe("campus payments route", () => {
         return true;
       });
       fallback(execCommand);
-      renderAt();
+      renderAt(routeForService(service));
       fireEvent.click(await screen.findByRole("button", { name: "复制" + service.title + "链接" }));
       expect(await screen.findByRole("status")).toHaveTextContent("链接已复制");
       expect(execCommand).toHaveBeenCalledWith("copy");
@@ -204,7 +199,7 @@ describe("campus payments route", () => {
       async () => {
         clipboard({ writeText: vi.fn().mockRejectedValue(new Error("denied")) });
         fallback(vi.fn().mockReturnValue(false));
-        renderAt();
+        renderAt(routeForService(service));
         fireEvent.click(
           await screen.findByRole("button", { name: "复制" + service.title + "链接" }),
         );
@@ -221,7 +216,7 @@ describe("campus payments route", () => {
     vi.mocked(invoke).mockImplementation(async (command) =>
       command === "open_network_fee_portal" ? new Promise(() => {}) : defaultCommand(command),
     );
-    renderAt();
+    renderAt("/campus-payments/network");
     const open = await screen.findByRole("button", { name: "打开网费官网" });
     fireEvent.click(open);
     fireEvent.click(open);
@@ -238,7 +233,7 @@ describe("campus payments route", () => {
       if (command === "open_network_fee_portal") throw new Error("do-not-display-native-details");
       return defaultCommand(command);
     });
-    renderAt();
+    renderAt("/campus-payments/network");
     const open = await screen.findByRole("button", { name: "打开网费官网" });
     fireEvent.click(open);
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -262,8 +257,7 @@ describe("campus payments route", () => {
     vi.mocked(invoke).mockImplementation(async (command) =>
       command === "consume_network_fee_portal_notice" ? notice : defaultCommand(command),
     );
-    renderAt("/", true);
-    fireEvent.click(await screen.findByRole("button", { name: /校园卡\/电费\/网费/ }));
+    renderAt("/campus-payments/network", true);
     await screen.findByRole("heading", { name: "校园卡/电费/网费" });
     act(() => resolveNotice({ code: "loadTimeout", message: "官网加载超时，请重试。" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("官网加载超时，请重试。");
@@ -282,9 +276,206 @@ describe("campus payments route", () => {
     vi.mocked(invoke).mockImplementation(async (command) =>
       command === "consume_network_fee_portal_notice" ? notice : defaultCommand(command),
     );
-    renderAt();
+    renderAt("/campus-payments/network");
     fireEvent.click(await screen.findByRole("button", { name: "打开网费官网" }));
     await act(async () => resolveNotice({ code: "loginTimeout", message: "上一次登录超时" }));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows usage records by default and keeps current electricity separate", async () => {
+    const options = [
+      {
+        id: "yuehai",
+        name: "北校区（粤海校区）",
+        areas: [
+          {
+            id: "yuehai-main",
+            name: "粤海校区宿舍",
+            campusId: "yuehai",
+            provider: "sims",
+            buildings: [{ id: "b1", name: "B1" }],
+          },
+        ],
+      },
+    ];
+    const queryResult = {
+      campusId: "yuehai",
+      areaId: "yuehai-main",
+      buildingName: "B1",
+      roomName: "601",
+      beginDate: "2026-09-11",
+      endDate: "2026-09-17",
+      currentRemaining: 12.34,
+      readings: [
+        {
+          date: "2026-09-17",
+          roomName: "601",
+          remaining: 12.34,
+          totalUsed: 8.5,
+          totalPurchased: 20,
+          dailyUsed: 1.2,
+          dailyPurchased: 0,
+        },
+      ],
+    };
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_electricity_options") return options;
+      if (command === "get_electricity_settings") return null;
+      if (command === "save_electricity_settings") return null;
+      if (command === "query_electricity") return queryResult;
+      return defaultCommand(command);
+    });
+
+    renderAt("/campus-payments/electricity");
+    await screen.findByRole("heading", { name: "查电量" });
+    fireEvent.change(screen.getByRole("combobox", { name: "校区" }), {
+      target: { value: "yuehai" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "宿舍号" }), {
+      target: { value: "601" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "查询电费" }));
+
+    expect(await screen.findByRole("heading", { name: "用电记录" })).toBeInTheDocument();
+    expect(screen.getByLabelText("当前电量")).toHaveTextContent("12.34 度");
+    expect(screen.queryByRole("combobox", { name: "校区" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "修改宿舍配置" }));
+    expect(screen.getByRole("combobox", { name: "校区" })).toBeInTheDocument();
+    expect(screen.getByRole("table")).toHaveTextContent("2026-09-17");
+    expect(screen.getByRole("table")).toHaveTextContent("当日用电");
+    expect(invoke).toHaveBeenCalledWith("query_electricity", {
+      input: expect.objectContaining({ buildingId: "b1", roomName: "601" }),
+    });
+  });
+
+  it("automatically refreshes the saved room when entering the electricity page", async () => {
+    const saved = {
+      campusId: "yuehai",
+      areaId: "yuehai-main",
+      buildingId: "b1",
+      buildingName: "B1",
+      roomName: "601",
+    };
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_electricity_options") {
+        return [
+          {
+            id: "yuehai",
+            name: "北校区（粤海校区）",
+            areas: [
+              {
+                id: "yuehai-main",
+                name: "粤海校区宿舍",
+                campusId: "yuehai",
+                provider: "sims",
+                buildings: [{ id: "b1", name: "B1" }],
+              },
+            ],
+          },
+        ];
+      }
+      if (command === "get_electricity_settings") return saved;
+      if (command === "query_electricity") {
+        return {
+          campusId: "yuehai",
+          areaId: "yuehai-main",
+          buildingName: "B1",
+          roomName: "601",
+          beginDate: "2026-09-12",
+          endDate: "2026-09-18",
+          currentRemaining: 9.87,
+          readings: [],
+        };
+      }
+      return defaultCommand(command);
+    });
+
+    renderAt("/campus-payments/electricity");
+    expect(await screen.findByLabelText("当前电量")).toHaveTextContent("9.87 度");
+    expect(screen.queryByRole("combobox", { name: "校区" })).not.toBeInTheDocument();
+    expect(invoke).toHaveBeenCalledWith("query_electricity", {
+      input: expect.objectContaining({ buildingId: "b1", roomName: "601" }),
+    });
+  });
+
+  it("starts the saved-room query after the page is rendered", async () => {
+    const saved = {
+      campusId: "yuehai",
+      areaId: "yuehai-main",
+      buildingId: "b1",
+      buildingName: "B1",
+      roomName: "601",
+    };
+    let resolveQuery!: (value: unknown) => void;
+    const query = new Promise((resolve) => {
+      resolveQuery = resolve;
+    });
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_electricity_options") {
+        return [
+          {
+            id: "yuehai",
+            name: "北校区（粤海校区）",
+            areas: [
+              {
+                id: "yuehai-main",
+                name: "粤海校区宿舍",
+                campusId: "yuehai",
+                provider: "sims",
+                buildings: [{ id: "b1", name: "B1" }],
+              },
+            ],
+          },
+        ];
+      }
+      if (command === "get_electricity_settings") return saved;
+      if (command === "query_electricity") return query;
+      return defaultCommand(command);
+    });
+
+    renderAt("/campus-payments/electricity", true);
+    expect(await screen.findByRole("heading", { name: "查电量" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /查询中/ })).toBeDisabled();
+    expect(screen.queryByLabelText("当前电量")).not.toBeInTheDocument();
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === "query_electricity"),
+    ).toHaveLength(1);
+
+    resolveQuery({
+      campusId: "yuehai",
+      areaId: "yuehai-main",
+      buildingName: "B1",
+      roomName: "601",
+      beginDate: "2026-09-12",
+      endDate: "2026-09-18",
+      currentRemaining: 9.87,
+      readings: [],
+    });
+    expect(await screen.findByLabelText("当前电量")).toHaveTextContent("9.87 度");
+  });
+
+  it("renders the electricity page while its initial data is still loading", async () => {
+    let resolveOptions!: (value: unknown) => void;
+    let resolveSettings!: (value: unknown) => void;
+    const options = new Promise((resolve) => {
+      resolveOptions = resolve;
+    });
+    const settings = new Promise((resolve) => {
+      resolveSettings = resolve;
+    });
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_electricity_options") return options;
+      if (command === "get_electricity_settings") return settings;
+      return defaultCommand(command);
+    });
+
+    renderAt("/campus-payments/electricity");
+    expect(await screen.findByRole("heading", { name: "查电量" })).toBeInTheDocument();
+    expect(screen.getByText("正在加载宿舍选项…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查询电费" })).toBeDisabled();
+
+    resolveOptions([]);
+    resolveSettings(null);
+    await waitFor(() => expect(screen.queryByText("正在加载宿舍选项…")).not.toBeInTheDocument());
   });
 });

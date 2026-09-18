@@ -1,14 +1,11 @@
 use super::{
-    model::{AuthAttempt, AuthState},
+    model::AuthState,
     probe::{
         auth_probe_reached_verified_endpoint, auth_probe_succeeded, is_auth_login_url,
         is_auth_profile_url,
     },
     scripts::*,
-    service::{
-        complete_authentication, credential_capture_failure, recover_session_restore_redirect,
-        session_failure,
-    },
+    service::{complete_authentication, credential_capture_failure},
     AuthStore,
 };
 use std::{
@@ -153,31 +150,11 @@ pub(crate) fn on_page_load(window: &tauri::Webview, payload: &tauri::webview::Pa
     let url = payload.url().as_str();
     if is_auth_login_url(url) {
         let app = window.app_handle();
-        let restoring_session = app.try_state::<AuthStore>().is_some_and(|store| {
-            matches!(
-                store.attempt.lock().ok().as_deref(),
-                Some(AuthAttempt::SessionRestore { .. })
-            )
-        });
-        if restoring_session {
-            // Handle the stale-session redirect on the first load event. Waiting
-            // for `Finished` allows WebView redirect loops to run before we can
-            // clear the expired cookies and navigate to a clean login page.
-            if let Some(store) = app.try_state::<AuthStore>() {
-                store.cancel_auth_probe();
-                if recover_session_restore_redirect(&app, &store).is_err() {
-                    session_failure(&app, &store);
-                }
-            }
-            return;
-        }
         if let Some(store) = app.try_state::<AuthStore>() {
             store.cancel_auth_probe();
         }
-        if !restoring_session {
-            let (allows_qr_login, prefill) = login_capture_context(&app);
-            inject_login_capture(window, allows_qr_login, prefill.as_ref());
-        }
+        let (allows_qr_login, prefill) = login_capture_context(&app);
+        inject_login_capture(window, allows_qr_login, prefill.as_ref());
     }
 
     if is_finished

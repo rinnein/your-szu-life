@@ -20,7 +20,7 @@ pub(super) fn auth_login_capture_script(
         r#"
 (() => {{
   if (location.protocol !== 'https:' || location.host !== '{AUTH_HOST}' ||
-      !location.pathname.startsWith('/authserver/login') ||
+      location.pathname !== '/authserver/login' ||
       window.__SZU_LOGIN_CAPTURE_VERSION__ === '3') return;
   if (!document.documentElement) return;
 

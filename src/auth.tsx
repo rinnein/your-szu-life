@@ -70,6 +70,29 @@ export function normalizeAuthState(raw: unknown): AuthState {
       if (!authenticated.studentId) throw new Error("认证状态中缺少学号");
       return { Authenticated: authenticated as AuthenticatedState };
     }
+    for (const key of [
+      "Checking",
+      "Unauthenticated",
+      "Authenticating",
+      "CredentialCaptureFailed",
+      "SessionCaptureFailed",
+      "CredentialStorageFailed",
+      "AccountMismatch",
+      "SessionExpired",
+      "checking",
+      "unauthenticated",
+      "authenticating",
+      "credentialCaptureFailed",
+      "sessionCaptureFailed",
+      "credentialStorageFailed",
+      "accountMismatch",
+      "sessionExpired",
+    ]) {
+      if (key in value) {
+        const normalized = key.charAt(0).toUpperCase() + key.slice(1);
+        return { [normalized]: null } as AuthState;
+      }
+    }
   }
   throw new Error("无法识别统一认证状态");
 }
@@ -167,6 +190,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     return () => unlisten?.();
   }, []);
+
+  useEffect(() => {
+    if (!("Authenticated" in state)) return;
+    const requestRefresh = () => {
+      void invoke("refresh_auth_session").catch(() => undefined);
+    };
+    requestRefresh();
+    const onFocus = () => requestRefresh();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") requestRefresh();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [state]);
 
   const value = useMemo(
     () => ({ state, profile, userData, refresh, setState, setProfile }),

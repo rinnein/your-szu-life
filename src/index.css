@@ -597,6 +597,169 @@ p {
   letter-spacing: -0.04em;
 }
 
+.payments-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-inline: 52px;
+}
+
+.payments-tabs button svg {
+  margin-right: 6px;
+}
+
+.electricity-page,
+.electricity-recharge {
+  display: grid;
+  gap: 24px;
+}
+
+.payments-section-heading {
+  display: grid;
+  gap: 6px;
+}
+
+.payments-section-heading h2,
+.payments-section-heading p {
+  margin: 0;
+}
+
+.payments-section-heading p {
+  color: var(--szu-muted);
+  line-height: 1.6;
+}
+
+.electricity-form {
+  display: grid;
+  gap: 20px;
+}
+
+.electricity-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  color: var(--szu-muted);
+  font-size: 13px;
+}
+
+.electricity-fields,
+.electricity-dates {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.electricity-dates {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 620px;
+}
+
+.electricity-fields > label,
+.electricity-form .field,
+.electricity-dates .field {
+  display: grid;
+  gap: 8px;
+  color: var(--szu-ink);
+  font-size: 13px;
+}
+
+.electricity-fields select {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid #d5d9e8;
+  border-radius: 8px;
+  background: white;
+  color: var(--szu-ink);
+}
+
+.electricity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.electricity-location-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--szu-page);
+  color: var(--szu-muted);
+}
+
+.electricity-location-summary strong {
+  color: var(--szu-ink);
+}
+
+.electricity-table-wrap {
+  overflow-x: auto;
+}
+
+.electricity-table {
+  width: 100%;
+  min-width: 660px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.electricity-table th,
+.electricity-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #e4e6ef;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.electricity-table th:first-child,
+.electricity-table td:first-child {
+  text-align: left;
+}
+
+.electricity-table th {
+  color: var(--szu-muted);
+  font-weight: 600;
+}
+
+.electricity-current {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: var(--szu-brand-soft);
+}
+
+.electricity-current-label {
+  color: var(--szu-muted);
+  font-size: 14px;
+}
+
+.electricity-current strong {
+  color: var(--szu-brand);
+  font-size: 28px;
+  letter-spacing: -0.03em;
+}
+
+.electricity-section-title {
+  margin: 0 0 12px;
+  font-size: 17px;
+}
+
+.payments-empty {
+  margin: 0;
+  color: var(--szu-muted);
+}
+
+.electricity-recharge h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
 .payments-card {
   min-width: 0;
   box-shadow: 0 12px 35px #25285812;
@@ -700,6 +863,16 @@ p {
 @media (max-width: 700px) {
   .payments-header {
     padding-inline: 44px 0;
+  }
+
+  .payments-tabs {
+    padding-inline: 44px 0;
+  }
+
+  .electricity-fields,
+  .electricity-dates {
+    grid-template-columns: minmax(0, 1fr);
+    max-width: none;
   }
 
   .payments-wechat-grid {

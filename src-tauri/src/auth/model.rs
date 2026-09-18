@@ -88,7 +88,6 @@ pub(super) enum AuthAttempt {
     None,
     InitialSetup,
     ReauthenticateExisting { student_id: String },
-    SessionRestore { student_id: String },
 }
 
 impl AuthAttempt {

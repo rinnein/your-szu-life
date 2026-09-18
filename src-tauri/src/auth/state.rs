@@ -4,6 +4,9 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Mutex,
 };
+use std::time::{SystemTime, UNIX_EPOCH};
+
+const SESSION_REFRESH_COOLDOWN_MS: u64 = 10_000;
 
 pub struct AuthStore {
     pub(super) state: Mutex<AuthState>,
@@ -13,10 +16,12 @@ pub struct AuthStore {
     pub(super) captured: Mutex<Option<CapturedCredentials>>,
     pub(super) login_prefill: Mutex<Option<LoginFormPrefill>>,
     pub(super) resume_url: Mutex<Option<tauri::Url>>,
-    pub(super) session_restore_redirect_handled: AtomicBool,
     pub(super) auth_probe_running: AtomicBool,
     pub(super) auth_probe_generation: AtomicU64,
     pub(super) auth_completion_claimed: AtomicBool,
+    pub(super) session_refresh_running: AtomicBool,
+    pub(super) session_refresh_generation: AtomicU64,
+    pub(super) session_refresh_last_started_ms: AtomicU64,
     pub(super) credentials: SharedCredentialStore,
 }
 
@@ -30,26 +35,62 @@ impl AuthStore {
             captured: Mutex::new(None),
             login_prefill: Mutex::new(None),
             resume_url: Mutex::new(None),
-            session_restore_redirect_handled: AtomicBool::new(false),
             auth_probe_running: AtomicBool::new(false),
             auth_probe_generation: AtomicU64::new(0),
             auth_completion_claimed: AtomicBool::new(false),
+            session_refresh_running: AtomicBool::new(false),
+            session_refresh_generation: AtomicU64::new(0),
+            session_refresh_last_started_ms: AtomicU64::new(0),
             credentials,
         }
     }
 
     pub(super) fn reset_auth_flow_guards(&self) {
-        self.session_restore_redirect_handled
-            .store(false, Ordering::Release);
         self.auth_probe_generation.fetch_add(1, Ordering::AcqRel);
         self.auth_probe_running.store(false, Ordering::Release);
         self.auth_completion_claimed.store(false, Ordering::Release);
+        self.session_refresh_last_started_ms
+            .store(0, Ordering::Release);
+        self.cancel_session_refresh();
     }
 
-    pub(super) fn claim_session_restore_redirect(&self) -> bool {
-        self.session_restore_redirect_handled
+    pub(super) fn try_start_session_refresh(&self) -> Option<u64> {
+        if self
+            .session_refresh_running
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
+            .is_err()
+        {
+            return None;
+        }
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or_default();
+        let last = self.session_refresh_last_started_ms.load(Ordering::Acquire);
+        if now.saturating_sub(last) < SESSION_REFRESH_COOLDOWN_MS && last != 0 {
+            self.session_refresh_running.store(false, Ordering::Release);
+            return None;
+        }
+        self.session_refresh_last_started_ms
+            .store(now, Ordering::Release);
+        Some(self.session_refresh_generation.load(Ordering::Acquire))
+    }
+
+    pub(super) fn cancel_session_refresh(&self) {
+        self.session_refresh_generation
+            .fetch_add(1, Ordering::AcqRel);
+        self.session_refresh_running.store(false, Ordering::Release);
+    }
+
+    pub(super) fn session_refresh_is_current(&self, generation: u64) -> bool {
+        self.session_refresh_running.load(Ordering::Acquire)
+            && self.session_refresh_generation.load(Ordering::Acquire) == generation
+    }
+
+    pub(super) fn finish_session_refresh(&self, generation: u64) {
+        if self.session_refresh_generation.load(Ordering::Acquire) == generation {
+            self.session_refresh_running.store(false, Ordering::Release);
+        }
     }
 
     pub(super) fn try_start_auth_probe(&self) -> Option<u64> {

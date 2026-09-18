@@ -7,10 +7,13 @@ use tauri::Manager;
 
 pub(crate) fn run() {
     let credentials: SharedCredentialStore = Arc::new(PlatformCredentialStore);
+    let electricity_credentials = credentials.clone();
     let builder = tauri::Builder::default()
         .manage(auth::AuthStore::new(credentials.clone()))
         .manage(campus_network::CampusNetworkStore::new(credentials))
-        .manage(campus_payments::CampusPaymentsStore::default())
+        .manage(campus_payments::CampusPaymentsStore::new(
+            electricity_credentials,
+        ))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
@@ -30,6 +33,7 @@ pub(crate) fn run() {
             app_content::commands::load_announcement_image,
             auth::commands::capture_auth_credentials,
             auth::commands::get_auth_state,
+            auth::commands::refresh_auth_session,
             auth::commands::get_account_profile,
             auth::commands::get_user_data,
             auth::commands::confirm_profile,
@@ -37,6 +41,10 @@ pub(crate) fn run() {
             auth::commands::logout,
             campus_payments::commands::open_network_fee_portal,
             campus_payments::commands::consume_network_fee_portal_notice,
+            campus_payments::commands::get_electricity_options,
+            campus_payments::commands::get_electricity_settings,
+            campus_payments::commands::save_electricity_settings,
+            campus_payments::commands::query_electricity,
             campus_network::commands::get_network_overview,
             campus_network::commands::refresh_campus_network,
             campus_network::commands::request_campus_network_permissions,

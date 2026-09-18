@@ -1,7 +1,8 @@
 use super::{
-    model::*, probe::*, session::*, webview::resume_application_window, AuthStore, AUTH_HOST,
-    AUTH_LOGIN_URL,
+    model::*, probe::*, refresh::*, session::*, webview::resume_application_window, AuthStore,
+    AUTH_HOST, AUTH_LOGIN_URL,
 };
+use std::thread;
 use tauri::{Emitter, Manager};
 
 pub(super) fn emit_state(app: &tauri::AppHandle, state: AuthState) {
@@ -18,59 +19,6 @@ pub(super) fn session_failure(app: &tauri::AppHandle, store: &AuthStore) {
     let _ = store.credentials.delete_session();
     let _ = clear_webview_session(app);
     set_terminal_state(app, store, AuthState::SessionCaptureFailed);
-}
-
-/// A restored session can be redirected to the official login page after the
-/// app has been suspended for a long time.  Treat that redirect as a single
-/// transition into a fresh login attempt instead of repeatedly restoring the
-/// same stale cookies and producing a redirect loop.
-pub(super) fn recover_session_restore_redirect(
-    app: &tauri::AppHandle,
-    store: &AuthStore,
-) -> Result<bool, String> {
-    if !store.claim_session_restore_redirect() {
-        return Ok(false);
-    }
-
-    let profile = store
-        .profile
-        .lock()
-        .map_err(|_| "状态锁失败")?
-        .clone()
-        .or(store.credentials.load_profile()?);
-    let pending = store
-        .pending
-        .lock()
-        .map_err(|_| "状态锁失败")?
-        .clone()
-        .or(store.credentials.load_pending()?);
-    let attempt = match profile.as_ref() {
-        Some(profile) => AuthAttempt::ReauthenticateExisting {
-            student_id: profile.student_id.clone(),
-        },
-        None => AuthAttempt::InitialSetup,
-    };
-    let prefill = login_form_prefill(profile.as_ref(), pending.as_ref());
-
-    let _ = store.credentials.delete_session();
-    let _ = clear_webview_session(app);
-    *store.profile.lock().map_err(|_| "状态锁失败")? = profile;
-    *store.pending.lock().map_err(|_| "状态锁失败")? = pending;
-    *store.attempt.lock().map_err(|_| "状态锁失败")? = attempt;
-    *store.captured.lock().map_err(|_| "状态锁失败")? = None;
-    *store.login_prefill.lock().map_err(|_| "状态锁失败")? = prefill;
-    *store.state.lock().map_err(|_| "状态锁失败")? = AuthState::Authenticating;
-
-    let window = app.get_webview_window("main").ok_or("主窗口不存在")?;
-    window
-        .navigate(
-            AUTH_LOGIN_URL
-                .parse::<tauri::Url>()
-                .map_err(|error| error.to_string())?,
-        )
-        .map_err(|error| error.to_string())?;
-    emit_state(app, AuthState::Authenticating);
-    Ok(true)
 }
 
 pub(super) fn credential_capture_failure(app: &tauri::AppHandle, store: &AuthStore) {
@@ -137,11 +85,7 @@ pub(super) fn complete_authentication(app: tauri::AppHandle, payload: String) {
     }
 
     let completion = match (profile, pending, attempt) {
-        (
-            Some(mut profile),
-            _,
-            AuthAttempt::ReauthenticateExisting { .. } | AuthAttempt::SessionRestore { .. },
-        ) => {
+        (Some(mut profile), _, AuthAttempt::ReauthenticateExisting { .. }) => {
             if profile.student_id != student_id {
                 let _ = store.credentials.delete_session();
                 let _ = clear_webview_session(&app);
@@ -153,7 +97,7 @@ pub(super) fn complete_authentication(app: tauri::AppHandle, payload: String) {
             }
             Completion::Existing(profile)
         }
-        (_, Some(mut pending), AuthAttempt::InitialSetup | AuthAttempt::SessionRestore { .. }) => {
+        (_, Some(mut pending), AuthAttempt::InitialSetup) => {
             if pending.student_id != student_id {
                 let _ = store.credentials.delete_session();
                 let _ = clear_webview_session(&app);
@@ -316,35 +260,6 @@ pub(super) fn capture_auth_credentials(
     Ok(())
 }
 
-pub(super) fn start_session_restore(
-    app: tauri::AppHandle,
-    store: &AuthStore,
-    session: AuthSessionSecret,
-) -> Result<AuthState, String> {
-    store.reset_auth_flow_guards();
-    *store.state.lock().map_err(|_| "状态锁失败")? = AuthState::Authenticating;
-    *store.attempt.lock().map_err(|_| "状态锁失败")? = AuthAttempt::SessionRestore {
-        student_id: session.student_id.clone(),
-    };
-    if let Err(_) = restore_auth_session(&app, &session) {
-        let _ = store.credentials.delete_session();
-        let _ = clear_webview_session(&app);
-        let next = if store.profile.lock().map_err(|_| "状态锁失败")?.is_some()
-            || store.pending.lock().map_err(|_| "状态锁失败")?.is_some()
-        {
-            AuthState::SessionExpired
-        } else {
-            AuthState::Unauthenticated
-        };
-        *store.state.lock().map_err(|_| "状态锁失败")? = next.clone();
-        *store.attempt.lock().map_err(|_| "状态锁失败")? = AuthAttempt::None;
-        emit_state(&app, next.clone());
-        return Ok(next);
-    }
-    emit_state(&app, AuthState::Authenticating);
-    Ok(AuthState::Authenticating)
-}
-
 pub(super) fn get_auth_state(
     app: tauri::AppHandle,
     store: &AuthStore,
@@ -356,31 +271,102 @@ pub(super) fn get_auth_state(
 
     let profile = store.credentials.load_profile()?;
     let pending = store.credentials.load_pending()?;
-    let session = store.credentials.load_session()?;
+    // A missing or unreadable session must not delay local account startup.
+    // The background refresh can recover it once the network and keyring are
+    // available again.
+    let session = store.credentials.load_session().unwrap_or(None);
     *store.profile.lock().map_err(|_| "状态锁失败")? = profile.clone();
     *store.pending.lock().map_err(|_| "状态锁失败")? = pending.clone();
 
-    if let Some(session) = session
-        .filter(|session| session_matches_account(session, profile.as_ref(), pending.as_ref()))
-    {
-        if let Some(window) = app.get_webview_window("main") {
-            if let Ok(current_url) = window.url() {
-                if current_url.host_str() != Some(AUTH_HOST) {
-                    *store.resume_url.lock().map_err(|_| "状态锁失败")? = Some(current_url);
-                }
-            }
-        }
-        return start_session_restore(app, &store, session);
+    if let Some(profile) = profile {
+        let next = AuthState::Authenticated {
+            name: profile.name,
+            student_id: profile.student_id.clone(),
+        };
+        *store.state.lock().map_err(|_| "状态锁失败")? = next.clone();
+        emit_state(&app, next.clone());
+        start_session_refresh(app, profile.student_id, session);
+        return Ok(next);
     }
-    let _ = store.credentials.delete_session();
-    let next = if profile.is_some() || pending.is_some() {
-        AuthState::SessionExpired
+    let next = if let Some(pending) = pending {
+        AuthState::AwaitingProfile {
+            name: pending.name,
+            student_id: Some(pending.student_id),
+        }
     } else {
+        let _ = store.credentials.delete_session();
         AuthState::Unauthenticated
     };
     *store.state.lock().map_err(|_| "状态锁失败")? = next.clone();
     emit_state(&app, next.clone());
     Ok(next)
+}
+
+pub(super) fn refresh_auth_session(app: tauri::AppHandle) -> Result<(), String> {
+    let store = app.try_state::<AuthStore>().ok_or("认证状态不可用")?;
+    // Refresh is only a background continuation of an already authenticated
+    // local account. Reauthentication and terminal states must not start a
+    // second worker or emit duplicate expiry events.
+    if !matches!(
+        store.state.lock().map_err(|_| "状态锁失败")?.clone(),
+        AuthState::Authenticated { .. }
+    ) {
+        return Ok(());
+    }
+    let profile = store
+        .profile
+        .lock()
+        .map_err(|_| "状态锁失败")?
+        .clone()
+        .or(store.credentials.load_profile()?);
+    let Some(profile) = profile else {
+        return Ok(());
+    };
+    let session = store.credentials.load_session().unwrap_or(None);
+    start_session_refresh(app, profile.student_id, session);
+    Ok(())
+}
+
+fn start_session_refresh(
+    app: tauri::AppHandle,
+    student_id: String,
+    session: Option<AuthSessionSecret>,
+) {
+    let Some(store) = app.try_state::<AuthStore>() else {
+        return;
+    };
+    let Some(generation) = store.try_start_session_refresh() else {
+        return;
+    };
+    let worker_app = app.clone();
+    thread::spawn(move || {
+        let outcome = refresh_session(session, &student_id);
+        let Some(store) = worker_app.try_state::<AuthStore>() else {
+            return;
+        };
+        if !store.session_refresh_is_current(generation) {
+            return;
+        }
+        match outcome {
+            RefreshOutcome::Refreshed(session) => {
+                if store.credentials.save_session(&session).is_ok() {
+                    let _ = install_auth_session_cookies(&worker_app, &session);
+                }
+            }
+            RefreshOutcome::Invalid => {
+                let _ = store.credentials.delete_session();
+                store.finish_attempt(AuthState::SessionExpired);
+                emit_state(&worker_app, AuthState::SessionExpired);
+            }
+            RefreshOutcome::Mismatch => {
+                let _ = store.credentials.delete_session();
+                store.finish_attempt(AuthState::AccountMismatch);
+                emit_state(&worker_app, AuthState::AccountMismatch);
+            }
+            RefreshOutcome::Unavailable => {}
+        }
+        store.finish_session_refresh(generation);
+    });
 }
 
 pub(super) fn get_account_profile(store: &AuthStore) -> Result<Option<AccountProfileView>, String> {
@@ -450,6 +436,7 @@ pub(super) fn confirm_profile(
 pub(super) fn navigate_to_authentication(app: tauri::AppHandle) -> Result<(), String> {
     let window = app.get_webview_window("main").ok_or("主窗口不存在")?;
     let store = app.try_state::<AuthStore>().ok_or("认证状态不可用")?;
+    store.cancel_session_refresh();
     let payments_return = crate::campus_payments::cancel(&app);
     if let Some(current_url) = payments_return.or_else(|| window.url().ok()) {
         if current_url.host_str() != Some(AUTH_HOST) {
@@ -503,6 +490,7 @@ pub(super) fn begin_authentication(app: tauri::AppHandle) -> Result<(), String> 
 }
 
 pub(super) fn logout(app: tauri::AppHandle, store: &AuthStore) -> Result<(), String> {
+    store.cancel_session_refresh();
     crate::campus_payments::cancel(&app);
     store.credentials.delete_profile()?;
     store.credentials.delete_pending()?;

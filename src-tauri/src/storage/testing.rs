@@ -96,6 +96,12 @@ impl CredentialStore for MemoryCredentialStore {
         DormCustomCredentials,
         DormNetworkCredentials
     );
+    stored_value!(
+        load_electricity_settings,
+        save_electricity_settings,
+        ElectricityLocationSettings,
+        ElectricitySettings
+    );
     fn delete_profile(&self) -> Result<(), String> {
         self.delete(SecretKey::Profile)
     }

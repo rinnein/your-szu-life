@@ -206,9 +206,17 @@ impl Runtime {
 pub(crate) struct CampusPaymentsStore {
     pub(super) opening: Mutex<()>,
     pub(super) runtime: Mutex<Runtime>,
+    pub(crate) electricity: super::electricity::ElectricityStore,
 }
 
 impl CampusPaymentsStore {
+    pub(crate) fn new(credentials: crate::storage::SharedCredentialStore) -> Self {
+        Self {
+            opening: Mutex::new(()),
+            runtime: Mutex::new(Runtime::default()),
+            electricity: super::electricity::ElectricityStore::new(credentials),
+        }
+    }
     /// Reserve before any native browsing-data operation. Concurrent opens
     /// must not clear a WebView after another request has already navigated.
     pub(super) fn reserve(

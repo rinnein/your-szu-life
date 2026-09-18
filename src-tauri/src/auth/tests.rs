@@ -56,17 +56,7 @@ fn session_cookie_rejects_external_domains_and_expired_sessions() {
     assert!(is_auth_cookie_domain(".szu.edu.cn"));
     let mut expired = session_cookie();
     expired.expires = Some("Sun, 13 Sep 2020 00:00:00 +0000".into());
-    let session = AuthSessionSecret {
-        student_id: "1234567890".into(),
-        cookies: vec![expired],
-    };
-    let profile = StoredAccountProfile {
-        student_id: "1234567890".into(),
-        campus_card_number: "123456".into(),
-        name: None,
-        password: "secret".into(),
-    };
-    assert!(!session_matches_account(&session, Some(&profile), None));
+    assert!(expired.is_definitely_expired(time::OffsetDateTime::now_utc()));
 }
 
 #[test]
@@ -206,8 +196,6 @@ fn auth_flow_guards_are_one_shot_and_resettable() {
     use std::sync::Arc;
 
     let store = super::AuthStore::new(Arc::new(MemoryCredentialStore::default()));
-    assert!(store.claim_session_restore_redirect());
-    assert!(!store.claim_session_restore_redirect());
     let generation = store.try_start_auth_probe().expect("probe starts");
     assert!(store.try_start_auth_probe().is_none());
     assert!(store.auth_probe_is_current(generation));
@@ -218,8 +206,28 @@ fn auth_flow_guards_are_one_shot_and_resettable() {
     assert!(store.claim_auth_completion());
     assert!(!store.claim_auth_completion());
     store.reset_auth_flow_guards();
-    assert!(store.claim_session_restore_redirect());
     assert!(store.claim_auth_completion());
+}
+
+#[test]
+fn session_refresh_guard_is_single_flight_and_cancellable() {
+    use crate::storage::testing::MemoryCredentialStore;
+    use std::sync::Arc;
+
+    let store = super::AuthStore::new(Arc::new(MemoryCredentialStore::default()));
+    let generation = store.try_start_session_refresh().expect("refresh starts");
+    assert!(store.try_start_session_refresh().is_none());
+    assert!(store.session_refresh_is_current(generation));
+    store.cancel_session_refresh();
+    assert!(!store.session_refresh_is_current(generation));
+    store
+        .session_refresh_last_started_ms
+        .store(0, std::sync::atomic::Ordering::Release);
+    let next_generation = store.try_start_session_refresh().expect("refresh restarts");
+    store.finish_session_refresh(next_generation);
+    assert!(store.try_start_session_refresh().is_none());
+    store.reset_auth_flow_guards();
+    assert!(store.try_start_session_refresh().is_some());
 }
 
 #[test]
@@ -258,6 +266,16 @@ fn accepts_only_strict_successful_probe_results() {
     assert!(!auth_probe_succeeded(login_redirect));
     assert!(auth_probe_reached_verified_endpoint(invalid_uid));
     assert!(!auth_probe_succeeded(invalid_uid));
+}
+
+#[test]
+fn auth_login_url_requires_the_exact_official_path() {
+    assert!(is_auth_login_url(
+        "https://authserver.szu.edu.cn/authserver/login?service=app"
+    ));
+    assert!(!is_auth_login_url(
+        "https://authserver.szu.edu.cn/authserver/login-redirect"
+    ));
 }
 
 #[test]
