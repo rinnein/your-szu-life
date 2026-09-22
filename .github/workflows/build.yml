@@ -1,0 +1,209 @@
+name: Build packages
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            os: ubuntu-latest
+            bundles: deb appimage
+            paths: |
+              src-tauri/target/release/bundle/deb/*.deb
+              src-tauri/target/release/bundle/appimage/*.AppImage
+          - name: windows-x64
+            os: windows-latest
+            bundles: nsis msi
+            paths: |
+              src-tauri/target/release/bundle/nsis/*.exe
+              src-tauri/target/release/bundle/msi/*.msi
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@v1.21.0
+        with:
+          node-version: '22'
+          cache: true
+          run-install: false
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            wget
+
+      - name: Install frontend dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Build desktop bundles
+        run: vpr tauri build --ci --bundles ${{ matrix.bundles }}
+
+      - name: Upload desktop bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.paths }}
+          if-no-files-found: error
+          retention-days: 14
+
+  android:
+    name: android
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@v1.21.0
+        with:
+          node-version: '22'
+          cache: true
+          run-install: false
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;35.0.0" \
+            "ndk;27.0.12077973"
+
+      - name: Set up Rust targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Install frontend dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Configure fixed Android signing
+        if: github.ref == 'refs/heads/master'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_PASSWORD"
+          android_dir="src-tauri/gen/android"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$android_dir/ci-release.keystore"
+          cat > "$android_dir/keystore.properties" <<EOF
+          storeFile=ci-release.keystore
+          keyAlias=$ANDROID_KEY_ALIAS
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
+
+      - name: Configure temporary Android signing
+        if: github.ref != 'refs/heads/master'
+        shell: bash
+        run: |
+          set -euo pipefail
+          android_dir="src-tauri/gen/android"
+          keytool -genkeypair -v \
+            -keystore "$android_dir/ci-ephemeral.keystore" \
+            -alias ci \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass changeit \
+            -keypass changeit \
+            -dname "CN=your-szu-life CI"
+          cat > "$android_dir/keystore.properties" <<'EOF'
+          storeFile=ci-ephemeral.keystore
+          keyAlias=ci
+          storePassword=changeit
+          keyPassword=changeit
+          EOF
+
+      - name: Build Android APK and AAB
+        run: vpr tauri android build --ci --apk --aab
+
+      - name: Verify Android signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          apk="$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -print -quit)"
+          aab="$(find src-tauri/gen/android/app/build/outputs/bundle -name '*.aab' -print -quit)"
+          test -n "$apk"
+          test -n "$aab"
+          apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          test -n "$apksigner"
+          "$apksigner" verify --verbose "$apk"
+          # AABs are signed with the configured release key (or an ephemeral
+          # CI key). jarsigner may report a self-signed certificate as an
+          # untrusted chain, so verify the JAR signature without requiring
+          # the certificate to chain to the runner's trust store.
+          jarsigner -verify "$aab"
+
+      - name: Upload Android packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: |
+            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+            src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove signing material
+        if: always()
+        shell: bash
+        run: rm -f src-tauri/gen/android/ci-*.keystore src-tauri/gen/android/keystore.properties
+
+  aur-source:
+    name: aur-source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Upload AUR PKGBUILD
+        uses: actions/upload-artifact@v4
+        with:
+          name: aur-source
+          path: PKGBUILD
+          if-no-files-found: error
+          retention-days: 14

@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "your-szu-life",
+  "productName": "泥深",
   "version": "../package.json",
   "identifier": "in.rinne.your-szu-life",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "your-szu-life",
+        "title": "泥深",
         "width": 800,
         "height": 600
       }
