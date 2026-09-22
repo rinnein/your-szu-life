@@ -1,5 +1,7 @@
 use tauri::Manager;
 
+const TRAY_ICON: tauri::image::Image<'static> = tauri::include_image!("icons/32x32.png");
+
 pub(crate) fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;
@@ -7,8 +9,9 @@ pub(crate) fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
     let exit = MenuItem::with_id(app, "exit", "退出", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &exit])?;
     TrayIconBuilder::new()
+        .icon(TRAY_ICON)
         .menu(&menu)
-        .tooltip("深大生活")
+        .tooltip("泥深")
         .on_menu_event(|app, event| match event.id().as_ref() {
             "show" => {
                 if let Some(window) = app.get_webview_window("main") {

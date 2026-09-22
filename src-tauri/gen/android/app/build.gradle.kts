@@ -1,3 +1,4 @@
+import java.io.FileInputStream
 import java.util.Properties
 
 private fun rustlsPlatformVerifierMavenDir(): File {
@@ -45,9 +46,30 @@ val tauriProperties = Properties().apply {
     }
 }
 
+val releaseSigningPropertiesFile = rootProject.file("keystore.properties")
+val releaseSigningProperties = Properties().apply {
+    if (releaseSigningPropertiesFile.exists()) {
+        FileInputStream(releaseSigningPropertiesFile).use { load(it) }
+    }
+}
+
+fun releaseSigningProperty(name: String): String =
+    releaseSigningProperties.getProperty(name)
+        ?: error("Missing $name in ${releaseSigningPropertiesFile.path}")
+
 android {
     compileSdk = 36
     namespace = "in.rinne.your_szu_life"
+    signingConfigs {
+        if (releaseSigningPropertiesFile.exists()) {
+            create("release") {
+                keyAlias = releaseSigningProperty("keyAlias")
+                keyPassword = releaseSigningProperty("keyPassword")
+                storeFile = rootProject.file(releaseSigningProperty("storeFile"))
+                storePassword = releaseSigningProperty("storePassword")
+            }
+        }
+    }
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         applicationId = "in.rinne.your_szu_life"
@@ -70,6 +92,9 @@ android {
         }
         getByName("release") {
             isMinifyEnabled = true
+            if (releaseSigningPropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
                     .plus(getDefaultProguardFile("proguard-android-optimize.txt"))

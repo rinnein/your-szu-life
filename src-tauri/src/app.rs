@@ -27,7 +27,9 @@ pub(crate) fn run() {
                             .build()])
                         .build()])?;
             }
-            app_content::initialize(app.handle())?;
+            if let Err(error) = app_content::initialize(app.handle()) {
+                eprintln!("应用内容后台服务未启动，将在下次打开时重试: {error}");
+            }
             if let Some(store) = app.try_state::<campus_network::CampusNetworkStore>() {
                 campus_network::diagnostics::initialize(app.handle(), &store);
             }

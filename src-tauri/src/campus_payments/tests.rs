@@ -21,7 +21,7 @@ fn url(value: &str) -> Url {
     value.parse().unwrap()
 }
 fn local() -> Url {
-    url("http://tauri.localhost/campus-payments")
+    url("http://tauri.localhost/campus-payments/network")
 }
 fn login() -> Url {
     url("https://self.szu.edu.cn/self/nav_login")
@@ -70,18 +70,20 @@ fn credentials_are_only_eligible_for_the_exact_https_login_endpoint() {
 fn return_url_accepts_only_the_payments_route_on_real_application_origins() {
     let development = url("http://localhost:1420/");
     for value in [
-        "tauri://localhost/campus-payments",
-        "http://tauri.localhost/campus-payments",
-        "http://tauri.localhost/campus-payments?discard=1#fragment",
-        "http://localhost:1420/campus-payments?discard=1#fragment",
+        "tauri://localhost/campus-payments/network",
+        "http://tauri.localhost/campus-payments/network",
+        "http://tauri.localhost/campus-payments/network?discard=1#fragment",
+        "http://localhost:1420/campus-payments/network?discard=1#fragment",
     ] {
         let result = application_return_url(&url(value), Some(&development)).unwrap();
-        assert_eq!(result.path(), "/campus-payments");
+        assert_eq!(result.path(), "/campus-payments/network");
         assert_eq!(result.query(), None);
         assert_eq!(result.fragment(), None);
     }
     for value in [
         "http://tauri.localhost/",
+        "tauri://localhost/campus-payments",
+        "http://tauri.localhost/campus-payments",
         "tauri://localhost/settings",
         "http://tauri.localhost:1420/campus-payments",
         "https://self.szu.edu.cn/campus-payments",
@@ -98,7 +100,11 @@ fn return_url_accepts_only_the_payments_route_on_real_application_origins() {
             "unexpected return URL: {value}"
         );
     }
-    assert!(application_return_url(&url("http://localhost:1420/campus-payments"), None).is_none());
+    assert!(application_return_url(
+        &url("http://localhost:1420/campus-payments/network"),
+        None
+    )
+    .is_none());
     assert!(!same_application_origin(
         &url("http://user@tauri.localhost/campus-payments"),
         &local()

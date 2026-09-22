@@ -19,3 +19,31 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# These methods are called from Rust through the Android bridge and must keep
+# their names in minified release builds.
+-keep class in.rinne.your_szu_life.CampusNetworkBridge {
+    public *;
+}
+-keep class in.rinne.your_szu_life.MainActivity {
+    public <init>(...);
+    public *;
+}
+-keep class io.crates.keyring.Keyring {
+    public *;
+}
+-keep class io.crates.keyring.Keyring$Companion {
+    public *;
+}
+
+# wry invokes these WebView bridge methods from Rust through JNI by name.
+# R8 cannot infer those calls from the Kotlin call graph.
+-keep class in.rinne.your_szu_life.RustWebView {
+    public *;
+}
+-keep class in.rinne.your_szu_life.RustWebViewClient {
+    public *;
+}
+-keep class in.rinne.your_szu_life.RustWebChromeClient {
+    public *;
+}

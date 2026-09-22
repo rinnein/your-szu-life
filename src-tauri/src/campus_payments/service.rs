@@ -6,11 +6,14 @@ use super::{
     PORTAL_URL,
 };
 use crate::auth;
+#[cfg(not(target_os = "android"))]
+use std::thread;
 use std::{
     sync::mpsc,
-    thread,
     time::{Duration, Instant},
 };
+#[cfg(target_os = "android")]
+use tauri::Webview;
 use tauri::{Manager, Url, WebviewWindow};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -87,6 +90,12 @@ pub(super) fn open(window: WebviewWindow) -> Result<(), String> {
         return Err(message);
     }
     drop(opening);
+    // Android's wry bridge aborts when `eval_with_callback` is registered
+    // repeatedly from a non-WebView Rust thread. Android page-load callbacks
+    // still install the credential-free toolbar below, while navigation and
+    // manual operation remain fully usable without this desktop-only probe
+    // worker. Keep the callback-driven worker for desktop automation.
+    #[cfg(not(target_os = "android"))]
     thread::spawn(move || run(window, generation));
     Ok(())
 }
@@ -190,6 +199,7 @@ fn check_timeout(window: &WebviewWindow, generation: u64) {
     }
 }
 
+#[cfg(not(target_os = "android"))]
 fn run(window: WebviewWindow, generation: u64) {
     loop {
         let Some(store) = window.app_handle().try_state::<CampusPaymentsStore>() else {
@@ -393,7 +403,12 @@ pub(crate) fn on_page_load(
     let Some(session) = runtime.active.as_mut() else {
         return false;
     };
-    // Some engines also report subframe loads. Only the current main URL counts.
+    // Android delivers this hook from WebViewClient.onPageStarted/onPageFinished
+    // on the WebView main thread. Calling the synchronous `window.url()` getter
+    // here re-enters wry's ForeignLooper and aborts the process. The Android
+    // callback URL is already the current main-document URL; keep the getter
+    // check on desktop where it is safe and useful for filtering subframes.
+    #[cfg(not(target_os = "android"))]
     if window.url().ok().as_ref() != Some(payload.url()) {
         return true;
     }
@@ -411,12 +426,143 @@ pub(crate) fn on_page_load(
     // Mount the credential-free mask/return controls at the first matching
     // document, without waiting for all resources. Provisional documents are
     // rejected by expected_url; bounded polling still owns all login actions.
-    let _ = window.eval(page_script(
-        session,
-        "probe",
-        None,
-        None,
-        Some(payload.url().as_str()),
-    ));
+    let script = page_script(session, "probe", None, None, Some(payload.url().as_str()));
+    #[cfg(target_os = "android")]
+    {
+        let generation = session.generation;
+        let url = payload.url().clone();
+        let probe_window = window.clone();
+        drop(runtime);
+        if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+            let _ = window.eval_with_callback(script, move |value| {
+                if let Some(page) = parse_observation(&value) {
+                    android_observe(&probe_window, generation, url.clone(), page);
+                }
+            });
+        } else {
+            let _ = window.eval(script);
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    let _ = window.eval(script);
     true
+}
+
+#[cfg(target_os = "android")]
+fn android_observe(window: &Webview, generation: u64, url: Url, page: PageObservation) {
+    let Some(store) = window.app_handle().try_state::<CampusPaymentsStore>() else {
+        return;
+    };
+    let action = store.runtime.lock().ok().and_then(|mut runtime| {
+        let session = runtime
+            .active
+            .as_mut()
+            .filter(|session| session.generation == generation)?;
+        Some(session.observe(&page, &url, Instant::now()))
+    });
+    if let Some(action) = action {
+        android_apply_action(window, generation, url, action);
+    }
+}
+
+#[cfg(target_os = "android")]
+fn android_apply_action(window: &Webview, generation: u64, url: Url, action: Action) {
+    let Some(store) = window.app_handle().try_state::<CampusPaymentsStore>() else {
+        return;
+    };
+    match action {
+        Action::Wait => {}
+        Action::HandOff => {
+            if let Ok(runtime) = store.runtime.lock() {
+                if let Some(session) = runtime
+                    .active
+                    .as_ref()
+                    .filter(|session| session.generation == generation)
+                {
+                    let _ = window.eval(page_script(session, "toolbar", None, None, None));
+                }
+            }
+        }
+        Action::Fail(code) => {
+            if let Ok(mut runtime) = store.runtime.lock() {
+                let script = if let Some(session) = runtime
+                    .active
+                    .as_mut()
+                    .filter(|session| session.generation == generation)
+                {
+                    session.hand_off(MANUAL_MESSAGE);
+                    Some(page_script(session, "toolbar", None, None, None))
+                } else {
+                    None
+                };
+                if let Some(script) = script {
+                    runtime.notice = Some(super::model::NetworkFeePortalNotice::from(code));
+                    let _ = window.eval(script);
+                }
+            }
+        }
+        Action::RestoreTarget(document_token) => {
+            if let Ok(runtime) = store.runtime.lock() {
+                if let Some(session) = runtime
+                    .active
+                    .as_ref()
+                    .filter(|session| session.generation == generation)
+                {
+                    let _ = window.eval(page_script(
+                        session,
+                        "restore",
+                        Some(&document_token),
+                        None,
+                        None,
+                    ));
+                }
+            }
+        }
+        Action::Submit(document_token) => {
+            let Ok((account, password)) = auth::current_network_credentials(window.app_handle())
+            else {
+                android_apply_action(
+                    window,
+                    generation,
+                    url,
+                    Action::Fail(NoticeCode::CredentialsUnavailable),
+                );
+                return;
+            };
+            if password.is_empty()
+                || auth::authenticated_campus_card_number(window.app_handle())
+                    .ok()
+                    .as_deref()
+                    != Some(&account)
+            {
+                android_apply_action(
+                    window,
+                    generation,
+                    url,
+                    Action::Fail(NoticeCode::CredentialsUnavailable),
+                );
+                return;
+            }
+            let script = store.runtime.lock().ok().and_then(|runtime| {
+                let session = runtime.active.as_ref().filter(|session| {
+                    session.generation == generation && session.phase == Phase::Submitting
+                })?;
+                Some(page_script(
+                    session,
+                    "submit",
+                    Some(&document_token),
+                    Some((&account, &password)),
+                    None,
+                ))
+            });
+            let Some(script) = script else { return };
+            let submit_window = window.clone();
+            let submit_url = url.clone();
+            let _ = window.eval_with_callback(script, move |value| {
+                if let Some(page) = parse_observation(&value) {
+                    android_observe(&submit_window, generation, submit_url.clone(), page);
+                }
+            });
+        }
+    }
 }
