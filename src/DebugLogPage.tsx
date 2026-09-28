@@ -1,7 +1,7 @@
+import { useLogicalNavigation } from "./logical-navigation";
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useNavigate } from "@tanstack/react-router";
 import { Alert, Button, Card, CloseButton, Spinner } from "@heroui/react";
 import { LuArrowLeft, LuCopy, LuEraser, LuPower } from "react-icons/lu";
 import { PageShell } from "./components";
@@ -57,7 +57,7 @@ function formatLogs(logs: DebugLog[]) {
 }
 
 export default function DebugLogPage() {
-  const navigate = useNavigate();
+  const navigation = useLogicalNavigation();
   const [mode, setMode] = useState(initialMode);
   const [logs, setLogs] = useState<DebugLog[]>([]);
   const [busy, setBusy] = useState(true);
@@ -126,7 +126,7 @@ export default function DebugLogPage() {
   const handleDisable = async () => {
     try {
       await invoke("set_debug_mode", { enabled: false });
-      await navigate({ to: "/" });
+      await navigation.back();
     } catch (cause) {
       setMessage(`关闭调试模式失败：${String(cause)}`);
     }
@@ -139,7 +139,7 @@ export default function DebugLogPage() {
           <Card.Content>
             <Card.Title>调试模式未启用</Card.Title>
             <Card.Description>请返回首页，连续点击左上角应用图标 5 次启用。</Card.Description>
-            <Button onPress={() => void navigate({ to: "/" })}>返回工作台</Button>
+            <Button onPress={() => void navigation.back()}>返回工作台</Button>
           </Card.Content>
         </Card>
       </PageShell>
@@ -152,7 +152,7 @@ export default function DebugLogPage() {
         <CloseButton
           className="debug-back"
           aria-label="返回工作台"
-          onPress={() => void navigate({ to: "/" })}
+          onPress={() => void navigation.back()}
         >
           <LuArrowLeft aria-hidden="true" />
         </CloseButton>

@@ -100,11 +100,10 @@ fn return_url_accepts_only_the_payments_route_on_real_application_origins() {
             "unexpected return URL: {value}"
         );
     }
-    assert!(application_return_url(
-        &url("http://localhost:1420/campus-payments/network"),
-        None
-    )
-    .is_none());
+    assert!(
+        application_return_url(&url("http://localhost:1420/campus-payments/network"), None)
+            .is_none()
+    );
     assert!(!same_application_origin(
         &url("http://user@tauri.localhost/campus-payments"),
         &local()

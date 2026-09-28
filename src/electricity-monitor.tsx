@@ -1,8 +1,8 @@
+import { useLogicalNavigation } from "./logical-navigation";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { PluginListener } from "@tauri-apps/api/core";
-import { useNavigate } from "@tanstack/react-router";
 
 export type ElectricityStatus = {
   remaining: number | null;
@@ -27,7 +27,7 @@ function isStatus(value: unknown): value is ElectricityStatus {
 }
 
 export function ElectricityMonitorProvider({ children }: { children: ReactNode }) {
-  const navigate = useNavigate();
+  const navigation = useLogicalNavigation();
   const [status, setStatus] = useState<ElectricityStatus>(EMPTY_ELECTRICITY_STATUS);
 
   useEffect(() => {
@@ -75,7 +75,7 @@ export function ElectricityMonitorProvider({ children }: { children: ReactNode }
             (notification.extra?.route === "/campus-payments/recharge" ||
               notification.actionTypeId === "electricity-low")
           ) {
-            void navigate({ to: "/campus-payments/recharge" });
+            void navigation.push("/campus-payments/recharge");
           }
         };
         const listener = await onAction(openRecharge);
@@ -87,7 +87,7 @@ export function ElectricityMonitorProvider({ children }: { children: ReactNode }
       active = false;
       void stop?.unregister();
     };
-  }, [navigate]);
+  }, [navigation]);
 
   return <Context.Provider value={status}>{children}</Context.Provider>;
 }

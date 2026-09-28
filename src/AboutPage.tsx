@@ -1,6 +1,6 @@
+import { useLogicalNavigation } from "./logical-navigation";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useNavigate } from "@tanstack/react-router";
 import { Alert, Avatar, Button, Card, CloseButton, Spinner } from "@heroui/react";
 import { LuArrowLeft, LuArrowUpRight, LuDownload, LuRefreshCw, LuUsers } from "react-icons/lu";
 import { BrandMark, PageShell } from "./components";
@@ -171,7 +171,7 @@ function Contributors() {
 }
 
 export default function AboutPage() {
-  const navigate = useNavigate();
+  const navigation = useLogicalNavigation();
   const { snapshot, error, refreshing, refresh } = useAppContent();
   const [openError, setOpenError] = useState<string>();
   const update = snapshot?.update;
@@ -183,7 +183,7 @@ export default function AboutPage() {
         <CloseButton
           className="about-back"
           aria-label="返回首页"
-          onPress={() => void navigate({ to: "/" })}
+          onPress={() => void navigation.back()}
         >
           <LuArrowLeft aria-hidden="true" />
         </CloseButton>

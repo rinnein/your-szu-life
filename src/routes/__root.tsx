@@ -1,3 +1,5 @@
+import { LogicalNavigationProvider } from "../logical-navigation";
+import { AndroidBackNavigation } from "../AndroidBackNavigation";
 import { createRootRoute, Outlet } from "@tanstack/react-router";
 import { AuthProvider } from "../auth";
 import { AppContentProvider } from "../app-content/context";
@@ -6,13 +8,16 @@ import { ElectricityMonitorProvider } from "../electricity-monitor";
 
 export const Route = createRootRoute({
   component: () => (
-    <AppContentProvider>
-      <ElectricityMonitorProvider>
-        <AuthProvider>
-          <Outlet />
-          <UpdateNotice />
-        </AuthProvider>
-      </ElectricityMonitorProvider>
-    </AppContentProvider>
+    <LogicalNavigationProvider>
+      <AppContentProvider>
+        <ElectricityMonitorProvider>
+          <AuthProvider>
+            <AndroidBackNavigation />
+            <Outlet />
+            <UpdateNotice />
+          </AuthProvider>
+        </ElectricityMonitorProvider>
+      </AppContentProvider>
+    </LogicalNavigationProvider>
   ),
 });

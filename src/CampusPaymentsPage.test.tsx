@@ -46,7 +46,7 @@ function defaultCommand(command: string) {
 function renderAt(path = "/campus-payments", strict = false) {
   const router = createRouter({
     routeTree,
-    history: createMemoryHistory({ initialEntries: [path] }),
+    history: createMemoryHistory({ initialEntries: path === "/" ? [path] : ["/", path] }),
   });
   const content = <RouterProvider router={router} />;
   render(strict ? <StrictMode>{content}</StrictMode> : content);

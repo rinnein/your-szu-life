@@ -16,6 +16,15 @@ vi.mock("./context", () => ({
   useAppContent: vi.fn(),
 }));
 
+vi.mock("../logical-navigation", () => ({
+  useLogicalNavigation: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    back: vi.fn(),
+    canBack: () => false,
+  }),
+}));
+
 const announcements: Announcement[] = [
   { title: "公告一", pic: "https://example.com/one.png", desc: "第一条公告" },
   { title: "公告二", pic: "https://example.com/two.png", desc: "第二条公告" },

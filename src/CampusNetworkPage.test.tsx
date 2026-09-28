@@ -1,3 +1,4 @@
+import { LogicalNavigationProvider } from "./logical-navigation";
 /** @vitest-environment jsdom */
 
 import "@testing-library/jest-dom/vitest";
@@ -55,7 +56,13 @@ const valueFor = (label: string) => screen.getByText(label).nextElementSibling;
 async function renderPage(readyLabel = cardLabel) {
   const history = createMemoryHistory({ initialEntries: ["/"] });
   const router = createRouter({
-    routeTree: createRootRoute({ component: CampusNetworkPage }),
+    routeTree: createRootRoute({
+      component: () => (
+        <LogicalNavigationProvider>
+          <CampusNetworkPage />
+        </LogicalNavigationProvider>
+      ),
+    }),
     history,
   });
   // Route integration is covered in App.test.tsx; these are component state tests.

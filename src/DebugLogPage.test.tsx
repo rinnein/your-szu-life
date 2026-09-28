@@ -12,7 +12,12 @@ const listeners = new Map<string, (event: { payload: unknown }) => void>();
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
+vi.mock("./logical-navigation", () => ({
+  useLogicalNavigation: () => ({
+    back: () => navigate({ to: "/" }),
+    push: (to: string) => navigate({ to }),
+  }),
+}));
 
 describe("debug log page", () => {
   beforeEach(() => {

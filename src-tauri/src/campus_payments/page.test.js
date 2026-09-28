@@ -1015,7 +1015,8 @@ describe("network-fee main document login guard (offline)", () => {
       if (mode === "newer-generation")
         p.evaluate("probe", { generation: "2", newDocumentToken: "document-2" });
       expect(["manual", "stale"]).toContain(p.evaluate("return").kind);
-      expect(p.errors).toHaveLength(0);
+      expect(p.errors).toHaveLength(mode === "return-button" ? 1 : 0);
+      if (mode === "return-button") expect(p.errors[0].message).toMatch(/navigation/i);
       p.expectEmpty();
     },
   );

@@ -1,4 +1,4 @@
-import { useNavigate } from "@tanstack/react-router";
+import { useLogicalNavigation } from "./logical-navigation";
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "@heroui/react";
@@ -8,11 +8,11 @@ import { useAuth } from "./auth";
 
 export default function SettingsPage() {
   const { state, profile, setProfile } = useAuth();
-  const navigate = useNavigate();
+  const navigation = useLogicalNavigation();
 
   useEffect(() => {
-    if (!("Checking" in state) && !("Authenticated" in state)) void navigate({ to: "/" });
-  }, [navigate, state]);
+    if (!("Checking" in state) && !("Authenticated" in state)) void navigation.back();
+  }, [navigation, state]);
 
   if (!("Authenticated" in state)) return null;
 
@@ -23,10 +23,10 @@ export default function SettingsPage() {
         name={profile?.name}
         onSaved={async () => {
           setProfile((await invoke("get_account_profile")) as typeof profile);
-          await navigate({ to: "/" });
+          await navigation.back();
         }}
       />
-      <Button className="back-button" variant="tertiary" onPress={() => void navigate({ to: "/" })}>
+      <Button className="back-button" variant="tertiary" onPress={() => void navigation.back()}>
         返回工作台
       </Button>
     </PageShell>

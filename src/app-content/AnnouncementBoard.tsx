@@ -1,3 +1,4 @@
+import { useLogicalNavigation } from "../logical-navigation";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Accordion, Alert, Button, Card, Spinner } from "@heroui/react";
@@ -64,6 +65,7 @@ export function AnnouncementImage({ url, title }: { url: string; title: string }
 }
 
 function AnnouncementCard({ unit }: { unit: AnnouncementUnit }) {
+  const navigation = useLogicalNavigation();
   const [error, setError] = useState<string>();
   if ("kind" in unit) {
     return (
@@ -73,8 +75,7 @@ function AnnouncementCard({ unit }: { unit: AnnouncementUnit }) {
           variant="tertiary"
           aria-label={unit.title}
           onPress={() => {
-            window.history.pushState({}, "", unit.url);
-            window.dispatchEvent(new PopStateEvent("popstate"));
+            void navigation.push(unit.url);
           }}
         >
           <span className="announcement-image-placeholder" aria-hidden="true">

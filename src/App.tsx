@@ -1,7 +1,8 @@
+import { useLogicalNavigation } from "./logical-navigation";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useNavigate, type NavigateOptions } from "@tanstack/react-router";
+import { type NavigateOptions } from "@tanstack/react-router";
 import { Alert, AlertDialog, Button, Card, Dropdown, Spinner } from "@heroui/react";
 import { authFailureFor, useAuth } from "./auth";
 import { ProfileForm } from "./ProfileForm";
@@ -129,7 +130,7 @@ function LogoutDialog({
 
 export default function App() {
   const { state, profile, setProfile, setState, userData } = useAuth();
-  const navigate = useNavigate();
+  const navigation = useLogicalNavigation();
   const [placeholder, setPlaceholder] = useState<string>();
   const [authBusy, setAuthBusy] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
@@ -278,7 +279,7 @@ export default function App() {
             <Dropdown.Menu
               aria-label="账户操作"
               onAction={(key) => {
-                if (key === "settings") void navigate({ to: "/settings" });
+                if (key === "settings") void navigation.push("/settings");
                 if (key === "reauth") void beginAuthentication();
                 if (key === "logout") setLogoutOpen(true);
               }}
@@ -315,7 +316,7 @@ export default function App() {
                 key={label}
                 className="feature-button"
                 variant="outline"
-                onPress={() => (to ? void navigate({ to }) : setPlaceholder(label))}
+                onPress={() => (to ? void navigation.push(to) : setPlaceholder(label))}
               >
                 <span className="feature-icon" aria-hidden="true">
                   <FeatureIcon size={19} focusable="false" />

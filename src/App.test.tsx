@@ -68,7 +68,9 @@ describe("auth state transport normalization", () => {
 });
 
 function renderRouterApp(initialEntry = "/") {
-  const history = createMemoryHistory({ initialEntries: [initialEntry] });
+  const history = createMemoryHistory({
+    initialEntries: initialEntry === "/" ? [initialEntry] : ["/", initialEntry],
+  });
   const testRouter = createRouter({ routeTree, history });
   return { ...render(<RouterProvider router={testRouter} />), testRouter };
 }

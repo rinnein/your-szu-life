@@ -1,5 +1,5 @@
+import { useLogicalNavigation } from "./logical-navigation";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { Alert, Button, Card, Spinner } from "@heroui/react";
 import { LuWifi } from "react-icons/lu";
@@ -8,7 +8,7 @@ import type { NetworkFeePortalNotice } from "./campus-payments";
 
 export default function CampusPaymentsNetworkPage() {
   const { state } = useAuth();
-  const navigate = useNavigate();
+  const navigation = useLogicalNavigation();
   const authenticated = "Authenticated" in state;
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string>();
@@ -16,8 +16,8 @@ export default function CampusPaymentsNetworkPage() {
   const noticeSuppressed = useRef(false);
   const noticeRequest = useRef<Promise<NetworkFeePortalNotice | null> | undefined>(undefined);
   useEffect(() => {
-    if (!authenticated) void navigate({ to: "/", replace: true });
-  }, [authenticated, navigate]);
+    if (!authenticated) void navigation.back();
+  }, [authenticated, navigation]);
   useEffect(() => {
     if (!authenticated) return;
     noticeRequest.current ??= invoke<NetworkFeePortalNotice | null>(
@@ -35,6 +35,8 @@ export default function CampusPaymentsNetworkPage() {
     setNotice(undefined);
     try {
       await invoke("open_network_fee_portal");
+      setBusy(false);
+      opening.current = false;
     } catch {
       setNotice("无法打开网费官网，请检查网络或重新认证后重试。");
       setBusy(false);
@@ -50,7 +52,7 @@ export default function CampusPaymentsNetworkPage() {
           网费
         </Card.Title>
         <Card.Description>
-          在当前窗口打开官网，必要时使用已保存的校园卡号和统一认证密码辅助登录。
+          在独立窗口打开官网，必要时使用已保存的校园卡号和统一认证密码辅助登录。
         </Card.Description>
       </Card.Header>
       <Card.Content className="payments-network-content">

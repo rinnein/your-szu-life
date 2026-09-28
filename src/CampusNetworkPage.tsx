@@ -1,5 +1,5 @@
+import { useLogicalNavigation } from "./logical-navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -168,7 +168,7 @@ function regionDefaultTab(region: NetworkRegion): RegionTab {
 }
 
 export default function CampusNetworkPage() {
-  const navigate = useNavigate();
+  const navigation = useLogicalNavigation();
   const [overview, setOverview] = useState<NetworkOverview>(initialOverview);
   const [settings, setSettings] = useState<Settings>();
   const [status, setStatus] = useState<Status>(initialStatus);
@@ -426,7 +426,7 @@ export default function CampusNetworkPage() {
         <CloseButton
           className="campus-network-back"
           aria-label="返回上一级"
-          onPress={() => void navigate({ to: "/" })}
+          onPress={() => void navigation.back()}
         >
           <LuArrowLeft aria-hidden="true" />
         </CloseButton>

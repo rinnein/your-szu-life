@@ -54,7 +54,9 @@ pub(crate) fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent
             }
         }
         tauri::WindowEvent::CloseRequested { api, .. } => {
-            if crate::campus_network::keep_running_in_background(window.app_handle()) {
+            if window.label() == "main"
+                && crate::campus_network::keep_running_in_background(window.app_handle())
+            {
                 api.prevent_close();
                 let _ = window.hide();
                 if let Some(store) = window

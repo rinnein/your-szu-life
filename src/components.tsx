@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
+import { Button } from "@heroui/react";
+import { useLogicalNavigation } from "./logical-navigation";
 import appIcon from "../src-tauri/icons/icon.png";
 
 export function PageShell({
@@ -11,12 +12,15 @@ export function PageShell({
   centered?: boolean;
   showAbout?: boolean;
 }) {
+  const navigation = useLogicalNavigation();
   return (
     <main className={centered ? "app-shell app-shell-centered" : "app-shell"}>
       {children}
       {showAbout && (
         <footer className="app-footer">
-          <Link to="/about">关于 · 检查更新</Link>
+          <Button variant="tertiary" onPress={() => void navigation.push("/about")}>
+            关于 · 检查更新
+          </Button>
         </footer>
       )}
     </main>

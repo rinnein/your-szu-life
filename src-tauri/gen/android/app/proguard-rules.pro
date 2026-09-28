@@ -51,3 +51,7 @@
 # The Android TLS verifier is called from Rust through JNI, so R8 cannot infer
 # these references from the Kotlin call graph.
 -keep, includedescriptorclasses class org.rustls.platformverifier.** { *; }
+
+# Tauri resolves activityName through JNI/Class.forName; keep the shared hooks.
+-keep class in.rinne.your_szu_life.ApplicationBackActivity { public *; protected *; }
+-keep class in.rinne.your_szu_life.FeatureActivity { public *; }

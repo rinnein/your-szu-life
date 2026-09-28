@@ -1,11 +1,12 @@
+import { useLogicalNavigation } from "../logical-navigation";
 import { useState } from "react";
-import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { useRouterState } from "@tanstack/react-router";
 import { Alert, Button, CloseButton } from "@heroui/react";
 import { useAppContent } from "./context";
 
 export function UpdateNotice() {
   const { snapshot } = useAppContent();
-  const navigate = useNavigate();
+  const navigation = useLogicalNavigation();
   const path = useRouterState({ select: (state) => state.location.pathname });
   const [dismissedVersion, setDismissedVersion] = useState<string>();
   const latest = snapshot?.update.data?.latest_ver;
@@ -27,7 +28,7 @@ export function UpdateNotice() {
             size="sm"
             onPress={() => {
               setDismissedVersion(latest);
-              void navigate({ to: "/about" });
+              void navigation.push("/about");
             }}
           >
             查看更新

@@ -86,12 +86,19 @@ pub(crate) fn run() {
             campus_network::commands::consume_dorm_login_failure_notice,
         ])
         .on_page_load(|window, payload| {
-            if !campus_payments::on_page_load(window, payload) {
+            if !campus_payments::on_page_load(window, payload) && window.label() == "main" {
                 auth::webview::on_page_load(window, payload);
             }
         });
-    #[cfg(desktop)]
-    let builder = builder.on_window_event(crate::desktop::on_window_event);
+    let builder = builder.on_window_event(|window, event| {
+        if matches!(event, tauri::WindowEvent::Destroyed) {
+            let app = window.app_handle().clone();
+            let label = window.label().to_owned();
+            std::thread::spawn(move || campus_payments::window_closed(&app, &label));
+        }
+        #[cfg(desktop)]
+        crate::desktop::on_window_event(window, event);
+    });
     builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

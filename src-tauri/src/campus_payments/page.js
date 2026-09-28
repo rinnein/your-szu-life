@@ -322,11 +322,13 @@ export default function networkFeePage(options) {
           documentContext.manual = true;
           documentContext.dispose();
         };
-        back.addEventListener("click", () => {
+        back.addEventListener("click", (event) => {
+          event.preventDefault();
           // Leave the link connected until its native navigation runs.
           documentContext.cancelled = true;
           documentContext.manual = true;
           documentContext.updateToolbar();
+          window.location.replace(options.returnUrl);
         });
         window.addEventListener("pagehide", invalidate);
 
