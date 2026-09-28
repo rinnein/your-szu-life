@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { StrictMode, type ComponentProps } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";

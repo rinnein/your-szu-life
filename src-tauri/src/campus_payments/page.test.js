@@ -1,5 +1,5 @@
 /** @vitest-environment node */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { JSDOM, VirtualConsole } from "jsdom";
 import networkFeePage from "./page.js";
 

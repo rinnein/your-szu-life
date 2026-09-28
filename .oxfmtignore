@@ -1,2 +1,4 @@
 # TanStack Router owns this generated file.
 src/routeTree.gen.ts
+
+.agents
