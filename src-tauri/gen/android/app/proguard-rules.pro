@@ -47,3 +47,7 @@
 -keep class in.rinne.your_szu_life.RustWebChromeClient {
     public *;
 }
+
+# The Android TLS verifier is called from Rust through JNI, so R8 cannot infer
+# these references from the Kotlin call graph.
+-keep, includedescriptorclasses class org.rustls.platformverifier.** { *; }
