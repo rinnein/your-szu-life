@@ -9,6 +9,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const SESSION_REFRESH_COOLDOWN_MS: u64 = 10_000;
 
 pub struct AuthStore {
+    // Serializes native cookie writes with reauthentication and logout.
+    pub(super) session_operations: Mutex<()>,
     pub(super) state: Mutex<AuthState>,
     pub(super) attempt: Mutex<AuthAttempt>,
     pub(super) profile: Mutex<Option<StoredAccountProfile>>,
@@ -28,6 +30,7 @@ pub struct AuthStore {
 impl AuthStore {
     pub(crate) fn new(credentials: SharedCredentialStore) -> Self {
         Self {
+            session_operations: Mutex::new(()),
             state: Mutex::new(AuthState::Checking),
             attempt: Mutex::new(AuthAttempt::None),
             profile: Mutex::new(None),

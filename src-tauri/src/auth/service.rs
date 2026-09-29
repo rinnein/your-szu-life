@@ -33,6 +33,9 @@ pub(super) fn complete_authentication(app: tauri::AppHandle, payload: String, ge
     let Some(store) = app.try_state::<AuthStore>() else {
         return;
     };
+    let Ok(_operation) = store.session_operations.lock() else {
+        return;
+    };
     if !store.auth_probe_is_current(generation)
         || !matches!(
             store.state.lock().ok().as_deref(),
@@ -277,10 +280,19 @@ pub(super) fn get_auth_state(
     // The background refresh can recover it once the network and keyring are
     // available again.
     let session = store.credentials.load_session().unwrap_or(None);
+    let legacy_session = session
+        .as_ref()
+        .is_some_and(|session| !session.can_restore());
     *store.profile.lock().map_err(|_| "状态锁失败")? = profile.clone();
     *store.pending.lock().map_err(|_| "状态锁失败")? = pending.clone();
 
     if let Some(profile) = profile {
+        if legacy_session {
+            let _ = store.credentials.delete_session();
+            *store.state.lock().map_err(|_| "状态锁失败")? = AuthState::SessionExpired;
+            emit_state(&app, AuthState::SessionExpired);
+            return Ok(AuthState::SessionExpired);
+        }
         let next = AuthState::Authenticated {
             name: profile.name,
             student_id: profile.student_id.clone(),
@@ -346,13 +358,19 @@ fn start_session_refresh(
         let Some(store) = worker_app.try_state::<AuthStore>() else {
             return;
         };
+        let Ok(_operation) = store.session_operations.lock() else {
+            return;
+        };
         if !store.session_refresh_is_current(generation) {
             return;
         }
         match outcome {
             RefreshOutcome::Refreshed(session) => {
                 if store.credentials.save_session(&session).is_ok() {
-                    let _ = install_auth_session_cookies(&worker_app, &session);
+                    if install_auth_session_cookies(&worker_app, &session).is_err() {
+                        store.finish_attempt(AuthState::SessionCaptureFailed);
+                        emit_state(&worker_app, AuthState::SessionCaptureFailed);
+                    }
                 }
             }
             RefreshOutcome::Invalid => {
@@ -441,12 +459,21 @@ pub(super) fn navigate_to_authentication(
 ) -> Result<(), String> {
     let window = app.get_webview_window("main").ok_or("主窗口不存在")?;
     let store = app.try_state::<AuthStore>().ok_or("认证状态不可用")?;
+    let _operation = store
+        .session_operations
+        .lock()
+        .map_err(|_| "会话操作锁失败")?;
     store.cancel_session_refresh();
     let payments_return = crate::campus_payments::cancel(&app);
     if let Some(current_url) = payments_return.or_else(|| window.url().ok()) {
         if current_url.host_str() != Some(AUTH_HOST) {
             *store.resume_url.lock().map_err(|_| "状态锁失败")? = Some(current_url);
         }
+    }
+    #[cfg(target_os = "android")]
+    if !super::android_cookies::supports_cookie_info()? {
+        set_terminal_state(&app, &store, AuthState::WebViewUpdateRequired);
+        return Ok(());
     }
     // The initial `get_auth_state` normally warms these caches. Load from the
     // credential store as a fallback so a reauthentication click still gets
@@ -478,7 +505,10 @@ pub(super) fn navigate_to_authentication(
     *store.captured.lock().map_err(|_| "状态锁失败")? = None;
     *store.login_prefill.lock().map_err(|_| "状态锁失败")? = prefill;
     store.credentials.delete_session()?;
-    clear_webview_session(&app)?;
+    if clear_webview_session(&app).is_err() {
+        set_terminal_state(&app, &store, AuthState::SessionCaptureFailed);
+        return Ok(());
+    }
     window
         .navigate(authentication_url(user_agent))
         .map_err(|error| error.to_string())?;
@@ -494,6 +524,10 @@ pub(super) fn begin_authentication(
 }
 
 pub(super) fn logout(app: tauri::AppHandle, store: &AuthStore) -> Result<(), String> {
+    let _operation = store
+        .session_operations
+        .lock()
+        .map_err(|_| "会话操作锁失败")?;
     store.cancel_session_refresh();
     crate::campus_payments::cancel(&app);
     store.credentials.delete_profile()?;

@@ -25,6 +25,7 @@
 -keep class in.rinne.your_szu_life.CampusNetworkBridge {
     public *;
 }
+-keep class in.rinne.your_szu_life.AuthCookieBridge { public *; }
 -keep class in.rinne.your_szu_life.MainActivity {
     public <init>(...);
     public *;

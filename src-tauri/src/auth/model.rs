@@ -75,6 +75,7 @@ pub enum AuthState {
     CredentialStorageFailed,
     AccountMismatch,
     SessionExpired,
+    WebViewUpdateRequired,
 }
 
 impl Default for AuthState {

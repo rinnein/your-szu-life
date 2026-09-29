@@ -5,7 +5,6 @@ use super::{
         probe_identity,
     },
     session::{AuthSessionSecret, StoredAuthCookie},
-    AUTH_HOST,
 };
 use reqwest::{blocking::Client, cookie::Jar, redirect::Policy, Url};
 use std::{io::Read, sync::Arc, time::Duration};
@@ -29,18 +28,7 @@ enum ResponseDisposition {
     Unavailable,
 }
 
-#[derive(Debug, Clone)]
-struct ResponseCookie {
-    name: String,
-    value: String,
-    domain: String,
-    path: String,
-    http_only: bool,
-    secure: bool,
-    expires: Option<String>,
-    same_site: Option<String>,
-    partitioned: Option<bool>,
-}
+type ResponseCookie = StoredAuthCookie;
 
 pub(super) fn refresh_session(
     session: Option<AuthSessionSecret>,
@@ -48,6 +36,12 @@ pub(super) fn refresh_session(
 ) -> RefreshOutcome {
     if !is_student_id(expected_student_id) {
         return RefreshOutcome::Unavailable;
+    }
+    if session
+        .as_ref()
+        .is_some_and(|session| !session.can_restore())
+    {
+        return RefreshOutcome::Invalid;
     }
     let endpoint = match USER_CONF_URL.parse::<Url>() {
         Ok(url) => url,
@@ -102,7 +96,13 @@ pub(super) fn refresh_session(
         ResponseDisposition::Unavailable => return RefreshOutcome::Unavailable,
     }
 
-    let response_cookies = response.cookies().map(response_cookie).collect::<Vec<_>>();
+    let response_cookies = response
+        .headers()
+        .get_all(reqwest::header::SET_COOKIE)
+        .iter()
+        .filter_map(|header| header.to_str().ok())
+        .filter_map(|header| response_cookie(header, &response_url))
+        .collect::<Vec<_>>();
     let mut body = Vec::new();
     if response
         .take(MAX_RESPONSE_BYTES + 1)
@@ -134,6 +134,7 @@ pub(super) fn refresh_session(
     }
 
     let mut refreshed = session.unwrap_or_else(|| AuthSessionSecret {
+        format_version: 2,
         student_id: expected_student_id.to_owned(),
         cookies: Vec::new(),
     });
@@ -176,6 +177,7 @@ fn merge_response_cookies(session: &mut AuthSessionSecret, response: Vec<Respons
             stored.name == cookie.name
                 && stored.domain == cookie.domain
                 && stored.path == cookie.path
+                && stored.host_only == cookie.host_only
         });
         let expired = cookie
             .expires
@@ -186,15 +188,16 @@ fn merge_response_cookies(session: &mut AuthSessionSecret, response: Vec<Respons
             session.cookies.retain(|stored| {
                 !(stored.name == cookie.name
                     && stored.domain == cookie.domain
-                    && stored.path == cookie.path)
+                    && stored.path == cookie.path
+                    && stored.host_only == cookie.host_only)
             });
             continue;
         }
         if let Some(existing) = existing {
             existing.value = cookie.value;
             existing.expires = cookie.expires;
-            existing.http_only = Some(cookie.http_only);
-            existing.secure = Some(cookie.secure);
+            existing.http_only = cookie.http_only;
+            existing.secure = cookie.secure;
             existing.same_site = cookie.same_site;
             existing.partitioned = cookie.partitioned;
         } else {
@@ -202,10 +205,11 @@ fn merge_response_cookies(session: &mut AuthSessionSecret, response: Vec<Respons
                 name: cookie.name,
                 value: cookie.value,
                 domain: cookie.domain,
+                host_only: cookie.host_only,
                 path: cookie.path,
                 expires: cookie.expires,
-                http_only: Some(cookie.http_only),
-                secure: Some(cookie.secure),
+                http_only: cookie.http_only,
+                secure: cookie.secure,
                 same_site: cookie.same_site,
                 partitioned: cookie.partitioned,
             });
@@ -213,38 +217,79 @@ fn merge_response_cookies(session: &mut AuthSessionSecret, response: Vec<Respons
     }
 }
 
-fn response_cookie(cookie: reqwest::cookie::Cookie<'_>) -> ResponseCookie {
-    let expires = cookie
-        .expires()
-        .map(OffsetDateTime::from)
-        .and_then(|expires| expires.format(&Rfc2822).ok());
-    let same_site = if cookie.same_site_lax() {
-        Some("Lax".to_owned())
-    } else if cookie.same_site_strict() {
-        Some("Strict".to_owned())
-    } else {
-        None
-    };
-    ResponseCookie {
-        name: cookie.name().to_owned(),
-        value: cookie.value().to_owned(),
-        domain: cookie.domain().unwrap_or(AUTH_HOST).to_ascii_lowercase(),
-        path: cookie.path().unwrap_or("/").to_owned(),
-        http_only: cookie.http_only(),
-        secure: cookie.secure(),
-        expires,
-        same_site,
-        partitioned: None,
+fn response_cookie(raw: &str, response_url: &Url) -> Option<ResponseCookie> {
+    let cookie = tauri::webview::cookie::Cookie::parse(raw.to_owned()).ok()?;
+    let mut stored = StoredAuthCookie::from_webview_cookie(cookie.clone().into_owned())?;
+    if cookie.path().is_none_or(|path| !path.starts_with('/')) {
+        // RFC 6265 default-path is the request's directory, not always '/'.
+        stored.path = response_url
+            .path()
+            .rsplit_once('/')
+            .map(|(directory, _)| if directory.is_empty() { "/" } else { directory })
+            .unwrap_or("/")
+            .to_owned();
     }
+    stored.to_webview_cookie().ok()?;
+    Some(stored)
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::AUTH_HOST;
     use super::*;
 
     #[test]
     fn rejects_invalid_student_ids_without_network_access() {
         assert_eq!(refresh_session(None, "bad"), RefreshOutcome::Unavailable);
+    }
+
+    #[test]
+    fn refresh_preserves_host_scope_and_http_cookie_defaults() {
+        let endpoint = Url::parse(USER_CONF_URL).unwrap();
+        let host = response_cookie("MOD_AUTH_CAS=current; Path=/; HttpOnly", &endpoint).unwrap();
+        assert!(host.host_only);
+        assert!(host.to_webview_cookie().unwrap().domain().is_none());
+        // In an HTTP response, any explicit Domain is a domain cookie, with or
+        // without a dot. AndroidX's canonical-domain representation differs.
+        let domain = response_cookie(
+            "MOD_AUTH_CAS=domain; Domain=authserver.szu.edu.cn; Path=/",
+            &endpoint,
+        )
+        .unwrap();
+        assert!(!domain.host_only);
+        let default_path = response_cookie("sid=test; SameSite=None; Secure", &endpoint).unwrap();
+        assert_eq!(default_path.path, "/personalInfo/common");
+        assert_eq!(default_path.same_site.as_deref(), Some("None"));
+        let deletion = response_cookie("sid=test; Max-Age=0", &endpoint).unwrap();
+        assert!(deletion.is_definitely_expired(OffsetDateTime::now_utc()));
+    }
+
+    #[test]
+    fn refreshed_host_cookie_and_deletion_do_not_overwrite_a_domain_cookie() {
+        let endpoint = Url::parse(USER_CONF_URL).unwrap();
+        let host = response_cookie("MOD_AUTH_CAS=old; Path=/; HttpOnly", &endpoint).unwrap();
+        let domain = response_cookie(
+            "MOD_AUTH_CAS=domain; Domain=authserver.szu.edu.cn; Path=/",
+            &endpoint,
+        )
+        .unwrap();
+        let mut session = AuthSessionSecret {
+            format_version: 2,
+            student_id: "1234567890".into(),
+            cookies: vec![host, domain.clone()],
+        };
+        merge_response_cookies(
+            &mut session,
+            vec![response_cookie("MOD_AUTH_CAS=new; Path=/; HttpOnly", &endpoint).unwrap()],
+        );
+        assert_eq!(session.cookies.len(), 2);
+        assert_eq!(session.cookies[0].value, "new");
+        assert_eq!(session.cookies[1], domain);
+        merge_response_cookies(
+            &mut session,
+            vec![response_cookie("MOD_AUTH_CAS=; Path=/; Max-Age=0", &endpoint).unwrap()],
+        );
+        assert_eq!(session.cookies, vec![domain]);
     }
 
     #[test]
@@ -273,11 +318,13 @@ mod tests {
     #[test]
     fn response_cookies_update_and_remove_only_allowed_session_entries() {
         let mut session = AuthSessionSecret {
+            format_version: 2,
             student_id: "1234567890".into(),
             cookies: vec![StoredAuthCookie {
                 name: "sid".into(),
                 value: "old".into(),
                 domain: AUTH_HOST.into(),
+                host_only: true,
                 path: "/".into(),
                 expires: None,
                 http_only: Some(true),
@@ -293,9 +340,10 @@ mod tests {
                     name: "sid".into(),
                     value: "new".into(),
                     domain: AUTH_HOST.into(),
+                    host_only: true,
                     path: "/".into(),
-                    http_only: true,
-                    secure: true,
+                    http_only: Some(true),
+                    secure: Some(true),
                     expires: Some("Fri, 13 Sep 2030 00:00:00 +0000".into()),
                     same_site: Some("Lax".into()),
                     partitioned: None,
@@ -304,9 +352,10 @@ mod tests {
                     name: "evil".into(),
                     value: "ignored".into(),
                     domain: "example.com".into(),
+                    host_only: false,
                     path: "/".into(),
-                    http_only: false,
-                    secure: true,
+                    http_only: Some(false),
+                    secure: Some(true),
                     expires: None,
                     same_site: None,
                     partitioned: None,

@@ -45,14 +45,24 @@ pub(crate) fn confirm_profile(
 }
 
 #[tauri::command]
-pub(crate) fn begin_authentication(
+pub(crate) async fn begin_authentication(
     app: tauri::AppHandle,
     user_agent: Option<String>,
 ) -> Result<(), String> {
-    service::begin_authentication(app, user_agent.as_deref())
+    tauri::async_runtime::spawn_blocking(move || {
+        service::begin_authentication(app, user_agent.as_deref())
+    })
+    .await
+    .map_err(|_| "认证任务执行失败".to_string())?
 }
 
 #[tauri::command]
-pub(crate) fn logout(app: tauri::AppHandle, store: State<'_, AuthStore>) -> Result<(), String> {
-    service::logout(app, &store)
+pub(crate) async fn logout(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = app.state::<AuthStore>();
+        service::logout(app.clone(), &store)
+    })
+    .await
+    .map_err(|_| "注销任务执行失败".to_string())?
 }

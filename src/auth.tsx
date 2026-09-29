@@ -21,7 +21,8 @@ export type AuthState =
   | { SessionCaptureFailed: null }
   | { CredentialStorageFailed: null }
   | { AccountMismatch: null }
-  | { SessionExpired: null };
+  | { SessionExpired: null }
+  | { WebViewUpdateRequired: null };
 
 export function normalizeAuthState(raw: unknown): AuthState {
   if (typeof raw === "string") {
@@ -34,7 +35,8 @@ export function normalizeAuthState(raw: unknown): AuthState {
       key === "SessionCaptureFailed" ||
       key === "CredentialStorageFailed" ||
       key === "AccountMismatch" ||
-      key === "SessionExpired"
+      key === "SessionExpired" ||
+      key === "WebViewUpdateRequired"
     ) {
       return { [key]: null } as AuthState;
     }
@@ -79,6 +81,7 @@ export function normalizeAuthState(raw: unknown): AuthState {
       "CredentialStorageFailed",
       "AccountMismatch",
       "SessionExpired",
+      "WebViewUpdateRequired",
       "checking",
       "unauthenticated",
       "authenticating",
@@ -87,6 +90,7 @@ export function normalizeAuthState(raw: unknown): AuthState {
       "credentialStorageFailed",
       "accountMismatch",
       "sessionExpired",
+      "webViewUpdateRequired",
     ]) {
       if (key in value) {
         const normalized = key.charAt(0).toUpperCase() + key.slice(1);
@@ -99,6 +103,13 @@ export function normalizeAuthState(raw: unknown): AuthState {
 
 export type AuthFailure = { title: string; detail: string; action: string };
 export function authFailureFor(state: AuthState): AuthFailure | undefined {
+  if ("WebViewUpdateRequired" in state)
+    return {
+      title: "需要更新 Android System WebView",
+      detail:
+        "当前网页内核无法完整读取认证会话，请更新 Android System WebView 后重试。本机账户资料仍保留。",
+      action: "更新后重试",
+    };
   if ("SessionExpired" in state)
     return {
       title: "统一认证已过期",
@@ -114,7 +125,7 @@ export function authFailureFor(state: AuthState): AuthFailure | undefined {
   if ("SessionCaptureFailed" in state)
     return {
       title: "本次登录未能安全保存会话",
-      detail: "官方登录已完成，但会话未能写入系统凭据库；请重新认证。",
+      detail: "认证会话未能完整读取、写入或清理；本机账户资料仍保留，请重试。",
       action: "重新认证",
     };
   if ("CredentialStorageFailed" in state)

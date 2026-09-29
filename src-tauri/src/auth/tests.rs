@@ -78,11 +78,71 @@ fn cookie_collection_deduplicates_shared_cookies_but_keeps_mobile_and_common_pat
     );
 }
 
+#[test]
+fn android_host_cookie_round_trip_does_not_create_a_domain_shadow() {
+    let host = from_android_cookie_info(
+        "MOD_AUTH_CAS=host-session; domain=authserver.szu.edu.cn; path=/; httponly",
+    )
+    .unwrap();
+    let domain = from_android_cookie_info(
+        "MOD_AUTH_CAS=domain-session; domain=.authserver.szu.edu.cn; path=/",
+    )
+    .unwrap();
+    assert!(host.host_only);
+    assert!(!domain.host_only);
+    assert_eq!(host.path, "/");
+    assert_eq!(host.http_only, Some(true));
+    let restored = host.to_webview_cookie().unwrap();
+    assert!(restored.domain().is_none());
+    assert!(!restored.to_string().contains("Domain="));
+    assert_eq!(
+        domain.to_webview_cookie().unwrap().domain(),
+        Some(AUTH_HOST)
+    );
+    let distinct = collect_auth_cookies([restored, domain.to_webview_cookie().unwrap()]);
+    assert_eq!(distinct.len(), 2);
+}
+
+#[test]
+fn android_cookie_metadata_preserves_paths_and_rejects_lossy_headers() {
+    let login = from_android_cookie_info(
+        "JSESSIONID=login; domain=authserver.szu.edu.cn; path=/authserver; secure; httponly",
+    )
+    .unwrap();
+    let profile = from_android_cookie_info("JSESSIONID=profile; domain=authserver.szu.edu.cn; path=/personalInfo; secure; httponly; samesite=none").unwrap();
+    assert_ne!(login.path, profile.path);
+    assert_eq!(profile.secure, Some(true));
+    assert_eq!(profile.same_site.as_deref(), Some("None"));
+    assert!(from_android_cookie_info("JSESSIONID=lossy").is_err());
+    assert!(from_android_cookie_info("JSESSIONID=lossy; domain=authserver.szu.edu.cn").is_err());
+    assert!(
+        from_android_cookie_info("JSESSIONID=foreign; domain=other.szu.edu.cn; path=/").is_err()
+    );
+}
+
+#[test]
+fn legacy_android_snapshots_require_reauthentication_without_guessing_scope() {
+    let legacy: AuthSessionSecret =
+        serde_json::from_str(r#"{"student_id":"1234567890","cookies":[]}"#).unwrap();
+    assert!(!legacy.has_android_cookie_metadata());
+    let current = AuthSessionSecret {
+        format_version: 2,
+        ..legacy
+    };
+    assert!(current.has_android_cookie_metadata());
+    assert_eq!(
+        serde_json::from_str::<AuthSessionSecret>(&serde_json::to_string(&current).unwrap())
+            .unwrap(),
+        current
+    );
+}
+
 fn session_cookie() -> StoredAuthCookie {
     StoredAuthCookie {
         name: "JSESSIONID".into(),
         value: "opaque-session".into(),
         domain: AUTH_HOST.into(),
+        host_only: false,
         path: "/".into(),
         expires: Some("Sun, 13 Sep 2026 00:00:00 +0000".into()),
         http_only: Some(true),
@@ -113,6 +173,7 @@ fn cookie_session_round_trip_keeps_sensitive_attributes_internal() {
     assert_eq!(restored.http_only(), Some(true));
     assert_eq!(restored.secure(), Some(true));
     let secret = AuthSessionSecret {
+        format_version: 2,
         student_id: "1234567890".into(),
         cookies: vec![cookie],
     };

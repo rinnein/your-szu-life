@@ -64,6 +64,11 @@ describe("auth state transport normalization", () => {
 
   it("normalizes terminal event objects from Tauri", () => {
     expect(normalizeAuthState({ sessionExpired: null })).toEqual({ SessionExpired: null });
+    expect(normalizeAuthState("webViewUpdateRequired")).toEqual({ WebViewUpdateRequired: null });
+    expect(normalizeAuthState({ webViewUpdateRequired: null })).toEqual({
+      WebViewUpdateRequired: null,
+    });
+    expect(authFailureFor({ WebViewUpdateRequired: null })?.detail).toContain("账户资料仍保留");
   });
 });
 
