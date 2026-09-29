@@ -424,6 +424,7 @@ export default function CampusNetworkPage() {
     <PageShell>
       <div className="campus-network-layout">
         <CloseButton
+          data-webview-navigation
           className="campus-network-back"
           aria-label="返回上一级"
           onPress={() => void navigation.back()}
@@ -432,8 +433,10 @@ export default function CampusNetworkPage() {
         </CloseButton>
         <header className="campus-network-header">
           <div>
-            <span className="eyebrow">NETWORK ACCESS</span>
-            <h1>校园网登录</h1>
+            <span data-webview-navigation className="eyebrow">
+              NETWORK ACCESS
+            </span>
+            <h1 data-webview-navigation>校园网登录</h1>
             <p className="page-description">当前推测网络状态：{statusText(overview)}</p>
           </div>
         </header>

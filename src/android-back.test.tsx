@@ -52,6 +52,26 @@ afterEach(() => {
 });
 
 describe("Android committed back", () => {
+  it("hides web navigation only after the native toolbar confirms mounting", () => {
+    install();
+    expect(bridge.postMessage).toHaveBeenCalledWith("toolbar-query");
+    expect(document.documentElement).not.toHaveAttribute("data-szu-native-toolbar");
+    bridge.onmessage?.({ data: "native-toolbar-ready" });
+    expect(document.documentElement).toHaveAttribute("data-szu-native-toolbar", "true");
+    dispose();
+    expect(document.documentElement).not.toHaveAttribute("data-szu-native-toolbar");
+  });
+
+  it("publishes a logical parent independently of overlay handling", () => {
+    document.body.innerHTML = '<div role="dialog"></div>';
+    install();
+    expect(bridge.postMessage).toHaveBeenCalledWith("parent:no");
+    expect(bridge.postMessage).toHaveBeenLastCalledWith("overlay");
+    path = "/settings";
+    update();
+    expect(bridge.postMessage).toHaveBeenCalledWith("parent:yes");
+    expect(bridge.postMessage).toHaveBeenLastCalledWith("overlay");
+  });
   it("does nothing outside Android", () => {
     delete window.SzuApplicationBack;
     install();

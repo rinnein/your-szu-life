@@ -1,4 +1,21 @@
-use super::{model::is_student_id, AUTH_HOST};
+use super::{
+    model::is_student_id, AUTH_HOST, AUTH_LOGIN_URL, AUTH_MOBILE_PROFILE_URL, AUTH_PROFILE_URL,
+};
+
+pub(super) fn authentication_url(user_agent: Option<&str>) -> tauri::Url {
+    let ua = user_agent.unwrap_or_default().to_ascii_lowercase();
+    let mobile = ["android", "iphone", "ipad", "ipod", "mobile"]
+        .iter()
+        .any(|marker| ua.contains(marker));
+    let profile = if mobile {
+        AUTH_MOBILE_PROFILE_URL
+    } else {
+        AUTH_PROFILE_URL
+    };
+    let mut url = tauri::Url::parse(AUTH_LOGIN_URL).expect("fixed official login URL");
+    url.query_pairs_mut().append_pair("service", profile);
+    url
+}
 
 pub(super) fn is_auth_login_url(raw: &str) -> bool {
     let Ok(url) = raw.parse::<tauri::Url>() else {

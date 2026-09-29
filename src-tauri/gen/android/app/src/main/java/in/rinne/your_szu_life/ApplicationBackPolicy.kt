@@ -25,6 +25,8 @@ internal class ApplicationBackPolicy(
 
   var action: String? = null
     private set
+  var hasLogicalParent = false
+    private set
 
   fun document(url: String?) {
     localDocument = applicationOrigin(url) in origins
@@ -32,6 +34,7 @@ internal class ApplicationBackPolicy(
     // Native history inside a child must not mask the Activity back stack.
     enabled = false
     action = null
+    hasLogicalParent = false
   }
 
   fun acceptsSource(source: String?, currentUrl: String?, mainFrame: Boolean): Boolean {
@@ -43,12 +46,22 @@ internal class ApplicationBackPolicy(
     if (!mainFrame || message !in setOf("route", "overlay", "loading", "system")) return false
     if (!acceptsSource(source, currentUrl, mainFrame)) return false
     localDocument = true
+    when (message) {
+      "route" -> hasLogicalParent = true
+      "system", "loading" -> hasLogicalParent = false
+    }
     action = when {
       message == "overlay" -> "dismiss-overlay"
       message == "route" -> "navigate-back"
       else -> null
     }
     enabled = action != null
+    return true
+  }
+
+  fun logicalParent(value: Boolean, source: String?, currentUrl: String?, mainFrame: Boolean): Boolean {
+    if (!acceptsSource(source, currentUrl, mainFrame)) return false
+    hasLogicalParent = value
     return true
   }
 }

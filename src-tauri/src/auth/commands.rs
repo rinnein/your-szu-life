@@ -45,8 +45,11 @@ pub(crate) fn confirm_profile(
 }
 
 #[tauri::command]
-pub(crate) fn begin_authentication(app: tauri::AppHandle) -> Result<(), String> {
-    service::begin_authentication(app)
+pub(crate) fn begin_authentication(
+    app: tauri::AppHandle,
+    user_agent: Option<String>,
+) -> Result<(), String> {
+    service::begin_authentication(app, user_agent.as_deref())
 }
 
 #[tauri::command]

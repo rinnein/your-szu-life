@@ -1,6 +1,6 @@
 use super::{
     model::*, probe::*, refresh::*, session::*, webview::resume_application_window, AuthStore,
-    AUTH_HOST, AUTH_LOGIN_URL,
+    AUTH_HOST,
 };
 use std::thread;
 use tauri::{Emitter, Manager};
@@ -29,14 +29,16 @@ pub(super) fn credential_capture_failure(app: &tauri::AppHandle, store: &AuthSto
     set_terminal_state(app, store, AuthState::CredentialCaptureFailed);
 }
 
-pub(super) fn complete_authentication(app: tauri::AppHandle, payload: String) {
+pub(super) fn complete_authentication(app: tauri::AppHandle, payload: String, generation: u64) {
     let Some(store) = app.try_state::<AuthStore>() else {
         return;
     };
-    if !matches!(
-        store.state.lock().ok().as_deref(),
-        Some(AuthState::Authenticating)
-    ) || !auth_probe_reached_verified_endpoint(&payload)
+    if !store.auth_probe_is_current(generation)
+        || !matches!(
+            store.state.lock().ok().as_deref(),
+            Some(AuthState::Authenticating)
+        )
+        || !auth_probe_reached_verified_endpoint(&payload)
     {
         return;
     }
@@ -433,7 +435,10 @@ pub(super) fn confirm_profile(
     Ok(())
 }
 
-pub(super) fn navigate_to_authentication(app: tauri::AppHandle) -> Result<(), String> {
+pub(super) fn navigate_to_authentication(
+    app: tauri::AppHandle,
+    user_agent: Option<&str>,
+) -> Result<(), String> {
     let window = app.get_webview_window("main").ok_or("主窗口不存在")?;
     let store = app.try_state::<AuthStore>().ok_or("认证状态不可用")?;
     store.cancel_session_refresh();
@@ -475,18 +480,17 @@ pub(super) fn navigate_to_authentication(app: tauri::AppHandle) -> Result<(), St
     store.credentials.delete_session()?;
     clear_webview_session(&app)?;
     window
-        .navigate(
-            AUTH_LOGIN_URL
-                .parse::<tauri::Url>()
-                .map_err(|error| error.to_string())?,
-        )
+        .navigate(authentication_url(user_agent))
         .map_err(|error| error.to_string())?;
     emit_state(&app, AuthState::Authenticating);
     Ok(())
 }
 
-pub(super) fn begin_authentication(app: tauri::AppHandle) -> Result<(), String> {
-    navigate_to_authentication(app)
+pub(super) fn begin_authentication(
+    app: tauri::AppHandle,
+    user_agent: Option<&str>,
+) -> Result<(), String> {
+    navigate_to_authentication(app, user_agent)
 }
 
 pub(super) fn logout(app: tauri::AppHandle, store: &AuthStore) -> Result<(), String> {

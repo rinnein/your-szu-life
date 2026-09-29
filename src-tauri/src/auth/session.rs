@@ -1,4 +1,6 @@
-use super::{AUTH_HOST, AUTH_LOGIN_URL, AUTH_PROFILE_URL};
+use super::{
+    AUTH_HOST, AUTH_LOGIN_URL, AUTH_MOBILE_PROFILE_URL, AUTH_PROFILE_URL, AUTH_USER_CONF_URL,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 #[cfg(target_os = "android")]
@@ -124,25 +126,35 @@ pub(super) fn capture_auth_session(
     window: &tauri::WebviewWindow,
     student_id: String,
 ) -> Result<AuthSessionSecret, String> {
-    let login_url = AUTH_LOGIN_URL
-        .parse::<tauri::Url>()
-        .map_err(|e| e.to_string())?;
-    let profile_url = AUTH_PROFILE_URL
-        .parse::<tauri::Url>()
-        .map_err(|e| e.to_string())?;
+    let mut cookies = Vec::new();
+    for url in [
+        AUTH_LOGIN_URL,
+        AUTH_PROFILE_URL,
+        AUTH_MOBILE_PROFILE_URL,
+        AUTH_USER_CONF_URL,
+    ] {
+        cookies.extend(
+            window
+                .cookies_for_url(url.parse().expect("fixed official URL"))
+                .map_err(|error| error.to_string())?,
+        );
+    }
+    let stored = collect_auth_cookies(cookies);
+    if stored.is_empty() {
+        return Err("未读取到官方认证会话".into());
+    }
+    Ok(AuthSessionSecret {
+        student_id,
+        cookies: stored,
+    })
+}
+
+pub(super) fn collect_auth_cookies(
+    cookies: impl IntoIterator<Item = Cookie<'static>>,
+) -> Vec<StoredAuthCookie> {
     let mut seen = HashSet::new();
     let mut stored = Vec::new();
-    for cookie in window
-        .cookies_for_url(login_url)
-        .map_err(|error| error.to_string())?
-        .into_iter()
-        .chain(
-            window
-                .cookies_for_url(profile_url)
-                .map_err(|error| error.to_string())?
-                .into_iter(),
-        )
-    {
+    for cookie in cookies {
         let Some(cookie) = StoredAuthCookie::from_webview_cookie(cookie) else {
             continue;
         };
@@ -151,13 +163,7 @@ pub(super) fn capture_auth_session(
             stored.push(cookie);
         }
     }
-    if stored.is_empty() {
-        return Err("未读取到官方认证会话".into());
-    }
-    Ok(AuthSessionSecret {
-        student_id,
-        cookies: stored,
-    })
+    stored
 }
 
 #[cfg(not(target_os = "android"))]

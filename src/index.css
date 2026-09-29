@@ -1,6 +1,11 @@
 @import "tailwindcss";
 @import "@heroui/styles";
 
+/* Only a mounted native toolbar may replace the page's navigation controls. */
+html[data-szu-native-toolbar="true"] [data-webview-navigation] {
+  display: none !important;
+}
+
 :root {
   --szu-brand: #5d5fef;
   --szu-brand-soft: #eef0ff;

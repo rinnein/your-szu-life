@@ -16,6 +16,7 @@ class ApplicationBackNavigation(
 ) {
   private val bridgeName = "SzuApplicationBack"
   private var reply: JavaScriptReplyProxy? = null
+  private var capabilityReply: JavaScriptReplyProxy? = null
   private var disposed = false
   private var script: ScriptHandler? = null
   private val origins = mutableSetOf("http://tauri.localhost", "https://tauri.localhost")
@@ -53,8 +54,10 @@ class ApplicationBackNavigation(
       if (url != lastUrl) {
         lastUrl = url
         reply = null
+        capabilityReply = null
         policy.document(url)
         callback.isEnabled = policy.enabled
+        activity.updateToolbarBack(policy.hasLogicalParent)
       }
       // No WebView history fallback: unknown state belongs to the system.
       if (!messaging) callback.isEnabled = false
@@ -81,20 +84,33 @@ class ApplicationBackNavigation(
           _, message, sourceOrigin, isMainFrame, proxy ->
         if (!disposed && isMainFrame && message.type == WebMessageCompat.TYPE_STRING) {
           when (message.data) {
+            // Read-only capability: remote main frames may ask whether the native
+            // bar is mounted, but cannot publish local navigation state.
+            "toolbar-query" -> {
+              capabilityReply = proxy
+              toolbarMounted()
+            }
+            "parent:yes", "parent:no" -> if (policy.logicalParent(
+                message.data == "parent:yes", sourceOrigin.toString(), webView.url, isMainFrame)) {
+              activity.updateToolbarBack(policy.hasLogicalParent)
+            }
             "back-request" -> if (policy.acceptsSource(sourceOrigin.toString(), webView.url, true)) {
               if (callback.isEnabled) callback.handleOnBackPressed()
               else activity.onBackPressedDispatcher.onBackPressed()
             }
             "document" -> {
               reply = null
+              capabilityReply = null
               policy.document(sourceOrigin.toString())
               callback.isEnabled = policy.enabled
+              activity.updateToolbarBack(policy.hasLogicalParent)
             }
             "route", "overlay", "loading", "system" -> if (policy.localState(
                 message.data, sourceOrigin.toString(), webView.url, isMainFrame)) {
               reply = proxy
               lastUrl = webView.url
               callback.isEnabled = policy.enabled
+              activity.updateToolbarBack(policy.hasLogicalParent)
             }
           }
         }
@@ -108,6 +124,13 @@ class ApplicationBackNavigation(
     if (!messaging || !documentStart) webView.post(fallback)
   }
 
+  fun toolbarMounted() {
+    if (!disposed && activity.nativeToolbarReady) {
+      activity.updateToolbarBack(policy.hasLogicalParent)
+      capabilityReply?.postMessage("native-toolbar-ready")
+    }
+  }
+
   fun dispose() {
     disposed = true
     callback.remove()
@@ -115,5 +138,6 @@ class ApplicationBackNavigation(
     script?.remove()
     if (messaging) WebViewCompat.removeWebMessageListener(webView, bridgeName)
     reply = null
+    capabilityReply = null
   }
 }

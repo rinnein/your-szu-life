@@ -31,10 +31,17 @@ export function installAndroidBack(options: {
   let disposed = false;
   let pending = false;
   const publish = () => {
-    if (!disposed)
+    if (!disposed) {
+      bridge.postMessage(options.canBack() ? "parent:yes" : "parent:no");
       bridge.postMessage(activeOverlay() ? "overlay" : options.canBack() ? "route" : "system");
+    }
   };
   bridge.onmessage = ({ data }) => {
+    if (disposed) return;
+    if (data === "native-toolbar-ready") {
+      document.documentElement.dataset.szuNativeToolbar = "true";
+      return;
+    }
     if ((data !== "dismiss-overlay" && data !== "navigate-back") || pending || disposed) return;
     const overlay = activeOverlay();
     if (overlay) {
@@ -79,12 +86,14 @@ export function installAndroidBack(options: {
     attributeFilter: ["aria-hidden", "hidden", "data-exiting", "role"],
   });
   const unsubscribe = options.subscribe(publish);
+  bridge.postMessage("toolbar-query");
   publish();
   return () => {
     disposed = true;
     observer.disconnect();
     unsubscribe();
     bridge.onmessage = null;
+    delete document.documentElement.dataset.szuNativeToolbar;
     // Do not hand an unmounted/loading page to the system as though it were home.
     bridge.postMessage("loading");
   };

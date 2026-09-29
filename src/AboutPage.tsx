@@ -181,6 +181,7 @@ export default function AboutPage() {
     <PageShell>
       <div className="about-layout">
         <CloseButton
+          data-webview-navigation
           className="about-back"
           aria-label="返回首页"
           onPress={() => void navigation.back()}
@@ -188,8 +189,10 @@ export default function AboutPage() {
           <LuArrowLeft aria-hidden="true" />
         </CloseButton>
         <header className="about-header">
-          <span className="eyebrow">ABOUT YOUR SZU LIFE</span>
-          <h1>关于</h1>
+          <span data-webview-navigation className="eyebrow">
+            ABOUT YOUR SZU LIFE
+          </span>
+          <h1 data-webview-navigation>关于</h1>
           <div className="about-brand">
             <BrandMark large />
             <div>

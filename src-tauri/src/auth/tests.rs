@@ -1,5 +1,83 @@
 use super::{model::*, probe::*, scripts::*, session::*, AUTH_HOST};
 
+#[test]
+fn login_service_uses_actual_ua_and_encodes_the_complete_profile_url() {
+    for ua in [
+        "Mozilla/5.0 (Linux; Android 14) Mobile",
+        "iPhone",
+        "iPad",
+        "iPod",
+        "MOBILE",
+    ] {
+        let url = authentication_url(Some(ua));
+        assert!(is_auth_login_url(url.as_str()));
+        assert_eq!(
+            url.query_pairs().collect::<Vec<_>>(),
+            vec![("service".into(), super::AUTH_MOBILE_PROFILE_URL.into())]
+        );
+        assert!(url.fragment().is_none());
+        assert!(url.as_str().contains("%23%2Fhome"));
+    }
+    for ua in [
+        None,
+        Some(""),
+        Some("unknown"),
+        Some("Mozilla/5.0 (X11; Linux x86_64) Chrome/130"),
+        Some("Mozilla/5.0 (Windows NT 10.0)"),
+    ] {
+        let url = authentication_url(ua);
+        assert_eq!(
+            url.query_pairs()
+                .find(|(name, _)| name == "service")
+                .unwrap()
+                .1,
+            super::AUTH_PROFILE_URL
+        );
+    }
+}
+
+#[test]
+fn profile_pages_are_not_authentication_evidence_and_foreign_hosts_are_rejected() {
+    for url in [super::AUTH_PROFILE_URL, super::AUTH_MOBILE_PROFILE_URL] {
+        assert!(is_auth_profile_url(url));
+        let page_response = serde_json::json!({"ok": true, "status": 200, "url": url, "text": "<html>profile shell</html>"});
+        assert!(!auth_probe_succeeded(&page_response.to_string()));
+    }
+    assert!(!is_auth_profile_url(
+        "https://authserver.szu.edu.cn.evil.example/personalInfo/personalMobile/index.html#/home"
+    ));
+    assert!(!is_auth_profile_url(
+        "http://authserver.szu.edu.cn/personalInfo/personalMobile/index.html#/home"
+    ));
+}
+
+#[test]
+fn cookie_collection_deduplicates_shared_cookies_but_keeps_mobile_and_common_paths() {
+    let root = session_cookie();
+    let mut mobile = root.clone();
+    mobile.path = "/personalInfo/personalMobile".into();
+    let mut common = root.clone();
+    common.path = "/personalInfo/common".into();
+    let foreign = tauri::webview::cookie::Cookie::parse("other=x; Domain=evil.example; Path=/")
+        .unwrap()
+        .into_owned();
+    let cookies = collect_auth_cookies([
+        root.to_webview_cookie().unwrap(),
+        root.to_webview_cookie().unwrap(),
+        mobile.to_webview_cookie().unwrap(),
+        common.to_webview_cookie().unwrap(),
+        foreign,
+    ]);
+    assert_eq!(cookies.len(), 3);
+    assert_eq!(
+        cookies
+            .iter()
+            .map(|cookie| cookie.path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["/", "/personalInfo/personalMobile", "/personalInfo/common"]
+    );
+}
+
 fn session_cookie() -> StoredAuthCookie {
     StoredAuthCookie {
         name: "JSESSIONID".into(),

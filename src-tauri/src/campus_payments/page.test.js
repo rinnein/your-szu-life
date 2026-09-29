@@ -82,6 +82,30 @@ afterEach(() => {
 });
 
 describe("network-fee main document login guard (offline)", () => {
+  it("removes only web navigation after native toolbar acknowledgement and cleans up its listener", () => {
+    const p = page({ html: "<title>网费套餐</title>" + FORM });
+    const bridge = { postMessage: vi.fn(), onmessage: null };
+    p.window.SzuApplicationBack = bridge;
+    p.evaluate();
+    const flow = p.window.__szuNetworkFeeFlow;
+    const shadow = flow.toolbar.shadowRoot;
+    const back = shadow.querySelector("a");
+    const title = shadow.querySelector("h2");
+    expect(bridge.postMessage).toHaveBeenCalledWith("toolbar-query");
+    expect(back.hidden).toBe(false);
+    bridge.onmessage({ data: "native-toolbar-ready" });
+    expect(back.hidden).toBe(true);
+    expect(title.hidden).toBe(true);
+    expect(flow.manualButton.hidden).toBe(false);
+    expect(shadow.querySelector("section").getAttribute("aria-label")).toBe("网费服务状态");
+    expect(flow.message.isConnected).toBe(true);
+    flow.manualButton.click();
+    expect(flow.manual).toBe(true);
+    expect(back.hidden).toBe(true);
+    expect(flow.message.textContent).toContain("已停止自动操作");
+    flow.dispose();
+    expect(bridge.onmessage).toBeNull();
+  });
   it("hands an already logged-in portal to the user without querying or operating payment controls", () => {
     const p = page({
       url: TARGET,

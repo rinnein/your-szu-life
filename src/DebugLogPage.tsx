@@ -139,7 +139,9 @@ export default function DebugLogPage() {
           <Card.Content>
             <Card.Title>调试模式未启用</Card.Title>
             <Card.Description>请返回首页，连续点击左上角应用图标 5 次启用。</Card.Description>
-            <Button onPress={() => void navigation.back()}>返回工作台</Button>
+            <Button data-webview-navigation onPress={() => void navigation.back()}>
+              返回工作台
+            </Button>
           </Card.Content>
         </Card>
       </PageShell>
@@ -150,6 +152,7 @@ export default function DebugLogPage() {
     <PageShell>
       <div className="debug-layout">
         <CloseButton
+          data-webview-navigation
           className="debug-back"
           aria-label="返回工作台"
           onPress={() => void navigation.back()}
@@ -157,8 +160,10 @@ export default function DebugLogPage() {
           <LuArrowLeft aria-hidden="true" />
         </CloseButton>
         <header className="debug-header">
-          <span className="eyebrow">DEVELOPER DIAGNOSTICS</span>
-          <h1>诊断日志</h1>
+          <span data-webview-navigation className="eyebrow">
+            DEVELOPER DIAGNOSTICS
+          </span>
+          <h1 data-webview-navigation>诊断日志</h1>
           <p className="page-description">仅记录脱敏的 Android 网络与门户探测信息。</p>
         </header>
         <Card className="debug-card" variant="default">

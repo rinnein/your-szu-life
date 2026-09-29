@@ -13,6 +13,10 @@ pub use state::AuthStore;
 pub(super) const AUTH_LOGIN_URL: &str = "https://authserver.szu.edu.cn/authserver/login";
 pub(super) const AUTH_PROFILE_URL: &str =
     "https://authserver.szu.edu.cn/personalInfo/personCenter/index.html#/accountsecurity";
+pub(super) const AUTH_MOBILE_PROFILE_URL: &str =
+    "https://authserver.szu.edu.cn/personalInfo/personalMobile/index.html#/home";
+pub(super) const AUTH_USER_CONF_URL: &str =
+    "https://authserver.szu.edu.cn/personalInfo/common/getUserConf";
 pub(super) const AUTH_HOST: &str = "authserver.szu.edu.cn";
 
 /// Credentials are read only inside Rust and never exposed by an IPC command.

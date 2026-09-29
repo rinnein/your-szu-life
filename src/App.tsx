@@ -174,7 +174,7 @@ export default function App() {
   const beginAuthentication = async () => {
     setAuthBusy(true);
     try {
-      await invoke("begin_authentication");
+      await invoke("begin_authentication", { userAgent: navigator.userAgent });
     } finally {
       setAuthBusy(false);
     }
@@ -266,7 +266,7 @@ export default function App() {
             </button>
             <span className="eyebrow">YOUR SZU LIFE</span>
           </div>
-          <h1>深大生活工作台</h1>
+          <h1 data-webview-navigation>深大生活工作台</h1>
         </div>
         <Dropdown>
           <Dropdown.Trigger className="account-trigger" aria-label="打开账户菜单">

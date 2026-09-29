@@ -105,6 +105,7 @@ export default function networkFeePage(options) {
           "a:focus-visible,button:focus-visible{outline:3px solid #8587ff;outline-offset:2px}section:focus{outline:none}[hidden]{display:none!important}",
           ":host([data-mode=automatic]) p[role=status]::before{content:'';display:inline-block;width:14px;height:14px;margin-right:8px;border:2px solid #dddff5;border-top-color:#5d5fef;border-radius:50%;vertical-align:-2px;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}",
           "@media(prefers-reduced-motion:reduce){p[role=status]::before{animation:none!important}}@media(max-width:560px){section{column-gap:8px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}h2{font-size:18px}p{grid-column:1/-1}button{padding:8px 12px}}",
+          ":host([data-native-toolbar]) section{grid-template-columns:minmax(0,1fr) auto}:host([data-native-toolbar]) p{grid-column:1/-1}:host([data-native-toolbar]) button{grid-column:2}:host([data-native-toolbar]) p[role=status]{grid-column:1;grid-row:1}",
         ].join("");
         const section = document.createElement("section");
         section.tabIndex = -1;
@@ -149,6 +150,7 @@ export default function networkFeePage(options) {
         documentContext.toolbar = toolbar;
         documentContext.message = message;
         documentContext.manualButton = manual;
+        let nativeToolbar = false;
 
         // The bar stays at the top even after Rust hands off. Observe only the
         // head and root's direct children, not form values or the page subtree.
@@ -264,7 +266,7 @@ export default function networkFeePage(options) {
             if (originalFocus?.isConnected && originalFocus !== document.body) {
               originalFocus.focus({ preventScroll: true });
             } else {
-              back.focus({ preventScroll: true });
+              (nativeToolbar ? section : back).focus({ preventScroll: true });
             }
           }
         };
@@ -300,7 +302,7 @@ export default function networkFeePage(options) {
             hint.hidden = !automatic;
             manual.hidden = !automatic;
             section.setAttribute("role", automatic ? "dialog" : "region");
-            section.setAttribute("aria-labelledby", title.id);
+            if (!nativeToolbar) section.setAttribute("aria-labelledby", title.id);
             section.setAttribute("aria-describedby", message.id);
             if (automatic) section.setAttribute("aria-modal", "true");
             else section.removeAttribute("aria-modal");
@@ -351,7 +353,12 @@ export default function networkFeePage(options) {
             event.preventDefault();
             event.stopImmediatePropagation();
             const active = shadow.activeElement;
-            (active === back || (active !== manual && event.shiftKey) ? manual : back).focus({
+            (nativeToolbar
+              ? manual
+              : active === back || (active !== manual && event.shiftKey)
+                ? manual
+                : back
+            ).focus({
               preventScroll: true,
             });
           } else if (!inside || (event.type === "keydown" && event.key === "Escape")) {
@@ -387,7 +394,29 @@ export default function networkFeePage(options) {
         for (const type of blockedEvents) {
           document.addEventListener(type, blockInteraction, { capture: true, passive: false });
         }
+        // Only remove our web navigation after the native container confirms
+        // that it is mounted. This capability conveys no navigation privilege.
+        const nativeBridge = window.SzuApplicationBack;
+        const previousNativeMessage = nativeBridge?.onmessage;
+        const nativeMessage = (event) => {
+          previousNativeMessage?.call(nativeBridge, event);
+          if (documentContext.cancelled || event.data !== "native-toolbar-ready") return;
+          nativeToolbar = true;
+          toolbar.dataset.nativeToolbar = "true";
+          back.hidden = true;
+          title.hidden = true;
+          section.removeAttribute("aria-labelledby");
+          section.setAttribute("aria-label", "网费服务状态");
+          if (shadow.activeElement === back) section.focus({ preventScroll: true });
+          syncSpacing();
+        };
+        if (nativeBridge) {
+          nativeBridge.onmessage = nativeMessage;
+          nativeBridge.postMessage("toolbar-query");
+        }
         documentContext.dispose = () => {
+          if (nativeBridge?.onmessage === nativeMessage)
+            nativeBridge.onmessage = previousNativeMessage;
           release(false);
           layoutObserver.disconnect();
           titleObserver.disconnect();

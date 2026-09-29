@@ -102,6 +102,12 @@ fn start_auth_probe(window: &tauri::Webview, app: &tauri::AppHandle) {
             let retry_window = probe_window.clone();
             let verified_flag = saw_verified_response.clone();
             let _ = probe_window.eval_with_callback(auth_probe_result_script(), move |value| {
+                if !callback_handle
+                    .try_state::<AuthStore>()
+                    .is_some_and(|store| store.auth_probe_is_current(generation))
+                {
+                    return;
+                }
                 if auth_probe_reached_verified_endpoint(&value) {
                     verified_flag.store(true, Ordering::Release);
                 }
@@ -110,7 +116,9 @@ fn start_auth_probe(window: &tauri::Webview, app: &tauri::AppHandle) {
                 if value != "null" && value != "undefined" {
                     let completion_handle = callback_handle.clone();
                     let payload = value.clone();
-                    thread::spawn(move || complete_authentication(completion_handle, payload));
+                    thread::spawn(move || {
+                        complete_authentication(completion_handle, payload, generation)
+                    });
                 }
                 if should_retry {
                     let _ = retry_window.eval(auth_probe_script());
@@ -126,10 +134,12 @@ fn start_auth_probe(window: &tauri::Webview, app: &tauri::AppHandle) {
             }
         }
         if let Some(store) = handle.try_state::<AuthStore>() {
-            if matches!(
-                store.state.lock().ok().as_deref(),
-                Some(AuthState::Authenticating)
-            ) && saw_verified_response.load(Ordering::Acquire)
+            if store.auth_probe_is_current(generation)
+                && matches!(
+                    store.state.lock().ok().as_deref(),
+                    Some(AuthState::Authenticating)
+                )
+                && saw_verified_response.load(Ordering::Acquire)
                 && !store.auth_completion_is_claimed()
             {
                 credential_capture_failure(&handle, &store);
@@ -148,6 +158,12 @@ pub(crate) fn on_page_load(window: &tauri::Webview, payload: &tauri::webview::Pa
     }
 
     let url = payload.url().as_str();
+    // A reload or full navigation invalidates every callback from the old document.
+    if is_started {
+        if let Some(store) = window.app_handle().try_state::<AuthStore>() {
+            store.cancel_auth_probe();
+        }
+    }
     if is_auth_login_url(url) {
         let app = window.app_handle();
         if let Some(store) = app.try_state::<AuthStore>() {

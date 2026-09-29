@@ -1,10 +1,25 @@
-import { createMemoryHistory, createRouter } from "@tanstack/react-router";
-import { initialLogicalEntries, isChildDocument } from "./logical-navigation";
+import { createRouter } from "@tanstack/react-router";
+import { isChildDocument } from "./logical-navigation";
+import { createReloadableLogicalHistory } from "./logical-history";
 import { routeTree } from "./routeTree.gen";
+
+function navigationStorage() {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return undefined;
+  }
+}
 
 export const router = createRouter({
   routeTree,
-  history: createMemoryHistory({ initialEntries: initialLogicalEntries(window.location.href) }),
+  history: createReloadableLogicalHistory({
+    href: window.location.href,
+    reload:
+      (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined)
+        ?.type === "reload",
+    storage: navigationStorage(),
+  }),
   defaultPreload: "intent",
 });
 

@@ -35,6 +35,7 @@ export default function CampusPaymentsPage() {
     <PageShell>
       <div className="payments-layout">
         <CloseButton
+          data-webview-navigation
           className="payments-back"
           aria-label="返回工作台"
           onPress={() => void navigation.back()}
@@ -42,8 +43,10 @@ export default function CampusPaymentsPage() {
           <LuArrowLeft aria-hidden="true" />
         </CloseButton>
         <header className="payments-header">
-          <span className="eyebrow">CAMPUS SERVICES</span>
-          <h1>校园卡/电费/网费</h1>
+          <span data-webview-navigation className="eyebrow">
+            CAMPUS SERVICES
+          </span>
+          <h1 data-webview-navigation>校园卡/电费/网费</h1>
           <p className="page-description">
             官方服务入口与宿舍电费查询；不会自动充值、扣款或修改套餐。
           </p>

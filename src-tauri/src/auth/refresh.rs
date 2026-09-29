@@ -11,7 +11,7 @@ use reqwest::{blocking::Client, cookie::Jar, redirect::Policy, Url};
 use std::{io::Read, sync::Arc, time::Duration};
 use time::{format_description::well_known::Rfc2822, OffsetDateTime};
 
-const USER_CONF_URL: &str = "https://authserver.szu.edu.cn/personalInfo/common/getUserConf";
+const USER_CONF_URL: &str = super::AUTH_USER_CONF_URL;
 const MAX_RESPONSE_BYTES: u64 = 512 * 1024;
 
 #[derive(Debug, PartialEq, Eq)]

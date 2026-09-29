@@ -26,7 +26,12 @@ export default function SettingsPage() {
           await navigation.back();
         }}
       />
-      <Button className="back-button" variant="tertiary" onPress={() => void navigation.back()}>
+      <Button
+        data-webview-navigation
+        className="back-button"
+        variant="tertiary"
+        onPress={() => void navigation.back()}
+      >
         返回工作台
       </Button>
     </PageShell>
