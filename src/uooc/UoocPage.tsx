@@ -110,6 +110,14 @@ export default function UoocPage() {
     }
   };
   const ready = snapshot?.session === "ready";
+  const refreshDetails = (cid: string) => {
+    if (!ready) return;
+    void invoke("refresh_uooc_progress", { courseIds: [cid] })
+      .then((next) => {
+        if (isUoocSnapshot(next)) apply(next);
+      })
+      .catch(() => setError("课程详情刷新失败，请重试。"));
+  };
   const tasks =
     snapshot?.tasks.filter((task) => !snapshot.user || task.accountId === snapshot.user.id) ?? [];
   const running = tasks.some(active);
@@ -325,9 +333,13 @@ export default function UoocPage() {
                     </Chip>
                   )}
                   <p className="text-sm text-muted">
-                    {course.organization} · {course.semester} · 周数 {course.weeks || "—"}
+                    {course.organization} · {course.semester}
                   </p>
-                  <CourseProgressView entry={snapshot?.progress?.[course.id]} />
+                  <CourseProgressView
+                    course={course}
+                    entry={snapshot?.progress?.[course.id]}
+                    onRefresh={() => refreshDetails(course.id)}
+                  />
                   {checkinControls(course.id)}
                 </Card.Content>
               </Card>
@@ -390,7 +402,11 @@ export default function UoocPage() {
                   </Card.Description>
                 </Card.Header>
                 <Card.Content className="grid gap-3">
-                  <CourseProgressView entry={snapshot?.progress?.[task.course.id]} />
+                  <CourseProgressView
+                    course={task.course}
+                    entry={snapshot?.progress?.[task.course.id]}
+                    onRefresh={() => refreshDetails(task.course.id)}
+                  />
                   {checkinControls(task.course.id)}
                   <div className="flex flex-wrap gap-2">
                     <Button

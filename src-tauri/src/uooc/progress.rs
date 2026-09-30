@@ -16,6 +16,9 @@ pub(crate) struct Metric {
     pub percent: Option<f64>,
     pub count: Option<u64>,
     pub total: Option<u64>,
+    pub weight: Option<f64>,
+    pub score: Option<f64>,
+    pub average_score: Option<f64>,
 }
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -35,6 +38,19 @@ pub(crate) struct CourseProgress {
     pub test: Metric,
     pub homework: Metric,
     pub signin: Metric,
+    #[serde(default)]
+    pub discussion: Metric,
+    #[serde(default)]
+    pub exam: Metric,
+    pub weighted_percent: Option<f64>,
+    #[serde(default)]
+    pub weighted_partial: bool,
+    pub weight_total: Option<f64>,
+    pub score: Option<f64>,
+    pub weighted_score: Option<f64>,
+    pub video_minutes: Option<f64>,
+    pub discussion_posts: Option<u64>,
+    pub discussion_replies: Option<u64>,
     pub signin_weight: Option<f64>,
     pub signin_time: Option<String>,
     pub attendance: Attendance,
@@ -71,12 +87,51 @@ fn percent(value: &Value, name: &str) -> Option<f64> {
                 .filter(|v| v.is_finite() && (0.0..=100.0).contains(v))
         })
 }
-fn metric(value: &Value, name: &str) -> Metric {
+fn metric(value: &Value, name: &str, weight_key: &str) -> Metric {
+    let completed = count(&value[format!("{name}_cnt")]);
+    let total = count(&value[format!("{name}_total")]);
+    let completion = percent(value, name).or_else(|| {
+        completed
+            .zip(total)
+            .filter(|(_, total)| *total > 0)
+            .map(|(count, total)| (count as f64 / total as f64 * 100.0).min(100.0))
+    });
     Metric {
-        percent: percent(value, name),
-        count: count(&value[format!("{name}_cnt")]),
-        total: count(&value[format!("{name}_total")]),
+        percent: completion,
+        count: completed,
+        total,
+        weight: nonnegative(&value[weight_key]).filter(|weight| *weight <= 100.0),
+        score: nonnegative(&value[format!("{name}_score")]),
+        average_score: nonnegative(&value[format!("{name}_avg_score")]),
     }
+}
+
+/// UOOC weights are percentages, not a fixed rubric shared by every course.
+/// Unknown completion rates remain unknown; scores never substitute for completion.
+fn weighted_progress(metrics: [&Metric; 6]) -> (Option<f64>, Option<f64>, bool) {
+    let Some(weights) = metrics.iter().map(|m| m.weight).collect::<Option<Vec<_>>>() else {
+        return (None, None, true);
+    };
+    let total: f64 = weights.iter().sum();
+    if (total - 100.0).abs() > 0.000001 {
+        return (None, Some(total), false);
+    }
+    let mut confirmed = 0.0;
+    let mut known = false;
+    let mut partial = false;
+    for (metric, weight) in metrics.iter().zip(weights) {
+        if weight == 0.0 {
+            continue;
+        }
+        match metric.percent {
+            Some(percent) => {
+                confirmed += weight * percent / 100.0;
+                known = true;
+            }
+            None => partial = true,
+        }
+    }
+    (known.then_some(confirmed.min(100.0)), Some(total), partial)
 }
 pub(super) fn today() -> NaiveDate {
     Utc::now()
@@ -103,8 +158,15 @@ fn signin_date(value: Option<&Value>) -> Result<Option<NaiveDate>, ()> {
 }
 impl CourseProgress {
     pub fn parse(value: &Value, date: NaiveDate) -> Self {
-        let signin = metric(value, "signin");
-        let weight = nonnegative(&value["signin"]);
+        let signin = metric(value, "signin", "signin");
+        let video = metric(value, "video", "video");
+        let homework = metric(value, "homework", "homework");
+        let test = metric(value, "test", "test");
+        let discussion = metric(value, "discuss", "discuz");
+        let exam = metric(value, "exam", "finalExam");
+        let (weighted_percent, weight_total, weighted_partial) =
+            weighted_progress([&signin, &video, &homework, &test, &discussion, &exam]);
+        let weight = signin.weight;
         let last_date = signin_date(value.get("signin_time"));
         let attendance = match (weight, signin.count, signin.total, last_date) {
             (Some(0.0), _, _, _) | (_, _, Some(0), _) => Attendance::NotRequired,
@@ -116,10 +178,20 @@ impl CourseProgress {
         };
         Self {
             total_percent: percent(value, "total"),
-            video: metric(value, "video"),
-            test: metric(value, "test"),
-            homework: metric(value, "homework"),
+            video,
+            test,
+            homework,
             signin,
+            discussion,
+            exam,
+            weighted_percent,
+            weighted_partial,
+            weight_total,
+            score: nonnegative(&value["score"]),
+            weighted_score: nonnegative(&value["weighted_score"]),
+            video_minutes: nonnegative(&value["video_mins"]),
+            discussion_posts: count(&value["discuss_publish_cnt"]),
+            discussion_replies: count(&value["discuss_reply_cnt"]),
             signin_weight: weight,
             signin_time: value["signin_time"]
                 .as_str()

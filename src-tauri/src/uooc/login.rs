@@ -151,8 +151,7 @@ pub(super) async fn open(service: Arc<Service>, parent: WebviewWindow) -> Result
                     continue;
                 }
                 *service.client.write().unwrap() = client;
-                runtime.snapshot.user = Some(user);
-                runtime.snapshot.courses = courses;
+                runtime.snapshot.update_courses(user, courses);
                 runtime.snapshot.session = SessionStatus::Ready;
                 runtime.snapshot.message.clear();
                 runtime.login.take();

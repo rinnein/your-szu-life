@@ -27,6 +27,114 @@ fn progress_uses_server_values_and_keeps_unknowns_unknown() {
 }
 
 #[test]
+fn weights_and_details_come_from_each_courses_response() {
+    let value = json!({
+        "signin":"5","video":"30","homework":"10","test":"20","discuz":"5","finalExam":"30",
+        "signin_progress_value":50,"signin_cnt":"10","signin_total":"20",
+        "video_progress_value":50,"video_cnt":28,"video_total":57,"video_score":"30",
+        "homework_progress_value":0,"homework_cnt":0,"homework_total":0,
+        "test_progress_value":100,"test_cnt":"13","test_total":"13",
+        "discuss_progress_value":60,"discuss_cnt":3,"discuss_score":"1.5","discuss_avg_score":"30",
+        "exam_cnt":"1","exam_total":2,"exam_score":"12","exam_avg_score":"40",
+        "score":"57.5","weighted_score":"51.5","total_progress_value":7,
+        "discuss_publish_cnt":1,"discuss_reply_cnt":2,"video_mins":"30.5",
+        "discuss":99,"exam":99
+    });
+    let p = CourseProgress::parse(&value, progress::today());
+    assert_eq!(
+        [
+            p.signin.weight,
+            p.video.weight,
+            p.homework.weight,
+            p.test.weight,
+            p.discussion.weight,
+            p.exam.weight
+        ],
+        [
+            Some(5.0),
+            Some(30.0),
+            Some(10.0),
+            Some(20.0),
+            Some(5.0),
+            Some(30.0)
+        ]
+    );
+    assert_eq!(p.weight_total, Some(100.0));
+    assert_eq!(p.weighted_percent, Some(55.5));
+    assert!(!p.weighted_partial);
+    assert_eq!(p.total_percent, Some(7.0));
+    assert_eq!(p.exam.percent, Some(50.0));
+    assert_eq!(p.discussion.total, None);
+    assert_eq!(p.homework.total, Some(0));
+    assert_eq!(p.discussion.score, Some(1.5));
+    assert_eq!(p.exam.average_score, Some(40.0));
+    assert_eq!(p.weighted_score, Some(51.5));
+    assert_eq!(p.discussion_posts, Some(1));
+    assert_eq!(p.discussion_replies, Some(2));
+    assert_eq!(p.video_minutes, Some(30.5));
+    assert!(
+        !p.video_complete(),
+        "a full score must not stand in for video completion"
+    );
+
+    let other = CourseProgress::parse(
+        &json!({"signin":0,"video":80,"homework":0,"test":20,"discuz":0,"finalExam":0,"video_progress_value":50,"test_progress_value":100}),
+        progress::today(),
+    );
+    assert_eq!(other.weighted_percent, Some(60.0));
+    assert!(
+        !other.weighted_partial,
+        "zero-weight unknown categories do not affect completion"
+    );
+}
+
+#[test]
+fn absent_discussion_and_exam_completion_remains_partial_not_a_grade() {
+    let p = CourseProgress::parse(
+        &json!({
+            "signin":5,"video":30,"homework":10,"test":20,"discuz":5,"finalExam":30,
+            "signin_progress_value":50,"video_progress_value":50,"homework_progress_value":0,"test_progress_value":100,
+            "discuss_cnt":9,"discuss_avg_score":100,"discuss_score":5,
+            "exam_cnt":0,"exam_total":0,"exam_avg_score":100,"exam_score":30
+        }),
+        progress::today(),
+    );
+    assert_eq!(p.weighted_percent, Some(37.5));
+    assert!(p.weighted_partial);
+    assert_eq!(p.discussion.percent, None);
+    assert_eq!(p.exam.percent, None);
+}
+
+#[test]
+fn missing_invalid_or_zero_weights_never_become_a_hardcoded_rubric() {
+    let mut value = json!({"signin":0,"video":100,"homework":0,"test":0,"discuz":0,"finalExam":0,"video_progress_value":70});
+    assert_eq!(
+        CourseProgress::parse(&value, progress::today()).weighted_percent,
+        Some(70.0)
+    );
+    value["video"] = json!(0);
+    let zero = CourseProgress::parse(&value, progress::today());
+    assert_eq!(zero.weight_total, Some(0.0));
+    assert_eq!(zero.weighted_percent, None);
+    value["video"] = json!(30);
+    assert_eq!(
+        CourseProgress::parse(&value, progress::today()).weighted_percent,
+        None
+    );
+    value["video"] = json!("invalid");
+    let invalid = CourseProgress::parse(&value, progress::today());
+    assert_eq!(invalid.video.weight, None);
+    assert_eq!(invalid.weight_total, None);
+    value.as_object_mut().unwrap().remove("discuz");
+    assert_eq!(
+        CourseProgress::parse(&value, progress::today())
+            .discussion
+            .weight,
+        None
+    );
+}
+
+#[test]
 fn signin_handles_beijing_day_boundaries_targets_and_invalid_fields() {
     let day = NaiveDate::from_ymd_opt(2026, 10, 1).unwrap();
     for (weight, count, total, last, want) in [

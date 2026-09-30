@@ -19,6 +19,7 @@ pub(super) fn course(cid: &str) -> Course {
         semester: "秋季".into(),
         organization: "大学".into(),
         weeks: "5/7".into(),
+        end_date: String::new(),
     }
 }
 pub(super) fn service_test(root: PathBuf) -> Arc<Service> {
@@ -28,7 +29,7 @@ pub(super) fn service_test(root: PathBuf) -> Arc<Service> {
 #[test]
 fn list_uses_status_and_cycle_id_not_weeks_or_parent() {
     let rows = json!({"data": [
-        {"id":1588976494_u64,"parent":1140106027,"status":"31","parent_name":"人工智能","name":"2026秋季","weeks":"5/7"},
+        {"id":1588976494_u64,"parent":1140106027,"status":"31","parent_name":"人工智能","name":"2026秋季","weeks":"5/7","end_time":"2026/10/14"},
         {"id":669673711,"parent":1327274410,"status":31,"parent_name":"艺术的星空","weeks":"99/17"},
         {"id":1677434615,"status":"35","weeks":"10/10"},
         {"id":422912032,"status":"34","weeks":"15/15"},
@@ -43,6 +44,50 @@ fn list_uses_status_and_cycle_id_not_weeks_or_parent() {
     );
     assert_eq!(courses[0].title, "人工智能");
     assert_eq!(courses[0].semester, "2026秋季");
+    assert_eq!(courses[0].end_date, "2026/10/14");
+    assert_eq!(
+        serde_json::to_value(&courses[0]).unwrap()["endDate"],
+        "2026/10/14"
+    );
+}
+
+#[test]
+fn course_schedule_metadata_refresh_is_compatible_with_saved_tasks() {
+    let legacy: Course = serde_json::from_value(
+        json!({"id":"42","title":"课程","semester":"秋季","organization":"大学","weeks":"5/7"}),
+    )
+    .unwrap();
+    assert!(legacy.end_date.is_empty());
+    let task = |account: &str| CourseTask {
+        course: legacy.clone(),
+        account_id: account.into(),
+        desired_running: false,
+        status: TaskStatus::Paused,
+        message: "keep".into(),
+        videos: vec![],
+        generation: 9,
+    };
+    let mut snapshot = Snapshot {
+        tasks: vec![task("7"), task("8")],
+        ..Snapshot::default()
+    };
+    let current = Course {
+        weeks: "6/7".into(),
+        end_date: "2026/10/14".into(),
+        ..legacy.clone()
+    };
+    snapshot.update_courses(
+        User {
+            id: "7".into(),
+            name: "test".into(),
+        },
+        vec![current.clone()],
+    );
+    assert_eq!(snapshot.tasks[0].course, current);
+    assert_eq!(snapshot.tasks[0].status, TaskStatus::Paused);
+    assert!(!snapshot.tasks[0].desired_running);
+    assert_eq!(snapshot.tasks[0].generation, 9);
+    assert_eq!(snapshot.tasks[1].course, legacy);
 }
 
 #[tokio::test]

@@ -4,6 +4,7 @@ export type UoocCourse = {
   semester: string;
   organization: string;
   weeks: string;
+  endDate?: string;
 };
 export type UoocSettings = {
   concurrency: number;
@@ -51,7 +52,14 @@ export type UoocSnapshot = {
   progress?: Record<string, ProgressEntry>;
   checkins?: Record<string, CheckinState>;
 };
-export type ProgressMetric = { percent: number | null; count: number | null; total: number | null };
+export type ProgressMetric = {
+  percent: number | null;
+  count: number | null;
+  total: number | null;
+  weight?: number | null;
+  score?: number | null;
+  averageScore?: number | null;
+};
 export type Attendance = "notRequired" | "complete" | "today" | "needed" | "unknown";
 export type CourseProgress = {
   totalPercent: number | null;
@@ -59,6 +67,16 @@ export type CourseProgress = {
   test: ProgressMetric;
   homework: ProgressMetric;
   signin: ProgressMetric;
+  discussion?: ProgressMetric;
+  exam?: ProgressMetric;
+  weightedPercent?: number | null;
+  weightedPartial?: boolean;
+  weightTotal?: number | null;
+  score?: number | null;
+  weightedScore?: number | null;
+  videoMinutes?: number | null;
+  discussionPosts?: number | null;
+  discussionReplies?: number | null;
   signinWeight: number | null;
   signinTime: string | null;
   attendance: Attendance;

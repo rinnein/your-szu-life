@@ -242,8 +242,7 @@ impl Service {
                         runtime.snapshot.progress.clear();
                         runtime.snapshot.checkins.clear();
                     }
-                    runtime.snapshot.user = Some(user);
-                    runtime.snapshot.courses = courses;
+                    runtime.snapshot.update_courses(user, courses);
                     runtime.snapshot.session = SessionStatus::Ready;
                     runtime.snapshot.message = match self.save_session(&client) {
                         Ok(()) => String::new(),

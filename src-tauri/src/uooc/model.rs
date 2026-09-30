@@ -28,6 +28,8 @@ pub(crate) struct Course {
     pub semester: String,
     pub organization: String,
     pub weeks: String,
+    #[serde(default)]
+    pub end_date: String,
 }
 pub(super) fn courses_page(value: &Value) -> Result<(Vec<Course>, u64), String> {
     let rows = value["data"].as_array().ok_or("课程列表格式无效")?;
@@ -47,6 +49,7 @@ pub(super) fn courses_page(value: &Value) -> Result<(Vec<Course>, u64), String> 
                 semester: text(&row["name"]),
                 organization: text(&row["org_name"]),
                 weeks: text(&row["weeks"]),
+                end_date: text(&row["end_time"]),
             })
         })
         .collect();
@@ -185,6 +188,22 @@ impl Default for Snapshot {
             progress: Default::default(),
             checkins: Default::default(),
         }
+    }
+}
+
+impl Snapshot {
+    pub(super) fn update_courses(&mut self, user: User, courses: Vec<Course>) {
+        for task in self
+            .tasks
+            .iter_mut()
+            .filter(|task| task.account_id == user.id)
+        {
+            if let Some(course) = courses.iter().find(|course| course.id == task.course.id) {
+                task.course.clone_from(course);
+            }
+        }
+        self.user = Some(user);
+        self.courses = courses;
     }
 }
 

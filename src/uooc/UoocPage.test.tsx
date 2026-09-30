@@ -335,3 +335,17 @@ it("cancels check-in without stopping video tasks and retains progress on refres
   expect(screen.getByText("35%")).toBeInTheDocument();
   expect(screen.getByText(/进度刷新失败：暂时离线/)).toBeInTheDocument();
 });
+
+it("refreshes the selected course when opening its details without adding a navigation level", async () => {
+  const router = mount();
+  const trigger = await screen.findByRole("button", { name: "人工智能的课程详情" });
+  await screen.findByRole("checkbox", { name: "人工智能" });
+  fireEvent.click(trigger);
+  await screen.findByRole("grid", { name: "人工智能的考核权重与任务" });
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("refresh_uooc_progress", { courseIds: ["1588976494"] }),
+  );
+  expect(router.state.location.pathname).toBe("/uooc");
+  fireEvent.click(screen.getByRole("button", { name: "返回工作台" }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+});
