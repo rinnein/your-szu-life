@@ -34,6 +34,16 @@ fn main() {
     println!("cargo:rerun-if-changed=capabilities/authserver-credential-capture.json");
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
+            "get_uooc_snapshot",
+            "refresh_uooc_progress",
+            "start_uooc_checkin",
+            "cancel_uooc_checkin",
+            "refresh_uooc_session",
+            "open_uooc_login",
+            "logout_uooc",
+            "save_uooc_settings",
+            "start_uooc_courses",
+            "control_uooc_tasks",
             "get_app_content_snapshot",
             "refresh_app_content",
             "get_contributors",

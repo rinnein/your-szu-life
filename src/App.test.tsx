@@ -295,8 +295,9 @@ describe("HeroUI frontend smoke tests", () => {
     renderRouterApp();
     const accountTrigger = await screen.findByRole("button", { name: "打开账户菜单" });
     expect(accountTrigger.querySelector('[data-slot="avatar"]')).not.toBeInTheDocument();
-    expect(document.querySelectorAll(".feature-icon svg")).toHaveLength(6);
+    expect(document.querySelectorAll(".feature-icon svg")).toHaveLength(7);
     for (const [label, description] of [
+      ["UOOC刷课", "优课在线视频任务"],
       ["上课时间表", "查看各节次上课时间"],
       ["选课", "暂未实现 · 即将支持"],
       ["培养方案检查", "暂未实现 · 即将支持"],

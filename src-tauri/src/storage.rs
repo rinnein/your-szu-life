@@ -20,6 +20,7 @@ enum SecretKey {
     Profile,
     PendingAuth,
     AuthSession,
+    UoocSession,
     DormNetworkSettings,
     DormNetworkCredentials,
     StaffNetworkSettings,
@@ -34,6 +35,7 @@ impl SecretKey {
             Self::Profile => "profile",
             Self::PendingAuth => "pending-auth",
             Self::AuthSession => "auth-session",
+            Self::UoocSession => "uooc-session",
             Self::DormNetworkSettings => "dorm-network-settings",
             Self::DormNetworkCredentials => "dorm-network-credentials",
             Self::StaffNetworkSettings => "staff-network-settings",
@@ -45,6 +47,9 @@ impl SecretKey {
 }
 
 pub(crate) trait CredentialStore: Send + Sync {
+    fn load_uooc_session(&self) -> Result<Option<String>, String>;
+    fn save_uooc_session(&self, session: &String) -> Result<(), String>;
+    fn delete_uooc_session(&self) -> Result<(), String>;
     fn load_profile(&self) -> Result<Option<StoredAccountProfile>, String>;
     fn save_profile(&self, profile: &StoredAccountProfile) -> Result<(), String>;
     fn delete_profile(&self) -> Result<(), String>;
@@ -110,6 +115,36 @@ fn keyring_store() -> KeyringStore {
 }
 
 impl CredentialStore for PlatformCredentialStore {
+    fn load_uooc_session(&self) -> Result<Option<String>, String> {
+        #[cfg(not(target_os = "android"))]
+        {
+            Self::load(SecretKey::UoocSession)
+        }
+        #[cfg(target_os = "android")]
+        {
+            load_android_secret(SecretKey::UoocSession)
+        }
+    }
+    fn save_uooc_session(&self, session: &String) -> Result<(), String> {
+        #[cfg(not(target_os = "android"))]
+        {
+            Self::save(SecretKey::UoocSession, session)
+        }
+        #[cfg(target_os = "android")]
+        {
+            save_android_secret(SecretKey::UoocSession, session)
+        }
+    }
+    fn delete_uooc_session(&self) -> Result<(), String> {
+        #[cfg(not(target_os = "android"))]
+        {
+            Self::delete(SecretKey::UoocSession)
+        }
+        #[cfg(target_os = "android")]
+        {
+            delete_android_secret(SecretKey::UoocSession)
+        }
+    }
     fn load_staff_settings(&self) -> Result<Option<StaffNetworkSettings>, String> {
         #[cfg(not(target_os = "android"))]
         {

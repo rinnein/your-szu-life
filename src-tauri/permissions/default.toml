@@ -1,6 +1,16 @@
 [default]
 description = "Allows the local application UI to use application commands, including public content."
 permissions = [
+  "allow-get-uooc-snapshot",
+  "allow-refresh-uooc-progress",
+  "allow-start-uooc-checkin",
+  "allow-cancel-uooc-checkin",
+  "allow-refresh-uooc-session",
+  "allow-open-uooc-login",
+  "allow-logout-uooc",
+  "allow-save-uooc-settings",
+  "allow-start-uooc-courses",
+  "allow-control-uooc-tasks",
   "allow-get-app-content-snapshot",
   "allow-refresh-app-content",
   "allow-get-contributors",

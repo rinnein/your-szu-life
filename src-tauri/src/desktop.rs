@@ -55,7 +55,13 @@ pub(crate) fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent
         }
         tauri::WindowEvent::CloseRequested { api, .. } => {
             if window.label() == "main"
-                && crate::campus_network::keep_running_in_background(window.app_handle())
+                && window
+                    .app_handle()
+                    .get_webview_window("main")
+                    .and_then(|view| view.url().ok())
+                    .is_some_and(|url| url.path() == "/")
+                && (crate::campus_network::keep_running_in_background(window.app_handle())
+                    || crate::uooc::keep_running(window.app_handle()))
             {
                 api.prevent_close();
                 let _ = window.hide();

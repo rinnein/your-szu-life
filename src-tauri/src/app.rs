@@ -1,6 +1,7 @@
 use crate::{
     app_content, auth, campus_network, campus_payments,
     storage::{PlatformCredentialStore, SharedCredentialStore},
+    uooc,
 };
 use std::sync::Arc;
 use tauri::Manager;
@@ -10,6 +11,7 @@ pub(crate) fn run() {
     let electricity_credentials = credentials.clone();
     let builder = tauri::Builder::default()
         .manage(auth::AuthStore::new(credentials.clone()))
+        .manage(uooc::UoocStore::new(credentials.clone()))
         .manage(campus_network::CampusNetworkStore::new(credentials))
         .manage(campus_payments::CampusPaymentsStore::new(
             electricity_credentials,
@@ -17,6 +19,9 @@ pub(crate) fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            if let Err(error) = uooc::initialize(app.handle()) {
+                eprintln!("UOOC 服务初始化失败: {error}");
+            }
             #[cfg(mobile)]
             {
                 use tauri_plugin_notification::{Action, ActionType, NotificationExt};
@@ -45,6 +50,16 @@ pub(crate) fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            uooc::commands::get_uooc_snapshot,
+            uooc::commands::refresh_uooc_progress,
+            uooc::commands::start_uooc_checkin,
+            uooc::commands::cancel_uooc_checkin,
+            uooc::commands::refresh_uooc_session,
+            uooc::commands::open_uooc_login,
+            uooc::commands::logout_uooc,
+            uooc::commands::save_uooc_settings,
+            uooc::commands::start_uooc_courses,
+            uooc::commands::control_uooc_tasks,
             app_content::commands::get_app_content_snapshot,
             app_content::commands::refresh_app_content,
             app_content::commands::get_contributors,
@@ -103,7 +118,10 @@ pub(crate) fn run() {
         if matches!(event, tauri::WindowEvent::Destroyed) {
             let app = window.app_handle().clone();
             let label = window.label().to_owned();
-            std::thread::spawn(move || campus_payments::window_closed(&app, &label));
+            std::thread::spawn(move || {
+                campus_payments::window_closed(&app, &label);
+                uooc::window_closed(&app, &label);
+            });
         }
         #[cfg(desktop)]
         crate::desktop::on_window_event(window, event);

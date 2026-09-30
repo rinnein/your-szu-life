@@ -88,7 +88,7 @@ pub(super) fn finish_authentication(restore: bool) -> Result<(), String> {
     })
 }
 
-pub(super) fn read_cookies(urls: &[&str]) -> Result<Vec<String>, String> {
+pub(crate) fn read_cookies(urls: &[&str]) -> Result<Vec<String>, String> {
     with_bridge(|env, class| {
         let input = env
             .new_string(serde_json::to_string(urls).map_err(|_| "认证地址无效")?)
@@ -111,7 +111,7 @@ pub(super) fn read_cookies(urls: &[&str]) -> Result<Vec<String>, String> {
     })
 }
 
-pub(super) fn write_cookies(cookies: &[serde_json::Value]) -> Result<(), String> {
+pub(crate) fn write_cookies(cookies: &[serde_json::Value]) -> Result<(), String> {
     with_bridge(|env, class| {
         let input = env
             .new_string(serde_json::to_string(cookies).map_err(|_| "认证会话格式无效")?)

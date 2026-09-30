@@ -29,12 +29,20 @@ reqwest = { version = "0.13", default-features = false, features = [
   "blocking",
   "rustls",
   "cookies",
+  "form",
+  "query",
 ] }
 sha1 = "0.10"
 hmac = "0.12"
 md-5 = "0.10"
 base64 = "0.22"
 uuid = { version = "1", features = ["v4"] }
+tokio = { version = "1", features = ["sync", "time", "rt", "macros"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+cookie_store = "0.22"
+reqwest_cookie_store = "0.10"
+mp4 = "0.14"
+m3u8-rs = "6"
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 keyring = { version = "3", features = ["linux-native", "apple-native", "windows-native"] }

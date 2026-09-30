@@ -8,6 +8,7 @@ mod desktop;
 #[cfg(target_os = "android")]
 mod platform_tls;
 mod storage;
+mod uooc;
 
 pub use auth::{
     model::{AccountProfileInput, AccountProfileView, AuthState, UserDataView},

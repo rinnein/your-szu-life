@@ -16,6 +16,7 @@ import {
   FaGraduationCap,
   FaWallet,
   FaWifi,
+  FaCirclePlay,
 } from "react-icons/fa6";
 import type { IconType } from "react-icons";
 
@@ -28,6 +29,7 @@ type Feature = {
 };
 
 const features: ReadonlyArray<Feature> = [
+  { label: "UOOC刷课", icon: FaCirclePlay, description: "优课在线视频任务", to: "/uooc" },
   {
     label: "上课时间表",
     icon: FaCalendarDays,

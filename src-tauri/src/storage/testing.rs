@@ -64,6 +64,10 @@ macro_rules! stored_value {
     };
 }
 impl CredentialStore for MemoryCredentialStore {
+    stored_value!(load_uooc_session, save_uooc_session, String, UoocSession);
+    fn delete_uooc_session(&self) -> Result<(), String> {
+        self.delete(SecretKey::UoocSession)
+    }
     stored_value!(
         load_staff_settings,
         save_staff_settings,

@@ -206,6 +206,24 @@ export default function AboutPage() {
             </div>
           </div>
         </header>
+        <Card className="about-card">
+          <Card.Header>
+            <Card.Title>UOOC 功能参考</Card.Title>
+            <Card.Description>视频任务流程参考 auto-uooc-go，使用 Rust 独立实现。</Card.Description>
+          </Card.Header>
+          <Card.Content>
+            <Button
+              variant="tertiary"
+              onPress={() =>
+                void openPublicUrl("https://github.com/rinnein/auto-uooc-go").catch(() =>
+                  setOpenError("无法打开参考项目链接"),
+                )
+              }
+            >
+              auto-uooc-go <LuArrowUpRight aria-hidden="true" />
+            </Button>
+          </Card.Content>
+        </Card>
         <Card className="about-card" aria-labelledby="updates-heading">
           <Card.Header>
             <Card.Title id="updates-heading">更新与公告</Card.Title>

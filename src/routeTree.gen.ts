@@ -16,6 +16,7 @@ import { Route as CampusPaymentsRouteRouteImport } from './routes/campus-payment
 import { Route as ClassTimetableRouteImport } from './routes/class-timetable'
 import { Route as DebugRouteImport } from './routes/debug'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as UoocRouteImport } from './routes/uooc'
 import { Route as CampusPaymentsIndexRouteImport } from './routes/campus-payments/index'
 import { Route as CampusPaymentsCardRouteImport } from './routes/campus-payments/card'
 import { Route as CampusPaymentsElectricityRouteImport } from './routes/campus-payments/electricity'
@@ -57,6 +58,11 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
+const UoocRoute = UoocRouteImport.update({
+  id: '/uooc',
+  path: '/uooc',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CampusPaymentsIndexRoute = CampusPaymentsIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -92,6 +98,7 @@ export interface FileRoutesByFullPath {
   '/class-timetable': typeof ClassTimetableRoute
   '/debug': typeof DebugRoute
   '/settings': typeof SettingsRoute
+  '/uooc': typeof UoocRoute
   '/campus-payments/card': typeof CampusPaymentsCardRoute
   '/campus-payments/electricity': typeof CampusPaymentsElectricityRoute
   '/campus-payments/network': typeof CampusPaymentsNetworkRoute
@@ -105,6 +112,7 @@ export interface FileRoutesByTo {
   '/class-timetable': typeof ClassTimetableRoute
   '/debug': typeof DebugRoute
   '/settings': typeof SettingsRoute
+  '/uooc': typeof UoocRoute
   '/campus-payments/card': typeof CampusPaymentsCardRoute
   '/campus-payments/electricity': typeof CampusPaymentsElectricityRoute
   '/campus-payments/network': typeof CampusPaymentsNetworkRoute
@@ -120,6 +128,7 @@ export interface FileRoutesById {
   '/class-timetable': typeof ClassTimetableRoute
   '/debug': typeof DebugRoute
   '/settings': typeof SettingsRoute
+  '/uooc': typeof UoocRoute
   '/campus-payments/card': typeof CampusPaymentsCardRoute
   '/campus-payments/electricity': typeof CampusPaymentsElectricityRoute
   '/campus-payments/network': typeof CampusPaymentsNetworkRoute
@@ -136,6 +145,7 @@ export interface FileRouteTypes {
     | '/class-timetable'
     | '/debug'
     | '/settings'
+    | '/uooc'
     | '/campus-payments/card'
     | '/campus-payments/electricity'
     | '/campus-payments/network'
@@ -149,6 +159,7 @@ export interface FileRouteTypes {
     | '/class-timetable'
     | '/debug'
     | '/settings'
+    | '/uooc'
     | '/campus-payments/card'
     | '/campus-payments/electricity'
     | '/campus-payments/network'
@@ -163,6 +174,7 @@ export interface FileRouteTypes {
     | '/class-timetable'
     | '/debug'
     | '/settings'
+    | '/uooc'
     | '/campus-payments/card'
     | '/campus-payments/electricity'
     | '/campus-payments/network'
@@ -178,6 +190,7 @@ export interface RootRouteChildren {
   ClassTimetableRoute: typeof ClassTimetableRoute
   DebugRoute: typeof DebugRoute
   SettingsRoute: typeof SettingsRoute
+  UoocRoute: typeof UoocRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -229,6 +242,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/uooc': {
+      id: '/uooc'
+      path: '/uooc'
+      fullPath: '/uooc'
+      preLoaderRoute: typeof UoocRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/campus-payments/': {
@@ -296,6 +316,7 @@ const rootRouteChildren: RootRouteChildren = {
   ClassTimetableRoute: ClassTimetableRoute,
   DebugRoute: DebugRoute,
   SettingsRoute: SettingsRoute,
+  UoocRoute: UoocRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

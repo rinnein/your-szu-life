@@ -1,5 +1,5 @@
 #[cfg(target_os = "android")]
-mod android_cookies;
+pub(crate) mod android_cookies;
 pub(crate) mod commands;
 pub(crate) mod model;
 mod probe;

@@ -1,0 +1,114 @@
+export type UoocCourse = {
+  id: string;
+  title: string;
+  semester: string;
+  organization: string;
+  weeks: string;
+};
+export type UoocSettings = {
+  concurrency: number;
+  reportIntervalSec: number;
+  speedMultiplier: number;
+  dryRun: boolean;
+};
+export type UoocTaskStatus =
+  | "queued"
+  | "running"
+  | "paused"
+  | "stopped"
+  | "awaitingLogin"
+  | "systemPaused"
+  | "completed"
+  | "dryRun"
+  | "blocked"
+  | "failed";
+export type UoocVideo = {
+  resourceId: string;
+  title: string;
+  status: UoocTaskStatus;
+  position: number;
+  duration: number | null;
+  message: string;
+};
+export type UoocTask = {
+  course: UoocCourse;
+  accountId: string;
+  desiredRunning: boolean;
+  status: UoocTaskStatus;
+  message: string;
+  videos: UoocVideo[];
+  generation: number;
+};
+export type UoocSnapshot = {
+  revision: number;
+  session: "checking" | "ready" | "loginRequired" | "networkError" | "loggingIn";
+  user: { id: string; name: string } | null;
+  courses: UoocCourse[];
+  settings: UoocSettings;
+  tasks: UoocTask[];
+  message: string;
+  logs: string[];
+  progress?: Record<string, ProgressEntry>;
+  checkins?: Record<string, CheckinState>;
+};
+export type ProgressMetric = { percent: number | null; count: number | null; total: number | null };
+export type Attendance = "notRequired" | "complete" | "today" | "needed" | "unknown";
+export type CourseProgress = {
+  totalPercent: number | null;
+  video: ProgressMetric;
+  test: ProgressMetric;
+  homework: ProgressMetric;
+  signin: ProgressMetric;
+  signinWeight: number | null;
+  signinTime: string | null;
+  attendance: Attendance;
+};
+export type ProgressEntry = {
+  data: CourseProgress | null;
+  updatedAtMs: number | null;
+  refreshing: boolean;
+  error: string | null;
+};
+export type CheckinState = {
+  id: string;
+  status: "queued" | "loading" | "verifying" | "succeeded" | "skipped" | "cancelled" | "failed";
+  visible: boolean;
+  message: string;
+  updatedAtMs: number;
+};
+export const attendanceText: Record<Attendance, string> = {
+  notRequired: "无需签到",
+  complete: "签到已完成",
+  today: "今日已签到",
+  needed: "待签到",
+  unknown: "签到状态未知",
+};
+export const checkinActive = (state?: CheckinState) =>
+  !!state && ["queued", "loading", "verifying"].includes(state.status);
+export const taskStatus: Record<UoocTaskStatus, string> = {
+  queued: "等待执行",
+  running: "运行中",
+  paused: "已暂停",
+  stopped: "已停止",
+  awaitingLogin: "等待登录",
+  systemPaused: "系统暂停",
+  completed: "已完成",
+  dryRun: "预览完成",
+  blocked: "前置任务未完成",
+  failed: "未完成",
+};
+export function newerSnapshot(previous: UoocSnapshot | undefined, next: UoocSnapshot) {
+  return !previous || next.revision >= previous.revision ? next : previous;
+}
+export function isUoocSnapshot(value: unknown): value is UoocSnapshot {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    "revision" in value &&
+    typeof value.revision === "number" &&
+    "courses" in value &&
+    Array.isArray(value.courses) &&
+    "tasks" in value &&
+    Array.isArray(value.tasks)
+  );
+}

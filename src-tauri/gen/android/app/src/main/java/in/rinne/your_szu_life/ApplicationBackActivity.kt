@@ -91,6 +91,7 @@ abstract class ApplicationBackActivity : TauriActivity(), app.tauri.AppBackNavig
 
   override fun onResume() {
     super.onResume()
+    UoocTaskBridge.resumed()
     resumed = true
     AuthWindowBridge.resumed(this)
     chrome?.setResumed(true)
