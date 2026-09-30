@@ -2,7 +2,7 @@ use super::{
     model::*, probe::*, refresh::*, session::*, webview::resume_application_window, AuthStore,
     AUTH_HOST,
 };
-use std::thread;
+use std::{thread, time::Instant};
 use tauri::{Emitter, Manager};
 
 pub(super) fn emit_state(app: &tauri::AppHandle, state: AuthState) {
@@ -155,8 +155,14 @@ pub(super) fn complete_authentication(app: tauri::AppHandle, payload: String, ge
         session_failure(&app, &store);
         return;
     };
+    if !store.auth_probe_is_current(generation) {
+        return;
+    }
     if store.credentials.save_session(&session).is_err() || clear_webview_session(&app).is_err() {
         session_failure(&app, &store);
+        return;
+    }
+    if !store.auth_probe_is_current(generation) {
         return;
     }
 
@@ -234,24 +240,18 @@ pub(super) fn record_credential_capture_failure(category: &str) {
 pub(super) fn capture_auth_credentials(
     window: tauri::WebviewWindow,
     capture: CapturedCredentials,
+    generation: &str,
+    document_id: &str,
     store: &AuthStore,
 ) -> Result<(), String> {
-    let page_url = match window.url() {
-        Ok(url) => url.to_string(),
-        Err(_) => {
-            record_credential_capture_failure("page-url-unavailable");
-            return Err("无法验证认证页面".into());
-        }
-    };
-    if !is_auth_login_url(&page_url) {
-        record_credential_capture_failure("untrusted-page");
-        return Err("仅可在深大统一认证账号密码页面保存凭据".into());
-    }
+    let _operation = store
+        .session_operations
+        .lock()
+        .map_err(|_| "会话操作锁失败")?;
+    let _flow = validate_recovery_page(&window, generation, document_id, store)?;
     let state = store.state.lock().map_err(|_| "状态锁失败")?.clone();
-    let attempt = store.attempt.lock().map_err(|_| "状态锁失败")?.clone();
-    if !matches!(state, AuthState::Authenticating) || !matches!(attempt, AuthAttempt::InitialSetup)
-    {
-        return Ok(());
+    if !matches!(state, AuthState::Authenticating) {
+        return Err("认证流程已结束".into());
     }
     if !(is_student_id(&capture.identifier) || is_campus_card_number(&capture.identifier)) {
         record_credential_capture_failure("invalid-identifier");
@@ -265,10 +265,49 @@ pub(super) fn capture_auth_credentials(
     Ok(())
 }
 
+fn validate_recovery_page<'a>(
+    window: &tauri::WebviewWindow,
+    generation: &str,
+    document_id: &str,
+    store: &'a AuthStore,
+) -> Result<std::sync::MutexGuard<'a, super::recovery::Recovery>, String> {
+    // Query the native URL before taking the document lock: page-load events
+    // run on the UI thread and must remain able to invalidate this document.
+    let trusted = window.label() == "main"
+        && window
+            .url()
+            .ok()
+            .is_some_and(|url| is_auth_login_url(url.as_str()));
+    let flow = store.recovery.lock().map_err(|_| "状态锁失败")?;
+    if !trusted || !flow.matches(generation, document_id) {
+        return Err("认证页面或流程已失效".into());
+    }
+    Ok(flow)
+}
+
+pub(super) fn control_auth_recovery(
+    window: tauri::WebviewWindow,
+    generation: &str,
+    document_id: &str,
+    operation: super::recovery::RecoveryOperation,
+    store: &AuthStore,
+) -> Result<super::recovery::RecoveryStatus, String> {
+    let _operation = store
+        .session_operations
+        .lock()
+        .map_err(|_| "会话操作锁失败")?;
+    validate_recovery_page(&window, generation, document_id, store)?
+        .control(operation, Instant::now())
+}
+
 pub(super) fn get_auth_state(
     app: tauri::AppHandle,
     store: &AuthStore,
 ) -> Result<AuthState, String> {
+    let _operation = store
+        .session_operations
+        .lock()
+        .map_err(|_| "会话操作锁失败")?;
     let current = store.state.lock().map_err(|_| "状态锁失败")?.clone();
     if !matches!(current, AuthState::Checking) {
         return Ok(current);
@@ -290,8 +329,8 @@ pub(super) fn get_auth_state(
         if legacy_session {
             let _ = store.credentials.delete_session();
             *store.state.lock().map_err(|_| "状态锁失败")? = AuthState::SessionExpired;
-            emit_state(&app, AuthState::SessionExpired);
-            return Ok(AuthState::SessionExpired);
+            recover_expired_session(&app, store);
+            return Ok(store.state.lock().map_err(|_| "状态锁失败")?.clone());
         }
         let next = AuthState::Authenticated {
             name: profile.name,
@@ -318,6 +357,10 @@ pub(super) fn get_auth_state(
 
 pub(super) fn refresh_auth_session(app: tauri::AppHandle) -> Result<(), String> {
     let store = app.try_state::<AuthStore>().ok_or("认证状态不可用")?;
+    let _operation = store
+        .session_operations
+        .lock()
+        .map_err(|_| "会话操作锁失败")?;
     // Refresh is only a background continuation of an already authenticated
     // local account. Reauthentication and terminal states must not start a
     // second worker or emit duplicate expiry events.
@@ -337,7 +380,7 @@ pub(super) fn refresh_auth_session(app: tauri::AppHandle) -> Result<(), String> 
         return Ok(());
     };
     let session = store.credentials.load_session().unwrap_or(None);
-    start_session_refresh(app, profile.student_id, session);
+    start_session_refresh(app.clone(), profile.student_id, session);
     Ok(())
 }
 
@@ -376,7 +419,7 @@ fn start_session_refresh(
             RefreshOutcome::Invalid => {
                 let _ = store.credentials.delete_session();
                 store.finish_attempt(AuthState::SessionExpired);
-                emit_state(&worker_app, AuthState::SessionExpired);
+                recover_expired_session(&worker_app, &store);
             }
             RefreshOutcome::Mismatch => {
                 let _ = store.credentials.delete_session();
@@ -457,12 +500,47 @@ pub(super) fn navigate_to_authentication(
     app: tauri::AppHandle,
     user_agent: Option<&str>,
 ) -> Result<(), String> {
-    let window = app.get_webview_window("main").ok_or("主窗口不存在")?;
     let store = app.try_state::<AuthStore>().ok_or("认证状态不可用")?;
     let _operation = store
         .session_operations
         .lock()
         .map_err(|_| "会话操作锁失败")?;
+    if matches!(
+        *store.state.lock().map_err(|_| "状态锁失败")?,
+        AuthState::Authenticating
+    ) {
+        return Ok(());
+    }
+    let result = navigate_to_authentication_locked(&app, &store, user_agent);
+    if result.is_err() {
+        set_terminal_state(&app, &store, AuthState::SessionExpired);
+    }
+    result
+}
+
+// Called only while session_operations is held, including background expiry.
+fn recover_expired_session(app: &tauri::AppHandle, store: &AuthStore) {
+    let can_recover = store
+        .profile
+        .lock()
+        .ok()
+        .and_then(|profile| profile.clone())
+        .is_some_and(|profile| is_student_id(&profile.student_id) && !profile.password.is_empty());
+    if !can_recover {
+        emit_state(app, AuthState::SessionExpired);
+        return;
+    }
+    if navigate_to_authentication_locked(app, store, None).is_err() {
+        set_terminal_state(app, store, AuthState::SessionExpired);
+    }
+}
+
+fn navigate_to_authentication_locked(
+    app: &tauri::AppHandle,
+    store: &AuthStore,
+    user_agent: Option<&str>,
+) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or("主窗口不存在")?;
     store.cancel_session_refresh();
     let payments_return = crate::campus_payments::cancel(&app);
     if let Some(current_url) = payments_return.or_else(|| window.url().ok()) {
@@ -492,6 +570,9 @@ pub(super) fn navigate_to_authentication(
         .or(store.credentials.load_pending()?);
     store.reset_auth_flow_guards();
     let prefill = login_form_prefill(profile.as_ref(), pending.as_ref());
+    let automatic = profile
+        .as_ref()
+        .is_some_and(|profile| !profile.password.is_empty());
     let attempt = match profile.as_ref() {
         Some(profile) => AuthAttempt::ReauthenticateExisting {
             student_id: profile.student_id.clone(),
@@ -504,15 +585,22 @@ pub(super) fn navigate_to_authentication(
     *store.attempt.lock().map_err(|_| "状态锁失败")? = attempt;
     *store.captured.lock().map_err(|_| "状态锁失败")? = None;
     *store.login_prefill.lock().map_err(|_| "状态锁失败")? = prefill;
+    store
+        .recovery
+        .lock()
+        .map_err(|_| "状态锁失败")?
+        .begin(automatic, Instant::now());
     store.credentials.delete_session()?;
     if clear_webview_session(&app).is_err() {
         set_terminal_state(&app, &store, AuthState::SessionCaptureFailed);
         return Ok(());
     }
+    super::webview::show_authentication_window(app, store)?;
     window
         .navigate(authentication_url(user_agent))
         .map_err(|error| error.to_string())?;
     emit_state(&app, AuthState::Authenticating);
+    super::webview::start_recovery_deadline(app, store);
     Ok(())
 }
 
@@ -528,7 +616,9 @@ pub(super) fn logout(app: tauri::AppHandle, store: &AuthStore) -> Result<(), Str
         .session_operations
         .lock()
         .map_err(|_| "会话操作锁失败")?;
+    let was_authenticating = store.recovery.lock().map_err(|_| "状态锁失败")?.active;
     store.cancel_session_refresh();
+    store.reset_auth_flow_guards();
     crate::campus_payments::cancel(&app);
     store.credentials.delete_profile()?;
     store.credentials.delete_pending()?;
@@ -541,5 +631,46 @@ pub(super) fn logout(app: tauri::AppHandle, store: &AuthStore) -> Result<(), Str
     *store.state.lock().map_err(|_| "状态锁失败")? = AuthState::Unauthenticated;
     clear_webview_session(&app)?;
     emit_state(&app, AuthState::Unauthenticated);
+    if was_authenticating {
+        resume_application_window(&app, store);
+    }
     Ok(())
+}
+
+pub(super) fn cancel_departed_authentication(app: tauri::AppHandle, generation: u64) {
+    let Some(store) = app.try_state::<AuthStore>() else {
+        return;
+    };
+    let Ok(_operation) = store.session_operations.lock() else {
+        return;
+    };
+    if !store
+        .recovery
+        .lock()
+        .ok()
+        .is_some_and(|flow| !flow.active && flow.generation == generation)
+        || !store
+            .state
+            .lock()
+            .ok()
+            .is_some_and(|state| matches!(*state, AuthState::Authenticating))
+    {
+        return;
+    }
+    let _ = clear_webview_session(&app);
+    let _ = store.credentials.delete_session();
+    let state = if store
+        .profile
+        .lock()
+        .ok()
+        .is_some_and(|profile| profile.is_some())
+    {
+        AuthState::SessionExpired
+    } else {
+        AuthState::Unauthenticated
+    };
+    store.finish_attempt(state.clone());
+    emit_state(&app, state);
+    #[cfg(target_os = "android")]
+    let _ = super::android_cookies::finish_authentication(true);
 }

@@ -55,6 +55,39 @@ pub(super) fn supports_cookie_info() -> Result<bool, String> {
     })
 }
 
+pub(super) fn show_authentication(return_url: &str) -> Result<(), String> {
+    with_bridge(|env, class| {
+        let input = env.new_string(return_url).map_err(|_| "认证返回地址无效")?;
+        let shown = env
+            .call_static_method(
+                class,
+                "showAuthentication",
+                "(Ljava/lang/String;)Z",
+                &[JValue::Object(&input)],
+            )
+            .and_then(|value| value.z())
+            .map_err(|_| "无法显示 Android 认证窗口")?;
+        if shown {
+            Ok(())
+        } else {
+            Err("无法显示 Android 认证窗口".into())
+        }
+    })
+}
+
+pub(super) fn finish_authentication(restore: bool) -> Result<(), String> {
+    with_bridge(|env, class| {
+        env.call_static_method(
+            class,
+            "finishAuthentication",
+            "(Z)Z",
+            &[JValue::Bool(restore.into())],
+        )
+        .map_err(|_| "无法恢复 Android 功能窗口")?;
+        Ok(())
+    })
+}
+
 pub(super) fn read_cookies(urls: &[&str]) -> Result<Vec<String>, String> {
     with_bridge(|env, class| {
         let input = env

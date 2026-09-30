@@ -44,6 +44,7 @@ fn main() {
             "get_user_data",
             "begin_authentication",
             "capture_auth_credentials",
+            "control_auth_recovery",
             "confirm_profile",
             "logout",
             "open_network_fee_portal",

@@ -2,25 +2,55 @@ use super::{model::*, service, AuthStore};
 use tauri::State;
 
 #[tauri::command]
-pub(crate) fn capture_auth_credentials(
+pub(crate) async fn capture_auth_credentials(
     window: tauri::WebviewWindow,
     capture: CapturedCredentials,
-    store: State<'_, AuthStore>,
+    generation: String,
+    document_id: String,
 ) -> Result<(), String> {
-    service::capture_auth_credentials(window, capture, &store)
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || {
+        let app = window.app_handle().clone();
+        let store = app.state::<AuthStore>();
+        service::capture_auth_credentials(window, capture, &generation, &document_id, &store)
+    })
+    .await
+    .map_err(|_| "凭据捕获任务失败".to_string())?
 }
 
 #[tauri::command]
-pub(crate) fn get_auth_state(
-    app: tauri::AppHandle,
-    store: State<'_, AuthStore>,
-) -> Result<AuthState, String> {
-    service::get_auth_state(app, &store)
+pub(crate) async fn control_auth_recovery(
+    window: tauri::WebviewWindow,
+    generation: String,
+    document_id: String,
+    operation: super::recovery::RecoveryOperation,
+) -> Result<super::recovery::RecoveryStatus, String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || {
+        let app = window.app_handle().clone();
+        let store = app.state::<AuthStore>();
+        service::control_auth_recovery(window, &generation, &document_id, operation, &store)
+    })
+    .await
+    .map_err(|_| "认证恢复任务失败".to_string())?
 }
 
 #[tauri::command]
-pub(crate) fn refresh_auth_session(app: tauri::AppHandle) -> Result<(), String> {
-    service::refresh_auth_session(app)
+pub(crate) async fn get_auth_state(app: tauri::AppHandle) -> Result<AuthState, String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = app.state::<AuthStore>();
+        service::get_auth_state(app.clone(), &store)
+    })
+    .await
+    .map_err(|_| "认证状态读取失败".to_string())?
+}
+
+#[tauri::command]
+pub(crate) async fn refresh_auth_session(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || service::refresh_auth_session(app))
+        .await
+        .map_err(|_| "会话刷新任务失败".to_string())?
 }
 
 #[tauri::command]

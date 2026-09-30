@@ -5,6 +5,19 @@ export const LOGICAL_HISTORY_KEY = "szu.logical-history.v1";
 type Snapshot = { version: 1; child: boolean; entries: string[]; index: number };
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
 
+export function consumeAuthReturn(
+  storage: Pick<globalThis.Storage, "getItem" | "removeItem"> | undefined,
+  href: string,
+) {
+  try {
+    const saved = storage?.getItem("szu.auth-return.v1");
+    storage?.removeItem("szu.auth-return.v1");
+    return saved === href;
+  } catch {
+    return false;
+  }
+}
+
 function restore(raw: string | null, href: string): Snapshot | undefined {
   if (!raw || raw.length > 128_000) return;
   const value = JSON.parse(raw) as Snapshot;

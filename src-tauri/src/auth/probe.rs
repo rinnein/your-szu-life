@@ -4,9 +4,10 @@ use super::{
 
 pub(super) fn authentication_url(user_agent: Option<&str>) -> tauri::Url {
     let ua = user_agent.unwrap_or_default().to_ascii_lowercase();
-    let mobile = ["android", "iphone", "ipad", "ipod", "mobile"]
-        .iter()
-        .any(|marker| ua.contains(marker));
+    let mobile = cfg!(target_os = "android")
+        || ["android", "iphone", "ipad", "ipod", "mobile"]
+            .iter()
+            .any(|marker| ua.contains(marker));
     let profile = if mobile {
         AUTH_MOBILE_PROFILE_URL
     } else {
@@ -23,6 +24,7 @@ pub(super) fn is_auth_login_url(raw: &str) -> bool {
     };
     url.scheme() == "https"
         && url.host_str() == Some(AUTH_HOST)
+        && url.port_or_known_default() == Some(443)
         && url.path() == "/authserver/login"
 }
 

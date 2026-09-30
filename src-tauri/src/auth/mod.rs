@@ -3,6 +3,7 @@ mod android_cookies;
 pub(crate) mod commands;
 pub(crate) mod model;
 mod probe;
+mod recovery;
 mod refresh;
 mod scripts;
 mod service;

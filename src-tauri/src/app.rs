@@ -50,6 +50,7 @@ pub(crate) fn run() {
             app_content::commands::get_contributors,
             app_content::commands::load_announcement_image,
             auth::commands::capture_auth_credentials,
+            auth::commands::control_auth_recovery,
             auth::commands::get_auth_state,
             auth::commands::refresh_auth_session,
             auth::commands::get_account_profile,
@@ -91,6 +92,14 @@ pub(crate) fn run() {
             }
         });
     let builder = builder.on_window_event(|window, event| {
+        if window.label() == "main"
+            && matches!(
+                event,
+                tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed
+            )
+        {
+            auth::webview::close_authentication_window(window.app_handle());
+        }
         if matches!(event, tauri::WindowEvent::Destroyed) {
             let app = window.app_handle().clone();
             let label = window.label().to_owned();

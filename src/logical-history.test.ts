@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vite-plus/test";
-import { createReloadableLogicalHistory, LOGICAL_HISTORY_KEY } from "./logical-history";
+import {
+  consumeAuthReturn,
+  createReloadableLogicalHistory,
+  LOGICAL_HISTORY_KEY,
+} from "./logical-history";
 
 function storage() {
   const values = new Map<string, string>();
   return {
     getItem: (key: string) => values.get(key) ?? null,
+    removeItem: (key: string) => {
+      values.delete(key);
+    },
     setItem: (key: string, value: string) => {
       values.set(key, value);
     },
@@ -12,6 +19,29 @@ function storage() {
 }
 
 describe("logical navigation across WebView reload", () => {
+  it("restores the logical parents once after returning from official authentication", () => {
+    const store = storage();
+    const href = "https://tauri.localhost/campus-payments/network?tab=current#details";
+    const history = createReloadableLogicalHistory({
+      href: "https://tauri.localhost/",
+      reload: false,
+      storage: store,
+    });
+    history.push("/settings");
+    history.push("/campus-payments/network?tab=current#details");
+    store.setItem("szu.auth-return.v1", href);
+    const restored = createReloadableLogicalHistory({
+      href,
+      reload: consumeAuthReturn(store, href),
+      storage: store,
+    });
+    expect(restored.length).toBe(3);
+    restored.back();
+    expect(restored.location.pathname).toBe("/settings");
+    expect(consumeAuthReturn(store, href)).toBe(false);
+    store.setItem("szu.auth-return.v1", href);
+    expect(consumeAuthReturn(store, "https://tauri.localhost/about")).toBe(false);
+  });
   it("restores nested parents and tab replacements, then returns to the same parent", () => {
     const store = storage();
     const history = createReloadableLogicalHistory({

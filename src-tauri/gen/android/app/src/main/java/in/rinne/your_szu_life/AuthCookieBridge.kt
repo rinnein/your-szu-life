@@ -13,6 +13,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** Native-only cookie transport. Cookie values never enter JavaScript or logs. */
 object AuthCookieBridge {
   @JvmStatic
+  fun showAuthentication(returnUrl: String): Boolean = AuthWindowBridge.showAuthentication(returnUrl)
+
+  @JvmStatic
+  fun finishAuthentication(restore: Boolean): Boolean = AuthWindowBridge.finishAuthentication(restore)
+
+  @JvmStatic
   fun supportsCookieInfo(): Boolean =
     WebViewFeature.isFeatureSupported(WebViewFeature.GET_COOKIE_INFO)
 

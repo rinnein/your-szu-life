@@ -266,60 +266,20 @@ fn remote_credential_capture_capability_matches_authserver_page_origin() {
 }
 
 #[test]
-fn login_capture_script_requires_capture_before_official_submission() {
-    let script = auth_login_capture_script(false, None);
-    assert!(script.contains("__SZU_LOGIN_CAPTURE_VERSION__ === '3'"));
-    assert!(script.contains("if (!document.documentElement) return;"));
-    assert!(script.contains("window.__SZU_LOGIN_CAPTURE_READY__ = true"));
-    assert!(script.contains("const savedCredentials = null"));
-    assert!(script.contains("const applySavedCredentials"));
-    assert!(script.contains("autofilledForms = new WeakSet"));
-    assert!(script.contains("account.value = savedCredentials.identifier"));
-    assert!(script.contains("password.value = savedCredentials.password"));
-    assert!(script.contains("autofilledForms.add(form)"));
-    assert!(script.contains("await captureCandidate()"));
-    assert!(script.contains("window.startLogin(button)"));
-    assert!(script.contains("const formField = selector => loginForm()?.querySelector(selector)"));
-    assert!(script.contains("const accountInput = () => formField('#username')"));
-    assert!(script.contains("const passwordInput = () => formField('#password')"));
-    assert!(script.contains("const loginButton = () => formField('#login_submit')"));
-    assert!(script.contains("const rememberInput = () => formField('#rememberMe')"));
-    assert!(script.contains(".login-main #pwdFromId"));
-    assert!(!script.contains(".login-main .m-account #username"));
-    assert!(!script.contains(".login-main .m-account #password"));
-    assert!(script.contains(".login-main #formErrorTip"));
-    assert!(script.contains(".login-main .pwd_login .error-tip"));
-    assert!(script.contains("error.classList.remove('hide')"));
-    assert!(script.contains("new MutationObserver(refreshLoginForm)"));
-    assert!(script.contains("setInterval(refreshLoginForm, 500)"));
-    assert!(script.contains("target.closest('.login-main #pwdFromId #login_submit')"));
-    assert!(!script.contains("document.querySelector('#username,"));
-    assert!(!script.contains("document.querySelector('#password,"));
-    assert!(!script.contains("button[type=\"submit\"]"));
-    assert!(script.contains("if (isActiveLoginButton(event.target)) intercept(event)"));
-    assert!(script.contains("const isActiveLoginForm = target =>"));
-    assert!(script.contains("const installStartLoginHook = () =>"));
-    assert!(script.contains("__SZU_LOGIN_CAPTURE_WRAPPED__"));
-    assert!(script.contains("const target = args[0]?.jquery ? args[0][0] : args[0]"));
-    assert!(script.contains("document.addEventListener('keydown', interceptEnter, true)"));
-    assert!(script.contains("document.addEventListener('keypress', interceptEnter, true)"));
-    assert!(script.contains("document.addEventListener('keyup', interceptEnter, true)"));
-    assert!(script.contains("if (isActiveLoginForm(event.target)) intercept(event)"));
-    assert!(script.contains("event.code === 'Enter'"));
-    assert!(script.contains("document.activeElement"));
-    assert!(!script.contains("if (event.target === loginForm()) intercept(event)"));
-    assert!(script.contains("await captureCandidate()"));
-    let bridge = &script[script.find("const bridgeSubmit = async").unwrap()..];
-    assert!(
-        bridge.find("await captureCandidate()").unwrap()
-            < bridge.find("continueOfficialLogin(button)").unwrap()
-    );
-    assert!(script.contains(".qrcode-middle"));
-    assert!(script.contains("二维码登录已禁用"));
-    assert!(script.contains("stopImmediatePropagation"));
-    assert!(script.contains("未能读取当前账号密码表单，请刷新后重新输入"));
-    let reauth = auth_login_capture_script(true, None);
-    assert!(reauth.contains("const qrAllowed = true"));
+fn login_script_serializes_credentials_and_native_flow_identity() {
+    let credentials = LoginFormPrefill {
+        identifier: "1234567890".into(),
+        password: "quotes\" and \n newline".into(),
+    };
+    let script = auth_login_capture_script(true, Some(&credentials), 7, 11, true);
+    let options = script.rsplit_once(")(").unwrap().1.trim_end_matches(')');
+    let options: serde_json::Value = serde_json::from_str(options).unwrap();
+    assert_eq!(options["generation"], "7");
+    assert_eq!(options["documentId"], "11");
+    assert_eq!(options["prefill"]["password"], credentials.password);
+    assert_eq!(options["automatic"], true);
+    assert!(!script.contains("export default"));
+    assert!(auth_login_capture_script(false, None, 1, 1, false).contains("\"prefill\":null"));
 }
 
 #[test]

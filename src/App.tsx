@@ -212,8 +212,8 @@ export default function App() {
     return (
       <PageShell centered showAbout>
         <AuthCard
-          title="正在打开统一认证"
-          detail="请在当前窗口完成深圳大学官方登录。验证成功且会话安全保存后，应用会自动返回后续设置或工作台。"
+          title="正在恢复统一认证"
+          detail="已有账户将自动尝试登录；需要验证码或出现错误时，请在官方页面手动继续。认证成功后会自动返回。"
         >
           <div className="auth-progress" role="status">
             <Spinner />

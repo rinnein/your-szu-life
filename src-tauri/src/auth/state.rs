@@ -18,6 +18,8 @@ pub struct AuthStore {
     pub(super) captured: Mutex<Option<CapturedCredentials>>,
     pub(super) login_prefill: Mutex<Option<LoginFormPrefill>>,
     pub(super) resume_url: Mutex<Option<tauri::Url>>,
+    pub(super) resume_window: Mutex<Option<String>>,
+    pub(super) recovery: Mutex<super::recovery::Recovery>,
     pub(super) auth_probe_running: AtomicBool,
     pub(super) auth_probe_generation: AtomicU64,
     pub(super) auth_completion_claimed: AtomicBool,
@@ -38,6 +40,8 @@ impl AuthStore {
             captured: Mutex::new(None),
             login_prefill: Mutex::new(None),
             resume_url: Mutex::new(None),
+            resume_window: Mutex::new(None),
+            recovery: Mutex::new(super::recovery::Recovery::default()),
             auth_probe_running: AtomicBool::new(false),
             auth_probe_generation: AtomicU64::new(0),
             auth_completion_claimed: AtomicBool::new(false),
@@ -49,6 +53,9 @@ impl AuthStore {
     }
 
     pub(super) fn reset_auth_flow_guards(&self) {
+        if let Ok(mut recovery) = self.recovery.lock() {
+            recovery.invalidate();
+        }
         self.auth_probe_generation.fetch_add(1, Ordering::AcqRel);
         self.auth_probe_running.store(false, Ordering::Release);
         self.auth_completion_claimed.store(false, Ordering::Release);
@@ -134,6 +141,10 @@ impl AuthStore {
     }
 
     pub(super) fn finish_attempt(&self, state: AuthState) {
+        if let Ok(mut recovery) = self.recovery.lock() {
+            recovery.invalidate();
+        }
+        self.cancel_auth_probe();
         if let Ok(mut current) = self.state.lock() {
             *current = state;
         }

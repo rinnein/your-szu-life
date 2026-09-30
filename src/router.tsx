@@ -1,6 +1,6 @@
 import { createRouter } from "@tanstack/react-router";
 import { isChildDocument } from "./logical-navigation";
-import { createReloadableLogicalHistory } from "./logical-history";
+import { consumeAuthReturn, createReloadableLogicalHistory } from "./logical-history";
 import { routeTree } from "./routeTree.gen";
 
 function navigationStorage() {
@@ -17,7 +17,7 @@ export const router = createRouter({
     href: window.location.href,
     reload:
       (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined)
-        ?.type === "reload",
+        ?.type === "reload" || consumeAuthReturn(navigationStorage(), window.location.href),
     storage: navigationStorage(),
   }),
   defaultPreload: "intent",

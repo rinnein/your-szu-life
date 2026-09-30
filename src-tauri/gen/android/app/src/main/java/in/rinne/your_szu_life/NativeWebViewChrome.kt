@@ -34,7 +34,7 @@ internal class NativeWebViewChrome(
     refreshTheme()
     toolbar.title = browserTitle(webView.title)
     toolbar.navigationContentDescription = activity.getString(R.string.browser_back)
-    toolbar.setNavigationOnClickListener { activity.onBackPressedDispatcher.onBackPressed() }
+    toolbar.setNavigationOnClickListener { activity.requestPageBack() }
     toolbar.menu.add(activity.getString(R.string.browser_refresh)).apply {
       icon = refreshIcon
       setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)

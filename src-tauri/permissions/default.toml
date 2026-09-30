@@ -11,6 +11,7 @@ permissions = [
   "allow-get-user-data",
   "allow-begin-authentication",
   "allow-capture-auth-credentials",
+  "allow-control-auth-recovery",
   "allow-confirm-profile",
   "allow-logout",
   "allow-open-network-fee-portal",

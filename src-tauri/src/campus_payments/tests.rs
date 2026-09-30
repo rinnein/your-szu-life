@@ -665,7 +665,10 @@ fn notices_and_ipc_contracts_keep_credentials_and_remote_permissions_out() {
     );
     assert_eq!(
         remote["permissions"],
-        serde_json::json!(["allow-capture-auth-credentials"])
+        serde_json::json!([
+            "allow-capture-auth-credentials",
+            "allow-control-auth-recovery"
+        ])
     );
     let commands = include_str!("commands.rs");
     assert!(commands.contains("open_network_fee_portal(window: tauri::WebviewWindow)"));

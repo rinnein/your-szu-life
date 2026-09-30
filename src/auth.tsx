@@ -1,4 +1,12 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -156,14 +164,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ Checking: null });
   const [profile, setProfile] = useState<Profile>();
   const [userData, setUserData] = useState<UserData>();
+  const stateRevision = useRef(0);
 
   const refresh = async () => {
+    const revision = stateRevision.current;
     try {
       const [rawState, nextProfile, nextUserData] = await Promise.all([
         invoke<unknown>("get_auth_state"),
         invoke<Profile | null>("get_account_profile"),
         invoke<UserData | null>("get_user_data"),
       ]);
+      if (revision !== stateRevision.current) return;
       setState(normalizeAuthState(rawState));
       setProfile(nextProfile ?? undefined);
       setUserData(nextUserData ?? undefined);
@@ -190,6 +201,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let unlisten: (() => void) | undefined;
     void listen<unknown>("auth-state-changed", (event) => {
+      stateRevision.current += 1;
       const next = normalizeAuthState(event.payload);
       setState(next);
       void invoke<UserData | null>("get_user_data").then((data) => setUserData(data ?? undefined));

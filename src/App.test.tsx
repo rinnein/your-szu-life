@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
@@ -130,6 +130,32 @@ describe("HeroUI frontend smoke tests", () => {
           .length,
       ).toBeGreaterThan(initialCalls),
     );
+  });
+
+  it("does not overwrite automatic recovery with a late initial state response", async () => {
+    let resolveState!: (value: unknown) => void;
+    const initial = new Promise((resolve) => {
+      resolveState = resolve;
+    });
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_auth_state") return initial;
+      return null;
+    });
+    renderRouterApp();
+    await waitFor(() =>
+      expect(listen).toHaveBeenCalledWith("auth-state-changed", expect.any(Function)),
+    );
+    const handler = vi
+      .mocked(listen)
+      .mock.calls.find(([name]) => name === "auth-state-changed")![1];
+    await act(async () => {
+      handler({ event: "auth-state-changed", id: 0, payload: "authenticating" });
+    });
+    expect(await screen.findByRole("heading", { name: "正在恢复统一认证" })).toBeInTheDocument();
+    await act(async () => {
+      resolveState({ authenticated: { studentId: "1234567890" } });
+    });
+    expect(screen.getByRole("heading", { name: "正在恢复统一认证" })).toBeInTheDocument();
   });
 
   it("requires five taps inside the two-second window", () => {
