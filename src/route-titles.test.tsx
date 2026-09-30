@@ -34,6 +34,7 @@ it("sets the document title from each route and updates it on tab replacement an
   await waitFor(() => expect(document.title).toBe("工作台"));
   for (const [to, title] of [
     ["/settings", "账户设置"],
+    ["/class-timetable", "上课时间表"],
     ["/campus-network", "校园网"],
     ["/about", "关于泥深"],
     ["/debug", "诊断日志"],

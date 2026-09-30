@@ -86,6 +86,7 @@ describe("Android committed back", () => {
   });
   it.each([
     "/settings",
+    "/class-timetable",
     "/about",
     "/debug",
     "/campus-network",

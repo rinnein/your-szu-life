@@ -177,7 +177,7 @@ describe("HeroUI frontend smoke tests", () => {
     expect(await screen.findByRole("heading", { name: "诊断日志" })).toBeInTheDocument();
   });
 
-  it.each(["课表", "选课", "培养方案检查", "成绩查询"])(
+  it.each(["选课", "培养方案检查", "成绩查询"])(
     "keeps %s on the workbench with a dismissible placeholder alert",
     async (label) => {
       vi.mocked(invoke).mockImplementation(async (command) => {
@@ -271,7 +271,7 @@ describe("HeroUI frontend smoke tests", () => {
     expect(accountTrigger.querySelector('[data-slot="avatar"]')).not.toBeInTheDocument();
     expect(document.querySelectorAll(".feature-icon svg")).toHaveLength(6);
     for (const [label, description] of [
-      ["课表", "暂未实现 · 即将支持"],
+      ["上课时间表", "查看各节次上课时间"],
       ["选课", "暂未实现 · 即将支持"],
       ["培养方案检查", "暂未实现 · 即将支持"],
       ["成绩查询", "暂未实现 · 即将支持"],

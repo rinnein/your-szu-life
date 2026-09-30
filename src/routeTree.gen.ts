@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as CampusNetworkRouteImport } from './routes/campus-network'
 import { Route as CampusPaymentsRouteRouteImport } from './routes/campus-payments/route'
+import { Route as ClassTimetableRouteImport } from './routes/class-timetable'
 import { Route as DebugRouteImport } from './routes/debug'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as CampusPaymentsIndexRouteImport } from './routes/campus-payments/index'
@@ -39,6 +40,11 @@ const CampusNetworkRoute = CampusNetworkRouteImport.update({
 const CampusPaymentsRouteRoute = CampusPaymentsRouteRouteImport.update({
   id: '/campus-payments',
   path: '/campus-payments',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClassTimetableRoute = ClassTimetableRouteImport.update({
+  id: '/class-timetable',
+  path: '/class-timetable',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DebugRoute = DebugRouteImport.update({
@@ -83,6 +89,7 @@ export interface FileRoutesByFullPath {
   '/campus-payments': typeof CampusPaymentsRouteRouteWithChildren
   '/about': typeof AboutRoute
   '/campus-network': typeof CampusNetworkRoute
+  '/class-timetable': typeof ClassTimetableRoute
   '/debug': typeof DebugRoute
   '/settings': typeof SettingsRoute
   '/campus-payments/card': typeof CampusPaymentsCardRoute
@@ -95,6 +102,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/campus-network': typeof CampusNetworkRoute
+  '/class-timetable': typeof ClassTimetableRoute
   '/debug': typeof DebugRoute
   '/settings': typeof SettingsRoute
   '/campus-payments/card': typeof CampusPaymentsCardRoute
@@ -109,6 +117,7 @@ export interface FileRoutesById {
   '/campus-payments': typeof CampusPaymentsRouteRouteWithChildren
   '/about': typeof AboutRoute
   '/campus-network': typeof CampusNetworkRoute
+  '/class-timetable': typeof ClassTimetableRoute
   '/debug': typeof DebugRoute
   '/settings': typeof SettingsRoute
   '/campus-payments/card': typeof CampusPaymentsCardRoute
@@ -124,6 +133,7 @@ export interface FileRouteTypes {
     | '/campus-payments'
     | '/about'
     | '/campus-network'
+    | '/class-timetable'
     | '/debug'
     | '/settings'
     | '/campus-payments/card'
@@ -136,6 +146,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/campus-network'
+    | '/class-timetable'
     | '/debug'
     | '/settings'
     | '/campus-payments/card'
@@ -149,6 +160,7 @@ export interface FileRouteTypes {
     | '/campus-payments'
     | '/about'
     | '/campus-network'
+    | '/class-timetable'
     | '/debug'
     | '/settings'
     | '/campus-payments/card'
@@ -163,6 +175,7 @@ export interface RootRouteChildren {
   CampusPaymentsRouteRoute: typeof CampusPaymentsRouteRouteWithChildren
   AboutRoute: typeof AboutRoute
   CampusNetworkRoute: typeof CampusNetworkRoute
+  ClassTimetableRoute: typeof ClassTimetableRoute
   DebugRoute: typeof DebugRoute
   SettingsRoute: typeof SettingsRoute
 }
@@ -195,6 +208,13 @@ declare module '@tanstack/react-router' {
       path: '/campus-payments'
       fullPath: '/campus-payments'
       preLoaderRoute: typeof CampusPaymentsRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/class-timetable': {
+      id: '/class-timetable'
+      path: '/class-timetable'
+      fullPath: '/class-timetable'
+      preLoaderRoute: typeof ClassTimetableRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/debug': {
@@ -273,6 +293,7 @@ const rootRouteChildren: RootRouteChildren = {
   CampusPaymentsRouteRoute: CampusPaymentsRouteRouteWithChildren,
   AboutRoute: AboutRoute,
   CampusNetworkRoute: CampusNetworkRoute,
+  ClassTimetableRoute: ClassTimetableRoute,
   DebugRoute: DebugRoute,
   SettingsRoute: SettingsRoute,
 }

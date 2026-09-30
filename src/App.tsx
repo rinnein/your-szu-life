@@ -28,7 +28,12 @@ type Feature = {
 };
 
 const features: ReadonlyArray<Feature> = [
-  { label: "课表", icon: FaCalendarDays, description: "暂未实现 · 即将支持" },
+  {
+    label: "上课时间表",
+    icon: FaCalendarDays,
+    description: "查看各节次上课时间",
+    to: "/class-timetable",
+  },
   { label: "选课", icon: FaClipboardList, description: "暂未实现 · 即将支持" },
   { label: "培养方案检查", icon: FaGraduationCap, description: "暂未实现 · 即将支持" },
   { label: "成绩查询", icon: FaChartLine, description: "暂未实现 · 即将支持" },
