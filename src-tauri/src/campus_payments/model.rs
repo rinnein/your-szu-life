@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct ElectricityLocationSettings {
     pub campus_id: String,
     pub area_id: String,
@@ -19,6 +19,10 @@ pub(crate) struct ElectricityCurrentCache {
     pub fetched_at_ms: i64,
     pub expires_at_ms: i64,
     pub warning_active: bool,
+    #[serde(default)]
+    pub estimated_days_left: Option<f64>,
+    #[serde(default)]
+    pub warning_reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
@@ -38,6 +42,8 @@ pub(crate) struct ElectricityStatusView {
     pub expires_at_ms: Option<i64>,
     pub expired: bool,
     pub low: bool,
+    pub estimated_days_left: Option<f64>,
+    pub warning_reason: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]

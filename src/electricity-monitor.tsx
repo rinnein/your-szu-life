@@ -10,6 +10,8 @@ export type ElectricityStatus = {
   expiresAtMs: number | null;
   expired: boolean;
   low: boolean;
+  estimatedDaysLeft?: number | null;
+  warningReason?: string | null;
 };
 
 export const EMPTY_ELECTRICITY_STATUS: ElectricityStatus = {

@@ -3,10 +3,11 @@ use super::model::{
     ElectricityStatusView,
 };
 use crate::storage::SharedCredentialStore;
-use chrono::{DateTime, Duration as ChronoDuration, Local, NaiveDate, NaiveDateTime, TimeZone};
+use chrono::{DateTime, Duration as ChronoDuration, Local, NaiveDate, NaiveDateTime};
 use encoding_rs::GB18030;
 use reqwest::blocking::{Client, Response};
 use serde::{Deserialize, Serialize};
+use std::io::Read;
 use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},
@@ -17,11 +18,68 @@ use tauri::{AppHandle, Emitter};
 use tauri_plugin_notification::NotificationExt;
 
 pub(crate) const ELECTRICITY_STATUS_EVENT: &str = "electricity-status-changed";
+mod analytics;
+mod providers;
+mod sharing;
+pub(crate) use analytics::{constants, ElectricityConstants, YUAN_PER_KWH};
+pub(crate) use providers::Recharge;
+pub(crate) use sharing::encode_settings;
+pub(crate) fn import_settings(text: &str) -> Result<ElectricityLocationSettings, String> {
+    let settings = sharing::decode_settings(text)?;
+    sharing::validate_options(&settings, &options()?)?;
+    Ok(settings)
+}
+pub(crate) fn recharges(mut input: ElectricityQueryInput) -> Result<Vec<Recharge>, String> {
+    (input.begin_date, input.end_date) =
+        analytics::window(analytics::today(), QueryPurpose::Detail);
+    validate(&input)?;
+    if input.area_id == "xili-lihuo-phase2" {
+        providers::lihu_recharges(&input)
+    } else {
+        providers::sims_recharges(&input)
+    }
+}
+
 pub(crate) const LOW_THRESHOLD: f64 = 5.0;
 
 const SIMS_BASE: &str = "http://192.168.84.3:9090";
 const LIHUO_BASE: &str = "http://172.25.100.105:8010";
 const MAX_BODY: usize = 2 * 1024 * 1024;
+// Portal limit counts both the start and end date.
+const MAX_QUERY_DAYS: i64 = 20;
+
+fn query_windows(input: &ElectricityQueryInput) -> Result<Vec<ElectricityQueryInput>, String> {
+    validate(input)?;
+    let mut start = query_date(&input.begin_date).unwrap();
+    let end = query_date(&input.end_date).unwrap();
+    let mut windows = Vec::new();
+    while start <= end {
+        let finish = start
+            .checked_add_signed(ChronoDuration::days(MAX_QUERY_DAYS - 1))
+            .unwrap_or(end)
+            .min(end);
+        let mut chunk = input.clone();
+        chunk.begin_date = start.to_string();
+        chunk.end_date = finish.to_string();
+        windows.push(chunk);
+        if finish == end {
+            break;
+        }
+        start = finish.succ_opt().ok_or("查询日期超出范围")?;
+    }
+    Ok(windows)
+}
+
+fn query_in_windows<T>(
+    input: &ElectricityQueryInput,
+    mut fetch: impl FnMut(&ElectricityQueryInput) -> Result<Vec<T>, String>,
+) -> Result<Vec<T>, String> {
+    let mut rows = Vec::new();
+    for chunk in query_windows(input)? {
+        rows.extend(fetch(&chunk)?);
+    }
+    Ok(rows)
+}
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -53,9 +111,9 @@ pub(crate) struct ElectricityCampus {
 pub(crate) struct ElectricityReading {
     pub date: String,
     pub room_name: String,
-    pub remaining: f64,
-    pub total_used: f64,
-    pub total_purchased: f64,
+    pub remaining: Option<f64>,
+    pub total_used: Option<f64>,
+    pub total_purchased: Option<f64>,
     pub daily_used: Option<f64>,
     pub daily_purchased: Option<f64>,
 }
@@ -71,6 +129,9 @@ pub(crate) struct ElectricityQueryView {
     pub end_date: String,
     pub readings: Vec<ElectricityReading>,
     pub current_remaining: Option<f64>,
+    pub summary: analytics::Summary,
+    pub recharges: Vec<providers::Recharge>,
+    pub recharge_error: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -81,7 +142,9 @@ pub(crate) struct ElectricityQueryInput {
     pub building_id: String,
     pub building_name: String,
     pub room_name: String,
+    #[serde(default)]
     pub begin_date: String,
+    #[serde(default)]
     pub end_date: String,
 }
 
@@ -95,6 +158,7 @@ pub(crate) struct ElectricityStore {
 pub(crate) struct ElectricityRuntime {
     pub(crate) background: bool,
     pub(crate) in_flight: bool,
+    pub(crate) generation: u64,
 }
 
 impl ElectricityStore {
@@ -156,8 +220,8 @@ fn body(response: Response) -> Result<String, String> {
     if !response.status().is_success() {
         return Err(format!("电费接口返回 HTTP {}", response.status().as_u16()));
     }
-    let bytes = response
-        .bytes()
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut response.take(MAX_BODY as u64 + 1), &mut bytes)
         .map_err(|_| "无法读取电费接口响应".to_owned())?;
     if bytes.len() > MAX_BODY {
         return Err("电费接口响应过大".into());
@@ -165,68 +229,29 @@ fn body(response: Response) -> Result<String, String> {
     Ok(GB18030.decode(&bytes).0.into_owned())
 }
 
-fn clean_html(value: &str) -> String {
-    let mut out = String::with_capacity(value.len());
-    let mut in_tag = false;
-    for ch in value.chars() {
-        match ch {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if !in_tag => out.push(ch),
-            _ => {}
-        }
-    }
-    out.replace("&nbsp;", " ")
-        .replace("&#160;", " ")
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 fn select_options(html: &str, name: &str) -> Vec<ElectricityBuilding> {
-    let marker = format!("name=\"{name}\"");
-    let Some(start) = html.find(&marker) else {
-        return Vec::new();
+    let document = scraper::Html::parse_document(html);
+    let select = scraper::Selector::parse("select").unwrap();
+    let option = scraper::Selector::parse("option").unwrap();
+    let Some(select) = document
+        .select(&select)
+        .find(|e| e.value().attr("name") == Some(name))
+    else {
+        return vec![];
     };
-    let Some(select_start) = html[..start].rfind("<select") else {
-        return Vec::new();
-    };
-    let Some(end_rel) = html[start..].find("</select>") else {
-        return Vec::new();
-    };
-    let block = &html[select_start..start + end_rel];
-    let mut result = Vec::new();
-    let mut cursor = 0;
-    while let Some(pos) = block[cursor..].find("<option") {
-        let begin = cursor + pos;
-        let Some(tag_end) = block[begin..].find('>') else {
-            break;
-        };
-        let tag = &block[begin..begin + tag_end];
-        let Some(value_pos) = tag.find("value=\"") else {
-            cursor = begin + tag_end + 1;
-            continue;
-        };
-        let value_start = value_pos + 7;
-        let Some(value_end) = tag[value_start..].find('"') else {
-            cursor = begin + tag_end + 1;
-            continue;
-        };
-        let id = tag[value_start..value_start + value_end].trim();
-        let content_start = begin + tag_end + 1;
-        let Some(close_rel) = block[content_start..].find("</option>") else {
-            break;
-        };
-        let name = clean_html(&block[content_start..content_start + close_rel]);
-        if !id.is_empty() && !name.is_empty() && name != "请选择" && name != "楼栋" {
-            result.push(ElectricityBuilding {
-                id: id.into(),
-                name: normalize_building(&name),
-            });
-        }
-        cursor = content_start + close_rel + 9;
-    }
-    result
+    select
+        .select(&option)
+        .filter_map(|e| {
+            let id = e.value().attr("value")?.trim();
+            let name = normalize_building(&e.text().collect::<String>());
+            (!id.is_empty() && !name.is_empty() && name != "请选择" && name != "楼栋").then(|| {
+                ElectricityBuilding {
+                    id: id.into(),
+                    name,
+                }
+            })
+        })
+        .collect()
 }
 
 fn normalize_building(value: &str) -> String {
@@ -315,10 +340,19 @@ fn validate(input: &ElectricityQueryInput) -> Result<(), String> {
 }
 
 fn parse_number(value: &str) -> Option<f64> {
-    value.trim().replace(',', "").parse().ok()
+    value
+        .trim()
+        .replace(',', "")
+        .parse::<f64>()
+        .ok()
+        .filter(|v| v.is_finite())
 }
 
 fn sims_query(input: &ElectricityQueryInput) -> Result<Vec<ElectricityReading>, String> {
+    query_in_windows(input, sims_query_chunk)
+}
+
+fn sims_query_chunk(input: &ElectricityQueryInput) -> Result<Vec<ElectricityReading>, String> {
     let client_ip = SIMS_AREAS
         .iter()
         .find(|area| area.id == input.area_id)
@@ -341,11 +375,14 @@ fn sims_query(input: &ElectricityQueryInput) -> Result<Vec<ElectricityReading>, 
         ("select", " 查询 "),
     ];
     let room_page = body(
-        http.post(format!("{SIMS_BASE}{action}"))
-            .header("content-type", "application/x-www-form-urlencoded")
-            .body(encode_form_gb18030(&room_form))
-            .send()
-            .map_err(|_| "无法解析 SIMS 宿舍信息".to_owned())?,
+        http.post(providers::safe_url(
+            &format!("{SIMS_BASE}/cgcSims/login.do"),
+            &action,
+        )?)
+        .header("content-type", "application/x-www-form-urlencoded")
+        .body(encode_form_gb18030(&room_form))
+        .send()
+        .map_err(|_| "无法解析 SIMS 宿舍信息".to_owned())?,
     )?;
     let room_id = hidden(&room_page, "roomId").ok_or("SIMS 未找到该宿舍，请检查楼栋和宿舍号")?;
     let building_name =
@@ -364,78 +401,59 @@ fn sims_query(input: &ElectricityQueryInput) -> Result<Vec<ElectricityReading>, 
     let encoded = encode_form_gb18030(&form);
     let query_action = form_action(&room_page).unwrap_or_else(|| "/cgcSims/selectList.do".into());
     let response = http
-        .post(format!("{SIMS_BASE}{query_action}"))
+        .post(providers::safe_url(
+            &format!("{SIMS_BASE}/cgcSims/selectList.do"),
+            &query_action,
+        )?)
         .header("content-type", "application/x-www-form-urlencoded")
         .body(encoded)
         .send()
         .map_err(|_| "无法连接 SIMS 电费查询接口".to_owned())?;
-    parse_sims(&body(response)?, &input.room_name)
+    let mut rows = parse_sims(&body(response)?, &input.room_name)?;
+    rows.retain(|row| providers::in_window(&row.date, input));
+    Ok(rows)
 }
 
 fn form_action(html: &str) -> Option<String> {
-    let start = html.find("<form")?;
-    let end = start + html[start..].find('>')?;
-    let tag = &html[start..end];
-    let marker = "action=\"";
-    let at = tag.find(marker)? + marker.len();
-    let close = tag[at..].find('"')?;
-    Some(tag[at..at + close].to_owned())
+    let document = scraper::Html::parse_document(html);
+    let selector = scraper::Selector::parse("form[action]").unwrap();
+    document
+        .select(&selector)
+        .next()?
+        .value()
+        .attr("action")
+        .map(str::to_owned)
 }
 
 fn hidden(html: &str, name: &str) -> Option<String> {
-    let marker = format!("name=\"{name}\"");
-    let start = html.find(&marker)?;
-    let value_start = start + html[start..].find("value=\"")? + 7;
-    let end = html[value_start..].find('"')?;
-    Some(html[value_start..value_start + end].trim().to_owned())
-}
-
-fn row_cells(row: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut cursor = 0;
-    while let Some(pos) = row[cursor..].find("<td") {
-        let begin = cursor + pos;
-        let Some(tag_end) = row[begin..].find('>') else {
-            break;
-        };
-        let content = begin + tag_end + 1;
-        let Some(end) = row[content..].find("</td>") else {
-            break;
-        };
-        out.push(clean_html(&row[content..content + end]));
-        cursor = content + end + 5;
-    }
-    out
+    let document = scraper::Html::parse_document(html);
+    let selector = scraper::Selector::parse("input[name]").unwrap();
+    document
+        .select(&selector)
+        .find(|e| e.value().attr("name") == Some(name))?
+        .value()
+        .attr("value")
+        .map(|v| v.trim().to_owned())
 }
 
 fn parse_sims(html: &str, room: &str) -> Result<Vec<ElectricityReading>, String> {
-    let Some(table_start) = html.find("id=\"oTable\"") else {
-        return Ok(Vec::new());
-    };
-    let table = &html[html[..table_start].rfind("<table").unwrap_or(table_start)..];
-    let mut rows = Vec::new();
-    let mut cursor = 0;
-    while let Some(pos) = table[cursor..].find("<tr") {
-        let begin = cursor + pos;
-        let Some(open) = table[begin..].find('>') else {
-            break;
-        };
-        let content = begin + open + 1;
-        let Some(end) = table[content..].find("</tr>") else {
-            break;
-        };
-        rows.push(row_cells(&table[content..content + end]));
-        cursor = content + end + 5;
-    }
+    let document = scraper::Html::parse_document(html);
+    let table_selector = scraper::Selector::parse("#oTable").unwrap();
+    let table = document
+        .select(&table_selector)
+        .next()
+        .ok_or("无法识别 SIMS 用电记录表格")?;
+    let row_selector = scraper::Selector::parse("tr").unwrap();
+    let cell_selector = scraper::Selector::parse("td, th").unwrap();
     let mut result = Vec::new();
-    for cells in rows.into_iter().filter(|cells| cells.len() >= 6) {
-        let (Some(remaining), Some(total_used), Some(total_purchased)) = (
-            parse_number(&cells[2]),
-            parse_number(&cells[3]),
-            parse_number(&cells[4]),
-        ) else {
+    for row in table.select(&row_selector) {
+        let cells: Vec<String> = row
+            .select(&cell_selector)
+            .map(|c| c.text().collect::<String>().trim().to_owned())
+            .collect();
+        if cells.len() < 6 || reading_datetime(&cells[5]).is_none() {
             continue;
-        };
+        }
         result.push(ElectricityReading {
             date: cells[5].clone(),
             room_name: if cells[1].is_empty() {
@@ -443,112 +461,18 @@ fn parse_sims(html: &str, room: &str) -> Result<Vec<ElectricityReading>, String>
             } else {
                 cells[1].clone()
             },
-            remaining,
-            total_used,
-            total_purchased,
+            remaining: parse_number(&cells[2]),
+            total_used: parse_number(&cells[3]),
+            total_purchased: parse_number(&cells[4]),
             daily_used: None,
             daily_purchased: None,
         });
     }
-    let fallback = NaiveDate::MIN.and_hms_opt(0, 0, 0).unwrap();
-    result.sort_by_key(|row| reading_datetime(&row.date).unwrap_or(fallback));
-    Ok(with_daily_changes(result))
+    Ok(result)
 }
 
-fn with_daily_changes(mut rows: Vec<ElectricityReading>) -> Vec<ElectricityReading> {
-    for index in 1..rows.len() {
-        let (previous, current) = (&rows[index - 1].clone(), &mut rows[index]);
-        current.daily_used = Some((current.total_used - previous.total_used).max(0.0));
-        current.daily_purchased =
-            Some((current.total_purchased - previous.total_purchased).max(0.0));
-    }
-    rows
-}
-
-fn li_huo_query(input: &ElectricityQueryInput) -> Result<Vec<ElectricityReading>, String> {
-    let http = client()?;
-    let mut html = body(
-        http.get(LIHUO_BASE)
-            .send()
-            .map_err(|_| "无法连接丽湖二期电费接口".to_owned())?,
-    )?;
-    let mut viewstate = hidden(&html, "__VIEWSTATE").unwrap_or_default();
-    let generator = hidden(&html, "__VIEWSTATEGENERATOR").unwrap_or_default();
-    let floor = input
-        .room_name
-        .trim()
-        .chars()
-        .filter(|c| c.is_ascii_digit())
-        .collect::<String>();
-    let floor = if floor.len() > 2 {
-        &floor[..floor.len() - 2]
-    } else {
-        return Err("丽湖二期宿舍号至少需要包含楼层和房间号".into());
-    };
-    let floor = format!("{}{:0>2}", input.building_id, floor);
-    let params = [
-        ("__VIEWSTATE", viewstate.as_str()),
-        ("__VIEWSTATEGENERATOR", generator.as_str()),
-        ("drlouming", input.building_id.as_str()),
-        ("drceng", ""),
-        ("drfangjian", ""),
-        ("radio", "usedR"),
-    ];
-    html = body(
-        http.post(LIHUO_BASE)
-            .header("content-type", "application/x-www-form-urlencoded")
-            .body(encode_form_gb18030(&params))
-            .send()
-            .map_err(|_| "无法加载丽湖二期楼层信息".to_owned())?,
-    )?;
-    viewstate = hidden(&html, "__VIEWSTATE").unwrap_or_default();
-    let generator = hidden(&html, "__VIEWSTATEGENERATOR").unwrap_or_default();
-    let params = [
-        ("__VIEWSTATE", viewstate.as_str()),
-        ("__VIEWSTATEGENERATOR", generator.as_str()),
-        ("drlouming", input.building_id.as_str()),
-        ("drceng", floor.as_str()),
-        ("drfangjian", ""),
-        ("radio", "usedR"),
-    ];
-    html = body(
-        http.post(LIHUO_BASE)
-            .header("content-type", "application/x-www-form-urlencoded")
-            .body(encode_form_gb18030(&params))
-            .send()
-            .map_err(|_| "无法加载丽湖二期楼层信息".to_owned())?,
-    )?;
-    viewstate = hidden(&html, "__VIEWSTATE").unwrap_or_default();
-    let generator = hidden(&html, "__VIEWSTATEGENERATOR").unwrap_or_default();
-    let room_digits = input
-        .room_name
-        .trim()
-        .chars()
-        .filter(|c| c.is_ascii_digit())
-        .collect::<String>();
-    let room_id = select_options(&html, "drfangjian")
-        .into_iter()
-        .find(|x| x.name.ends_with(&room_digits))
-        .map(|x| x.id)
-        .ok_or("丽湖二期未找到该宿舍号")?;
-    let params = [
-        ("__VIEWSTATE", viewstate.as_str()),
-        ("__VIEWSTATEGENERATOR", generator.as_str()),
-        ("drlouming", input.building_id.as_str()),
-        ("drceng", floor.as_str()),
-        ("drfangjian", room_id.as_str()),
-        ("radio", "usedR"),
-        ("ImageButton1.x", "1"),
-        ("ImageButton1.y", "1"),
-    ];
-    html = body(
-        http.post(LIHUO_BASE)
-            .header("content-type", "application/x-www-form-urlencoded")
-            .body(encode_form_gb18030(&params))
-            .send()
-            .map_err(|_| "无法查询丽湖二期电费记录".to_owned())?,
-    )?;
-    parse_lihuo(&html, &input.room_name)
+fn with_daily_changes(rows: Vec<ElectricityReading>) -> Vec<ElectricityReading> {
+    analytics::normalize(rows)
 }
 
 fn encode_form_gb18030(values: &[(&str, &str)]) -> String {
@@ -573,18 +497,47 @@ fn form_component(value: &str) -> String {
         .collect()
 }
 
-fn parse_lihuo(html: &str, room: &str) -> Result<Vec<ElectricityReading>, String> {
-    parse_sims(html, room)
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum QueryPurpose {
+    Detail,
+    Monitor,
 }
 
-pub(crate) fn query(input: ElectricityQueryInput) -> Result<ElectricityQueryView, String> {
+pub(crate) fn query(
+    mut input: ElectricityQueryInput,
+    purpose: QueryPurpose,
+) -> Result<ElectricityQueryView, String> {
+    let today = analytics::today();
+    (input.begin_date, input.end_date) = analytics::window(today, purpose);
     validate(&input)?;
-    let readings = if input.area_id == "xili-lihuo-phase2" {
-        li_huo_query(&input)?
+    let mut data = if input.area_id == "xili-lihuo-phase2" {
+        providers::lihuo(&input, purpose)?
     } else {
-        sims_query(&input)?
+        let rows = sims_query(&input)?;
+        let mut data = providers::ProviderData::new(rows);
+        if purpose == QueryPurpose::Detail {
+            match providers::sims_recharges(&input) {
+                Ok(rows) => data.recharges = rows,
+                Err(error) => data.recharge_error = Some(error),
+            }
+        }
+        data
     };
-    let current_remaining = current_reading(&readings).map(|row| row.remaining);
+    data.readings.retain(|r| {
+        reading_date(&r.date)
+            .is_some_and(|d| d >= query_date(&input.begin_date).unwrap() && d <= today)
+    });
+    let readings = with_daily_changes(data.readings);
+    let current = readings.iter().rev().find(|r| r.remaining.is_some());
+    let remaining = data
+        .current_remaining
+        .or_else(|| current.and_then(|r| r.remaining));
+    let observed = if data.current_remaining.is_some() {
+        Some(today.to_string())
+    } else {
+        current.map(|r| r.date.clone())
+    };
+    let summary = analytics::summarize(&readings, remaining, observed, today);
     Ok(ElectricityQueryView {
         campus_id: input.campus_id,
         area_id: input.area_id,
@@ -593,7 +546,10 @@ pub(crate) fn query(input: ElectricityQueryInput) -> Result<ElectricityQueryView
         begin_date: input.begin_date,
         end_date: input.end_date,
         readings,
-        current_remaining,
+        current_remaining: remaining,
+        summary,
+        recharges: data.recharges,
+        recharge_error: data.recharge_error,
     })
 }
 
@@ -606,12 +562,13 @@ fn local_now() -> DateTime<Local> {
 }
 
 fn local_date() -> String {
-    local_now().date_naive().format("%Y-%m-%d").to_string()
+    analytics::today().format("%Y-%m-%d").to_string()
 }
 
+#[cfg(test)]
 fn current_reading_date() -> NaiveDate {
     // The meter backend publishes the previous day's 23:59 snapshot only.
-    local_now().date_naive() - ChronoDuration::days(1)
+    analytics::today() - ChronoDuration::days(1)
 }
 
 fn reading_datetime(value: &str) -> Option<NaiveDateTime> {
@@ -638,6 +595,7 @@ fn reading_date(value: &str) -> Option<NaiveDate> {
     reading_datetime(value).map(|value| value.date())
 }
 
+#[cfg(test)]
 fn current_reading<'a>(readings: &'a [ElectricityReading]) -> Option<&'a ElectricityReading> {
     let target = current_reading_date();
     readings
@@ -652,22 +610,6 @@ fn current_reading<'a>(readings: &'a [ElectricityReading]) -> Option<&'a Electri
         })
 }
 
-fn cache_expiry_ms(now: DateTime<Local>) -> i64 {
-    let next_midnight = now
-        .date_naive()
-        .succ_opt()
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    Local
-        .from_local_datetime(&next_midnight)
-        .single()
-        .unwrap_or(now + ChronoDuration::days(1))
-        .checked_sub_signed(ChronoDuration::minutes(2))
-        .unwrap_or(now)
-        .timestamp_millis()
-}
-
 fn location_for(input: &ElectricityQueryInput) -> ElectricityLocationSettings {
     ElectricityLocationSettings {
         campus_id: input.campus_id.clone(),
@@ -680,16 +622,6 @@ fn location_for(input: &ElectricityQueryInput) -> ElectricityLocationSettings {
 
 fn cache_matches(cache: &ElectricityCurrentCache, location: &ElectricityLocationSettings) -> bool {
     cache.location == *location
-}
-
-fn warning_state(previous: bool, remaining: f64) -> bool {
-    if remaining < LOW_THRESHOLD {
-        true
-    } else if remaining > LOW_THRESHOLD {
-        false
-    } else {
-        previous
-    }
 }
 
 fn load_monitor_record(store: &ElectricityStore) -> ElectricityMonitorRecord {
@@ -720,6 +652,8 @@ pub(crate) fn status(store: &ElectricityStore) -> ElectricityStatusView {
             expires_at_ms: None,
             expired: false,
             low: false,
+            estimated_days_left: None,
+            warning_reason: None,
         };
     };
     let expired = cache.expires_at_ms <= now_ms();
@@ -728,11 +662,17 @@ pub(crate) fn status(store: &ElectricityStore) -> ElectricityStatusView {
         observed_date: Some(cache.observed_date),
         expires_at_ms: Some(cache.expires_at_ms),
         expired,
-        low: cache.warning_active,
+        low: !expired && cache.warning_active,
+        estimated_days_left: if expired {
+            None
+        } else {
+            cache.estimated_days_left
+        },
+        warning_reason: if expired { None } else { cache.warning_reason },
     }
 }
 
-fn emit_status(app: &AppHandle, store: &ElectricityStore) {
+pub(super) fn emit_status(app: &AppHandle, store: &ElectricityStore) {
     let _ = app.emit(ELECTRICITY_STATUS_EVENT, status(store));
 }
 
@@ -750,7 +690,10 @@ fn notify_if_needed(app: &AppHandle, store: &ElectricityStore) {
     let Some(cache) = record.cache.as_ref() else {
         return;
     };
-    if !cache.warning_active || record.last_notified_date.as_deref() == Some(today.as_str()) {
+    if cache.expires_at_ms <= now_ms()
+        || !cache.warning_active
+        || record.last_notified_date.as_deref() == Some(today.as_str())
+    {
         return;
     }
     record.last_notified_date = Some(today);
@@ -761,7 +704,12 @@ fn notify_if_needed(app: &AppHandle, store: &ElectricityStore) {
         .builder()
         .id(0x535a)
         .title(title)
-        .body("宿舍剩余电量低于 5 度，请及时充值。")
+        .body(
+            cache
+                .warning_reason
+                .as_deref()
+                .unwrap_or("宿舍电量不足，请及时充值。"),
+        )
         .action_type_id("electricity-low")
         .extra("route", "/campus-payments/recharge")
         .auto_cancel()
@@ -787,36 +735,69 @@ pub(crate) fn query_and_record(
     input: ElectricityQueryInput,
     store: &ElectricityStore,
     app: &AppHandle,
+    purpose: QueryPurpose,
 ) -> Result<ElectricityQueryView, String> {
-    begin_query(store)?;
-    let result = query(input.clone());
-    end_query(store);
+    // Foreground detail queries may run alongside monitoring; generation guards
+    // prevent a completed request for a previous configuration from being saved.
+    if purpose == QueryPurpose::Monitor {
+        begin_query(store)?;
+    }
+    let started_at_ms = now_ms();
+    let generation = store
+        .runtime
+        .lock()
+        .map_err(|_| "电费状态不可用")?
+        .generation;
+    let result = query(input.clone(), purpose);
+    if purpose == QueryPurpose::Monitor {
+        end_query(store);
+    }
     let view = result?;
-    let Some(reading) = current_reading(&view.readings) else {
-        return Ok(view);
-    };
-    let current_date = reading_date(&reading.date).unwrap_or_else(current_reading_date);
-    let location = location_for(&input);
-    let mut record = load_monitor_record(store);
-    let previous_warning = record
-        .cache
-        .as_ref()
-        .filter(|cache| cache_matches(cache, &location))
-        .map(|cache| cache.warning_active)
-        .unwrap_or(false);
-    let warning_active = warning_state(previous_warning, reading.remaining);
-    record.cache = Some(ElectricityCurrentCache {
-        location,
-        remaining: reading.remaining,
-        observed_date: current_date.format("%Y-%m-%d").to_string(),
-        fetched_at_ms: now_ms(),
-        expires_at_ms: cache_expiry_ms(local_now()),
-        warning_active,
-    });
-    save_monitor_record(store, &record);
+    record_view(store, &input, generation, started_at_ms, &view)?;
     emit_status(app, store);
     notify_if_needed(app, store);
     Ok(view)
+}
+
+fn record_view(
+    store: &ElectricityStore,
+    input: &ElectricityQueryInput,
+    generation: u64,
+    started_at_ms: i64,
+    view: &ElectricityQueryView,
+) -> Result<(), String> {
+    let location = location_for(input);
+    let runtime = store.runtime.lock().map_err(|_| "电费状态不可用")?;
+    if runtime.generation != generation || load_settings(store)?.as_ref() != Some(&location) {
+        return Ok(());
+    }
+    if let (Some(remaining), Some(observed)) =
+        (view.current_remaining, view.summary.observed_date.as_ref())
+    {
+        let mut record = load_monitor_record(store);
+        if !record.cache.as_ref().is_some_and(|cache| {
+            cache.location == location
+                && (cache.fetched_at_ms > started_at_ms
+                    || reading_datetime(&cache.observed_date) > reading_datetime(observed))
+        }) {
+            record.cache = Some(ElectricityCurrentCache {
+                location,
+                remaining,
+                observed_date: observed.clone(),
+                fetched_at_ms: started_at_ms,
+                expires_at_ms: if view.summary.expired {
+                    now_ms()
+                } else {
+                    analytics::expiry_ms()
+                },
+                warning_active: view.summary.warning_reason.is_some(),
+                estimated_days_left: view.summary.estimated_days_left,
+                warning_reason: view.summary.warning_reason.clone(),
+            });
+            save_monitor_record(store, &record);
+        }
+    }
+    Ok(())
 }
 
 fn mark_attempt(store: &ElectricityStore, background: bool, date: &str) -> bool {
@@ -852,10 +833,10 @@ fn automatic_query(app: &AppHandle, store: &ElectricityStore, background: bool) 
         building_id: settings.building_id.clone(),
         building_name: settings.building_name.clone(),
         room_name: settings.room_name.clone(),
-        begin_date: date_offset(-6),
+        begin_date: date_offset(-2),
         end_date: date.clone(),
     };
-    let _ = query_and_record(input, store, app);
+    let _ = query_and_record(input, store, app, QueryPurpose::Monitor);
 }
 
 fn date_offset(days: i64) -> String {
@@ -907,11 +888,16 @@ pub(crate) fn save_settings(
     store: &ElectricityStore,
     settings: ElectricityLocationSettings,
 ) -> Result<(), String> {
-    store
-        .credentials
-        .as_ref()
-        .ok_or("电费设置存储不可用")?
-        .save_electricity_settings(&settings)
+    sharing::validate_shape(&settings)?;
+    let mut runtime = store.runtime.lock().map_err(|_| "电费状态不可用")?;
+    let credentials = store.credentials.as_ref().ok_or("电费设置存储不可用")?;
+    let changed = credentials.load_electricity_settings()?.as_ref() != Some(&settings);
+    credentials.save_electricity_settings(&settings)?;
+    if changed {
+        runtime.generation += 1;
+        credentials.save_electricity_monitor(&ElectricityMonitorRecord::default())?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -928,7 +914,7 @@ mod tests {
     #[test]
     fn parses_sims_rows_and_daily_changes() {
         let html = r#"<table id="oTable"><tr><td>1</td><td>101</td><td>10</td><td>2</td><td>4</td><td>2026-01-01</td></tr><tr><td>2</td><td>101</td><td>8</td><td>5</td><td>4</td><td>2026-01-02</td></tr></table>"#;
-        let rows = parse_sims(html, "101").unwrap();
+        let rows = with_daily_changes(parse_sims(html, "101").unwrap());
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[1].daily_used, Some(3.0));
     }
@@ -943,23 +929,26 @@ mod tests {
             ElectricityReading {
                 date: "2026-09-16 23:59:01.0".into(),
                 room_name: "601".into(),
-                remaining: 8.0,
-                total_used: 1.0,
-                total_purchased: 0.0,
+                remaining: Some(8.0),
+                total_used: Some(1.0),
+                total_purchased: Some(0.0),
                 daily_used: None,
                 daily_purchased: None,
             },
             ElectricityReading {
                 date: format!("{} 23:59:01.0", current_reading_date()),
                 room_name: "601".into(),
-                remaining: 4.0,
-                total_used: 2.0,
-                total_purchased: 0.0,
+                remaining: Some(4.0),
+                total_used: Some(2.0),
+                total_purchased: Some(0.0),
                 daily_used: None,
                 daily_purchased: None,
             },
         ];
-        assert_eq!(current_reading(&rows).map(|row| row.remaining), Some(4.0));
+        assert_eq!(
+            current_reading(&rows).and_then(|row| row.remaining),
+            Some(4.0)
+        );
     }
     #[test]
     fn validates_dates_and_room() {
@@ -1008,27 +997,6 @@ mod tests {
     }
 
     #[test]
-    fn current_cache_expires_at_2358_local_time() {
-        let now = Local
-            .with_ymd_and_hms(2026, 9, 18, 12, 0, 0)
-            .single()
-            .unwrap();
-        let expected = Local
-            .with_ymd_and_hms(2026, 9, 18, 23, 58, 0)
-            .single()
-            .unwrap();
-        assert_eq!(cache_expiry_ms(now), expected.timestamp_millis());
-    }
-
-    #[test]
-    fn low_battery_threshold_only_clears_above_five() {
-        assert!(warning_state(false, 4.99));
-        assert!(!warning_state(false, 5.0));
-        assert!(warning_state(true, 5.0));
-        assert!(!warning_state(true, 5.01));
-    }
-
-    #[test]
     fn automatic_attempt_is_recorded_once_per_date_and_mode() {
         let credentials = Arc::new(MemoryCredentialStore::default());
         let store = ElectricityStore::new(credentials);
@@ -1037,5 +1005,160 @@ mod tests {
         assert!(mark_attempt(&store, true, "2026-09-18"));
         assert!(!mark_attempt(&store, true, "2026-09-18"));
         assert!(mark_attempt(&store, true, "2026-09-19"));
+    }
+    #[test]
+    fn old_monitor_cache_loads_and_room_changes_reject_inflight_results() {
+        let old: ElectricityCurrentCache = serde_json::from_value(serde_json::json!({
+            "location": {"campusId":"yuehai","areaId":"yuehai-main","buildingId":"1","buildingName":"山茶斋","roomName":"601"},
+            "remaining": 4.0, "observedDate": "2026-09-30", "fetchedAtMs": 0, "expiresAtMs": 1, "warningActive": true
+        })).unwrap();
+        assert_eq!(old.estimated_days_left, None);
+        assert_eq!(old.warning_reason, None);
+        let store = ElectricityStore::new(Arc::new(MemoryCredentialStore::default()));
+        save_settings(&store, old.location.clone()).unwrap();
+        let generation = store.runtime.lock().unwrap().generation;
+        let input = ElectricityQueryInput {
+            campus_id: old.location.campus_id.clone(),
+            area_id: old.location.area_id.clone(),
+            building_id: old.location.building_id.clone(),
+            building_name: old.location.building_name.clone(),
+            room_name: old.location.room_name.clone(),
+            begin_date: String::new(),
+            end_date: String::new(),
+        };
+        let mut view = ElectricityQueryView {
+            campus_id: input.campus_id.clone(),
+            area_id: input.area_id.clone(),
+            building_name: input.building_name.clone(),
+            room_name: input.room_name.clone(),
+            begin_date: String::new(),
+            end_date: String::new(),
+            readings: vec![],
+            current_remaining: Some(4.0),
+            summary: analytics::summarize(
+                &[],
+                Some(4.0),
+                Some(analytics::today().to_string()),
+                analytics::today(),
+            ),
+            recharges: vec![],
+            recharge_error: None,
+        };
+        record_view(&store, &input, generation, 200, &view).unwrap();
+        assert!(status(&store).low);
+        view.current_remaining = Some(30.0);
+        view.summary = analytics::summarize(
+            &[],
+            Some(30.0),
+            Some(analytics::today().to_string()),
+            analytics::today(),
+        );
+        record_view(&store, &input, generation, 300, &view).unwrap();
+        assert!(!status(&store).low);
+        view.current_remaining = Some(1.0);
+        record_view(&store, &input, generation, 100, &view).unwrap();
+        assert_eq!(status(&store).remaining, Some(30.0));
+        let mut other = old.location;
+        other.room_name = "602".into();
+        save_settings(&store, other).unwrap();
+        record_view(&store, &input, generation, 400, &view).unwrap();
+        assert_eq!(status(&store).remaining, None);
+    }
+    #[test]
+    fn splits_queries_into_at_most_twenty_inclusive_days() {
+        let mut input = ElectricityQueryInput {
+            campus_id: "canghai".into(),
+            area_id: "canghai-main".into(),
+            building_id: "test".into(),
+            building_name: "测试楼".into(),
+            room_name: "101".into(),
+            begin_date: "2026-09-01".into(),
+            end_date: "2026-10-01".into(),
+        };
+        let windows = query_windows(&input).unwrap();
+        assert_eq!(
+            windows
+                .iter()
+                .map(|w| (w.begin_date.as_str(), w.end_date.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("2026-09-01", "2026-09-20"), ("2026-09-21", "2026-10-01")]
+        );
+        for (start, days) in [
+            ("2026-12-20", 31),
+            ("2024-02-10", 20),
+            ("2024-02-10", 21),
+            ("2026-09-29", 3),
+            ("2026-10-01", 1),
+        ] {
+            let start = query_date(start).unwrap();
+            let end = start + ChronoDuration::days(days - 1);
+            input.begin_date = start.to_string();
+            input.end_date = end.to_string();
+            let mut dates = Vec::new();
+            let rows = query_in_windows(&input, |w| {
+                let first = query_date(&w.begin_date).unwrap();
+                let last = query_date(&w.end_date).unwrap();
+                assert!((last - first).num_days() < 20);
+                dates.extend(
+                    first
+                        .iter_days()
+                        .take((last - first).num_days() as usize + 1),
+                );
+                Ok(vec![()])
+            })
+            .unwrap();
+            assert_eq!(dates.len(), days as usize);
+            assert_eq!(
+                dates,
+                start.iter_days().take(days as usize).collect::<Vec<_>>()
+            );
+            assert_eq!(rows.len(), ((days + 19) / 20) as usize);
+        }
+    }
+
+    #[test]
+    fn computes_usage_after_merging_chunks_and_rejects_partial_success() {
+        let input = ElectricityQueryInput {
+            campus_id: "canghai".into(),
+            area_id: "canghai-main".into(),
+            building_id: "test".into(),
+            building_name: "测试楼".into(),
+            room_name: "101".into(),
+            begin_date: "2026-09-01".into(),
+            end_date: "2026-10-01".into(),
+        };
+        let start = query_date(&input.begin_date).unwrap();
+        let rows = query_in_windows(&input, |w| {
+            let first = query_date(&w.begin_date).unwrap();
+            let last = query_date(&w.end_date).unwrap();
+            Ok(first
+                .iter_days()
+                .take((last - first).num_days() as usize + 1)
+                .map(|date| ElectricityReading {
+                    date: date.to_string(),
+                    room_name: "101".into(),
+                    remaining: Some(100.0),
+                    total_used: Some((date - start).num_days() as f64 * 3.0),
+                    total_purchased: Some(100.0),
+                    daily_used: None,
+                    daily_purchased: None,
+                })
+                .collect())
+        })
+        .unwrap();
+        let daily = with_daily_changes(rows);
+        assert_eq!(daily.len(), 31);
+        assert_eq!(daily[0].daily_used, None);
+        assert!(daily[1..].iter().all(|r| r.daily_used == Some(3.0)));
+        let mut calls = 0;
+        let failure = query_in_windows(&input, |_| {
+            calls += 1;
+            if calls == 2 {
+                Err("第二段失败".into())
+            } else {
+                Ok(vec![1])
+            }
+        });
+        assert_eq!(failure.unwrap_err(), "第二段失败");
     }
 }

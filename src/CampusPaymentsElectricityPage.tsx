@@ -8,53 +8,23 @@ import {
   Input,
   Label,
   ListBox,
-  Popover,
-  RangeCalendar,
   Select,
   Spinner,
-  Table,
   TextField,
 } from "@heroui/react";
-import { getLocalTimeZone, today, type CalendarDate } from "@internationalized/date";
-import type { RangeValue } from "react-aria-components";
 import { LuZap } from "react-icons/lu";
-import { EMPTY_ELECTRICITY_STATUS, useElectricityMonitor } from "./electricity-monitor";
+import { copyText } from "./clipboard";
+import { ElectricityDetails } from "./ElectricityDetails";
+import {
+  getElectricityConstants,
+  type ElectricitySettings as Settings,
+  type ElectricityResult as Result,
+  type ElectricityRecharge,
+} from "./electricity";
 
 type Building = { id: string; name: string };
 type Area = { id: string; name: string; campusId: string; provider: string; buildings: Building[] };
 type Campus = { id: string; name: string; areas: Area[] };
-type Settings = {
-  campusId: string;
-  areaId: string;
-  buildingId: string;
-  buildingName: string;
-  roomName: string;
-};
-type Reading = {
-  date: string;
-  roomName: string;
-  remaining: number;
-  totalUsed: number;
-  totalPurchased: number;
-  dailyUsed?: number;
-  dailyPurchased?: number;
-};
-type Result = {
-  campusId: string;
-  areaId: string;
-  buildingName: string;
-  roomName: string;
-  beginDate: string;
-  endDate: string;
-  readings: Reading[];
-  currentRemaining?: number;
-};
-
-function initialDateRange(): RangeValue<CalendarDate> {
-  const end = today(getLocalTimeZone());
-  return { start: end.subtract({ days: 6 }), end };
-}
-
 function LocationSelect({
   label,
   value,
@@ -94,7 +64,6 @@ function LocationSelect({
 }
 
 export default function CampusPaymentsElectricityPage() {
-  const monitor = useElectricityMonitor() ?? EMPTY_ELECTRICITY_STATUS;
   const [campuses, setCampuses] = useState<Campus[]>([]);
   const [settings, setSettings] = useState<Settings>({
     campusId: "",
@@ -103,12 +72,32 @@ export default function CampusPaymentsElectricityPage() {
     buildingName: "",
     roomName: "",
   });
-  const [dateRange, setDateRange] = useState<RangeValue<CalendarDate>>(initialDateRange);
   const [result, setResult] = useState<Result>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [rate, setRate] = useState<number>();
+  const [savedSettings, setSavedSettings] = useState<Settings>();
+  const [importText, setImportText] = useState("");
+  const [shareMessage, setShareMessage] = useState("");
+  const [exportText, setExportText] = useState("");
+  const [sharing, setSharing] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const requestId = useRef(0);
+  useEffect(() => {
+    let active = true;
+    void getElectricityConstants()
+      .then((constants) => {
+        if (active) setRate(constants?.yuanPerKwh);
+      })
+      .catch(() => {
+        if (active) setError("无法加载电价换算比例，请重新打开模块。");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const initialDataRequest = useRef<Promise<[Campus[], Settings | null]> | undefined>(undefined);
   useEffect(() => {
     let active = true;
@@ -123,34 +112,34 @@ export default function CampusPaymentsElectricityPage() {
         setCampuses(Array.isArray(next) ? next : []);
         if (saved) {
           setSettings(saved);
+          setSavedSettings(saved);
         }
         // Render the configured page first, then refresh it asynchronously just
         // like a user submitting the query form.
         if (active) setLoading(false);
         if (saved) {
           setBusy(true);
+          const id = ++requestId.current;
           void invoke<Result>("query_electricity", {
             input: {
               ...saved,
-              beginDate: dateRange.start.toString(),
-              endDate: dateRange.end.toString(),
             },
           })
             .then((automatic) => {
-              if (active) {
+              if (active && id === requestId.current) {
                 setResult(automatic);
                 setEditing(false);
               }
             })
             .catch((e) => {
-              if (active) {
+              if (active && id === requestId.current) {
                 setError(
                   typeof e === "string" ? e : "无法自动获取当前电量，请检查宿舍信息和校园网连接。",
                 );
               }
             })
             .finally(() => {
-              if (active) setBusy(false);
+              if (active && id === requestId.current) setBusy(false);
             });
         }
       } catch (e) {
@@ -164,6 +153,7 @@ export default function CampusPaymentsElectricityPage() {
     void load();
     return () => {
       active = false;
+      requestId.current += 1;
     };
   }, []);
   const campus = campuses.find((x) => x.id === settings.campusId);
@@ -173,6 +163,7 @@ export default function CampusPaymentsElectricityPage() {
     settings.campusId && settings.areaId && settings.buildingId && settings.roomName.trim(),
   );
   const chooseCampus = (campusId: string) => {
+    requestId.current += 1;
     const next = campuses.find((x) => x.id === campusId);
     const nextArea = next?.areas[0];
     const nextBuilding = nextArea?.buildings[0];
@@ -186,6 +177,7 @@ export default function CampusPaymentsElectricityPage() {
     setResult(undefined);
   };
   const chooseArea = (areaId: string) => {
+    requestId.current += 1;
     const next = campus?.areas.find((x) => x.id === areaId);
     const nextBuilding = next?.buildings[0];
     setSettings((s) => ({
@@ -197,6 +189,8 @@ export default function CampusPaymentsElectricityPage() {
     setResult(undefined);
   };
   const chooseBuilding = (buildingId: string) => {
+    requestId.current += 1;
+    setResult(undefined);
     const next = buildings.find((x) => x.id === buildingId);
     setSettings((s) => ({ ...s, buildingId, buildingName: next?.name ?? "" }));
   };
@@ -206,27 +200,81 @@ export default function CampusPaymentsElectricityPage() {
       setError("请先选择校区、宿舍区域、楼栋并填写宿舍号。");
       return;
     }
+    const id = ++requestId.current;
     setBusy(true);
     setError(undefined);
     try {
       await invoke("save_electricity_settings", { settings });
+      if (id !== requestId.current) return;
+      setSavedSettings(settings);
       const next = await invoke<Result>("query_electricity", {
         input: {
           ...settings,
-          beginDate: dateRange.start.toString(),
-          endDate: dateRange.end.toString(),
         },
       });
-      setResult(next);
-      setEditing(false);
+      if (id === requestId.current) {
+        setResult(next);
+        setEditing(false);
+      }
     } catch (e) {
-      setError(typeof e === "string" ? e : "电费查询失败，请检查宿舍信息和校园网连接。");
+      if (id === requestId.current)
+        setError(typeof e === "string" ? e : "电费查询失败，请检查宿舍信息和校园网连接。");
     } finally {
-      setBusy(false);
+      if (id === requestId.current) setBusy(false);
     }
   };
-  const currentRemaining = monitor.remaining ?? result?.currentRemaining;
-  const formDisabled = loading || busy;
+  const exportConfig = async () => {
+    setSharing(true);
+    setShareMessage("");
+    setExportText("");
+    try {
+      const text = await invoke<string>("export_electricity_settings");
+      if (await copyText(text)) setShareMessage("宿舍配置已复制。");
+      else {
+        setExportText(text);
+        setShareMessage("无法自动复制，请选择下方配置码手动复制。");
+      }
+    } catch (e) {
+      setShareMessage(typeof e === "string" ? e : "导出失败，请重试。");
+    } finally {
+      setSharing(false);
+    }
+  };
+  const importConfig = async () => {
+    setSharing(true);
+    setShareMessage("");
+    try {
+      const imported = await invoke<Settings>("import_electricity_settings", { text: importText });
+      requestId.current += 1;
+      setSettings(imported);
+      setEditing(true);
+      setResult(undefined);
+      setShareMessage("已填入宿舍配置，点击查询电费保存并查询。");
+    } catch (e) {
+      setShareMessage(typeof e === "string" ? e : "导入失败，请检查配置码。");
+    } finally {
+      setSharing(false);
+    }
+  };
+  const retryRecharges = async () => {
+    if (!savedSettings || retrying) return;
+    const id = requestId.current;
+    setRetrying(true);
+    try {
+      const recharges = await invoke<ElectricityRecharge[]>("query_electricity_recharges", {
+        input: savedSettings,
+      });
+      if (id === requestId.current) setResult((r) => r && { ...r, recharges, rechargeError: null });
+    } catch (e) {
+      if (id === requestId.current)
+        setResult(
+          (r) => r && { ...r, rechargeError: typeof e === "string" ? e : "充值记录查询失败" },
+        );
+    } finally {
+      setRetrying(false);
+    }
+  };
+  const formDisabled = loading || busy || sharing;
   return (
     <div className="electricity-page">
       <Card className="payments-card">
@@ -236,7 +284,7 @@ export default function CampusPaymentsElectricityPage() {
             查电量
           </Card.Title>
           <Card.Description>
-            查询近期开销和当前剩余电量；宿舍配置仅保存在本机安全存储。
+            查询近期开销和当前剩余电量；宿舍配置保存在本机安全存储，也可导出分享。
           </Card.Description>
         </Card.Header>
         <Card.Content>
@@ -275,7 +323,11 @@ export default function CampusPaymentsElectricityPage() {
                   <Input
                     disabled={formDisabled}
                     value={settings.roomName}
-                    onChange={(e) => setSettings((s) => ({ ...s, roomName: e.target.value }))}
+                    onChange={(e) => {
+                      requestId.current += 1;
+                      setResult(undefined);
+                      setSettings((s) => ({ ...s, roomName: e.target.value }));
+                    }}
                     placeholder="如 601"
                   />
                 </TextField>
@@ -289,54 +341,57 @@ export default function CampusPaymentsElectricityPage() {
                 </strong>
               </div>
             )}
-            <div className="electricity-dates">
-              <Popover>
-                <Popover.Trigger>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    isDisabled={formDisabled}
-                    aria-label="查询日期范围"
-                  >
-                    {dateRange.start.toString()} 至 {dateRange.end.toString()}
-                  </Button>
-                </Popover.Trigger>
-                <Popover.Content>
-                  <RangeCalendar
-                    aria-label="查询日期范围"
-                    value={dateRange}
-                    onChange={(next) => next && setDateRange(next)}
-                    firstDayOfWeek="mon"
-                  >
-                    <RangeCalendar.Header>
-                      <RangeCalendar.NavButton slot="previous" />
-                      <RangeCalendar.Heading />
-                      <RangeCalendar.NavButton slot="next" />
-                    </RangeCalendar.Header>
-                    <RangeCalendar.Grid>
-                      <RangeCalendar.GridHeader>
-                        {(_day) => <RangeCalendar.HeaderCell />}
-                      </RangeCalendar.GridHeader>
-                      <RangeCalendar.GridBody>
-                        {(date) => <RangeCalendar.Cell date={date} />}
-                      </RangeCalendar.GridBody>
-                    </RangeCalendar.Grid>
-                  </RangeCalendar>
-                </Popover.Content>
-              </Popover>
-            </div>
+            <p className="text-sm text-muted">展示最近 31 天的用电与充值记录。</p>
             <div className="electricity-actions">
               <Button type="submit" variant="primary" isDisabled={formDisabled || !canQuery}>
                 {busy && <Spinner size="sm" color="current" />}
                 {busy ? "查询中…" : "查询电费"}
               </Button>
               {result && (
-                <Button type="button" variant="outline" onPress={() => setEditing(!editing)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  isDisabled={formDisabled || sharing}
+                  onPress={() => setEditing(!editing)}
+                >
                   {editing ? "收起配置" : "修改宿舍配置"}
                 </Button>
               )}
             </div>
           </Form>
+          <div className="mt-4 flex flex-col gap-3">
+            {savedSettings && (
+              <Button
+                variant="outline"
+                isDisabled={formDisabled}
+                onPress={() => void exportConfig()}
+              >
+                导出宿舍配置并复制
+              </Button>
+            )}
+            {(!result || editing) && (
+              <>
+                <TextField value={importText} onChange={setImportText} isDisabled={formDisabled}>
+                  <Label>宿舍配置码</Label>
+                  <Input placeholder="粘贴分享的宿舍配置码" />
+                </TextField>
+                <Button
+                  variant="secondary"
+                  isDisabled={formDisabled || !importText.trim()}
+                  onPress={() => void importConfig()}
+                >
+                  快捷导入宿舍配置
+                </Button>
+              </>
+            )}
+            {shareMessage && <p role="status">{shareMessage}</p>}
+            {exportText && (
+              <TextField value={exportText} isReadOnly>
+                <Label>可复制的宿舍配置码</Label>
+                <Input />
+              </TextField>
+            )}
+          </div>
           {error && (
             <Alert status="danger" role="alert">
               <Alert.Indicator />
@@ -349,58 +404,12 @@ export default function CampusPaymentsElectricityPage() {
         </Card.Content>
       </Card>
       {result && (
-        <Card className="payments-card electricity-results">
-          <Card.Header>
-            <Card.Title>电费查询结果</Card.Title>
-            <Card.Description>
-              {result.buildingName} {result.roomName} · {result.beginDate} 至 {result.endDate}
-            </Card.Description>
-          </Card.Header>
-          <Card.Content>
-            <div className="electricity-current" aria-label="当前电量">
-              <span className="electricity-current-label">当前电量</span>
-              <strong>
-                {currentRemaining == null ? "暂无数据" : `${currentRemaining.toFixed(2)} 度`}
-              </strong>
-              {monitor.expired && currentRemaining != null && (
-                <small className="electricity-current-stale">数据将在下次查询后更新</small>
-              )}
-            </div>
-            <h3 className="electricity-section-title">用电记录</h3>
-            {result.readings.length === 0 ? (
-              <p className="payments-empty">该时间段没有查询到记录。</p>
-            ) : (
-              <Table aria-label="用电记录">
-                <Table.ScrollContainer>
-                  <Table.Content aria-label="用电记录">
-                    <Table.Header>
-                      <Table.Column id="date" isRowHeader>
-                        日期
-                      </Table.Column>
-                      <Table.Column id="remaining">剩余电量</Table.Column>
-                      <Table.Column id="dailyUsed">当日用电</Table.Column>
-                      <Table.Column id="dailyPurchased">当日购电</Table.Column>
-                    </Table.Header>
-                    <Table.Body items={result.readings}>
-                      {(row) => (
-                        <Table.Row id={row.date}>
-                          <Table.Cell>{row.date}</Table.Cell>
-                          <Table.Cell>{row.remaining.toFixed(2)}</Table.Cell>
-                          <Table.Cell>
-                            {row.dailyUsed == null ? "—" : row.dailyUsed.toFixed(2)}
-                          </Table.Cell>
-                          <Table.Cell>
-                            {row.dailyPurchased == null ? "—" : row.dailyPurchased.toFixed(2)}
-                          </Table.Cell>
-                        </Table.Row>
-                      )}
-                    </Table.Body>
-                  </Table.Content>
-                </Table.ScrollContainer>
-              </Table>
-            )}
-          </Card.Content>
-        </Card>
+        <ElectricityDetails
+          result={result}
+          rate={rate}
+          retryRecharges={() => void retryRecharges()}
+          retrying={retrying}
+        />
       )}
     </div>
   );

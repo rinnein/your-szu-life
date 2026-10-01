@@ -148,7 +148,7 @@ export function AnnouncementBoard() {
     electricity.low && electricity.remaining != null
       ? {
           kind: "electricity-low",
-          title: `当前剩余电量：${electricity.remaining.toFixed(2)} 度`,
+          title: `当前剩余电量：${electricity.remaining.toFixed(2)} 度${electricity.warningReason ? ` · ${electricity.warningReason}` : ""}`,
           url: "/campus-payments/recharge",
         }
       : undefined;

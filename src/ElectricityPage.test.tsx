@@ -1,0 +1,174 @@
+// @vitest-environment jsdom
+import "@testing-library/jest-dom/vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { invoke } from "@tauri-apps/api/core";
+import { copyText } from "./clipboard";
+import CampusPaymentsElectricityPage from "./CampusPaymentsElectricityPage";
+import type { ElectricityResult } from "./electricity";
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("./clipboard", () => ({ copyText: vi.fn() }));
+vi.mock("./logical-navigation", () => ({ useLogicalNavigation: () => ({ replace: vi.fn() }) }));
+vi.mock("recharts", async () => {
+  const React = await import("react");
+  const Container = ({ children }: { children: React.ReactNode }) =>
+    React.createElement("div", null, children);
+  return {
+    ResponsiveContainer: Container,
+    ComposedChart: Container,
+    Bar: () => null,
+    CartesianGrid: () => null,
+    Legend: () => null,
+    Line: () => null,
+    Tooltip: () => null,
+    XAxis: () => null,
+    YAxis: () => null,
+  };
+});
+const saved = {
+  campusId: "yuehai",
+  areaId: "yuehai-main",
+  buildingId: "b1",
+  buildingName: "山茶斋",
+  roomName: "601",
+};
+const options = [
+  {
+    id: "yuehai",
+    name: "粤海",
+    areas: [
+      {
+        id: "yuehai-main",
+        name: "粤海宿舍",
+        campusId: "yuehai",
+        provider: "sims",
+        buildings: [{ id: "b1", name: "山茶斋" }],
+      },
+    ],
+  },
+];
+const result: ElectricityResult = {
+  ...saved,
+  beginDate: "2026-09-01",
+  endDate: "2026-10-01",
+  currentRemaining: 10,
+  readings: [
+    {
+      date: "2026-09-30",
+      roomName: "601",
+      remaining: 10,
+      totalUsed: 20,
+      totalPurchased: 30,
+      dailyUsed: 2,
+      dailyPurchased: 0,
+    },
+  ],
+  summary: {
+    totalUsed: 20,
+    dailyAverage: 2,
+    validDays: 10,
+    predictionDailyAverage: 2,
+    estimatedDaysLeft: 5,
+    observedDate: "2026-09-30",
+    expired: false,
+    warningReason: null,
+  },
+  recharges: [{ time: "2026-09-29", kwh: 10, yuan: 8.5, source: "微信", sourceKind: "channel" }],
+  rechargeError: null,
+};
+function mock(extra: (command: string) => unknown = () => undefined) {
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    const override = extra(command);
+    if (override !== undefined) return override;
+    if (command === "get_electricity_constants") return { yuanPerKwh: 0.61 };
+    if (command === "get_electricity_options") return options;
+    if (command === "get_electricity_settings") return saved;
+    if (command === "query_electricity") return result;
+    if (command === "export_electricity_settings") return "配置码";
+    return null;
+  });
+}
+beforeEach(() => {
+  vi.clearAllMocks();
+  mock();
+});
+afterEach(cleanup);
+it("requests backend-owned dates, shows converted balance and preserves actual recharge amount", async () => {
+  render(<CampusPaymentsElectricityPage />);
+  expect(await screen.findByText("折算余额 6.10 元")).toBeInTheDocument();
+  expect(invoke).toHaveBeenCalledWith("query_electricity", { input: saved });
+  expect(screen.queryByLabelText("查询日期范围")).not.toBeInTheDocument();
+  expect(screen.getByRole("grid", { name: "充值记录" })).toHaveTextContent("8.50");
+  fireEvent.click(screen.getByRole("button", { name: "切换为电费" }));
+  expect(screen.getByRole("grid", { name: "用电记录" })).toHaveTextContent("1.22");
+});
+it("copies exported configuration and offers manual fallback on clipboard failure", async () => {
+  vi.mocked(copyText).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+  render(<CampusPaymentsElectricityPage />);
+  const button = await screen.findByRole("button", { name: "导出宿舍配置并复制" });
+  await waitFor(() => expect(button).toBeEnabled());
+  fireEvent.click(button);
+  expect(await screen.findByText("宿舍配置已复制。")).toBeInTheDocument();
+  expect(copyText).toHaveBeenCalledWith("配置码");
+  fireEvent.click(button);
+  expect(await screen.findByLabelText("可复制的宿舍配置码")).toHaveValue("配置码");
+});
+it("imports into the draft without saving, rejects invalid imports without replacing the draft", async () => {
+  const imported = { ...saved, roomName: "602" };
+  mock((command) => (command === "import_electricity_settings" ? imported : undefined));
+  render(<CampusPaymentsElectricityPage />);
+  fireEvent.click(await screen.findByRole("button", { name: "修改宿舍配置" }));
+  fireEvent.change(screen.getByLabelText("宿舍配置码"), { target: { value: "配置码" } });
+  fireEvent.click(screen.getByRole("button", { name: "快捷导入宿舍配置" }));
+  await waitFor(() => expect(screen.getByRole("textbox", { name: "宿舍号" })).toHaveValue("602"));
+  expect(
+    vi.mocked(invoke).mock.calls.some(([command]) => command === "save_electricity_settings"),
+  ).toBe(false);
+  mock((command) =>
+    command === "import_electricity_settings" ? Promise.reject("配置码格式错误") : undefined,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "快捷导入宿舍配置" }));
+  expect(await screen.findByText("配置码格式错误")).toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "宿舍号" })).toHaveValue("602");
+});
+it("retries only recharge data while keeping usage details visible", async () => {
+  mock((command) =>
+    command === "query_electricity"
+      ? { ...result, recharges: [], rechargeError: "充值服务暂不可用" }
+      : command === "query_electricity_recharges"
+        ? result.recharges
+        : undefined,
+  );
+  render(<CampusPaymentsElectricityPage />);
+  fireEvent.click(await screen.findByRole("button", { name: "重试充值记录" }));
+  expect(await screen.findByText("充值渠道：微信")).toBeInTheDocument();
+  expect(screen.getByLabelText("当前电量")).toHaveTextContent("10.00");
+  expect(
+    vi.mocked(invoke).mock.calls.filter(([command]) => command === "query_electricity"),
+  ).toHaveLength(1);
+});
+it("does not attach an old recharge retry to an imported room", async () => {
+  let resolve!: (value: unknown) => void;
+  const pending = new Promise((r) => {
+    resolve = r;
+  });
+  mock((command) =>
+    command === "query_electricity"
+      ? { ...result, recharges: [], rechargeError: "失败" }
+      : command === "query_electricity_recharges"
+        ? pending
+        : command === "import_electricity_settings"
+          ? { ...saved, roomName: "602" }
+          : undefined,
+  );
+  render(<CampusPaymentsElectricityPage />);
+  fireEvent.click(await screen.findByRole("button", { name: "重试充值记录" }));
+  fireEvent.click(screen.getByRole("button", { name: "修改宿舍配置" }));
+  fireEvent.change(screen.getByLabelText("宿舍配置码"), { target: { value: "新配置" } });
+  fireEvent.click(screen.getByRole("button", { name: "快捷导入宿舍配置" }));
+  await waitFor(() => expect(screen.getByRole("textbox", { name: "宿舍号" })).toHaveValue("602"));
+  resolve(result.recharges);
+  await waitFor(() =>
+    expect(screen.queryByRole("grid", { name: "充值记录" })).not.toBeInTheDocument(),
+  );
+});
