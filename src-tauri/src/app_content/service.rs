@@ -360,7 +360,8 @@ impl ContentService {
             .map(|data| {
                 data.announcements
                     .iter()
-                    .filter_map(|unit| web_url(&unit.pic).ok().map(|url| url.to_string()))
+                    .filter_map(|unit| unit.pic.as_deref())
+                    .filter_map(|pic| web_url(pic).ok().map(|url| url.to_string()))
                     .collect()
             })
             .unwrap_or_default()

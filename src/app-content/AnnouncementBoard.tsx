@@ -15,10 +15,18 @@ type LocalAnnouncement = {
 };
 type AnnouncementUnit = Announcement | LocalAnnouncement;
 
-export function AnnouncementImage({ url, title }: { url: string; title: string }) {
+export function AnnouncementImage({
+  url: sourceUrl,
+  title,
+}: {
+  url?: string | null;
+  title: string;
+}) {
+  const url = sourceUrl?.trim();
   const [image, setImage] = useState<{ url: string; src?: string; failed?: boolean }>();
   const request = useRef<{ url: string; promise: Promise<string> } | undefined>(undefined);
   useEffect(() => {
+    if (!url) return;
     let active = true;
     // Use the restricted native channel for HTTPS as well: no WebView auth cookies,
     // no CORS dependency, and identical validation/caching on desktop and Android.
@@ -48,16 +56,22 @@ export function AnnouncementImage({ url, title }: { url: string; title: string }
           src={current.src}
           alt={title + "头图"}
           loading="lazy"
-          onError={() => setImage({ url, failed: true })}
+          onError={() => setImage({ url: current.url, failed: true })}
         />
       ) : (
         <span
           className="announcement-image-placeholder"
           role="img"
-          aria-label={current?.failed ? title + "头图加载失败" : "正在加载" + title + "头图"}
+          aria-label={
+            !url
+              ? title + "暂无头图"
+              : current?.failed
+                ? title + "头图加载失败"
+                : "正在加载" + title + "头图"
+          }
         >
-          {current?.failed ? <LuImage aria-hidden="true" /> : <Spinner size="sm" />}
-          <span>{current?.failed ? "头图暂不可用" : "正在加载头图"}</span>
+          {!url || current?.failed ? <LuImage aria-hidden="true" /> : <Spinner size="sm" />}
+          <span>{!url ? "暂无头图" : current?.failed ? "头图暂不可用" : "正在加载头图"}</span>
         </span>
       )}
     </span>
@@ -78,9 +92,7 @@ function AnnouncementCard({ unit }: { unit: AnnouncementUnit }) {
             void navigation.push(unit.url);
           }}
         >
-          <span className="announcement-image-placeholder" aria-hidden="true">
-            <LuMegaphone />
-          </span>
+          <AnnouncementImage title={unit.title} />
           <span className="announcement-title-row">
             <span>{unit.title}</span>
             <LuArrowUpRight aria-hidden="true" />

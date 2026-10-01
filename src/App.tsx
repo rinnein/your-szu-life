@@ -13,6 +13,8 @@ import {
   FaCalendarDays,
   FaChartLine,
   FaClipboardList,
+  FaCircleInfo,
+  FaGear,
   FaGraduationCap,
   FaWallet,
   FaWifi,
@@ -28,35 +30,59 @@ type Feature = {
   debugOnly?: boolean;
 };
 
-const features: ReadonlyArray<Feature> = [
-  { label: "UOOC刷课", icon: FaCirclePlay, description: "优课在线视频任务", to: "/uooc" },
+const featureGroups: ReadonlyArray<{
+  id: string;
+  label: string;
+  features: ReadonlyArray<Feature>;
+}> = [
   {
-    label: "上课时间表",
-    icon: FaCalendarDays,
-    description: "查看各节次上课时间",
-    to: "/class-timetable",
-  },
-  { label: "选课", icon: FaClipboardList, description: "暂未实现 · 即将支持" },
-  { label: "培养方案检查", icon: FaGraduationCap, description: "暂未实现 · 即将支持" },
-  { label: "成绩查询", icon: FaChartLine, description: "暂未实现 · 即将支持" },
-  {
-    label: "校园网登录",
-    icon: FaWifi,
-    description: "教工区 + 宿舍区 | 自动登录",
-    to: "/campus-network",
-  },
-  {
-    label: "校园卡/电费/网费",
-    icon: FaWallet,
-    description: "快速导航入口",
-    to: "/campus-payments",
+    id: "study",
+    label: "学习",
+    features: [
+      {
+        label: "上课时间表",
+        icon: FaCalendarDays,
+        description: "查看各节次上课时间",
+        to: "/class-timetable",
+      },
+      { label: "UOOC刷课", icon: FaCirclePlay, description: "优课在线视频任务", to: "/uooc" },
+      { label: "选课", icon: FaClipboardList, description: "暂未实现 · 即将支持" },
+      { label: "培养方案检查", icon: FaGraduationCap, description: "暂未实现 · 即将支持" },
+      { label: "成绩查询", icon: FaChartLine, description: "暂未实现 · 即将支持" },
+    ],
   },
   {
-    label: "诊断日志",
-    icon: FaBug,
-    description: "查看网络诊断记录",
-    to: "/debug",
-    debugOnly: true,
+    id: "life",
+    label: "生活",
+    features: [
+      {
+        label: "校园网登录",
+        icon: FaWifi,
+        description: "教工区 + 宿舍区 | 自动登录",
+        to: "/campus-network",
+      },
+      {
+        label: "校园卡/电费/网费",
+        icon: FaWallet,
+        description: "快速导航入口",
+        to: "/campus-payments",
+      },
+    ],
+  },
+  {
+    id: "other",
+    label: "其它",
+    features: [
+      { label: "设置", icon: FaGear, description: "管理账户资料与应用设置", to: "/settings" },
+      { label: "关于", icon: FaCircleInfo, description: "应用信息与检查更新", to: "/about" },
+      {
+        label: "诊断日志",
+        icon: FaBug,
+        description: "查看网络诊断记录",
+        to: "/debug",
+        debugOnly: true,
+      },
+    ],
   },
 ];
 
@@ -259,7 +285,7 @@ export default function App() {
   const auth =
     "Authenticated" in state ? state.Authenticated : { studentId: profile?.studentId ?? "" };
   return (
-    <PageShell showAbout>
+    <PageShell>
       <header className="app-header">
         <div>
           <div className="brand-line">
@@ -311,34 +337,36 @@ export default function App() {
         </Dropdown>
       </header>
       <AnnouncementBoard />
-      <section aria-labelledby="feature-heading">
-        <h2 id="feature-heading" className="section-heading">
-          功能入口
-        </h2>
-        <div className="feature-grid">
-          {features
-            .filter(({ debugOnly }) => !debugOnly || debugEnabled)
-            .map(({ label, icon: FeatureIcon, description, to }) => (
-              <Button
-                key={label}
-                className="feature-button"
-                variant="outline"
-                onPress={() => (to ? void navigation.push(to) : setPlaceholder(label))}
-              >
-                <span className="feature-icon" aria-hidden="true">
-                  <FeatureIcon size={19} focusable="false" />
-                </span>
-                <span className="feature-copy">
-                  <strong>{label}</strong>
-                  <small>{description}</small>
-                </span>
-                <span className="feature-arrow" aria-hidden="true">
-                  →
-                </span>
-              </Button>
-            ))}
-        </div>
-      </section>
+      {featureGroups.map(({ id, label: groupLabel, features }) => (
+        <section key={id} aria-labelledby={`feature-heading-${id}`}>
+          <h2 id={`feature-heading-${id}`} className="section-heading">
+            {groupLabel}
+          </h2>
+          <div className="feature-grid">
+            {features
+              .filter(({ debugOnly }) => !debugOnly || debugEnabled)
+              .map(({ label, icon: FeatureIcon, description, to }) => (
+                <Button
+                  key={label}
+                  className="feature-button"
+                  variant="outline"
+                  onPress={() => (to ? void navigation.push(to) : setPlaceholder(label))}
+                >
+                  <span className="feature-icon" aria-hidden="true">
+                    <FeatureIcon size={19} focusable="false" />
+                  </span>
+                  <span className="feature-copy">
+                    <strong>{label}</strong>
+                    <small>{description}</small>
+                  </span>
+                  <span className="feature-arrow" aria-hidden="true">
+                    →
+                  </span>
+                </Button>
+              ))}
+          </div>
+        </section>
+      ))}
       {placeholder && (
         <Alert className="placeholder-alert" status="default" role="status">
           <Alert.Indicator />

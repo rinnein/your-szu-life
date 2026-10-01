@@ -6,7 +6,7 @@ export type ContentError = {
 
 export type Announcement = {
   title: string;
-  pic: string;
+  pic?: string | null;
 } & ({ desc: string; goto?: never } | { goto: string; desc?: never });
 
 export type UpdateInfo = {

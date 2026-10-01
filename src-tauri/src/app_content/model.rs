@@ -88,7 +88,8 @@ fn present_string<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<S
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct Announcement {
     pub title: String,
-    pub pic: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pic: Option<String>,
     #[serde(
         default,
         deserialize_with = "present_string",
@@ -123,10 +124,12 @@ impl Document for Announcements {
                     .is_some_and(|desc| desc.len() > 64 * 1024)
             {
                 return Err(ContentError::invalid(
-                    "公告需要标题、头图，以及且仅有 desc / goto 中的一项",
+                    "公告需要标题，以及且仅有 desc / goto 中的一项",
                 ));
             }
-            web_url(&unit.pic)?;
+            if let Some(pic) = unit.pic.as_deref().filter(|pic| !pic.trim().is_empty()) {
+                web_url(pic)?;
+            }
             if let Some(goto) = &unit.goto {
                 web_url(goto)?;
             }

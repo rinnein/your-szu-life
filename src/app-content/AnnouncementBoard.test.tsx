@@ -4,9 +4,10 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
-import { AnnouncementBoard } from "./AnnouncementBoard";
+import { AnnouncementBoard, AnnouncementImage } from "./AnnouncementBoard";
 import { useAppContent } from "./context";
 import type { Announcement, AppContentSnapshot, ContentError } from "./types";
+import { EMPTY_ELECTRICITY_STATUS, useElectricityMonitor } from "../electricity-monitor";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -14,6 +15,11 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 vi.mock("./context", () => ({
   useAppContent: vi.fn(),
+}));
+
+vi.mock("../electricity-monitor", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../electricity-monitor")>()),
+  useElectricityMonitor: vi.fn(),
 }));
 
 vi.mock("../logical-navigation", () => ({
@@ -75,11 +81,58 @@ function mockContent(snapshot: AppContentSnapshot, error?: string) {
 describe("AnnouncementBoard carousel", () => {
   beforeEach(() => {
     vi.mocked(invoke).mockResolvedValue("data:image/png;base64,AA==");
+    vi.mocked(useElectricityMonitor).mockReturnValue(EMPTY_ELECTRICITY_STATUS);
   });
 
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+  });
+
+  it.each([undefined, null, "", "  "])(
+    "shows a static placeholder without requesting an absent picture (%s)",
+    (pic) => {
+      mockContent(makeSnapshot([{ title: "无图公告", pic, desc: "公告正文" }]));
+      render(<AnnouncementBoard />);
+
+      expect(screen.getByRole("img", { name: "无图公告暂无头图" })).toBeInTheDocument();
+      expect(screen.queryByText("正在加载头图")).not.toBeInTheDocument();
+      expect(invoke).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: /无图公告/ }));
+      expect(screen.getByText("公告正文")).toBeInTheDocument();
+    },
+  );
+
+  it("replaces a loaded picture with a placeholder when the next item has no picture", async () => {
+    const { rerender } = render(
+      <AnnouncementImage url="https://example.com/one.png" title="有图公告" />,
+    );
+    expect(await screen.findByRole("img", { name: "有图公告头图" })).toBeInTheDocument();
+
+    rerender(<AnnouncementImage title="无图公告" />);
+
+    expect(screen.getByRole("img", { name: "无图公告暂无头图" })).toBeInTheDocument();
+    expect(screen.queryByRole("img", { name: "有图公告头图" })).not.toBeInTheDocument();
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives the local electricity notice the same image slot as a remote picture", async () => {
+    vi.mocked(useElectricityMonitor).mockReturnValue({
+      ...EMPTY_ELECTRICITY_STATUS,
+      low: true,
+      remaining: 5,
+    });
+    mockContent(makeSnapshot([announcements[0]]));
+    render(<AnnouncementBoard />);
+
+    const placeholder = screen.getByRole("img", { name: "当前剩余电量：5.00 度暂无头图" });
+    expect(placeholder.parentElement).toHaveClass("announcement-image");
+    expect(invoke).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "下一条公告" }));
+    expect((await screen.findByRole("img", { name: "公告一头图" })).parentElement).toHaveClass(
+      "announcement-image",
+    );
   });
 
   it("renders one announcement at a time and switches with controls and indicators", () => {

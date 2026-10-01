@@ -295,15 +295,17 @@ describe("HeroUI frontend smoke tests", () => {
     renderRouterApp();
     const accountTrigger = await screen.findByRole("button", { name: "打开账户菜单" });
     expect(accountTrigger.querySelector('[data-slot="avatar"]')).not.toBeInTheDocument();
-    expect(document.querySelectorAll(".feature-icon svg")).toHaveLength(7);
+    expect(document.querySelectorAll(".feature-icon svg")).toHaveLength(9);
     for (const [label, description] of [
-      ["UOOC刷课", "优课在线视频任务"],
       ["上课时间表", "查看各节次上课时间"],
+      ["UOOC刷课", "优课在线视频任务"],
       ["选课", "暂未实现 · 即将支持"],
       ["培养方案检查", "暂未实现 · 即将支持"],
       ["成绩查询", "暂未实现 · 即将支持"],
       ["校园网登录", "教工区 + 宿舍区 | 自动登录"],
       ["校园卡/电费/网费", "快速导航入口"],
+      ["设置", "管理账户资料与应用设置"],
+      ["关于", "应用信息与检查更新"],
     ]) {
       expect(screen.getByRole("button", { name: new RegExp(`^${label}`) })).toHaveTextContent(
         description,

@@ -59,20 +59,27 @@ fn content_source_preserves_directory_path_prefix() {
 }
 
 #[test]
-fn announcements_require_title_pic_and_exactly_one_action() {
+fn announcements_allow_missing_pictures_but_require_title_and_exactly_one_action() {
     let valid = json!({
         "announcements": [
             {"title": "详情", "desc": "正文", "pic": "http://intranet.test/a.png"},
-            {"title": "外链", "goto": "https://example.com", "pic": "https://example.com/a.jpg"}
+            {"title": "外链", "goto": "https://example.com", "pic": "https://example.com/a.jpg"},
+            {"title": "缺图详情", "desc": "正文"},
+            {"title": "缺图外链", "goto": "https://example.com"},
+            {"title": "空图", "desc": "正文", "pic": ""},
+            {"title": "空白图", "desc": "正文", "pic": "  "},
+            {"title": "null 图", "desc": "正文", "pic": null}
         ]
     });
     assert!(parse_document::<Announcements>(&serde_json::to_vec(&valid).unwrap()).is_ok());
     assert!(parse_document::<Announcements>(br#"{"announcements":[]}"#).is_ok());
     for invalid in [
-        json!({"announcements":[{"title":"缺图","desc":"x"}]}),
+        json!({"announcements":[{"desc":"x"}]}),
+        json!({"announcements":[{"title":" ","desc":"x"}]}),
         json!({"announcements":[{"title":"双操作","desc":"x","goto":"https://example.com","pic":"https://example.com/a"}]}),
         json!({"announcements":[{"title":"无操作","pic":"https://example.com/a"}]}),
         json!({"announcements":[{"title":"非法图","desc":"x","pic":"file:///tmp/a"}]}),
+        json!({"announcements":[{"title":"错误图类型","desc":"x","pic":123}]}),
     ] {
         assert!(parse_document::<Announcements>(&serde_json::to_vec(&invalid).unwrap()).is_err());
     }
