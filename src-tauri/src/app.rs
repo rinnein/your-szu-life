@@ -17,7 +17,7 @@ pub(crate) fn run() {
             electricity_credentials,
         ))
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_notification::init())
+        .plugin(crate::notification::init())
         .setup(|app| {
             if let Err(error) = uooc::initialize(app.handle()) {
                 eprintln!("UOOC 服务初始化失败: {error}");

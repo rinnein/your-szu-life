@@ -5,6 +5,7 @@ mod campus_network;
 mod campus_payments;
 #[cfg(desktop)]
 mod desktop;
+mod notification;
 #[cfg(target_os = "android")]
 mod platform_tls;
 mod storage;
