@@ -62,6 +62,7 @@ abstract class ApplicationBackActivity : TauriActivity(), app.tauri.AppBackNavig
     AuthWindowBridge.created(this)
     // Required for IME insets on older Android; never pan the toolbar under
     // the status bar when focusing a field near the bottom of a portal.
+    @Suppress("DEPRECATION") // Retained for Android 7-10; modern layout uses WindowInsetsCompat.
     window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
   }
 

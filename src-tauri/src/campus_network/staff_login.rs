@@ -856,6 +856,7 @@ pub(super) fn auto_due(
     due
 }
 
+#[cfg(desktop)]
 pub(crate) fn keep_running_in_background(store: &CampusNetworkStore) -> bool {
     settings::load(store).is_ok_and(|s| {
         s.mode == StaffLoginMode::AppAuto

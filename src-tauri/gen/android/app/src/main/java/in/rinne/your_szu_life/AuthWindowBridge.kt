@@ -87,6 +87,7 @@ object AuthWindowBridge {
         dialog.window?.let { window ->
           WindowCompat.setDecorFitsSystemWindows(window, false)
           window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+          @Suppress("DEPRECATION") // Match the Activity's IME behavior on Android 7-10.
           window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
         target.setAuthenticationPresented(true)

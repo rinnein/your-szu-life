@@ -1,22 +1,23 @@
+#[cfg(not(target_os = "android"))]
+use super::{model::PageKind, urls::is_login_url};
 use super::{
-    model::{parse_observation, NoticeCode, PageKind, PageObservation},
+    model::{parse_observation, NetworkFeePortalNotice, NoticeCode, PageObservation},
     scripts::{cancel_script, page_script},
     state::{Action, CampusPaymentsStore, Phase, MANUAL_MESSAGE},
-    urls::{application_return_url, is_login_url, same_application_origin},
+    urls::{application_return_url, same_application_origin},
     PORTAL_URL,
 };
 use crate::auth;
+use std::time::Instant;
 #[cfg(not(target_os = "android"))]
-use std::thread;
-use std::{
-    sync::mpsc,
-    time::{Duration, Instant},
-};
+use std::{sync::mpsc, thread, time::Duration};
 #[cfg(target_os = "android")]
 use tauri::Webview;
 use tauri::{Manager, Url, WebviewWindow};
 
+#[cfg(not(target_os = "android"))]
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
+#[cfg(not(target_os = "android"))]
 const CALLBACK_TIMEOUT: Duration = Duration::from_millis(750);
 
 pub(super) fn local_return_url(window: &WebviewWindow) -> Result<Url, String> {
@@ -96,7 +97,7 @@ pub(super) fn open(parent: WebviewWindow) -> Result<(), String> {
             }
             window
                 .navigate(PORTAL_URL.parse().expect("fixed portal URL"))
-                .map_err(|_| "无法打开网费官网，请检查网络后重试。")?;
+                .map_err(|_| NetworkFeePortalNotice::from(NoticeCode::NavigationFailed).message)?;
         }
         #[cfg(not(target_os = "android"))]
         thread::spawn(move || run(window, generation));
@@ -178,6 +179,7 @@ fn cancel_matching(app: &tauri::AppHandle, expected_generation: Option<u64>) -> 
 
 /// Queue under the runtime lock, but never hold it while waiting for a native
 /// callback. Only synchronous page-check JSON is evaluated, not a Promise.
+#[cfg(not(target_os = "android"))]
 fn start_evaluation(window: &WebviewWindow, script: String) -> Option<mpsc::Receiver<String>> {
     let (sender, receiver) = mpsc::sync_channel(1);
     window
@@ -188,11 +190,13 @@ fn start_evaluation(window: &WebviewWindow, script: String) -> Option<mpsc::Rece
     Some(receiver)
 }
 
+#[cfg(not(target_os = "android"))]
 fn finish_evaluation(receiver: Option<mpsc::Receiver<String>>) -> Option<PageObservation> {
     let value = receiver?.recv_timeout(CALLBACK_TIMEOUT).ok()?;
     parse_observation(&value)
 }
 
+#[cfg(not(target_os = "android"))]
 fn fail(window: &WebviewWindow, generation: u64, code: NoticeCode) {
     let Some(store) = window.app_handle().try_state::<CampusPaymentsStore>() else {
         return;
@@ -234,6 +238,7 @@ fn fail(window: &WebviewWindow, generation: u64, code: NoticeCode) {
     // The credential-free return script checks those flags synchronously.
 }
 
+#[cfg(not(target_os = "android"))]
 fn check_timeout(window: &WebviewWindow, generation: u64) {
     let code = window
         .app_handle()
@@ -333,6 +338,7 @@ fn run(window: WebviewWindow, generation: u64) {
     }
 }
 
+#[cfg(not(target_os = "android"))]
 fn apply_action(window: &WebviewWindow, generation: u64, url: &Url, action: Action) -> bool {
     let Some(store) = window.app_handle().try_state::<CampusPaymentsStore>() else {
         return false;

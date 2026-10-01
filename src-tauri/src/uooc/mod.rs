@@ -640,6 +640,7 @@ fn service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
         .cloned()
         .ok_or("UOOC 服务尚未初始化".into())
 }
+#[cfg(desktop)]
 pub(crate) fn keep_running(app: &tauri::AppHandle) -> bool {
     service(app).is_ok_and(|s| {
         let r = s.runtime.lock().unwrap();

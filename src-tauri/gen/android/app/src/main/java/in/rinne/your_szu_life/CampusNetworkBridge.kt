@@ -140,10 +140,15 @@ object CampusNetworkBridge {
     }
     val defaultIpv4 = defaultLinkProperties?.let(::ipv4Addresses).orEmpty()
 
+    // Keep a synchronous association snapshot, including Wi-Fi that Android
+    // has not selected as its validated default network.
+    @Suppress("DEPRECATION")
     val wifiInfo = runCatching {
       (context.getSystemService(Context.WIFI_SERVICE) as? WifiManager)?.connectionInfo
     }.getOrNull()
     val wifiAssociated = wifiInfo?.supplicantState == SupplicantState.COMPLETED
+    // activeNetwork alone misses captive campus Wi-Fi while cellular is default.
+    @Suppress("DEPRECATION")
     val networks = runCatching { connectivity.allNetworks.toList() }.getOrDefault(emptyList())
     val wifiCandidates = networks.mapNotNull { network ->
       val capabilities = runCatching { connectivity.getNetworkCapabilities(network) }.getOrNull()
@@ -236,6 +241,8 @@ object CampusNetworkBridge {
   private fun readSsid(context: Context): String? {
     if (!canReadSsid(context)) return null
     val wifi = context.getSystemService(Context.WIFI_SERVICE) as? WifiManager ?: return null
+    // Supports API 24+ and the associated Wi-Fi even when it is not the default network.
+    @Suppress("DEPRECATION")
     return runCatching { normalizeWifiSsid(wifi.connectionInfo?.ssid) }.getOrNull()
   }
 

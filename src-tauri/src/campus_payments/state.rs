@@ -257,6 +257,7 @@ impl CampusPaymentsStore {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(super) fn cancel_generation(&self, generation: u64) -> Option<Url> {
         let mut runtime = self.runtime.lock().ok()?;
         if runtime.active.as_ref()?.generation != generation {
@@ -265,6 +266,7 @@ impl CampusPaymentsStore {
         runtime.active.take().map(|session| session.return_url)
     }
 
+    #[cfg(test)]
     pub(super) fn fail(&self, generation: u64, code: NoticeCode) -> Option<Url> {
         let mut runtime = self.runtime.lock().ok()?;
         if runtime.active.as_ref()?.generation != generation {
