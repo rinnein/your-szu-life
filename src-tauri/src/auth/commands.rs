@@ -1,5 +1,4 @@
 use super::{model::*, service, AuthStore};
-use tauri::State;
 
 #[tauri::command]
 pub(crate) async fn capture_auth_credentials(
@@ -54,24 +53,36 @@ pub(crate) async fn refresh_auth_session(app: tauri::AppHandle) -> Result<(), St
 }
 
 #[tauri::command]
-pub(crate) fn get_account_profile(
-    store: State<'_, AuthStore>,
+pub(crate) async fn get_account_profile(
+    app: tauri::AppHandle,
 ) -> Result<Option<AccountProfileView>, String> {
-    service::get_account_profile(&store)
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || {
+        service::get_account_profile(&app.state::<AuthStore>())
+    })
+    .await
+    .map_err(|_| "账户资料读取失败".to_string())?
 }
 
 #[tauri::command]
-pub(crate) fn get_user_data(store: State<'_, AuthStore>) -> Result<Option<UserDataView>, String> {
-    service::get_user_data(&store)
+pub(crate) async fn get_user_data(app: tauri::AppHandle) -> Result<Option<UserDataView>, String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || service::get_user_data(&app.state::<AuthStore>()))
+        .await
+        .map_err(|_| "账户资料读取失败".to_string())?
 }
 
 #[tauri::command]
-pub(crate) fn confirm_profile(
+pub(crate) async fn confirm_profile(
     app: tauri::AppHandle,
     input: AccountProfileInput,
-    store: State<'_, AuthStore>,
 ) -> Result<(), String> {
-    service::confirm_profile(app, input, &store)
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || {
+        service::confirm_profile(app.clone(), input, &app.state::<AuthStore>())
+    })
+    .await
+    .map_err(|_| "账户资料保存失败".to_string())?
 }
 
 #[tauri::command]

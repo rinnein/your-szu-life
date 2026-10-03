@@ -55,6 +55,7 @@ fn main() {
             "refresh_app_content",
             "get_contributors",
             "load_announcement_image",
+            "get_credential_storage_status",
             "get_auth_state",
             "refresh_auth_session",
             "get_account_profile",

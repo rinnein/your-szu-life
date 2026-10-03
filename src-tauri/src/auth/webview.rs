@@ -1,9 +1,6 @@
 use super::{
     model::AuthState,
-    probe::{
-        auth_probe_reached_verified_endpoint, auth_probe_succeeded, is_auth_login_url,
-        is_auth_profile_url,
-    },
+    probe::{auth_probe_reached_verified_endpoint, is_auth_login_url, is_auth_profile_url},
     scripts::*,
     service::{complete_authentication, credential_capture_failure},
     AuthStore,
@@ -24,7 +21,6 @@ const LOCAL_ENTRY_URL: &str = "http://tauri.localhost/";
 const LOCAL_ENTRY_URL: &str = "tauri://localhost/";
 
 const LOGIN_CAPTURE_RETRY_DELAYS_MS: &[u64] = &[100, 250, 500, 1_000, 2_000];
-const AUTH_PROBE_ATTEMPTS: usize = 40;
 const AUTH_PROBE_INTERVAL: Duration = Duration::from_millis(250);
 
 pub(super) fn resume_application_window(app: &tauri::AppHandle, store: &AuthStore) {
@@ -92,7 +88,12 @@ fn inject_login_capture(window: &tauri::Webview) {
                 }
                 (
                     flow.automatic,
-                    !flow.automatic || flow.phase == super::recovery::RecoveryPhase::Ready,
+                    !flow.automatic
+                        || matches!(
+                            flow.phase,
+                            super::recovery::RecoveryPhase::Loading
+                                | super::recovery::RecoveryPhase::Ready
+                        ),
                 )
             };
             let allows_qr_login = store
@@ -243,12 +244,20 @@ fn start_auth_probe(window: &tauri::Webview, app: &tauri::AppHandle) {
         return;
     };
 
-    let _ = window.eval(auth_probe_script());
+    let budget = store
+        .recovery
+        .lock()
+        .ok()
+        .map(|flow| flow.probe_budget(std::time::Instant::now()))
+        .unwrap_or(super::recovery::SUBMIT_TIMEOUT);
+    let _ = window.eval(auth_probe_script(generation, budget, "start"));
     let handle = app.clone();
     let probe_window = window.clone();
     let saw_verified_response = Arc::new(AtomicBool::new(false));
     thread::spawn(move || {
-        for _ in 0..AUTH_PROBE_ATTEMPTS {
+        let deadline = std::time::Instant::now() + budget;
+        let callback_pending = Arc::new(AtomicBool::new(false));
+        while std::time::Instant::now() < deadline {
             thread::sleep(AUTH_PROBE_INTERVAL);
             if !handle
                 .try_state::<AuthStore>()
@@ -257,31 +266,37 @@ fn start_auth_probe(window: &tauri::Webview, app: &tauri::AppHandle) {
                 break;
             }
             let callback_handle = handle.clone();
-            let retry_window = probe_window.clone();
+
             let verified_flag = saw_verified_response.clone();
-            let _ = probe_window.eval_with_callback(auth_probe_result_script(), move |value| {
-                if !callback_handle
-                    .try_state::<AuthStore>()
-                    .is_some_and(|store| store.auth_probe_is_current(generation))
-                {
-                    return;
-                }
-                if auth_probe_reached_verified_endpoint(&value) {
-                    verified_flag.store(true, Ordering::Release);
-                }
-                let should_retry =
-                    value == "null" || value == "undefined" || !auth_probe_succeeded(&value);
-                if value != "null" && value != "undefined" {
-                    let completion_handle = callback_handle.clone();
-                    let payload = value.clone();
-                    thread::spawn(move || {
-                        complete_authentication(completion_handle, payload, generation)
-                    });
-                }
-                if should_retry {
-                    let _ = retry_window.eval(auth_probe_script());
-                }
-            });
+            if callback_pending.swap(true, Ordering::AcqRel) {
+                continue;
+            }
+            let pending = callback_pending.clone();
+            let result = probe_window.eval_with_callback(
+                auth_probe_script(generation, budget, "poll"),
+                move |value| {
+                    pending.store(false, Ordering::Release);
+                    if !callback_handle
+                        .try_state::<AuthStore>()
+                        .is_some_and(|store| store.auth_probe_is_current(generation))
+                    {
+                        return;
+                    }
+                    if auth_probe_reached_verified_endpoint(&value) {
+                        verified_flag.store(true, Ordering::Release);
+                    }
+                    if value != "null" && value != "undefined" {
+                        let completion_handle = callback_handle.clone();
+                        let payload = value.clone();
+                        thread::spawn(move || {
+                            complete_authentication(completion_handle, payload, generation)
+                        });
+                    }
+                },
+            );
+            if result.is_err() {
+                callback_pending.store(false, Ordering::Release);
+            }
             if handle.try_state::<AuthStore>().is_some_and(|store| {
                 !matches!(
                     store.state.lock().ok().as_deref(),
@@ -343,6 +358,15 @@ pub(crate) fn on_page_load(window: &tauri::Webview, payload: &tauri::webview::Pa
         let app = window.app_handle();
         if let Some(store) = app.try_state::<AuthStore>() {
             store.cancel_auth_probe();
+        }
+        if let Some(store) = app.try_state::<AuthStore>() {
+            // A committed login document is a fresh form or a failed submission.
+            if let Ok(mut capture) = store.captured.lock() {
+                *capture = None;
+            }
+            if let Ok(mut submitted) = store.submitted_password.lock() {
+                *submitted = None;
+            }
         }
         inject_login_capture(window);
     }

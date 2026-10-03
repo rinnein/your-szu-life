@@ -139,7 +139,7 @@ export function authFailureFor(state: AuthState): AuthFailure | undefined {
   if ("CredentialStorageFailed" in state)
     return {
       title: "无法保存本机认证资料",
-      detail: "系统凭据库写入失败，未保留本次登录资料；请检查系统凭据库后重试。",
+      detail: "无法读取或保存凭据，现有存储未被当作空数据覆盖；请检查密钥环或本机文件后重试。",
       action: "重新登录",
     };
   if ("AccountMismatch" in state)
@@ -180,7 +180,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUserData(nextUserData ?? undefined);
     } catch (error) {
       console.error("读取统一认证状态失败", error);
-      setState((current) => ("Checking" in current ? { Unauthenticated: null } : current));
+      setState((current) => ("Checking" in current ? { CredentialStorageFailed: null } : current));
     }
   };
 

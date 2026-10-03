@@ -1,12 +1,14 @@
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
-const PREPARE_TIMEOUT: Duration = Duration::from_secs(15);
-const SUBMIT_TIMEOUT: Duration = Duration::from_secs(30);
+const LOAD_TIMEOUT: Duration = Duration::from_secs(120);
+const PREPARE_TIMEOUT: Duration = Duration::from_secs(30);
+pub(super) const SUBMIT_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) enum RecoveryPhase {
+    Loading,
     Ready,
     Submitted,
     Manual,
@@ -16,8 +18,11 @@ pub(super) enum RecoveryPhase {
 #[serde(rename_all = "camelCase")]
 pub(crate) enum RecoveryOperation {
     Status,
+    FormReady,
     Claim,
     Stop,
+    PasswordSubmitted,
+    DiscardPassword,
 }
 
 #[derive(Serialize)]
@@ -56,11 +61,11 @@ impl Recovery {
         self.active = true;
         self.automatic = automatic;
         self.phase = if automatic {
-            RecoveryPhase::Ready
+            RecoveryPhase::Loading
         } else {
             RecoveryPhase::Manual
         };
-        self.deadline = now + PREPARE_TIMEOUT;
+        self.deadline = now + LOAD_TIMEOUT;
     }
 
     pub fn invalidate(&mut self) {
@@ -91,6 +96,13 @@ impl Recovery {
         self.expire(now);
         match operation {
             RecoveryOperation::Status => {}
+            RecoveryOperation::PasswordSubmitted | RecoveryOperation::DiscardPassword => {}
+            RecoveryOperation::FormReady => {
+                if self.phase == RecoveryPhase::Loading {
+                    self.phase = RecoveryPhase::Ready;
+                    self.deadline = now + PREPARE_TIMEOUT;
+                }
+            }
             RecoveryOperation::Stop => self.phase = RecoveryPhase::Manual,
             RecoveryOperation::Claim => {
                 if self.phase != RecoveryPhase::Ready {
@@ -105,6 +117,14 @@ impl Recovery {
             remaining_ms: self.deadline.saturating_duration_since(now).as_millis() as u64,
         })
     }
+
+    pub fn probe_budget(&self, now: Instant) -> Duration {
+        if self.automatic && self.phase == RecoveryPhase::Submitted {
+            self.deadline.saturating_duration_since(now)
+        } else {
+            SUBMIT_TIMEOUT
+        }
+    }
 }
 
 #[cfg(test)]
@@ -112,10 +132,61 @@ mod tests {
     use super::*;
 
     #[test]
+    fn rendering_preparation_and_submission_have_independent_bounded_deadlines() {
+        for seconds in [20, 90, 119] {
+            let start = Instant::now();
+            let ready = start + Duration::from_secs(seconds);
+            let mut flow = Recovery::default();
+            flow.begin(true, start);
+            assert!(!flow.expire(ready));
+            assert!(flow.control(RecoveryOperation::Claim, ready).is_err());
+            assert_eq!(
+                flow.control(RecoveryOperation::FormReady, ready)
+                    .unwrap()
+                    .remaining_ms,
+                30000
+            );
+            assert_eq!(
+                flow.control(
+                    RecoveryOperation::FormReady,
+                    ready + Duration::from_secs(10)
+                )
+                .unwrap()
+                .remaining_ms,
+                20000
+            );
+            let submitted = ready + Duration::from_secs(29);
+            assert_eq!(
+                flow.control(RecoveryOperation::Claim, submitted)
+                    .unwrap()
+                    .remaining_ms,
+                90000
+            );
+            assert_eq!(
+                flow.probe_budget(submitted + Duration::from_secs(60))
+                    .as_secs(),
+                30
+            );
+            assert!(flow.control(RecoveryOperation::Claim, submitted).is_err());
+        }
+        let start = Instant::now();
+        let mut flow = Recovery::default();
+        flow.begin(true, start);
+        assert!(flow.expire(start + LOAD_TIMEOUT));
+        assert_eq!(
+            flow.control(RecoveryOperation::FormReady, start + LOAD_TIMEOUT)
+                .unwrap()
+                .phase,
+            RecoveryPhase::Manual
+        );
+    }
+
+    #[test]
     fn reload_and_reinjection_cannot_grant_another_submission() {
         let now = Instant::now();
         let mut flow = Recovery::default();
         flow.begin(true, now);
+        flow.control(RecoveryOperation::FormReady, now).unwrap();
         let generation = flow.generation.to_string();
         assert!(flow.matches(&generation, "0"));
         flow.control(RecoveryOperation::Claim, now).unwrap();
@@ -124,6 +195,7 @@ mod tests {
         assert!(flow.matches(&generation, "1"));
         assert!(flow.control(RecoveryOperation::Claim, now).is_err());
         flow.begin(true, now);
+        flow.control(RecoveryOperation::FormReady, now).unwrap();
         assert!(!flow.matches(&generation, "1"));
         assert!(flow.control(RecoveryOperation::Claim, now).is_ok());
     }
@@ -133,13 +205,16 @@ mod tests {
         let now = Instant::now();
         let mut flow = Recovery::default();
         flow.begin(true, now);
+        flow.control(RecoveryOperation::FormReady, now).unwrap();
         flow.control(RecoveryOperation::Stop, now).unwrap();
         assert!(flow.control(RecoveryOperation::Claim, now).is_err());
         flow.begin(true, now);
+        flow.control(RecoveryOperation::FormReady, now).unwrap();
         assert!(flow
             .control(RecoveryOperation::Claim, now + PREPARE_TIMEOUT)
             .is_err());
         flow.begin(true, now);
+        flow.control(RecoveryOperation::FormReady, now).unwrap();
         flow.control(RecoveryOperation::Claim, now).unwrap();
         assert!(!flow.expire(now + SUBMIT_TIMEOUT - Duration::from_millis(1)));
         assert!(flow.expire(now + SUBMIT_TIMEOUT));
@@ -155,6 +230,10 @@ mod tests {
         use std::sync::{Arc, Mutex};
         let flow = Arc::new(Mutex::new(Recovery::default()));
         flow.lock().unwrap().begin(true, Instant::now());
+        flow.lock()
+            .unwrap()
+            .control(RecoveryOperation::FormReady, Instant::now())
+            .unwrap();
         let workers: Vec<_> = (0..8)
             .map(|_| {
                 let flow = flow.clone();

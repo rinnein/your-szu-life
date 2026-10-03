@@ -5,6 +5,7 @@ fn command_names_match_handlers_manifest_and_local_permissions() {
     let commands: BTreeSet<_> = [
         include_str!("app_content/commands.rs"),
         include_str!("auth/commands.rs"),
+        include_str!("storage/commands.rs"),
         include_str!("campus_network/commands.rs"),
         include_str!("campus_payments/commands.rs"),
         include_str!("uooc/commands.rs"),

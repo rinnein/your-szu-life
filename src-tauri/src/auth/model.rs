@@ -48,6 +48,22 @@ pub(crate) struct CapturedCredentials {
     pub(crate) password: String,
 }
 
+pub(super) fn verified_password_update<'a>(
+    saved_student_id: &str,
+    saved_campus_card: Option<&str>,
+    verified_student_id: &str,
+    submitted: Option<&'a CapturedCredentials>,
+) -> Option<&'a str> {
+    submitted
+        .filter(|capture| {
+            saved_student_id == verified_student_id
+                && (capture.identifier == saved_student_id
+                    || Some(capture.identifier.as_str()) == saved_campus_card)
+                && !capture.password.is_empty()
+        })
+        .map(|capture| capture.password.as_str())
+}
+
 /// Exists only while the official login page is being prepared. This is
 /// serialized directly into an `eval` script for the trusted official login
 /// document, never into a command result, event, log, or local app state.

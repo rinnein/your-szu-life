@@ -77,7 +77,7 @@ pub(super) fn complete_authentication(app: tauri::AppHandle, payload: String, ge
         .map(|attempt| attempt.clone())
         .unwrap_or(AuthAttempt::None);
     let captured = store
-        .captured
+        .submitted_password
         .lock()
         .ok()
         .and_then(|mut captured| captured.take());
@@ -100,6 +100,14 @@ pub(super) fn complete_authentication(app: tauri::AppHandle, payload: String, ge
             if authenticated_name.is_some() {
                 profile.name = authenticated_name.clone();
             }
+            if let Some(password) = verified_password_update(
+                &profile.student_id,
+                Some(&profile.campus_card_number),
+                &student_id,
+                captured.as_ref(),
+            ) {
+                profile.password = password.to_owned();
+            }
             Completion::Existing(profile)
         }
         (_, Some(mut pending), AuthAttempt::InitialSetup) => {
@@ -111,6 +119,11 @@ pub(super) fn complete_authentication(app: tauri::AppHandle, payload: String, ge
             }
             if authenticated_name.is_some() {
                 pending.name = authenticated_name.clone();
+            }
+            if let Some(password) =
+                verified_password_update(&pending.student_id, None, &student_id, captured.as_ref())
+            {
+                pending.password = password.to_owned();
             }
             Completion::Pending(pending)
         }
@@ -296,8 +309,24 @@ pub(super) fn control_auth_recovery(
         .session_operations
         .lock()
         .map_err(|_| "会话操作锁失败")?;
-    validate_recovery_page(&window, generation, document_id, store)?
-        .control(operation, Instant::now())
+    let mut flow = validate_recovery_page(&window, generation, document_id, store)?;
+    match operation {
+        super::recovery::RecoveryOperation::PasswordSubmitted => {
+            let capture = store
+                .captured
+                .lock()
+                .map_err(|_| "状态锁失败")?
+                .clone()
+                .ok_or("缺少本次登录凭据")?;
+            *store.submitted_password.lock().map_err(|_| "状态锁失败")? = Some(capture);
+        }
+        super::recovery::RecoveryOperation::DiscardPassword => {
+            *store.captured.lock().map_err(|_| "状态锁失败")? = None;
+            *store.submitted_password.lock().map_err(|_| "状态锁失败")? = None;
+        }
+        _ => {}
+    }
+    flow.control(operation, Instant::now())
 }
 
 pub(super) fn get_auth_state(
@@ -315,10 +344,9 @@ pub(super) fn get_auth_state(
 
     let profile = store.credentials.load_profile()?;
     let pending = store.credentials.load_pending()?;
-    // A missing or unreadable session must not delay local account startup.
-    // The background refresh can recover it once the network and keyring are
-    // available again.
-    let session = store.credentials.load_session().unwrap_or(None);
+    // Missing sessions can be refreshed in the background. Unreadable storage
+    // must not be interpreted as expiry or overwritten with a new session.
+    let session = store.credentials.load_session()?;
     let legacy_session = session
         .as_ref()
         .is_some_and(|session| !session.can_restore());
@@ -375,11 +403,14 @@ pub(super) fn refresh_auth_session(app: tauri::AppHandle) -> Result<(), String> 
         .lock()
         .map_err(|_| "状态锁失败")?
         .clone()
-        .or(store.credentials.load_profile()?);
+        .map_or_else(
+            || store.credentials.load_profile(),
+            |profile| Ok(Some(profile)),
+        )?;
     let Some(profile) = profile else {
         return Ok(());
     };
-    let session = store.credentials.load_session().unwrap_or(None);
+    let session = store.credentials.load_session()?;
     start_session_refresh(app.clone(), profile.student_id, session);
     Ok(())
 }
@@ -438,7 +469,10 @@ pub(super) fn get_account_profile(store: &AuthStore) -> Result<Option<AccountPro
         .lock()
         .map_err(|_| "状态锁失败")?
         .clone()
-        .or(store.credentials.load_profile()?);
+        .map_or_else(
+            || store.credentials.load_profile(),
+            |profile| Ok(Some(profile)),
+        )?;
     Ok(profile.as_ref().map(profile_view))
 }
 
@@ -448,13 +482,22 @@ pub(super) fn get_user_data(store: &AuthStore) -> Result<Option<UserDataView>, S
         .lock()
         .map_err(|_| "状态锁失败")?
         .clone()
-        .or(store.credentials.load_profile()?);
+        .map_or_else(
+            || store.credentials.load_profile(),
+            |profile| Ok(Some(profile)),
+        )?;
+    if profile.is_some() {
+        return Ok(user_data_view(profile.as_ref(), None));
+    }
     let pending = store
         .pending
         .lock()
         .map_err(|_| "状态锁失败")?
         .clone()
-        .or(store.credentials.load_pending()?);
+        .map_or_else(
+            || store.credentials.load_pending(),
+            |pending| Ok(Some(pending)),
+        )?;
     Ok(user_data_view(profile.as_ref(), pending.as_ref()))
 }
 
@@ -561,13 +604,19 @@ fn navigate_to_authentication_locked(
         .lock()
         .map_err(|_| "状态锁失败")?
         .clone()
-        .or(store.credentials.load_profile()?);
+        .map_or_else(
+            || manual_login_credentials(store, store.credentials.load_profile()),
+            |profile| Ok(Some(profile)),
+        )?;
     let pending = store
         .pending
         .lock()
         .map_err(|_| "状态锁失败")?
         .clone()
-        .or(store.credentials.load_pending()?);
+        .map_or_else(
+            || manual_login_credentials(store, store.credentials.load_pending()),
+            |pending| Ok(Some(pending)),
+        )?;
     store.reset_auth_flow_guards();
     let prefill = login_form_prefill(profile.as_ref(), pending.as_ref());
     let automatic = profile
@@ -584,24 +633,37 @@ fn navigate_to_authentication_locked(
     *store.state.lock().map_err(|_| "状态锁失败")? = AuthState::Authenticating;
     *store.attempt.lock().map_err(|_| "状态锁失败")? = attempt;
     *store.captured.lock().map_err(|_| "状态锁失败")? = None;
+    *store.submitted_password.lock().map_err(|_| "状态锁失败")? = None;
     *store.login_prefill.lock().map_err(|_| "状态锁失败")? = prefill;
-    store
-        .recovery
-        .lock()
-        .map_err(|_| "状态锁失败")?
-        .begin(automatic, Instant::now());
     store.credentials.delete_session()?;
     if clear_webview_session(&app).is_err() {
         set_terminal_state(&app, &store, AuthState::SessionCaptureFailed);
         return Ok(());
     }
     super::webview::show_authentication_window(app, store)?;
+    store
+        .recovery
+        .lock()
+        .map_err(|_| "状态锁失败")?
+        .begin(automatic, Instant::now());
     window
         .navigate(authentication_url(user_agent))
         .map_err(|error| error.to_string())?;
     emit_state(&app, AuthState::Authenticating);
     super::webview::start_recovery_deadline(app, store);
     Ok(())
+}
+
+// Explicitly opening login may start with unreadable keyring credentials when
+// the authorized file backend is usable. Corrupt files never take this path.
+fn manual_login_credentials<T>(
+    _store: &AuthStore,
+    result: Result<Option<T>, String>,
+) -> Result<Option<T>, String> {
+    match result {
+        Err(error) if error == crate::storage::CREDENTIALS_UNAVAILABLE => Ok(None),
+        result => result,
+    }
 }
 
 pub(super) fn begin_authentication(
@@ -626,6 +688,7 @@ pub(super) fn logout(app: tauri::AppHandle, store: &AuthStore) -> Result<(), Str
     *store.profile.lock().map_err(|_| "状态锁失败")? = None;
     *store.pending.lock().map_err(|_| "状态锁失败")? = None;
     *store.captured.lock().map_err(|_| "状态锁失败")? = None;
+    *store.submitted_password.lock().map_err(|_| "状态锁失败")? = None;
     *store.login_prefill.lock().map_err(|_| "状态锁失败")? = None;
     *store.attempt.lock().map_err(|_| "状态锁失败")? = AuthAttempt::None;
     *store.state.lock().map_err(|_| "状态锁失败")? = AuthState::Unauthenticated;

@@ -16,6 +16,7 @@ pub struct AuthStore {
     pub(super) profile: Mutex<Option<StoredAccountProfile>>,
     pub(super) pending: Mutex<Option<PendingAuthCredentials>>,
     pub(super) captured: Mutex<Option<CapturedCredentials>>,
+    pub(super) submitted_password: Mutex<Option<CapturedCredentials>>,
     pub(super) login_prefill: Mutex<Option<LoginFormPrefill>>,
     pub(super) resume_url: Mutex<Option<tauri::Url>>,
     pub(super) resume_window: Mutex<Option<String>>,
@@ -38,6 +39,7 @@ impl AuthStore {
             profile: Mutex::new(None),
             pending: Mutex::new(None),
             captured: Mutex::new(None),
+            submitted_password: Mutex::new(None),
             login_prefill: Mutex::new(None),
             resume_url: Mutex::new(None),
             resume_window: Mutex::new(None),
@@ -150,6 +152,9 @@ impl AuthStore {
         }
         if let Ok(mut attempt) = self.attempt.lock() {
             *attempt = AuthAttempt::None;
+        }
+        if let Ok(mut submitted) = self.submitted_password.lock() {
+            *submitted = None;
         }
         if let Ok(mut captured) = self.captured.lock() {
             *captured = None;

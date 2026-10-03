@@ -13,15 +13,22 @@ const flush = async () => {
 };
 
 function native(automatic = true) {
-  let phase = automatic ? "ready" : "manual";
+  let phase = automatic ? "loading" : "manual";
+  let deadline = Date.now() + 120000;
   return {
     control(operation) {
+      if (Date.now() >= deadline && phase !== "manual") phase = "manual";
+      if (operation === "formReady" && phase === "loading") {
+        phase = "ready";
+        deadline = Date.now() + 30000;
+      }
       if (operation === "claim") {
         if (phase !== "ready") throw new Error("already consumed");
         phase = "submitted";
+        deadline = Date.now() + 90000;
       }
       if (operation === "stop") phase = "manual";
-      return { phase, remainingMs: phase === "submitted" ? 30000 : 15000 };
+      return { phase, remainingMs: Math.max(0, deadline - Date.now()) };
     },
   };
 }
@@ -47,6 +54,8 @@ function page({
   window.clearTimeout = clearTimeout;
   window.setInterval = setInterval;
   window.clearInterval = clearInterval;
+  const submit = vi.fn();
+  window.HTMLFormElement.prototype.submit = submit;
   let finishCapture;
   const captured = deferCapture
     ? new Promise((resolve) => {
@@ -82,7 +91,7 @@ function page({
       `(${authLoginPage.toString()})(${JSON.stringify({ generation: "1", documentId: "1", automatic, allowQrLogin: true, prefill, ...overrides })})`,
     );
   const field = (id) => document.querySelector(`.login-main #${id}`);
-  return { window, document, official, invoke, evaluate, captcha, field, finishCapture };
+  return { window, document, official, invoke, evaluate, captcha, field, finishCapture, submit };
 }
 
 afterEach(() => {
@@ -94,6 +103,74 @@ afterEach(() => {
 });
 
 describe("official auth automatic recovery", () => {
+  it.each([20, 90, 119])("keeps a %s-second render within its own budget", async (seconds) => {
+    vi.useFakeTimers();
+    const p = page({ html: '<main class="login-main"></main>' });
+    p.evaluate();
+    await flush();
+    await vi.advanceTimersByTimeAsync(seconds * 1000);
+    p.document.querySelector("main").innerHTML = FORM;
+    await flush();
+    await vi.advanceTimersByTimeAsync(25000);
+    p.captcha();
+    await flush();
+    expect(p.official).toHaveBeenCalledTimes(1);
+    expect(p.document.body.textContent).not.toContain("超时");
+  });
+
+  it("does not restart automation when rendering completes after two minutes", async () => {
+    vi.useFakeTimers();
+    const p = page({ html: '<main class="login-main"></main>' });
+    p.evaluate();
+    await flush();
+    await vi.advanceTimersByTimeAsync(120000);
+    p.document.querySelector("main").innerHTML = FORM;
+    await flush();
+    p.captcha();
+    await flush();
+    expect(p.official).not.toHaveBeenCalled();
+    expect(p.field("password").value).toBe("");
+  });
+
+  it("confirms a password submission only after official validation reaches the form", async () => {
+    const p = page();
+    p.official.mockImplementation(() => p.field("pwdFromId").submit());
+    p.evaluate();
+    await flush();
+    p.captcha();
+    await flush();
+    expect(p.invoke).toHaveBeenCalledWith(
+      "control_auth_recovery",
+      expect.objectContaining({ operation: "passwordSubmitted" }),
+    );
+    expect(p.submit).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not confirm a rejected password, and clears it before a QR switch", async () => {
+    vi.useFakeTimers();
+    const p = page();
+    p.evaluate();
+    await flush();
+    p.captcha();
+    await flush();
+    expect(p.submit).not.toHaveBeenCalled();
+    expect(p.invoke.mock.calls.some(([, args]) => args.operation === "passwordSubmitted")).toBe(
+      false,
+    );
+    const tab = p.document.createElement("button");
+    tab.id = "qrLoginSpan";
+    p.document.body.append(tab);
+    const switched = vi.fn(() => {
+      expect(p.invoke).toHaveBeenCalledWith(
+        "control_auth_recovery",
+        expect.objectContaining({ operation: "discardPassword" }),
+      );
+    });
+    tab.addEventListener("click", switched);
+    tab.click();
+    await flush();
+    expect(switched).toHaveBeenCalledTimes(1);
+  });
   it.each(["m-account", "pwd_login"])(
     "uses only the active %s form and captures before official submission",
     async (layout) => {
@@ -222,7 +299,7 @@ describe("official auth automatic recovery", () => {
       p.captcha();
       await flush();
     }
-    await vi.advanceTimersByTimeAsync(submitted ? 30000 : 15000);
+    await vi.advanceTimersByTimeAsync(submitted ? 90000 : 30000);
     expect(p.document.body.textContent).toContain("超时");
     expect(p.official).toHaveBeenCalledTimes(submitted ? 1 : 0);
     await vi.advanceTimersByTimeAsync(30000);

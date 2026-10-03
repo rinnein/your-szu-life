@@ -12,6 +12,7 @@ use std::sync::Arc;
 use tauri_plugin_keyring_store::KeyringStore;
 
 const SERVICE_NAME: &str = "in.rinne.your-szu-life";
+pub(crate) const CREDENTIALS_UNAVAILABLE: &str = "系统密钥环暂时不可用";
 
 pub(crate) type SharedCredentialStore = Arc<dyn CredentialStore>;
 
@@ -49,6 +50,9 @@ impl SecretKey {
 }
 
 pub(crate) trait CredentialStore: Send + Sync {
+    fn storage_status(&self) -> CredentialStorageStatus {
+        CredentialStorageStatus::system()
+    }
     fn load_uooc_ai(&self) -> Result<Option<String>, String>;
     fn save_uooc_ai(&self, value: &String) -> Result<(), String>;
     fn load_uooc_session(&self) -> Result<Option<String>, String>;
@@ -80,15 +84,96 @@ pub(crate) trait CredentialStore: Send + Sync {
     fn save_electricity_monitor(&self, record: &ElectricityMonitorRecord) -> Result<(), String>;
 }
 
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CredentialStorageStatus {
+    pub backend: &'static str,
+    pub available: bool,
+}
+impl CredentialStorageStatus {
+    fn system() -> Self {
+        Self {
+            backend: "systemKeyring",
+            available: true,
+        }
+    }
+    #[cfg(target_os = "linux")]
+    fn file(available: bool) -> Self {
+        Self {
+            backend: "localEncryptedFile",
+            available,
+        }
+    }
+}
+
+pub(crate) mod commands;
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "linux")]
+static LINUX_STORE: std::sync::OnceLock<linux::LinuxStore> = std::sync::OnceLock::new();
+
+pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        use tauri::Manager;
+        let directory = app
+            .path()
+            .app_data_dir()
+            .map_err(|_| "无法确定凭据存储目录")?
+            .join("credentials");
+        let _ = LINUX_STORE.set(linux::LinuxStore::new(
+            directory,
+            linux::KeyringBackend { legacy: false },
+            linux::KeyringBackend { legacy: true },
+        ));
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = app;
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn linux_store() -> Result<&'static linux::LinuxStore, String> {
+    LINUX_STORE.get().ok_or_else(|| "凭据存储尚未初始化".into())
+}
+
 pub(crate) struct PlatformCredentialStore;
 
 impl PlatformCredentialStore {
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_os = "linux")]
+    fn load<T: for<'a> Deserialize<'a>>(key: SecretKey) -> Result<Option<T>, String> {
+        linux_store()?
+            .read_validated(key.name(), |raw| {
+                serde_json::from_str::<T>(raw)
+                    .map(|_| ())
+                    .map_err(|_| linux::StoreError::Corrupt)
+            })
+            .map_err(linux::StoreError::message)?
+            .map(|raw| {
+                serde_json::from_str(&raw).map_err(|_| "保存的凭据格式无效，未修改原数据".into())
+            })
+            .transpose()
+    }
+    #[cfg(target_os = "linux")]
+    fn save<T: Serialize>(key: SecretKey, value: &T) -> Result<(), String> {
+        let raw = serde_json::to_string(value).map_err(|_| "凭据格式无效")?;
+        linux_store()?
+            .write(key.name(), Some(&raw))
+            .map_err(linux::StoreError::message)
+    }
+    #[cfg(target_os = "linux")]
+    fn delete(key: SecretKey) -> Result<(), String> {
+        linux_store()?
+            .write(key.name(), None)
+            .map_err(linux::StoreError::message)
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "linux")))]
     fn entry(key: SecretKey) -> Result<keyring::Entry, String> {
         keyring::Entry::new(SERVICE_NAME, key.name()).map_err(|e| e.to_string())
     }
 
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "linux")))]
     fn load<T: for<'a> Deserialize<'a>>(key: SecretKey) -> Result<Option<T>, String> {
         match Self::entry(key)?.get_password() {
             Ok(value) => serde_json::from_str(&value)
@@ -98,7 +183,7 @@ impl PlatformCredentialStore {
         }
     }
 
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "linux")))]
     fn save<T: Serialize>(key: SecretKey, value: &T) -> Result<(), String> {
         let raw = serde_json::to_string(value).map_err(|e| e.to_string())?;
         Self::entry(key)?
@@ -106,7 +191,7 @@ impl PlatformCredentialStore {
             .map_err(|e| e.to_string())
     }
 
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_os = "android", target_os = "linux")))]
     fn delete(key: SecretKey) -> Result<(), String> {
         let _ = Self::entry(key)?.delete_credential();
         Ok(())
@@ -119,6 +204,19 @@ fn keyring_store() -> KeyringStore {
 }
 
 impl CredentialStore for PlatformCredentialStore {
+    fn storage_status(&self) -> CredentialStorageStatus {
+        #[cfg(target_os = "linux")]
+        {
+            linux_store()
+                .map(|store| store.status())
+                .unwrap_or_else(|_| CredentialStorageStatus::file(false))
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            CredentialStorageStatus::system()
+        }
+    }
+
     fn load_uooc_ai(&self) -> Result<Option<String>, String> {
         #[cfg(not(target_os = "android"))]
         {

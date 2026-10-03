@@ -30,6 +30,12 @@ export default function authLoginPage(options) {
   let checking = false;
   let captchaChecked = false;
   let initialized = false;
+  let formReady = false;
+  let credentialReset = Promise.resolve(true);
+  let forwardingForm = false;
+  const originalFormSubmit = HTMLFormElement.prototype.submit;
+  let wrappedFormSubmit;
+  let replayingLoginMode = false;
   let ticking = false;
   let observer;
   let interval;
@@ -73,6 +79,8 @@ export default function authLoginPage(options) {
     window.jQuery?.(document).off(".szuAuthRecovery");
     if (window.startLogin === wrappedStartLogin) window.startLogin = originalStartLogin;
     candidateCapture = null;
+    if (HTMLFormElement.prototype.submit === wrappedFormSubmit)
+      HTMLFormElement.prototype.submit = originalFormSubmit;
   };
   window.__SZU_AUTH_LOGIN__ = { generation, documentId, stop, dispose };
   const autofilledForms = new WeakSet();
@@ -185,7 +193,15 @@ export default function authLoginPage(options) {
     if (!account.value.trim() || !password.value) return null;
     return { identifier: account.value.trim(), password: password.value };
   };
+  const discardPassword = () => {
+    candidateCapture = null;
+    credentialReset = control("discardPassword").then(
+      () => true,
+      () => false,
+    );
+  };
   const captureCandidate = async () => {
+    if (!(await credentialReset)) return false;
     const capture = prepare();
     if (!capture) return false;
 
@@ -199,6 +215,27 @@ export default function authLoginPage(options) {
     if (!captured && candidateCapture?.key === key) candidateCapture = null;
     return captured;
   };
+  const submitPasswordForm = async (form) => {
+    if (forwardingForm || disposed) return;
+    forwardingForm = true;
+    const version = stopVersion;
+    try {
+      await control("passwordSubmitted");
+      if (!disposed && version === stopVersion && form === loginForm() && form.isConnected) {
+        originalFormSubmit.call(form);
+      }
+    } catch {
+      stop("未能保存登录提交状态，请手动重试。");
+    } finally {
+      forwardingForm = false;
+    }
+  };
+  wrappedFormSubmit = function (...args) {
+    if (!isActiveLoginForm(this)) return originalFormSubmit.apply(this, args);
+    if (allowOfficialSubmit) void submitPasswordForm(this);
+    else void bridgeSubmit();
+  };
+  HTMLFormElement.prototype.submit = wrappedFormSubmit;
   const continueOfficialLogin = (button) => {
     if (!button || button !== loginButton() || typeof window.startLogin !== "function") {
       throw new Error("active login button or startLogin unavailable");
@@ -331,6 +368,7 @@ export default function authLoginPage(options) {
         ),
       ].some((element) => visible(element) && element.textContent.trim())
     ) {
+      discardPassword();
       stop("官方页面提示登录异常，请检查后手动继续。");
       return true;
     }
@@ -380,11 +418,32 @@ export default function authLoginPage(options) {
       if (
         !visible(form) ||
         !visible(button) ||
+        !visible(accountInput()) ||
+        !visible(passwordInput()) ||
+        accountInput()?.disabled ||
+        passwordInput()?.disabled ||
         button.disabled ||
         document.readyState === "loading" ||
-        typeof window.startLogin !== "function"
+        typeof window.startLogin !== "function" ||
+        (automatic &&
+          !formReady &&
+          (typeof window.checkNeedCaptcha !== "function" || typeof window.jQuery !== "function"))
       )
         return;
+      if (automatic && !formReady) {
+        const status = await control("formReady");
+        if (disposed || manual) return;
+        if (status.phase !== "ready") {
+          stop();
+          return;
+        }
+        formReady = true;
+        clearTimeout(deadline);
+        deadline = setTimeout(
+          () => stop("验证码检查或提交准备超时，请手动继续。"),
+          status.remainingMs,
+        );
+      }
       applySavedCredentials();
       prepare();
       if (!automatic || submitting) return;
@@ -394,6 +453,8 @@ export default function authLoginPage(options) {
       // persists across replacement documents and failed-login redirects.
       automatic = false;
       await bridgeSubmit(true);
+    } catch {
+      stop("认证准备未完成，请手动继续。");
     } finally {
       ticking = false;
     }
@@ -425,24 +486,52 @@ export default function authLoginPage(options) {
         event.stopImmediatePropagation();
         return;
       }
-      if (isActiveLoginForm(event.target)) intercept(event);
+      if (isActiveLoginForm(event.target)) {
+        if (allowOfficialSubmit) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          void submitPasswordForm(event.target);
+        } else intercept(event);
+      }
     },
     true,
   );
   listen("input", (event) => {
-    if (!applyingCredentials && isActiveFormTarget(event.target)) stop("已切换为手动登录。");
+    if (!applyingCredentials && isActiveFormTarget(event.target)) {
+      discardPassword();
+      stop("已切换为手动登录。");
+    }
   });
   listen("change", (event) => {
-    if (!applyingCredentials && isActiveFormTarget(event.target)) stop("已切换为手动登录。");
+    if (!applyingCredentials && isActiveFormTarget(event.target)) {
+      discardPassword();
+      stop("已切换为手动登录。");
+    }
   });
   listen("click", (event) => {
+    if (replayingLoginMode) return;
     if (
       event.target instanceof Element &&
       event.target.closest(
         "#pwdLoginSpan, #phoneLoginSpan, #fidoLoginSpan, #qrLoginSpan, #qrLogin_a, #qrCodeA, #qrLoginForm",
       )
     ) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const target = event.target.closest(
+        "#pwdLoginSpan, #phoneLoginSpan, #fidoLoginSpan, #qrLoginSpan, #qrLogin_a, #qrCodeA, #qrLoginForm",
+      );
+      discardPassword();
       stop("已切换为手动登录。");
+      void credentialReset.then((accepted) => {
+        if (!accepted || disposed || !target?.isConnected) return;
+        replayingLoginMode = true;
+        try {
+          target.click();
+        } finally {
+          replayingLoginMode = false;
+        }
+      });
     }
   });
   const unload = () => dispose();
@@ -451,7 +540,8 @@ export default function authLoginPage(options) {
   void control("status")
     .then((status) => {
       if (disposed) return;
-      automatic = status.phase === "ready";
+      automatic = status.phase === "loading" || status.phase === "ready";
+      formReady = status.phase === "ready";
       // An existing recovery already submitted or handed off on another page.
       if (options.automatic && !automatic) {
         manual = true;
@@ -463,7 +553,10 @@ export default function authLoginPage(options) {
         );
       }
       if (automatic)
-        deadline = setTimeout(() => stop("登录页面准备超时，请手动继续。"), status.remainingMs);
+        deadline = setTimeout(
+          () => stop("登录页面加载或准备超时，请手动继续。"),
+          status.remainingMs,
+        );
       initialized = true;
       observer = new MutationObserver(() => {
         void refreshLoginForm();

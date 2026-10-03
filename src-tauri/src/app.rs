@@ -19,6 +19,7 @@ pub(crate) fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(crate::notification::init())
         .setup(|app| {
+            crate::storage::initialize(app.handle())?;
             if let Err(error) = uooc::initialize(app.handle()) {
                 eprintln!("UOOC 服务初始化失败: {error}");
             }
@@ -50,6 +51,7 @@ pub(crate) fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            crate::storage::commands::get_credential_storage_status,
             uooc::commands::get_uooc_snapshot,
             uooc::commands::get_uooc_ai_config,
             uooc::commands::save_uooc_ai_config,

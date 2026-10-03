@@ -256,6 +256,38 @@ fn reauthentication_prefill_uses_saved_profile_or_pending_credentials() {
 }
 
 #[test]
+fn only_a_submitted_password_for_the_verified_existing_account_can_replace_the_secret() {
+    let mut capture = CapturedCredentials {
+        identifier: "1234567890".into(),
+        password: "corrected-test-password".into(),
+    };
+    assert_eq!(
+        verified_password_update("1234567890", Some("123456"), "1234567890", Some(&capture)),
+        Some("corrected-test-password")
+    );
+    assert_eq!(
+        verified_password_update("1234567890", Some("123456"), "9999999999", Some(&capture)),
+        None
+    );
+    // QR success has no confirmed password submission, even if a prior form
+    // captured a password before the user switched methods.
+    assert_eq!(
+        verified_password_update("1234567890", Some("123456"), "1234567890", None),
+        None
+    );
+    capture.identifier = "123456".into();
+    assert!(
+        verified_password_update("1234567890", Some("123456"), "1234567890", Some(&capture))
+            .is_some()
+    );
+    capture.password.clear();
+    assert!(
+        verified_password_update("1234567890", Some("123456"), "1234567890", Some(&capture))
+            .is_none()
+    );
+}
+
+#[test]
 fn remote_credential_capture_capability_matches_authserver_page_origin() {
     let capability = include_str!("../../capabilities/authserver-credential-capture.json");
     // Tauri evaluates remote IPC against the document origin it reports
@@ -280,13 +312,6 @@ fn login_script_serializes_credentials_and_native_flow_identity() {
     assert_eq!(options["automatic"], true);
     assert!(!script.contains("export default"));
     assert!(auth_login_capture_script(false, None, 1, 1, false).contains("\"prefill\":null"));
-}
-
-#[test]
-fn probe_result_script_consumes_each_result_once() {
-    let script = auth_probe_result_script();
-    assert!(script.contains("window.__SZU_AUTH_PROBE__=null"));
-    assert!(script.contains("||null"));
 }
 
 #[test]

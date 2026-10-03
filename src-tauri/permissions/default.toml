@@ -22,6 +22,7 @@ permissions = [
   "allow-refresh-app-content",
   "allow-get-contributors",
   "allow-load-announcement-image",
+  "allow-get-credential-storage-status",
   "allow-get-auth-state",
   "allow-refresh-auth-session",
   "allow-get-account-profile",
