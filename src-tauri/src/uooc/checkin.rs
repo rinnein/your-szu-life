@@ -1,5 +1,5 @@
 use super::{
-    checkin_view,
+    client::{CourseSignin, Error},
     model::SessionStatus,
     progress::{Attendance, CourseProgress},
     Runtime, Service,
@@ -16,19 +16,36 @@ use tokio_util::sync::CancellationToken;
 #[serde(rename_all = "camelCase")]
 pub(crate) enum CheckinStatus {
     Queued,
-    Loading,
+    Submitting,
     Verifying,
     Succeeded,
     Skipped,
     Cancelled,
     Failed,
 }
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum CheckinSource {
+    Automatic,
+    Manual,
+}
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum Outcome {
+    Changed,
+    AlreadySatisfied,
+    NotRequired,
+    AlreadySigned,
+    Unchanged,
+}
+
+const POLL_INTERVAL: Duration = Duration::from_secs(2);
+const TIMEOUT: Duration = Duration::from_secs(60);
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CheckinState {
     pub id: String,
     pub status: CheckinStatus,
-    pub visible: bool,
+    pub source: CheckinSource,
     pub message: String,
     pub updated_at_ms: i64,
 }
@@ -38,8 +55,7 @@ pub(super) struct Job {
     pub cid: String,
     pub account: String,
     pub epoch: u64,
-    pub visible: bool,
-    pub parent: String,
+    pub source: CheckinSource,
     pub cancel: CancellationToken,
 }
 #[derive(Default)]
@@ -47,8 +63,8 @@ pub(super) struct Checkins {
     pub queue: VecDeque<Job>,
     pub active: Option<Job>,
     pub pumping: bool,
-    pub attempted: HashSet<(String, String)>,
-    pub closing: HashSet<String>,
+    pub attempted: HashSet<(String, String, chrono::NaiveDate)>,
+    pub daily_scans: HashSet<(String, chrono::NaiveDate)>,
 }
 pub(super) fn cancel_locked(runtime: &mut Runtime, ids: &[String], message: &str) {
     for job in runtime
@@ -89,13 +105,12 @@ impl Service {
             })
             .map(|c| c.id.clone())
             .collect();
-        let _ = self.enqueue_checkins(ids, false, "main".into());
+        let _ = self.enqueue_checkins(ids, CheckinSource::Automatic);
     }
     pub(super) fn enqueue_checkins(
         self: &Arc<Self>,
         ids: Vec<String>,
-        visible: bool,
-        parent: String,
+        source: CheckinSource,
     ) -> Result<(), String> {
         let start;
         {
@@ -116,6 +131,11 @@ impl Service {
             {
                 return Err("只能为开课中的课程签到".into());
             }
+            let day = super::progress::today();
+            runtime
+                .checkins
+                .attempted
+                .retain(|(_, _, date)| *date == day);
             for cid in ids {
                 if runtime
                     .checkins
@@ -128,11 +148,11 @@ impl Service {
                 {
                     continue;
                 }
-                if !visible
+                if source == CheckinSource::Automatic
                     && !runtime
                         .checkins
                         .attempted
-                        .insert((account.clone(), cid.clone()))
+                        .insert((account.clone(), cid.clone(), day))
                 {
                     continue;
                 }
@@ -141,8 +161,7 @@ impl Service {
                     cid: cid.clone(),
                     account: account.clone(),
                     epoch: runtime.epoch,
-                    visible,
-                    parent: parent.clone(),
+                    source,
                     cancel: CancellationToken::new(),
                 };
                 runtime.snapshot.checkins.insert(
@@ -150,7 +169,7 @@ impl Service {
                     CheckinState {
                         id: job.id.clone(),
                         status: CheckinStatus::Queued,
-                        visible,
+                        source: job.source,
                         message: "等待签到".into(),
                         updated_at_ms: chrono::Utc::now().timestamp_millis(),
                     },
@@ -178,7 +197,11 @@ impl Service {
     }
     fn checkin_update(&self, job: &Job, status: CheckinStatus, message: &str) {
         let mut runtime = self.runtime.lock().unwrap();
-        if runtime.epoch != job.epoch || job.cancel.is_cancelled() {
+        if runtime.epoch != job.epoch
+            || job.cancel.is_cancelled()
+            || runtime.snapshot.session != SessionStatus::Ready
+            || runtime.snapshot.user.as_ref().map(|user| &user.id) != Some(&job.account)
+        {
             return;
         }
         if let Some(state) = runtime
@@ -223,18 +246,31 @@ impl Service {
             } else {
                 tokio::select! { biased;
                     _ = job.cancel.cancelled() => Err("签到已取消".into()),
-                    result = tokio::time::timeout(Duration::from_secs(60), self.execute_checkin(&job)) => result.unwrap_or_else(|_| Err("签到超时，未获得服务端确认；可手动重试".into())),
+                    result = self.execute_checkin(&job, POLL_INTERVAL, TIMEOUT) => result,
                 }
             };
             match result {
-                Ok(true) => {
-                    self.checkin_update(&job, CheckinStatus::Succeeded, "签到成功，已由服务端确认")
-                }
-                Ok(false) => self.checkin_update(
+                Ok(Outcome::Changed) => self.checkin_update(
+                    &job,
+                    CheckinStatus::Succeeded,
+                    "签到已确认，检测到签到进度更新",
+                ),
+                Ok(Outcome::AlreadySatisfied) => self.checkin_update(
                     &job,
                     CheckinStatus::Skipped,
                     "本次无需签到，已更新课程进度",
                 ),
+                Ok(Outcome::NotRequired) => {
+                    self.checkin_update(&job, CheckinStatus::Skipped, "课程入口确认无需签到")
+                }
+                Ok(Outcome::AlreadySigned) => self.checkin_update(
+                    &job,
+                    CheckinStatus::Succeeded,
+                    "今日已签到，课程入口已确认",
+                ),
+                Ok(Outcome::Unchanged) => {
+                    self.checkin_update(&job, CheckinStatus::Failed, "未检测到签到变化，可稍后重试")
+                }
                 Err(message) => self.checkin_update(&job, CheckinStatus::Failed, &message),
             }
             {
@@ -247,101 +283,126 @@ impl Service {
                 {
                     runtime.checkins.active = None;
                 }
-                runtime.checkins.closing.remove(&job.id);
+                // A cancelled job may still have received fresh Set-Cookie headers.
+                // Never let it overwrite a newer login or another account's keyring entry.
+                if runtime.epoch == job.epoch
+                    && runtime.snapshot.session == SessionStatus::Ready
+                    && runtime
+                        .snapshot
+                        .user
+                        .as_ref()
+                        .is_some_and(|user| user.id == job.account)
+                {
+                    if let Err(error) = self.save_session(&self.client()) {
+                        runtime.snapshot.message = error;
+                    }
+                }
                 self.publish(&mut runtime);
             }
             let _ = self.sync_platform();
         }
     }
-    async fn execute_checkin(self: &Arc<Self>, job: &Job) -> Result<bool, String> {
-        let before = self
-            .fetch_progress(&job.cid, &job.cancel)
-            .await
-            .map_err(|e| e.message())?;
+    pub(super) async fn execute_checkin(
+        self: &Arc<Self>,
+        job: &Job,
+        interval: Duration,
+        timeout: Duration,
+    ) -> Result<Outcome, String> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        self.checkin_update(
+            job,
+            CheckinStatus::Verifying,
+            "检测中，正在读取最新签到进度…",
+        );
+        let before = self.checkin_progress(job, deadline).await?;
         if before.attendance != Attendance::Needed {
             return if before.attendance == Attendance::Unknown {
                 Err("签到状态未知，请刷新进度后重试".into())
             } else {
-                Ok(false)
+                Ok(Outcome::AlreadySatisfied)
             };
         }
         if !self.checkin_current(job) {
             return Err("签到已取消或账户已变化".into());
         }
+        self.checkin_update(job, CheckinStatus::Submitting, "正在提交签到…");
+        // Reserve time to verify an uncertain submission instead of resending it.
+        let submission_budget = (deadline.saturating_duration_since(tokio::time::Instant::now())
+            / 2)
+        .min(Duration::from_secs(15));
+        let submitted = tokio::time::timeout(
+            submission_budget,
+            self.client().signin(&job.cid, &job.cancel),
+        )
+        .await;
+        if !self.checkin_current(job) {
+            return Err("签到已取消或账户已变化".into());
+        }
+        let uncertain = match submitted {
+            Ok(Ok(CourseSignin::Signed)) => false,
+            Ok(Ok(marker @ (CourseSignin::NotRequired | CourseSignin::AlreadySigned))) => {
+                self.checkin_progress(job, deadline).await?;
+                return Ok(if marker == CourseSignin::NotRequired {
+                    Outcome::NotRequired
+                } else {
+                    Outcome::AlreadySigned
+                });
+            }
+            Err(_) | Ok(Err(Error::Network | Error::Invalid)) => true,
+            Ok(Err(Error::Unauthorized)) => {
+                let mut runtime = self.runtime.lock().unwrap();
+                if runtime.epoch == job.epoch
+                    && runtime.snapshot.user.as_ref().map(|user| &user.id) == Some(&job.account)
+                {
+                    Self::expire_session(&mut runtime);
+                    self.publish(&mut runtime);
+                }
+                return Err(Error::Unauthorized.message());
+            }
+            Ok(Err(error)) => return Err(format!("签到提交失败：{}", error.message())),
+        };
         self.checkin_update(
             job,
-            CheckinStatus::Loading,
-            if job.visible {
-                "正在打开官方课程页面…"
+            CheckinStatus::Verifying,
+            if uncertain {
+                "签到提交结果暂未确认，正在核对服务端进度…"
             } else {
-                "正在后台加载官方课程页面…"
+                "签到已提交，正在确认服务端进度…"
             },
         );
-        let page = checkin_view::open(self.clone(), job.clone()).await?;
-        self.verify_checkin(
-            job,
-            &before,
-            &*page,
-            Duration::from_secs(10),
-            Duration::from_secs(2),
-        )
-        .await
+        loop {
+            if tokio::time::Instant::now() >= deadline {
+                return if uncertain {
+                    Err("签到提交结果未确认，未检测到签到变化；请检查网络后重试".into())
+                } else {
+                    Ok(Outcome::Unchanged)
+                };
+            }
+            let after = self.checkin_progress(job, deadline).await?;
+            if after.confirms_checkin(&before) {
+                return Ok(Outcome::Changed);
+            }
+            tokio::select! { biased;
+                _ = job.cancel.cancelled() => return Err("签到检测已取消".into()),
+                _ = tokio::time::sleep_until((tokio::time::Instant::now() + interval).min(deadline)) => {},
+            }
+        }
     }
-    pub(super) async fn verify_checkin(
+    async fn checkin_progress(
         self: &Arc<Self>,
         job: &Job,
-        before: &CourseProgress,
-        page: &dyn checkin_view::Page,
-        settle: Duration,
-        interval: Duration,
-    ) -> Result<bool, String> {
-        loop {
-            if !self.checkin_current(job) {
-                return Err("签到已取消或账户已变化".into());
-            }
-            if page.ready().await? {
-                break;
-            }
-            tokio::time::sleep(interval).await;
+        deadline: tokio::time::Instant,
+    ) -> Result<CourseProgress, String> {
+        if !self.checkin_current(job) {
+            return Err("签到检测已取消或账户已变化".into());
         }
-        tokio::time::sleep(settle).await;
-        page.synchronize(self.clone(), job.clone()).await?;
-        self.checkin_update(job, CheckinStatus::Verifying, "等待服务端确认签到结果…");
-        loop {
-            if !self.checkin_current(job) {
-                return Err("签到已取消或账户已变化".into());
-            }
-            // Detect a closed/redirected visible window while verifying, too.
-            if !page.ready().await? {
-                tokio::time::sleep(interval).await;
-                continue;
-            }
-            let after = self
-                .fetch_progress(&job.cid, &job.cancel)
-                .await
-                .map_err(|e| e.message())?;
-            if after.confirms_checkin(before) {
-                return Ok(true);
-            }
-            tokio::time::sleep(interval).await;
+        let result = tokio::time::timeout_at(deadline, self.fetch_progress(&job.cid, &job.cancel))
+            .await
+            .map_err(|_| "签到进度查询超时，请检查网络后重试".to_owned())?
+            .map_err(|error| error.message())?;
+        if !self.checkin_current(job) {
+            return Err("签到检测已取消或账户已变化".into());
         }
-    }
-}
-pub(super) fn window_closed(service: &Arc<Service>, label: &str) {
-    let mut runtime = service.runtime.lock().unwrap();
-    if runtime.checkins.closing.remove(label) {
-        return;
-    }
-    let ids: Vec<_> = runtime
-        .checkins
-        .queue
-        .iter()
-        .chain(runtime.checkins.active.iter())
-        .filter(|job| job.id == label || (job.visible && job.parent == label))
-        .map(|job| job.cid.clone())
-        .collect();
-    if !ids.is_empty() {
-        cancel_locked(&mut runtime, &ids, "签到窗口已关闭");
-        service.publish(&mut runtime);
+        Ok(result)
     }
 }

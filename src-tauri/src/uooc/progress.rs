@@ -142,19 +142,20 @@ fn signin_date(value: Option<&Value>) -> Result<Option<NaiveDate>, ()> {
     match value {
         Some(Value::Null) => Ok(None),
         Some(Value::String(s)) if s.trim().is_empty() => Ok(None),
-        Some(Value::String(s)) => NaiveDateTime::parse_from_str(s.trim(), "%Y-%m-%d %H:%M:%S")
-            .map(|d| Some(d.date()))
-            .or_else(|_| {
-                DateTime::parse_from_rfc3339(s.trim()).map(|d| {
-                    Some(
-                        d.with_timezone(&FixedOffset::east_opt(8 * 3600).unwrap())
-                            .date_naive(),
-                    )
-                })
-            })
-            .map_err(|_| ()),
+        Some(Value::String(s)) => parse_signin_date(s).map(Some),
         _ => Err(()),
     }
+}
+fn parse_signin_date(value: &str) -> Result<NaiveDate, ()> {
+    NaiveDateTime::parse_from_str(value.trim(), "%Y-%m-%d %H:%M:%S")
+        .map(|d| d.date())
+        .or_else(|_| {
+            DateTime::parse_from_rfc3339(value.trim()).map(|d| {
+                d.with_timezone(&FixedOffset::east_opt(8 * 3600).unwrap())
+                    .date_naive()
+            })
+        })
+        .map_err(|_| ())
 }
 impl CourseProgress {
     pub fn parse(value: &Value, date: NaiveDate) -> Self {
@@ -204,11 +205,29 @@ impl CourseProgress {
         self.video.percent == Some(100.0)
     }
     pub fn confirms_checkin(&self, before: &Self) -> bool {
+        if self
+            .signin
+            .percent
+            .zip(before.signin.percent)
+            .is_some_and(|(after, before)| after < before)
+        {
+            return false;
+        }
         self.signin
-            .count
-            .zip(before.signin.count)
+            .percent
+            .zip(before.signin.percent)
             .is_some_and(|(after, before)| after > before)
-            || (self.attendance == Attendance::Today && self.signin_time != before.signin_time)
+            || self
+                .signin
+                .count
+                .zip(before.signin.count)
+                .is_some_and(|(after, before)| after > before)
+            || (self.signin_time != before.signin_time
+                && self
+                    .signin_time
+                    .as_deref()
+                    .and_then(|s| parse_signin_date(s).ok())
+                    == Some(today()))
     }
 }
 
@@ -369,7 +388,27 @@ impl Service {
         while pending.join_next().await.is_some() {}
     }
     pub(super) async fn session_ready(self: &Arc<Self>) {
-        let ids = self.snapshot().courses.into_iter().map(|c| c.id).collect();
+        let ids = {
+            let mut runtime = self.runtime.lock().unwrap();
+            if runtime.snapshot.session != SessionStatus::Ready {
+                return;
+            }
+            let Some(account) = runtime.snapshot.user.as_ref().map(|user| user.id.clone()) else {
+                return;
+            };
+            let day = today();
+            runtime
+                .checkins
+                .daily_scans
+                .retain(|(_, date)| *date == day);
+            runtime.checkins.daily_scans.insert((account, day));
+            runtime
+                .snapshot
+                .courses
+                .iter()
+                .map(|course| course.id.clone())
+                .collect()
+        };
         self.refresh_progress(ids).await;
         self.enqueue_automatic_checkins();
     }
@@ -383,6 +422,9 @@ pub(super) fn start_updates(service: &Arc<Service>) {
             let Some(service) = weak.upgrade() else {
                 break;
             };
+            // This timer belongs to the native service, not the UOOC page or video queue.
+            // On wake/resume it catches up to today's Beijing date without replaying missed days.
+            let _ = service.refresh_session(Some(today())).await;
             let ids = service
                 .runtime
                 .lock()

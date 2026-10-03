@@ -21,6 +21,7 @@ enum SecretKey {
     PendingAuth,
     AuthSession,
     UoocSession,
+    UoocAi,
     DormNetworkSettings,
     DormNetworkCredentials,
     StaffNetworkSettings,
@@ -36,6 +37,7 @@ impl SecretKey {
             Self::PendingAuth => "pending-auth",
             Self::AuthSession => "auth-session",
             Self::UoocSession => "uooc-session",
+            Self::UoocAi => "uooc-ai",
             Self::DormNetworkSettings => "dorm-network-settings",
             Self::DormNetworkCredentials => "dorm-network-credentials",
             Self::StaffNetworkSettings => "staff-network-settings",
@@ -47,6 +49,8 @@ impl SecretKey {
 }
 
 pub(crate) trait CredentialStore: Send + Sync {
+    fn load_uooc_ai(&self) -> Result<Option<String>, String>;
+    fn save_uooc_ai(&self, value: &String) -> Result<(), String>;
     fn load_uooc_session(&self) -> Result<Option<String>, String>;
     fn save_uooc_session(&self, session: &String) -> Result<(), String>;
     fn delete_uooc_session(&self) -> Result<(), String>;
@@ -115,6 +119,26 @@ fn keyring_store() -> KeyringStore {
 }
 
 impl CredentialStore for PlatformCredentialStore {
+    fn load_uooc_ai(&self) -> Result<Option<String>, String> {
+        #[cfg(not(target_os = "android"))]
+        {
+            Self::load(SecretKey::UoocAi)
+        }
+        #[cfg(target_os = "android")]
+        {
+            load_android_secret(SecretKey::UoocAi)
+        }
+    }
+    fn save_uooc_ai(&self, value: &String) -> Result<(), String> {
+        #[cfg(not(target_os = "android"))]
+        {
+            Self::save(SecretKey::UoocAi, value)
+        }
+        #[cfg(target_os = "android")]
+        {
+            save_android_secret(SecretKey::UoocAi, value)
+        }
+    }
     fn load_uooc_session(&self) -> Result<Option<String>, String> {
         #[cfg(not(target_os = "android"))]
         {

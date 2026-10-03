@@ -68,6 +68,47 @@ pub(super) async fn open(service: Arc<Service>, parent: WebviewWindow) -> Result
         (label, token, runtime.epoch)
     };
     let _ = service.sync_platform();
+    #[cfg(target_os = "android")]
+    let navigation = {
+        let owner = Arc::downgrade(&service);
+        let failure_owner = owner.clone();
+        let expected_label = label.clone();
+        let failure_label = label.clone();
+        let current = token.clone();
+        super::user_agent::AndroidNavigation::new(
+            parent.app_handle().clone(),
+            label.clone(),
+            move || {
+                if current.is_cancelled() {
+                    return false;
+                }
+                owner.upgrade().is_some_and(|service| {
+                    service.runtime.lock().ok().is_some_and(|runtime| {
+                        runtime.epoch == epoch
+                            && runtime
+                                .login
+                                .as_ref()
+                                .is_some_and(|attempt| attempt.label == expected_label)
+                    })
+                })
+            },
+            move || {
+                if let Some(service) = failure_owner.upgrade() {
+                    let mut runtime = service.runtime.lock().unwrap();
+                    if runtime.epoch == epoch
+                        && runtime
+                            .login
+                            .as_ref()
+                            .is_some_and(|attempt| attempt.label == failure_label)
+                    {
+                        runtime.snapshot.message =
+                            "UOOC 访问模式切换失败，请关闭登录窗口后重试".into();
+                        service.publish(&mut runtime);
+                    }
+                }
+            },
+        )
+    };
     let result = (|| {
         let builder = tauri::WebviewWindowBuilder::new(
             parent.app_handle(),
@@ -75,8 +116,11 @@ pub(super) async fn open(service: Arc<Service>, parent: WebviewWindow) -> Result
             tauri::WebviewUrl::External("about:blank".parse().unwrap()),
         )
         .title("UOOC 官方登录");
+        #[cfg(not(target_os = "android"))]
+        let builder = builder.user_agent(super::user_agent::DESKTOP);
         #[cfg(target_os = "android")]
         let builder = builder
+            .on_navigation(move |url| navigation.navigate(url))
             .activity_name("FeatureActivity")
             .created_by_activity_name(parent.activity_name().map_err(|_| "无法确认 UOOC 父窗口")?);
         builder

@@ -120,6 +120,7 @@ pub(crate) enum TaskStatus {
     DryRun,
     Blocked,
     Failed,
+    AwaitingDecision,
 }
 impl TaskStatus {
     pub fn active(&self) -> bool {
@@ -156,6 +157,8 @@ pub(crate) struct CourseTask {
 pub(super) struct SavedState {
     pub settings: Settings,
     pub tasks: Vec<CourseTask>,
+    #[serde(default)]
+    pub quizzes: std::collections::BTreeMap<String, super::quiz::model::QuizState>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -173,6 +176,8 @@ pub(crate) struct Snapshot {
     pub progress: std::collections::HashMap<String, super::progress::ProgressEntry>,
     #[serde(default)]
     pub checkins: std::collections::HashMap<String, super::checkin::CheckinState>,
+    #[serde(default)]
+    pub quizzes: std::collections::BTreeMap<String, super::quiz::model::QuizState>,
 }
 impl Default for Snapshot {
     fn default() -> Self {
@@ -187,6 +192,7 @@ impl Default for Snapshot {
             logs: vec![],
             progress: Default::default(),
             checkins: Default::default(),
+            quizzes: Default::default(),
         }
     }
 }

@@ -274,6 +274,10 @@ mod tests {
             let counter = transferred.clone();
             let server = Server::bytes(move |request| {
                 assert!(!request.headers.contains_key("cookie"));
+                assert_eq!(
+                    request.headers["user-agent"],
+                    super::super::user_agent::DESKTOP
+                );
                 let (start, end) = request.headers["range"]
                     .strip_prefix("bytes=")
                     .unwrap()
@@ -289,7 +293,7 @@ mod tests {
                 )
             });
             let reader = RemoteReader::new(
-                Client::new(),
+                media_client().unwrap(),
                 format!("{}/video", server.base).parse().unwrap(),
                 CancellationToken::new(),
             )
@@ -311,14 +315,18 @@ mod tests {
         let data = movie(false, 8);
         let server = Server::bytes(move |_| (200, data.clone(), String::new()));
         let token = CancellationToken::new();
-        let mut reader =
-            RemoteReader::new(Client::new(), server.base.parse().unwrap(), token.clone()).unwrap();
+        let mut reader = RemoteReader::new(
+            media_client().unwrap(),
+            server.base.parse().unwrap(),
+            token.clone(),
+        )
+        .unwrap();
         assert!(reader.complete);
         token.cancel();
         assert!(reader.read(&mut [0; 8]).is_err());
         let server = Server::bytes(|_| (200, vec![0; LIMIT + 1], String::new()));
         assert!(RemoteReader::new(
-            Client::new(),
+            media_client().unwrap(),
             server.base.parse().unwrap(),
             CancellationToken::new()
         )
@@ -326,7 +334,7 @@ mod tests {
         let server =
             Server::bytes(|_| (206, vec![0; 20], "Content-Range: bytes 2-21/100\r\n".into()));
         assert!(RemoteReader::new(
-            Client::new(),
+            media_client().unwrap(),
             server.base.parse().unwrap(),
             CancellationToken::new()
         )
@@ -343,7 +351,7 @@ mod tests {
         let vod = b"#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:9.5,\n1.ts\n#EXTINF:8.25,\n2.ts\n#EXT-X-ENDLIST\n";
         assert_eq!(
             hls(
-                &Client::new(),
+                &media_client().unwrap(),
                 "https://example.org/video/index.m3u8".parse().unwrap(),
                 vod.to_vec(),
                 &CancellationToken::new()
@@ -363,6 +371,22 @@ mod tests {
     }
 }
 
+fn media_client() -> Result<Client, String> {
+    Client::builder()
+        .user_agent(super::user_agent::DESKTOP)
+        .timeout(Duration::from_secs(15))
+        .connect_timeout(Duration::from_secs(8))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 5 || !public_url(attempt.url()) {
+                attempt.stop()
+            } else {
+                attempt.follow()
+            }
+        }))
+        .build()
+        .map_err(|_| "无法初始化视频元数据读取器".into())
+}
+
 pub(super) async fn probe(source: String, cancel: CancellationToken) -> Result<f64, String> {
     // Blocking HTTP and the MP4 reader are both created/dropped on the blocking pool.
     tokio::task::spawn_blocking(move || {
@@ -370,18 +394,7 @@ pub(super) async fn probe(source: String, cancel: CancellationToken) -> Result<f
         if !public_url(&url) {
             return Err("不支持的视频地址".into());
         }
-        let client = Client::builder()
-            .timeout(Duration::from_secs(15))
-            .connect_timeout(Duration::from_secs(8))
-            .redirect(reqwest::redirect::Policy::custom(|attempt| {
-                if attempt.previous().len() >= 5 || !public_url(attempt.url()) {
-                    attempt.stop()
-                } else {
-                    attempt.follow()
-                }
-            }))
-            .build()
-            .map_err(|_| "无法初始化视频元数据读取器")?;
+        let client = media_client()?;
         let reader = RemoteReader::new(client.clone(), url.clone(), cancel.clone())?;
         if reader.bytes.starts_with(b"#EXTM3U") {
             let bytes = if reader.complete || reader.bytes.len() as u64 == reader.len {

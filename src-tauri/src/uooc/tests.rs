@@ -201,8 +201,9 @@ fn cookies_keep_session_and_host_only_metadata_and_reject_other_domains() {
 
 #[derive(Clone)]
 pub(super) struct Request {
+    pub method: String,
     pub path: String,
-    body: String,
+    pub body: String,
     pub headers: HashMap<String, String>,
 }
 impl Request {
@@ -298,6 +299,7 @@ fn read_request(stream: &mut TcpStream) -> Option<Request> {
                 .unwrap_or(0);
             if bytes.len() >= end + 4 + length {
                 return Some(Request {
+                    method: header.lines().next()?.split_whitespace().next()?.into(),
                     path: header.lines().next()?.split_whitespace().nth(1)?.into(),
                     body: String::from_utf8_lossy(&bytes[end + 4..end + 4 + length]).into(),
                     headers: header
@@ -323,6 +325,7 @@ async fn list_pagination_auth_and_subsection_parameters_are_preserved() {
     let observed = requests.clone();
     let server = Server::new(move |request| {
         let fields = request.fields();
+        assert_eq!(request.headers["user-agent"], user_agent::DESKTOP);
         observed.lock().unwrap().push(request.path.clone());
         if request.path.starts_with(client::LIST) {
             assert_eq!(fields["type"], "learn");
@@ -371,6 +374,32 @@ async fn list_pagination_auth_and_subsection_parameters_are_preserved() {
     let server = Server::new(|_| json!({"code":401,"msg":"not logged in"}));
     let client = Client::with_base(session::load(None).unwrap(), &server.base).unwrap();
     assert_eq!(client.courses(&cancel).await, Err(Error::Unauthorized));
+}
+
+#[tokio::test]
+async fn login_redirects_and_download_redirects_are_distinguished_without_following() {
+    for (location, expected) in [
+        ("/user/login", Error::Unauthorized),
+        ("/app/download", Error::UnexpectedRedirect),
+        (
+            "https://other.example/user/login",
+            Error::UnexpectedRedirect,
+        ),
+    ] {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed = calls.clone();
+        let server = Server::bytes(move |request| {
+            assert_eq!(request.headers["user-agent"], user_agent::DESKTOP);
+            observed.fetch_add(1, Ordering::SeqCst);
+            (302, vec![], format!("Location: {location}\r\n"))
+        });
+        let client = Client::with_base(session::load(None).unwrap(), &server.base).unwrap();
+        assert_eq!(
+            client.courses(&CancellationToken::new()).await,
+            Err(expected)
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
 }
 
 pub(super) async fn wait_finished(service: &Service) {
@@ -621,6 +650,7 @@ async fn startup_restores_only_running_courses_after_identity_and_course_checks(
         &SavedState {
             settings: Settings::default(),
             tasks: vec![task("42", true), task("43", false), task("44", true)],
+            quizzes: Default::default(),
         },
     )
     .unwrap();

@@ -92,7 +92,12 @@ pub extern "system" fn Java_in_rinne_your_1szu_1life_UoocTaskBridge_nativeContro
                 "Android 后台服务已停止或达到系统运行时限；重新打开应用后恢复",
                 Some(generation as u64),
             ),
-            2 => service.reconcile(),
+            2 => {
+                service.reconcile();
+                let _ = service
+                    .refresh_session(Some(super::progress::today()))
+                    .await;
+            }
             _ => {}
         }
     });

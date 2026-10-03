@@ -1,6 +1,13 @@
 [default]
 description = "Allows the local application UI to use application commands, including public content."
 permissions = [
+  "allow-get-uooc-ai-config",
+  "allow-save-uooc-ai-config",
+  "allow-list-uooc-ai-models",
+  "allow-save-uooc-quiz-mode",
+  "allow-save-uooc-quiz-answers",
+  "allow-control-uooc-quiz",
+  "allow-open-uooc-quiz-portal",
   "allow-get-uooc-snapshot",
   "allow-refresh-uooc-progress",
   "allow-start-uooc-checkin",

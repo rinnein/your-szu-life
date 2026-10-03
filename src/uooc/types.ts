@@ -22,7 +22,8 @@ export type UoocTaskStatus =
   | "completed"
   | "dryRun"
   | "blocked"
-  | "failed";
+  | "failed"
+  | "awaitingDecision";
 export type UoocVideo = {
   resourceId: string;
   title: string;
@@ -51,6 +52,7 @@ export type UoocSnapshot = {
   logs: string[];
   progress?: Record<string, ProgressEntry>;
   checkins?: Record<string, CheckinState>;
+  quizzes?: Record<string, QuizState>;
 };
 export type ProgressMetric = {
   percent: number | null;
@@ -89,8 +91,8 @@ export type ProgressEntry = {
 };
 export type CheckinState = {
   id: string;
-  status: "queued" | "loading" | "verifying" | "succeeded" | "skipped" | "cancelled" | "failed";
-  visible: boolean;
+  status: "queued" | "submitting" | "verifying" | "succeeded" | "skipped" | "cancelled" | "failed";
+  source: "automatic" | "manual";
   message: string;
   updatedAtMs: number;
 };
@@ -102,7 +104,7 @@ export const attendanceText: Record<Attendance, string> = {
   unknown: "签到状态未知",
 };
 export const checkinActive = (state?: CheckinState) =>
-  !!state && ["queued", "loading", "verifying"].includes(state.status);
+  !!state && ["queued", "submitting", "verifying"].includes(state.status);
 export const taskStatus: Record<UoocTaskStatus, string> = {
   queued: "等待执行",
   running: "运行中",
@@ -114,6 +116,7 @@ export const taskStatus: Record<UoocTaskStatus, string> = {
   dryRun: "预览完成",
   blocked: "前置任务未完成",
   failed: "未完成",
+  awaitingDecision: "等待测验处理",
 };
 export function newerSnapshot(previous: UoocSnapshot | undefined, next: UoocSnapshot) {
   return !previous || next.revision >= previous.revision ? next : previous;
@@ -130,3 +133,56 @@ export function isUoocSnapshot(value: unknown): value is UoocSnapshot {
     Array.isArray(value.tasks)
   );
 }
+
+export type QuizMode = "yolo" | "approval" | "supervised";
+export type QuizStage =
+  | "idle"
+  | "preparing"
+  | "generating"
+  | "awaitingChoice"
+  | "awaitingApproval"
+  | "submitting"
+  | "verifying"
+  | "passed"
+  | "failed"
+  | "manual"
+  | "disabled";
+export type QuizQuestion = {
+  id: string;
+  text: string;
+  kind: "single" | "multiple" | "text";
+  options: { id: string; text: string }[];
+  blanks: number;
+  images: string[];
+};
+export type QuizAnswers = Record<string, string[]>;
+export type QuizState = {
+  accountId: string;
+  cid: string;
+  taskId: string;
+  resourceId: string;
+  title: string;
+  mode: QuizMode;
+  stage: QuizStage;
+  revision: number;
+  questions: QuizQuestion[];
+  answers: QuizAnswers;
+  reviews: {
+    questionId: string;
+    answers: string[];
+    probabilities: Record<string, number>;
+    message: string;
+  }[];
+  message: string;
+  gated: boolean;
+  videoComplete: boolean;
+  passed: string[];
+};
+export type AiProvider = { baseUrl: string; model: string; hasKey: boolean };
+export type AiConfig = {
+  main: AiProvider;
+  jev: AiProvider;
+  jevEnabled: boolean;
+  confidence: number;
+  defaultMode: QuizMode;
+};

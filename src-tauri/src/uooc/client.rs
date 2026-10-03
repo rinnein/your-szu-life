@@ -7,24 +7,36 @@ use tokio_util::sync::CancellationToken;
 pub(super) const ORIGIN: &str = "https://www.uooc.net.cn";
 pub(super) const LOGIN: &str = "https://www.uooc.net.cn/user/login";
 pub(super) const LIST: &str = "/home/course/list";
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum CourseSignin {
+    NotRequired,
+    Signed,
+    AlreadySigned,
+}
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum Error {
     Cancelled,
     Unauthorized,
+    Forbidden,
     Gate,
     Network,
     Invalid,
+    UnexpectedRedirect,
     Server(i64),
+    Quiz(String),
 }
 impl Error {
     pub fn message(&self) -> String {
         match self {
             Self::Cancelled => "任务已取消".into(),
             Self::Unauthorized => "UOOC 登录已失效，请重新登录".into(),
+            Self::Forbidden => "UOOC 拒绝访问（HTTP 403，可能不允许此请求方法）".into(),
             Self::Gate => "需要先完成前置任务或测验".into(),
             Self::Network => "UOOC 请求失败，请检查网络后重试".into(),
             Self::Invalid => "UOOC 返回数据格式无效".into(),
-            Self::Server(code) => format!("UOOC 拒绝请求（状态码 {code}）"),
+            Self::UnexpectedRedirect => "UOOC 返回了非登录重定向，请检查访问方式或网络".into(),
+            Self::Server(code) => format!("UOOC 拒绝请求（业务码 {code}）"),
+            Self::Quiz(message) => message.clone(),
         }
     }
 }
@@ -34,6 +46,138 @@ pub(super) struct Client {
     base: String,
 }
 impl Client {
+    pub(super) fn origin(&self) -> &str {
+        &self.base
+    }
+    pub(super) async fn quiz_list(
+        &self,
+        cid: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<Value>, Error> {
+        let mut all = vec![];
+        let mut seen = HashSet::new();
+        for page in 1..=1000 {
+            let data = self
+                .request(
+                    "/home/task/testList",
+                    &[
+                        ("cid".into(), cid.into()),
+                        ("page".into(), page.to_string()),
+                        ("pagesize".into(), "20".into()),
+                    ],
+                    false,
+                    cancel,
+                )
+                .await?;
+            let rows = data["data"].as_array().ok_or(Error::Invalid)?;
+            for row in rows {
+                if let Some(rid) = id(&row["res_id"]) {
+                    if seen.insert(rid) {
+                        all.push(row.clone());
+                    }
+                }
+            }
+            let pages = text(&data["page"]["pages"])
+                .parse::<u64>()
+                .map_err(|_| Error::Invalid)?;
+            if page >= pages {
+                return Ok(all);
+            }
+        }
+        Err(Error::Invalid)
+    }
+    pub(super) async fn quiz_document(
+        &self,
+        task: &str,
+        cancel: &CancellationToken,
+    ) -> Result<String, Error> {
+        let bytes = self
+            .quiz_http(&format!("{}/exam/{task}", self.base), None, cancel)
+            .await?;
+        String::from_utf8(bytes).map_err(|_| Error::Invalid)
+    }
+    pub(super) async fn quiz_http(
+        &self,
+        url: &str,
+        fields: Option<&[(String, String)]>,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<u8>, Error> {
+        let target = reqwest::Url::parse(url).map_err(|_| Error::Invalid)?;
+        let base = reqwest::Url::parse(&self.base).map_err(|_| Error::Invalid)?;
+        if target.origin() != base.origin()
+            || !target.path().starts_with("/exam/")
+            || !target.username().is_empty()
+            || target.password().is_some()
+        {
+            return Err(Error::Invalid);
+        }
+        let request = match fields {
+            Some(fields) => self.http.post(target).form(fields),
+            None => self.http.get(target),
+        }
+        .header("Accept", "text/html,application/json")
+        .header("Referer", format!("{}/home", self.base));
+        tokio::select! { biased; _=cancel.cancelled()=>Err(Error::Cancelled),r=async {
+            let mut response=request.send().await.map_err(|_|Error::Network)?;
+            if response.status().is_redirection() {
+                return Err(if response.headers().get(reqwest::header::LOCATION).and_then(|v|v.to_str().ok()).is_some_and(|s|super::user_agent::is_login_redirect(response.url(),s)){Error::Unauthorized}else{Error::UnexpectedRedirect});
+            }
+            match response.status().as_u16(){401=>return Err(Error::Unauthorized),403=>return Err(Error::Forbidden),200..=299=>{},_=>return Err(Error::Network)}
+            let mut bytes=vec![];while let Some(chunk)=response.chunk().await.map_err(|_|Error::Network)? {if bytes.len()+chunk.len()>4*1024*1024{return Err(Error::Invalid);}bytes.extend_from_slice(&chunk);}
+            if serde_json::from_slice::<Value>(&bytes).ok().is_some_and(|v|text(&v["code"])=="401"){return Err(Error::Unauthorized);}
+            Ok(bytes)
+        }=>r}
+    }
+    pub(super) async fn quiz_image(
+        &self,
+        url: &str,
+        cancel: &CancellationToken,
+    ) -> Result<String, Error> {
+        use base64::Engine;
+        if url.starts_with("data:image/") {
+            let (header, data) = url.split_once(',').ok_or(Error::Invalid)?;
+            if !header.ends_with(";base64") || data.len() > 1400000 {
+                return Err(Error::Invalid);
+            }
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(data)
+                .map_err(|_| Error::Invalid)?;
+            let format = image::guess_format(&bytes).map_err(|_| Error::Invalid)?;
+            if !matches!(
+                format,
+                image::ImageFormat::Png
+                    | image::ImageFormat::Jpeg
+                    | image::ImageFormat::WebP
+                    | image::ImageFormat::Gif
+            ) {
+                return Err(Error::Invalid);
+            }
+            return Ok(format!(
+                "data:{};base64,{}",
+                format.to_mime_type(),
+                base64::engine::general_purpose::STANDARD.encode(bytes)
+            ));
+        }
+        let target = reqwest::Url::parse(url).map_err(|_| Error::Invalid)?;
+        if !matches!(target.scheme(), "http" | "https")
+            || !matches!(
+                target.host_str(),
+                Some("www.uooc.net.cn" | "assets.uooconline.com")
+            )
+            || !target.username().is_empty()
+            || target.password().is_some()
+        {
+            return Err(Error::Invalid);
+        }
+        tokio::select! {biased;_=cancel.cancelled()=>Err(Error::Cancelled),r=async{
+            let mut response=self.http.get(target).send().await.map_err(|_|Error::Network)?;
+            if !response.status().is_success(){return Err(Error::Network);}
+            let mut bytes=vec![];while let Some(chunk)=response.chunk().await.map_err(|_|Error::Network)?{if bytes.len()+chunk.len()>1024*1024{return Err(Error::Invalid);}bytes.extend_from_slice(&chunk);}
+            let format=image::guess_format(&bytes).map_err(|_|Error::Invalid)?;
+            if !matches!(format,image::ImageFormat::Png|image::ImageFormat::Jpeg|image::ImageFormat::WebP|image::ImageFormat::Gif){return Err(Error::Invalid);}
+            Ok(format!("data:{};base64,{}",format.to_mime_type(),base64::engine::general_purpose::STANDARD.encode(bytes)))
+        }=>r}
+    }
     pub fn new(jar: Arc<CookieStoreMutex>) -> Result<Self, String> {
         Self::with_base(jar, ORIGIN)
     }
@@ -45,7 +189,7 @@ impl Client {
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(10))
             .redirect(reqwest::redirect::Policy::none())
-            .user_agent("your-szu-life/0.2 UOOC")
+            .user_agent(super::user_agent::DESKTOP)
             .build()
             .map_err(|_| "无法初始化 UOOC 网络服务")?;
         Ok(Self {
@@ -61,7 +205,24 @@ impl Client {
         post: bool,
         cancel: &CancellationToken,
     ) -> Result<Value, Error> {
-        let attempts = if post { 1 } else { 3 };
+        self.request_with_referer(path, fields, post, None, cancel)
+            .await
+    }
+    async fn request_with_referer(
+        &self,
+        path: &str,
+        fields: &[(String, String)],
+        post: bool,
+        referer: Option<&str>,
+        cancel: &CancellationToken,
+    ) -> Result<Value, Error> {
+        // Course info is a GET with a sign-in side effect. Verify uncertain results,
+        // rather than automatically repeating the operation like an ordinary read.
+        let attempts = if post || path == "/home/course/info" {
+            1
+        } else {
+            3
+        };
         for attempt in 0..attempts {
             let request = if post {
                 self.http.post(format!("{}{path}", self.base)).form(fields)
@@ -69,13 +230,23 @@ impl Client {
                 self.http.get(format!("{}{path}", self.base)).query(fields)
             }
             .header("Accept", "application/json, text/plain, */*")
-            .header("Referer", format!("{}/home", self.base))
+            .header(
+                "Referer",
+                referer
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| format!("{}/home", self.base)),
+            )
             .header("XSRF", "");
             let result = tokio::select! { biased;
                 _ = cancel.cancelled() => return Err(Error::Cancelled),
                 result = async {
                     let mut response = request.send().await.map_err(|_| Error::Network)?;
-                    if response.status().is_redirection() || matches!(response.status().as_u16(), 401 | 403) { return Err(Error::Unauthorized); }
+                    if response.status().is_redirection() {
+                        return Err(if response.headers().get(reqwest::header::LOCATION).and_then(|value| value.to_str().ok())
+                            .is_some_and(|location| super::user_agent::is_login_redirect(response.url(), location)) { Error::Unauthorized } else { Error::UnexpectedRedirect });
+                    }
+                    if response.status().as_u16() == 401 { return Err(Error::Unauthorized); }
+                    if response.status().as_u16() == 403 { return Err(Error::Forbidden); }
                     if !response.status().is_success() { return Err(Error::Network); }
                     let mut bytes = Vec::new();
                     while let Some(chunk) = response.chunk().await.map_err(|_| Error::Network)? {
@@ -93,6 +264,30 @@ impl Client {
             tokio::select! { biased; _ = cancel.cancelled() => return Err(Error::Cancelled), _ = tokio::time::sleep(Duration::from_secs(1 << attempt)) => {} }
         }
         Err(Error::Network)
+    }
+    pub async fn signin(
+        &self,
+        cid: &str,
+        cancel: &CancellationToken,
+    ) -> Result<CourseSignin, Error> {
+        // Official course/router.js enters via course/info. Live-account observations:
+        // data.signin: 0 = not required, 1 = newly signed, 2 = already signed.
+        // This marker is distinct from the assessment weight in course/progress.
+        let data = self
+            .request_with_referer(
+                "/home/course/info",
+                &[("cid".into(), cid.into())],
+                false,
+                Some(&format!("{}/home/course/{cid}", self.base)),
+                cancel,
+            )
+            .await?;
+        match text(&data["signin"]).as_str() {
+            "0" => Ok(CourseSignin::NotRequired),
+            "1" => Ok(CourseSignin::Signed),
+            "2" => Ok(CourseSignin::AlreadySigned),
+            _ => Err(Error::Invalid),
+        }
     }
     pub async fn user(&self, cancel: &CancellationToken) -> Result<User, Error> {
         let value = self

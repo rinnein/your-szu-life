@@ -313,28 +313,32 @@ it("shows server progress and allows check-in for a course whose add checkbox is
   expect(invoke).toHaveBeenCalledWith("refresh_uooc_progress", { courseIds: [] });
 });
 
-it("cancels check-in without stopping video tasks and retains progress on refresh errors", async () => {
-  snapshot.progress = {
-    "1588976494": { data: progress(), updatedAtMs: 123, refreshing: false, error: "暂时离线" },
-  };
-  snapshot.checkins = {
-    "1588976494": {
-      id: "checkin-1",
-      status: "verifying",
-      visible: false,
-      message: "等待服务端确认",
-      updatedAtMs: 123,
-    },
-  };
-  mount();
-  fireEvent.click(await screen.findByRole("button", { name: "取消签到" }));
-  await waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith("cancel_uooc_checkin", { courseIds: ["1588976494"] }),
-  );
-  expect(invoke).not.toHaveBeenCalledWith("control_uooc_tasks", expect.anything());
-  expect(screen.getByText("35%")).toBeInTheDocument();
-  expect(screen.getByText(/进度刷新失败：暂时离线/)).toBeInTheDocument();
-});
+it.each(["submitting", "verifying"] as const)(
+  "cancels %s check-in without stopping video tasks and retains progress on refresh errors",
+  async (status) => {
+    snapshot.progress = {
+      "1588976494": { data: progress(), updatedAtMs: 123, refreshing: false, error: "暂时离线" },
+    };
+    snapshot.checkins = {
+      "1588976494": {
+        id: "checkin-1",
+        status,
+        source: "automatic",
+        message: "等待服务端确认",
+        updatedAtMs: 123,
+      },
+    };
+    mount();
+    expect(await screen.findByText("自动签到：等待服务端确认")).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "取消签到" }));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("cancel_uooc_checkin", { courseIds: ["1588976494"] }),
+    );
+    expect(invoke).not.toHaveBeenCalledWith("control_uooc_tasks", expect.anything());
+    expect(screen.getByText("35%")).toBeInTheDocument();
+    expect(screen.getByText(/进度刷新失败：暂时离线/)).toBeInTheDocument();
+  },
+);
 
 it("refreshes the selected course when opening its details without adding a navigation level", async () => {
   const router = mount();

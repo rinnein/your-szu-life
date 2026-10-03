@@ -5,6 +5,7 @@ import { AuthProvider } from "../auth";
 import { AppContentProvider } from "../app-content/context";
 import { UpdateNotice } from "../app-content/UpdateNotice";
 import { ElectricityMonitorProvider } from "../electricity-monitor";
+import { QuizNotifications } from "../uooc/QuizNotifications";
 
 export const Route = createRootRoute({
   head: () => ({ meta: [{ title: "泥深" }] }),
@@ -15,6 +16,7 @@ export const Route = createRootRoute({
         <ElectricityMonitorProvider>
           <AuthProvider>
             <AndroidBackNavigation />
+            <QuizNotifications />
             <Outlet />
             <UpdateNotice />
           </AuthProvider>

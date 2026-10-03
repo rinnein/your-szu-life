@@ -18,6 +18,9 @@ import {
 import { LuArrowLeft, LuCheck, LuPause, LuPlay, LuRefreshCw, LuSquare } from "react-icons/lu";
 import { PageShell } from "../components";
 import { useLogicalNavigation } from "../logical-navigation";
+import { AiSettings, QuizModePicker } from "./AiSettings";
+import { QuizPanel } from "./QuizPanel";
+import type { AiConfig, QuizMode } from "./types";
 import { CourseProgressView } from "./CourseProgressView";
 import {
   isUoocSnapshot,
@@ -44,10 +47,22 @@ const seconds = (value: number) =>
 
 export default function UoocPage() {
   const navigation = useLogicalNavigation();
-  const { tab } = useSearch({ from: "/uooc" });
+  const { tab, course } = useSearch({ from: "/uooc" });
+  useEffect(() => {
+    if (course)
+      document.getElementById(`uooc-course-${course}`)?.scrollIntoView?.({ block: "start" });
+  }, [tab, course]);
   const [snapshot, setSnapshot] = useState<UoocSnapshot>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [defaultMode, setDefaultMode] = useState<QuizMode>("approval");
+  useEffect(() => {
+    void invoke<AiConfig>("get_uooc_ai_config")
+      .then((v) => {
+        if (v?.defaultMode) setDefaultMode(v.defaultMode);
+      })
+      .catch(() => {});
+  }, []);
   const [selected, setSelected] = useState<string[]>([]);
   const [settings, setSettings] = useState<UoocSettings>({
     concurrency: 3,
@@ -185,7 +200,7 @@ export default function UoocPage() {
         </div>
         {state?.message && (
           <p role="status" className="text-xs text-muted">
-            {state.visible ? "手动签到" : "自动签到"}：{state.message}
+            {state.source === "manual" ? "手动签到" : "自动签到"}：{state.message}
           </p>
         )}
       </div>
@@ -278,6 +293,10 @@ export default function UoocPage() {
             </Tabs.List>
           </Tabs.ListContainer>
           <Tabs.Panel id="courses" className="grid gap-4 pt-4">
+            <p className="text-sm text-muted">
+              已登录且应用运行期间，按北京时间每日自动为有签到考核的待签到课程提交签到，无需加入视频任务。
+              提交后根据服务端签到进度确认结果。
+            </p>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-muted">{snapshot?.courses.length ?? 0} 门开课中的课程</p>
               <div className="flex flex-wrap gap-2">
@@ -327,6 +346,19 @@ export default function UoocPage() {
                       {course.title}
                     </Checkbox.Content>
                   </Checkbox>
+                  <QuizModePicker
+                    value={
+                      Object.values(snapshot?.quizzes ?? {}).find(
+                        (q) => q.cid === course.id && q.accountId === snapshot?.user?.id,
+                      )?.mode ?? defaultMode
+                    }
+                    disabled={
+                      !ready || busy || tasks.some((t) => t.course.id === course.id && active(t))
+                    }
+                    onChange={(mode) =>
+                      void action("save_uooc_quiz_mode", { cid: course.id, mode })
+                    }
+                  />
                   {added.has(course.id) && (
                     <Chip size="sm" className="justify-self-start">
                       已添加
@@ -385,7 +417,7 @@ export default function UoocPage() {
               离开本页后任务继续运行。重启时自动恢复上次运行的课程；主动暂停或停止的任务不会自动恢复。
             </p>
             {tasks.map((task) => (
-              <Card key={task.course.id}>
+              <Card key={task.course.id} id={`uooc-course-${task.course.id}`}>
                 <Card.Header>
                   <Card.Title>{task.course.title}</Card.Title>
                   {(task.status === "completed" ||
@@ -423,7 +455,7 @@ export default function UoocPage() {
                       isDisabled={busy || !ready || active(task)}
                       onPress={() => control("resume", [task.course.id])}
                     >
-                      继续
+                      {task.status === "completed" ? "继续测验" : "继续"}
                     </Button>
                     <Button
                       size="sm"
@@ -440,6 +472,18 @@ export default function UoocPage() {
                     </p>
                   )}
                   <div className="grid max-h-96 gap-4 overflow-auto">
+                    {Object.values(snapshot?.quizzes ?? {})
+                      .filter((q) => q.cid === task.course.id && q.accountId === task.accountId)
+                      .map((q) => (
+                        <QuizPanel
+                          key={q.cid}
+                          active={active(task)}
+                          quiz={q}
+                          weight={snapshot?.progress?.[q.cid]?.data?.test.weight}
+                          dryRun={snapshot?.settings.dryRun ?? false}
+                          onSnapshot={apply}
+                        />
+                      ))}
                     {task.videos.map((video) => (
                       <div key={video.resourceId} className="grid gap-1">
                         <div className="flex flex-wrap justify-between gap-2 text-sm">
@@ -504,7 +548,8 @@ export default function UoocPage() {
               </Card>
             )}
           </Tabs.Panel>
-          <Tabs.Panel id="settings" className="pt-4">
+          <Tabs.Panel id="settings" className="grid gap-4 pt-4">
+            <AiSettings onMode={setDefaultMode} />
             <Card>
               <Card.Header>
                 <Card.Title>运行设置</Card.Title>

@@ -46,6 +46,11 @@ m3u8-rs = "6"
 scraper = "0.27.0"
 calamine = "0.36.1"
 base16384 = "0.1.0"
+async-openai = { version = "0.42.1", default-features = false, features = [
+  "chat-completion",
+  "model",
+  "rustls",
+] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 keyring = { version = "3", features = ["linux-native", "apple-native", "windows-native"] }
@@ -55,3 +60,6 @@ jni = "0.21"
 jni022 = { package = "jni", version = "0.22" }
 ndk-context = "0.1.1"
 rustls-platform-verifier = "0.7"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+notify-rust = "4.18.1"

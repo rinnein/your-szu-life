@@ -35,6 +35,13 @@ fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
             "get_uooc_snapshot",
+            "get_uooc_ai_config",
+            "save_uooc_ai_config",
+            "list_uooc_ai_models",
+            "save_uooc_quiz_mode",
+            "save_uooc_quiz_answers",
+            "control_uooc_quiz",
+            "open_uooc_quiz_portal",
             "refresh_uooc_progress",
             "start_uooc_checkin",
             "cancel_uooc_checkin",

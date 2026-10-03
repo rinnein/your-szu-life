@@ -1,7 +1,5 @@
-#[cfg(target_os = "android")]
-mod android_checkin;
+mod ai;
 mod checkin;
-mod checkin_view;
 mod client;
 pub(crate) mod commands;
 mod duration;
@@ -11,8 +9,10 @@ pub(crate) mod model;
 mod persistence;
 mod platform;
 mod progress;
+mod quiz;
 mod runner;
 mod session;
+mod user_agent;
 
 use crate::storage::SharedCredentialStore;
 use client::{Client, Error};
@@ -48,6 +48,7 @@ struct Runtime {
     background_generation: u64,
     background_active: bool,
     checkins: checkin::Checkins,
+    quiz_windows: HashMap<String, (u64, String)>,
 }
 pub(super) struct Service {
     app: Option<tauri::AppHandle>,
@@ -60,8 +61,8 @@ pub(super) struct Service {
     durations: DurationCache,
     progress_requests: progress::ProgressRequests,
     native_session: Arc<tokio::sync::Mutex<()>>,
-    #[cfg(test)]
-    checkin_factory: Mutex<Option<Arc<dyn checkin_view::Factory>>>,
+    ai: Mutex<ai::Config>,
+    ai_permits: Semaphore,
 }
 impl Service {
     fn new(
@@ -73,6 +74,7 @@ impl Service {
         let saved = persistence::read::<SavedState>(&path);
         let mut message = saved.as_ref().err().cloned().unwrap_or_default();
         let mut saved = saved.ok().flatten().unwrap_or_default();
+        quiz::restore_media(&mut saved.quizzes, &root);
         if saved.settings.validate().is_err() {
             saved.settings = Settings::default();
         }
@@ -97,6 +99,12 @@ impl Service {
                 session::load(None)?
             }
         };
+        let ai = credentials
+            .load_uooc_ai()
+            .ok()
+            .flatten()
+            .and_then(|v| serde_json::from_str(&v).ok())
+            .unwrap_or_default();
         Ok(Arc::new(Self {
             app,
             credentials,
@@ -104,8 +112,8 @@ impl Service {
             durations: DurationCache::new(root.join("video-durations.json")),
             progress_requests: progress::ProgressRequests::default(),
             native_session: Arc::new(tokio::sync::Mutex::new(())),
-            #[cfg(test)]
-            checkin_factory: Mutex::new(None),
+            ai: Mutex::new(ai),
+            ai_permits: Semaphore::new(2),
             permits: RwLock::new(Arc::new(Semaphore::new(saved.settings.concurrency))),
             client: RwLock::new(Arc::new(Client::new(jar)?)),
             refresh_lock: tokio::sync::Mutex::new(()),
@@ -113,6 +121,7 @@ impl Service {
                 snapshot: Snapshot {
                     settings: saved.settings,
                     tasks: saved.tasks,
+                    quizzes: saved.quizzes,
                     message,
                     ..Snapshot::default()
                 },
@@ -123,11 +132,20 @@ impl Service {
                 background_generation: 0,
                 background_active: false,
                 checkins: checkin::Checkins::default(),
+                quiz_windows: HashMap::new(),
             }),
         }))
     }
     pub(super) fn snapshot(&self) -> Snapshot {
-        self.runtime.lock().unwrap().snapshot.clone()
+        Self::visible_snapshot(&self.runtime.lock().unwrap())
+    }
+    fn visible_snapshot(runtime: &Runtime) -> Snapshot {
+        let mut snapshot = runtime.snapshot.clone();
+        let account = snapshot.user.as_ref().map(|u| u.id.as_str());
+        snapshot
+            .quizzes
+            .retain(|_, q| Some(q.account_id.as_str()) == account);
+        snapshot
     }
     fn publish(&self, runtime: &mut Runtime) {
         runtime.snapshot.revision = runtime.snapshot.revision.saturating_add(1);
@@ -137,15 +155,36 @@ impl Service {
                 .logs
                 .drain(..runtime.snapshot.logs.len() - 200);
         }
-        let saved = SavedState {
-            settings: runtime.snapshot.settings.clone(),
-            tasks: runtime.snapshot.tasks.clone(),
-        };
-        if let Err(error) = persistence::write(&self.path, &saved) {
+        let saved =
+            quiz::saved(&runtime.snapshot.quizzes, self.path.parent().unwrap()).map(|quizzes| {
+                SavedState {
+                    settings: runtime.snapshot.settings.clone(),
+                    tasks: runtime.snapshot.tasks.clone(),
+                    quizzes,
+                }
+            });
+        if let Err(error) = saved.and_then(|saved| persistence::write(&self.path, &saved)) {
             runtime.snapshot.message = error;
         }
         if let Some(app) = &self.app {
-            let _ = app.emit("uooc-state-changed", &runtime.snapshot);
+            let stale: Vec<_> = runtime
+                .quiz_windows
+                .iter()
+                .filter(|(_, (epoch, _))| {
+                    *epoch != runtime.epoch || runtime.snapshot.session != SessionStatus::Ready
+                })
+                .map(|(label, _)| label.clone())
+                .collect();
+            for label in stale {
+                runtime.quiz_windows.remove(&label);
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Some(w) = app.get_webview_window(&label) {
+                        let _ = w.destroy();
+                    }
+                });
+            }
+            let _ = app.emit("uooc-state-changed", Self::visible_snapshot(runtime));
         }
     }
     fn change(&self, f: impl FnOnce(&mut Snapshot)) {
@@ -198,6 +237,13 @@ impl Service {
         }
     }
     async fn refresh(self: &Arc<Self>) -> Result<(), String> {
+        self.refresh_session(None).await
+    }
+    // Daily scans share the normal session/list refresh lock, including startup and login.
+    async fn refresh_session(
+        self: &Arc<Self>,
+        automatic_day: Option<chrono::NaiveDate>,
+    ) -> Result<(), String> {
         let Ok(_refresh) = self.refresh_lock.try_lock() else {
             return Ok(());
         };
@@ -205,6 +251,25 @@ impl Service {
             let mut runtime = self.runtime.lock().unwrap();
             if runtime.login.is_some() {
                 return Ok(());
+            }
+            if let Some(day) = automatic_day {
+                if !matches!(
+                    runtime.snapshot.session,
+                    SessionStatus::Ready | SessionStatus::NetworkError
+                ) {
+                    return Ok(());
+                }
+                let Some(account) = runtime.snapshot.user.as_ref().map(|user| user.id.clone())
+                else {
+                    return Ok(());
+                };
+                runtime
+                    .checkins
+                    .daily_scans
+                    .retain(|(_, date)| *date == day);
+                if !runtime.checkins.daily_scans.insert((account, day)) {
+                    return Ok(());
+                }
             }
             if runtime.snapshot.session != SessionStatus::Ready {
                 runtime.snapshot.session = SessionStatus::Checking;
@@ -448,6 +513,9 @@ impl Service {
                     if !task.desired_running {
                         continue;
                     }
+                    if task.status == TaskStatus::AwaitingDecision {
+                        continue;
+                    }
                     if selected.is_some_and(|ids| !ids.contains(&task.course.id)) {
                         continue;
                     }
@@ -510,7 +578,11 @@ impl Service {
                 if !cancel.is_cancelled() {
                     let _ = service.fetch_progress(&cid, &cancel).await;
                 }
+                let resume = result == Ok(TaskStatus::Queued);
                 service.finish(&cid, generation, result, &client);
+                if resume {
+                    service.reconcile();
+                }
             });
         }
     }
@@ -535,7 +607,10 @@ impl Service {
                 .iter_mut()
                 .find(|t| t.course.id == cid && t.generation == generation)
             {
-                task.desired_running = false;
+                task.desired_running = matches!(
+                    result,
+                    Ok(TaskStatus::Queued | TaskStatus::AwaitingDecision)
+                );
                 task.status = result.clone().unwrap_or(TaskStatus::Failed);
                 task.message = match &result {
                     Err(error) => error.message(),
@@ -644,13 +719,19 @@ fn service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
 pub(crate) fn keep_running(app: &tauri::AppHandle) -> bool {
     service(app).is_ok_and(|s| {
         let r = s.runtime.lock().unwrap();
-        !r.workers.is_empty() || !r.checkins.queue.is_empty() || r.checkins.active.is_some()
+        !r.workers.is_empty()
+            || !r.checkins.queue.is_empty()
+            || r.checkins.active.is_some()
+            || r.snapshot
+                .tasks
+                .iter()
+                .any(|t| t.desired_running && t.status == TaskStatus::AwaitingDecision)
     })
 }
 pub(crate) fn window_closed(app: &tauri::AppHandle, label: &str) {
     if let Ok(service) = service(app) {
         login::window_closed(&service, label);
-        checkin::window_closed(&service, label);
+        quiz::window_closed(&service, label);
     }
 }
 

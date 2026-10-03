@@ -129,7 +129,7 @@ pub(super) async fn run(
         .await?
         .video_complete()
     {
-        return Ok(TaskStatus::Completed);
+        return super::quiz::run(service, client, cid, generation, false, cancel).await;
     }
     service.task_change(&cid, generation, |t| t.status = TaskStatus::Running);
     let mut processed = HashSet::new();
@@ -167,6 +167,23 @@ pub(super) async fn run(
             .filter(|v| processed.insert(v.resource.clone()))
             .collect();
         if pending.is_empty() {
+            if !failed && !settings.dry_run {
+                let result = super::quiz::run(
+                    service.clone(),
+                    client.clone(),
+                    cid.clone(),
+                    generation,
+                    gate || video_gate,
+                    cancel.clone(),
+                )
+                .await?;
+                if result == TaskStatus::Queued {
+                    processed.clear();
+                    video_gate = false;
+                    continue;
+                }
+                return Ok(result);
+            }
             return Ok(if gate || video_gate {
                 TaskStatus::Blocked
             } else if failed {

@@ -51,6 +51,13 @@ pub(crate) fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             uooc::commands::get_uooc_snapshot,
+            uooc::commands::get_uooc_ai_config,
+            uooc::commands::save_uooc_ai_config,
+            uooc::commands::list_uooc_ai_models,
+            uooc::commands::save_uooc_quiz_mode,
+            uooc::commands::save_uooc_quiz_answers,
+            uooc::commands::control_uooc_quiz,
+            uooc::commands::open_uooc_quiz_portal,
             uooc::commands::refresh_uooc_progress,
             uooc::commands::start_uooc_checkin,
             uooc::commands::cancel_uooc_checkin,

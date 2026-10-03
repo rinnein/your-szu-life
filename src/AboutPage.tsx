@@ -324,7 +324,9 @@ export default function AboutPage() {
         <Card className="about-card">
           <Card.Header>
             <Card.Title>UOOC 功能参考</Card.Title>
-            <Card.Description>视频任务流程参考 auto-uooc-go，使用 Rust 独立实现。</Card.Description>
+            <Card.Description>
+              视频流程参考 auto-uooc-go，测验交互参考 fuckuooc，使用 Rust 独立实现。
+            </Card.Description>
           </Card.Header>
           <Card.Content>
             <Button
@@ -336,6 +338,16 @@ export default function AboutPage() {
               }
             >
               auto-uooc-go <LuArrowUpRight aria-hidden="true" />
+            </Button>
+            <Button
+              variant="tertiary"
+              onPress={() =>
+                void openPublicUrl("https://github.com/YusongXiao/fuckuooc").catch(() =>
+                  setOpenError("无法打开参考项目链接"),
+                )
+              }
+            >
+              fuckuooc <LuArrowUpRight aria-hidden="true" />
             </Button>
           </Card.Content>
         </Card>
