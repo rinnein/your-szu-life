@@ -1,5 +1,5 @@
 use crate::{
-    app_content, auth, campus_network, campus_payments,
+    app_content, auth, campus_network, campus_payments, oj,
     storage::{PlatformCredentialStore, SharedCredentialStore},
     uooc,
 };
@@ -12,6 +12,7 @@ pub(crate) fn run() {
     let builder = tauri::Builder::default()
         .manage(auth::AuthStore::new(credentials.clone()))
         .manage(uooc::UoocStore::new(credentials.clone()))
+        .manage(oj::OjStore::new(credentials.clone()))
         .manage(campus_network::CampusNetworkStore::new(credentials))
         .manage(campus_payments::CampusPaymentsStore::new(
             electricity_credentials,
@@ -20,6 +21,9 @@ pub(crate) fn run() {
         .plugin(crate::notification::init())
         .setup(|app| {
             crate::storage::initialize(app.handle())?;
+            if let Err(error) = oj::initialize(app.handle()) {
+                eprintln!("OJ 初始化失败: {error}");
+            }
             if let Err(error) = uooc::initialize(app.handle()) {
                 eprintln!("UOOC 服务初始化失败: {error}");
             }
@@ -51,6 +55,29 @@ pub(crate) fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            oj::commands::load_oj_image,
+            oj::commands::save_oj_preferences,
+            oj::commands::configure_oj_companion,
+            oj::commands::set_oj_companion_status,
+            oj::commands::activate_oj_companion,
+            oj::commands::submit_oj_companion,
+            oj::commands::get_oj_snapshot,
+            oj::commands::save_oj_site,
+            oj::commands::remove_oj_site,
+            oj::commands::login_oj,
+            oj::commands::get_oj_captcha,
+            oj::commands::get_oj_groups,
+            oj::commands::get_oj_contests,
+            oj::commands::get_oj_paper,
+            oj::commands::save_oj_draft,
+            oj::commands::get_oj_draft,
+            oj::commands::submit_oj,
+            oj::commands::get_oj_records,
+            oj::commands::get_oj_result,
+            oj::commands::acknowledge_oj_submission,
+            oj::commands::send_oj_companion,
+            oj::commands::refresh_oj,
+            oj::commands::read_oj_notice,
             crate::storage::commands::get_credential_storage_status,
             uooc::commands::get_uooc_snapshot,
             uooc::commands::get_uooc_ai_config,

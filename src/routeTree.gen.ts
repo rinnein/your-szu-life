@@ -14,7 +14,9 @@ import { Route as AboutRouteImport } from './routes/about'
 import { Route as CampusNetworkRouteImport } from './routes/campus-network'
 import { Route as CampusPaymentsRouteRouteImport } from './routes/campus-payments/route'
 import { Route as ClassTimetableRouteImport } from './routes/class-timetable'
+import { Route as ComputingRouteImport } from './routes/computing'
 import { Route as DebugRouteImport } from './routes/debug'
+import { Route as OjRouteImport } from './routes/oj'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as UoocRouteImport } from './routes/uooc'
 import { Route as CampusPaymentsIndexRouteImport } from './routes/campus-payments/index'
@@ -48,9 +50,19 @@ const ClassTimetableRoute = ClassTimetableRouteImport.update({
   path: '/class-timetable',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ComputingRoute = ComputingRouteImport.update({
+  id: '/computing',
+  path: '/computing',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DebugRoute = DebugRouteImport.update({
   id: '/debug',
   path: '/debug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OjRoute = OjRouteImport.update({
+  id: '/oj',
+  path: '/oj',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -96,7 +108,9 @@ export interface FileRoutesByFullPath {
   '/about': typeof AboutRoute
   '/campus-network': typeof CampusNetworkRoute
   '/class-timetable': typeof ClassTimetableRoute
+  '/computing': typeof ComputingRoute
   '/debug': typeof DebugRoute
+  '/oj': typeof OjRoute
   '/settings': typeof SettingsRoute
   '/uooc': typeof UoocRoute
   '/campus-payments/card': typeof CampusPaymentsCardRoute
@@ -110,7 +124,9 @@ export interface FileRoutesByTo {
   '/about': typeof AboutRoute
   '/campus-network': typeof CampusNetworkRoute
   '/class-timetable': typeof ClassTimetableRoute
+  '/computing': typeof ComputingRoute
   '/debug': typeof DebugRoute
+  '/oj': typeof OjRoute
   '/settings': typeof SettingsRoute
   '/uooc': typeof UoocRoute
   '/campus-payments/card': typeof CampusPaymentsCardRoute
@@ -126,7 +142,9 @@ export interface FileRoutesById {
   '/about': typeof AboutRoute
   '/campus-network': typeof CampusNetworkRoute
   '/class-timetable': typeof ClassTimetableRoute
+  '/computing': typeof ComputingRoute
   '/debug': typeof DebugRoute
+  '/oj': typeof OjRoute
   '/settings': typeof SettingsRoute
   '/uooc': typeof UoocRoute
   '/campus-payments/card': typeof CampusPaymentsCardRoute
@@ -143,7 +161,9 @@ export interface FileRouteTypes {
     | '/about'
     | '/campus-network'
     | '/class-timetable'
+    | '/computing'
     | '/debug'
+    | '/oj'
     | '/settings'
     | '/uooc'
     | '/campus-payments/card'
@@ -157,7 +177,9 @@ export interface FileRouteTypes {
     | '/about'
     | '/campus-network'
     | '/class-timetable'
+    | '/computing'
     | '/debug'
+    | '/oj'
     | '/settings'
     | '/uooc'
     | '/campus-payments/card'
@@ -172,7 +194,9 @@ export interface FileRouteTypes {
     | '/about'
     | '/campus-network'
     | '/class-timetable'
+    | '/computing'
     | '/debug'
+    | '/oj'
     | '/settings'
     | '/uooc'
     | '/campus-payments/card'
@@ -188,7 +212,9 @@ export interface RootRouteChildren {
   AboutRoute: typeof AboutRoute
   CampusNetworkRoute: typeof CampusNetworkRoute
   ClassTimetableRoute: typeof ClassTimetableRoute
+  ComputingRoute: typeof ComputingRoute
   DebugRoute: typeof DebugRoute
+  OjRoute: typeof OjRoute
   SettingsRoute: typeof SettingsRoute
   UoocRoute: typeof UoocRoute
 }
@@ -230,11 +256,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ClassTimetableRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/computing': {
+      id: '/computing'
+      path: '/computing'
+      fullPath: '/computing'
+      preLoaderRoute: typeof ComputingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/debug': {
       id: '/debug'
       path: '/debug'
       fullPath: '/debug'
       preLoaderRoute: typeof DebugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/oj': {
+      id: '/oj'
+      path: '/oj'
+      fullPath: '/oj'
+      preLoaderRoute: typeof OjRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -314,7 +354,9 @@ const rootRouteChildren: RootRouteChildren = {
   AboutRoute: AboutRoute,
   CampusNetworkRoute: CampusNetworkRoute,
   ClassTimetableRoute: ClassTimetableRoute,
+  ComputingRoute: ComputingRoute,
   DebugRoute: DebugRoute,
+  OjRoute: OjRoute,
   SettingsRoute: SettingsRoute,
   UoocRoute: UoocRoute,
 }

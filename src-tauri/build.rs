@@ -1,3 +1,6 @@
+#[path = "build_support/ocr_model.rs"]
+mod ocr_model;
+
 use std::{collections::HashMap, env, path::PathBuf};
 
 const CONTENT_ENV_VARS: [&str; 2] = ["SZU_LIFE_BASE_URL", "SZU_LIFE_FALLBACK_BASE_URL"];
@@ -20,6 +23,7 @@ fn configured_value(name: &str, dotenv: &HashMap<String, String>) -> Option<Stri
 }
 
 fn main() {
+    ocr_model::prepare().expect("failed to prepare shared OCR model");
     let dotenv_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.env");
     let dotenv = load_dotenv(&dotenv_path);
     println!("cargo:rerun-if-changed={}", dotenv_path.display());
@@ -34,6 +38,29 @@ fn main() {
     println!("cargo:rerun-if-changed=capabilities/authserver-credential-capture.json");
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
+            "load_oj_image",
+            "save_oj_preferences",
+            "configure_oj_companion",
+            "set_oj_companion_status",
+            "activate_oj_companion",
+            "submit_oj_companion",
+            "get_oj_snapshot",
+            "save_oj_site",
+            "remove_oj_site",
+            "login_oj",
+            "get_oj_captcha",
+            "get_oj_groups",
+            "get_oj_contests",
+            "get_oj_paper",
+            "save_oj_draft",
+            "get_oj_draft",
+            "submit_oj",
+            "get_oj_records",
+            "get_oj_result",
+            "acknowledge_oj_submission",
+            "send_oj_companion",
+            "refresh_oj",
+            "read_oj_notice",
             "get_uooc_snapshot",
             "get_uooc_ai_config",
             "save_uooc_ai_config",

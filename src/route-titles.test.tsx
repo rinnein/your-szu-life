@@ -36,6 +36,8 @@ it("sets the document title from each route and updates it on tab replacement an
     ["/settings", "账户设置"],
     ["/class-timetable", "上课时间表"],
     ["/uooc", "UOOC刷课"],
+    ["/oj", "OJ · 计软合集"],
+    ["/computing", "计软合集"],
     ["/campus-network", "校园网"],
     ["/about", "关于泥深"],
     ["/debug", "诊断日志"],
@@ -57,4 +59,21 @@ it("sets the document title from each route and updates it on tab replacement an
     history.back();
   });
   await waitFor(() => expect(document.title).toBe("充电费"));
+});
+
+it("keeps numeric OJ deep-link IDs through router search parsing", async () => {
+  const history = createMemoryHistory({
+    initialEntries: ["/oj?site=szu-67&group=3&contest=12&problem=0%3A1&tab=answer"],
+  });
+  const router = createRouter({ routeTree, history });
+  render(<RouterProvider router={router} />);
+  await waitFor(() => expect(router.state.location.pathname).toBe("/oj"));
+  await router.load();
+  expect(router.state.matches[router.state.matches.length - 1]?.search).toMatchObject({
+    site: "szu-67",
+    group: "3",
+    contest: "12",
+    problem: "0:1",
+    tab: "answer",
+  });
 });

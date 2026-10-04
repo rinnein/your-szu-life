@@ -22,7 +22,8 @@ export function initialLogicalEntries(href: string) {
   const child = url.searchParams.get(CHILD_PARAMETER) === "child";
   url.searchParams.delete(CHILD_PARAMETER);
   const path = url.pathname + url.search + url.hash;
-  return child || url.pathname === "/" ? [path] : ["/", path];
+  if (child || url.pathname === "/") return [path];
+  return url.pathname === "/oj" ? ["/", "/computing", path] : ["/", path];
 }
 export function logicalBackAction(hasParent: boolean, child: boolean) {
   return hasParent ? "pop" : child ? "close" : "exit";

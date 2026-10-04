@@ -1,0 +1,237 @@
+.oj-page {
+  display: grid;
+  gap: 1.25rem;
+  width: 100%;
+  min-width: 0;
+}
+.oj-page h1 {
+  font-size: 1.7rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.oj-page h2 {
+  font-size: 1.2rem;
+  font-weight: 650;
+  margin-block: 0.6rem;
+}
+.oj-page h3 {
+  font-size: 1rem;
+  font-weight: 650;
+  margin-block: 0.6rem;
+}
+.oj-toolbar,
+.oj-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+.oj-toolbar {
+  justify-content: space-between;
+}
+.oj-muted {
+  color: var(--muted);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+.oj-site-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 0.8rem;
+}
+.oj-enabled {
+  border-inline-start: 3px solid var(--accent);
+}
+.oj-form,
+.oj-paper,
+.oj-statement-sections {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+.oj-workspace {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+.oj-directory {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+.oj-directory h3 {
+  display: none;
+}
+.oj-directory-item {
+  flex-shrink: 0;
+  white-space: normal;
+  height: auto;
+  padding-block: 0.7rem;
+  text-align: start;
+}
+.oj-directory-item small {
+  display: none;
+}
+.oj-detail,
+.oj-reading,
+.oj-statement {
+  min-width: 0;
+}
+.oj-desktop-answer {
+  display: none;
+}
+.oj-code-editor {
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+.oj-code-editor .cm-editor {
+  min-height: 320px;
+  background: var(--field-background);
+  color: var(--foreground);
+}
+.oj-code-editor .cm-scroller {
+  min-height: 320px;
+  max-height: 65vh;
+  overflow: auto;
+}
+.oj-code-editor .cm-gutters {
+  background: var(--default);
+  color: var(--muted);
+  border-color: var(--border);
+}
+.oj-page pre {
+  white-space: pre;
+  overflow: auto;
+  background: var(--default);
+  border-radius: 0.5rem;
+  padding: 0.85rem;
+  font: 0.85rem/1.5 monospace;
+  max-width: 100%;
+}
+.oj-sample {
+  display: grid;
+  gap: 0.7rem;
+  min-width: 0;
+}
+.oj-sample > div {
+  min-width: 0;
+}
+.oj-statement {
+  overflow-wrap: anywhere;
+  line-height: 1.75;
+}
+.oj-statement p {
+  margin-block: 0.6em;
+}
+.oj-statement img {
+  max-width: 100%;
+  height: auto;
+}
+.oj-statement table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+}
+.oj-statement th,
+.oj-statement td {
+  border: 1px solid var(--border);
+  padding: 0.4rem 0.7rem;
+}
+.oj-statement ul {
+  list-style: disc;
+  padding-inline-start: 1.5rem;
+}
+.oj-statement ol {
+  list-style: decimal;
+  padding-inline-start: 1.5rem;
+}
+.oj-statement a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.oj-statement .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.oj-choice {
+  display: flex;
+  gap: 0.5rem;
+}
+@media (min-width: 768px) {
+  .oj-sample {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (min-width: 1024px) {
+  .app-shell:has(.oj-page) {
+    max-width: 1600px;
+  }
+  .oj-workspace {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+  .oj-directory {
+    display: block;
+    position: sticky;
+    top: 1rem;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  .oj-directory h3 {
+    display: block;
+  }
+  .oj-directory-item {
+    display: flex;
+    width: 100%;
+    justify-content: start;
+    flex-direction: column;
+    align-items: start;
+    margin-bottom: 0.3rem;
+  }
+  .oj-directory-item small {
+    display: block;
+    color: var(--muted);
+  }
+}
+@media (min-width: 1280px) {
+  .oj-reading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1.5rem;
+  }
+  .oj-desktop-answer {
+    display: block;
+  }
+}
+
+.oj-monaco-editor {
+  height: 420px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+.oj-problem-group {
+  flex-shrink: 0;
+}
+.oj-problem-group h4 {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0.5rem;
+}
+
+/* Cell backgrounds also cover the sticky first column and row hover styling. */
+.oj-page .oj-contest-active > .table__cell {
+  background-color: color-mix(in oklab, var(--success) 16%, var(--surface));
+}
+.oj-page .oj-contest-active > .table__cell:first-child {
+  box-shadow: inset 3px 0 var(--success);
+}
+.oj-contest-countdown {
+  display: inline-block;
+  margin-inline-start: 0.35rem;
+  color: var(--success);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

@@ -39,7 +39,7 @@ jobs:
       - name: Set up Vite+
         uses: voidzero-dev/setup-vp@v1.21.1
         with:
-          node-version: '22'
+          node-version: "22"
           cache: true
           run-install: false
 
@@ -57,6 +57,12 @@ jobs:
             librsvg2-dev \
             libxdo-dev \
             wget
+
+      - name: Cache verified OCR model
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/target/model-cache
+          key: ${{ runner.os }}-ddddocr-${{ hashFiles('src-tauri/resources/ocr/ddddocr/model.json') }}
 
       - name: Install frontend dependencies
         run: vp install --frozen-lockfile
@@ -82,7 +88,7 @@ jobs:
       - name: Set up Vite+
         uses: voidzero-dev/setup-vp@v1.21.1
         with:
-          node-version: '22'
+          node-version: "22"
           cache: true
           run-install: false
 
@@ -90,7 +96,7 @@ jobs:
         uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: '25'
+          java-version: "25"
           cache: gradle
 
       - name: Set up Android SDK
@@ -109,6 +115,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Cache verified OCR model
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/target/model-cache
+          key: ${{ runner.os }}-ddddocr-${{ hashFiles('src-tauri/resources/ocr/ddddocr/model.json') }}
 
       - name: Install frontend dependencies
         run: vp install --frozen-lockfile

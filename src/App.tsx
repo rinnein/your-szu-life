@@ -45,6 +45,12 @@ const featureGroups: ReadonlyArray<{
         description: "查看各节次上课时间",
         to: "/class-timetable",
       },
+      {
+        label: "计软合集",
+        icon: FaGraduationCap,
+        description: "OJ等计软相关功能",
+        to: "/computing",
+      },
       { label: "UOOC刷课", icon: FaCirclePlay, description: "优课在线视频任务", to: "/uooc" },
       { label: "选课", icon: FaClipboardList, description: "暂未实现 · 即将支持" },
       { label: "培养方案检查", icon: FaGraduationCap, description: "暂未实现 · 即将支持" },

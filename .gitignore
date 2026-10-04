@@ -30,3 +30,13 @@ dist-ssr
 .vitest/
 
 docs/
+
+# OJ licenses copied into the Android bundle by Tauri
+/src-tauri/gen/android/app/src/main/assets/resources/oj/
+
+# Browser QA artifacts
+/output/playwright/
+
+# Models are downloaded and hash-verified by the Cargo build script
+*.onnx
+/src-tauri/gen/android/app/src/main/assets/resources/ocr/

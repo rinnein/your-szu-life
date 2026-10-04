@@ -6,6 +6,8 @@ mod campus_payments;
 #[cfg(desktop)]
 mod desktop;
 mod notification;
+mod ocr;
+mod oj;
 #[cfg(target_os = "android")]
 mod platform_tls;
 mod storage;
@@ -30,3 +32,8 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[allow(dead_code)]
+#[path = "../build_support/ocr_model.rs"]
+mod ocr_model_build_tests;

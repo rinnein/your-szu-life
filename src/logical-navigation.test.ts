@@ -19,3 +19,12 @@ describe("logical navigation entry stack", () => {
     expect(initialLogicalEntries("https://tauri.localhost/")).toEqual(["/"]);
   });
 });
+
+it("includes the computing collection for an OJ deep link", () => {
+  expect(initialLogicalEntries("https://tauri.localhost/oj?site=szu-67")).toEqual([
+    "/",
+    "/computing",
+    "/oj?site=szu-67",
+  ]);
+  expect(initialLogicalEntries("https://tauri.localhost/oj?__szu_window=child")).toEqual(["/oj"]);
+});
