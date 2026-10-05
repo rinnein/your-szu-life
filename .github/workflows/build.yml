@@ -220,3 +220,93 @@ jobs:
           path: PKGBUILD
           if-no-files-found: error
           retention-days: 14
+
+  canary:
+    name: Publish canary prerelease
+    needs: [desktop, android, aur-source]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: canary-release
+      cancel-in-progress: false
+    steps:
+      - name: Download this run's packages
+        uses: actions/download-artifact@v8
+        with:
+          path: packages
+
+      - name: Replace canary release assets
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('node:fs/promises');
+            const path = require('node:path');
+            const repo = context.repo;
+            const tag = 'canary';
+            const root = path.resolve('packages');
+            const files = [];
+            async function collect(dir) {
+              for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+                const file = path.join(dir, entry.name);
+                if (entry.isDirectory()) await collect(file);
+                else if (entry.isFile()) files.push(file);
+              }
+            }
+            await collect(root);
+            if (!files.length) throw new Error('No packages downloaded');
+            // Include artifact/subdirectory names to avoid platform filename collisions.
+            const assets = files.sort().map(file => ({
+              file,
+              name: path.relative(root, file).split(path.sep).join('--'),
+            }));
+            if (new Set(assets.map(asset => asset.name)).size !== assets.length) {
+              throw new Error('Duplicate release asset names');
+            }
+            const metadata = {
+              ...repo,
+              tag_name: tag,
+              target_commitish: context.sha,
+              name: 'canary',
+              body: `自动构建预发布。\n\n提交：${context.sha}\n构建：${context.serverUrl}/${repo.owner}/${repo.repo}/actions/runs/${context.runId}`,
+              draft: false,
+              prerelease: true,
+              make_latest: 'false',
+            };
+            let release;
+            try {
+              ({ data: release } = await github.rest.repos.getReleaseByTag({ ...repo, tag }));
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            if (release) {
+              const previousAssets = await github.paginate(github.rest.repos.listReleaseAssets, {
+                ...repo, release_id: release.id, per_page: 100,
+              });
+              for (const asset of previousAssets) {
+                await github.rest.repos.deleteReleaseAsset({ ...repo, asset_id: asset.id });
+              }
+            }
+            // Keep the rolling tag on the commit that produced these packages.
+            try {
+              await github.rest.git.updateRef({
+                ...repo, ref: `tags/${tag}`, sha: context.sha, force: true,
+              });
+            } catch (error) {
+              if (error.status !== 404 && error.status !== 422) throw error;
+              await github.rest.git.createRef({
+                ...repo, ref: `refs/tags/${tag}`, sha: context.sha,
+              });
+            }
+            ({ data: release } = release
+              ? await github.rest.repos.updateRelease({ ...metadata, release_id: release.id })
+              : await github.rest.repos.createRelease(metadata));
+            for (const asset of assets) {
+              await github.rest.repos.uploadReleaseAsset({
+                ...repo,
+                release_id: release.id,
+                name: asset.name,
+                data: await fs.readFile(asset.file),
+              });
+            }
+            core.info(`Uploaded ${assets.length} assets to ${release.html_url}`);
