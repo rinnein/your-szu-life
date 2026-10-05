@@ -171,7 +171,7 @@ pub(super) fn complete_authentication(app: tauri::AppHandle, payload: String, ge
     if !store.auth_probe_is_current(generation) {
         return;
     }
-    if store.credentials.save_session(&session).is_err() || clear_webview_session(&app).is_err() {
+    if store.credentials.save_session(&session).is_err() {
         session_failure(&app, &store);
         return;
     }
@@ -359,6 +359,34 @@ pub(super) fn get_auth_state(
             *store.state.lock().map_err(|_| "状态锁失败")? = AuthState::SessionExpired;
             recover_expired_session(&app, store);
             return Ok(store.state.lock().map_err(|_| "状态锁失败")?.clone());
+        }
+        let session = match session
+            .as_ref()
+            .map(|session| {
+                session.restorable_snapshot(&profile.student_id, time::OffsetDateTime::now_utc())
+            })
+            .transpose()
+        {
+            Ok(session) => session.flatten(),
+            Err(error) => {
+                let state = if error == SessionRestoreError::AccountMismatch {
+                    AuthState::AccountMismatch
+                } else {
+                    AuthState::SessionCaptureFailed
+                };
+                store.finish_attempt(state.clone());
+                emit_state(&app, state.clone());
+                return Ok(state);
+            }
+        };
+        // Restore the native jar before any HTTP validation or page uses it.
+        // Offline/transient validation failures must leave this copy intact.
+        if let Some(session) = &session {
+            if install_auth_session_cookies(&app, session).is_err() {
+                store.finish_attempt(AuthState::SessionCaptureFailed);
+                emit_state(&app, AuthState::SessionCaptureFailed);
+                return Ok(AuthState::SessionCaptureFailed);
+            }
         }
         let next = AuthState::Authenticated {
             name: profile.name,

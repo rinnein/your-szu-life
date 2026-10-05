@@ -199,6 +199,55 @@ fn session_cookie_rejects_external_domains_and_expired_sessions() {
 }
 
 #[test]
+fn restoration_keeps_session_cookies_and_drops_only_expired_records() {
+    let mut persistent = session_cookie();
+    persistent.expires = None;
+    let mut expired = persistent.clone();
+    expired.name = "expired".into();
+    expired.expires = Some("Sun, 13 Sep 2020 00:00:00 +0000".into());
+    let session = AuthSessionSecret {
+        format_version: 3,
+        student_id: "1234567890".into(),
+        cookies: vec![persistent, expired],
+    };
+    let restored = session
+        .restorable_snapshot("1234567890", time::OffsetDateTime::now_utc())
+        .unwrap()
+        .unwrap();
+    assert_eq!(restored.cookies.len(), 1);
+    assert_eq!(restored.cookies[0].name, "JSESSIONID");
+    assert!(restored.cookies[0].expires.is_none());
+    assert_eq!(
+        session.restorable_snapshot("9999999999", time::OffsetDateTime::now_utc()),
+        Err(SessionRestoreError::AccountMismatch)
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn legacy_linux_cookie_scope_is_narrowed_and_latest_update_wins() {
+    let mut old = session_cookie();
+    old.expires = None;
+    old.host_only = false;
+    let mut fresh = old.clone();
+    fresh.host_only = true;
+    fresh.value = "fresh-test-value".into();
+    let session = AuthSessionSecret {
+        format_version: 2,
+        student_id: "1234567890".into(),
+        cookies: vec![old, fresh],
+    };
+    let restored = session
+        .restorable_snapshot("1234567890", time::OffsetDateTime::now_utc())
+        .unwrap()
+        .unwrap();
+    assert_eq!(restored.format_version, 3);
+    assert_eq!(restored.cookies.len(), 1);
+    assert!(restored.cookies[0].host_only);
+    assert_eq!(restored.cookies[0].value, "fresh-test-value");
+}
+
+#[test]
 fn auth_cookie_serialization_requires_a_safe_matching_path() {
     let mut cookie = session_cookie();
     cookie.path = "personalInfo".into();

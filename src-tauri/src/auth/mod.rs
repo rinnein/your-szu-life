@@ -1,6 +1,8 @@
 #[cfg(target_os = "android")]
 pub(crate) mod android_cookies;
 pub(crate) mod commands;
+#[cfg(target_os = "linux")]
+mod linux_cookies;
 pub(crate) mod model;
 mod probe;
 mod recovery;

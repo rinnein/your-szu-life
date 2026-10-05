@@ -4,6 +4,7 @@ use super::{
         auth_probe_succeeded, is_auth_login_url, is_auth_profile_url, is_authserver_url,
         probe_identity,
     },
+    session::SessionRestoreError,
     session::{AuthSessionSecret, StoredAuthCookie},
 };
 use reqwest::{blocking::Client, cookie::Jar, redirect::Policy, Url};
@@ -37,12 +38,16 @@ pub(super) fn refresh_session(
     if !is_student_id(expected_student_id) {
         return RefreshOutcome::Unavailable;
     }
-    if session
+    let session = match session
         .as_ref()
-        .is_some_and(|session| !session.can_restore())
+        .map(|session| session.restorable_snapshot(expected_student_id, OffsetDateTime::now_utc()))
+        .transpose()
     {
-        return RefreshOutcome::Invalid;
-    }
+        Ok(session) => session.flatten(),
+        Err(SessionRestoreError::AccountMismatch) => return RefreshOutcome::Mismatch,
+        Err(SessionRestoreError::Unsupported) => return RefreshOutcome::Invalid,
+        Err(SessionRestoreError::InvalidCookie) => return RefreshOutcome::Unavailable,
+    };
     let endpoint = match USER_CONF_URL.parse::<Url>() {
         Ok(url) => url,
         Err(_) => return RefreshOutcome::Unavailable,
@@ -74,76 +79,166 @@ pub(super) fn refresh_session(
         Ok(client) => client,
         Err(_) => return RefreshOutcome::Unavailable,
     };
-    let response = match client
-        .get(endpoint.clone())
-        .header("Accept", "application/json")
-        .send()
-    {
-        Ok(response) => response,
-        Err(_) => return RefreshOutcome::Unavailable,
-    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    refresh_with_transport(session, expected_student_id, |url| {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            return Err(());
+        }
+        let response = client
+            .get(url)
+            .header("Accept", "application/json")
+            .timeout(remaining.min(Duration::from_secs(8)))
+            .send()
+            .map_err(|_| ())?;
+        let status = response.status().as_u16();
+        let url = response.url().clone();
+        let location = response
+            .headers()
+            .get("location")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| url.join(value).ok());
+        let updates = response
+            .headers()
+            .get_all(reqwest::header::SET_COOKIE)
+            .iter()
+            .filter_map(|header| header.to_str().ok())
+            .filter_map(|header| response_cookie(header, &url))
+            .collect();
+        let mut body = Vec::new();
+        response
+            .take(MAX_RESPONSE_BYTES + 1)
+            .read_to_end(&mut body)
+            .map_err(|_| ())?;
+        if body.len() > MAX_RESPONSE_BYTES as usize {
+            return Err(());
+        }
+        Ok(AuthResponse {
+            status,
+            url,
+            location,
+            updates,
+            text: String::from_utf8(body).map_err(|_| ())?,
+        })
+    })
+}
 
-    let status = response.status().as_u16();
-    let response_url = response.url().clone();
-    let location = response
-        .headers()
-        .get("location")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| response_url.join(value).ok());
-    match classify_response(status, &response_url, location.as_ref()) {
-        ResponseDisposition::Valid => {}
+struct AuthResponse {
+    status: u16,
+    url: Url,
+    location: Option<Url>,
+    updates: Vec<ResponseCookie>,
+    text: String,
+}
+
+fn verify_response(response: &AuthResponse, expected: &str) -> RefreshOutcome {
+    match classify_response(response.status, &response.url, response.location.as_ref()) {
         ResponseDisposition::Invalid => return RefreshOutcome::Invalid,
         ResponseDisposition::Unavailable => return RefreshOutcome::Unavailable,
+        ResponseDisposition::Valid => {}
     }
-
-    let response_cookies = response
-        .headers()
-        .get_all(reqwest::header::SET_COOKIE)
-        .iter()
-        .filter_map(|header| header.to_str().ok())
-        .filter_map(|header| response_cookie(header, &response_url))
-        .collect::<Vec<_>>();
-    let mut body = Vec::new();
-    if response
-        .take(MAX_RESPONSE_BYTES + 1)
-        .read_to_end(&mut body)
-        .is_err()
-        || body.len() > MAX_RESPONSE_BYTES as usize
-    {
-        return RefreshOutcome::Unavailable;
-    }
-    let text = match String::from_utf8(body) {
-        Ok(text) => text,
-        Err(_) => return RefreshOutcome::Unavailable,
-    };
-    let payload = serde_json::json!({
-        "ok": true,
-        "status": status,
-        "url": response_url.as_str(),
-        "text": text,
-    })
-    .to_string();
+    let payload = serde_json::json!({ "ok": true, "status": response.status, "url": response.url.as_str(), "text": response.text }).to_string();
     if !auth_probe_succeeded(&payload) {
         return RefreshOutcome::Unavailable;
     }
-    let Some(identity) = probe_identity(&payload) else {
-        return RefreshOutcome::Unavailable;
-    };
-    if identity.student_id != expected_student_id {
+    if probe_identity(&payload).is_none_or(|identity| identity.student_id != expected) {
         return RefreshOutcome::Mismatch;
     }
-
-    let mut refreshed = session.unwrap_or_else(|| AuthSessionSecret {
+    RefreshOutcome::Refreshed(AuthSessionSecret {
+        student_id: expected.into(),
         format_version: 2,
-        student_id: expected_student_id.to_owned(),
+        cookies: Vec::new(),
+    })
+}
+
+fn refresh_with_transport(
+    session: Option<AuthSessionSecret>,
+    expected: &str,
+    mut request: impl FnMut(Url) -> Result<AuthResponse, ()>,
+) -> RefreshOutcome {
+    let can_resume_sso = session
+        .as_ref()
+        .is_some_and(|session| !session.cookies.is_empty());
+    let mut stored = session.unwrap_or_else(|| AuthSessionSecret {
+        student_id: expected.into(),
+        format_version: 2,
         cookies: Vec::new(),
     });
-    merge_response_cookies(&mut refreshed, response_cookies);
-    if refreshed.cookies.is_empty() {
+    let endpoint: Url = USER_CONF_URL.parse().expect("official endpoint");
+    let Ok(mut first) = request(endpoint.clone()) else {
         return RefreshOutcome::Unavailable;
+    };
+    let outcome = verify_response(&first, expected);
+    merge_response_cookies(&mut stored, std::mem::take(&mut first.updates));
+    match outcome {
+        RefreshOutcome::Refreshed(_) => {
+            return if stored.cookies.is_empty() {
+                RefreshOutcome::Unavailable
+            } else {
+                RefreshOutcome::Refreshed(stored)
+            }
+        }
+        RefreshOutcome::Invalid if can_resume_sso => {}
+        outcome => return outcome,
     }
-    refreshed.student_id = expected_student_id.to_owned();
-    RefreshOutcome::Refreshed(refreshed)
+    // An expired personalInfo session is not proof that the CAS login is gone.
+    // Let CASTGC/JSESSIONID establish a new service session without credentials.
+    let mut url = super::probe::authentication_url(None);
+    for _ in 0..8 {
+        let Ok(mut response) = request(url) else {
+            return RefreshOutcome::Unavailable;
+        };
+        merge_response_cookies(&mut stored, std::mem::take(&mut response.updates));
+        if (300..400).contains(&response.status) {
+            let Some(next) = response.location else {
+                return RefreshOutcome::Unavailable;
+            };
+            if !is_trusted_sso_url(&next) {
+                return RefreshOutcome::Unavailable;
+            }
+            url = next;
+            continue;
+        }
+        if !(200..300).contains(&response.status) {
+            return RefreshOutcome::Unavailable;
+        }
+        if is_auth_login_url(response.url.as_str()) {
+            // Only the actual official login form warrants dropping the session.
+            return if response.text.contains("login-main") && response.text.contains("pwdFromId") {
+                RefreshOutcome::Invalid
+            } else {
+                RefreshOutcome::Unavailable
+            };
+        }
+        if !is_auth_profile_url(response.url.as_str()) {
+            return RefreshOutcome::Unavailable;
+        }
+        let Ok(mut verified) = request(endpoint) else {
+            return RefreshOutcome::Unavailable;
+        };
+        let outcome = verify_response(&verified, expected);
+        merge_response_cookies(&mut stored, std::mem::take(&mut verified.updates));
+        return match outcome {
+            RefreshOutcome::Refreshed(_) => {
+                if stored.cookies.is_empty() {
+                    RefreshOutcome::Unavailable
+                } else {
+                    RefreshOutcome::Refreshed(stored)
+                }
+            }
+            // A redirect loop/transient service failure must not erase CASTGC.
+            RefreshOutcome::Invalid => RefreshOutcome::Unavailable,
+            other => other,
+        };
+    }
+    RefreshOutcome::Unavailable
+}
+
+fn is_trusted_sso_url(url: &Url) -> bool {
+    url.scheme() == "https"
+        && url.host_str() == Some(super::AUTH_HOST)
+        && url.port_or_known_default() == Some(443)
+        && (is_auth_login_url(url.as_str()) || is_auth_profile_url(url.as_str()))
 }
 
 fn classify_response(
@@ -237,6 +332,166 @@ fn response_cookie(raw: &str, response_url: &Url) -> Option<ResponseCookie> {
 mod tests {
     use super::super::AUTH_HOST;
     use super::*;
+
+    fn fixture_session() -> AuthSessionSecret {
+        AuthSessionSecret {
+            format_version: 3,
+            student_id: "1234567890".into(),
+            cookies: vec![StoredAuthCookie {
+                name: "CASTGC".into(),
+                value: "test-only-cas-session".into(),
+                domain: AUTH_HOST.into(),
+                host_only: true,
+                path: "/authserver".into(),
+                expires: None,
+                http_only: Some(true),
+                secure: Some(true),
+                same_site: None,
+                partitioned: None,
+            }],
+        }
+    }
+    fn reply(url: Url, status: u16, redirect: Option<&str>, text: &str) -> AuthResponse {
+        AuthResponse {
+            status,
+            location: redirect.map(|location| url.join(location).unwrap()),
+            url,
+            updates: Vec::new(),
+            text: text.into(),
+        }
+    }
+
+    #[test]
+    fn valid_saved_session_never_visits_login() {
+        let mut requests = 0;
+        let result = refresh_with_transport(Some(fixture_session()), "1234567890", |url| {
+            requests += 1;
+            assert_eq!(url.as_str(), USER_CONF_URL);
+            Ok(reply(url, 200, None, r#"{"datas":{"uid":"1234567890"}}"#))
+        });
+        assert!(matches!(result, RefreshOutcome::Refreshed(_)));
+        assert_eq!(requests, 1);
+    }
+
+    #[test]
+    fn expired_service_session_resumes_cas_without_a_password() {
+        let mut paths = Vec::new();
+        let result = refresh_with_transport(Some(fixture_session()), "1234567890", |url| {
+            paths.push(url.path().to_owned());
+            Ok(match paths.len() {
+                1 => reply(url, 302, Some(super::super::AUTH_LOGIN_URL), ""),
+                2 => {
+                    let mut result = reply(url, 302, Some(super::super::AUTH_PROFILE_URL), "");
+                    result.updates.push(
+                        response_cookie(
+                            "MOD_AUTH_CAS=renewed-test-only; Path=/; HttpOnly",
+                            &result.url,
+                        )
+                        .unwrap(),
+                    );
+                    result
+                }
+                3 => reply(url, 200, None, "<html>profile</html>"),
+                4 => reply(url, 200, None, r#"{"datas":{"uid":"1234567890"}}"#),
+                _ => panic!("unbounded SSO requests"),
+            })
+        });
+        let RefreshOutcome::Refreshed(session) = result else {
+            panic!("CAS restoration failed");
+        };
+        assert_eq!(paths.len(), 4);
+        assert!(session.cookies.iter().any(|cookie| cookie.name == "CASTGC"));
+        assert!(session
+            .cookies
+            .iter()
+            .any(|cookie| cookie.name == "MOD_AUTH_CAS" && cookie.host_only));
+    }
+
+    #[test]
+    fn only_a_real_login_form_discards_the_old_session() {
+        for (status, text, invalid) in [
+            (
+                200,
+                "<div class='login-main'><form id='pwdFromId'></form></div>",
+                true,
+            ),
+            (200, "proxy error", false),
+            (503, "unavailable", false),
+        ] {
+            let mut step = 0;
+            let result = refresh_with_transport(Some(fixture_session()), "1234567890", |url| {
+                step += 1;
+                Ok(if step == 1 {
+                    reply(url, 302, Some(super::super::AUTH_LOGIN_URL), "")
+                } else {
+                    reply(url, status, None, text)
+                })
+            });
+            assert_eq!(matches!(result, RefreshOutcome::Invalid), invalid);
+            assert_eq!(step, 2);
+        }
+    }
+
+    #[test]
+    fn sso_does_not_follow_external_redirects_or_loop_forever() {
+        for external in [true, false] {
+            let mut calls = 0;
+            let result = refresh_with_transport(Some(fixture_session()), "1234567890", |url| {
+                calls += 1;
+                Ok(reply(
+                    url,
+                    302,
+                    Some(if external && calls > 1 {
+                        "https://evil.example/"
+                    } else {
+                        super::super::AUTH_LOGIN_URL
+                    }),
+                    "",
+                ))
+            });
+            assert_eq!(result, RefreshOutcome::Unavailable);
+            assert_eq!(calls, if external { 2 } else { 9 });
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "Read-only live session diagnostic; requires explicit user authorization"]
+    fn verify_saved_session_without_writing_credentials() {
+        assert!(
+            std::env::var("SZU_READ_SAVED_SESSION").as_deref() == Ok("1"),
+            "set SZU_READ_SAVED_SESSION=1 to explicitly enable this live diagnostic"
+        );
+        let output = std::process::Command::new("secret-tool")
+            .args([
+                "lookup",
+                "service",
+                "in.rinne.your-szu-life",
+                "username",
+                "auth-session",
+            ])
+            .output()
+            .expect("credential lookup command unavailable");
+        assert!(output.status.success(), "saved session unavailable");
+        let Ok(session) = serde_json::from_slice::<AuthSessionSecret>(&output.stdout) else {
+            panic!("saved session format invalid");
+        };
+        let expected = session.student_id.clone();
+        let outcome = refresh_session(Some(session), &expected);
+        eprintln!(
+            "Saved-session result: {}",
+            match outcome {
+                RefreshOutcome::Refreshed(_) => "accepted",
+                RefreshOutcome::Invalid => "reauthentication requested",
+                RefreshOutcome::Mismatch => "identity mismatch",
+                RefreshOutcome::Unavailable => "temporarily unavailable",
+            }
+        );
+        assert!(
+            matches!(outcome, RefreshOutcome::Refreshed(_)),
+            "saved session was not accepted by this transport"
+        );
+    }
 
     #[test]
     fn rejects_invalid_student_ids_without_network_access() {

@@ -46,6 +46,48 @@ function page({
   pages.push(dom);
   const { window } = dom;
   const { document } = window;
+  let userInput = false;
+  const nativeAdd = document.addEventListener.bind(document);
+  const nativeRemove = document.removeEventListener.bind(document);
+  const wrappers = new WeakMap();
+  document.addEventListener = (type, listener, options) => {
+    if (!["input", "change", "click"].includes(type) || typeof listener !== "function")
+      return nativeAdd(type, listener, options);
+    const wrapper = (event) =>
+      listener(
+        userInput
+          ? new Proxy(event, {
+              get: (target, key) =>
+                key === "isTrusted"
+                  ? true
+                  : typeof target[key] === "function"
+                    ? target[key].bind(target)
+                    : Reflect.get(target, key, target),
+            })
+          : event,
+      );
+    wrappers.set(listener, wrapper);
+    nativeAdd(type, wrapper, options);
+  };
+  document.removeEventListener = (type, listener, options) =>
+    nativeRemove(type, wrappers.get(listener) || listener, options);
+  const click = (element) => {
+    userInput = true;
+    try {
+      element.click();
+    } finally {
+      userInput = false;
+    }
+  };
+  const input = (element) => {
+    userInput = true;
+    try {
+      element.dispatchEvent(new window.Event("input", { bubbles: true }));
+    } finally {
+      userInput = false;
+    }
+  };
+
   Object.defineProperty(document, "readyState", { configurable: true, value: ready });
   window.Element.prototype.getClientRects = function () {
     return this.isConnected ? [{}] : [];
@@ -91,7 +133,19 @@ function page({
       `(${authLoginPage.toString()})(${JSON.stringify({ generation: "1", documentId: "1", automatic, allowQrLogin: true, prefill, ...overrides })})`,
     );
   const field = (id) => document.querySelector(`.login-main #${id}`);
-  return { window, document, official, invoke, evaluate, captcha, field, finishCapture, submit };
+  return {
+    window,
+    document,
+    official,
+    invoke,
+    evaluate,
+    captcha,
+    field,
+    finishCapture,
+    submit,
+    click,
+    input,
+  };
 }
 
 afterEach(() => {
@@ -103,6 +157,20 @@ afterEach(() => {
 });
 
 describe("official auth automatic recovery", () => {
+  it("does not mistake official-page initialization events for user takeover", async () => {
+    const p = page();
+    const tab = p.document.createElement("button");
+    tab.id = "pwdLoginSpan";
+    p.document.body.append(tab);
+    p.evaluate();
+    tab.click();
+    p.field("username").dispatchEvent(new p.window.Event("change", { bubbles: true }));
+    await flush();
+    p.captcha();
+    await flush();
+    expect(p.official).toHaveBeenCalledTimes(1);
+    expect(p.invoke.mock.calls.some(([, args]) => args.operation === "stop")).toBe(false);
+  });
   it.each([20, 90, 119])("keeps a %s-second render within its own budget", async (seconds) => {
     vi.useFakeTimers();
     const p = page({ html: '<main class="login-main"></main>' });
@@ -167,7 +235,7 @@ describe("official auth automatic recovery", () => {
       );
     });
     tab.addEventListener("click", switched);
-    tab.click();
+    p.click(tab);
     await flush();
     expect(switched).toHaveBeenCalledTimes(1);
   });
@@ -267,7 +335,7 @@ describe("official auth automatic recovery", () => {
     p.captcha();
     await flush();
     p.field("password").value = "user-edit";
-    p.field("password").dispatchEvent(new p.window.Event("input", { bubbles: true }));
+    p.input(p.field("password"));
     p.finishCapture();
     await flush();
     expect(p.official).not.toHaveBeenCalled();
@@ -284,7 +352,7 @@ describe("official auth automatic recovery", () => {
     const tab = p.document.createElement("button");
     tab.id = "qrLoginSpan";
     p.document.body.append(tab);
-    tab.click();
+    p.click(tab);
     p.captcha();
     await flush();
     expect(p.official).not.toHaveBeenCalled();

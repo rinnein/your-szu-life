@@ -22,12 +22,76 @@ fn is_zero(value: &u8) -> bool {
 
 impl AuthSessionSecret {
     pub(super) fn has_android_cookie_metadata(&self) -> bool {
-        self.format_version == 2
+        matches!(self.format_version, 2 | 3)
     }
 
     pub(super) fn can_restore(&self) -> bool {
         !cfg!(target_os = "android") || self.has_android_cookie_metadata()
     }
+
+    pub(super) fn restorable_snapshot(
+        &self,
+        expected_id: &str,
+        now: OffsetDateTime,
+    ) -> Result<Option<Self>, SessionRestoreError> {
+        if self.student_id != expected_id {
+            return Err(SessionRestoreError::AccountMismatch);
+        }
+        if !self.can_restore() {
+            return Err(SessionRestoreError::Unsupported);
+        }
+        let mut cookies = Vec::new();
+        for original in &self.cookies {
+            let mut cookie = original.clone();
+            cookie.domain = cookie.domain.trim_start_matches('.').to_ascii_lowercase();
+            // Older desktop snapshots lost Soup's host/domain distinction.
+            // Narrow an ambiguous auth-host cookie to that exact host. A later
+            // HTTP update for the same cookie takes precedence over the old copy.
+            #[cfg(target_os = "linux")]
+            if self.format_version < 3 && cookie.domain == AUTH_HOST {
+                cookie.host_only = true;
+            }
+            if !cookie_in_auth_scope(&cookie)
+                || cookie.to_webview_cookie().is_err()
+                || cookie
+                    .expires
+                    .as_deref()
+                    .is_some_and(|date| OffsetDateTime::parse(date, &Rfc2822).is_err())
+            {
+                return Err(SessionRestoreError::InvalidCookie);
+            }
+            if !cookie.value.is_empty() && !cookie.is_definitely_expired(now) {
+                cookies.push(cookie);
+            }
+        }
+        let mut seen = HashSet::new();
+        cookies.reverse();
+        cookies.retain(|cookie| {
+            seen.insert((
+                cookie.name.clone(),
+                cookie.domain.clone(),
+                cookie.path.clone(),
+                cookie.host_only,
+            ))
+        });
+        cookies.reverse();
+        Ok((!cookies.is_empty()).then(|| Self {
+            format_version: if cfg!(target_os = "linux") {
+                3
+            } else {
+                self.format_version
+            },
+            student_id: self.student_id.clone(),
+            cookies,
+        }))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum SessionRestoreError {
+    AccountMismatch,
+    Unsupported,
+    InvalidCookie,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -178,6 +242,19 @@ const AUTH_COOKIE_URLS: [&str; 4] = [
     AUTH_USER_CONF_URL,
 ];
 
+pub(super) fn cookie_in_auth_scope(cookie: &StoredAuthCookie) -> bool {
+    is_auth_cookie_domain(&cookie.domain)
+        && (!cookie.host_only || cookie.domain.trim_start_matches('.') == AUTH_HOST)
+        && is_valid_cookie_path(&cookie.path)
+        && AUTH_COOKIE_URLS.iter().any(|url| {
+            let url: tauri::Url = url.parse().expect("fixed official URL");
+            url.path() == cookie.path
+                || (url.path().starts_with(&cookie.path)
+                    && (cookie.path.ends_with('/')
+                        || url.path().as_bytes().get(cookie.path.len()) == Some(&b'/')))
+        })
+}
+
 #[cfg(target_os = "android")]
 fn read_android_auth_cookies() -> Result<Vec<StoredAuthCookie>, String> {
     let mut stored = Vec::new();
@@ -206,7 +283,9 @@ pub(super) fn capture_auth_session(
         let _ = window;
         read_android_auth_cookies()?
     };
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_os = "linux")]
+    let stored = super::linux_cookies::read(window)?;
+    #[cfg(not(any(target_os = "android", target_os = "linux")))]
     let stored = {
         let mut cookies = Vec::new();
         for url in AUTH_COOKIE_URLS {
@@ -222,13 +301,13 @@ pub(super) fn capture_auth_session(
         return Err("未读取到官方认证会话".into());
     }
     Ok(AuthSessionSecret {
-        format_version: 2,
+        format_version: if cfg!(target_os = "linux") { 3 } else { 2 },
         student_id,
         cookies: stored,
     })
 }
 
-#[cfg(any(not(target_os = "android"), test))]
+#[cfg(any(not(any(target_os = "android", target_os = "linux")), test))]
 pub(super) fn collect_auth_cookies(
     cookies: impl IntoIterator<Item = Cookie<'static>>,
 ) -> Vec<StoredAuthCookie> {
@@ -251,14 +330,16 @@ pub(super) fn collect_auth_cookies(
     stored
 }
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "linux")))]
 pub(super) fn install_auth_cookie(
     window: &tauri::WebviewWindow,
     cookie: &StoredAuthCookie,
 ) -> Result<(), String> {
-    window
-        .set_cookie(cookie.to_webview_cookie()?)
-        .map_err(|error| error.to_string())
+    let mut native = cookie.to_webview_cookie()?;
+    if cookie.host_only {
+        native.set_domain(cookie.domain.clone());
+    }
+    window.set_cookie(native).map_err(|error| error.to_string())
 }
 
 #[cfg(target_os = "android")]
@@ -292,17 +373,37 @@ pub(super) fn install_auth_session_cookies(
         }
         super::android_cookies::write_cookies(&writes)
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_os = "linux")]
+    {
+        let window = app.get_webview_window("main").ok_or("主窗口不存在")?;
+        let cookies = session
+            .cookies
+            .iter()
+            .filter(|cookie| !cookie.is_definitely_expired(OffsetDateTime::now_utc()))
+            .cloned()
+            .collect();
+        super::linux_cookies::replace(&window, cookies)
+    }
+    #[cfg(not(any(target_os = "android", target_os = "linux")))]
     {
         let window = app.get_webview_window("main").ok_or("主窗口不存在")?;
         for cookie in &session.cookies {
-            install_auth_cookie(&window, cookie)?;
+            if !cookie.is_definitely_expired(OffsetDateTime::now_utc()) {
+                install_auth_cookie(&window, cookie)?;
+            }
         }
         Ok(())
     }
 }
 
 pub(super) fn clear_webview_session(app: &tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(window) = app.get_webview_window("main") {
+            super::linux_cookies::replace(&window, Vec::new())?;
+        }
+        return Ok(());
+    }
     #[cfg(target_os = "android")]
     {
         super::android_cookies::write_cookies(&android_cookie_deletions()?)?;
@@ -310,10 +411,12 @@ pub(super) fn clear_webview_session(app: &tauri::AppHandle) -> Result<(), String
             return Err("Android 认证会话未能清除".into());
         }
     }
+    #[cfg(not(target_os = "linux"))]
     if let Some(window) = app.get_webview_window("main") {
         window
             .clear_all_browsing_data()
             .map_err(|error| error.to_string())?;
     }
+    #[cfg(not(target_os = "linux"))]
     Ok(())
 }

@@ -7652,6 +7652,7 @@ dependencies = [
  "ddddocr-tract2",
  "dotenvy",
  "encoding_rs",
+ "gtk",
  "hmac",
  "image",
  "jni 0.21.1",
@@ -7672,6 +7673,7 @@ dependencies = [
  "serde_json",
  "sha1",
  "sha2 0.10.9",
+ "soup3",
  "tauri",
  "tauri-build",
  "tauri-plugin-keyring-store",
@@ -7682,6 +7684,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "uuid",
+ "webkit2gtk",
  "zeroize",
 ]
 

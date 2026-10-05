@@ -497,19 +497,19 @@ export default function authLoginPage(options) {
     true,
   );
   listen("input", (event) => {
-    if (!applyingCredentials && isActiveFormTarget(event.target)) {
+    if (event.isTrusted && !applyingCredentials && isActiveFormTarget(event.target)) {
       discardPassword();
       stop("已切换为手动登录。");
     }
   });
   listen("change", (event) => {
-    if (!applyingCredentials && isActiveFormTarget(event.target)) {
+    if (event.isTrusted && !applyingCredentials && isActiveFormTarget(event.target)) {
       discardPassword();
       stop("已切换为手动登录。");
     }
   });
   listen("click", (event) => {
-    if (replayingLoginMode) return;
+    if (replayingLoginMode || !event.isTrusted) return;
     if (
       event.target instanceof Element &&
       event.target.closest(
