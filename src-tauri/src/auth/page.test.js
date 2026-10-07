@@ -79,10 +79,10 @@ function page({
       userInput = false;
     }
   };
-  const input = (element) => {
+  const input = (element, type = "input") => {
     userInput = true;
     try {
-      element.dispatchEvent(new window.Event("input", { bubbles: true }));
+      element.dispatchEvent(new window.Event(type, { bubbles: true }));
     } finally {
       userInput = false;
     }
@@ -157,6 +157,140 @@ afterEach(() => {
 });
 
 describe("official auth automatic recovery", () => {
+  it("fills before captcha helpers finish loading and repairs fields cleared by page setup", async () => {
+    vi.useFakeTimers();
+    const p = page();
+    const check = p.window.checkNeedCaptcha;
+    delete p.window.checkNeedCaptcha;
+    p.evaluate();
+    await flush();
+    expect(p.field("password").value).toBe(CREDENTIALS.password);
+    p.field("password").value = "";
+    await vi.advanceTimersByTimeAsync(500);
+    expect(p.field("password").value).toBe(CREDENTIALS.password);
+    p.window.checkNeedCaptcha = check;
+    await vi.advanceTimersByTimeAsync(500);
+    p.captcha();
+    await flush();
+    expect(p.official).toHaveBeenCalledTimes(1);
+  });
+
+  it("consumes the full Enter cycle even after official validation moves focus to body", async () => {
+    const p = page({ backend: native(false), automatic: false, prefill: null });
+    p.evaluate();
+    await flush();
+    p.field("username").value = CREDENTIALS.identifier;
+    p.field("password").value = CREDENTIALS.password;
+    const password = p.field("password");
+    password.focus();
+    p.official.mockImplementation(() => {
+      password.disabled = true;
+      password.blur();
+      p.field("pwdFromId").submit();
+    });
+    p.document.body.addEventListener("keyup", (event) => {
+      if (event.key === "Enter") p.window.startLogin(p.field("login_submit"));
+    });
+    password.dispatchEvent(
+      new p.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+    await flush();
+    p.document.body.dispatchEvent(
+      new p.window.KeyboardEvent("keypress", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+    p.document.body.dispatchEvent(
+      new p.window.KeyboardEvent("keyup", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+    await flush();
+    expect(p.official).toHaveBeenCalledTimes(1);
+    expect(p.submit).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not discard a captured password on the blur/change caused by disabling its input", async () => {
+    const p = page({ backend: native(false), automatic: false, prefill: null });
+    p.evaluate();
+    await flush();
+    p.field("username").value = CREDENTIALS.identifier;
+    p.field("password").value = CREDENTIALS.password;
+    p.official.mockImplementation(() => {
+      p.field("password").disabled = true;
+      p.input(p.field("password"), "change");
+      p.field("pwdFromId").submit();
+    });
+    p.field("login_submit").click();
+    await flush();
+    expect(p.submit).toHaveBeenCalledTimes(1);
+    expect(p.invoke.mock.calls.some(([, args]) => args.operation === "discardPassword")).toBe(
+      false,
+    );
+  });
+
+  it("waits for every queued credential discard before capturing and submitting", async () => {
+    const p = page({ backend: native(false), automatic: false, prefill: null });
+    const original = p.invoke.getMockImplementation();
+    const releases = [];
+    p.invoke.mockImplementation((command, args) =>
+      args.operation === "discardPassword"
+        ? new Promise((resolve) => releases.push(resolve))
+        : original(command, args),
+    );
+    p.evaluate();
+    await flush();
+    p.field("username").value = CREDENTIALS.identifier;
+    p.field("password").value = "partial";
+    p.input(p.field("password"));
+    p.field("password").value = CREDENTIALS.password;
+    p.input(p.field("password"));
+    p.field("login_submit").click();
+    await flush();
+    expect(releases).toHaveLength(1);
+    expect(p.invoke.mock.calls.some(([command]) => command === "capture_auth_credentials")).toBe(
+      false,
+    );
+    releases[0]();
+    await flush();
+    expect(releases).toHaveLength(2);
+    expect(p.official).not.toHaveBeenCalled();
+    releases[1]();
+    await flush();
+    expect(p.official).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not submit Enter used to finish an IME composition", async () => {
+    const p = page({ backend: native(false), automatic: false, prefill: null });
+    p.evaluate();
+    await flush();
+    p.field("username").value = CREDENTIALS.identifier;
+    p.field("password").value = CREDENTIALS.password;
+    p.document.body.addEventListener("keyup", () => p.window.startLogin(p.field("login_submit")));
+    const password = p.field("password");
+    password.dispatchEvent(new p.window.CompositionEvent("compositionstart", { bubbles: true }));
+    password.dispatchEvent(
+      new p.window.KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true }),
+    );
+    password.dispatchEvent(new p.window.CompositionEvent("compositionend", { bubbles: true }));
+    password.dispatchEvent(new p.window.KeyboardEvent("keyup", { key: "Enter", bubbles: true }));
+    expect(p.official).not.toHaveBeenCalled();
+  });
+
+  it("lets the official captcha finish an already validated form without another login attempt", async () => {
+    vi.useFakeTimers();
+    const p = page();
+    p.official.mockImplementation(() => {
+      p.window.needCaptcha = true;
+      p.field("password").disabled = true;
+    });
+    p.evaluate();
+    await flush();
+    p.captcha();
+    await flush();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(p.document.body.textContent).toContain("验证码");
+    p.field("pwdFromId").submit();
+    await flush();
+    expect(p.submit).toHaveBeenCalledTimes(1);
+    expect(p.official).toHaveBeenCalledTimes(1);
+  });
   it("does not mistake official-page initialization events for user takeover", async () => {
     const p = page();
     const tab = p.document.createElement("button");

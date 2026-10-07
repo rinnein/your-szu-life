@@ -20,7 +20,7 @@ const LOCAL_ENTRY_URL: &str = "http://tauri.localhost/";
 #[cfg(not(any(target_os = "windows", target_os = "android")))]
 const LOCAL_ENTRY_URL: &str = "tauri://localhost/";
 
-const LOGIN_CAPTURE_RETRY_DELAYS_MS: &[u64] = &[100, 250, 500, 1_000, 2_000];
+const LOGIN_CAPTURE_RETRY_INTERVAL: Duration = Duration::from_millis(250);
 const AUTH_PROBE_INTERVAL: Duration = Duration::from_millis(250);
 
 pub(super) fn resume_application_window(app: &tauri::AppHandle, store: &AuthStore) {
@@ -57,24 +57,56 @@ pub(super) fn application_resume_url(store: &AuthStore) -> tauri::Url {
         .unwrap_or_else(|| LOCAL_ENTRY_URL.parse().expect("valid local entry URL"))
 }
 
+pub(crate) fn setup_login_injection(app: &tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    if let Some(window) = app.get_webview_window("main") {
+        use webkit2gtk::WebViewExt;
+        let target: tauri::Webview = window.as_ref().clone();
+        window
+            .with_webview(move |platform| {
+                platform.inner().connect_load_changed(move |view, event| {
+                    // Committed identifies the new document. Waiting for Finished
+                    // also waits for slow images/fonts and can exhaust auto recovery.
+                    if event == webkit2gtk::LoadEvent::Committed
+                        && view.uri().is_some_and(|url| is_auth_login_url(&url))
+                    {
+                        inject_login_capture(&target);
+                    }
+                });
+            })
+            .map_err(|_| "无法初始化认证页面注入".to_string())?;
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = app;
+    Ok(())
+}
+
 fn inject_login_capture(window: &tauri::Webview) {
     let app = window.app_handle();
     let Some(store) = app.try_state::<AuthStore>() else {
         return;
     };
-    let Some((generation, document)) = store
-        .recovery
-        .lock()
-        .ok()
-        .filter(|flow| flow.active)
-        .map(|flow| (flow.generation, flow.document))
-    else {
-        return;
+    let (generation, document) = {
+        let Ok(mut flow) = store.recovery.lock() else {
+            return;
+        };
+        if !flow.prepare_login_document() {
+            return;
+        }
+        // Clear old candidates once for each committed login document. A later
+        // Finished event for the same page must not erase an in-flight submit.
+        if let Ok(mut captured) = store.captured.lock() {
+            *captured = None;
+        }
+        if let Ok(mut submitted) = store.submitted_password.lock() {
+            *submitted = None;
+        }
+        (flow.generation, flow.document)
     };
     let retry_window = window.clone();
     thread::spawn(move || {
-        for delay in std::iter::once(&0).chain(LOGIN_CAPTURE_RETRY_DELAYS_MS) {
-            thread::sleep(Duration::from_millis(*delay));
+        let until = std::time::Instant::now() + Duration::from_secs(120);
+        while std::time::Instant::now() < until {
             let app = retry_window.app_handle();
             let Some(store) = app.try_state::<AuthStore>() else {
                 return;
@@ -118,6 +150,19 @@ fn inject_login_capture(window: &tauri::Webview) {
                 automatic,
             );
             let _ = retry_window.eval(&script);
+            let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+            let check = format!("Boolean(window.__SZU_LOGIN_CAPTURE_READY__ && window.__SZU_AUTH_LOGIN__?.generation === {:?} && window.__SZU_AUTH_LOGIN__?.documentId === {:?})", generation.to_string(), document.to_string());
+            let _ = retry_window.eval_with_callback(check, move |value| {
+                let _ = sender.try_send(value);
+            });
+            if receiver
+                .recv_timeout(LOGIN_CAPTURE_RETRY_INTERVAL)
+                .ok()
+                .is_some_and(|value| value == "true")
+            {
+                return;
+            }
+            thread::sleep(LOGIN_CAPTURE_RETRY_INTERVAL);
         }
     });
 }
@@ -358,15 +403,6 @@ pub(crate) fn on_page_load(window: &tauri::Webview, payload: &tauri::webview::Pa
         let app = window.app_handle();
         if let Some(store) = app.try_state::<AuthStore>() {
             store.cancel_auth_probe();
-        }
-        if let Some(store) = app.try_state::<AuthStore>() {
-            // A committed login document is a fresh form or a failed submission.
-            if let Ok(mut capture) = store.captured.lock() {
-                *capture = None;
-            }
-            if let Ok(mut submitted) = store.submitted_password.lock() {
-                *submitted = None;
-            }
         }
         inject_login_capture(window);
     }

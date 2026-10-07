@@ -22,6 +22,7 @@ pub(crate) fn run() {
         .plugin(crate::notification::init())
         .setup(move |app| {
             crate::storage::initialize(app.handle())?;
+            auth::webview::setup_login_injection(app.handle())?;
             crate::enrollment::initialize(app.handle(), academic_credentials.clone())?;
             if let Err(error) = oj::initialize(app.handle()) {
                 eprintln!("OJ 初始化失败: {error}");

@@ -39,6 +39,7 @@ pub(super) struct Recovery {
     pub active: bool,
     pub automatic: bool,
     pub phase: RecoveryPhase,
+    login_document: Option<u64>,
     deadline: Instant,
 }
 
@@ -50,6 +51,7 @@ impl Default for Recovery {
             active: false,
             automatic: false,
             phase: RecoveryPhase::Manual,
+            login_document: None,
             deadline: Instant::now(),
         }
     }
@@ -72,6 +74,15 @@ impl Recovery {
         self.generation += 1;
         self.active = false;
         self.phase = RecoveryPhase::Manual;
+        self.login_document = None;
+    }
+
+    pub fn prepare_login_document(&mut self) -> bool {
+        if !self.active || self.login_document == Some(self.document) {
+            return false;
+        }
+        self.login_document = Some(self.document);
+        true
     }
 
     pub fn matches(&self, generation: &str, document: &str) -> bool {
@@ -130,6 +141,19 @@ impl Recovery {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn committed_and_finished_share_one_login_document_preparation() {
+        let mut flow = Recovery::default();
+        flow.begin(true, Instant::now());
+        flow.document += 1;
+        assert!(flow.prepare_login_document());
+        assert!(!flow.prepare_login_document());
+        flow.document += 1;
+        assert!(flow.prepare_login_document());
+        flow.invalidate();
+        assert!(!flow.prepare_login_document());
+    }
 
     #[test]
     fn rendering_preparation_and_submission_have_independent_bounded_deadlines() {

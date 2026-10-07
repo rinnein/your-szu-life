@@ -33,6 +33,13 @@ export default function authLoginPage(options) {
   let formReady = false;
   let credentialReset = Promise.resolve(true);
   let forwardingForm = false;
+  let forwardingPromise = null;
+  let posted = false;
+  let submissionSnapshot = null;
+  let officialForm = null;
+  let enterCycle = false;
+  let composing = false;
+  let compositionEnter = false;
   const originalFormSubmit = HTMLFormElement.prototype.submit;
   let wrappedFormSubmit;
   let replayingLoginMode = false;
@@ -60,9 +67,13 @@ export default function authLoginPage(options) {
     }
     if (element.textContent !== message) element.textContent = message;
   };
-  const stop = (message = "自动登录已停止，请在官方页面手动完成登录。") => {
+  const stop = (
+    message = "自动登录已停止，请在官方页面手动完成登录。",
+    preserveSubmission = false,
+  ) => {
     manual = true;
     stopVersion += 1;
+    if (preserveSubmission && officialForm) officialForm.version = stopVersion;
     savedCredentials = null;
     clearTimeout(deadline);
     void control("stop").catch(() => undefined);
@@ -79,11 +90,13 @@ export default function authLoginPage(options) {
     window.jQuery?.(document).off(".szuAuthRecovery");
     if (window.startLogin === wrappedStartLogin) window.startLogin = originalStartLogin;
     candidateCapture = null;
+    submissionSnapshot = null;
+    officialForm = null;
     if (HTMLFormElement.prototype.submit === wrappedFormSubmit)
       HTMLFormElement.prototype.submit = originalFormSubmit;
   };
   window.__SZU_AUTH_LOGIN__ = { generation, documentId, stop, dispose };
-  const autofilledForms = new WeakSet();
+  window.__SZU_LOGIN_CAPTURE_READY__ = false;
   let submitting = false;
   let allowOfficialSubmit = false;
   let candidateCapture = null;
@@ -127,10 +140,14 @@ export default function authLoginPage(options) {
     const form = loginForm();
     const account = accountInput();
     const password = passwordInput();
-    if (!form || !account || !password || autofilledForms.has(form)) return;
-    // The values are only injected into the active account/password form on
-    // the HTTPS official login origin. Mark this specific form so the user can
-    // still deliberately edit or clear either field afterwards.
+    if (!form || !account || !password) return;
+    if (
+      account.value === savedCredentials.identifier &&
+      password.value === savedCredentials.password
+    )
+      return;
+    // Official initialization can rebuild or clear these fields. Refill only
+    // until real user input takes ownership; never depend on a one-time form node.
     account.value = savedCredentials.identifier;
     password.value = savedCredentials.password;
     applyingCredentials = true;
@@ -139,7 +156,6 @@ export default function authLoginPage(options) {
       input.dispatchEvent(new Event("change", { bubbles: true }));
     }
     applyingCredentials = false;
-    autofilledForms.add(form);
   };
   const disableQrLogin = () => {
     if (qrAllowed) return;
@@ -195,10 +211,16 @@ export default function authLoginPage(options) {
   };
   const discardPassword = () => {
     candidateCapture = null;
-    credentialReset = control("discardPassword").then(
-      () => true,
-      () => false,
-    );
+    officialForm = null;
+    submissionSnapshot = null;
+    // Each keystroke may invalidate an older candidate. Finish every prior
+    // invalidation before a new capture so a late IPC cannot erase it.
+    credentialReset = credentialReset
+      .then(() => control("discardPassword"))
+      .then(
+        () => true,
+        () => false,
+      );
   };
   const captureCandidate = async () => {
     if (!(await credentialReset)) return false;
@@ -215,36 +237,61 @@ export default function authLoginPage(options) {
     if (!captured && candidateCapture?.key === key) candidateCapture = null;
     return captured;
   };
-  const submitPasswordForm = async (form) => {
-    if (forwardingForm || disposed) return;
+  const valuesMatch = (capture) =>
+    !!capture &&
+    accountInput()?.value.trim() === capture.identifier &&
+    passwordInput()?.value === capture.password;
+  const submitPasswordForm = (form) => {
+    if (forwardingForm || disposed) return forwardingPromise;
+    const authorization = officialForm;
+    if (!authorization || authorization.form !== form || !valuesMatch(authorization.capture))
+      return;
     forwardingForm = true;
-    const version = stopVersion;
-    try {
-      await control("passwordSubmitted");
-      if (!disposed && version === stopVersion && form === loginForm() && form.isConnected) {
-        originalFormSubmit.call(form);
+    forwardingPromise = (async () => {
+      try {
+        await control("passwordSubmitted");
+        if (
+          !disposed &&
+          authorization.version === stopVersion &&
+          form === loginForm() &&
+          form.isConnected &&
+          valuesMatch(authorization.capture)
+        ) {
+          posted = true;
+          originalFormSubmit.call(form);
+        }
+      } catch {
+        stop("未能保存登录提交状态，请手动重试。");
+      } finally {
+        forwardingForm = false;
+        if (officialForm === authorization) officialForm = null;
       }
-    } catch {
-      stop("未能保存登录提交状态，请手动重试。");
-    } finally {
-      forwardingForm = false;
-    }
+    })();
+    return forwardingPromise;
   };
   wrappedFormSubmit = function (...args) {
     if (!isActiveLoginForm(this)) return originalFormSubmit.apply(this, args);
-    if (allowOfficialSubmit) void submitPasswordForm(this);
+    if (officialForm?.form === this) void submitPasswordForm(this);
     else void bridgeSubmit();
   };
   HTMLFormElement.prototype.submit = wrappedFormSubmit;
-  const continueOfficialLogin = (button) => {
+  const continueOfficialLogin = (button, capture, version) => {
     if (!button || button !== loginButton() || typeof window.startLogin !== "function") {
       throw new Error("active login button or startLogin unavailable");
     }
+    officialForm = { form: loginForm(), capture, version };
+    // This bypass only covers the synchronous call into the official handler.
+    // It must never allow the following keypress/keyup to trigger another login.
     allowOfficialSubmit = true;
-    window.startLogin(button);
+    try {
+      window.startLogin(button);
+    } finally {
+      allowOfficialSubmit = false;
+    }
+    return forwardingPromise;
   };
   const bridgeSubmit = async (auto = false) => {
-    if (submitting) return;
+    if (submitting || posted) return;
     const capture = prepare();
     const button = loginButton();
     if (!capture || !button) {
@@ -253,8 +300,9 @@ export default function authLoginPage(options) {
     }
     const form = loginForm();
     const version = stopVersion;
-    let continued = false;
     submitting = true;
+    forwardingPromise = null;
+    submissionSnapshot = capture;
     button.setAttribute("aria-disabled", "true");
     try {
       if (!(await captureCandidate())) throw new Error("credential capture failed");
@@ -263,7 +311,8 @@ export default function authLoginPage(options) {
         loginForm() !== form ||
         accountInput()?.value.trim() !== capture.identifier ||
         passwordInput()?.value !== capture.password ||
-        (auto && (manual || version !== stopVersion))
+        version !== stopVersion ||
+        (auto && manual)
       )
         return;
       if (auto) {
@@ -286,27 +335,19 @@ export default function authLoginPage(options) {
         );
         notice("正在恢复统一认证，请稍候…");
       }
-      continueOfficialLogin(button);
-      continued = true;
-      setTimeout(() => {
-        allowOfficialSubmit = false;
-        submitting = false;
-        button.removeAttribute("aria-disabled");
-      }, 3000);
+      await continueOfficialLogin(button, capture, version);
     } catch {
       submitting = false;
       button.removeAttribute("aria-disabled");
       if (auto) stop("自动登录未完成，请在官方页面手动继续。");
       else setCaptureError("未能保存本次登录凭据，请刷新后重新输入");
     } finally {
-      if (!continued) {
-        submitting = false;
-        button.removeAttribute("aria-disabled");
-      }
+      submitting = false;
+      button.removeAttribute("aria-disabled");
+      if (!officialForm) submissionSnapshot = null;
     }
   };
   const intercept = (event) => {
-    if (allowOfficialSubmit) return;
     event.preventDefault();
     event.stopImmediatePropagation();
     if (automatic && !manual) stop("已切换为手动登录。");
@@ -335,11 +376,37 @@ export default function authLoginPage(options) {
     window.startLogin = guardedStartLogin;
   };
   const interceptEnter = (event) => {
-    if (event.isComposing) return;
     const isEnter =
-      event.key === "Enter" || event.code === "Enter" || event.keyCode === 13 || event.which === 13;
+      event.key === "Enter" ||
+      event.code === "Enter" ||
+      event.code === "NumpadEnter" ||
+      event.keyCode === 13 ||
+      event.which === 13;
+    if (!isEnter) return;
+    if (event.isComposing || composing || event.keyCode === 229) {
+      compositionEnter = event.type !== "keyup";
+      event.stopImmediatePropagation();
+      return;
+    }
+    if (compositionEnter) {
+      event.stopImmediatePropagation();
+      if (event.type === "keyup") compositionEnter = false;
+      return;
+    }
     const target = isActiveFormTarget(event.target) ? event.target : document.activeElement;
-    if (isEnter && isActiveFormTarget(target)) intercept(event);
+    // Disabling the password input in checkForm moves focus out of the form.
+    // Still consume the rest of this Enter cycle before the site's body keyup.
+    if (!enterCycle && !isActiveFormTarget(target)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (event.type === "keyup") {
+      enterCycle = false;
+      return;
+    }
+    if (event.type !== "keydown" || enterCycle || event.repeat) return;
+    enterCycle = true;
+    if (automatic && !manual) stop("已切换为手动登录。");
+    void bridgeSubmit();
   };
 
   const visible = (element) => {
@@ -358,7 +425,7 @@ export default function authLoginPage(options) {
           visible(element) && (element.id !== "sliderCaptchaDiv" || element.children.length),
       )
     ) {
-      stop("需要完成验证码，请在官方页面手动登录。");
+      stop("需要完成验证码，请在官方页面手动登录。", true);
       return true;
     }
     if (
@@ -395,7 +462,7 @@ export default function authLoginPage(options) {
         return;
       }
       captchaChecked = true;
-      if (xhr.responseJSON.isNeed) stop("需要完成验证码，请在官方页面手动登录。");
+      if (xhr.responseJSON.isNeed) stop("需要完成验证码，请在官方页面手动登录。", true);
       else void refreshLoginForm();
     });
     try {
@@ -412,18 +479,23 @@ export default function authLoginPage(options) {
       disableQrLogin();
       installStartLoginHook();
       if (manual) return;
-      if (options.automatic && blocked()) return;
+      if (options.automatic && !savedCredentials && blocked()) return;
       const form = loginForm();
       const button = loginButton();
       if (
         !visible(form) ||
-        !visible(button) ||
         !visible(accountInput()) ||
         !visible(passwordInput()) ||
         accountInput()?.disabled ||
         passwordInput()?.disabled ||
+        document.readyState === "loading"
+      )
+        return;
+      applySavedCredentials();
+      if (options.automatic && blocked()) return;
+      if (
+        !visible(button) ||
         button.disabled ||
-        document.readyState === "loading" ||
         typeof window.startLogin !== "function" ||
         (automatic &&
           !formReady &&
@@ -444,7 +516,6 @@ export default function authLoginPage(options) {
           status.remainingMs,
         );
       }
-      applySavedCredentials();
       prepare();
       if (!automatic || submitting) return;
       checkCaptcha();
@@ -475,6 +546,12 @@ export default function authLoginPage(options) {
     },
     true,
   );
+  listen("compositionstart", () => {
+    composing = true;
+  });
+  listen("compositionend", () => {
+    composing = false;
+  });
   listen("keydown", interceptEnter, true);
   listen("keypress", interceptEnter, true);
   listen("keyup", interceptEnter, true);
@@ -487,7 +564,7 @@ export default function authLoginPage(options) {
         return;
       }
       if (isActiveLoginForm(event.target)) {
-        if (allowOfficialSubmit) {
+        if (officialForm?.form === event.target) {
           event.preventDefault();
           event.stopImmediatePropagation();
           void submitPasswordForm(event.target);
@@ -497,13 +574,23 @@ export default function authLoginPage(options) {
     true,
   );
   listen("input", (event) => {
-    if (event.isTrusted && !applyingCredentials && isActiveFormTarget(event.target)) {
+    if (
+      event.isTrusted &&
+      !applyingCredentials &&
+      (event.target === accountInput() || event.target === passwordInput()) &&
+      !valuesMatch(submissionSnapshot)
+    ) {
       discardPassword();
       stop("已切换为手动登录。");
     }
   });
   listen("change", (event) => {
-    if (event.isTrusted && !applyingCredentials && isActiveFormTarget(event.target)) {
+    if (
+      event.isTrusted &&
+      !applyingCredentials &&
+      (event.target === accountInput() || event.target === passwordInput()) &&
+      !valuesMatch(submissionSnapshot)
+    ) {
       discardPassword();
       stop("已切换为手动登录。");
     }
