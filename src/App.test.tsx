@@ -203,7 +203,7 @@ describe("HeroUI frontend smoke tests", () => {
     expect(await screen.findByRole("heading", { name: "诊断日志" })).toBeInTheDocument();
   });
 
-  it.each(["选课", "培养方案检查", "成绩查询"])(
+  it.each(["成绩查询"])(
     "keeps %s on the workbench with a dismissible placeholder alert",
     async (label) => {
       vi.mocked(invoke).mockImplementation(async (command) => {
@@ -295,12 +295,13 @@ describe("HeroUI frontend smoke tests", () => {
     renderRouterApp();
     const accountTrigger = await screen.findByRole("button", { name: "打开账户菜单" });
     expect(accountTrigger.querySelector('[data-slot="avatar"]')).not.toBeInTheDocument();
-    expect(document.querySelectorAll(".feature-icon svg")).toHaveLength(10);
+    expect(document.querySelectorAll(".feature-icon svg")).toHaveLength(11);
     for (const [label, description] of [
       ["上课时间表", "查看各节次上课时间"],
       ["UOOC刷课", "优课在线视频任务"],
-      ["选课", "暂未实现 · 即将支持"],
-      ["培养方案检查", "暂未实现 · 即将支持"],
+      ["选课", "查课、抢课与选课期间课表"],
+      ["学业完成查询", "培养方案、学分与课程完成情况"],
+      ["WebVPN", "校外访问与专属2FA认证"],
       ["成绩查询", "暂未实现 · 即将支持"],
       ["校园网登录", "教工区 + 宿舍区 | 自动登录"],
       ["校园卡/电费/网费", "快速导航入口"],

@@ -1,3 +1,4 @@
+mod enrollment;
 mod app;
 mod app_content;
 mod auth;

@@ -11,19 +11,28 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AboutRouteImport } from './routes/about'
+import { Route as AcademicRouteImport } from './routes/academic'
 import { Route as CampusNetworkRouteImport } from './routes/campus-network'
 import { Route as CampusPaymentsRouteRouteImport } from './routes/campus-payments/route'
 import { Route as ClassTimetableRouteImport } from './routes/class-timetable'
 import { Route as ComputingRouteImport } from './routes/computing'
 import { Route as DebugRouteImport } from './routes/debug'
+import { Route as EnrollmentRouteImport } from './routes/enrollment'
 import { Route as OjRouteImport } from './routes/oj'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as UoocRouteImport } from './routes/uooc'
+import { Route as WebvpnRouteImport } from './routes/webvpn'
 import { Route as CampusPaymentsIndexRouteImport } from './routes/campus-payments/index'
 import { Route as CampusPaymentsCardRouteImport } from './routes/campus-payments/card'
 import { Route as CampusPaymentsElectricityRouteImport } from './routes/campus-payments/electricity'
 import { Route as CampusPaymentsNetworkRouteImport } from './routes/campus-payments/network'
 import { Route as CampusPaymentsRechargeRouteImport } from './routes/campus-payments/recharge'
+import { Route as EnrollmentIndexRouteImport } from './routes/enrollment.index'
+import { Route as EnrollmentLoginRouteImport } from './routes/enrollment.login'
+import { Route as EnrollmentSelectedRouteImport } from './routes/enrollment.selected'
+import { Route as EnrollmentSettingsRouteImport } from './routes/enrollment.settings'
+import { Route as EnrollmentTasksRouteImport } from './routes/enrollment.tasks'
+import { Route as EnrollmentTimetableRouteImport } from './routes/enrollment.timetable'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -33,6 +42,11 @@ const IndexRoute = IndexRouteImport.update({
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AcademicRoute = AcademicRouteImport.update({
+  id: '/academic',
+  path: '/academic',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CampusNetworkRoute = CampusNetworkRouteImport.update({
@@ -60,6 +74,11 @@ const DebugRoute = DebugRouteImport.update({
   path: '/debug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EnrollmentRoute = EnrollmentRouteImport.update({
+  id: '/enrollment',
+  path: '/enrollment',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OjRoute = OjRouteImport.update({
   id: '/oj',
   path: '/oj',
@@ -73,6 +92,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const UoocRoute = UoocRouteImport.update({
   id: '/uooc',
   path: '/uooc',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WebvpnRoute = WebvpnRouteImport.update({
+  id: '/webvpn',
+  path: '/webvpn',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CampusPaymentsIndexRoute = CampusPaymentsIndexRouteImport.update({
@@ -101,27 +125,67 @@ const CampusPaymentsRechargeRoute = CampusPaymentsRechargeRouteImport.update({
   path: '/recharge',
   getParentRoute: () => CampusPaymentsRouteRoute,
 } as any)
+const EnrollmentIndexRoute = EnrollmentIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => EnrollmentRoute,
+} as any)
+const EnrollmentLoginRoute = EnrollmentLoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => EnrollmentRoute,
+} as any)
+const EnrollmentSelectedRoute = EnrollmentSelectedRouteImport.update({
+  id: '/selected',
+  path: '/selected',
+  getParentRoute: () => EnrollmentRoute,
+} as any)
+const EnrollmentSettingsRoute = EnrollmentSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => EnrollmentRoute,
+} as any)
+const EnrollmentTasksRoute = EnrollmentTasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
+  getParentRoute: () => EnrollmentRoute,
+} as any)
+const EnrollmentTimetableRoute = EnrollmentTimetableRouteImport.update({
+  id: '/timetable',
+  path: '/timetable',
+  getParentRoute: () => EnrollmentRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/campus-payments': typeof CampusPaymentsRouteRouteWithChildren
   '/about': typeof AboutRoute
+  '/academic': typeof AcademicRoute
   '/campus-network': typeof CampusNetworkRoute
   '/class-timetable': typeof ClassTimetableRoute
   '/computing': typeof ComputingRoute
   '/debug': typeof DebugRoute
+  '/enrollment': typeof EnrollmentRouteWithChildren
   '/oj': typeof OjRoute
   '/settings': typeof SettingsRoute
   '/uooc': typeof UoocRoute
+  '/webvpn': typeof WebvpnRoute
   '/campus-payments/card': typeof CampusPaymentsCardRoute
   '/campus-payments/electricity': typeof CampusPaymentsElectricityRoute
   '/campus-payments/network': typeof CampusPaymentsNetworkRoute
   '/campus-payments/recharge': typeof CampusPaymentsRechargeRoute
+  '/enrollment/login': typeof EnrollmentLoginRoute
+  '/enrollment/selected': typeof EnrollmentSelectedRoute
+  '/enrollment/settings': typeof EnrollmentSettingsRoute
+  '/enrollment/tasks': typeof EnrollmentTasksRoute
+  '/enrollment/timetable': typeof EnrollmentTimetableRoute
   '/campus-payments/': typeof CampusPaymentsIndexRoute
+  '/enrollment/': typeof EnrollmentIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/academic': typeof AcademicRoute
   '/campus-network': typeof CampusNetworkRoute
   '/class-timetable': typeof ClassTimetableRoute
   '/computing': typeof ComputingRoute
@@ -129,29 +193,45 @@ export interface FileRoutesByTo {
   '/oj': typeof OjRoute
   '/settings': typeof SettingsRoute
   '/uooc': typeof UoocRoute
+  '/webvpn': typeof WebvpnRoute
   '/campus-payments/card': typeof CampusPaymentsCardRoute
   '/campus-payments/electricity': typeof CampusPaymentsElectricityRoute
   '/campus-payments/network': typeof CampusPaymentsNetworkRoute
   '/campus-payments/recharge': typeof CampusPaymentsRechargeRoute
+  '/enrollment/login': typeof EnrollmentLoginRoute
+  '/enrollment/selected': typeof EnrollmentSelectedRoute
+  '/enrollment/settings': typeof EnrollmentSettingsRoute
+  '/enrollment/tasks': typeof EnrollmentTasksRoute
+  '/enrollment/timetable': typeof EnrollmentTimetableRoute
   '/campus-payments': typeof CampusPaymentsIndexRoute
+  '/enrollment': typeof EnrollmentIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/campus-payments': typeof CampusPaymentsRouteRouteWithChildren
   '/about': typeof AboutRoute
+  '/academic': typeof AcademicRoute
   '/campus-network': typeof CampusNetworkRoute
   '/class-timetable': typeof ClassTimetableRoute
   '/computing': typeof ComputingRoute
   '/debug': typeof DebugRoute
+  '/enrollment': typeof EnrollmentRouteWithChildren
   '/oj': typeof OjRoute
   '/settings': typeof SettingsRoute
   '/uooc': typeof UoocRoute
+  '/webvpn': typeof WebvpnRoute
   '/campus-payments/card': typeof CampusPaymentsCardRoute
   '/campus-payments/electricity': typeof CampusPaymentsElectricityRoute
   '/campus-payments/network': typeof CampusPaymentsNetworkRoute
   '/campus-payments/recharge': typeof CampusPaymentsRechargeRoute
+  '/enrollment/login': typeof EnrollmentLoginRoute
+  '/enrollment/selected': typeof EnrollmentSelectedRoute
+  '/enrollment/settings': typeof EnrollmentSettingsRoute
+  '/enrollment/tasks': typeof EnrollmentTasksRoute
+  '/enrollment/timetable': typeof EnrollmentTimetableRoute
   '/campus-payments/': typeof CampusPaymentsIndexRoute
+  '/enrollment/': typeof EnrollmentIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -159,22 +239,32 @@ export interface FileRouteTypes {
     | '/'
     | '/campus-payments'
     | '/about'
+    | '/academic'
     | '/campus-network'
     | '/class-timetable'
     | '/computing'
     | '/debug'
+    | '/enrollment'
     | '/oj'
     | '/settings'
     | '/uooc'
+    | '/webvpn'
     | '/campus-payments/card'
     | '/campus-payments/electricity'
     | '/campus-payments/network'
     | '/campus-payments/recharge'
+    | '/enrollment/login'
+    | '/enrollment/selected'
+    | '/enrollment/settings'
+    | '/enrollment/tasks'
+    | '/enrollment/timetable'
     | '/campus-payments/'
+    | '/enrollment/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/about'
+    | '/academic'
     | '/campus-network'
     | '/class-timetable'
     | '/computing'
@@ -182,41 +272,60 @@ export interface FileRouteTypes {
     | '/oj'
     | '/settings'
     | '/uooc'
+    | '/webvpn'
     | '/campus-payments/card'
     | '/campus-payments/electricity'
     | '/campus-payments/network'
     | '/campus-payments/recharge'
+    | '/enrollment/login'
+    | '/enrollment/selected'
+    | '/enrollment/settings'
+    | '/enrollment/tasks'
+    | '/enrollment/timetable'
     | '/campus-payments'
+    | '/enrollment'
   id:
     | '__root__'
     | '/'
     | '/campus-payments'
     | '/about'
+    | '/academic'
     | '/campus-network'
     | '/class-timetable'
     | '/computing'
     | '/debug'
+    | '/enrollment'
     | '/oj'
     | '/settings'
     | '/uooc'
+    | '/webvpn'
     | '/campus-payments/card'
     | '/campus-payments/electricity'
     | '/campus-payments/network'
     | '/campus-payments/recharge'
+    | '/enrollment/login'
+    | '/enrollment/selected'
+    | '/enrollment/settings'
+    | '/enrollment/tasks'
+    | '/enrollment/timetable'
     | '/campus-payments/'
+    | '/enrollment/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CampusPaymentsRouteRoute: typeof CampusPaymentsRouteRouteWithChildren
   AboutRoute: typeof AboutRoute
+  AcademicRoute: typeof AcademicRoute
   CampusNetworkRoute: typeof CampusNetworkRoute
   ClassTimetableRoute: typeof ClassTimetableRoute
   ComputingRoute: typeof ComputingRoute
   DebugRoute: typeof DebugRoute
+  EnrollmentRoute: typeof EnrollmentRouteWithChildren
   OjRoute: typeof OjRoute
   SettingsRoute: typeof SettingsRoute
   UoocRoute: typeof UoocRoute
+  WebvpnRoute: typeof WebvpnRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -233,6 +342,13 @@ declare module '@tanstack/react-router' {
       path: '/about'
       fullPath: '/about'
       preLoaderRoute: typeof AboutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/academic': {
+      id: '/academic'
+      path: '/academic'
+      fullPath: '/academic'
+      preLoaderRoute: typeof AcademicRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/campus-network': {
@@ -270,6 +386,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DebugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/enrollment': {
+      id: '/enrollment'
+      path: '/enrollment'
+      fullPath: '/enrollment'
+      preLoaderRoute: typeof EnrollmentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/oj': {
       id: '/oj'
       path: '/oj'
@@ -289,6 +412,13 @@ declare module '@tanstack/react-router' {
       path: '/uooc'
       fullPath: '/uooc'
       preLoaderRoute: typeof UoocRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/webvpn': {
+      id: '/webvpn'
+      path: '/webvpn'
+      fullPath: '/webvpn'
+      preLoaderRoute: typeof WebvpnRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/campus-payments/': {
@@ -326,6 +456,48 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CampusPaymentsRechargeRouteImport
       parentRoute: typeof CampusPaymentsRouteRoute
     }
+    '/enrollment/': {
+      id: '/enrollment/'
+      path: '/'
+      fullPath: '/enrollment/'
+      preLoaderRoute: typeof EnrollmentIndexRouteImport
+      parentRoute: typeof EnrollmentRoute
+    }
+    '/enrollment/login': {
+      id: '/enrollment/login'
+      path: '/login'
+      fullPath: '/enrollment/login'
+      preLoaderRoute: typeof EnrollmentLoginRouteImport
+      parentRoute: typeof EnrollmentRoute
+    }
+    '/enrollment/selected': {
+      id: '/enrollment/selected'
+      path: '/selected'
+      fullPath: '/enrollment/selected'
+      preLoaderRoute: typeof EnrollmentSelectedRouteImport
+      parentRoute: typeof EnrollmentRoute
+    }
+    '/enrollment/settings': {
+      id: '/enrollment/settings'
+      path: '/settings'
+      fullPath: '/enrollment/settings'
+      preLoaderRoute: typeof EnrollmentSettingsRouteImport
+      parentRoute: typeof EnrollmentRoute
+    }
+    '/enrollment/tasks': {
+      id: '/enrollment/tasks'
+      path: '/tasks'
+      fullPath: '/enrollment/tasks'
+      preLoaderRoute: typeof EnrollmentTasksRouteImport
+      parentRoute: typeof EnrollmentRoute
+    }
+    '/enrollment/timetable': {
+      id: '/enrollment/timetable'
+      path: '/timetable'
+      fullPath: '/enrollment/timetable'
+      preLoaderRoute: typeof EnrollmentTimetableRouteImport
+      parentRoute: typeof EnrollmentRoute
+    }
   }
 }
 
@@ -348,17 +520,42 @@ const CampusPaymentsRouteRouteChildren: CampusPaymentsRouteRouteChildren = {
 const CampusPaymentsRouteRouteWithChildren =
   CampusPaymentsRouteRoute._addFileChildren(CampusPaymentsRouteRouteChildren)
 
+interface EnrollmentRouteChildren {
+  EnrollmentLoginRoute: typeof EnrollmentLoginRoute
+  EnrollmentSelectedRoute: typeof EnrollmentSelectedRoute
+  EnrollmentSettingsRoute: typeof EnrollmentSettingsRoute
+  EnrollmentTasksRoute: typeof EnrollmentTasksRoute
+  EnrollmentTimetableRoute: typeof EnrollmentTimetableRoute
+  EnrollmentIndexRoute: typeof EnrollmentIndexRoute
+}
+
+const EnrollmentRouteChildren: EnrollmentRouteChildren = {
+  EnrollmentLoginRoute: EnrollmentLoginRoute,
+  EnrollmentSelectedRoute: EnrollmentSelectedRoute,
+  EnrollmentSettingsRoute: EnrollmentSettingsRoute,
+  EnrollmentTasksRoute: EnrollmentTasksRoute,
+  EnrollmentTimetableRoute: EnrollmentTimetableRoute,
+  EnrollmentIndexRoute: EnrollmentIndexRoute,
+}
+
+const EnrollmentRouteWithChildren = EnrollmentRoute._addFileChildren(
+  EnrollmentRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CampusPaymentsRouteRoute: CampusPaymentsRouteRouteWithChildren,
   AboutRoute: AboutRoute,
+  AcademicRoute: AcademicRoute,
   CampusNetworkRoute: CampusNetworkRoute,
   ClassTimetableRoute: ClassTimetableRoute,
   ComputingRoute: ComputingRoute,
   DebugRoute: DebugRoute,
+  EnrollmentRoute: EnrollmentRouteWithChildren,
   OjRoute: OjRoute,
   SettingsRoute: SettingsRoute,
   UoocRoute: UoocRoute,
+  WebvpnRoute: WebvpnRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

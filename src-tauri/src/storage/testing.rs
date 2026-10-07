@@ -64,6 +64,12 @@ macro_rules! stored_value {
     };
 }
 impl CredentialStore for MemoryCredentialStore {
+    stored_value!(
+        load_academic_sessions,
+        save_academic_sessions,
+        String,
+        AcademicSessions
+    );
     stored_value!(load_oj_accounts, save_oj_accounts, String, OjAccounts);
     stored_value!(load_uooc_ai, save_uooc_ai, String, UoocAi);
     stored_value!(load_uooc_session, save_uooc_session, String, UoocSession);

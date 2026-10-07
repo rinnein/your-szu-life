@@ -9,6 +9,7 @@ use tauri::Manager;
 pub(crate) fn run() {
     let credentials: SharedCredentialStore = Arc::new(PlatformCredentialStore);
     let electricity_credentials = credentials.clone();
+    let academic_credentials = credentials.clone();
     let builder = tauri::Builder::default()
         .manage(auth::AuthStore::new(credentials.clone()))
         .manage(uooc::UoocStore::new(credentials.clone()))
@@ -19,8 +20,9 @@ pub(crate) fn run() {
         ))
         .plugin(tauri_plugin_opener::init())
         .plugin(crate::notification::init())
-        .setup(|app| {
+        .setup(move |app| {
             crate::storage::initialize(app.handle())?;
+            crate::enrollment::initialize(app.handle(), academic_credentials.clone())?;
             if let Err(error) = oj::initialize(app.handle()) {
                 eprintln!("OJ 初始化失败: {error}");
             }
@@ -55,6 +57,9 @@ pub(crate) fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            crate::enrollment::commands::enrollment_command,
+            crate::enrollment::commands::open_academic_portal,
+            crate::enrollment::commands::open_enrollment_official,
             oj::commands::load_oj_image,
             oj::commands::save_oj_preferences,
             oj::commands::configure_oj_companion,
@@ -142,6 +147,7 @@ pub(crate) fn run() {
             campus_network::commands::consume_dorm_login_failure_notice,
         ])
         .on_page_load(|window, payload| {
+            crate::enrollment::portal::on_page_load(window, payload);
             if !campus_payments::on_page_load(window, payload) && window.label() == "main" {
                 auth::webview::on_page_load(window, payload);
             }

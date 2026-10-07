@@ -23,6 +23,26 @@ export function initialLogicalEntries(href: string) {
   url.searchParams.delete(CHILD_PARAMETER);
   const path = url.pathname + url.search + url.hash;
   if (child || url.pathname === "/") return [path];
+  const enrollmentPath = url.pathname.replace(/\/+$/, "") || "/";
+  const enrollmentChildren = [
+    "/enrollment/selected",
+    "/enrollment/tasks",
+    "/enrollment/timetable",
+    "/enrollment/settings",
+  ];
+  const legacyChild =
+    enrollmentPath === "/enrollment" &&
+    ["selected", "tasks", "timetable"].includes(url.searchParams.get("tab") ?? "");
+  const loginChild =
+    enrollmentPath === "/enrollment/login" &&
+    enrollmentChildren.includes((url.searchParams.get("returnTo") ?? "").split("?")[0]);
+  const cachedParent =
+    url.searchParams.get("view") === "cache" ||
+    (loginChild &&
+      new URLSearchParams((url.searchParams.get("returnTo") ?? "").split("?")[1]).get("view") ===
+        "cache");
+  if (enrollmentChildren.includes(enrollmentPath) || legacyChild || loginChild)
+    return ["/", cachedParent ? "/enrollment?view=cache" : "/enrollment", path];
   return url.pathname === "/oj" ? ["/", "/computing", path] : ["/", path];
 }
 export function logicalBackAction(hasParent: boolean, child: boolean) {

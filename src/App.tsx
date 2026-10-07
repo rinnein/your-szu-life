@@ -52,8 +52,18 @@ const featureGroups: ReadonlyArray<{
         to: "/computing",
       },
       { label: "UOOC刷课", icon: FaCirclePlay, description: "优课在线视频任务", to: "/uooc" },
-      { label: "选课", icon: FaClipboardList, description: "暂未实现 · 即将支持" },
-      { label: "培养方案检查", icon: FaGraduationCap, description: "暂未实现 · 即将支持" },
+      {
+        label: "选课",
+        icon: FaClipboardList,
+        description: "查课、抢课与选课期间课表",
+        to: "/enrollment",
+      },
+      {
+        label: "学业完成查询",
+        icon: FaGraduationCap,
+        description: "培养方案、学分与课程完成情况",
+        to: "/academic",
+      },
       { label: "成绩查询", icon: FaChartLine, description: "暂未实现 · 即将支持" },
     ],
   },
@@ -79,6 +89,7 @@ const featureGroups: ReadonlyArray<{
     id: "other",
     label: "其它",
     features: [
+      { label: "WebVPN", icon: FaWifi, description: "校外访问与专属2FA认证", to: "/webvpn" },
       { label: "设置", icon: FaGear, description: "管理账户资料与应用设置", to: "/settings" },
       { label: "关于", icon: FaCircleInfo, description: "应用信息与检查更新", to: "/about" },
       {

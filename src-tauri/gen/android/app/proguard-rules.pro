@@ -58,3 +58,7 @@
 # Tauri resolves activityName through JNI/Class.forName; keep the shared hooks.
 -keep class in.rinne.your_szu_life.ApplicationBackActivity { public *; protected *; }
 -keep class in.rinne.your_szu_life.FeatureActivity { public *; }
+
+# Enrollment callbacks are resolved by name from Rust JNI.
+-keep class in.rinne.your_szu_life.EnrollmentTaskBridge { public *; }
+-keep class in.rinne.your_szu_life.EnrollmentTaskService { public *; }

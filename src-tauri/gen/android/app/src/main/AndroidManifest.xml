@@ -40,6 +40,7 @@
         </activity>
 
         <!-- Separate standard instances preserve the native parent Activity stack. -->
+        <service android:name=".EnrollmentTaskService" android:exported="false" android:foregroundServiceType="dataSync" />
         <service
             android:name=".UoocTaskService"
             android:exported="false"

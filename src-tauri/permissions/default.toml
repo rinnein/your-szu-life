@@ -1,6 +1,9 @@
 [default]
 description = "Allows the local application UI to use application commands, including public content."
 permissions = [
+  "allow-enrollment-command",
+  "allow-open-academic-portal",
+  "allow-open-enrollment-official",
   "allow-get-uooc-ai-config",
   "allow-save-uooc-ai-config",
   "allow-list-uooc-ai-models",
