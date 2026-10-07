@@ -102,6 +102,7 @@ fn main() {
             "save_electricity_settings",
             "query_electricity",
             "get_electricity_status",
+            "get_cached_electricity",
             "get_electricity_constants",
             "export_electricity_settings",
             "import_electricity_settings",

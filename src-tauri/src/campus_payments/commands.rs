@@ -58,6 +58,7 @@ pub(crate) async fn save_electricity_settings(
 
 #[tauri::command]
 pub(crate) async fn query_electricity(
+    force_refresh: Option<bool>,
     input: super::ElectricityQueryInput,
     app: AppHandle,
     store: State<'_, CampusPaymentsStore>,
@@ -69,6 +70,7 @@ pub(crate) async fn query_electricity(
             &electricity_store,
             &app,
             electricity::QueryPurpose::Detail,
+            force_refresh.unwrap_or(false),
         )
     })
     .await
@@ -121,8 +123,23 @@ pub(crate) async fn import_electricity_settings(
 #[tauri::command]
 pub(crate) async fn query_electricity_recharges(
     input: super::ElectricityQueryInput,
+    store: State<'_, CampusPaymentsStore>,
 ) -> Result<Vec<electricity::Recharge>, String> {
-    tauri::async_runtime::spawn_blocking(move || electricity::recharges(input))
+    let electricity_store = store.electricity.clone();
+    tauri::async_runtime::spawn_blocking(move || electricity::recharges(input, &electricity_store))
         .await
         .map_err(|_| "无法查询充值记录".to_owned())?
+}
+
+#[tauri::command]
+pub(crate) async fn get_cached_electricity(
+    input: super::ElectricityQueryInput,
+    store: State<'_, CampusPaymentsStore>,
+) -> Result<Option<super::ElectricityQueryView>, String> {
+    let electricity_store = store.electricity.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        electricity::cached_detail(input, &electricity_store)
+    })
+    .await
+    .map_err(|_| "无法读取电量历史缓存".to_owned())?
 }

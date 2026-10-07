@@ -45,6 +45,7 @@ export type ElectricityResult = {
   summary: ElectricitySummary;
   recharges: ElectricityRecharge[];
   rechargeError: string | null;
+  cache?: { fromCache: boolean; updatedAtMs: number | null; refreshError: string | null } | null;
 };
 export type ElectricityConstants = { yuanPerKwh: number };
 /** Backend-owned tariff; no duplicate frontend rate or silently assumed fallback. */

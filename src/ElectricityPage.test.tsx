@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { copyText } from "./clipboard";
@@ -119,6 +119,9 @@ it("imports into the draft without saving, rejects invalid imports without repla
   render(<CampusPaymentsElectricityPage />);
   fireEvent.click(await screen.findByRole("button", { name: "修改宿舍配置" }));
   fireEvent.change(screen.getByLabelText("宿舍配置码"), { target: { value: "配置码" } });
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "快捷导入宿舍配置" })).toBeEnabled(),
+  );
   fireEvent.click(screen.getByRole("button", { name: "快捷导入宿舍配置" }));
   await waitFor(() => expect(screen.getByRole("textbox", { name: "宿舍号" })).toHaveValue("602"));
   expect(
@@ -126,6 +129,9 @@ it("imports into the draft without saving, rejects invalid imports without repla
   ).toBe(false);
   mock((command) =>
     command === "import_electricity_settings" ? Promise.reject("配置码格式错误") : undefined,
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "快捷导入宿舍配置" })).toBeEnabled(),
   );
   fireEvent.click(screen.getByRole("button", { name: "快捷导入宿舍配置" }));
   expect(await screen.findByText("配置码格式错误")).toBeInTheDocument();
@@ -165,10 +171,60 @@ it("does not attach an old recharge retry to an imported room", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "重试充值记录" }));
   fireEvent.click(screen.getByRole("button", { name: "修改宿舍配置" }));
   fireEvent.change(screen.getByLabelText("宿舍配置码"), { target: { value: "新配置" } });
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "快捷导入宿舍配置" })).toBeEnabled(),
+  );
   fireEvent.click(screen.getByRole("button", { name: "快捷导入宿舍配置" }));
   await waitFor(() => expect(screen.getByRole("textbox", { name: "宿舍号" })).toHaveValue("602"));
   resolve(result.recharges);
   await waitFor(() =>
     expect(screen.queryByRole("grid", { name: "充值记录" })).not.toBeInTheDocument(),
+  );
+});
+
+it("renders persisted history before a slow refresh without fetching room options", async () => {
+  let resolve!: (value: unknown) => void;
+  const pending = new Promise((r) => {
+    resolve = r;
+  });
+  mock((command) =>
+    command === "get_cached_electricity"
+      ? {
+          ...result,
+          cache: { fromCache: true, updatedAtMs: Date.UTC(2026, 9, 1), refreshError: null },
+        }
+      : command === "query_electricity"
+        ? pending
+        : undefined,
+  );
+  render(<CampusPaymentsElectricityPage />);
+  expect(await screen.findByLabelText("当前电量")).toHaveTextContent("10.00");
+  expect(screen.getByText(/已加载本地记录/)).toBeInTheDocument();
+  expect(
+    vi.mocked(invoke).mock.calls.some(([command]) => command === "get_electricity_options"),
+  ).toBe(false);
+  await act(async () => resolve({ ...result, currentRemaining: 12 }));
+  expect(screen.getByLabelText("当前电量")).toHaveTextContent("12.00");
+});
+it("keeps local history visible if the refresh fails offline", async () => {
+  mock((command) =>
+    command === "get_cached_electricity"
+      ? result
+      : command === "query_electricity"
+        ? Promise.reject("校园网暂不可用")
+        : undefined,
+  );
+  render(<CampusPaymentsElectricityPage />);
+  expect(await screen.findByText("校园网暂不可用")).toBeInTheDocument();
+  expect(screen.getByLabelText("当前电量")).toHaveTextContent("10.00");
+  expect(screen.getByRole("grid", { name: "用电记录" })).toBeInTheDocument();
+});
+it("lets the user explicitly refresh recent data after opening cached details", async () => {
+  render(<CampusPaymentsElectricityPage />);
+  const button = await screen.findByRole("button", { name: "刷新最新数据" });
+  await waitFor(() => expect(button).toBeEnabled());
+  fireEvent.click(button);
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("query_electricity", { input: saved, forceRefresh: true }),
   );
 });

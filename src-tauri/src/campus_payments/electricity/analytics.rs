@@ -1,5 +1,5 @@
 use super::{reading_date, reading_datetime, ElectricityReading, QueryPurpose, LOW_THRESHOLD};
-use chrono::{Duration, FixedOffset, NaiveDate, TimeZone, Utc};
+use chrono::{Duration, FixedOffset, NaiveDate, Utc};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -21,10 +21,7 @@ pub(super) fn today() -> NaiveDate {
     Utc::now().with_timezone(&shanghai()).date_naive()
 }
 pub(super) fn expiry_ms() -> i64 {
-    shanghai()
-        .from_local_datetime(&today().succ_opt().unwrap().and_hms_opt(0, 0, 0).unwrap())
-        .unwrap()
-        .timestamp_millis()
+    super::history::valid_until(Utc::now().timestamp_millis())
 }
 pub(super) fn window(today: NaiveDate, purpose: QueryPurpose) -> (String, String) {
     (

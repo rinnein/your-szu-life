@@ -14,11 +14,12 @@ use std::{
     thread,
     time::Duration,
 };
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
 pub(crate) const ELECTRICITY_STATUS_EVENT: &str = "electricity-status-changed";
 mod analytics;
+mod history;
 mod providers;
 mod sharing;
 pub(crate) use analytics::{constants, ElectricityConstants, YUAN_PER_KWH};
@@ -29,14 +30,23 @@ pub(crate) fn import_settings(text: &str) -> Result<ElectricityLocationSettings,
     sharing::validate_options(&settings, &options()?)?;
     Ok(settings)
 }
-pub(crate) fn recharges(mut input: ElectricityQueryInput) -> Result<Vec<Recharge>, String> {
-    (input.begin_date, input.end_date) =
-        analytics::window(analytics::today(), QueryPurpose::Detail);
-    validate(&input)?;
+pub(crate) fn recharges(
+    input: ElectricityQueryInput,
+    store: &ElectricityStore,
+) -> Result<Vec<Recharge>, String> {
+    history::recharges(store, input)
+}
+pub(crate) fn cached_detail(
+    input: ElectricityQueryInput,
+    store: &ElectricityStore,
+) -> Result<Option<ElectricityQueryView>, String> {
+    history::snapshot(store, input)
+}
+fn fetch_recharges(input: &ElectricityQueryInput) -> Result<Vec<Recharge>, String> {
     if input.area_id == "xili-lihuo-phase2" {
-        providers::lihu_recharges(&input)
+        providers::lihu_recharges(input)
     } else {
-        providers::sims_recharges(&input)
+        providers::sims_recharges(input)
     }
 }
 
@@ -106,7 +116,7 @@ pub(crate) struct ElectricityCampus {
     pub areas: Vec<ElectricityArea>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ElectricityReading {
     pub date: String,
@@ -132,6 +142,7 @@ pub(crate) struct ElectricityQueryView {
     pub summary: analytics::Summary,
     pub recharges: Vec<providers::Recharge>,
     pub recharge_error: Option<String>,
+    pub cache: Option<history::CacheInfo>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -152,6 +163,8 @@ pub(crate) struct ElectricityQueryInput {
 pub(crate) struct ElectricityStore {
     pub(crate) credentials: Option<SharedCredentialStore>,
     pub(crate) runtime: Arc<Mutex<ElectricityRuntime>>,
+    history: Arc<Mutex<history::History>>,
+    query_lock: Arc<Mutex<()>>,
 }
 
 #[derive(Default)]
@@ -166,6 +179,8 @@ impl ElectricityStore {
         Self {
             credentials: Some(credentials),
             runtime: Arc::new(Mutex::new(ElectricityRuntime::default())),
+            history: Arc::default(),
+            query_lock: Arc::default(),
         }
     }
 }
@@ -503,26 +518,20 @@ pub(crate) enum QueryPurpose {
     Monitor,
 }
 
-pub(crate) fn query(
-    mut input: ElectricityQueryInput,
-    purpose: QueryPurpose,
-) -> Result<ElectricityQueryView, String> {
-    let today = analytics::today();
-    (input.begin_date, input.end_date) = analytics::window(today, purpose);
-    validate(&input)?;
-    let mut data = if input.area_id == "xili-lihuo-phase2" {
-        providers::lihuo(&input, purpose)?
+fn fetch_usage(input: &ElectricityQueryInput) -> Result<providers::ProviderData, String> {
+    if input.area_id == "xili-lihuo-phase2" {
+        providers::lihuo(input, QueryPurpose::Monitor)
     } else {
-        let rows = sims_query(&input)?;
-        let mut data = providers::ProviderData::new(rows);
-        if purpose == QueryPurpose::Detail {
-            match providers::sims_recharges(&input) {
-                Ok(rows) => data.recharges = rows,
-                Err(error) => data.recharge_error = Some(error),
-            }
-        }
-        data
-    };
+        Ok(providers::ProviderData::new(sims_query(input)?))
+    }
+}
+
+fn build_view(
+    input: ElectricityQueryInput,
+    mut data: providers::ProviderData,
+    today: NaiveDate,
+    balance_date: Option<String>,
+) -> ElectricityQueryView {
     data.readings.retain(|r| {
         reading_date(&r.date)
             .is_some_and(|d| d >= query_date(&input.begin_date).unwrap() && d <= today)
@@ -533,12 +542,12 @@ pub(crate) fn query(
         .current_remaining
         .or_else(|| current.and_then(|r| r.remaining));
     let observed = if data.current_remaining.is_some() {
-        Some(today.to_string())
+        balance_date
     } else {
         current.map(|r| r.date.clone())
     };
     let summary = analytics::summarize(&readings, remaining, observed, today);
-    Ok(ElectricityQueryView {
+    ElectricityQueryView {
         campus_id: input.campus_id,
         area_id: input.area_id,
         building_name: normalize_building(&input.building_name),
@@ -550,7 +559,8 @@ pub(crate) fn query(
         summary,
         recharges: data.recharges,
         recharge_error: data.recharge_error,
-    })
+        cache: None,
+    }
 }
 
 fn now_ms() -> i64 {
@@ -736,6 +746,7 @@ pub(crate) fn query_and_record(
     store: &ElectricityStore,
     app: &AppHandle,
     purpose: QueryPurpose,
+    force_refresh: bool,
 ) -> Result<ElectricityQueryView, String> {
     // Foreground detail queries may run alongside monitoring; generation guards
     // prevent a completed request for a previous configuration from being saved.
@@ -748,7 +759,7 @@ pub(crate) fn query_and_record(
         .lock()
         .map_err(|_| "电费状态不可用")?
         .generation;
-    let result = query(input.clone(), purpose);
+    let result = history::query(store, input.clone(), purpose, force_refresh);
     if purpose == QueryPurpose::Monitor {
         end_query(store);
     }
@@ -769,6 +780,14 @@ fn record_view(
     let location = location_for(input);
     let runtime = store.runtime.lock().map_err(|_| "电费状态不可用")?;
     if runtime.generation != generation || load_settings(store)?.as_ref() != Some(&location) {
+        return Ok(());
+    }
+    // Offline fallback must not renew the lifetime of an old warning snapshot.
+    if view
+        .cache
+        .as_ref()
+        .is_some_and(|c| c.from_cache && c.refresh_error.is_some())
+    {
         return Ok(());
     }
     if let (Some(remaining), Some(observed)) =
@@ -824,7 +843,7 @@ fn automatic_query(app: &AppHandle, store: &ElectricityStore, background: bool) 
     if current.remaining.is_some() && !current.expired {
         return;
     }
-    if !mark_attempt(store, background, &date) {
+    if !mark_attempt(store, background, &history::attempt_key(now_ms())) {
         return;
     }
     let input = ElectricityQueryInput {
@@ -836,7 +855,7 @@ fn automatic_query(app: &AppHandle, store: &ElectricityStore, background: bool) 
         begin_date: date_offset(-2),
         end_date: date.clone(),
     };
-    let _ = query_and_record(input, store, app, QueryPurpose::Monitor);
+    let _ = query_and_record(input, store, app, QueryPurpose::Monitor, false);
 }
 
 fn date_offset(days: i64) -> String {
@@ -846,6 +865,12 @@ fn date_offset(days: i64) -> String {
 }
 
 pub(crate) fn initialize(app: AppHandle, store: ElectricityStore) {
+    if let Ok(mut cache) = store.history.lock() {
+        *cache = match app.path().app_data_dir() {
+            Ok(directory) => history::History::open(directory.join("electricity-history-v1.json")),
+            Err(_) => history::History::unavailable(),
+        };
+    }
     thread::spawn(move || {
         automatic_query(&app, &store, false);
         loop {
@@ -1043,9 +1068,26 @@ mod tests {
             ),
             recharges: vec![],
             recharge_error: None,
+            cache: None,
         };
+        view.cache = Some(history::CacheInfo {
+            from_cache: false,
+            updated_at_ms: Some(200),
+            refresh_error: Some("本地保存失败".into()),
+        });
         record_view(&store, &input, generation, 200, &view).unwrap();
         assert!(status(&store).low);
+        view.cache = Some(history::CacheInfo {
+            from_cache: true,
+            updated_at_ms: Some(200),
+            refresh_error: Some("离线".into()),
+        });
+        record_view(&store, &input, generation, 250, &view).unwrap();
+        assert_eq!(
+            load_monitor_record(&store).cache.unwrap().fetched_at_ms,
+            200
+        );
+        view.cache = None;
         view.current_remaining = Some(30.0);
         view.summary = analytics::summarize(
             &[],

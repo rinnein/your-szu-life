@@ -75,6 +75,8 @@ export default function CampusPaymentsElectricityPage() {
   const [result, setResult] = useState<Result>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
+  const [loadingOptions, setLoadingOptions] = useState(false);
+  const [optionsReady, setOptionsReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const [rate, setRate] = useState<number>();
@@ -98,53 +100,51 @@ export default function CampusPaymentsElectricityPage() {
       active = false;
     };
   }, []);
-  const initialDataRequest = useRef<Promise<[Campus[], Settings | null]> | undefined>(undefined);
+  const initialSettingsRequest = useRef<Promise<Settings | null> | undefined>(undefined);
+  const optionsRequest = useRef<Promise<Campus[]> | undefined>(undefined);
   useEffect(() => {
     let active = true;
     const load = async () => {
       try {
-        initialDataRequest.current ??= Promise.all([
-          invoke<Campus[]>("get_electricity_options"),
-          invoke<Settings | null>("get_electricity_settings"),
-        ]);
-        const [next, saved] = await initialDataRequest.current;
+        initialSettingsRequest.current ??= invoke<Settings | null>("get_electricity_settings");
+        const saved = await initialSettingsRequest.current;
         if (!active) return;
-        setCampuses(Array.isArray(next) ? next : []);
-        if (saved) {
-          setSettings(saved);
-          setSavedSettings(saved);
+        if (!saved) {
+          setLoading(false);
+          return;
         }
-        // Render the configured page first, then refresh it asynchronously just
-        // like a user submitting the query form.
-        if (active) setLoading(false);
-        if (saved) {
-          setBusy(true);
-          const id = ++requestId.current;
-          void invoke<Result>("query_electricity", {
-            input: {
-              ...saved,
-            },
-          })
-            .then((automatic) => {
-              if (active && id === requestId.current) {
-                setResult(automatic);
-                setEditing(false);
-              }
-            })
-            .catch((e) => {
-              if (active && id === requestId.current) {
-                setError(
-                  typeof e === "string" ? e : "无法自动获取当前电量，请检查宿舍信息和校园网连接。",
-                );
-              }
-            })
-            .finally(() => {
-              if (active && id === requestId.current) setBusy(false);
-            });
+        setSettings(saved);
+        setSavedSettings(saved);
+        setLoading(false);
+        setBusy(true);
+        const id = ++requestId.current;
+        // Cache reads are independent of portal options and refresh requests.
+        // Even offline, a previously visited room can render immediately.
+        const cached = await invoke<Result | null>("get_cached_electricity", {
+          input: saved,
+        }).catch(() => null);
+        if (!active || id !== requestId.current) return;
+        if (cached) {
+          setResult(cached);
+          setEditing(false);
+        }
+        try {
+          const next = await invoke<Result>("query_electricity", { input: saved });
+          if (active && id === requestId.current) {
+            setResult(next);
+            setEditing(false);
+            setError(next.cache?.refreshError || undefined);
+          }
+        } catch (e) {
+          if (active && id === requestId.current)
+            setError(typeof e === "string" ? e : "本次更新未完成，已有记录仍可查看。");
+        } finally {
+          if (active && id === requestId.current) setBusy(false);
         }
       } catch (e) {
         if (active) {
-          setError(typeof e === "string" ? e : "无法读取电费宿舍选项，请连接校园网后重试。");
+          setError(typeof e === "string" ? e : "无法读取宿舍配置。");
+          setBusy(false);
         }
       } finally {
         if (active) setLoading(false);
@@ -156,6 +156,32 @@ export default function CampusPaymentsElectricityPage() {
       requestId.current += 1;
     };
   }, []);
+  useEffect(() => {
+    if (loading || (savedSettings && !editing)) {
+      setLoadingOptions(false);
+      return;
+    }
+    let active = true;
+    setLoadingOptions(true);
+    optionsRequest.current ??= invoke<Campus[]>("get_electricity_options");
+    void optionsRequest.current
+      .then((next) => {
+        if (active) {
+          setCampuses(Array.isArray(next) ? next : []);
+          setOptionsReady(true);
+        }
+      })
+      .catch((e) => {
+        optionsRequest.current = undefined;
+        if (active) setError(typeof e === "string" ? e : "无法加载宿舍选项，请连接校园网后重试。");
+      })
+      .finally(() => {
+        if (active) setLoadingOptions(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [loading, savedSettings, editing]);
   const campus = campuses.find((x) => x.id === settings.campusId);
   const area = campus?.areas.find((x) => x.id === settings.areaId);
   const buildings = area?.buildings ?? [];
@@ -215,10 +241,32 @@ export default function CampusPaymentsElectricityPage() {
       if (id === requestId.current) {
         setResult(next);
         setEditing(false);
+        setError(next.cache?.refreshError || undefined);
       }
     } catch (e) {
       if (id === requestId.current)
         setError(typeof e === "string" ? e : "电费查询失败，请检查宿舍信息和校园网连接。");
+    } finally {
+      if (id === requestId.current) setBusy(false);
+    }
+  };
+  const refreshLatest = async () => {
+    if (!savedSettings || busy) return;
+    const id = ++requestId.current;
+    setBusy(true);
+    setError(undefined);
+    try {
+      const next = await invoke<Result>("query_electricity", {
+        input: savedSettings,
+        forceRefresh: true,
+      });
+      if (id === requestId.current) {
+        setResult(next);
+        setError(next.cache?.refreshError || undefined);
+      }
+    } catch (e) {
+      if (id === requestId.current)
+        setError(typeof e === "string" ? e : "更新未完成，已有记录仍可查看。");
     } finally {
       if (id === requestId.current) setBusy(false);
     }
@@ -274,7 +322,11 @@ export default function CampusPaymentsElectricityPage() {
       setRetrying(false);
     }
   };
-  const formDisabled = loading || busy || sharing;
+  const formDisabled =
+    loading ||
+    busy ||
+    sharing ||
+    ((!savedSettings || editing) && (loadingOptions || !optionsReady));
   return (
     <div className="electricity-page">
       <Card className="payments-card">
@@ -288,14 +340,14 @@ export default function CampusPaymentsElectricityPage() {
           </Card.Description>
         </Card.Header>
         <Card.Content>
-          {loading && (
+          {(loading || loadingOptions) && (
             <div className="electricity-loading" aria-live="polite">
               <Spinner size="sm" aria-label="正在加载电费宿舍选项" />
               <span>正在加载宿舍选项…</span>
             </div>
           )}
           <Form className="electricity-form" onSubmit={submit}>
-            {(!result || editing) && (
+            {(!savedSettings || editing) && (
               <div className="electricity-fields">
                 <LocationSelect
                   label="校区"
@@ -333,11 +385,11 @@ export default function CampusPaymentsElectricityPage() {
                 </TextField>
               </div>
             )}
-            {result && !editing && (
+            {savedSettings && !editing && (
               <div className="electricity-location-summary">
                 <span>当前宿舍</span>
                 <strong>
-                  {result.buildingName} {result.roomName}
+                  {savedSettings.buildingName} {savedSettings.roomName}
                 </strong>
               </div>
             )}
@@ -347,11 +399,21 @@ export default function CampusPaymentsElectricityPage() {
                 {busy && <Spinner size="sm" color="current" />}
                 {busy ? "查询中…" : "查询电费"}
               </Button>
-              {result && (
+              {savedSettings && !editing && (
                 <Button
                   type="button"
                   variant="outline"
-                  isDisabled={formDisabled || sharing}
+                  isDisabled={formDisabled}
+                  onPress={() => void refreshLatest()}
+                >
+                  刷新最新数据
+                </Button>
+              )}
+              {savedSettings && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  isDisabled={busy || sharing}
                   onPress={() => setEditing(!editing)}
                 >
                   {editing ? "收起配置" : "修改宿舍配置"}
@@ -369,7 +431,7 @@ export default function CampusPaymentsElectricityPage() {
                 导出宿舍配置并复制
               </Button>
             )}
-            {(!result || editing) && (
+            {(!savedSettings || editing) && (
               <>
                 <TextField value={importText} onChange={setImportText} isDisabled={formDisabled}>
                   <Label>宿舍配置码</Label>

@@ -92,6 +92,15 @@ export function ElectricityDetails({
         {summary?.expired ? "读数已过期，无法有效预测。" : "预计可用天数仅供参考。"}{" "}
         {rate != null && `固定换算：${rate} 元/度。`}
       </p>
+      {result.cache?.updatedAtMs != null && (
+        <p className="text-sm text-muted">
+          {result.cache.fromCache ? "已加载本地记录" : "记录已更新"} · 最近获取：
+          {new Date(result.cache.updatedAtMs).toLocaleString("zh-CN", {
+            timeZone: "Asia/Shanghai",
+          })}
+          （北京时间）。通常每天 23:59 左右更新，可手动刷新最新数据。
+        </p>
+      )}
       {summary?.warningReason && (
         <Alert status="warning">
           <Alert.Content>

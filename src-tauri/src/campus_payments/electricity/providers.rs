@@ -4,7 +4,7 @@ use calamine::{open_workbook_auto_from_rs, Reader};
 use scraper::{Html, Selector};
 use std::io::{Cursor, Read};
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Recharge {
     pub time: String,

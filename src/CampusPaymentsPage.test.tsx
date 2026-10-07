@@ -328,6 +328,7 @@ describe("campus payments route", () => {
 
     renderAt("/campus-payments/electricity");
     await screen.findByRole("heading", { name: "查电量" });
+    await waitFor(() => expect(screen.getByRole("button", { name: /校区/ })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: /校区/ }));
     fireEvent.click(await screen.findByRole("option", { name: "北校区（粤海校区）" }));
     fireEvent.change(screen.getByRole("textbox", { name: "宿舍号" }), {

@@ -121,6 +121,7 @@ pub(crate) fn run() {
             campus_payments::commands::save_electricity_settings,
             campus_payments::commands::query_electricity,
             campus_payments::commands::get_electricity_status,
+            campus_payments::commands::get_cached_electricity,
             campus_payments::commands::get_electricity_constants,
             campus_payments::commands::export_electricity_settings,
             campus_payments::commands::import_electricity_settings,

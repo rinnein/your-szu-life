@@ -65,6 +65,7 @@ permissions = [
   "allow-save-electricity-settings",
   "allow-query-electricity",
   "allow-get-electricity-status",
+  "allow-get-cached-electricity",
   "allow-get-electricity-constants",
   "allow-export-electricity-settings",
   "allow-import-electricity-settings",
