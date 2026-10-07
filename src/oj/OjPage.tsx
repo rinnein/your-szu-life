@@ -15,7 +15,7 @@ import {
   TextField,
   Toast,
 } from "@heroui/react";
-import { PageShell } from "../components";
+import { ModuleHeader, PageShell } from "../components";
 import { useLogicalNavigation } from "../logical-navigation";
 import { OjPaper } from "./OjPaper";
 import { type Site, type Snapshot, type Group, type Contest, route, sessionName } from "./types";
@@ -153,47 +153,50 @@ export default function OjPage() {
     <PageShell>
       <Toast.Provider placement="bottom end" />
       <div className="oj-page">
-        <header className="oj-toolbar">
-          <div>
-            <Button variant="tertiary" onPress={() => void nav.back()}>
-              ← 返回
-            </Button>
-            <h1 data-webview-navigation>{site?.name ?? "OJ"}</h1>
-            <p className="oj-muted">{site ? site.url : "OJ · 班级、测验与练习"}</p>
-          </div>
-          <div className="oj-actions">
-            <Button
-              variant="secondary"
-              isDisabled={busy}
-              onPress={() =>
-                void action(async () => {
-                  await invoke("refresh_oj");
-                  if (site) {
-                    if (search.group)
-                      setContests(
-                        await invoke("get_oj_contests", { siteId: site.id, groupId: search.group }),
-                      );
-                    else setGroups(await invoke("get_oj_groups", { siteId: site.id }));
-                  }
-                })
-              }
-            >
-              刷新
-            </Button>
-            {snapshot?.desktop && isOverview && (
+        <ModuleHeader
+          title={site?.name ?? "OJ"}
+          description={site ? site.url : "OJ · 班级、测验与练习"}
+          backLabel="返回上一级"
+          actions={
+            <>
               <Button
                 variant="secondary"
-                onPress={() => {
-                  setConfigurationError(undefined);
-                  setConfigurationOpen(true);
-                }}
+                isDisabled={busy}
+                onPress={() =>
+                  void action(async () => {
+                    await invoke("refresh_oj");
+                    if (site) {
+                      if (search.group)
+                        setContests(
+                          await invoke("get_oj_contests", {
+                            siteId: site.id,
+                            groupId: search.group,
+                          }),
+                        );
+                      else setGroups(await invoke("get_oj_groups", { siteId: site.id }));
+                    }
+                  })
+                }
               >
-                全局配置
+                刷新
               </Button>
-            )}
-            <Button onPress={() => setEdit(site ?? "new")}>{site ? "账号配置" : "添加 OJ"}</Button>
-          </div>
-        </header>
+              {snapshot?.desktop && isOverview && (
+                <Button
+                  variant="secondary"
+                  onPress={() => {
+                    setConfigurationError(undefined);
+                    setConfigurationOpen(true);
+                  }}
+                >
+                  全局配置
+                </Button>
+              )}
+              <Button onPress={() => setEdit(site ?? "new")}>
+                {site ? "账号配置" : "添加 OJ"}
+              </Button>
+            </>
+          }
+        />
         <ErrorNotice message={error} />
         {snapshot?.desktop && isOverview && (
           <Modal isOpen={configurationOpen} onOpenChange={setConfigurationOpen}>

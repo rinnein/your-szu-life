@@ -1,20 +1,13 @@
 import { Button } from "@heroui/react";
 import { FaCode } from "react-icons/fa6";
-import { PageShell } from "./components";
+import { ModuleHeader, PageShell } from "./components";
 import { useLogicalNavigation } from "./logical-navigation";
 
 export default function ComputingCollectionPage() {
   const navigation = useLogicalNavigation();
   return (
     <PageShell>
-      <header className="oj-toolbar">
-        <div>
-          <Button variant="tertiary" onPress={() => void navigation.back()}>
-            ← 返回
-          </Button>
-          <h1 data-webview-navigation>计软合集</h1>
-        </div>
-      </header>
+      <ModuleHeader title="计软合集" />
       <section aria-label="计软学习工具">
         <h2 className="section-heading">学习工具</h2>
         <div className="feature-grid">

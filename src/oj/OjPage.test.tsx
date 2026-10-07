@@ -232,7 +232,7 @@ it("renders contests as table rows with a green active state", async () => {
   search.group = "2";
   render(<OjPage />);
   const table = await screen.findByRole("grid", { name: "测验列表" });
-  expect(table.querySelectorAll("tbody tr")).toHaveLength(2);
+  await waitFor(() => expect(table.querySelectorAll("tbody tr")).toHaveLength(2));
   expect(screen.getByText("进行中").closest(".chip")?.className).toContain("success");
   expect(table.querySelector("tbody tr")?.textContent).toContain("未来测验");
 });
@@ -351,7 +351,7 @@ it("sends using the latest global port without a per-paper port input", async ()
   await screen.findByText("A. 选择题", { selector: "h2" });
   view.rerender(<OjPaper site={site} contestId="1" tab="records" desktop port={27300} />);
   expect(screen.queryByLabelText("本机接收端口")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "发送全部编程题" }));
+  fireEvent.click(screen.getByRole("button", { name: "发送全部题目到CPH" }));
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith(
       "send_oj_companion",

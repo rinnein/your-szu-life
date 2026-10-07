@@ -1,36 +1,6 @@
 import { Alert, Button, CloseButton, Label, ListBox, Select } from "@heroui/react";
-import { LuArrowLeft, LuX } from "react-icons/lu";
-import type { ReactNode } from "react";
-import { useLogicalNavigation } from "../logical-navigation";
-export function ModuleHeader({
-  title,
-  description,
-  backLabel = "返回工作台",
-  actions,
-}: {
-  title: string;
-  description?: string;
-  backLabel?: string;
-  actions?: ReactNode;
-}) {
-  const nav = useLogicalNavigation();
-  return (
-    <header className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex min-w-0 items-center gap-3">
-        <CloseButton data-webview-navigation aria-label={backLabel} onPress={() => void nav.back()}>
-          <LuArrowLeft aria-hidden="true" />
-        </CloseButton>
-        <div>
-          <h1 data-webview-navigation className="text-2xl font-semibold">
-            {title}
-          </h1>
-          {description && <p className="text-sm text-muted">{description}</p>}
-        </div>
-      </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
-    </header>
-  );
-}
+import { LuX } from "react-icons/lu";
+export { ModuleHeader } from "../components";
 export function OperationError({
   message,
   onRetry,
