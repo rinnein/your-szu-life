@@ -166,6 +166,8 @@ impl Service {
             site_id: id,
             contest_id: cid,
             problem_key: pk,
+            account: e.username.clone(),
+            epoch: e.epoch,
             submission,
         };
         if let Some(app) = &self.app {

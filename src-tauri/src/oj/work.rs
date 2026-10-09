@@ -1,5 +1,115 @@
 use super::*;
 impl Service {
+    pub(super) async fn progress(
+        &self,
+        id: &str,
+        cid: &str,
+        force: bool,
+        account: Option<&str>,
+        generation: Option<u64>,
+    ) -> Result<Value, String> {
+        protocol::id(&json!(cid)).map_err(|e| e.message)?;
+        let e = self.entry(id)?;
+        if account.is_some_and(|a| a != e.username) || generation.is_some_and(|g| g != e.epoch) {
+            return Err("OJ 账号配置已变化，请重新加载".into());
+        }
+        let cached = || {
+            let now = chrono::Utc::now().timestamp_millis();
+            e.state
+                .lock()
+                .unwrap()
+                .progress
+                .get(cid)
+                .filter(|(time, _)| !force && (0..300_000).contains(&(now - time)))
+                .map(|(_, value)| value.clone())
+        };
+        if !self.current(id, &e) {
+            return Err("OJ 账号配置已变化，请重新加载".into());
+        }
+        if let Some(value) = cached() {
+            return Ok(value);
+        }
+        let _guard = e.gate.lock().await;
+        if !self.current(id, &e) {
+            return Err("OJ 账号配置已变化，请重新加载".into());
+        }
+        // Another WebView may have completed the same request while we waited.
+        if let Some(value) = cached() {
+            return Ok(value);
+        }
+        self.ensure(id, &e).await?;
+        let raw = self.read(id, &e, &format!("contests/{cid}/"), &[]).await?;
+        let problems = protocol::problems(&raw).map_err(|e| e.message)?;
+        let rank = self
+            .read(id, &e, &format!("contests/{cid}/self_rank/"), &[])
+            .await?;
+        let mut accepted = problems
+            .iter()
+            .filter(|p| {
+                p.kind == 0
+                    && rank["data"]["submission_info"][&p.id]["accepted"].as_bool() == Some(true)
+            })
+            .count();
+        if problems.iter().any(|p| p.kind == 4) {
+            let rows = self
+                .list(
+                    id,
+                    &e,
+                    "code-fill-submission/my_submissions/",
+                    &[("contest", cid.into())],
+                )
+                .await?;
+            accepted += problems
+                .iter()
+                .filter(|p| {
+                    p.kind == 4
+                        && rows.iter().any(|r| {
+                            r["status"].as_i64() == Some(0)
+                                && protocol::record_for_problem(r, 4, &p.id).is_some()
+                        })
+                })
+                .count();
+        }
+        let now = chrono::Utc::now().timestamp_millis();
+        let value = json!({"accepted":accepted,"total":problems.len(),"updatedAt":now});
+        e.state
+            .lock()
+            .unwrap()
+            .progress
+            .insert(cid.into(), (now, value.clone()));
+        Ok(value)
+    }
+
+    fn invalidate_progress(&self, id: &str, e: &Entry, cid: &str) {
+        e.state.lock().unwrap().progress.remove(cid);
+        if let Some(app) = &self.app {
+            let _ = app.emit("oj-progress-invalidated", json!({"siteId":id,"account":e.username,"sessionGeneration":e.epoch,"contestId":cid}));
+        }
+    }
+
+    pub(super) async fn ranking(&self, id: &str, cid: &str, offset: u32) -> Result<Value, String> {
+        protocol::id(&json!(cid)).map_err(|e| e.message)?;
+        if offset > 100_000 {
+            return Err("排名分页超出范围".into());
+        }
+        let e = self.entry(id)?;
+        let _guard = e.gate.lock().await;
+        self.ensure(id, &e).await?;
+        let contest = self.read(id, &e, &format!("contests/{cid}/"), &[]).await?;
+        if contest["show_ranking"].as_bool() == Some(false) {
+            return Err("此测验未开放排名".into());
+        }
+        let raw = self
+            .read(
+                id,
+                &e,
+                &format!("contests/{cid}/rank/"),
+                &[("offset", offset.to_string()), ("limit", "20".into())],
+            )
+            .await?;
+        protocol::ranking(&raw, offset).map_err(|e| e.message)
+    }
+
     async fn paper_locked(&self, id: &str, e: &Entry, cid: &str) -> Result<Paper, String> {
         protocol::id(&json!(cid)).map_err(|e| e.message)?;
         self.ensure(id, e).await?;
@@ -210,6 +320,44 @@ impl Service {
         if e.epoch != input.epoch || e.username != input.account {
             return Err("账号已变化，请重新加载".into());
         }
+        // Persist IDE code before any network request, including rejected or uncertain submissions.
+        if let Some(code) = &source_code {
+            let pk = input.problem_key.as_deref().ok_or("题目编号缺失")?;
+            let mut draft = {
+                let r = self.runtime.lock().unwrap();
+                let preferences = Self::preferences_locked(&r, id, &e.username);
+                let previous =
+                    r.data
+                        .drafts
+                        .get(&draft_key(id, &e.username, cid, pk, &preferences.language));
+                Draft {
+                    code: code.clone(),
+                    language: preferences.language.clone(),
+                    options: preferences.options()?,
+                    revision: (chrono::Utc::now().timestamp_millis() as u64)
+                        .max(previous.map_or(0, |d| d.revision.saturating_add(1))),
+                    ..Default::default()
+                }
+            };
+            draft.answer = json!("");
+            self.save_draft(DraftInput {
+                site_id: id.clone(),
+                contest_id: cid.clone(),
+                problem_key: pk.into(),
+                account: e.username.clone(),
+                epoch: e.epoch,
+                draft: draft.clone(),
+            })?;
+            if let Some(app) = &self.app {
+                let _ = app.emit(
+                    "oj-draft-changed",
+                    json!({
+                        "siteId": id, "contestId": cid, "problemKey": pk,
+                        "account": e.username, "epoch": e.epoch, "draft": draft,
+                    }),
+                );
+            }
+        }
         let key = operation_key(id, &e.username, cid, input.problem_key.as_deref());
         if self
             .runtime
@@ -283,6 +431,7 @@ impl Service {
         if !self.current(id, &e) {
             return Err("账号已变化，原提交请在对应账号记录中确认".into());
         }
+        self.invalidate_progress(id, &e, cid);
         match result {
             Ok(value) => {
                 if protocol::id(&value["id"]).is_err() {
@@ -307,36 +456,86 @@ impl Service {
             }
         }
     }
-    pub(super) async fn records(&self, id: &str, cid: &str, kind: u8) -> Result<Value, String> {
+    pub(super) async fn records(
+        &self,
+        id: &str,
+        cid: &str,
+        kind: u8,
+        pid: Option<&str>,
+    ) -> Result<Value, String> {
         let e = self.entry(id)?;
         let _guard = e.gate.lock().await;
         self.ensure(id, &e).await?;
         protocol::id(&json!(cid)).map_err(|e| e.message)?;
+        if let Some(pid) = pid {
+            protocol::id(&json!(pid)).map_err(|e| e.message)?;
+        }
+        if kind > 4 {
+            return Err("未知题型".into());
+        }
         let path = match kind {
             0 => "code-submission/my_submissions/",
             4 => "code-fill-submission/my_submissions/",
             3 => "qa-submission/my_submissions/",
             _ => "contest-submission/",
         };
-        let records = e
-            .client
-            .list(path, &[("contest", cid.into())])
-            .await
-            .map_err(|e| e.message)?;
+        let mut query = vec![("contest", cid.into())];
+        if let Some(pid) = pid.filter(|_| matches!(kind, 0 | 3 | 4)) {
+            query.push(("problem", pid.into()));
+        }
+        let mut records = e.client.list(path, &query).await.map_err(|e| e.message)?;
+        if let Some(pid) = pid {
+            if matches!(kind, 1 | 2) {
+                let mut scoped = vec![];
+                for row in records {
+                    let sid = protocol::id(&row["id"]).map_err(|e| e.message)?;
+                    let detail = self
+                        .read(id, &e, &format!("contest-submission/{sid}/"), &[])
+                        .await?;
+                    if let Some(row) = protocol::record_for_problem(&detail, kind, pid) {
+                        scoped.push(row);
+                    }
+                }
+                records = scoped;
+            } else {
+                records = records
+                    .iter()
+                    .filter_map(|row| protocol::record_for_problem(row, kind, pid))
+                    .collect();
+            }
+        }
+        if !self.current(id, &e) {
+            return Err("账号已变化，请重新加载".into());
+        }
         let r = self.runtime.lock().unwrap();
         let uncertain: Vec<_> = r
             .data
             .uncertain
             .iter()
             .filter(|(key, _)| {
-                serde_json::from_str::<(String, String, String, Option<String>)>(key)
-                    .is_ok_and(|(s, a, c, _)| s == id && a == e.username && c == cid)
+                serde_json::from_str::<(String, String, String, Option<String>)>(key).is_ok_and(
+                    |(s, a, c, p)| {
+                        s == id
+                            && a == e.username
+                            && c == cid
+                            && pid.is_none_or(|pid| {
+                                p.as_deref() == Some(&format!("{kind}:{pid}"))
+                                    || (p.is_none() && matches!(kind, 1..=3))
+                            })
+                    },
+                )
             })
             .map(|(key, value)| json!({"key":key,"details":value}))
             .collect();
         Ok(json!({"records":records,"uncertain":uncertain}))
     }
-    pub(super) async fn result(&self, id: &str, sid: &str, kind: u8) -> Result<Value, String> {
+    pub(super) async fn result(
+        &self,
+        id: &str,
+        sid: &str,
+        kind: u8,
+        pid: Option<&str>,
+    ) -> Result<Value, String> {
         let e = self.entry(id)?;
         let _guard = e.gate.lock().await;
         self.ensure(id, &e).await?;
@@ -347,7 +546,32 @@ impl Service {
             1 | 2 => "contest-submission",
             _ => "code-submission",
         };
-        self.read(id, &e, &format!("{prefix}/{sid}/"), &[]).await
+        let value = self.read(id, &e, &format!("{prefix}/{sid}/"), &[]).await?;
+        if matches!(kind, 0 | 4) {
+            if let Some(status) = value["status"].as_i64().filter(|s| *s != 6 && *s != 7) {
+                let contest = value["contest"].get("id").unwrap_or(&value["contest"]);
+                if let Ok(cid) = protocol::id(contest) {
+                    let changed = {
+                        let mut state = e.state.lock().unwrap();
+                        let key = format!("{kind}:{sid}");
+                        let changed = state.judged_progress.get(&key) != Some(&status);
+                        if state.judged_progress.len() >= 512 {
+                            state.judged_progress.clear();
+                        }
+                        state.judged_progress.insert(key, status);
+                        changed
+                    };
+                    if changed {
+                        self.invalidate_progress(id, &e, &cid);
+                    }
+                }
+            }
+        }
+        if let Some(pid) = pid {
+            protocol::record_for_problem(&value, kind, pid).ok_or("提交记录不属于当前题目".into())
+        } else {
+            Ok(value)
+        }
     }
     pub(super) fn acknowledge(&self, id: &str, key: &str) -> Result<(), String> {
         let e = self.entry(id)?;

@@ -24,6 +24,7 @@ import { ContestTable } from "./ContestTable";
 import { CompanionSettings } from "./CompanionSettings";
 import { useAuth } from "../auth";
 import { notifySuccess } from "./feedback";
+import { ojProgressCache, progressScope } from "./progress-store";
 export function ErrorNotice({ message }: { message?: string }) {
   return message ? (
     <Alert status="warning">
@@ -166,14 +167,18 @@ export default function OjPage() {
                   void action(async () => {
                     await invoke("refresh_oj");
                     if (site) {
-                      if (search.group)
-                        setContests(
-                          await invoke("get_oj_contests", {
-                            siteId: site.id,
-                            groupId: search.group,
-                          }),
+                      if (search.group) {
+                        const rows = await invoke<Contest[]>("get_oj_contests", {
+                          siteId: site.id,
+                          groupId: search.group,
+                        });
+                        ojProgressCache.invalidate(
+                          progressScope(site),
+                          rows.map((c) => c.id),
+                          true,
                         );
-                      else setGroups(await invoke("get_oj_groups", { siteId: site.id }));
+                        setContests(rows);
+                      } else setGroups(await invoke("get_oj_groups", { siteId: site.id }));
                     }
                   })
                 }
@@ -373,6 +378,10 @@ export default function OjPage() {
               </div>
             ) : (
               <ContestTable
+                siteId={site.id}
+                account={site.username}
+                siteUrl={site.url}
+                sessionGeneration={site.sessionGeneration}
                 contests={contests}
                 query={query}
                 onOpen={(contest) =>

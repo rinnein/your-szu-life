@@ -6,6 +6,7 @@ import { AppContentProvider } from "../app-content/context";
 import { UpdateNotice } from "../app-content/UpdateNotice";
 import { ElectricityMonitorProvider } from "../electricity-monitor";
 import { OjCompanionBridge } from "../oj/OjCompanionBridge";
+import { OjProgressBridge } from "../oj/OjProgressBridge";
 import { OjNotifications } from "../oj/OjNotifications";
 import { QuizNotifications } from "../uooc/QuizNotifications";
 
@@ -20,6 +21,7 @@ export const Route = createRootRoute({
             <AndroidBackNavigation />
             <QuizNotifications />
             <OjNotifications />
+            <OjProgressBridge />
             <OjCompanionBridge />
             <Outlet />
             <UpdateNotice />

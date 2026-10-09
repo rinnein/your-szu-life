@@ -1,4 +1,4 @@
-import type * as Monaco from "monaco-editor/editor/editor.api.js";
+import type * as Monaco from "modern-monaco/editor-core";
 
 // Monaco only ships a language service for JS/TS. These offline keyword/snippet
 // suggestions supplement its document-word completion for the other OJ languages.

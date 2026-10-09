@@ -95,6 +95,38 @@ pub(crate) async fn get_oj_contests(
     service(&app)?.contests(&site_id, &group_id).await
 }
 #[tauri::command]
+pub(crate) async fn get_oj_progress(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    site_id: String,
+    contest_id: String,
+    force: Option<bool>,
+    account: Option<String>,
+    session_generation: Option<u64>,
+) -> Result<Value, String> {
+    local(&window)?;
+    service(&app)?
+        .progress(
+            &site_id,
+            &contest_id,
+            force.unwrap_or(false),
+            account.as_deref(),
+            session_generation,
+        )
+        .await
+}
+#[tauri::command]
+pub(crate) async fn get_oj_ranking(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    site_id: String,
+    contest_id: String,
+    offset: u32,
+) -> Result<Value, String> {
+    local(&window)?;
+    service(&app)?.ranking(&site_id, &contest_id, offset).await
+}
+#[tauri::command]
 pub(crate) async fn get_oj_paper(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
@@ -141,9 +173,12 @@ pub(crate) async fn get_oj_records(
     site_id: String,
     contest_id: String,
     kind: u8,
+    problem_id: Option<String>,
 ) -> Result<Value, String> {
     local(&window)?;
-    service(&app)?.records(&site_id, &contest_id, kind).await
+    service(&app)?
+        .records(&site_id, &contest_id, kind, problem_id.as_deref())
+        .await
 }
 #[tauri::command]
 pub(crate) async fn get_oj_result(
@@ -152,9 +187,12 @@ pub(crate) async fn get_oj_result(
     site_id: String,
     submission_id: String,
     kind: u8,
+    problem_id: Option<String>,
 ) -> Result<Value, String> {
     local(&window)?;
-    service(&app)?.result(&site_id, &submission_id, kind).await
+    service(&app)?
+        .result(&site_id, &submission_id, kind, problem_id.as_deref())
+        .await
 }
 #[tauri::command]
 pub(crate) fn acknowledge_oj_submission(

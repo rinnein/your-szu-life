@@ -1,7 +1,9 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
+import { ojProgressCache, progressScope } from "./progress-store";
+import { listen } from "@tauri-apps/api/event";
 import OjPage, { SiteEditor } from "./OjPage";
 import { OjPaper } from "./OjPaper";
 import type { Paper, Site } from "./types";
@@ -98,6 +100,7 @@ const paper: Paper = {
   drafts: { "1:1": { code: "", language: "", answer: [], revision: 0, options: null } },
 };
 beforeEach(() => {
+  ojProgressCache.clear();
   window.matchMedia = vi.fn().mockImplementation((media) => ({
     media,
     matches: false,
@@ -373,4 +376,107 @@ it.each([
   expect(screen.queryByRole("button", { name: "全局配置" })).toBeNull();
   expect(screen.queryByText("cph-ng 直接提交")).toBeNull();
   expect(screen.queryByLabelText("本机接收端口")).toBeNull();
+});
+
+it("marks the directory and shows only the selected problem's submissions", async () => {
+  const coding: Paper = {
+    ...paper,
+    problems: [1, 2].map((id) => ({
+      ...paper.problems[0],
+      id: String(id),
+      displayLabel: id === 1 ? "A" : "B",
+      kind: 0,
+      title: `题目 ${id}`,
+      choices: [],
+      languages: ["cpp"],
+    })),
+    drafts: {
+      "0:1": { code: "first", language: "cpp", options: null, answer: "", revision: 1 },
+      "0:2": { code: "second", language: "cpp", options: null, answer: "", revision: 1 },
+    },
+  };
+  const previous = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (cmd, args) => {
+    if (cmd === "get_oj_paper") return coding;
+    if (cmd === "get_oj_records")
+      return {
+        records: [
+          { id: 11, problem: 1, status: 0 },
+          { id: 12, problem: 2, status: -1 },
+        ],
+        uncertain: [],
+      };
+    return previous(cmd, args);
+  });
+  const props = { site, contestId: "1", tab: "records", desktop: false, port: 27121 };
+  const view = render(<OjPaper {...props} selected="0:1" />);
+  await screen.findByText("#11");
+  expect(screen.queryByText("#12")).toBeNull();
+  expect(screen.getByRole("button", { name: /A. 题目 1/ }).textContent).toContain("AC");
+  expect(screen.getByRole("button", { name: /B. 题目 2/ }).textContent).toContain("WA");
+  view.rerender(<OjPaper {...props} selected="0:2" />);
+  await screen.findByText("#12");
+  expect(screen.queryByText("#11")).toBeNull();
+});
+
+it("loads cached CPH code into a clean editor and preserves unsaved edits on conflict", async () => {
+  const coding: Paper = {
+    ...paper,
+    preferences: { language: "cpp", optionsByLanguage: {}, revision: 0 },
+    problems: [{ ...paper.problems[0], kind: 0, title: "编程题", languages: ["cpp"] }],
+    drafts: { "0:1": { code: "initial", language: "cpp", options: null, answer: "", revision: 1 } },
+  };
+  const previous = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (cmd, args) =>
+    cmd === "get_oj_paper" ? coding : previous(cmd, args),
+  );
+  render(<OjPaper site={site} contestId="1" tab="answer" desktop={false} port={27121} />);
+  const editor = await screen.findByLabelText("代码编辑器");
+  const callback = vi.mocked(listen).mock.calls.find(([name]) => name === "oj-draft-changed")![1];
+  const payload = {
+    siteId: site.id,
+    contestId: "1",
+    problemKey: "0:1",
+    account: paper.account,
+    epoch: paper.epoch,
+    draft: { ...coding.drafts["0:1"], code: "from-cph", revision: Date.now() + 1 },
+  };
+  await act(async () => callback({ event: "oj-draft-changed", id: 1, payload }));
+  expect(editor).toHaveProperty("value", "from-cph");
+  fireEvent.change(editor, { target: { value: "unsaved-local" } });
+  await act(async () =>
+    callback({
+      event: "oj-draft-changed",
+      id: 1,
+      payload: {
+        ...payload,
+        draft: { ...payload.draft, code: "new-cph", revision: Date.now() + 100 },
+      },
+    }),
+  );
+  expect(editor).toHaveProperty("value", "unsaved-local");
+  expect(screen.getByRole("button", { name: "保留编辑器修改" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "载入 cph-ng 缓存" }));
+  await waitFor(() => expect(editor).toHaveProperty("value", "new-cph"));
+  expect(vi.mocked(invoke).mock.calls.some(([cmd]) => cmd === "submit_oj")).toBe(false);
+});
+
+it("keeps the cached completed status visible while a paper reloads its records", async () => {
+  const coding: Paper = {
+    ...paper,
+    problems: [{ ...paper.problems[0], kind: 0, languages: ["cpp"] }],
+    drafts: {
+      "0:1": { code: "int main(){}", language: "cpp", answer: "", revision: 1, options: null },
+    },
+  };
+  ojProgressCache.seed(progressScope(site), "1", { accepted: 1, total: 1 });
+  const previous = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (cmd, args) => {
+    if (cmd === "get_oj_paper") return coding;
+    if (cmd === "get_oj_records") return new Promise(() => {});
+    return previous(cmd, args);
+  });
+  render(<OjPaper site={site} contestId="1" tab="answer" desktop={false} port={27121} />);
+  expect(await screen.findByText("已完成")).toBeTruthy();
+  expect(vi.mocked(invoke).mock.calls.some(([cmd]) => cmd === "get_oj_progress")).toBe(false);
 });

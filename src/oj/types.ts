@@ -14,6 +14,7 @@ export interface Site {
   reminders: boolean;
   enabled: boolean;
   username: string;
+  sessionGeneration?: number | null;
   session: Session;
   message: string;
   lastSync?: number;
@@ -95,12 +96,12 @@ export interface Paper {
 }
 export interface Submission {
   id: number | string;
-  problem?: number;
+  problem?: number | string | { id: number | string };
   status?: number;
   language?: string;
   code?: string;
   create_time?: string;
-  time?: number;
+  time?: number | string;
   memory?: number;
   result?: unknown;
   [key: string]: unknown;
@@ -108,6 +109,22 @@ export interface Submission {
 export interface Records {
   records: Submission[];
   uncertain: { key: string; details: { time: number; problemKey?: string } }[];
+}
+export interface ProgressSummary {
+  accepted: number;
+  total: number;
+}
+export interface Ranking {
+  count: number;
+  rows: {
+    rank: number;
+    username: string;
+    name: string;
+    nickname: string;
+    accepted: number;
+    penalty: string;
+    problems: Record<string, { accepted: boolean; errors: number; seconds: number | null }>;
+  }[];
 }
 export const problemKey = (p: Problem) => `${p.kind}:${p.id}`;
 export const kindName = ["编程题", "选择题", "填空题", "问答题", "代码补全"];

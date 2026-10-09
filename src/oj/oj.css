@@ -235,3 +235,33 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* Verdicts colour the entire target. Selection is a ring, independent of verdict. */
+.oj-page .oj-directory-item[data-verdict-tone] {
+  background: color-mix(in oklab, var(--oj-verdict-color) 22%, var(--surface));
+  color: var(--foreground);
+}
+.oj-page .oj-directory-item[data-verdict-tone]:hover {
+  background: color-mix(in oklab, var(--oj-verdict-color) 32%, var(--surface));
+}
+.oj-directory-item[data-verdict-tone="success"] {
+  --oj-verdict-color: var(--success);
+}
+.oj-directory-item[data-verdict-tone="danger"] {
+  --oj-verdict-color: var(--danger);
+}
+.oj-directory-item[data-verdict-tone="warning"] {
+  --oj-verdict-color: var(--warning);
+}
+.oj-directory-item[data-verdict-tone="accent"] {
+  --oj-verdict-color: var(--accent);
+}
+.oj-directory-item[data-verdict-tone="default"] {
+  --oj-verdict-color: var(--muted);
+}
+.oj-page .oj-directory-item[data-selected="true"] {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.oj-ranking-self > .table__cell {
+  background: color-mix(in oklab, var(--accent) 12%, var(--surface));
+}

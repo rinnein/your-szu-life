@@ -744,7 +744,7 @@ fn companion_urls_are_resolved_only_with_exact_instance_and_problem() {
     }
 }
 #[tokio::test]
-async fn cph_submission_uses_instance_options_and_keeps_app_code() {
+async fn cph_submission_uses_instance_options_and_caches_ide_code() {
     let mut raw = fixture();
     raw["problem_json"] = json!({"0":raw["problem_json"]["0"].clone()});
     let (url, handle) = server(vec![
@@ -805,8 +805,13 @@ async fn cph_submission_uses_instance_options_and_keeps_app_code() {
             .unwrap()
             .unwrap()
             .code,
-        "app-code"
+        "ide-code"
     );
+    let stored = persistence::read(&s.path).unwrap();
+    let draft = &stored.drafts[&draft_key(&id, &e.username, "12", "0:1", "cpp")];
+    assert_eq!(draft.code, "ide-code");
+    assert_eq!(draft.options.as_ref().unwrap().version, "c++17");
+    assert!(draft.revision > 1);
     assert!(s
         .companion_submit(CompanionSubmission {
             url: source_url,
@@ -839,4 +844,278 @@ fn saving_unchanged_companion_configuration_keeps_active_connection() {
     assert!(s.snapshot().companion_status.active);
     s.configure_companion(false, 27121).unwrap();
     assert!(!s.snapshot().companion_status.active);
+}
+
+#[tokio::test]
+async fn ide_code_is_cached_even_when_the_site_cannot_load_the_paper() {
+    let (url, handle) = server(vec![(503, json!({}))]);
+    let (_dir, s) = setup();
+    let id = s.save_site(input(&url)).unwrap();
+    let e = s.entry(&id).unwrap();
+    e.state.lock().unwrap().session = Session::Ready;
+    let code = "  int main() {} \n\n";
+    let result = s
+        .submit_with_code(
+            SubmitInput {
+                site_id: id.clone(),
+                contest_id: "12".into(),
+                problem_key: Some("0:1".into()),
+                account: e.username.clone(),
+                epoch: e.epoch,
+            },
+            Some(code.into()),
+        )
+        .await;
+    assert!(result.is_err());
+    let stored = persistence::read(&s.path).unwrap();
+    assert_eq!(
+        stored.drafts[&draft_key(&id, &e.username, "12", "0:1", "cpp")].code,
+        code
+    );
+    assert_eq!(handle.join().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn records_filter_problem_after_pagination_and_scope_uncertainty() {
+    let (url, handle) = server(vec![
+        (
+            200,
+            json!({"count":3,"results":[{"id":1,"problem":1,"status":0},{"id":2,"problem":2,"status":-1}]}),
+        ),
+        (
+            200,
+            json!({"count":3,"results":[{"id":3,"problem":{"id":"1"},"status":1}]}),
+        ),
+    ]);
+    let (_dir, s) = setup();
+    let id = s.save_site(input(&url)).unwrap();
+    let e = s.entry(&id).unwrap();
+    e.state.lock().unwrap().session = Session::Ready;
+    {
+        let mut r = s.runtime.lock().unwrap();
+        for pk in ["0:1", "0:2", "4:1"] {
+            r.data.uncertain.insert(
+                operation_key(&id, &e.username, "12", Some(pk)),
+                json!({"time":0,"problemKey":pk}),
+            );
+        }
+    }
+    let records = s.records(&id, "12", 0, Some("1")).await.unwrap();
+    assert_eq!(records["records"].as_array().unwrap().len(), 2);
+    assert_eq!(records["records"][1]["id"], 3);
+    assert_eq!(records["uncertain"].as_array().unwrap().len(), 1);
+    let requests = handle.join().unwrap();
+    assert!(requests.iter().all(|r| r.contains("problem=1")));
+    assert!(requests[1].contains("offset=2"));
+}
+
+#[test]
+fn noncode_records_never_expose_other_problem_answers() {
+    let row = json!({"id":1,"time":"now","choice_submission":{"1":[0],"2":[1]},"fill_in_submission":{"1":["secret"]},"status":0});
+    let value = protocol::record_for_problem(&row, 1, "1").unwrap();
+    assert_eq!(value["answer"], json!([0]));
+    assert_eq!(value["problem"], "1");
+    assert!(value.get("choice_submission").is_none());
+    assert!(value.get("status").is_none());
+    assert!(protocol::record_for_problem(&row, 1, "3").is_none());
+}
+
+#[test]
+fn sample_spaces_tabs_blank_lines_and_crlf_are_preserved() {
+    let mut raw = fixture();
+    let text = "\n  1 \t\r\n2  \r\n\r\n";
+    raw["problem_json"]["0"][0]["sample_input"] = json!([text]);
+    raw["problem_json"]["0"][0]["sample_output"] = json!(["  \t"]);
+    let problems = protocol::problems(&raw).unwrap();
+    assert_eq!(problems[0].samples[0].input, text);
+    assert_eq!(problems[0].samples[0].output, "  \t");
+    let payload = protocol::companion(
+        &defaults()[0],
+        &protocol::contest(&raw).unwrap(),
+        &problems[0],
+        "batch",
+        1,
+        false,
+    )
+    .unwrap();
+    assert_eq!(payload["tests"][0]["input"], text);
+    assert_eq!(payload["tests"][0]["output"], "  \t\n");
+}
+
+#[tokio::test]
+async fn completion_uses_all_visible_problem_ids_not_just_a_score_count() {
+    let mut raw = fixture();
+    raw["problem_json"] = json!({"0": [raw["problem_json"]["0"][0].clone(), {"id":2,"title":"B"}]});
+    let (url, handle) = server(vec![
+        (200, raw),
+        (
+            200,
+            json!({"data":{"score":5,"submission_info":{"1":{"accepted":true},"2":{"accepted":true},"99":{"accepted":true}}}}),
+        ),
+    ]);
+    let (_dir, s) = setup();
+    let id = s.save_site(input(&url)).unwrap();
+    let e = s.entry(&id).unwrap();
+    e.state.lock().unwrap().session = Session::Ready;
+    assert_eq!(
+        {
+            let result = s.progress(&id, "12", false, None, None).await.unwrap();
+            json!({"accepted":result["accepted"],"total":result["total"]})
+        },
+        json!({"accepted":2,"total":2})
+    );
+    assert!(handle.join().unwrap()[1].starts_with("GET /api/contests/12/self_rank/"));
+}
+#[tokio::test]
+async fn ranking_respects_visibility_and_uses_student_rank_pagination() {
+    let mut raw = fixture();
+    raw["show_ranking"] = json!(false);
+    let (url, handle) = server(vec![(200, raw)]);
+    let (_dir, s) = setup();
+    let id = s.save_site(input(&url)).unwrap();
+    let e = s.entry(&id).unwrap();
+    e.state.lock().unwrap().session = Session::Ready;
+    assert!(s
+        .ranking(&id, "12", 0)
+        .await
+        .unwrap_err()
+        .contains("未开放"));
+    assert_eq!(handle.join().unwrap().len(), 1);
+    let (url, handle) = server(vec![
+        (200, fixture()),
+        (
+            200,
+            json!({"count":21,"results":[{"user":{"username":"fixture","name":"测试","secret":"not-exported"},"score":1,"penalty":"00:20:00","submission_info":{"1":{"accepted":true,"time_usage":0,"error":1}}}]}),
+        ),
+    ]);
+    let id = s.save_site(input(&url)).unwrap();
+    let e = s.entry(&id).unwrap();
+    e.state.lock().unwrap().session = Session::Ready;
+    let result = s.ranking(&id, "12", 20).await.unwrap();
+    assert_eq!(result["rows"][0]["rank"], 21);
+    assert_eq!(result["rows"][0]["problems"]["1"]["seconds"], 0.0);
+    assert!(!result.to_string().contains("secret"));
+    let requests = handle.join().unwrap();
+    assert!(requests[1].starts_with("GET /api/contests/12/rank/?offset=20&limit=20"));
+}
+
+#[tokio::test]
+async fn progress_cache_is_shared_across_callers_and_manual_refresh_bypasses_it() {
+    let mut raw = fixture();
+    raw["problem_json"] = json!({"0":raw["problem_json"]["0"].clone()});
+    let (url, handle) = server(vec![
+        (200, raw.clone()),
+        (
+            200,
+            json!({"data":{"submission_info":{"1":{"accepted":true}}}}),
+        ),
+        (200, raw),
+        (200, json!({"data":{"submission_info":{}}})),
+    ]);
+    let (_dir, s) = setup();
+    let id = s.save_site(input(&url)).unwrap();
+    let e = s.entry(&id).unwrap();
+    e.state.lock().unwrap().session = Session::Ready;
+    let (first, second) = tokio::join!(
+        s.progress(&id, "12", false, Some(&e.username), Some(e.epoch)),
+        s.progress(&id, "12", false, Some(&e.username), Some(e.epoch))
+    );
+    assert_eq!(first.as_ref().unwrap()["accepted"], 1);
+    assert_eq!(first, second);
+    assert_eq!(
+        s.progress(&id, "12", false, None, None).await.unwrap()["accepted"],
+        1
+    );
+    assert!(s
+        .progress(&id, "12", false, Some("wrong-account"), None)
+        .await
+        .is_err());
+    assert!(s
+        .progress(&id, "12", false, None, Some(e.epoch + 1))
+        .await
+        .is_err());
+    assert_eq!(
+        s.progress(&id, "12", true, None, None).await.unwrap()["accepted"],
+        0
+    );
+    assert_eq!(handle.join().unwrap().len(), 4);
+}
+#[tokio::test]
+async fn terminal_judging_invalidates_only_its_contest_and_only_when_status_changes() {
+    let mut raw = fixture();
+    raw["problem_json"] = json!({"0":raw["problem_json"]["0"].clone()});
+    let judged = json!({"id":11,"contest":{"id":12},"problem":1,"status":0});
+    let (url, handle) = server(vec![
+        (200, raw.clone()),
+        (200, json!({"data":{"submission_info":{}}})),
+        (200, judged.clone()),
+        (200, raw),
+        (
+            200,
+            json!({"data":{"submission_info":{"1":{"accepted":true}}}}),
+        ),
+        (200, judged),
+    ]);
+    let (_dir, s) = setup();
+    let id = s.save_site(input(&url)).unwrap();
+    let e = s.entry(&id).unwrap();
+    e.state.lock().unwrap().session = Session::Ready;
+    assert_eq!(
+        s.progress(&id, "12", false, None, None).await.unwrap()["accepted"],
+        0
+    );
+    e.state.lock().unwrap().progress.insert(
+        "99".into(),
+        (
+            chrono::Utc::now().timestamp_millis(),
+            json!({"accepted":1,"total":1}),
+        ),
+    );
+    s.result(&id, "11", 0, Some("1")).await.unwrap();
+    assert!(!e.state.lock().unwrap().progress.contains_key("12"));
+    assert!(e.state.lock().unwrap().progress.contains_key("99"));
+    assert_eq!(
+        s.progress(&id, "12", false, None, None).await.unwrap()["accepted"],
+        1
+    );
+    s.result(&id, "11", 0, Some("1")).await.unwrap();
+    assert!(e.state.lock().unwrap().progress.contains_key("12"));
+    assert_eq!(handle.join().unwrap().len(), 6);
+}
+#[tokio::test]
+async fn expired_progress_refreshes_and_account_replacement_discards_the_cache() {
+    let mut raw = fixture();
+    raw["problem_json"] = json!({"0":raw["problem_json"]["0"].clone()});
+    let (url, handle) = server(vec![
+        (200, raw),
+        (200, json!({"data":{"submission_info":{}}})),
+    ]);
+    let (_dir, s) = setup();
+    let id = s.save_site(input(&url)).unwrap();
+    let e = s.entry(&id).unwrap();
+    e.state.lock().unwrap().session = Session::Ready;
+    e.state.lock().unwrap().progress.insert(
+        "12".into(),
+        (
+            chrono::Utc::now().timestamp_millis() - 300_000,
+            json!({"accepted":1,"total":1}),
+        ),
+    );
+    assert_eq!(
+        s.progress(&id, "12", false, None, None).await.unwrap()["accepted"],
+        0
+    );
+    let mut changed = input(&url);
+    changed.id = Some(id.clone());
+    changed.username = "other".into();
+    s.save_site(changed).unwrap();
+    assert!(s
+        .entry(&id)
+        .unwrap()
+        .state
+        .lock()
+        .unwrap()
+        .progress
+        .is_empty());
+    assert_eq!(handle.join().unwrap().len(), 2);
 }

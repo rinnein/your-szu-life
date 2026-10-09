@@ -34,7 +34,11 @@
     "resources": {
       "resources/ocr/ddddocr/model.json": "resources/ocr/ddddocr/model.json",
       "resources/ocr/ddddocr/LICENSE-ddddocr": "resources/ocr/ddddocr/LICENSE-ddddocr",
-      "../node_modules/socket.io-client/LICENSE": "resources/licenses/socket.io-client.txt"
+      "../node_modules/socket.io-client/LICENSE": "resources/licenses/socket.io-client.txt",
+      "resources/licenses/modern-monaco.txt": "resources/licenses/modern-monaco.txt",
+      "../node_modules/typescript-lsp/LICENSE.txt": "resources/licenses/typescript-lsp.txt",
+      "../node_modules/tm-grammars/LICENSE": "resources/licenses/tm-grammars.txt",
+      "../node_modules/tm-themes/LICENSE": "resources/licenses/tm-themes.txt"
     }
   }
 }

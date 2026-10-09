@@ -27,6 +27,26 @@ pub(super) fn group(v: &Value) -> Result<Group, Error> {
         name: text(&v["name"]),
     })
 }
+pub(super) fn ranking(raw: &Value, offset: u32) -> Result<Value, Error> {
+    let count = raw["count"]
+        .as_u64()
+        .ok_or_else(|| Error::local("排名总数缺失"))?;
+    let rows = raw["results"]
+        .as_array()
+        .ok_or_else(|| Error::local("排名格式不兼容"))?;
+    let results = rows.iter().enumerate().map(|(index,row)| {
+        let user = &row["user"];
+        let username = user["username"].as_str().ok_or_else(|| Error::local("排名用户数据缺失"))?;
+        let mut problems = BTreeMap::new();
+        if let Some(info) = row["submission_info"].as_object() {
+            for (pid, item) in info {
+                problems.insert(pid.clone(),json!({"accepted":item["accepted"].as_bool().unwrap_or(false),"errors":item["error"].as_u64().unwrap_or(0),"seconds":item["time_usage"].as_f64().filter(|n| *n>=0.)}));
+            }
+        }
+        Ok(json!({"rank":offset as usize+index+1,"username":username,"name":text(&user["name"]),"nickname":text(&user["nickname"]),"accepted":row["score"].as_u64().unwrap_or(0),"penalty":text(&row["penalty"]),"problems":problems}))
+    }).collect::<Result<Vec<_>, Error>>()?;
+    Ok(json!({"count":count,"rows":results}))
+}
 pub(super) fn contest(v: &Value) -> Result<Contest, Error> {
     Ok(Contest {
         id: id(&v["id"])?,
@@ -152,6 +172,29 @@ pub(super) fn problems(v: &Value) -> Result<Vec<Problem>, Error> {
         }
     }
     Ok(result)
+}
+
+/// Older deployments may ignore `problem` in list queries; always scope locally too.
+pub(super) fn record_for_problem(row: &Value, kind: u8, pid: &str) -> Option<Value> {
+    if matches!(kind, 1 | 2) {
+        let field = if kind == 1 {
+            "choice_submission"
+        } else {
+            "fill_in_submission"
+        };
+        let answer = row.get(field)?.get(pid)?;
+        let mut scoped = json!({"id": row["id"], "problem": pid, "answer": answer});
+        for key in ["time", "create_time", "judged", "finished"] {
+            if let Some(value) = row.get(key) {
+                scoped[key] = value.clone();
+            }
+        }
+        Some(scoped)
+    } else {
+        let problem = row.get("problem")?;
+        let problem = problem.get("id").unwrap_or(problem);
+        (id(problem).ok().as_deref() == Some(pid)).then(|| row.clone())
+    }
 }
 pub(super) fn noncode_body(
     contest: &str,

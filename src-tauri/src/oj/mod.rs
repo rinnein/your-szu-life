@@ -48,6 +48,8 @@ struct Status {
     next_sync: i64,
     failures: u32,
     offset: i64,
+    progress: BTreeMap<String, (i64, Value)>,
+    judged_progress: BTreeMap<String, i64>,
 }
 struct Runtime {
     data: Data,
@@ -145,6 +147,7 @@ impl Service {
                     site: site.clone(),
                     enabled: entry.is_some(),
                     username: entry.map(|e| e.username.clone()).unwrap_or_default(),
+                    session_generation: entry.map(|e| e.epoch),
                     session: s.as_ref().map(|s| s.session).unwrap_or(Session::Disabled),
                     message: s.as_ref().map(|s| s.message.clone()).unwrap_or_default(),
                     last_sync: s.as_ref().and_then(|s| s.last_sync),

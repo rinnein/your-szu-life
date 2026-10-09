@@ -21,8 +21,15 @@ export interface CodeEditorProps {
   language: string;
   disabled: boolean;
   onChange: (text: string) => void;
+  ariaLabel?: string;
 }
-export function CodeEditor({ value, language, disabled, onChange }: CodeEditorProps) {
+export function CodeEditor({
+  value,
+  language,
+  disabled,
+  onChange,
+  ariaLabel = "代码编辑器",
+}: CodeEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView>(undefined);
   const changed = useRef(onChange);
@@ -42,7 +49,10 @@ export function CodeEditor({ value, language, disabled, onChange }: CodeEditorPr
             EditorView.editable.of(!disabled),
           ]),
           EditorView.lineWrapping,
-          EditorView.contentAttributes.of({ "aria-label": "代码编辑器" }),
+          EditorView.contentAttributes.of({
+            "aria-label": ariaLabel,
+            "aria-readonly": String(disabled),
+          }),
           EditorView.updateListener.of((update) => {
             if (update.docChanged && !external.current)
               changed.current(update.state.doc.toString());

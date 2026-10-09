@@ -40,3 +40,6 @@ docs/
 # Models are downloaded and hash-verified by the Cargo build script
 *.onnx
 /src-tauri/gen/android/app/src/main/assets/resources/ocr/
+
+# Third-party licenses staged by Tauri from npm packages / source resources
+/src-tauri/gen/android/app/src/main/assets/resources/licenses/

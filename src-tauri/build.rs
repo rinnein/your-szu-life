@@ -55,6 +55,8 @@ fn main() {
             "get_oj_groups",
             "get_oj_contests",
             "get_oj_paper",
+            "get_oj_progress",
+            "get_oj_ranking",
             "save_oj_draft",
             "get_oj_draft",
             "submit_oj",

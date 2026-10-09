@@ -82,7 +82,9 @@ The receiver port must match cph-ng. The app must remain running (tray is OK).
 Only exact configured instance URLs using the exported contest/problem link
 format are accepted. The native service revalidates account generation, contest
 access/time and allowed language, and reuses the normal submission journal.
-It submits the IDE code directly without overwriting app drafts. Duplicate
+IDE code is atomically cached in the current account/problem/language draft before
+network access, including failed submissions. Open editors receive `oj-draft-changed`;
+unsaved local edits require choosing which version to keep. Duplicate
 in-flight/recent requests are rejected; uncertain writes are never retried.
 Submission notices and result records are available in the app. The legacy
 router does not define a browser-to-IDE judging-result event.
@@ -97,3 +99,72 @@ instead of changing the preference. Other open OJ windows receive updates.
 Socket.IO is a normal `socket.io-client` npm dependency locked by pnpm and
 bundled locally by Vite. No runtime CDN dependency or custom Socket.IO
 implementation is used. Its MIT license is included in native packages.
+
+## Submission presentation
+
+`get_oj_records` and `get_oj_result` accept an optional `problemId`. Code/QA
+records send the API problem filter and also filter locally after full pagination.
+Choice/fill answers are projected out of the whole-paper record; unrelated answers
+are not returned. Directory verdicts use current-account submissions, keep AC once
+solved, and otherwise show the most recent attempt.
+
+Result details follow the public SZU frontend checked on 2026-10-09:
+`GET /api/code-submission/{id}/` returns `status`, `time`, and `result.data`
+with `test_case`, `result`, `cpu_time` and `real_time` (ms), and `memory` (bytes).
+CE/SE can return a string in `result`. The UI uses status chips, visible-case
+progress and a result table; it never queries teacher test-data endpoints.
+Active result views poll sequentially every 2 seconds, pause after three read
+failures or 90 attempts, and cancel on problem/account changes or unmount.
+Pending latest submissions are resumed when reopening a problem. No polling
+path repeats a submission. Samples are read-only fields and copied from the
+original strings without trimming; only the Companion wire format appends its
+required final newline when absent.
+
+## Verdicts, completion and ranking
+
+Known verdicts (-3 through 8) colour the whole directory button using semantic
+backgrounds; selection is an independent ring. All status chips use filled
+backgrounds. Group completion requires every visible problem in that group to
+be AC; contest completion requires all visible problems to be AC (an empty
+contest never completes). Non-coding saved answers are not treated as AC.
+The programming heading shows its AC count over the contest's total question
+count, and the detail deadline shares the server-adjusted countdown.
+
+`get_oj_progress` reads contest problem IDs and the student's
+`/api/contests/{id}/self_rank/` accepted flags, with separate code-fill records
+where needed. Completion results are shared by the application rather than reloaded on focus.
+`get_oj_ranking` reads `/api/contests/{id}/rank/?offset=…&limit=20`, preserves
+server order and projects only public ranking fields. `show_ranking: false`
+and HTTP permission errors stay inline; no roster/teacher endpoint is used.
+
+Submission code and results are separate, initially collapsed HeroUI Accordion
+panels. Code editors are mounted only while expanded and are read-only.
+Desktop uses `modern-monaco` 0.4.2; mobile retains CodeMirror. The npm editor,
+worker modules, themes and grammar dependencies are served and copied by the
+Vite static-copy plugin. The upstream JS language-service worker is bundled
+with Rolldown and TypeScript 6 under the `typescript-lsp` alias, because the
+app's TypeScript 7 toolchain is native and has no browser compiler module.
+The application's TypeScript compiler remains unchanged. No runtime CDN is
+needed for OJ languages, syntax, snippets, the editor or its built-in JS service.
+
+## Global completion cache
+
+TanStack React Store (`createStore` / `useSelector`) owns the completion state
+shared by the contest list and detail page. Entries are scoped by site ID,
+normalized URL, account and native `sessionGeneration`, then contest ID. Successful
+results stay fresh for five minutes; remounts and changed list array identities
+reuse them, and in-flight requests are shared across React callers. Focus and
+visibility changes do not force a progress scan. Expired entries keep the previous
+label during refresh; failures keep that label and back off for 30 seconds. The
+manual OJ refresh invalidates the displayed contest IDs and forces a server read.
+Complete submission lists already read by the problem page directly seed the store.
+
+Each native account session also caches progress for five minutes, so independent
+Android/WebView pages reuse the same network result. The account gate coalesces
+concurrent reads across windows. Credential replacement/deletion discards that
+session's cache. `get_oj_progress` accepts `force`, `account`, `sessionGeneration`
+and returns `updatedAt` alongside accepted/total counts. Submissions and changed
+terminal verdicts emit `oj-progress-invalidated` for just the affected contest;
+the root bridge updates every WebView store. Late replies cannot overwrite a
+newer locally derived result or recreate a removed account's cache. This is an
+application-lifetime cache, not credential or restart persistence.

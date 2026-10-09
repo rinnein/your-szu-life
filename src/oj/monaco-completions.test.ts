@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vite-plus/test";
-import type * as Monaco from "monaco-editor/editor/editor.api.js";
+import type * as Monaco from "modern-monaco/editor-core";
 import { registerOjCompletions } from "./monaco-completions";
 it("offers usable C++ snippets without duplicating a typed std prefix", () => {
   const register = vi.fn();

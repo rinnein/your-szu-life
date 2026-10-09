@@ -75,6 +75,8 @@ pub(crate) fn run() {
             oj::commands::get_oj_groups,
             oj::commands::get_oj_contests,
             oj::commands::get_oj_paper,
+            oj::commands::get_oj_progress,
+            oj::commands::get_oj_ranking,
             oj::commands::save_oj_draft,
             oj::commands::get_oj_draft,
             oj::commands::submit_oj,

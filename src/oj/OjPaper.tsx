@@ -1,10 +1,11 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { useSelector } from "@tanstack/react-store";
+import { ojProgressCache, progressScope, progressScopeKey } from "./progress-store";
 import {
   Alert,
   Button,
-  Card,
   Checkbox,
   CheckboxGroup,
   Chip,
@@ -29,6 +30,13 @@ import { CodeEditor } from "./CodeEditor";
 import { CompileOptions } from "./CompileOptions";
 import { compileOptions } from "./compile-options";
 import { notifySuccess } from "./feedback";
+import { SampleField } from "./SampleField";
+import { Verdict } from "./JudgeResult";
+import { SubmissionRecord, ResultAccordion } from "./SubmissionRecord";
+import { RankingTable } from "./RankingTable";
+import { ContestStatus, formatRemaining } from "./ContestTable";
+import { useSubmissions } from "./useSubmissions";
+import { verdicts } from "./judging";
 const MonacoEditor = lazy(() => import("./MonacoEditor"));
 import {
   type Site,
@@ -36,14 +44,11 @@ import {
   type Preferences,
   type Draft,
   type Problem,
-  type Records,
   type Submission,
   problemKey,
   kindName,
   languageName,
-  statusName,
   route,
-  phase,
 } from "./types";
 export function Html({ html, base, siteId }: { html: string; base: string; siteId?: string }) {
   const element = useRef<HTMLDivElement>(null);
@@ -133,14 +138,8 @@ function Statement({ p, paper, siteId }: { p: Problem; paper: Paper; siteId: str
         <section key={i}>
           <h3>样例 {i + 1}</h3>
           <div className="oj-sample">
-            <div>
-              <p>输入</p>
-              <pre>{s.input}</pre>
-            </div>
-            <div>
-              <p>输出</p>
-              <pre>{s.output}</pre>
-            </div>
+            <SampleField label="输入" value={s.input} sample={i + 1} />
+            <SampleField label="输出" value={s.output} sample={i + 1} />
           </div>
         </section>
       ))}
@@ -183,6 +182,7 @@ export function OjPaper({
     [paper?.contest.description, paper?.sourceUrl],
   );
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [incomingDrafts, setIncomingDrafts] = useState<Record<string, Draft>>({});
   const draftsRef = useRef(drafts);
   draftsRef.current = drafts;
   const preferencesRef = useRef<Preferences>({
@@ -197,8 +197,6 @@ export function OjPaper({
   const [saved, setSaved] = useState("已保存");
   const [confirm, setConfirm] = useState(false);
   const [manualCopy, setManualCopy] = useState<string>();
-  const [records, setRecords] = useState<Records>();
-  const [result, setResult] = useState<Submission>();
   const [now, setNow] = useState(Date.now());
   const dirty = useRef<Record<string, Draft>>({});
   const loaded = useRef<Paper>(undefined);
@@ -206,7 +204,6 @@ export function OjPaper({
   const writes = useRef<Promise<void>>(Promise.resolve());
   const live = useRef(true);
   const timeOffset = useRef(0);
-  const pollGeneration = useRef(0);
   const flush = useCallback(() => {
     clearTimeout(timer.current);
     const current = loaded.current;
@@ -271,7 +268,6 @@ export function OjPaper({
     const clock = setInterval(() => setNow(Date.now() + timeOffset.current), 1000);
     return () => {
       live.current = false;
-      pollGeneration.current++;
       clearInterval(clock);
       void flush().catch(() => {});
     };
@@ -347,6 +343,52 @@ export function OjPaper({
       stop?.();
     };
   }, [site.id, flush, applyPreferences]);
+  useEffect(() => {
+    let active = true;
+    let stop: (() => void) | undefined;
+    void listen<{
+      siteId: string;
+      contestId: string;
+      problemKey: string;
+      account: string;
+      epoch: number;
+      draft: Draft;
+    }>("oj-draft-changed", ({ payload }) => {
+      const current = loaded.current;
+      if (
+        !active ||
+        payload.siteId !== site.id ||
+        payload.contestId !== contestId ||
+        payload.account !== current?.account ||
+        payload.epoch !== current?.epoch
+      )
+        return;
+      const key = payload.problemKey;
+      if (dirty.current[key]) {
+        setIncomingDrafts((old) => ({ ...old, [key]: payload.draft }));
+        setSaved("cph-ng 代码已缓存，编辑器另有未保存修改");
+        clearTimeout(timer.current);
+        return;
+      }
+      if (payload.draft.language === preferencesRef.current.language) {
+        setDrafts((old) =>
+          old[key] && old[key].revision >= payload.draft.revision
+            ? old
+            : { ...old, [key]: payload.draft },
+        );
+        setSaved("cph-ng 代码已缓存到本机");
+      }
+    })
+      .then((off) => {
+        if (active) stop = off;
+        else off();
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+      stop?.();
+    };
+  }, [site.id, contestId]);
   const savePreferences = async (language: string, options: Draft["options"]) => {
     preferenceSaving.current = true;
     try {
@@ -375,10 +417,13 @@ export function OjPaper({
   const p = paper?.problems.find((p) => problemKey(p) === selected) ?? paper?.problems[0];
   const pk = p ? problemKey(p) : "";
   const draft = drafts[pk];
-  useEffect(() => {
-    pollGeneration.current++;
-    setResult(undefined);
-  }, [pk]);
+  const submissions = useSubmissions(site.id, contestId, paper, p, site);
+  const { records, result, refreshRecords } = submissions;
+  const completionKey = progressScopeKey(progressScope(site));
+  const completion = useSelector(
+    ojProgressCache.store,
+    (state) => state[completionKey]?.entries[contestId]?.value,
+  );
   const writable =
     !!paper?.writable &&
     now >= paper.contest.begin &&
@@ -399,6 +444,7 @@ export function OjPaper({
     const value = { ...draft, ...next, revision: Math.max(Date.now(), draft.revision + 1) };
     setDrafts((old) => ({ ...old, [pk]: value }));
     dirty.current[pk] = value;
+    if (incomingDrafts[pk]) return;
     setSaved("正在保存…");
     clearTimeout(timer.current);
     timer.current = setTimeout(() => {
@@ -419,59 +465,6 @@ export function OjPaper({
       if (live.current) setBusy(false);
     }
   };
-  const refreshRecords = useCallback(async () => {
-    const value = await invoke<Records>("get_oj_records", {
-      siteId: site.id,
-      contestId,
-      kind: p?.kind ?? 0,
-    });
-    if (live.current) setRecords(value);
-  }, [site.id, contestId, p?.kind]);
-  useEffect(() => {
-    if (tab === "records" && paper) void refreshRecords().catch((e) => setError(String(e)));
-  }, [tab, paper, refreshRecords]);
-  const poll = async (submission: Submission) => {
-    setResult(submission);
-    const generation = ++pollGeneration.current;
-    for (let attempt = 0; attempt < 30; attempt++) {
-      await new Promise((r) => setTimeout(r, 2000));
-      if (!live.current || generation !== pollGeneration.current) return;
-      const next = await invoke<Submission>("get_oj_result", {
-        siteId: site.id,
-        submissionId: String(submission.id),
-        kind: p!.kind,
-      });
-      if (!live.current || generation !== pollGeneration.current) return;
-      setResult(next);
-      if (next.status !== 6 && next.status !== 7) return;
-    }
-    setError("判题尚未完成，可在提交记录中刷新结果。");
-  };
-  useEffect(() => {
-    let active = true;
-    let stop: (() => void) | undefined;
-    void listen<{ siteId: string; contestId: string; problemKey: string; submission: Submission }>(
-      "oj-companion-result",
-      ({ payload }) => {
-        if (
-          payload.siteId === site.id &&
-          payload.contestId === contestId &&
-          payload.problemKey === pk
-        ) {
-          void poll(payload.submission).catch((e) => setError(String(e)));
-        }
-      },
-    )
-      .then((off) => {
-        if (active) stop = off;
-        else off();
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-      stop?.();
-    };
-  }, [site.id, contestId, pk]);
   const submit = (whole: boolean) =>
     action(async () => {
       await flush();
@@ -490,7 +483,7 @@ export function OjPaper({
         await load();
       } else {
         notifySuccess("代码已提交，正在查询判题结果。");
-        await poll(value);
+        submissions.show(value);
       }
     });
   const send = (all = false) =>
@@ -523,6 +516,15 @@ export function OjPaper({
       <Button variant="secondary" isDisabled={busy} onPress={() => void action(refreshRecords)}>
         刷新提交记录
       </Button>
+      {submissions.recordError && (
+        <Alert status="warning">
+          <Alert.Content>{submissions.recordError}</Alert.Content>
+        </Alert>
+      )}
+      {!records && !submissions.recordError && <Spinner aria-label="正在读取当前题目提交记录" />}
+      {records && records.records.length === 0 && (
+        <p className="oj-muted">当前题目暂无提交记录。</p>
+      )}
       {records?.uncertain.map((u) => (
         <Alert key={u.key} status="warning">
           <Alert.Content>
@@ -546,36 +548,14 @@ export function OjPaper({
         </Alert>
       ))}
       {records?.records.map((r) => (
-        <Card key={r.id}>
-          <Card.Content>
-            <strong>
-              #{r.id} ·{" "}
-              {typeof r.status === "number"
-                ? (statusName[r.status] ?? `状态 ${r.status}`)
-                : "已保存答卷"}
-            </strong>
-            <p>
-              {r.create_time} {r.language}
-            </p>
-            {r.code && <pre>{r.code}</pre>}
-            <Button
-              variant="secondary"
-              onPress={() =>
-                void action(async () =>
-                  setResult(
-                    await invoke("get_oj_result", {
-                      siteId: site.id,
-                      submissionId: String(r.id),
-                      kind: p?.kind ?? 0,
-                    }),
-                  ),
-                )
-              }
-            >
-              查看结果
-            </Button>
-          </Card.Content>
-        </Card>
+        <SubmissionRecord
+          key={r.id}
+          submission={submissions.detail(r)}
+          desktop={desktop}
+          polling={String(result?.id) === String(r.id) && submissions.polling}
+          error={String(result?.id) === String(r.id) ? submissions.pollError : undefined}
+          onShow={() => submissions.show(submissions.detail(r))}
+        />
       ))}
     </div>
   );
@@ -586,6 +566,58 @@ export function OjPaper({
           <strong>作答</strong>
           <span role="status">{saved}</span>
         </div>
+        {incomingDrafts[pk] && (
+          <Alert status="warning">
+            <Alert.Content>
+              <Alert.Title>cph-ng 代码已缓存，编辑器另有未保存修改</Alert.Title>
+              <Alert.Description>当前编辑内容已保留，请选择继续使用哪一份代码。</Alert.Description>
+              <div className="oj-actions">
+                <Button
+                  variant="secondary"
+                  isDisabled={busy}
+                  onPress={() =>
+                    void action(async () => {
+                      await writes.current.catch(() => {});
+                      const next = {
+                        ...draft,
+                        revision: Math.max(Date.now(), incomingDrafts[pk].revision + 1),
+                      };
+                      dirty.current[pk] = next;
+                      setDrafts((old) => ({ ...old, [pk]: next }));
+                      await flush();
+                      setIncomingDrafts((old) => {
+                        const next = { ...old };
+                        delete next[pk];
+                        return next;
+                      });
+                    })
+                  }
+                >
+                  保留编辑器修改
+                </Button>
+                <Button
+                  variant="secondary"
+                  isDisabled={busy}
+                  onPress={() =>
+                    void action(async () => {
+                      await writes.current.catch(() => {});
+                      delete dirty.current[pk];
+                      setDrafts((old) => ({ ...old, [pk]: incomingDrafts[pk] }));
+                      setIncomingDrafts((old) => {
+                        const next = { ...old };
+                        delete next[pk];
+                        return next;
+                      });
+                      setSaved("cph-ng 代码已缓存到本机");
+                    })
+                  }
+                >
+                  载入 cph-ng 缓存
+                </Button>
+              </div>
+            </Alert.Content>
+          </Alert>
+        )}
         {!writable && (
           <Alert>
             <Alert.Content>当前测验不可提交，已保存草稿仍可查看。</Alert.Content>
@@ -661,7 +693,12 @@ export function OjPaper({
             )}
             <Button
               isDisabled={
-                busy || !writable || !draft.code.trim() || !p.languages.includes(draft.language)
+                busy ||
+                submissions.polling ||
+                !writable ||
+                !!incomingDrafts[pk] ||
+                !draft.code.trim() ||
+                !p.languages.includes(draft.language)
               }
               onPress={() => void submit(false)}
             >
@@ -749,7 +786,21 @@ export function OjPaper({
         <div>
           <h2>{paper.contest.title}</h2>
           <p className="oj-muted">
-            {phase(paper.contest, now)} · 截止 {new Date(paper.contest.end).toLocaleString()}
+            <ContestStatus
+              contest={paper.contest}
+              now={now}
+              complete={
+                paper.problems.length > 0 &&
+                completion?.total === paper.problems.length &&
+                completion.accepted === completion.total
+              }
+            />
+            <span>截止 {new Date(paper.contest.end).toLocaleString()}</span>
+            {now >= paper.contest.begin && now < paper.contest.end && (
+              <span className="oj-contest-countdown">
+                （剩余 {formatRemaining(paper.contest.end - now)}）
+              </span>
+            )}
           </p>
         </div>
         <div className="oj-actions">
@@ -787,6 +838,7 @@ export function OjPaper({
           </Button>
         </div>
       )}
+      <RankingTable siteId={site.id} paper={paper} />
       <div className="oj-workspace">
         <aside className="oj-directory">
           <h3>题目</h3>
@@ -794,17 +846,46 @@ export function OjPaper({
             .filter((kind) => paper.problems.some((p) => p.kind === kind))
             .map((kind) => (
               <div className="oj-problem-group" key={kind}>
-                <h4>{kindName[kind]}</h4>
+                <h4 className="flex flex-wrap items-center gap-2">
+                  {kindName[kind]}
+                  {[0, 4].includes(kind) && (
+                    <span>
+                      {
+                        paper.problems.filter(
+                          (p) => p.kind === kind && submissions.verdict(p) === 0,
+                        ).length
+                      }
+                      /{paper.problems.length}
+                    </span>
+                  )}
+                  {paper.problems
+                    .filter((p) => p.kind === kind)
+                    .every((p) => submissions.verdict(p) === 0) && (
+                    <Chip size="sm" variant="primary" color="success">
+                      已完成
+                    </Chip>
+                  )}
+                </h4>
                 {paper.problems
                   .filter((p) => p.kind === kind)
                   .map((problem) => (
                     <Button
                       className="oj-directory-item"
+                      data-verdict-tone={
+                        verdicts[submissions.verdict(problem) ?? 99]?.color ?? "default"
+                      }
+                      data-selected={problemKey(problem) === pk}
                       key={problemKey(problem)}
                       variant={problemKey(problem) === pk ? "secondary" : "tertiary"}
                       onPress={() => void go({ problem: problemKey(problem) })}
                     >
-                      {problem.displayLabel}. {problem.title}
+                      <span>
+                        {problem.displayLabel}. {problem.title}
+                      </span>
+                      <Verdict
+                        status={submissions.verdict(problem)}
+                        empty={submissions.emptyVerdict(problem)}
+                      />
                     </Button>
                   ))}
               </div>
@@ -863,33 +944,14 @@ export function OjPaper({
                 <Tabs.Panel id="answer">{answerPanel}</Tabs.Panel>
                 <Tabs.Panel id="records">{recordPanel}</Tabs.Panel>
               </Tabs>
-              {result && (
-                <Card>
-                  <Card.Header>
-                    <Card.Title>
-                      提交 #{result.id} · {statusName[result.status ?? 6] ?? "结果"}
-                    </Card.Title>
-                  </Card.Header>
-                  <Card.Content>
-                    <pre>{JSON.stringify(result.result ?? result, null, 2)}</pre>
-                    <Button
-                      variant="secondary"
-                      onPress={() =>
-                        void action(async () =>
-                          setResult(
-                            await invoke("get_oj_result", {
-                              siteId: site.id,
-                              submissionId: String(result.id),
-                              kind: p.kind,
-                            }),
-                          ),
-                        )
-                      }
-                    >
-                      刷新判题
-                    </Button>
-                  </Card.Content>
-                </Card>
+              {result && tab !== "records" && (
+                <ResultAccordion
+                  key={result.id}
+                  submission={result}
+                  polling={submissions.polling}
+                  error={submissions.pollError}
+                  onRefresh={() => submissions.show(result)}
+                />
               )}
             </>
           ) : (

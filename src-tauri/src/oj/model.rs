@@ -64,6 +64,7 @@ pub(crate) struct SiteView {
     pub site: Site,
     pub enabled: bool,
     pub username: String,
+    pub session_generation: Option<u64>,
     pub session: Session,
     pub message: String,
     pub last_sync: Option<i64>,
@@ -235,6 +236,8 @@ pub(crate) struct CompanionResult {
     pub site_id: String,
     pub contest_id: String,
     pub problem_key: String,
+    pub account: String,
+    pub epoch: u64,
     pub submission: Value,
 }
 

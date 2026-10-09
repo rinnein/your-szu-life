@@ -1,6 +1,40 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSelector } from "@tanstack/react-store";
+import {
+  EMPTY_PROGRESS,
+  ojProgressCache,
+  progressScopeKey,
+  type ProgressScope,
+} from "./progress-store";
 import { Button, Chip, Table } from "@heroui/react";
 import { type Contest, phase } from "./types";
+
+export function ContestStatus({
+  contest,
+  now,
+  complete = false,
+}: {
+  contest: Contest;
+  now: number;
+  complete?: boolean;
+}) {
+  const state = phase(contest, now);
+  return (
+    <span className="inline-flex flex-wrap gap-2">
+      <Chip
+        variant="primary"
+        color={state === "进行中" ? "success" : state === "已结束" ? "danger" : "default"}
+      >
+        {state}
+      </Chip>
+      {complete && (
+        <Chip variant="primary" color="success">
+          已完成
+        </Chip>
+      )}
+    </span>
+  );
+}
 
 export function formatRemaining(milliseconds: number): string {
   const total = Math.max(0, Math.ceil(milliseconds / 1000));
@@ -15,11 +49,46 @@ export function ContestTable({
   contests,
   query,
   onOpen,
+  siteId,
+  account,
+  siteUrl = "",
+  sessionGeneration = null,
 }: {
   contests: Contest[];
   query: string;
   onOpen: (contest: Contest) => void;
+  siteId?: string;
+  account?: string;
+  siteUrl?: string;
+  sessionGeneration?: number | null;
 }) {
+  const scope: ProgressScope = {
+    siteId: siteId ?? "",
+    account: account ?? "",
+    url: siteUrl,
+    generation: sessionGeneration,
+  };
+  const key = progressScopeKey(scope);
+  const progress = useSelector(
+    ojProgressCache.store,
+    (state) => state[key]?.entries ?? EMPTY_PROGRESS,
+  );
+  const revision = useSelector(ojProgressCache.store, (state) => state[key]?.revision ?? 0);
+  useEffect(() => {
+    let active = true;
+    if (siteId && account)
+      void (async () => {
+        for (const contest of contests) {
+          if (!active) return;
+          if (contest.now < contest.begin) continue;
+          await ojProgressCache.ensure(scope, contest.id);
+        }
+      })();
+    // In-flight requests belong to the shared cache, not this page's lifetime.
+    return () => {
+      active = false;
+    };
+  }, [key, contests, revision]);
   const sampledAt = useMemo(() => Date.now(), [contests]);
   const [clock, setClock] = useState(Date.now);
   useEffect(() => {
@@ -59,9 +128,14 @@ export function ContestTable({
                   >
                     <Table.Cell>{contest.title}</Table.Cell>
                     <Table.Cell>
-                      <Chip color={active ? "success" : state === "已结束" ? "danger" : "default"}>
-                        {state}
-                      </Chip>
+                      <ContestStatus
+                        contest={contest}
+                        now={now}
+                        complete={
+                          (progress[contest.id]?.value?.total ?? 0) > 0 &&
+                          progress[contest.id].value?.accepted === progress[contest.id].value?.total
+                        }
+                      />
                     </Table.Cell>
                     <Table.Cell>{new Date(contest.begin).toLocaleString()}</Table.Cell>
                     <Table.Cell>
@@ -73,8 +147,12 @@ export function ContestTable({
                       )}
                     </Table.Cell>
                     <Table.Cell>
-                      <Button isDisabled={state === "未开始"} onPress={() => onOpen(contest)}>
-                        进入测验
+                      <Button
+                        variant={state === "已结束" ? "secondary" : "primary"}
+                        isDisabled={state === "未开始"}
+                        onPress={() => onOpen(contest)}
+                      >
+                        {state === "已结束" ? "查看测验" : "进入测验"}
                       </Button>
                     </Table.Cell>
                   </Table.Row>
