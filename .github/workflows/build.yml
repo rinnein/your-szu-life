@@ -27,10 +27,13 @@ jobs:
               src-tauri/target/release/bundle/appimage/*.AppImage
           - name: windows-x64
             os: windows-latest
-            bundles: nsis msi
+            # WiX 3.14's MSI database defaults to code page 1252 and cannot
+            # bundle the Chinese productName ("泥深"). NSIS handles the same
+            # name correctly; keep the Windows artifact build reliable until
+            # a UTF-8 WiX locale is supplied.
+            bundles: nsis
             paths: |
               src-tauri/target/release/bundle/nsis/*.exe
-              src-tauri/target/release/bundle/msi/*.msi
 
     steps:
       - name: Check out repository
@@ -171,7 +174,10 @@ jobs:
           EOF
 
       - name: Build Android APK and AAB
-        run: vpr tauri android build --ci --apk --aab
+        # The release artifact is ARM64. Explicitly limit Tauri/Gradle to the
+        # target that is built so the generated project does not require the
+        # default armv7/x86 libraries that are intentionally not compiled.
+        run: vpr tauri android build --ci --apk --aab --target aarch64 --split-per-abi
 
       - name: Verify Android signatures
         shell: bash
