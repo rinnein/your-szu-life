@@ -139,9 +139,9 @@ describe("campus payments route", () => {
     renderAt("/campus-payments/network");
     const open = await screen.findByRole("button", { name: "打开网费官网" });
     const guidance = screen.getByRole("region", { name: "网费办理说明" });
-    expect(guidance).toHaveTextContent("请先在校园卡「通用代扣费账户」充值足够金额。");
+    expect(guidance).toHaveTextContent("请先在校园卡「通用代扣费账户」充值足够金额");
     expect(guidance).toHaveTextContent(
-      "若当前套餐仍剩余多个月，请在套餐剩余一个月内预订下个月套餐；只有无套餐或套餐剩余一个月内，才能修改或续费套餐。",
+      "若当前套餐仍剩余多个月，请在套餐剩余一个月内预订下个月套餐；只有无套餐或套餐剩余一个月内，才能修改或续费套餐",
     );
     expect(guidance.compareDocumentPosition(open) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByText("复制链接后在微信内打开，或使用微信扫码")).not.toBeInTheDocument();
@@ -237,7 +237,7 @@ describe("campus payments route", () => {
     const open = await screen.findByRole("button", { name: "打开网费官网" });
     fireEvent.click(open);
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "无法打开网费官网，请检查网络或重新认证后重试。",
+      "无法打开网费官网，请检查网络或重新认证后重试",
     );
     expect(screen.queryByText(/do-not-display/)).not.toBeInTheDocument();
     expect(open).toBeEnabled();

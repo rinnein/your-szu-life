@@ -16,7 +16,7 @@ import {
   Tabs,
 } from "@heroui/react";
 import { LuArrowLeft, LuCheck, LuPause, LuPlay, LuRefreshCw, LuSquare } from "react-icons/lu";
-import { PageShell } from "../components";
+import { PageShell, SkeletonCard } from "../components";
 import { useLogicalNavigation } from "../logical-navigation";
 import { AiSettings, QuizModePicker } from "./AiSettings";
 import { QuizPanel } from "./QuizPanel";
@@ -292,11 +292,28 @@ export default function UoocPage() {
               </Tabs.Tab>
             </Tabs.List>
           </Tabs.ListContainer>
-          <Tabs.Panel id="courses" className="grid gap-4 pt-4">
+          <Tabs.Panel id="courses" className="grid gap-6 pt-4">
+            {!snapshot && !error && <SkeletonCard />}
             <p className="text-sm text-muted">
               已登录且应用运行期间，按北京时间每日自动为有签到考核的待签到课程提交签到，无需加入视频任务。
               提交后根据服务端签到进度确认结果。
             </p>
+            {pendingCheckins.length > 0 && (
+              <Alert status="warning" className="flex flex-wrap items-center justify-between gap-3">
+                <Alert.Indicator />
+                <Alert.Content>
+                  <Alert.Title>需要签到</Alert.Title>
+                  <Alert.Description>{pendingCheckins.length} 门课程需要签到</Alert.Description>
+                </Alert.Content>
+                <Button
+                  variant="secondary"
+                  isDisabled={!ready || busy}
+                  onPress={() => void action("start_uooc_checkin", { courseIds: pendingCheckins })}
+                >
+                  签到全部待签到课程 ({pendingCheckins.length})
+                </Button>
+              </Alert>
+            )}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-muted">{snapshot?.courses.length ?? 0} 门开课中的课程</p>
               <div className="flex flex-wrap gap-2">
@@ -306,13 +323,6 @@ export default function UoocPage() {
                   onPress={() => setSelected(ids.length === selectable.length ? [] : selectable)}
                 >
                   {ids.length > 0 && ids.length === selectable.length ? "取消全选" : "全选"}
-                </Button>
-                <Button
-                  variant="secondary"
-                  isDisabled={!ready || busy || pendingCheckins.length === 0}
-                  onPress={() => void action("start_uooc_checkin", { courseIds: pendingCheckins })}
-                >
-                  签到全部待签到课程 ({pendingCheckins.length})
                 </Button>
                 <Button
                   isDisabled={!ready || busy || ids.length === 0}

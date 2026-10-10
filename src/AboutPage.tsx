@@ -1,9 +1,8 @@
-import { useLogicalNavigation } from "./logical-navigation";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Alert, Avatar, Button, Card, CloseButton, Spinner } from "@heroui/react";
-import { LuArrowLeft, LuArrowUpRight, LuDownload, LuRefreshCw, LuUsers } from "react-icons/lu";
-import { BrandMark, PageShell } from "./components";
+import { Alert, Avatar, Button, Spinner } from "@heroui/react";
+import { LuArrowUpRight, LuDownload, LuRefreshCw, LuUsers } from "react-icons/lu";
+import { BrandMark, Card, ModuleHeader, PageShell } from "./components";
 import { useAppContent } from "./app-content/context";
 import { contentTime, openPublicUrl } from "./app-content/external";
 import type { AppContentSnapshot, ContributorsSnapshot } from "./app-content/types";
@@ -65,16 +64,12 @@ function Contributors() {
   };
 
   return (
-    <Card className="about-card" aria-labelledby="contributors-heading">
-      <Card.Header>
-        <Card.Title id="contributors-heading">
-          <LuUsers aria-hidden="true" /> 贡献者
-        </Card.Title>
-        <Card.Description>
-          感谢每一位参与者。列表来自公开 GitHub 仓库，按仓库缓存 24 小时。
-        </Card.Description>
-      </Card.Header>
-      <Card.Content>
+    <Card
+      title="贡献者"
+      icon={<LuUsers />}
+      description="感谢每一位参与者。列表来自公开 GitHub 仓库，按仓库缓存 24 小时"
+    >
+      <div className="grid gap-4">
         {result?.repository && (
           <Button
             className="repository-link"
@@ -165,13 +160,12 @@ function Contributors() {
             {linkError}
           </p>
         )}
-      </Card.Content>
+      </div>
     </Card>
   );
 }
 
 export default function AboutPage() {
-  const navigation = useLogicalNavigation();
   const { snapshot, error, refreshing, refresh } = useAppContent();
   const [openError, setOpenError] = useState<string>();
   const update = snapshot?.update;
@@ -180,19 +174,12 @@ export default function AboutPage() {
   return (
     <PageShell>
       <div className="about-layout">
-        <CloseButton
-          data-webview-navigation
-          className="about-back"
-          aria-label="返回首页"
-          onPress={() => void navigation.back()}
-        >
-          <LuArrowLeft aria-hidden="true" />
-        </CloseButton>
+        <ModuleHeader title="关于" />
         <header className="about-header">
           <span data-webview-navigation className="eyebrow">
             ABOUT YOUR SZU LIFE
           </span>
-          <h1 data-webview-navigation>关于</h1>
+          <h1 data-webview-navigation className="sr-only">关于</h1>
           <div className="about-brand">
             <BrandMark large />
             <div>
@@ -206,14 +193,11 @@ export default function AboutPage() {
             </div>
           </div>
         </header>
-        <Card className="about-card" aria-labelledby="updates-heading">
-          <Card.Header>
-            <Card.Title id="updates-heading">更新与公告</Card.Title>
-            <Card.Description>
-              启动时自动检查，持续运行每 24 小时检查一次。手动检查同时刷新公告与更新信息。
-            </Card.Description>
-          </Card.Header>
-          <Card.Content>
+        <Card
+          title="更新与公告"
+          description="启动时自动检查,持续运行每 24 小时检查一次。手动检查同时刷新公告与更新信息"
+        >
+          <div className="grid gap-4">
             <div className="about-update-toolbar">
               <p className="update-status" role="status">
                 {updateStatus(snapshot, refreshing, error)}
@@ -318,17 +302,14 @@ export default function AboutPage() {
             <p className="content-muted about-download-note">
               仅检查版本，不会自动下载或安装；点击下载后在系统浏览器打开。
             </p>
-          </Card.Content>
+          </div>
         </Card>
         <Contributors />
-        <Card className="about-card">
-          <Card.Header>
-            <Card.Title>UOOC 功能参考</Card.Title>
-            <Card.Description>
-              视频流程参考 auto-uooc-go，测验交互参考 fuckuooc，使用 Rust 独立实现。
-            </Card.Description>
-          </Card.Header>
-          <Card.Content>
+        <Card
+          title="UOOC 功能参考"
+          description="视频流程参考 auto-uooc-go，测验交互参考 fuckuooc，使用 Rust 独立实现"
+        >
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="tertiary"
               onPress={() =>
@@ -349,7 +330,7 @@ export default function AboutPage() {
             >
               fuckuooc <LuArrowUpRight aria-hidden="true" />
             </Button>
-          </Card.Content>
+          </div>
         </Card>
       </div>
     </PageShell>

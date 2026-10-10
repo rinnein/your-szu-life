@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { Button, Card, Chip, Input, Label, TextField } from "@heroui/react";
 import { LuPin, LuSearch, LuRefreshCw } from "react-icons/lu";
+import { EmptyState } from "../components";
 import { useCacheMode, canSelect } from "./view-mode";
 import { useEnrollment } from "./use-enrollment";
 import { Choice, OperationError, categories } from "./shared";
@@ -143,7 +144,10 @@ export default function CatalogPage() {
         {courses.map((c) => {
           const a = academicIndex.get(c.code);
           return (
-            <Card key={c.id}>
+            <Card
+              key={c.id}
+              className="hover:shadow-lg hover:-translate-y-1 transition-all duration-200"
+            >
               <Card.Header>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -205,11 +209,21 @@ export default function CatalogPage() {
       </div>
       {!courses.length && (
         <Card>
-          <Card.Content className="py-12 text-center text-muted">
-            {cacheOnly
-              ? "未缓存匹配课程；这不代表学校当前没有相关课程。"
-              : "暂无匹配课程。调整目录和关键词后查询；连接不可用时仍可查看已有缓存。"}
-          </Card.Content>
+          <EmptyState
+            icon={<LuSearch className="size-10" aria-hidden="true" />}
+            title={cacheOnly ? "未找到缓存课程" : "暂无匹配课程"}
+            description={
+              cacheOnly
+                ? "未缓存匹配课程；这不代表学校当前没有相关课程。"
+                : "调整目录和关键词后查询；连接不可用时仍可查看已有缓存。"
+            }
+            action={
+              <Button size="sm" variant="secondary" onPress={() => refresh()}>
+                <LuRefreshCw />
+                重新查询
+              </Button>
+            }
+          />
         </Card>
       )}
       <div className="flex items-center justify-center gap-4">

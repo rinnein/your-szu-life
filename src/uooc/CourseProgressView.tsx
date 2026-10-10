@@ -1,4 +1,4 @@
-import { Chip, ProgressBar, Spinner } from "@heroui/react";
+import { Chip, ProgressBar, ProgressCircle, Spinner } from "@heroui/react";
 import { attendanceText, type ProgressEntry, type UoocCourse } from "./types";
 import { courseSchedule } from "./course-schedule";
 import { CourseProgressDetails, formatPercent } from "./CourseProgressDetails";
@@ -33,7 +33,7 @@ export function CourseProgressView({
             ? "部分项目的完成率未知，当前仅显示已确认的加权进度。"
             : undefined;
   return (
-    <div className="grid gap-2" aria-label="服务端课程进度">
+    <div className="grid gap-4" aria-label="服务端课程进度">
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
         <span>周程进度 · {course.weeks.trim() || "—"}</span>
         <span className="text-muted">结课日期：{endDate}</span>
@@ -52,29 +52,38 @@ export function CourseProgressView({
       ) : (
         <p className="text-xs text-muted">周程进度未知</p>
       )}
-      <div className="flex items-center justify-between gap-2 text-sm">
-        <span>课程总进度{weighted && "（按权重）"}</span>
-        <span>{totalText}</span>
-      </div>
       {totalPercent != null && (
-        <ProgressBar
-          aria-label="课程总进度"
-          value={totalPercent}
-          valueLabel={
-            partial ? `已确认至少 ${formatPercent(displayPercent)}` : formatPercent(totalPercent)
-          }
-        >
-          <ProgressBar.Track>
-            <ProgressBar.Fill />
-          </ProgressBar.Track>
-        </ProgressBar>
+        <div className="flex items-center gap-4 rounded-xl border border-separator/50 p-4">
+          <ProgressCircle
+            aria-label="课程总进度"
+            value={Math.max(0, Math.min(100, totalPercent))}
+            color={totalPercent >= 100 ? "success" : "accent"}
+            size="lg"
+          >
+            <ProgressCircle.Track>
+              <ProgressCircle.TrackCircle />
+              <ProgressCircle.FillCircle />
+            </ProgressCircle.Track>
+            <span className="text-sm font-semibold">{totalText}</span>
+          </ProgressCircle>
+          <div className="grid gap-1">
+            <span className="text-sm font-semibold">课程总进度{weighted && "（按权重）"}</span>
+            {partial && (
+              <span className="text-xs text-muted">部分项目进度未知，数值为已确认部分</span>
+            )}
+          </div>
+        </div>
       )}
       {weightMessage && <p className="text-xs text-muted">{weightMessage}</p>}
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
         <Chip
           size="sm"
           color={
-            data?.attendance === "today" || data?.attendance === "complete" ? "success" : "default"
+            data?.attendance === "today" || data?.attendance === "complete"
+              ? "success"
+              : data?.attendance === "needed"
+                ? "warning"
+                : "default"
           }
         >
           {attendanceText[data?.attendance ?? "unknown"]}

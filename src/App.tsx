@@ -6,7 +6,7 @@ import { type NavigateOptions } from "@tanstack/react-router";
 import { Alert, AlertDialog, Button, Card, Dropdown, Spinner } from "@heroui/react";
 import { authFailureFor, useAuth } from "./auth";
 import { ProfileForm } from "./ProfileForm";
-import { BrandMark, PageShell } from "./components";
+import { BrandMark, PageShell, Section } from "./components";
 import { AnnouncementBoard } from "./app-content/AnnouncementBoard";
 import {
   FaBug,
@@ -302,104 +302,111 @@ export default function App() {
   const auth =
     "Authenticated" in state ? state.Authenticated : { studentId: profile?.studentId ?? "" };
   return (
-    <PageShell>
-      <header className="app-header">
-        <div>
-          <div className="brand-line">
-            <button
-              type="button"
-              className="brand-mark-trigger"
-              aria-label="应用图标，连续点击 5 次启用调试模式"
-              onClick={handleBrandMarkTap}
-            >
-              <BrandMark />
-            </button>
-            <span className="eyebrow">YOUR SZU LIFE</span>
-          </div>
-          <h1 data-webview-navigation>深大生活工作台</h1>
-        </div>
-        <Dropdown>
-          <Dropdown.Trigger className="account-trigger" aria-label="打开账户菜单">
-            <span>{auth.studentId}</span>
-            <span className="account-chevron" aria-hidden="true">
-              ⌄
-            </span>
-          </Dropdown.Trigger>
-          <Dropdown.Popover placement="bottom end">
-            <Dropdown.Menu
-              aria-label="账户操作"
-              onAction={(key) => {
-                if (key === "settings") void navigation.push("/settings");
-                if (key === "reauth") void beginAuthentication();
-                if (key === "logout") setLogoutOpen(true);
-              }}
-            >
-              <Dropdown.Item id="identity" textValue={auth.name ?? "未设置姓名"} isDisabled>
-                <strong>{auth.name ?? "未设置姓名"}</strong>
-              </Dropdown.Item>
-              <Dropdown.Item
-                id="card"
-                textValue={`校园卡号 ${profile?.campusCardNumber ?? "未设置"}`}
-                isDisabled
+    <PageShell maxWidth="2xl">
+      <div className="grid gap-12">
+        <header className="flex items-start justify-between gap-5 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2.5 mb-2.5">
+              <button
+                type="button"
+                className="brand-mark-trigger"
+                aria-label="应用图标，连续点击 5 次启用调试模式"
+                onClick={handleBrandMarkTap}
               >
-                校园卡号：{profile?.campusCardNumber ?? "未设置"}
-              </Dropdown.Item>
-              <Dropdown.Item id="settings">设置</Dropdown.Item>
-              <Dropdown.Item id="reauth">重新认证</Dropdown.Item>
-              <Dropdown.Item id="logout" variant="danger">
-                注销
-              </Dropdown.Item>
-            </Dropdown.Menu>
-          </Dropdown.Popover>
-        </Dropdown>
-      </header>
-      <AnnouncementBoard />
-      {featureGroups.map(({ id, label: groupLabel, features }) => (
-        <section key={id} aria-labelledby={`feature-heading-${id}`}>
-          <h2 id={`feature-heading-${id}`} className="section-heading">
-            {groupLabel}
-          </h2>
-          <div className="feature-grid">
-            {features
-              .filter(({ debugOnly }) => !debugOnly || debugEnabled)
-              .map(({ label, icon: FeatureIcon, description, to }) => (
-                <Button
-                  key={label}
-                  className="feature-button"
-                  variant="outline"
-                  onPress={() => (to ? void navigation.push(to) : setPlaceholder(label))}
-                >
-                  <span className="feature-icon" aria-hidden="true">
-                    <FeatureIcon size={19} focusable="false" />
-                  </span>
-                  <span className="feature-copy">
-                    <strong>{label}</strong>
-                    <small>{description}</small>
-                  </span>
-                  <span className="feature-arrow" aria-hidden="true">
-                    →
-                  </span>
-                </Button>
-              ))}
+                <BrandMark />
+              </button>
+              <span className="eyebrow">YOUR SZU LIFE</span>
+            </div>
+            <h1 data-webview-navigation className="text-3xl md:text-4xl font-bold tracking-tight">
+              深大生活工作台
+            </h1>
           </div>
-        </section>
-      ))}
-      {placeholder && (
-        <Alert className="placeholder-alert" status="default" role="status">
-          <Alert.Indicator />
-          <Alert.Content>
-            <Alert.Title>{placeholder}功能即将支持</Alert.Title>
-            <Alert.Description>当前仅提供入口占位。</Alert.Description>
-          </Alert.Content>
-          <Button
-            variant="tertiary"
-            onPress={() => setPlaceholder(undefined)}
-            aria-label="关闭提示"
-          >
-            ×
-          </Button>
-        </Alert>
-      )}
+          <Dropdown>
+            <Dropdown.Trigger className="account-trigger shrink-0" aria-label="打开账户菜单">
+              <span>{auth.studentId}</span>
+              <span className="account-chevron" aria-hidden="true">
+                ⌄
+              </span>
+            </Dropdown.Trigger>
+            <Dropdown.Popover placement="bottom end">
+              <Dropdown.Menu
+                aria-label="账户操作"
+                onAction={(key) => {
+                  if (key === "settings") void navigation.push("/settings");
+                  if (key === "reauth") void beginAuthentication();
+                  if (key === "logout") setLogoutOpen(true);
+                }}
+              >
+                <Dropdown.Item id="identity" textValue={auth.name ?? "未设置姓名"} isDisabled>
+                  <strong>{auth.name ?? "未设置姓名"}</strong>
+                </Dropdown.Item>
+                <Dropdown.Item
+                  id="card"
+                  textValue={`校园卡号 ${profile?.campusCardNumber ?? "未设置"}`}
+                  isDisabled
+                >
+                  校园卡号：{profile?.campusCardNumber ?? "未设置"}
+                </Dropdown.Item>
+                <Dropdown.Item id="settings">设置</Dropdown.Item>
+                <Dropdown.Item id="reauth">重新认证</Dropdown.Item>
+                <Dropdown.Item id="logout" variant="danger">
+                  注销
+                </Dropdown.Item>
+              </Dropdown.Menu>
+            </Dropdown.Popover>
+          </Dropdown>
+        </header>
+
+        <AnnouncementBoard />
+
+        <div className="space-y-12">
+          {featureGroups.map(({ id, label: groupLabel, features }) => (
+            <Section key={id} title={groupLabel}>
+              <div className="feature-grid">
+                {features
+                  .filter(({ debugOnly }) => !debugOnly || debugEnabled)
+                  .map(({ label, icon: FeatureIcon, description, to }) => (
+                    <Button
+                      key={label}
+                      className="feature-button"
+                      variant="outline"
+                      onPress={() => (to ? void navigation.push(to) : setPlaceholder(label))}
+                    >
+                      <span className="feature-icon" aria-hidden="true">
+                        <FeatureIcon size={19} focusable="false" />
+                      </span>
+                      <span className="feature-copy">
+                        <strong>{label}</strong>
+                        <small>{description}</small>
+                      </span>
+                      <span className="feature-arrow" aria-hidden="true">
+                        →
+                      </span>
+                    </Button>
+                  ))}
+              </div>
+            </Section>
+          ))}
+        </div>
+
+        {placeholder && (
+          <Alert className="placeholder-alert" status="default" role="status">
+            <Alert.Indicator />
+            <Alert.Content>
+              <Alert.Title>{placeholder}功能即将支持</Alert.Title>
+              <Alert.Description>当前仅提供入口占位。</Alert.Description>
+            </Alert.Content>
+            <Button
+              variant="tertiary"
+              onPress={() => setPlaceholder(undefined)}
+              aria-label="关闭提示"
+            >
+              ×
+            </Button>
+          </Alert>
+        )}
+      </div>
+
       <LogoutDialog
         isOpen={logoutOpen}
         isBusy={logoutBusy}

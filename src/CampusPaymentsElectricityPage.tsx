@@ -15,6 +15,7 @@ import {
 import { LuZap } from "react-icons/lu";
 import { copyText } from "./clipboard";
 import { ElectricityDetails } from "./ElectricityDetails";
+import { Card as UiCard, SkeletonCard } from "./components";
 import {
   getElectricityConstants,
   type ElectricitySettings as Settings,
@@ -393,6 +394,16 @@ export default function CampusPaymentsElectricityPage() {
                 </strong>
               </div>
             )}
+            {savedSettings && editing && (
+              <Button
+                type="button"
+                variant="tertiary"
+                isDisabled={busy || sharing}
+                onPress={() => setSettings(savedSettings)}
+              >
+                使用上次配置
+              </Button>
+            )}
             <p className="text-sm text-muted">展示最近 31 天的用电与充值记录。</p>
             <div className="electricity-actions">
               <Button type="submit" variant="primary" isDisabled={formDisabled || !canQuery}>
@@ -472,6 +483,21 @@ export default function CampusPaymentsElectricityPage() {
           retryRecharges={() => void retryRecharges()}
           retrying={retrying}
         />
+      )}
+      {(loading || (busy && !result)) && (
+        <div className="grid gap-4" role="status" aria-label="正在加载电费数据">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {[0, 1, 2, 3].map((item) => (
+              <SkeletonCard key={item} />
+            ))}
+          </div>
+          <UiCard title="用电趋势">
+            <div className="grid h-64 content-end gap-3" aria-hidden="true">
+              <div className="h-40 animate-pulse rounded-lg bg-default-100" />
+              <div className="h-3 w-2/3 animate-pulse rounded bg-default-100" />
+            </div>
+          </UiCard>
+        </div>
       )}
     </div>
   );

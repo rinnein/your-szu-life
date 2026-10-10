@@ -1,4 +1,3 @@
-import { useLogicalNavigation } from "./logical-navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -7,7 +6,6 @@ import {
   AlertDialog,
   Button,
   Card,
-  CloseButton,
   FieldError,
   Input,
   Label,
@@ -16,8 +14,7 @@ import {
   Tabs,
   TextField,
 } from "@heroui/react";
-import { LuArrowLeft } from "react-icons/lu";
-import { PageShell } from "./components";
+import { ModuleHeader, PageShell } from "./components";
 import StaffNetworkPanel from "./StaffNetworkPanel";
 import {
   initialStaffSettings,
@@ -168,7 +165,6 @@ function regionDefaultTab(region: NetworkRegion): RegionTab {
 }
 
 export default function CampusNetworkPage() {
-  const navigation = useLogicalNavigation();
   const [overview, setOverview] = useState<NetworkOverview>(initialOverview);
   const [settings, setSettings] = useState<Settings>();
   const [status, setStatus] = useState<Status>(initialStatus);
@@ -423,23 +419,10 @@ export default function CampusNetworkPage() {
   return (
     <PageShell>
       <div className="campus-network-layout">
-        <CloseButton
-          data-webview-navigation
-          className="campus-network-back"
-          aria-label="返回上一级"
-          onPress={() => void navigation.back()}
-        >
-          <LuArrowLeft aria-hidden="true" />
-        </CloseButton>
-        <header className="campus-network-header">
-          <div>
-            <span data-webview-navigation className="eyebrow">
-              NETWORK ACCESS
-            </span>
-            <h1 data-webview-navigation>校园网登录</h1>
-            <p className="page-description">当前推测网络状态：{statusText(overview)}</p>
-          </div>
-        </header>
+        <ModuleHeader
+          title="校园网登录"
+          description={`当前推测网络状态：${statusText(overview)}`}
+        />
 
         <Tabs
           className="campus-region-tabs"

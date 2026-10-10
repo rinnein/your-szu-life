@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { formatElectricity as fmt, type ElectricityResult } from "./electricity";
 import { useLogicalNavigation } from "./logical-navigation";
+import { StatCard } from "./components";
 
 export function ElectricityDetails({
   result,
@@ -74,17 +75,14 @@ export function ElectricityDetails({
     <>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" aria-label="电费概览">
         {metrics.map((metric) => (
-          <Card key={metric.title} aria-label={metric.title}>
-            <Card.Header>
-              <Card.Title>{metric.title}</Card.Title>
-            </Card.Header>
-            <Card.Content>
-              <strong className="text-2xl">
-                {fmt(metric.value)} <small>{metric.suffix}</small>
-              </strong>
-              <p className="text-muted">{metric.sub}</p>
-            </Card.Content>
-          </Card>
+          <StatCard
+            key={metric.title}
+            label={metric.title}
+            value={fmt(metric.value)}
+            unit={metric.suffix}
+            description={metric.sub}
+            color={metric.title === "当前电量" ? "brand" : "default"}
+          />
         ))}
       </div>
       <p className="text-sm text-muted">

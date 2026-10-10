@@ -2,9 +2,9 @@ import { useLogicalNavigation } from "./logical-navigation";
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Alert, Button, Card, CloseButton, Spinner } from "@heroui/react";
-import { LuArrowLeft, LuCopy, LuEraser, LuPower } from "react-icons/lu";
-import { PageShell } from "./components";
+import { Alert, Button, Spinner } from "@heroui/react";
+import { LuCopy, LuEraser, LuPower } from "react-icons/lu";
+import { Card, ModuleHeader, PageShell } from "./components";
 import { copyText } from "./clipboard";
 
 type DebugMode = { enabled: boolean; logCount: number };
@@ -135,43 +135,33 @@ export default function DebugLogPage() {
   if (!mode.enabled && !busy) {
     return (
       <PageShell centered>
-        <Card className="debug-card" variant="default">
-          <Card.Content>
-            <Card.Title>调试模式未启用</Card.Title>
-            <Card.Description>请返回首页，连续点击左上角应用图标 5 次启用。</Card.Description>
-            <Button data-webview-navigation onPress={() => void navigation.back()}>
-              返回工作台
-            </Button>
-          </Card.Content>
+        <Card title="调试模式未启用" description="请返回首页，连续点击左上角应用图标 5 次启用">
+          <Button
+            data-webview-navigation
+            onPress={() => void navigation.back()}
+            className="mt-2"
+          >
+            返回工作台
+          </Button>
         </Card>
       </PageShell>
     );
   }
 
   return (
-    <PageShell>
-      <div className="debug-layout">
-        <CloseButton
-          data-webview-navigation
-          className="debug-back"
-          aria-label="返回工作台"
-          onPress={() => void navigation.back()}
+    <PageShell maxWidth="xl">
+      <div className="grid gap-6">
+        <ModuleHeader
+          title="诊断日志"
+          eyebrow="DEVELOPER DIAGNOSTICS"
+          description="仅记录脱敏的 Android 网络与门户探测信息"
+        />
+
+        <Card
+          title="调试模式已启用"
+          description={`当前保留 ${mode.logCount} 条日志，最多保存 1000 条`}
         >
-          <LuArrowLeft aria-hidden="true" />
-        </CloseButton>
-        <header className="debug-header">
-          <span data-webview-navigation className="eyebrow">
-            DEVELOPER DIAGNOSTICS
-          </span>
-          <h1 data-webview-navigation>诊断日志</h1>
-          <p className="page-description">仅记录脱敏的 Android 网络与门户探测信息。</p>
-        </header>
-        <Card className="debug-card" variant="default">
-          <Card.Header>
-            <Card.Title>调试模式已启用</Card.Title>
-            <Card.Description>当前保留 {mode.logCount} 条日志，最多保存 1000 条。</Card.Description>
-          </Card.Header>
-          <Card.Content className="debug-actions">
+          <div className="flex flex-wrap gap-2.5">
             <Button variant="outline" onPress={() => void load()} isDisabled={busy}>
               {busy && <Spinner size="sm" color="current" />}
               刷新
@@ -188,32 +178,31 @@ export default function DebugLogPage() {
               <LuPower aria-hidden="true" />
               关闭调试模式
             </Button>
-          </Card.Content>
+          </div>
         </Card>
+
         {message && (
           <Alert role="status" status="default">
             <Alert.Content>{message}</Alert.Content>
           </Alert>
         )}
-        <Card className="debug-card" variant="default">
-          <Card.Header>
-            <Card.Title>最近记录</Card.Title>
-          </Card.Header>
-          <Card.Content>
-            {busy ? (
-              <div className="debug-empty">
-                <Spinner />
-              </div>
-            ) : renderedLogs.length ? (
-              <ol className="debug-log-list">
-                {renderedLogs.map((log, index) => (
-                  <li key={`${log.timestampMs}-${index}`}>{formatLog(log)}</li>
-                ))}
-              </ol>
-            ) : (
-              <p className="debug-empty">暂无诊断日志。请返回校园网页面等待下一次网络探测。</p>
-            )}
-          </Card.Content>
+
+        <Card title="最近记录">
+          {busy ? (
+            <div className="flex items-center justify-center py-8">
+              <Spinner />
+            </div>
+          ) : renderedLogs.length ? (
+            <ol className="debug-log-list">
+              {renderedLogs.map((log, index) => (
+                <li key={`${log.timestampMs}-${index}`}>{formatLog(log)}</li>
+              ))}
+            </ol>
+          ) : (
+            <p className="text-[var(--szu-muted)] text-center py-8">
+              暂无诊断日志。请返回校园网页面等待下一次网络探测。
+            </p>
+          )}
         </Card>
       </div>
     </PageShell>

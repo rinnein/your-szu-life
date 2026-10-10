@@ -1,11 +1,11 @@
 import { useLogicalNavigation } from "./logical-navigation";
 import { Outlet, useLocation } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { Button, CloseButton, Spinner } from "@heroui/react";
-import { LuArrowLeft, LuCreditCard, LuWifi, LuZap } from "react-icons/lu";
+import { Button, Spinner } from "@heroui/react";
+import { LuCreditCard, LuWifi, LuZap } from "react-icons/lu";
 import { useAuth } from "./auth";
 import { CAMPUS_PAYMENTS_ROUTES, saveLastCampusPaymentsRoute } from "./campus-payments";
-import { PageShell } from "./components";
+import { ModuleHeader, PageShell } from "./components";
 
 export default function CampusPaymentsPage() {
   const { state } = useAuth();
@@ -13,14 +13,17 @@ export default function CampusPaymentsPage() {
   const location = useLocation();
   const authenticated = "Authenticated" in state;
   const checking = "Checking" in state;
+
   useEffect(() => {
     if (!authenticated && !checking) void navigation.back();
   }, [authenticated, checking, navigation]);
+
   useEffect(() => {
     if ((CAMPUS_PAYMENTS_ROUTES as readonly string[]).includes(location.pathname)) {
       saveLastCampusPaymentsRoute(location.pathname);
     }
   }, [location.pathname]);
+
   if (!authenticated) {
     if (checking)
       return (
@@ -30,28 +33,19 @@ export default function CampusPaymentsPage() {
       );
     return null;
   }
+
   const current = location.pathname.split("/").pop();
+
   return (
-    <PageShell>
-      <div className="payments-layout">
-        <CloseButton
-          data-webview-navigation
-          className="payments-back"
-          aria-label="返回工作台"
-          onPress={() => void navigation.back()}
-        >
-          <LuArrowLeft aria-hidden="true" />
-        </CloseButton>
-        <header className="payments-header">
-          <span data-webview-navigation className="eyebrow">
-            CAMPUS SERVICES
-          </span>
-          <h1 data-webview-navigation>校园卡/电费/网费</h1>
-          <p className="page-description">
-            官方服务入口与宿舍电费查询；不会自动充值、扣款或修改套餐。
-          </p>
-        </header>
-        <nav className="payments-tabs" aria-label="校园服务分类">
+    <PageShell maxWidth="xl">
+      <div className="grid gap-8">
+        <ModuleHeader
+          title="校园卡/电费/网费"
+          eyebrow="CAMPUS SERVICES"
+          description="官方服务入口与宿舍电费查询；不会自动充值、扣款或修改套餐"
+        />
+
+        <nav className="flex flex-wrap gap-2.5" aria-label="校园服务分类">
           <Button
             variant={current === "card" ? "primary" : "outline"}
             onPress={() => void navigation.replace("/campus-payments/card")}
@@ -81,6 +75,7 @@ export default function CampusPaymentsPage() {
             充电费
           </Button>
         </nav>
+
         <Outlet />
       </div>
     </PageShell>

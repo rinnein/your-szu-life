@@ -405,7 +405,7 @@ describe("HeroUI frontend smoke tests", () => {
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("save_dorm_network_settings", expect.anything()),
     );
-    fireEvent.click(screen.getByRole("button", { name: "返回上一级" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回工作台" }));
     await waitFor(() => expect(testRouter.state.location.pathname).toBe("/"));
   });
 

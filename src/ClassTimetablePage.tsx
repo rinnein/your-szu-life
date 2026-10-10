@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { Button, CloseButton, Table } from "@heroui/react";
-import { LuArrowLeft, LuArrowUpRight } from "react-icons/lu";
-import { PageShell } from "./components";
-import { useLogicalNavigation } from "./logical-navigation";
+import { Button, Table } from "@heroui/react";
+import { LuArrowUpRight } from "react-icons/lu";
+import { ModuleHeader, PageShell } from "./components";
 import { openPublicUrl } from "./app-content/external";
 
 const sourceUrl = "https://jwb.szu.edu.cn/bszn1/sksjb.htm";
@@ -27,25 +26,14 @@ const rows = [
 ] as const;
 
 export default function ClassTimetablePage() {
-  const navigation = useLogicalNavigation();
   const [openError, setOpenError] = useState<string>();
 
   return (
-    <PageShell>
-      <div className="mx-auto grid w-full max-w-3xl min-w-0 gap-6">
-        <header className="flex items-center gap-3">
-          <CloseButton
-            data-webview-navigation
-            aria-label="返回工作台"
-            onPress={() => void navigation.back()}
-          >
-            <LuArrowLeft aria-hidden="true" />
-          </CloseButton>
-          <h1 data-webview-navigation className="text-2xl font-semibold">
-            上课时间表
-          </h1>
-        </header>
-        <Table>
+    <PageShell maxWidth="lg">
+      <div className="grid gap-6">
+        <ModuleHeader title="上课时间表" description="深圳大学标准课程时间安排" />
+
+        <Table className="shadow-sm">
           <Table.ScrollContainer>
             <Table.Content aria-label="深圳大学上课时间表">
               <Table.Header>
@@ -75,6 +63,7 @@ export default function ClassTimetablePage() {
             </Table.Content>
           </Table.ScrollContainer>
         </Table>
+
         <footer className="grid justify-items-start gap-2">
           <Button
             size="sm"
@@ -90,7 +79,7 @@ export default function ClassTimetablePage() {
             <LuArrowUpRight aria-hidden="true" />
           </Button>
           {openError && (
-            <p role="alert" className="content-error">
+            <p role="alert" className="text-sm text-red-600">
               {openError}
             </p>
           )}

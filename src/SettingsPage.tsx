@@ -1,9 +1,8 @@
 import { useLogicalNavigation } from "./logical-navigation";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Button, Card } from "@heroui/react";
 import { ProfileForm } from "./ProfileForm";
-import { PageShell } from "./components";
+import { Card, ModuleHeader, PageShell } from "./components";
 import { useAuth } from "./auth";
 
 export default function SettingsPage() {
@@ -30,37 +29,34 @@ export default function SettingsPage() {
   if (!("Authenticated" in state)) return null;
 
   return (
-    <PageShell centered>
-      {storage && (
-        <Card>
-          <Card.Header>
-            <Card.Title>隐私信息存储</Card.Title>
-            <Card.Description>
-              {!storage.available
-                ? "凭据存储暂时不可用，请检查密钥环或本机文件。"
+    <PageShell maxWidth="lg">
+      <div className="grid gap-6">
+        <ModuleHeader title="设置" description="管理账户资料与应用配置" />
+
+        {storage && (
+          <Card
+            title="隐私信息存储"
+            description={
+              !storage.available
+                ? "凭据存储暂时不可用，请检查密钥环或本机文件"
                 : storage.backend === "localEncryptedFile"
-                  ? "当前使用本机加密文件，保护依赖当前系统账号的文件访问权限。"
-                  : "当前使用系统密钥环。"}
-            </Card.Description>
-          </Card.Header>
-        </Card>
-      )}
-      <ProfileForm
-        initial={profile}
-        name={profile?.name}
-        onSaved={async () => {
-          setProfile((await invoke("get_account_profile")) as typeof profile);
-          await navigation.back();
-        }}
-      />
-      <Button
-        data-webview-navigation
-        className="back-button"
-        variant="tertiary"
-        onPress={() => void navigation.back()}
-      >
-        返回工作台
-      </Button>
+                  ? "当前使用本机加密文件，保护依赖当前系统账号的文件访问权限"
+                  : "当前使用系统密钥环"
+            }
+          >
+            <div className="h-0" />
+          </Card>
+        )}
+
+        <ProfileForm
+          initial={profile}
+          name={profile?.name}
+          onSaved={async () => {
+            setProfile((await invoke("get_account_profile")) as typeof profile);
+            await navigation.back();
+          }}
+        />
+      </div>
     </PageShell>
   );
 }

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, Card, Chip, Spinner } from "@heroui/react";
+import { Button, Card, ProgressCircle } from "@heroui/react";
 import { LuRefreshCw } from "react-icons/lu";
-import { PageShell } from "../components";
+import { PageShell, SkeletonTable, StatCard } from "../components";
 import { useEnrollment } from "./use-enrollment";
 import { ModuleHeader, OperationError } from "./shared";
 import AcademicGraph from "./academic/AcademicGraph";
 import CourseQueryModal from "./academic/CourseQueryModal";
-import { buildTree, creditSummary } from "./academic/tree";
+import { buildTree, creditSummary, number } from "./academic/tree";
 import { getViewState, saveViewState, migrateViewState } from "./academic/view-state";
 export default function AcademicPage() {
   const { snapshot: s, run, portal, pending, errors } = useEnrollment();
@@ -18,6 +18,16 @@ export default function AcademicPage() {
     setSelected(getViewState(viewKey).selected);
   }, [viewKey]);
   const tree = useMemo(() => (s?.academic ? buildTree(s.academic) : undefined), [s?.academic]);
+  const creditStats = useMemo(() => {
+    const row = s?.academic?.summary[0];
+    const required = number(row?.YQXF);
+    const completed = number(row?.WCXF);
+    const percent =
+      required != null && required > 0 && completed != null
+        ? Math.min(100, Math.max(0, (completed / required) * 100))
+        : null;
+    return { required, completed, percent };
+  }, [s?.academic]);
   if (tree) migrateViewState(viewKey, tree);
   useEffect(() => {
     if (tree) setSelected(migrateViewState(viewKey, tree).selected);
@@ -114,12 +124,45 @@ export default function AcademicPage() {
           }
         />
         {s?.academic && (
-          <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-            <Chip variant="soft">{creditSummary(s.academic.summary[0] ?? {})}</Chip>
-            <span className="text-muted">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <StatCard
+              label="已完成学分"
+              value={creditStats.completed == null ? "—" : creditStats.completed}
+              unit="分"
+              color="brand"
+            />
+            <StatCard
+              label="培养方案学分"
+              value={creditStats.required == null ? "—" : creditStats.required}
+              unit="分"
+              description={creditSummary(s.academic.summary[0] ?? {})}
+            />
+            <div className="flex items-center gap-4 rounded-xl border border-separator/50 bg-surface p-4">
+              <ProgressCircle
+                aria-label="学分完成度"
+                value={creditStats.percent ?? 0}
+                isIndeterminate={creditStats.percent == null}
+                color={
+                  creditStats.percent != null && creditStats.percent >= 100 ? "success" : "accent"
+                }
+                size="lg"
+              >
+                <ProgressCircle.Track>
+                  <ProgressCircle.TrackCircle />
+                  <ProgressCircle.FillCircle />
+                </ProgressCircle.Track>
+              </ProgressCircle>
+              <div className="grid gap-1">
+                <span className="text-sm font-semibold">学分完成度</span>
+                <span className="text-lg font-semibold">
+                  {creditStats.percent == null ? "未知" : `${creditStats.percent.toFixed(1)}%`}
+                </span>
+              </div>
+            </div>
+            <p className="text-xs text-muted sm:col-span-3">
               缓存更新于 {new Date(s.academic.updatedAt).toLocaleString()}
               {s.academic.calculatedAt ? ` · 学校计算时间 ${s.academic.calculatedAt}` : ""}
-            </span>
+            </p>
           </div>
         )}
         {calculating && (
@@ -153,7 +196,9 @@ export default function AcademicPage() {
           <Card>
             <Card.Content className="grid min-h-[420px] place-content-center justify-items-center gap-4 text-center">
               {pending.academic ? (
-                <Spinner aria-label="正在加载学业数据" />
+                <div className="w-full" role="status" aria-label="正在加载学业数据">
+                  <SkeletonTable rows={5} cols={2} />
+                </div>
               ) : (
                 <>
                   <h2 className="text-lg font-semibold">还没有学业完成数据</h2>
