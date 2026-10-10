@@ -42,9 +42,28 @@ jobs:
       - name: Set up Vite+
         uses: voidzero-dev/setup-vp@v1.21.1
         with:
-          node-version: "22"
+          node-version: "24"
           cache: true
           run-install: false
+
+      - name: Cache Node dependencies
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-${{ matrix.name }}-node-${{ hashFiles('package.json', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.name }}-node-
+
+      - name: Cache Rust build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-${{ matrix.name }}-cargo-${{ hashFiles('src-tauri/Cargo.toml', 'src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.name }}-cargo-
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -94,6 +113,25 @@ jobs:
           node-version: "22"
           cache: true
           run-install: false
+
+      - name: Cache Node dependencies
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-android-node-${{ hashFiles('package.json', 'pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-android-node-
+
+      - name: Cache Rust build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-android-cargo-${{ hashFiles('src-tauri/Cargo.toml', 'src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-android-cargo-
 
       - name: Set up Java
         uses: actions/setup-java@v6
