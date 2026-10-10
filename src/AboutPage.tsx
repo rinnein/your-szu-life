@@ -179,7 +179,9 @@ export default function AboutPage() {
           <span data-webview-navigation className="eyebrow">
             ABOUT YOUR SZU LIFE
           </span>
-          <h1 data-webview-navigation className="sr-only">关于</h1>
+          <h1 data-webview-navigation className="sr-only">
+            关于
+          </h1>
           <div className="about-brand">
             <BrandMark large />
             <div>

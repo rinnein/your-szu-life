@@ -136,11 +136,7 @@ export default function DebugLogPage() {
     return (
       <PageShell centered>
         <Card title="调试模式未启用" description="请返回首页，连续点击左上角应用图标 5 次启用">
-          <Button
-            data-webview-navigation
-            onPress={() => void navigation.back()}
-            className="mt-2"
-          >
+          <Button data-webview-navigation onPress={() => void navigation.back()} className="mt-2">
             返回工作台
           </Button>
         </Card>

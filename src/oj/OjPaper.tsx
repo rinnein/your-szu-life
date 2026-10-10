@@ -804,6 +804,7 @@ export function OjPaper({
           </p>
         </div>
         <div className="oj-actions">
+          <RankingTable siteId={site.id} paper={paper} />
           <Button
             variant="secondary"
             isDisabled={busy}
@@ -838,7 +839,6 @@ export function OjPaper({
           </Button>
         </div>
       )}
-      <RankingTable siteId={site.id} paper={paper} />
       <div className="oj-workspace">
         <aside className="oj-directory">
           <h3>题目</h3>

@@ -20,7 +20,7 @@ impl Service {
                 .unwrap()
                 .progress
                 .get(cid)
-                .filter(|(time, _)| !force && (0..300_000).contains(&(now - time)))
+                .filter(|(time, _)| !force && (0..3_600_000).contains(&(now - time)))
                 .map(|(_, value)| value.clone())
         };
         if !self.current(id, &e) {

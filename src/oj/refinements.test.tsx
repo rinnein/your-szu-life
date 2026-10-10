@@ -17,10 +17,11 @@ const contest: Contest = {
   title: "练习",
   description: "",
   begin: 0,
-  end: 100,
+  end: 300,
   now: 200,
   isExam: false,
 };
+const ended: Contest = { ...contest, id: "2", end: 100 };
 const paper = {
   contest,
   account: "fixture",
@@ -62,15 +63,45 @@ it.each(Object.entries(verdicts))("gives status %s a filled semantic label", (st
 it("adds completed only when all problems are AC and makes ended contests secondary", async () => {
   vi.mocked(invoke).mockResolvedValue({ accepted: 2, total: 2 });
   const open = vi.fn();
-  render(
+  const view = render(
     <ContestTable contests={[contest]} query="" siteId="test" account="fixture" onOpen={open} />,
   );
   expect(await screen.findByText("已完成")).toBeInTheDocument();
-  expect(screen.getByText("已结束").closest(".chip")?.className).toContain("primary");
-  const button = screen.getByRole("button", { name: "查看测验" });
-  expect(button.className).toContain("secondary");
+  expect(screen.getByText("进行中").closest(".chip")?.className).toContain("primary");
+  const button = screen.getByRole("button", { name: "进入测验" });
   fireEvent.click(button);
   expect(open).toHaveBeenCalledWith(contest);
+  view.unmount();
+  const openEnded = vi.fn();
+  render(
+    <ContestTable contests={[ended]} query="" siteId="test" account="fixture" onOpen={openEnded} />,
+  );
+  expect(screen.getByText("已结束").closest(".chip")?.className).toContain("primary");
+  const endedButton = screen.getByRole("button", { name: "查看测验" });
+  expect(endedButton.className).toContain("secondary");
+  fireEvent.click(endedButton);
+  expect(openEnded).toHaveBeenCalledWith(ended);
+});
+it("does not fetch completion for contests that are not running", async () => {
+  vi.mocked(invoke).mockResolvedValue({ accepted: 1, total: 2 });
+  render(
+    <ContestTable
+      contests={[ended, { ...contest, id: "3", begin: 250 }, contest]}
+      query=""
+      siteId="test"
+      account="fixture"
+      onOpen={() => {}}
+    />,
+  );
+  await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
+  expect(invoke).toHaveBeenCalledWith("get_oj_progress", {
+    siteId: "test",
+    contestId: "1",
+    account: "fixture",
+    sessionGeneration: null,
+    force: false,
+  });
+  expect(screen.queryByText("已完成")).toBeNull();
 });
 it.each([
   { accepted: 0, total: 0 },
@@ -112,7 +143,7 @@ it("keeps code and results collapsed and mounts a read-only CodeMirror only when
   expect(show).toHaveBeenCalledOnce();
   expect(await screen.findByLabelText("提交 12 判题结果")).toBeVisible();
 });
-it("loads and paginates rankings only after opening the accordion", async () => {
+it("loads and paginates rankings only after opening the modal", async () => {
   vi.mocked(invoke).mockResolvedValue({
     count: 21,
     rows: [
@@ -129,7 +160,7 @@ it("loads and paginates rankings only after opening the accordion", async () => 
   });
   render(<RankingTable siteId="test" paper={paper} />);
   expect(invoke).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "测验内排名" }));
+  fireEvent.click(screen.getByRole("button", { name: "排名" }));
   expect(await screen.findByRole("grid", { name: "测验内排名" })).toHaveTextContent("fixture");
   expect(screen.getByText("我")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "下一页" }));
@@ -144,7 +175,7 @@ it("loads and paginates rankings only after opening the accordion", async () => 
 it("keeps a server ranking denial as an inline error", async () => {
   vi.mocked(invoke).mockRejectedValue(new Error("此测验未开放排名"));
   render(<RankingTable siteId="test" paper={paper} />);
-  fireEvent.click(screen.getByRole("button", { name: "测验内排名" }));
+  fireEvent.click(screen.getByRole("button", { name: "排名" }));
   expect(await screen.findByText(/此测验未开放排名/)).toBeInTheDocument();
   expect(screen.queryByRole("grid")).toBeNull();
 });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Accordion, Alert, Button, Chip, Spinner, Table } from "@heroui/react";
+import { Alert, Button, Chip, Modal, Spinner, Table } from "@heroui/react";
 import { type Paper, type Ranking } from "./types";
 import { formatRemaining } from "./ContestTable";
 function RankingContent({ siteId, paper }: { siteId: string; paper: Paper }) {
@@ -135,20 +135,25 @@ function RankingContent({ siteId, paper }: { siteId: string; paper: Paper }) {
 export function RankingTable({ siteId, paper }: { siteId: string; paper: Paper }) {
   const [open, setOpen] = useState(false);
   return (
-    <Accordion variant="surface">
-      <Accordion.Item isExpanded={open} onExpandedChange={setOpen}>
-        <Accordion.Heading>
-          <Accordion.Trigger>
-            测验内排名
-            <Accordion.Indicator />
-          </Accordion.Trigger>
-        </Accordion.Heading>
-        <Accordion.Panel>
-          <Accordion.Body>
-            {open && <RankingContent siteId={siteId} paper={paper} />}
-          </Accordion.Body>
-        </Accordion.Panel>
-      </Accordion.Item>
-    </Accordion>
+    <>
+      <Button variant="secondary" onPress={() => setOpen(true)}>
+        排名
+      </Button>
+      <Modal isOpen={open} onOpenChange={setOpen}>
+        <Modal.Backdrop>
+          <Modal.Container size="cover">
+            <Modal.Dialog>
+              <Modal.CloseTrigger />
+              <Modal.Header>
+                <Modal.Heading>排名</Modal.Heading>
+              </Modal.Header>
+              <Modal.Body>
+                <RankingContent siteId={siteId} paper={paper} />
+              </Modal.Body>
+            </Modal.Dialog>
+          </Modal.Container>
+        </Modal.Backdrop>
+      </Modal>
+    </>
   );
 }

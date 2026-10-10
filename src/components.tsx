@@ -142,7 +142,10 @@ export function Card({
 
 export function LoadingState({ message = "加载中…" }: { message?: string }) {
   return (
-    <div className="flex items-center justify-center gap-3 py-12 text-[var(--szu-muted)]" role="status">
+    <div
+      className="flex items-center justify-center gap-3 py-12 text-[var(--szu-muted)]"
+      role="status"
+    >
       <Spinner size="md" />
       <span className="text-sm">{message}</span>
     </div>
@@ -179,9 +182,7 @@ export function EmptyState({
       )}
       <h3
         className={
-          variant === "error"
-            ? "font-semibold text-red-600"
-            : "font-semibold text-[var(--szu-ink)]"
+          variant === "error" ? "font-semibold text-red-600" : "font-semibold text-[var(--szu-ink)]"
         }
       >
         {title}
@@ -220,10 +221,7 @@ export function Section({
         <div className="flex items-start justify-between gap-4 mb-4">
           <div>
             {title && (
-              <h2
-                id={`section-${title}`}
-                className="text-xl font-semibold tracking-tight mb-1.5"
-              >
+              <h2 id={`section-${title}`} className="text-xl font-semibold tracking-tight mb-1.5">
                 {title}
               </h2>
             )}

@@ -80,7 +80,9 @@ export function ContestTable({
       void (async () => {
         for (const contest of contests) {
           if (!active) return;
-          if (contest.now < contest.begin) continue;
+          // Only running contests can still change; completed status for
+          // started/ended ones comes from the cache (1h TTL) or manual refresh.
+          if (phase(contest, contest.now) !== "进行中") continue;
           await ojProgressCache.ensure(scope, contest.id);
         }
       })();

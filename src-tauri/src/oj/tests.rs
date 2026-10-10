@@ -1097,7 +1097,7 @@ async fn expired_progress_refreshes_and_account_replacement_discards_the_cache()
     e.state.lock().unwrap().progress.insert(
         "12".into(),
         (
-            chrono::Utc::now().timestamp_millis() - 300_000,
+            chrono::Utc::now().timestamp_millis() - 3_600_000,
             json!({"accepted":1,"total":1}),
         ),
     );

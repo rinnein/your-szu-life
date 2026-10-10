@@ -2,7 +2,7 @@ import { createStore } from "@tanstack/react-store";
 import { invoke } from "@tauri-apps/api/core";
 import type { ProgressSummary, Site } from "./types";
 
-export const PROGRESS_TTL = 5 * 60_000;
+export const PROGRESS_TTL = 60 * 60_000;
 const RETRY_DELAY = 30_000;
 export interface ProgressScope {
   siteId: string;
