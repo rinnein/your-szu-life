@@ -167,7 +167,7 @@ export function AnnouncementBoard() {
   const displayUnits: AnnouncementUnit[] = localUnit
     ? [localUnit, ...(units ?? [])]
     : (units ?? []);
-  const unavailable = snapshot?.configuration.status !== "ready";
+  const unavailable = snapshot?.configuration.status !== "ready" && !(snapshot?.configuration.status === "unconfigured" && snapshot.repository);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [carouselPaused, setCarouselPaused] = useState(false);
   const announcementCount = displayUnits.length;

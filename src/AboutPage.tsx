@@ -16,7 +16,7 @@ export function updateStatus(
   if (refreshing) return "正在检查公告和更新…";
   if (error) return "本次检查未能完成";
   if (!snapshot) return "正在读取更新状态…";
-  if (snapshot.configuration.status === "unconfigured") return "未配置内容源";
+  if (snapshot.configuration.status === "unconfigured" && !snapshot.repository) return "未配置内容源";
   if (snapshot.configuration.status === "invalid") return "内容源配置无效";
   if (snapshot.update.error) return "本次更新检查失败";
   if (!snapshot.update.data) return "尚未完成更新检查";
@@ -171,6 +171,7 @@ export default function AboutPage() {
   const update = snapshot?.update;
   const announcements = snapshot?.announcements;
   const configured = snapshot?.configuration.status === "ready";
+  const hasUpdateSource = configured || (snapshot?.configuration.status === "unconfigured" && !!snapshot.repository);
   return (
     <PageShell>
       <div className="about-layout">
@@ -206,7 +207,7 @@ export default function AboutPage() {
               </p>
               <Button
                 variant="primary"
-                isDisabled={refreshing || (!!snapshot && !configured)}
+                isDisabled={refreshing || (!!snapshot && !hasUpdateSource)}
                 onPress={() => void refresh()}
               >
                 {refreshing ? (
@@ -242,14 +243,14 @@ export default function AboutPage() {
                 <dt>更新信息最后成功</dt>
                 <dd>
                   {contentTime(update?.lastSuccessAt)}
-                  {update?.source === "fallback" ? " · 备用源" : ""}
+                  {update?.source === "fallback" ? " · 备用源" : update?.source === "github" ? " · GitHub" : ""}
                 </dd>
               </div>
               <div>
                 <dt>公告最后成功</dt>
                 <dd>
                   {contentTime(announcements?.lastSuccessAt)}
-                  {announcements?.source === "fallback" ? " · 备用源" : ""}
+                  {announcements?.source === "fallback" ? " · 备用源" : announcements?.source === "github" ? " · GitHub" : ""}
                 </dd>
               </div>
               {snapshot?.nextAutomaticCheckAt != null && (
@@ -265,7 +266,7 @@ export default function AboutPage() {
                 {announcements.fromCache && " 已保留上次成功的公告。"}
               </p>
             )}
-            {configured && !refreshing && announcements?.data && !announcements.error && (
+            {hasUpdateSource && !refreshing && announcements?.data && !announcements.error && (
               <p className="content-muted">
                 {announcements.fromCache ? "公告缓存" : "公告已刷新"} ·{" "}
                 {announcements.data.announcements.length} 条

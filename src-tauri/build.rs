@@ -35,6 +35,7 @@ fn main() {
     }
 
     println!("cargo:rerun-if-changed=../package.json");
+    println!("cargo:rerun-if-changed=../github-accelerator.json");
     println!("cargo:rerun-if-changed=capabilities/authserver-credential-capture.json");
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[

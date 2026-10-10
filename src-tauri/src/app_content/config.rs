@@ -24,6 +24,7 @@ pub(super) struct ContentConfig {
     pub view: ConfigurationView,
     pub repository: Option<Repository>,
     pub repository_message: Option<String>,
+    pub github_accelerators: Vec<Url>,
 }
 
 fn directory_url(value: &str) -> Result<Url, ContentError> {
@@ -41,6 +42,12 @@ fn directory_url(value: &str) -> Result<Url, ContentError> {
 }
 
 impl ContentConfig {
+    pub fn uses_github_releases(&self) -> bool {
+        self.sources.is_none()
+            && self.view.status == ConfigurationStatus::Unconfigured
+            && self.repository.is_some()
+    }
+
     pub fn compiled(version: String) -> Self {
         let package: Value = serde_json::from_str(include_str!("../../../package.json"))
             .expect("package.json must be valid JSON");
@@ -65,7 +72,7 @@ impl ContentConfig {
                 None,
                 ConfigurationView {
                     status: ConfigurationStatus::Unconfigured,
-                    message: Some("本构建未配置内容源，公告与更新检查已停用。".into()),
+                    message: Some("本构建未配置独立内容源；公告与更新信息将从 GitHub Release 获取。".into()),
                 },
             ),
             Some(primary) => match directory_url(primary).and_then(|primary| {
@@ -109,6 +116,13 @@ impl ContentConfig {
             view,
             repository,
             repository_message,
+            github_accelerators: serde_json::from_str::<Vec<String>>(include_str!(
+                "../../../github-accelerator.json"
+            ))
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|value| directory_url(&value).ok())
+            .collect(),
         }
     }
 }

@@ -173,6 +173,7 @@ pub(super) fn is_newer(current: &str, latest: &str) -> bool {
 pub(crate) enum Source {
     Primary,
     Fallback,
+    Github,
 }
 
 #[derive(Clone, Debug, Serialize)]

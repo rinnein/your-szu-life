@@ -48,7 +48,8 @@ impl ContentService {
             repository: config.repository.clone(),
             repository_message: config.repository_message.clone(),
             refreshing: false,
-            next_automatic_check_at: config.sources.as_ref().map(|_| now),
+            next_automatic_check_at: (config.sources.is_some() || config.uses_github_releases())
+                .then_some(now),
             announcements: FeedSnapshot::default(),
             update: FeedSnapshot::default(),
             update_available: false,
@@ -61,6 +62,17 @@ impl ContentService {
                 .data
                 .as_ref()
                 .is_some_and(|update| is_newer(&config.version, &update.latest_ver));
+        }
+        if config.uses_github_releases() {
+            if let Some(repository) = &config.repository {
+                let key = format!("github:{}", repository.full_name);
+                snapshot.update = load_feed(&cache, &key, "latest-release.json", now);
+                snapshot.update_available = snapshot
+                    .update
+                    .data
+                    .as_ref()
+                    .is_some_and(|update| is_newer(&config.version, &update.latest_ver));
+            }
         }
         Self {
             config,
@@ -84,7 +96,7 @@ impl ContentService {
     }
 
     pub fn automatic_tick(&self) -> bool {
-        if self.config.sources.is_none() {
+        if self.config.sources.is_none() && !self.config.uses_github_releases() {
             return false;
         }
         let next = {
@@ -110,9 +122,10 @@ impl ContentService {
     }
 
     pub fn refresh(&self) -> AppContentSnapshot {
-        let Some(sources) = &self.config.sources else {
+        let sources = self.config.sources.as_ref();
+        if sources.is_none() && !self.config.uses_github_releases() {
             return self.snapshot();
-        };
+        }
         self.refresh_flight.run(|| {
             let attempted_at = self.clock.now_ms();
             self.mutate(|snapshot| {
@@ -121,19 +134,30 @@ impl ContentService {
                 snapshot.update.last_attempt_at = Some(attempted_at);
             });
             // Each document has its own fallback chain. No successful request is repeated.
-            let (announcements, update) = std::thread::scope(|scope| {
-                let announcements =
-                    scope.spawn(|| self.fetch::<Announcements>(sources, "announcements.json"));
-                let update = self.fetch::<UpdateInfo>(sources, "update.json");
-                (
-                    announcements.join().expect("content request worker"),
-                    update,
+            let (announcements, update) = if let Some(sources) = sources {
+                std::thread::scope(|scope| {
+                    let announcements =
+                        scope.spawn(|| self.fetch::<Announcements>(sources, "announcements.json"));
+                    let update = self.fetch::<UpdateInfo>(sources, "update.json");
+                    (
+                        Some(announcements.join().expect("content request worker")),
+                        update,
+                    )
+                })
+            } else {
+                let (announcements, update) = self.fetch_github_releases();
+                (Some(announcements), update)
+            };
+            let completed_at = self.clock.now_ms();
+            let cache_scope = sources.map(Sources::key).unwrap_or_else(|| {
+                format!(
+                    "github:{}",
+                    self.config.repository.as_ref().unwrap().full_name
                 )
             });
-            let completed_at = self.clock.now_ms();
-            if let Ok((data, source)) = &announcements {
+            if let Some(Ok((data, source))) = &announcements {
                 self.cache.save(
-                    &sources.key(),
+                    &cache_scope,
                     "announcements.json",
                     data,
                     *source,
@@ -141,11 +165,22 @@ impl ContentService {
                 );
             }
             if let Ok((data, source)) = &update {
-                self.cache
-                    .save(&sources.key(), "update.json", data, *source, completed_at);
+                self.cache.save(
+                    &cache_scope,
+                    if sources.is_some() {
+                        "update.json"
+                    } else {
+                        "latest-release.json"
+                    },
+                    data,
+                    *source,
+                    completed_at,
+                );
             }
             self.mutate(|snapshot| {
-                apply_result(&mut snapshot.announcements, announcements, completed_at);
+                if let Some(announcements) = announcements {
+                    apply_result(&mut snapshot.announcements, announcements, completed_at);
+                }
                 apply_result(&mut snapshot.update, update, completed_at);
                 snapshot.refreshing = false;
                 snapshot.update_available = snapshot
@@ -159,9 +194,79 @@ impl ContentService {
                 .lock()
                 .unwrap()
                 .retain(|url, _| allowed.contains(url));
-            self.cache.prune_images(&sources.key(), &allowed);
+            self.cache.prune_images(&cache_scope, &allowed);
             self.snapshot()
         })
+    }
+
+    fn fetch_github_releases(
+        &self,
+    ) -> (
+        Result<(Announcements, Source), ContentError>,
+        Result<(UpdateInfo, Source), ContentError>,
+    ) {
+        #[derive(Deserialize)]
+        struct Release {
+            tag_name: String,
+            body: Option<String>,
+            assets: Vec<Asset>,
+        }
+        #[derive(Deserialize)]
+        struct Asset {
+            name: String,
+            browser_download_url: String,
+        }
+        let Some(repository) = self.config.repository.as_ref() else {
+            let error = ContentError::new(ErrorKind::Unavailable, "未配置 GitHub 仓库");
+            return (Err(error.clone()), Err(error));
+        };
+        let get_release = |endpoint: &str| -> Result<Release, ContentError> {
+            let url = Url::parse(&format!(
+                "https://api.github.com/repos/{}/{endpoint}",
+                repository.full_name
+            ))
+            .map_err(|_| ContentError::invalid("GitHub 仓库地址无效"))?;
+            let response = self
+                .http
+                .get(&url, RequestKind::Github, JSON_LIMIT)?
+                .successful(RequestKind::Github)?;
+            serde_json::from_slice(&response.body)
+                .map_err(|_| ContentError::invalid("GitHub Release 响应无效"))
+        };
+        let announcement = get_release("releases/tags/announcement").and_then(|release| {
+            let body = release.body.unwrap_or_default();
+            let data: Announcements = serde_json::from_str(&body).map_err(|_| {
+                ContentError::invalid("announcement Release 的 body 不是有效公告 JSON")
+            })?;
+            data.validate()?;
+            Ok((data, Source::Github))
+        });
+        let update = get_release("releases/latest").and_then(|release| {
+            let asset = release
+                .assets
+                .iter()
+                .find(|asset| is_platform_asset(&asset.name))
+                .ok_or_else(|| {
+                    ContentError::new(
+                        ErrorKind::Unavailable,
+                        "最新 GitHub Release 未包含当前平台的安装包",
+                    )
+                })?;
+            let direct = web_url(&asset.browser_download_url)?;
+            let accelerated = self
+                .config
+                .github_accelerators
+                .iter()
+                .find_map(|prefix| web_url(&format!("{prefix}{direct}")).ok());
+            let update = UpdateInfo {
+                latest_ver: release.tag_name,
+                latest_ver_url: accelerated.unwrap_or(direct).to_string(),
+                changelog: release.body.unwrap_or_default(),
+            };
+            update.validate()?;
+            Ok((update, Source::Github))
+        });
+        (announcement, update)
     }
 
     fn fetch<T: Document>(
@@ -382,8 +487,16 @@ impl ContentService {
             .config
             .sources
             .as_ref()
-            .ok_or_else(|| ContentError::invalid("未配置内容源"))?
-            .key();
+            .map(Sources::key)
+            .or_else(|| {
+                self.config.uses_github_releases().then(|| {
+                    format!(
+                        "github:{}",
+                        self.config.repository.as_ref().unwrap().full_name
+                    )
+                })
+            })
+            .ok_or_else(|| ContentError::invalid("未配置内容源"))?;
         let flight = self
             .image_flights
             .lock()
@@ -414,6 +527,36 @@ impl ContentService {
             self.cache.save_image(&scope, url.as_str(), &response.body);
             Ok(data)
         })
+    }
+}
+
+fn is_platform_asset(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    #[cfg(target_os = "android")]
+    {
+        name.ends_with(".apk")
+    }
+    #[cfg(target_os = "windows")]
+    {
+        name.ends_with(".msi") || name.ends_with(".exe")
+    }
+    #[cfg(target_os = "macos")]
+    {
+        name.ends_with(".dmg") || name.ends_with(".pkg")
+    }
+    #[cfg(target_os = "linux")]
+    {
+        name.ends_with(".deb") || name.ends_with(".appimage") || name.ends_with(".rpm")
+    }
+    #[cfg(not(any(
+        target_os = "android",
+        target_os = "windows",
+        target_os = "macos",
+        target_os = "linux"
+    )))]
+    {
+        let _ = name;
+        false
     }
 }
 
