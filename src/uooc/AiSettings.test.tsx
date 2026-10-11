@@ -32,39 +32,54 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-it("never loads the stored key into the form and preserves it when left empty", async () => {
-  render(<AiSettings onMode={vi.fn()} />);
-  const key = await screen.findByLabelText("主模型 API Key");
-  expect(key).toHaveValue("");
+it("keeps connection fields out of UOOC and saves only model preferences", async () => {
+  render(<AiSettings onMode={vi.fn()} onOpenAiSettings={vi.fn()} />);
+  await screen.findByRole("combobox", { name: "主模型名称" });
+  expect(screen.queryByLabelText("主模型 API Key")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("主模型 API 地址")).not.toBeInTheDocument();
   fireEvent.change(screen.getByRole("combobox", { name: "主模型名称" }), {
     target: { value: "custom-model" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "保存 AI 配置" }));
+  fireEvent.click(screen.getByRole("button", { name: "保存运行设置" }));
   await waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith("save_uooc_ai_config", {
-      config: expect.objectContaining({
-        main: {
-          baseUrl: "https://example.org/v1",
-          model: "custom-model",
-          apiKey: null,
-          clearKey: false,
-        },
-      }),
+    expect(invoke).toHaveBeenCalledWith("save_uooc_ai_preferences", {
+      preferences: {
+        mainModel: "custom-model",
+        jevModel: "jev-latest",
+        jevEnabled: false,
+        confidence: 0.8,
+        defaultMode: "approval",
+      },
     }),
   );
 });
-it("loads model autocomplete through the native provider and supports explicit key deletion", async () => {
-  render(<AiSettings onMode={vi.fn()} />);
-  await screen.findByLabelText("主模型 API Key");
-  fireEvent.click(screen.getByRole("checkbox", { name: "删除已保存的主模型密钥" }));
-  fireEvent.click(screen.getByRole("button", { name: "保存并加载主模型列表" }));
+it("loads model autocomplete through the configured native provider", async () => {
+  render(<AiSettings onMode={vi.fn()} onOpenAiSettings={vi.fn()} />);
+  await screen.findByRole("combobox", { name: "主模型名称" });
+  fireEvent.click(screen.getByRole("button", { name: "加载主模型列表" }));
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("list_uooc_ai_models", { provider: "main" }),
   );
-  expect(invoke).toHaveBeenCalledWith("save_uooc_ai_config", {
-    config: expect.objectContaining({
-      main: expect.objectContaining({ clearKey: true, apiKey: null }),
-    }),
-  });
   expect(await screen.findByText("已加载 2 个模型，选择后保存配置")).toBeInTheDocument();
+});
+
+it("opens the global AI connection settings from the model settings", async () => {
+  const onOpenAiSettings = vi.fn();
+  render(<AiSettings onMode={vi.fn()} onOpenAiSettings={onOpenAiSettings} />);
+  await screen.findByRole("combobox", { name: "主模型名称" });
+  fireEvent.click(screen.getByRole("button", { name: "前往 AI 连接设置" }));
+  expect(onOpenAiSettings).toHaveBeenCalledOnce();
+});
+
+it("shows UOOC AI save failures in a visible alert above the form", async () => {
+  render(<AiSettings onMode={vi.fn()} onOpenAiSettings={vi.fn()} />);
+  await screen.findByRole("combobox", { name: "主模型名称" });
+  vi.mocked(invoke).mockRejectedValueOnce("运行设置保存失败");
+  fireEvent.click(screen.getByRole("button", { name: "保存运行设置" }));
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("运行设置保存失败");
+  expect(
+    alert.compareDocumentPosition(screen.getByRole("combobox", { name: "主模型名称" })) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });

@@ -234,10 +234,13 @@ fn provider_normalization_and_secret_view_are_safe() {
         ai::normalize_url("https://example.org/api/v3/chat/completions/").unwrap(),
         "https://example.org/api/v3"
     );
+    assert_eq!(
+        ai::normalize_url("http://192.168.1.20:8000/v1/").unwrap(),
+        "http://192.168.1.20:8000/v1"
+    );
     for url in [
         "https://user:key@example.org/v1",
         "https://example.org/v1?key=secret",
-        "http://example.org/v1",
         "file:///tmp/key",
     ] {
         assert!(ai::normalize_url(url).is_err());

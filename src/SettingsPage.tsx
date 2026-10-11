@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ProfileForm } from "./ProfileForm";
 import { Card, ModuleHeader, PageShell } from "./components";
 import { useAuth } from "./auth";
+import AiConnectionSettings from "./AiConnectionSettings";
 
 export default function SettingsPage() {
   const { state, profile, setProfile } = useAuth();
@@ -47,6 +48,8 @@ export default function SettingsPage() {
             <div className="h-0" />
           </Card>
         )}
+
+        <AiConnectionSettings />
 
         <ProfileForm
           initial={profile}

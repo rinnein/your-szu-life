@@ -6,6 +6,7 @@ export type StaffSettings = {
   enabled: boolean;
   credentialMode: StaffCredentialMode;
   customConfigured: boolean;
+  customCampusCardNumber?: string | null;
   needsApply: boolean;
   appliedMode?: StaffLoginMode | null;
 };
@@ -33,6 +34,7 @@ export const initialStaffSettings: StaffSettings = {
   enabled: false,
   credentialMode: "currentAccount",
   customConfigured: false,
+  customCampusCardNumber: null,
   needsApply: true,
   appliedMode: null,
 };

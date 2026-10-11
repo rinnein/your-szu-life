@@ -44,6 +44,17 @@ let settings: {
   enabled: boolean;
   credentialMode: "currentAccount" | "custom";
   customConfigured: boolean;
+  customCampusCardNumber?: string | null;
+};
+let staffSettings: {
+  revision: number;
+  mode: "macAuth" | "appAuto";
+  enabled: boolean;
+  credentialMode: "currentAccount" | "custom";
+  customConfigured: boolean;
+  customCampusCardNumber?: string | null;
+  needsApply: boolean;
+  appliedMode?: "macAuth" | "appAuto" | null;
 };
 let logoutHandler: () => Promise<unknown>;
 let permissionHandler: () => Promise<unknown>;
@@ -104,6 +115,16 @@ describe("campus network status and logout", () => {
     vi.clearAllMocks();
     listeners.clear();
     settings = { enabled: false, credentialMode: "currentAccount", customConfigured: false };
+    staffSettings = {
+      revision: 0,
+      mode: "appAuto",
+      enabled: false,
+      credentialMode: "currentAccount",
+      customConfigured: false,
+      customCampusCardNumber: null,
+      needsApply: true,
+      appliedMode: null,
+    };
     permissionHandler = async () => undefined;
     refreshHandler = async () => overview;
     logoutHandler = async () => {
@@ -144,6 +165,7 @@ describe("campus network status and logout", () => {
       if (command === "get_network_overview") return overview;
       if (command === "refresh_campus_network") return refreshHandler();
       if (command === "get_dorm_network_settings") return { ...settings };
+      if (command === "get_staff_network_settings") return { ...staffSettings };
       if (command === "logout_campus_network") return logoutHandler();
       if (command === "get_dorm_login_status")
         return {
@@ -241,6 +263,34 @@ describe("campus network status and logout", () => {
     expect(valueFor(nameLabel)).toHaveTextContent("网关同学");
     expect(valueFor(cardLabel)).not.toHaveTextContent("123456");
     expect(valueFor(nameLabel)).not.toHaveTextContent("应用同学");
+  });
+
+  it("prefills the saved custom dormitory card number", async () => {
+    settings = {
+      enabled: false,
+      credentialMode: "custom",
+      customConfigured: true,
+      customCampusCardNumber: "001234",
+    };
+    await renderPage("校园网登录");
+    fireEvent.click(screen.getByRole("tab", { name: "单独配置" }));
+    expect(screen.getByLabelText("校园卡号")).toHaveValue("001234");
+    expect(screen.getByLabelText("密码")).toHaveValue("");
+  });
+
+  it("prefills the saved custom staff card number", async () => {
+    staffSettings = {
+      ...staffSettings,
+      credentialMode: "custom",
+      customConfigured: true,
+      customCampusCardNumber: "654321",
+    };
+    await renderPage("校园网登录");
+    fireEvent.click(screen.getByRole("tab", { name: "教工区" }));
+    fireEvent.click(screen.getByRole("tab", { name: "软件自动登录（不绑定MAC地址）" }));
+    fireEvent.click(screen.getByRole("tab", { name: "单独配置" }));
+    expect(screen.getByLabelText("校园卡号")).toHaveValue("654321");
+    expect(screen.getByLabelText("密码")).toHaveValue("");
   });
 
   it.each(["campusCardNumber", "onlineUsername"] as const)(

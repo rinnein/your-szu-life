@@ -14,6 +14,18 @@ pub(super) struct Attempt {
 }
 
 pub(super) fn local_parent(parent: &WebviewWindow) -> Result<(), String> {
+    trusted_local_page(parent, Some("/uooc"), "请从应用内的 UOOC 页面打开登录")
+}
+
+pub(super) fn local_app_parent(parent: &WebviewWindow) -> Result<(), String> {
+    trusted_local_page(parent, None, "请从应用内页面管理 AI 连接配置")
+}
+
+fn trusted_local_page(
+    parent: &WebviewWindow,
+    path: Option<&str>,
+    message: &str,
+) -> Result<(), String> {
     let url = parent.url().map_err(|_| "无法确认 UOOC 来源页面")?;
     let official = (url.scheme() == "tauri" && url.host_str() == Some("localhost"))
         || (matches!(url.scheme(), "http" | "https") && url.host_str() == Some("tauri.localhost"));
@@ -25,11 +37,11 @@ pub(super) fn local_parent(parent: &WebviewWindow) -> Result<(), String> {
         .as_ref()
         .is_some_and(|dev| dev.origin() == url.origin());
     if (!official && !dev)
-        || url.path() != "/uooc"
+        || path.is_some_and(|path| url.path() != path)
         || !url.username().is_empty()
         || url.password().is_some()
     {
-        return Err("请从应用内的 UOOC 页面打开登录".into());
+        return Err(message.into());
     }
     Ok(())
 }

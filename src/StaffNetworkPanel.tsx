@@ -35,7 +35,7 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
   const [credentialMode, setCredentialMode] = useState<StaffCredentialMode>(
     settings.credentialMode,
   );
-  const [card, setCard] = useState("");
+  const [card, setCard] = useState(settings.customCampusCardNumber ?? "");
   const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -54,15 +54,23 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
     setMode(settings.mode);
     setEnabled(settings.enabled);
     setCredentialMode(settings.credentialMode);
+    setCard(settings.customCampusCardNumber ?? "");
     setConfirmation(undefined);
-  }, [settings.mode, settings.enabled, settings.credentialMode, settings.revision]);
+  }, [
+    settings.mode,
+    settings.enabled,
+    settings.credentialMode,
+    settings.revision,
+    settings.customCampusCardNumber,
+  ]);
   const inProgress = applying || status.state === "probing" || status.state === "loggingIn";
   const busy = disabled || saving || inProgress;
   const dirty =
     mode !== settings.mode ||
     enabled !== settings.enabled ||
     credentialMode !== settings.credentialMode ||
-    (credentialMode === "custom" && (card !== "" || password !== ""));
+    (credentialMode === "custom" &&
+      (card !== (settings.customCampusCardNumber ?? "") || password !== ""));
 
   const save = async () => {
     if (busy) return;
@@ -71,7 +79,7 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
     setFeedback(undefined);
     setConfirmation(undefined);
     try {
-      await onSave({
+      const next = await onSave({
         mode,
         enabled: mode === "appAuto" && enabled,
         credentialMode,
@@ -79,7 +87,7 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
         password: credentialMode === "custom" ? password || undefined : undefined,
       });
       if (mounted.current) {
-        setCard("");
+        setCard(next.customCampusCardNumber ?? "");
         setPassword("");
       }
     } catch (cause) {

@@ -52,20 +52,37 @@ pub(crate) struct ConfigView {
     pub confidence: f64,
     pub default_mode: Mode,
 }
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ConnectionProviderView {
+    pub base_url: String,
+    pub has_key: bool,
+}
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ConnectionsView {
+    pub main: ConnectionProviderView,
+    pub jev: ConnectionProviderView,
+}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ProviderInput {
+pub(crate) struct ConnectionProviderInput {
     pub base_url: String,
-    pub model: String,
     pub api_key: Option<String>,
     #[serde(default)]
     pub clear_key: bool,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ConfigInput {
-    pub main: ProviderInput,
-    pub jev: ProviderInput,
+pub(crate) struct ConnectionsInput {
+    pub main: ConnectionProviderInput,
+    pub jev: ConnectionProviderInput,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PreferencesInput {
+    pub main_model: String,
+    pub jev_model: String,
     pub jev_enabled: bool,
     pub confidence: f64,
     pub default_mode: Mode,
@@ -77,6 +94,73 @@ pub(crate) enum ProviderKind {
     Jev,
 }
 impl Config {
+    pub fn connections(&self) -> ConnectionsView {
+        let view = |provider: &Provider| ConnectionProviderView {
+            base_url: provider.base_url.clone(),
+            has_key: !provider.key.is_empty(),
+        };
+        ConnectionsView {
+            main: view(&self.main),
+            jev: view(&self.jev),
+        }
+    }
+
+    pub fn update_connections(&self, input: ConnectionsInput) -> Result<Self, String> {
+        fn update(old: &Provider, new: ConnectionProviderInput) -> Result<Provider, String> {
+            if new
+                .api_key
+                .as_ref()
+                .is_some_and(|v| v.len() > 8192 || v.contains(['\r', '\n']))
+            {
+                return Err("密钥格式无效".into());
+            }
+            let base_url = if new.base_url.trim().is_empty() {
+                String::new()
+            } else {
+                normalize_url(&new.base_url)?
+            };
+            let key = if new.clear_key {
+                String::new()
+            } else {
+                new.api_key
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or_else(|| old.key.clone())
+            };
+            Ok(Provider {
+                base_url,
+                key,
+                ..old.clone()
+            })
+        }
+        Ok(Self {
+            main: update(&self.main, input.main)?,
+            jev: update(&self.jev, input.jev)?,
+            ..self.clone()
+        })
+    }
+
+    pub fn update_preferences(&self, input: PreferencesInput) -> Result<Self, String> {
+        if input.main_model.len() > 256 || input.jev_model.len() > 256 {
+            return Err("模型名称格式无效".into());
+        }
+        if !input.confidence.is_finite() || !(0.5..=1.0).contains(&input.confidence) {
+            return Err("Jev 阈值必须在 0.5 到 1 之间".into());
+        }
+        Ok(Self {
+            main: Provider {
+                model: input.main_model.trim().into(),
+                ..self.main.clone()
+            },
+            jev: Provider {
+                model: input.jev_model.trim().into(),
+                ..self.jev.clone()
+            },
+            jev_enabled: input.jev_enabled,
+            confidence: input.confidence,
+            default_mode: input.default_mode,
+        })
+    }
+
     pub fn view(&self) -> ConfigView {
         let view = |p: &Provider| ProviderView {
             base_url: p.base_url.clone(),
@@ -91,45 +175,6 @@ impl Config {
             default_mode: self.default_mode,
         }
     }
-    pub fn update(&self, input: ConfigInput) -> Result<Self, String> {
-        fn update(old: &Provider, new: ProviderInput) -> Result<Provider, String> {
-            let base_url = if new.base_url.trim().is_empty() {
-                String::new()
-            } else {
-                normalize_url(&new.base_url)?
-            };
-            if new.model.len() > 256
-                || new
-                    .api_key
-                    .as_ref()
-                    .is_some_and(|v| v.len() > 8192 || v.contains(['\r', '\n']))
-            {
-                return Err("模型或密钥格式无效".into());
-            }
-            let key = if new.clear_key {
-                String::new()
-            } else {
-                new.api_key
-                    .filter(|v| !v.is_empty())
-                    .unwrap_or_else(|| old.key.clone())
-            };
-            Ok(Provider {
-                base_url,
-                model: new.model.trim().into(),
-                key,
-            })
-        }
-        if !input.confidence.is_finite() || !(0.5..=1.0).contains(&input.confidence) {
-            return Err("Jev 阈值必须在 0.5 到 1 之间".into());
-        }
-        Ok(Self {
-            main: update(&self.main, input.main)?,
-            jev: update(&self.jev, input.jev)?,
-            jev_enabled: input.jev_enabled,
-            confidence: input.confidence,
-            default_mode: input.default_mode,
-        })
-    }
 }
 pub(super) fn normalize_url(raw: &str) -> Result<String, String> {
     let raw = raw.trim().trim_end_matches('/');
@@ -138,15 +183,14 @@ pub(super) fn normalize_url(raw: &str) -> Result<String, String> {
         .unwrap_or(raw)
         .trim_end_matches('/');
     let url = reqwest::Url::parse(raw).map_err(|_| "AI 地址无效")?;
-    let local = matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
-    if (url.scheme() != "https" && !(url.scheme() == "http" && local))
+    if !matches!(url.scheme(), "http" | "https")
         || url.host_str().is_none()
         || !url.username().is_empty()
         || url.password().is_some()
         || url.query().is_some()
         || url.fragment().is_some()
     {
-        return Err("AI 地址需使用 HTTPS（本机服务可用 HTTP），不能包含凭据或查询参数".into());
+        return Err("AI 地址需使用 HTTP 或 HTTPS，不能包含凭据或查询参数".into());
     }
     Ok(url.as_str().trim_end_matches('/').into())
 }
@@ -212,6 +256,96 @@ pub(super) async fn models(
         Ok(names)
     };
     tokio::select! { biased; _ = cancel.cancelled() => Err("已取消".into()), r = result => r }
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::*;
+
+    #[test]
+    fn split_updates_preserve_the_other_ai_configuration() {
+        let original = Config {
+            main: Provider {
+                base_url: "https://old.example/v1".into(),
+                model: "main-model".into(),
+                key: "main-secret".into(),
+            },
+            jev: Provider {
+                base_url: "https://jev.example/v1".into(),
+                model: "jev-model".into(),
+                key: "jev-secret".into(),
+            },
+            jev_enabled: true,
+            confidence: 0.9,
+            default_mode: Mode::Supervised,
+        };
+        let connections = original
+            .update_connections(ConnectionsInput {
+                main: ConnectionProviderInput {
+                    base_url: "https://new.example/v1".into(),
+                    api_key: Some("new-secret".into()),
+                    clear_key: false,
+                },
+                jev: ConnectionProviderInput {
+                    base_url: "https://jev.example/v2".into(),
+                    api_key: None,
+                    clear_key: false,
+                },
+            })
+            .unwrap();
+        assert_eq!(connections.main.model, "main-model");
+        assert_eq!(connections.jev.model, "jev-model");
+        assert_eq!(connections.jev.key, "jev-secret");
+        assert!(connections.jev_enabled);
+        assert_eq!(connections.confidence, 0.9);
+        assert_eq!(connections.default_mode, Mode::Supervised);
+
+        let preferences = connections
+            .update_preferences(PreferencesInput {
+                main_model: "next-main".into(),
+                jev_model: "next-jev".into(),
+                jev_enabled: false,
+                confidence: 0.75,
+                default_mode: Mode::Approval,
+            })
+            .unwrap();
+        assert_eq!(preferences.main.base_url, "https://new.example/v1");
+        assert_eq!(preferences.main.key, "new-secret");
+        assert_eq!(preferences.jev.base_url, "https://jev.example/v2");
+        assert_eq!(preferences.jev.key, "jev-secret");
+        assert_eq!(preferences.main.model, "next-main");
+        assert_eq!(preferences.jev.model, "next-jev");
+    }
+
+    #[test]
+    fn connection_view_exposes_key_presence_without_secrets_and_clear_is_explicit() {
+        let config = Config {
+            main: Provider {
+                key: "secret-value".into(),
+                ..Provider::default()
+            },
+            ..Config::default()
+        };
+        let view = serde_json::to_value(config.connections()).unwrap();
+        assert_eq!(view["main"]["hasKey"], true);
+        assert!(view.to_string().find("secret-value").is_none());
+
+        let cleared = config
+            .update_connections(ConnectionsInput {
+                main: ConnectionProviderInput {
+                    base_url: String::new(),
+                    api_key: None,
+                    clear_key: true,
+                },
+                jev: ConnectionProviderInput {
+                    base_url: String::new(),
+                    api_key: None,
+                    clear_key: false,
+                },
+            })
+            .unwrap();
+        assert!(cleared.main.key.is_empty());
+    }
 }
 async fn answer(
     p: &Provider,

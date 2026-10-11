@@ -54,33 +54,42 @@ pub(super) fn applied(settings: &StaffNetworkSettings, stamp: &str) -> bool {
         && settings.applied_mode == Some(settings.mode)
         && settings.applied_credentials.as_deref() == Some(stamp)
 }
-pub(super) fn cached_view(
+pub(crate) fn cached_view(
     store: &CampusNetworkStore,
     settings: &StaffNetworkSettings,
-) -> StaffNetworkSettingsView {
-    StaffNetworkSettingsView {
+) -> Result<StaffNetworkSettingsView, String> {
+    let credentials = store
+        .credentials
+        .load_staff_credentials()
+        .map_err(|_| "无法读取教工区凭据状态")?;
+    let custom_campus_card_number = credentials
+        .as_ref()
+        .filter(|value| is_campus_card_number(&value.campus_card_number))
+        .map(|value| value.campus_card_number.clone());
+    let custom_configured = custom_campus_card_number.is_some()
+        && credentials
+            .as_ref()
+            .is_some_and(|value| !value.password.is_empty());
+    store
+        .staff
+        .configured
+        .store(custom_configured, Ordering::Relaxed);
+    Ok(StaffNetworkSettingsView {
         revision: settings.revision,
         mode: settings.mode,
         enabled: settings.enabled && settings.mode == StaffLoginMode::AppAuto,
         credential_mode: settings.credential_mode.clone(),
-        custom_configured: store.staff.configured.load(Ordering::Relaxed),
+        custom_configured,
+        custom_campus_card_number,
         needs_apply: store.staff.needs_apply.load(Ordering::Acquire),
         applied_mode: settings.applied_mode,
-    }
+    })
 }
 pub(super) fn view(
     store: &CampusNetworkStore,
     current: &CredentialsProvider<'_>,
 ) -> Result<StaffNetworkSettingsView, String> {
     let settings = load(store)?;
-    let configured = store
-        .credentials
-        .load_staff_credentials()
-        .map_err(|_| "无法读取教工区凭据状态")?
-        .is_some_and(|value| {
-            is_campus_card_number(&value.campus_card_number) && !value.password.is_empty()
-        });
-    store.staff.configured.store(configured, Ordering::Relaxed);
     let needs_apply = credentials(store, &settings, current)
         .map(|(card, password)| !applied(&settings, &credential_stamp(&card, &password)))
         .unwrap_or(true);
@@ -88,7 +97,7 @@ pub(super) fn view(
         .staff
         .needs_apply
         .store(needs_apply, Ordering::Release);
-    Ok(cached_view(store, &settings))
+    cached_view(store, &settings)
 }
 pub(super) fn persist(
     store: &CampusNetworkStore,
@@ -130,7 +139,7 @@ pub(super) fn save(
                     .lock()
                     .map_err(|_| "教工区设置锁失败")? = Some(settings.clone());
                 persist(store, &settings)?;
-                let view = cached_view(store, &settings);
+                let view = cached_view(store, &settings)?;
                 events.staff_settings_changed(&view);
                 store.change_staff_status(
                     |status| {
@@ -245,7 +254,7 @@ pub(crate) fn disable(
             .lock()
             .map_err(|_| "教工区设置锁失败")? = Some(settings.clone());
         persist(store, &settings)?;
-        events.staff_settings_changed(&cached_view(store, &settings));
+        events.staff_settings_changed(&cached_view(store, &settings)?);
         Ok(())
     })();
     store.change_staff_status(

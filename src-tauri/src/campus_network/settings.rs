@@ -51,12 +51,15 @@ pub(super) fn dorm_settings_view(
     store: &CampusNetworkStore,
     settings: &DormNetworkSettings,
 ) -> Result<DormNetworkSettingsView, String> {
-    let custom_configured = store
-        .credentials
-        .load_dorm_credentials()?
-        .is_some_and(|value| {
-            is_campus_card_number(&value.campus_card_number) && !value.password.is_empty()
-        });
+    let custom_credentials = store.credentials.load_dorm_credentials()?;
+    let custom_campus_card_number = custom_credentials
+        .as_ref()
+        .filter(|value| is_campus_card_number(&value.campus_card_number))
+        .map(|value| value.campus_card_number.clone());
+    let custom_configured = custom_campus_card_number.is_some()
+        && custom_credentials
+            .as_ref()
+            .is_some_and(|value| !value.password.is_empty());
     store
         .custom_configured
         .store(custom_configured, std::sync::atomic::Ordering::Relaxed);
@@ -64,6 +67,7 @@ pub(super) fn dorm_settings_view(
         enabled: settings.enabled,
         credential_mode: settings.credential_mode.clone(),
         custom_configured,
+        custom_campus_card_number,
     })
 }
 

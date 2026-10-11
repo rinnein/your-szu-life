@@ -280,7 +280,10 @@ fn mark_pending(store: &CampusNetworkStore, events: &dyn NetworkEvents) -> Resul
         .map_err(|_| Failure::manual("教工区设置锁失败"))? = Some(settings.clone());
     settings::persist(store, &settings)
         .map_err(|_| Failure::manual("无法保存待应用状态，未继续认证"))?;
-    events.staff_settings_changed(&settings::cached_view(store, &settings));
+    events.staff_settings_changed(
+        &settings::cached_view(store, &settings)
+            .map_err(|_| Failure::manual("无法读取教工区凭据状态"))?,
+    );
     Ok(())
 }
 fn confirmation(
@@ -609,7 +612,10 @@ fn run_login(
                 },
                 events,
             );
-            events.staff_settings_changed(&settings::cached_view(store, &saved));
+            events.staff_settings_changed(
+                &settings::cached_view(store, &saved)
+                    .map_err(|_| Failure::manual("无法读取教工区凭据状态"))?,
+            );
             events.log(&DormLoginLogView {
                 region: Some(NetworkRegion::Staff),
                 timestamp_ms: environment.now_ms(),
@@ -806,7 +812,9 @@ pub(super) fn auto_due(
         .is_none_or(|stamp| !settings::applied(&settings, stamp))
     {
         store.staff.needs_apply.store(true, Ordering::Release);
-        events.staff_settings_changed(&settings::cached_view(store, &settings));
+        if let Ok(view) = settings::cached_view(store, &settings) {
+            events.staff_settings_changed(&view);
+        }
         store.change_staff_status(
             |status| {
                 status.state = DormLoginState::Disabled;

@@ -80,6 +80,14 @@ beforeEach(() => {
       name === "control_uooc_tasks"
     )
       return structuredClone(snapshot);
+    if (name === "get_uooc_ai_config")
+      return {
+        main: { baseUrl: "https://example.org/v1", model: "main", hasKey: true },
+        jev: { baseUrl: "https://api.typesafe.ai/v1", model: "jev", hasKey: false },
+        jevEnabled: false,
+        confidence: 0.8,
+        defaultMode: "approval",
+      };
     if (name === "get_auth_state")
       return { Authenticated: { studentId: "1234567890", name: "测试同学" } };
     if (name === "get_account_profile")
@@ -197,6 +205,13 @@ it("saves preview settings and shows command errors", async () => {
   await waitFor(() => expect(screen.getByRole("button", { name: "刷新课程" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "刷新课程" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("网络不可用");
+});
+
+it("opens global AI connection settings from UOOC runtime settings", async () => {
+  const router = mount("/uooc?tab=settings");
+  await screen.findByRole("button", { name: "前往 AI 连接设置" });
+  fireEvent.click(screen.getByRole("button", { name: "前往 AI 连接设置" }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/settings"));
 });
 
 it("does not label a real run as a preview when the settings edit has not been saved", async () => {

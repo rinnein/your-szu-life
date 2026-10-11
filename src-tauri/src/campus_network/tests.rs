@@ -2,6 +2,52 @@ use super::{login::backoff_delay, logs::sanitized_log, model::*, network::*, por
 use std::time::Duration;
 
 #[test]
+fn custom_network_settings_expose_saved_card_number_without_password() {
+    use crate::{
+        campus_network::{settings, staff_login, CampusNetworkStore},
+        storage::{testing::MemoryCredentialStore, CredentialStore},
+    };
+    use std::sync::Arc;
+
+    let credentials = Arc::new(MemoryCredentialStore::default());
+    credentials
+        .save_dorm_credentials(&DormCustomCredentials {
+            campus_card_number: "001234".into(),
+            password: "dorm-secret".into(),
+        })
+        .unwrap();
+    credentials
+        .save_staff_credentials(&DormCustomCredentials {
+            campus_card_number: "654321".into(),
+            password: "staff-secret".into(),
+        })
+        .unwrap();
+    let store = CampusNetworkStore::new(credentials.clone());
+
+    let dorm = settings::dorm_settings_view(&store, &DormNetworkSettings::default()).unwrap();
+    assert_eq!(dorm.custom_campus_card_number.as_deref(), Some("001234"));
+    assert!(dorm.custom_configured);
+    assert!(!serde_json::to_string(&dorm)
+        .unwrap()
+        .contains("dorm-secret"));
+
+    let staff =
+        staff_login::settings::cached_view(&store, &StaffNetworkSettings::default()).unwrap();
+    assert_eq!(staff.custom_campus_card_number.as_deref(), Some("654321"));
+    assert!(staff.custom_configured);
+    assert!(!serde_json::to_string(&staff)
+        .unwrap()
+        .contains("staff-secret"));
+
+    let empty = CampusNetworkStore::new(Arc::new(MemoryCredentialStore::default()));
+    let dorm_empty = settings::dorm_settings_view(&empty, &DormNetworkSettings::default()).unwrap();
+    let staff_empty =
+        staff_login::settings::cached_view(&empty, &StaffNetworkSettings::default()).unwrap();
+    assert_eq!(dorm_empty.custom_campus_card_number, None);
+    assert_eq!(staff_empty.custom_campus_card_number, None);
+}
+
+#[test]
 fn parses_android_network_snapshot_and_keeps_connectivity_without_ssid() {
     let snapshot = super::android::parse_network_snapshot_json(
         r#"{"connected":true,"ssid":"SZU_WLAN","ip":"172.24.111.161","transport":"wifi","capabilitiesAvailable":false,"wifiPermission":"denied","locationEnabled":false}"#,

@@ -8,19 +8,44 @@ pub(crate) fn get_uooc_ai_config(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
 ) -> Result<super::ai::ConfigView, String> {
-    login::local_parent(&window)?;
+    login::local_app_parent(&window)?;
     Ok(service(&app)?.ai.lock().unwrap().view())
 }
 #[tauri::command]
-pub(crate) fn save_uooc_ai_config(
+pub(crate) fn get_uooc_ai_connections(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
-    config: super::ai::ConfigInput,
-) -> Result<super::ai::ConfigView, String> {
-    login::local_parent(&window)?;
+) -> Result<super::ai::ConnectionsView, String> {
+    login::local_app_parent(&window)?;
+    Ok(service(&app)?.ai.lock().unwrap().connections())
+}
+#[tauri::command]
+pub(crate) fn save_uooc_ai_connections(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    connections: super::ai::ConnectionsInput,
+) -> Result<super::ai::ConnectionsView, String> {
+    login::local_app_parent(&window)?;
     let service = service(&app)?;
     let mut old = service.ai.lock().unwrap();
-    let next = old.update(config)?;
+    let next = old.update_connections(connections)?;
+    service
+        .credentials
+        .save_uooc_ai(&serde_json::to_string(&next).map_err(|_| "无法序列化 AI 配置")?)
+        .map_err(|_| "AI 配置无法写入系统密钥存储")?;
+    *old = next;
+    Ok(old.connections())
+}
+#[tauri::command]
+pub(crate) fn save_uooc_ai_preferences(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    preferences: super::ai::PreferencesInput,
+) -> Result<super::ai::ConfigView, String> {
+    login::local_app_parent(&window)?;
+    let service = service(&app)?;
+    let mut old = service.ai.lock().unwrap();
+    let next = old.update_preferences(preferences)?;
     service
         .credentials
         .save_uooc_ai(&serde_json::to_string(&next).map_err(|_| "无法序列化 AI 配置")?)
@@ -34,7 +59,7 @@ pub(crate) async fn list_uooc_ai_models(
     app: tauri::AppHandle,
     provider: super::ai::ProviderKind,
 ) -> Result<Vec<String>, String> {
-    login::local_parent(&window)?;
+    login::local_app_parent(&window)?;
     let service = service(&app)?;
     let config = service.ai.lock().unwrap().clone();
     super::ai::models(

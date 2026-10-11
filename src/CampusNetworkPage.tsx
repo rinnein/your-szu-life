@@ -29,7 +29,12 @@ type CredentialMode = "currentAccount" | "custom";
 type RegionTab = "staff" | "dormitory";
 type NetworkRegion = "none" | "staff" | "dormitory";
 type NetworkState = "noNetwork" | "unknown" | "notLoggedIn" | "connected";
-type Settings = { enabled: boolean; credentialMode: CredentialMode; customConfigured: boolean };
+type Settings = {
+  enabled: boolean;
+  credentialMode: CredentialMode;
+  customConfigured: boolean;
+  customCampusCardNumber?: string | null;
+};
 type PortalSession = {
   campusCardNumber?: string | null;
   onlineUsername?: string | null;
@@ -210,6 +215,7 @@ export default function CampusNetworkPage() {
     setSettings(next);
     setEnabled(next.enabled);
     setMode(next.credentialMode);
+    setCard(next.customCampusCardNumber ?? "");
   };
 
   const refreshConnection = async (showError = true) => {

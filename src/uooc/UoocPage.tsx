@@ -559,7 +559,10 @@ export default function UoocPage() {
             )}
           </Tabs.Panel>
           <Tabs.Panel id="settings" className="grid gap-4 pt-4">
-            <AiSettings onMode={setDefaultMode} />
+            <AiSettings
+              onMode={setDefaultMode}
+              onOpenAiSettings={() => void navigation.push("/settings")}
+            />
             <Card>
               <Card.Header>
                 <Card.Title>运行设置</Card.Title>

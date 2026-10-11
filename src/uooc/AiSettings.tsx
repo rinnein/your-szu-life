@@ -6,13 +6,13 @@ import {
   Checkbox,
   ComboBox,
   Description,
+  Alert,
   Input,
   Label,
   ListBox,
   NumberField,
   Select,
   Spinner,
-  TextField,
 } from "@heroui/react";
 import type { AiConfig, QuizMode } from "./types";
 
@@ -57,13 +57,18 @@ export function QuizModePicker({
     </Select>
   );
 }
-export function AiSettings({ onMode }: { onMode: (mode: QuizMode) => void }) {
+export function AiSettings({
+  onMode,
+  onOpenAiSettings,
+}: {
+  onMode: (mode: QuizMode) => void;
+  onOpenAiSettings: () => void;
+}) {
   const [config, setConfig] = useState<AiConfig>();
-  const [keys, setKeys] = useState({ main: "", jev: "" });
-  const [clear, setClear] = useState({ main: false, jev: false });
   const [models, setModels] = useState<{ main: string[]; jev: string[] }>({ main: [], jev: [] });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
   useEffect(() => {
     let live = true;
     void invoke<AiConfig>("get_uooc_ai_config")
@@ -73,8 +78,15 @@ export function AiSettings({ onMode }: { onMode: (mode: QuizMode) => void }) {
           onMode(v.defaultMode);
         }
       })
-      .catch(() => {
-        if (live) setMessage("无法读取 AI 配置");
+      .catch((cause) => {
+        if (live)
+          setError(
+            typeof cause === "string"
+              ? cause
+              : cause instanceof Error
+                ? cause.message
+                : "无法读取 AI 配置",
+          );
       });
     return () => {
       live = false;
@@ -82,35 +94,26 @@ export function AiSettings({ onMode }: { onMode: (mode: QuizMode) => void }) {
   }, []);
   const save = async () => {
     if (!config) return;
-    const input = {
-      ...config,
-      main: {
-        baseUrl: config.main.baseUrl,
-        model: config.main.model,
-        apiKey: keys.main || null,
-        clearKey: clear.main,
-      },
-      jev: {
-        baseUrl: config.jev.baseUrl,
-        model: config.jev.model,
-        apiKey: keys.jev || null,
-        clearKey: clear.jev,
-      },
+    const preferences = {
+      mainModel: config.main.model,
+      jevModel: config.jev.model,
+      jevEnabled: config.jevEnabled,
+      confidence: config.confidence,
+      defaultMode: config.defaultMode,
     };
-    const next = await invoke<AiConfig>("save_uooc_ai_config", { config: input });
+    const next = await invoke<AiConfig>("save_uooc_ai_preferences", { preferences });
     setConfig(next);
-    setKeys({ main: "", jev: "" });
-    setClear({ main: false, jev: false });
     onMode(next.defaultMode);
     return next;
   };
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     setMessage("");
+    setError("");
     try {
       await fn();
     } catch (e) {
-      setMessage(typeof e === "string" ? e : "操作失败，请检查配置");
+      setError(typeof e === "string" ? e : e instanceof Error ? e.message : "操作失败，请检查配置");
     } finally {
       setBusy(false);
     }
@@ -118,8 +121,20 @@ export function AiSettings({ onMode }: { onMode: (mode: QuizMode) => void }) {
   if (!config)
     return (
       <Card>
+        <Card.Header>
+          <Card.Title>测验 AI</Card.Title>
+        </Card.Header>
         <Card.Content>
-          <p role="status">{message || "正在读取 AI 配置…"}</p>
+          {error ? (
+            <Alert status="danger" role="alert">
+              <Alert.Content>
+                <Alert.Title>AI 配置出错</Alert.Title>
+                <Alert.Description>{error}</Alert.Description>
+              </Alert.Content>
+            </Alert>
+          ) : (
+            <p role="status">正在读取 AI 配置…</p>
+          )}
         </Card.Content>
       </Card>
     );
@@ -128,60 +143,40 @@ export function AiSettings({ onMode }: { onMode: (mode: QuizMode) => void }) {
       <Card.Header>
         <Card.Title>测验 AI</Card.Title>
         <Card.Description>
-          API Key 保存于系统密钥存储。测验内容会发送给你配置的供应商。
+          API 地址和 Key 在全局设置中管理。测验内容会发送给你配置的供应商。
         </Card.Description>
+        <Button variant="outline" onPress={onOpenAiSettings}>
+          前往 AI 连接设置
+        </Button>
       </Card.Header>
       <Card.Content className="grid gap-4">
+        {error && (
+          <Alert status="danger" role="alert">
+            <Alert.Content>
+              <Alert.Title>AI 配置出错</Alert.Title>
+              <Alert.Description>{error}</Alert.Description>
+            </Alert.Content>
+          </Alert>
+        )}
+        {message && (
+          <Alert status="success" role="status">
+            <Alert.Content>
+              <Alert.Title>{message}</Alert.Title>
+            </Alert.Content>
+          </Alert>
+        )}
         {(["main", "jev"] as const).map((provider) => (
           <div className="grid gap-3" key={provider}>
             <h3 className="font-semibold">
               {provider === "main" ? "主模型 · OpenAI 兼容接口" : "Jev · TypeSafe System One"}
             </h3>
-            <TextField
-              value={config[provider].baseUrl}
-              onChange={(baseUrl) =>
-                setConfig({ ...config, [provider]: { ...config[provider], baseUrl } })
-              }
-              isDisabled={busy}
-            >
-              <Label>{provider === "main" ? "主模型" : "Jev"} API 地址</Label>
-              <Input
-                placeholder={
-                  provider === "main" ? "https://example.com/v1" : "https://api.typesafe.ai/v1"
-                }
-              />
-            </TextField>
-            <TextField
-              type="password"
-              value={keys[provider]}
-              onChange={(value) => setKeys({ ...keys, [provider]: value })}
-              isDisabled={busy}
-            >
-              <Label>{provider === "main" ? "主模型" : "Jev"} API Key</Label>
-              <Input
-                autoComplete="new-password"
-                placeholder={config[provider].hasKey ? "已保存；留空保持不变" : "填写密钥"}
-              />
-            </TextField>
-            <Checkbox
-              isSelected={clear[provider]}
-              onChange={(v) => setClear({ ...clear, [provider]: v })}
-              isDisabled={busy}
-            >
-              <Checkbox.Control>
-                <Checkbox.Indicator />
-              </Checkbox.Control>
-              <Checkbox.Content>
-                删除已保存的{provider === "main" ? "主模型" : "Jev"}密钥
-              </Checkbox.Content>
-            </Checkbox>
             <ComboBox
               allowsCustomValue
               inputValue={config[provider].model}
               onInputChange={(model) =>
                 setConfig({ ...config, [provider]: { ...config[provider], model } })
               }
-              isDisabled={busy}
+              isDisabled={busy || !config[provider].baseUrl || !config[provider].hasKey}
             >
               <Label>{provider === "main" ? "主模型" : "Jev"}名称</Label>
               <ComboBox.InputGroup>
@@ -204,14 +199,13 @@ export function AiSettings({ onMode }: { onMode: (mode: QuizMode) => void }) {
               isDisabled={busy}
               onPress={() =>
                 void run(async () => {
-                  await save();
                   const found = await invoke<string[]>("list_uooc_ai_models", { provider });
                   setModels((old) => ({ ...old, [provider]: found }));
                   setMessage(`已加载 ${found.length} 个模型，选择后保存配置`);
                 })
               }
             >
-              保存并加载{provider === "main" ? "主模型" : "Jev"}列表
+              加载{provider === "main" ? "主模型" : "Jev"}列表
             </Button>
           </div>
         ))}
@@ -258,10 +252,9 @@ export function AiSettings({ onMode }: { onMode: (mode: QuizMode) => void }) {
             })
           }
         >
-          保存 AI 配置
+          保存运行设置
         </Button>
         {busy && <Spinner aria-label="正在处理 AI 配置" />}
-        {message && <p role="status">{message}</p>}
       </Card.Content>
     </Card>
   );

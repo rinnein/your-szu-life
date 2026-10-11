@@ -179,6 +179,8 @@ export type QuizState = {
   passed: string[];
 };
 export type AiProvider = { baseUrl: string; model: string; hasKey: boolean };
+export type AiConnectionProvider = { baseUrl: string; hasKey: boolean };
+export type AiConnections = { main: AiConnectionProvider; jev: AiConnectionProvider };
 export type AiConfig = {
   main: AiProvider;
   jev: AiProvider;

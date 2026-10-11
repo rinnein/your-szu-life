@@ -39,6 +39,7 @@ pub struct DormNetworkSettingsView {
     pub enabled: bool,
     pub credential_mode: DormCredentialMode,
     pub custom_configured: bool,
+    pub custom_campus_card_number: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
@@ -267,6 +268,7 @@ pub struct StaffNetworkSettingsView {
     pub enabled: bool,
     pub credential_mode: DormCredentialMode,
     pub custom_configured: bool,
+    pub custom_campus_card_number: Option<String>,
     pub needs_apply: bool,
     pub applied_mode: Option<StaffLoginMode>,
 }

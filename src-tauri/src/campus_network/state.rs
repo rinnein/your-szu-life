@@ -263,6 +263,14 @@ impl NetworkEvents for AppNetworkEvents<'_> {
         let _ = self.0.emit("network-overview-changed", overview);
     }
     fn settings_changed(&self, settings: &DormNetworkSettings) {
+        let credentials = self
+            .0
+            .try_state::<CampusNetworkStore>()
+            .and_then(|store| store.credentials.load_dorm_credentials().ok().flatten());
+        let custom_campus_card_number = credentials
+            .as_ref()
+            .filter(|value| crate::auth::model::is_campus_card_number(&value.campus_card_number))
+            .map(|value| value.campus_card_number.clone());
         let view = DormNetworkSettingsView {
             enabled: settings.enabled,
             credential_mode: settings.credential_mode.clone(),
@@ -270,6 +278,7 @@ impl NetworkEvents for AppNetworkEvents<'_> {
                 .0
                 .try_state::<CampusNetworkStore>()
                 .is_some_and(|store| store.custom_configured.load(Ordering::Relaxed)),
+            custom_campus_card_number,
         };
         let _ = self.0.emit("dorm-network-settings-changed", view);
     }
