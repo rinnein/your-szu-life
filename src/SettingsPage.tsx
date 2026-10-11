@@ -5,6 +5,7 @@ import { ProfileForm } from "./ProfileForm";
 import { Card, ModuleHeader, PageShell } from "./components";
 import { useAuth } from "./auth";
 import AiConnectionSettings from "./AiConnectionSettings";
+import SettingsTransfer from "./SettingsTransfer";
 
 export default function SettingsPage() {
   const { state, profile, setProfile } = useAuth();
@@ -50,6 +51,8 @@ export default function SettingsPage() {
         )}
 
         <AiConnectionSettings />
+
+        <SettingsTransfer />
 
         <ProfileForm
           initial={profile}

@@ -38,7 +38,7 @@ pub(super) fn defaults() -> Vec<Site> {
     .collect()
 }
 #[derive(Clone, Default, Serialize, Deserialize)]
-pub(super) struct Secret {
+pub(crate) struct Secret {
     pub username: String,
     pub password: String,
     #[serde(default)]

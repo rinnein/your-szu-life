@@ -1,7 +1,7 @@
 mod client;
 pub(crate) mod commands;
 mod companion;
-mod model;
+pub(crate) mod model;
 mod monitor;
 mod persistence;
 mod preferences;

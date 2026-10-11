@@ -7724,6 +7724,7 @@ dependencies = [
 name = "your-szu-life"
 version = "0.1.0"
 dependencies = [
+ "argon2",
  "async-openai",
  "base16384",
  "base64 0.22.1",
@@ -7750,6 +7751,7 @@ dependencies = [
  "mp4",
  "ndk-context",
  "notify-rust",
+ "rand 0.9.5",
  "regex",
  "reqwest",
  "reqwest_cookie_store",

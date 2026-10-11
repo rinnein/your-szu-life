@@ -1,5 +1,5 @@
 use crate::{
-    app_content, auth, campus_network, campus_payments, oj,
+    app_content, auth, campus_network, campus_payments, oj, settings,
     storage::{PlatformCredentialStore, SharedCredentialStore},
     uooc,
 };
@@ -18,6 +18,9 @@ pub(crate) fn run() {
         .manage(campus_payments::CampusPaymentsStore::new(
             electricity_credentials,
         ))
+        .manage(settings::SettingsStore::new(Arc::new(
+            PlatformCredentialStore,
+        )))
         .plugin(tauri_plugin_opener::init())
         .plugin(crate::notification::init())
         .setup(move |app| {
@@ -87,6 +90,10 @@ pub(crate) fn run() {
             oj::commands::refresh_oj,
             oj::commands::read_oj_notice,
             crate::storage::commands::get_credential_storage_status,
+            settings::commands::get_settings_snapshot,
+            settings::commands::export_settings,
+            settings::commands::preview_import_settings,
+            settings::commands::import_settings,
             uooc::commands::get_uooc_snapshot,
             uooc::commands::get_uooc_ai_config,
             uooc::commands::get_uooc_ai_connections,

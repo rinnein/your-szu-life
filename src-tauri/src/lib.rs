@@ -1,4 +1,3 @@
-mod enrollment;
 mod app;
 mod app_content;
 mod auth;
@@ -6,11 +5,13 @@ mod campus_network;
 mod campus_payments;
 #[cfg(desktop)]
 mod desktop;
+mod enrollment;
 mod notification;
 mod ocr;
 mod oj;
 #[cfg(target_os = "android")]
 mod platform_tls;
+mod settings;
 mod storage;
 mod uooc;
 
