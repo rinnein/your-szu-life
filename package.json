@@ -70,7 +70,8 @@
     "typescript-lsp": "npm:typescript@6.0.3",
     "vite": "catalog:",
     "vite-plugin-static-copy": "^4.1.1",
-    "vite-plus": "catalog:"
+    "vite-plus": "catalog:",
+    "vitest": "^5.0.3"
   },
   "devEngines": {
     "packageManager": {
