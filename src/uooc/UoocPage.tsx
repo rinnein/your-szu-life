@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -13,9 +13,19 @@ import {
   NumberField,
   ProgressBar,
   Spinner,
+  Switch,
+  TextArea,
   Tabs,
 } from "@heroui/react";
-import { LuArrowLeft, LuCheck, LuPause, LuPlay, LuRefreshCw, LuSquare } from "react-icons/lu";
+import {
+  LuArrowLeft,
+  LuCheck,
+  LuMessageCircle,
+  LuPause,
+  LuPlay,
+  LuRefreshCw,
+  LuSquare,
+} from "react-icons/lu";
 import { PageShell, SkeletonCard } from "../components";
 import { useLogicalNavigation } from "../logical-navigation";
 import { AiSettings, QuizModePicker } from "./AiSettings";
@@ -55,6 +65,7 @@ export default function UoocPage() {
   const [snapshot, setSnapshot] = useState<UoocSnapshot>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [clock, setClock] = useState(() => Date.now());
   const [defaultMode, setDefaultMode] = useState<QuizMode>("approval");
   useEffect(() => {
     void invoke<AiConfig>("get_uooc_ai_config")
@@ -69,6 +80,9 @@ export default function UoocPage() {
     reportIntervalSec: 20,
     speedMultiplier: 2,
     dryRun: false,
+    discussionEnabled: true,
+    discussionContent: "要好好学习",
+    discussionIntervalMin: 30,
   });
   const apply = (next: UoocSnapshot) => setSnapshot((old) => newerSnapshot(old, next));
 
@@ -106,9 +120,27 @@ export default function UoocPage() {
 
   const saved = snapshot?.settings;
   useEffect(() => {
-    if (saved) setSettings({ ...saved });
+    if (saved) {
+      setSettings({
+        concurrency: saved.concurrency,
+        reportIntervalSec: saved.reportIntervalSec,
+        speedMultiplier: saved.speedMultiplier,
+        dryRun: saved.dryRun,
+        discussionEnabled: saved.discussionEnabled ?? true,
+        discussionContent: saved.discussionContent ?? "要好好学习",
+        discussionIntervalMin: saved.discussionIntervalMin ?? 30,
+      });
+    }
     // Only actual settings changes replace edits, not progress events.
-  }, [saved?.concurrency, saved?.reportIntervalSec, saved?.speedMultiplier, saved?.dryRun]);
+  }, [
+    saved?.concurrency,
+    saved?.reportIntervalSec,
+    saved?.speedMultiplier,
+    saved?.dryRun,
+    saved?.discussionEnabled,
+    saved?.discussionContent,
+    saved?.discussionIntervalMin,
+  ]);
 
   const action = async (command: string, args?: Record<string, unknown>) => {
     setBusy(true);
@@ -136,6 +168,63 @@ export default function UoocPage() {
   const tasks =
     snapshot?.tasks.filter((task) => !snapshot.user || task.accountId === snapshot.user.id) ?? [];
   const running = tasks.some(active);
+  const discussionEnabled = settings.discussionEnabled ?? true;
+  const discussionContent = settings.discussionContent ?? "要好好学习";
+  const discussionIntervalMin = settings.discussionIntervalMin ?? 30;
+  const cooldown = snapshot?.discussionCooldownUntilMs;
+  useEffect(() => {
+    const hasDiscussionTimestamps = Object.values(snapshot?.discussions ?? {}).some(
+      (state) => state.lastSentAtMs != null,
+    );
+    if (!cooldown && !hasDiscussionTimestamps) return;
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [cooldown, snapshot?.discussions]);
+  const cooldownRemainingMs = cooldown ? Math.max(0, cooldown - clock) : 0;
+  const cooldownText = cooldownRemainingMs > 0
+    ? `讨论冷却中，${Math.ceil(cooldownRemainingMs / 60000)} 分钟后继续`
+    : undefined;
+  const cooldownClock = cooldownRemainingMs > 0
+    ? `${Math.floor(cooldownRemainingMs / 60000)}:${Math.floor((cooldownRemainingMs % 60000) / 1000)
+        .toString()
+        .padStart(2, "0")}`
+    : "现在可以发起";
+  const discussionEligible = (cid: string) => {
+    const progress = snapshot?.progress?.[cid]?.data?.discussion;
+    const ratio =
+      progress?.score != null && progress.weight != null && progress.weight > 0
+        ? progress.score / progress.weight
+        : undefined;
+    return (
+      ready &&
+      ratio != null &&
+      ratio < 1
+    );
+  };
+  const discussionCandidates = useMemo(
+    () =>
+      snapshot?.courses.filter((course) => {
+        const progress = snapshot.progress?.[course.id]?.data?.discussion;
+        const ratio =
+          progress?.score != null && progress.weight != null && progress.weight > 0
+            ? progress.score / progress.weight
+            : undefined;
+        return ratio != null && ratio < 1;
+      }) ?? [],
+    [snapshot],
+  );
+  const discussionStatus = (cid: string) => {
+    const state = snapshot?.discussions?.[cid];
+    const progress = snapshot?.progress?.[cid]?.data?.discussion;
+    const ratio = progress?.score != null && progress.weight ? progress.score / progress.weight : undefined;
+    if (!state && ratio == null) return undefined;
+    if (ratio == null || ratio >= 1) return "无需讨论";
+    if (state?.lastSentAtMs) {
+      const elapsed = Math.max(0, clock - state.lastSentAtMs);
+      return `上次发送讨论于${elapsed < 60_000 ? "不到 1 分钟前" : `${Math.floor(elapsed / 60_000)} 分钟前`}`;
+    }
+    return "无需讨论";
+  };
   const added = new Set(
     snapshot?.tasks
       .filter((task) => task.accountId === snapshot.user?.id)
@@ -163,6 +252,7 @@ export default function UoocPage() {
     if (await action("start_uooc_courses", { courseIds: ids }))
       await navigation.replace("/uooc?tab=tasks");
   };
+  const startDiscussion = (cid: string) => void action("start_uooc_discussion", { courseId: cid });
   const checkinControls = (cid: string) => {
     const state = snapshot?.checkins?.[cid];
     const attendance = snapshot?.progress?.[cid]?.data?.attendance ?? "unknown";
@@ -203,6 +293,34 @@ export default function UoocPage() {
             {state.source === "manual" ? "手动签到" : "自动签到"}：{state.message}
           </p>
         )}
+      </div>
+    );
+  };
+  const discussionControls = (cid: string) => {
+    const progress = snapshot?.progress?.[cid]?.data?.discussion;
+    const ratio =
+      progress?.score != null && progress.weight != null && progress.weight > 0
+        ? progress.score / progress.weight
+        : undefined;
+    const needsDiscussion = ratio != null && ratio < 1;
+    const state = snapshot?.discussions?.[cid];
+    return (
+      <div className="grid gap-2">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+          <span role="status">{discussionStatus(cid) ?? (needsDiscussion ? "无需讨论" : "无需讨论")}</span>
+        </div>
+        {needsDiscussion && (
+          <Button
+            size="sm"
+            variant="secondary"
+            isDisabled={busy || !ready || !discussionEligible(cid)}
+            onPress={() => startDiscussion(cid)}
+          >
+            <LuMessageCircle aria-hidden="true" />
+            立即参与一次讨论
+          </Button>
+        )}
+        {state?.status === "failed" && <span className="text-xs text-danger">本次讨论未发送成功，请重试。</span>}
       </div>
     );
   };
@@ -383,6 +501,7 @@ export default function UoocPage() {
                     onRefresh={() => refreshDetails(course.id)}
                   />
                   {checkinControls(course.id)}
+                  {discussionControls(course.id)}
                 </Card.Content>
               </Card>
             ))}
@@ -426,8 +545,18 @@ export default function UoocPage() {
             <p className="text-sm text-muted">
               离开本页后任务继续运行。重启时自动恢复上次运行的课程；主动暂停或停止的任务不会自动恢复。
             </p>
-            {tasks.map((task) => (
-              <Card key={task.course.id} id={`uooc-course-${task.course.id}`}>
+            <section aria-labelledby="uooc-course-tasks" className="grid gap-4">
+              <div className="flex items-end justify-between gap-3 border-b border-separator/60 pb-2">
+                <div>
+                  <h2 id="uooc-course-tasks" className="text-lg font-semibold">
+                    课程 / 测验
+                  </h2>
+                  <p className="text-sm text-muted">视频任务、前置测验和课程进度集中在这里。</p>
+                </div>
+                <span className="text-xs text-muted">{tasks.length} 门课程</span>
+              </div>
+              {tasks.map((task) => (
+                <Card key={task.course.id} id={`uooc-course-${task.course.id}`}>
                 <Card.Header>
                   <Card.Title>{task.course.title}</Card.Title>
                   {(task.status === "completed" ||
@@ -450,6 +579,7 @@ export default function UoocPage() {
                     onRefresh={() => refreshDetails(task.course.id)}
                   />
                   {checkinControls(task.course.id)}
+                  {discussionControls(task.course.id)}
                   <div className="flex flex-wrap gap-2">
                     <Button
                       size="sm"
@@ -536,8 +666,43 @@ export default function UoocPage() {
                     ))}
                   </div>
                 </Card.Content>
+                </Card>
+              ))}
+            </section>
+            <section aria-labelledby="uooc-discussion-tasks" className="grid gap-4">
+              <div className="flex items-end justify-between gap-3 border-b border-separator/60 pb-2">
+                <div>
+                  <h2 id="uooc-discussion-tasks" className="text-lg font-semibold">
+                    讨论
+                  </h2>
+                  <p className="text-sm text-muted">课程之间共享发送间隔，下一次只会发起一个课程的讨论。</p>
+                </div>
+                <LuMessageCircle className="text-muted" aria-hidden="true" />
+              </div>
+              <Card>
+                <Card.Content className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
+                  <div className="grid gap-1">
+                    <span className="text-xs text-muted">下一次发起讨论</span>
+                    <strong className="text-base">
+                      {discussionCandidates[0]?.title ?? "暂无待完成的讨论课程"}
+                    </strong>
+                    <span className="text-sm text-muted">
+                      {!discussionEnabled
+                        ? "自动讨论已关闭，可使用课程卡片中的单次参与"
+                        : discussionCandidates.length
+                        ? cooldownText ?? "满足条件后会自动发起"
+                        : "刷新课程进度后重新检查"}
+                    </span>
+                  </div>
+                  <div className="rounded-lg border border-separator/60 px-4 py-3 text-center">
+                    <span className="block font-mono text-xl font-semibold tabular-nums" aria-live="polite">
+                      {discussionCandidates.length ? cooldownClock : "暂空"}
+                    </span>
+                    <span className="text-xs text-muted">全局冷却</span>
+                  </div>
+                </Card.Content>
               </Card>
-            ))}
+            </section>
             {!tasks.length && (
               <Card>
                 <Card.Content>选择课程并开始后，任务会显示在这里。</Card.Content>
@@ -569,19 +734,21 @@ export default function UoocPage() {
                 <Card.Description>所有课程共享并发额度。请暂停全部任务后修改。</Card.Description>
               </Card.Header>
               <Card.Content className="grid gap-5">
-                <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   {(
                     [
                       { key: "concurrency", label: "视频并发数", min: 1, step: 1 },
                       { key: "reportIntervalSec", label: "上报间隔（秒）", min: 1, step: 1 },
                       { key: "speedMultiplier", label: "目标倍率", min: 0.1, step: 0.1 },
+                      { key: "discussionIntervalMin", label: "讨论间隔（分钟）", min: 1, max: 1440, step: 1 },
                     ] as const
                   ).map(({ key, label, min, step }) => (
                     <NumberField
                       key={key}
                       minValue={min}
                       step={step}
-                      value={settings[key]}
+                      value={settings[key] ?? 30}
+                      maxValue={key === "discussionIntervalMin" ? 1440 : undefined}
                       isDisabled={running || busy || !snapshot}
                       onChange={(value) => setSettings((old) => ({ ...old, [key]: value }))}
                     >
@@ -606,9 +773,46 @@ export default function UoocPage() {
                     仅预览（dry-run），不提交视频进度
                   </Checkbox.Content>
                 </Checkbox>
-                <p className="text-sm text-muted">
+                  <p className="text-sm text-muted">
                   视频时长成功获取后会保存在本机，后续任务和重启后均直接复用。仅处理视频，测验、作业与考试需自行完成。
-                </p>
+                  </p>
+                <div className="grid gap-3 rounded-xl border border-separator/60 p-4">
+                  <Switch
+                    isSelected={discussionEnabled}
+                    isDisabled={busy || !snapshot}
+                    onChange={(value) =>
+                      setSettings((old) => ({ ...old, discussionEnabled: value }))
+                    }
+                  >
+                    <Switch.Control>
+                      <Switch.Thumb />
+                    </Switch.Control>
+                    <Switch.Content>
+                      <Label>自动完成讨论</Label>
+                      <span className="text-xs text-muted">
+                        仅处理有讨论权重且完成率未达 100% 的课程，课程之间至少间隔 {discussionIntervalMin} 分钟。
+                      </span>
+                    </Switch.Content>
+                  </Switch>
+                  <div className="grid gap-2">
+                    <Label htmlFor="uooc-discussion-content">无评论时的发帖内容</Label>
+                    <TextArea
+                      id="uooc-discussion-content"
+                      value={discussionContent}
+                      rows={3}
+                      maxLength={500}
+                      variant="secondary"
+                      disabled={busy || !snapshot || !discussionEnabled}
+                      onChange={(event) =>
+                        setSettings((old) => ({ ...old, discussionContent: event.target.value }))
+                      }
+                    />
+                    <span className="text-xs text-muted">
+                      发送时会自动包裹为一段 HTML，主题固定为“要好好学习”。
+                    </span>
+                  </div>
+                  {cooldownText && <p className="text-xs text-muted">{cooldownText}</p>}
+                </div>
                 <Button
                   className="justify-self-start"
                   isDisabled={running || busy || !snapshot}

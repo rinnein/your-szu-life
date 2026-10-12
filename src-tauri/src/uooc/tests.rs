@@ -651,6 +651,7 @@ async fn startup_restores_only_running_courses_after_identity_and_course_checks(
             settings: Settings::default(),
             tasks: vec![task("42", true), task("43", false), task("44", true)],
             quizzes: Default::default(),
+            discussion: Default::default(),
         },
     )
     .unwrap();

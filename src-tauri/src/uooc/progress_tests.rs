@@ -67,6 +67,7 @@ fn weights_and_details_come_from_each_courses_response() {
     assert_eq!(p.discussion.total, None);
     assert_eq!(p.homework.total, Some(0));
     assert_eq!(p.discussion.score, Some(1.5));
+    assert_eq!(p.discussion_completion_ratio(), Some(0.3));
     assert_eq!(p.exam.average_score, Some(40.0));
     assert_eq!(p.weighted_score, Some(51.5));
     assert_eq!(p.discussion_posts, Some(1));

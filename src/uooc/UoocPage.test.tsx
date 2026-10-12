@@ -50,7 +50,15 @@ beforeEach(() => {
     message: "",
     logs: [],
     tasks: [],
-    settings: { concurrency: 3, reportIntervalSec: 20, speedMultiplier: 2, dryRun: false },
+    settings: {
+      concurrency: 3,
+      reportIntervalSec: 20,
+      speedMultiplier: 2,
+      dryRun: false,
+      discussionEnabled: true,
+      discussionContent: "要好好学习",
+      discussionIntervalMin: 30,
+    },
     courses: [
       {
         id: "1588976494",

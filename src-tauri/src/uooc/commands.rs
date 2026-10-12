@@ -211,3 +211,13 @@ pub(crate) fn cancel_uooc_checkin(
     service.cancel_checkins(course_ids);
     Ok(service.snapshot())
 }
+
+#[tauri::command]
+pub(crate) async fn start_uooc_discussion(
+    app: tauri::AppHandle,
+    course_id: String,
+) -> Result<Snapshot, String> {
+    let service = service(&app)?;
+    service.start_discussion_once(&course_id).await?;
+    Ok(service.snapshot())
+}

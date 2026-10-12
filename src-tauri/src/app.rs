@@ -107,6 +107,7 @@ pub(crate) fn run() {
             uooc::commands::refresh_uooc_progress,
             uooc::commands::start_uooc_checkin,
             uooc::commands::cancel_uooc_checkin,
+            uooc::commands::start_uooc_discussion,
             uooc::commands::refresh_uooc_session,
             uooc::commands::open_uooc_login,
             uooc::commands::logout_uooc,

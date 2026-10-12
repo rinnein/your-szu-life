@@ -11,6 +11,9 @@ export type UoocSettings = {
   reportIntervalSec: number;
   speedMultiplier: number;
   dryRun: boolean;
+  discussionEnabled?: boolean;
+  discussionContent?: string;
+  discussionIntervalMin?: number;
 };
 export type UoocTaskStatus =
   | "queued"
@@ -53,6 +56,15 @@ export type UoocSnapshot = {
   progress?: Record<string, ProgressEntry>;
   checkins?: Record<string, CheckinState>;
   quizzes?: Record<string, QuizState>;
+  discussions?: Record<string, DiscussionCourseState>;
+  discussionCooldownUntilMs?: number | null;
+};
+export type DiscussionCourseState = {
+  status: "idle" | "waitingCooldown" | "eligible" | "sending" | "completed" | "skipped" | "failed";
+  message: string;
+  updatedAtMs: number;
+  lastTid?: string | null;
+  lastSentAtMs?: number | null;
 };
 export type ProgressMetric = {
   percent: number | null;

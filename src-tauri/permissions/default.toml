@@ -42,6 +42,7 @@ permissions = [
   "allow-refresh-uooc-progress",
   "allow-start-uooc-checkin",
   "allow-cancel-uooc-checkin",
+  "allow-start-uooc-discussion",
   "allow-refresh-uooc-session",
   "allow-open-uooc-login",
   "allow-logout-uooc",

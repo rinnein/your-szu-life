@@ -2,6 +2,7 @@ mod ai;
 mod checkin;
 mod client;
 pub(crate) mod commands;
+mod discussion;
 mod duration;
 mod login;
 mod media;
@@ -49,6 +50,7 @@ struct Runtime {
     background_active: bool,
     checkins: checkin::Checkins,
     quiz_windows: HashMap<String, (u64, String)>,
+    discussion: DiscussionStoreState,
 }
 pub(super) struct Service {
     app: Option<tauri::AppHandle>,
@@ -63,6 +65,7 @@ pub(super) struct Service {
     native_session: Arc<tokio::sync::Mutex<()>>,
     ai: Mutex<ai::Config>,
     ai_permits: Semaphore,
+    discussion_lock: tokio::sync::Mutex<()>,
 }
 impl Service {
     fn new(
@@ -74,6 +77,7 @@ impl Service {
         let saved = persistence::read::<SavedState>(&path);
         let mut message = saved.as_ref().err().cloned().unwrap_or_default();
         let mut saved = saved.ok().flatten().unwrap_or_default();
+        let saved_settings = saved.settings.clone();
         quiz::restore_media(&mut saved.quizzes, &root);
         if saved.settings.validate().is_err() {
             saved.settings = Settings::default();
@@ -114,14 +118,20 @@ impl Service {
             native_session: Arc::new(tokio::sync::Mutex::new(())),
             ai: Mutex::new(ai),
             ai_permits: Semaphore::new(2),
+            discussion_lock: tokio::sync::Mutex::new(()),
             permits: RwLock::new(Arc::new(Semaphore::new(saved.settings.concurrency))),
             client: RwLock::new(Arc::new(Client::new(jar)?)),
             refresh_lock: tokio::sync::Mutex::new(()),
             runtime: Mutex::new(Runtime {
                 snapshot: Snapshot {
-                    settings: saved.settings,
+                    settings: saved_settings.clone(),
                     tasks: saved.tasks,
                     quizzes: saved.quizzes,
+                    discussions: saved.discussion.courses.clone(),
+                    discussion_cooldown_until_ms: saved
+                        .discussion
+                        .last_sent_at_ms
+                        .and_then(|at| discussion::cooldown_until(Some(at), &saved_settings)),
                     message,
                     ..Snapshot::default()
                 },
@@ -133,6 +143,7 @@ impl Service {
                 background_active: false,
                 checkins: checkin::Checkins::default(),
                 quiz_windows: HashMap::new(),
+                discussion: saved.discussion,
             }),
         }))
     }
@@ -145,6 +156,11 @@ impl Service {
         snapshot
             .quizzes
             .retain(|_, q| Some(q.account_id.as_str()) == account);
+        snapshot.discussions = runtime.discussion.courses.clone();
+        snapshot.discussion_cooldown_until_ms = runtime
+            .discussion
+            .last_sent_at_ms
+            .and_then(|at| discussion::cooldown_until(Some(at), &runtime.snapshot.settings));
         snapshot
     }
     fn publish(&self, runtime: &mut Runtime) {
@@ -161,6 +177,7 @@ impl Service {
                     settings: runtime.snapshot.settings.clone(),
                     tasks: runtime.snapshot.tasks.clone(),
                     quizzes,
+                    discussion: runtime.discussion.clone(),
                 }
             });
         if let Err(error) = saved.and_then(|saved| persistence::write(&self.path, &saved)) {
@@ -293,6 +310,12 @@ impl Service {
             }
             match result {
                 Ok((user, courses)) => {
+                    if runtime.discussion.account_id != user.id {
+                        runtime.discussion = DiscussionStoreState {
+                            account_id: user.id.clone(),
+                            ..DiscussionStoreState::default()
+                        };
+                    }
                     if runtime
                         .snapshot
                         .user
@@ -306,6 +329,7 @@ impl Service {
                         runtime.session_cancel = CancellationToken::new();
                         runtime.snapshot.progress.clear();
                         runtime.snapshot.checkins.clear();
+                        runtime.discussion = DiscussionStoreState::default();
                     }
                     runtime.snapshot.update_courses(user, courses);
                     runtime.snapshot.session = SessionStatus::Ready;

@@ -4,6 +4,118 @@ use serde_json::Value;
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct ThreadSummary {
+    pub tid: String,
+}
+
+fn collect_thread_ids(value: &Value, output: &mut Vec<String>, depth: usize) {
+    if depth > 5 {
+        return;
+    }
+    match value {
+        Value::String(serialized) => {
+            if let Ok(nested) = serde_json::from_str::<Value>(serialized) {
+                collect_thread_ids(&nested, output, depth + 1);
+            }
+        }
+        Value::Array(rows) => rows
+            .iter()
+            .for_each(|row| collect_thread_ids(row, output, depth + 1)),
+        Value::Object(map) => {
+            if let Some(tid) = [
+                "tid",
+                "thread_id",
+                "threadId",
+                "threadid",
+                "topic_id",
+                "topicId",
+                "topicid",
+                "id",
+            ]
+                .iter()
+                .find_map(|key| id(map.get(*key).unwrap_or(&Value::Null)))
+            {
+                if !output.contains(&tid) {
+                    output.push(tid);
+                }
+            }
+            for key in [
+                "data",
+                "list",
+                "rows",
+                "items",
+                "threads",
+                "topics",
+                "result",
+                "ask_list",
+                "thread_list",
+                "threadList",
+            ] {
+                if let Some(child) = map.get(key) {
+                    collect_thread_ids(child, output, depth + 1);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn find_thread_content(value: &Value, depth: usize) -> Option<String> {
+    if depth > 5 {
+        return None;
+    }
+    match value {
+        Value::String(content) if !content.trim().is_empty() => {
+            if let Ok(nested) = serde_json::from_str::<Value>(content) {
+                find_thread_content(&nested, depth + 1).or_else(|| Some(content.clone()))
+            } else {
+                Some(content.clone())
+            }
+        }
+        Value::Object(map) => {
+            for key in ["content", "body", "text", "ask_content", "thread_content"] {
+                if let Some(content) = map.get(key).map(text).filter(|v| !v.trim().is_empty()) {
+                    return Some(content);
+                }
+            }
+            for key in ["data", "detail", "thread", "topic", "post", "result"] {
+                if let Some(child) = map.get(key) {
+                    if let Some(content) = find_thread_content(child, depth + 1) {
+                        return Some(content);
+                    }
+                }
+            }
+            map.values()
+                .find_map(|child| find_thread_content(child, depth + 1))
+        }
+        Value::Array(rows) => rows
+            .iter()
+            .find_map(|row| find_thread_content(row, depth + 1)),
+        _ => None,
+    }
+}
+
+fn thread_rows(value: &Value) -> Option<Vec<&Value>> {
+    match value {
+        Value::Array(rows) => Some(rows.iter().collect()),
+        Value::Object(map) => [
+            "list",
+            "rows",
+            "items",
+            "threads",
+            "topics",
+            "ask_list",
+            "thread_list",
+            "threadList",
+        ]
+        .iter()
+        .find_map(|key| map.get(*key).and_then(thread_rows))
+            .or_else(|| map.get("data").and_then(thread_rows)),
+        _ => None,
+    }
+}
+
 pub(super) const ORIGIN: &str = "https://www.uooc.net.cn";
 pub(super) const LOGIN: &str = "https://www.uooc.net.cn/user/login";
 pub(super) const LIST: &str = "/home/course/list";
@@ -44,6 +156,36 @@ pub(super) struct Client {
     http: reqwest::Client,
     pub jar: Arc<CookieStoreMutex>,
     base: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn discussion_payload_helpers_accept_nested_realistic_shapes() {
+        let value = json!({
+            "page": {"pages": 1},
+            "data": {"data": {"rows": [{"threadId": "17"}]}}
+        });
+        let mut tids = Vec::new();
+        collect_thread_ids(&value, &mut tids, 0);
+        assert_eq!(tids, vec!["17"]);
+        assert_eq!(
+            find_thread_content(&json!({"data": {"post": [{"body": "<p>hello</p>"}]}}), 0),
+            Some("<p>hello</p>".into())
+        );
+    }
+
+    #[test]
+    fn discussion_payload_helpers_accept_json_string_layers() {
+        let value = json!({"data": "{\"rows\":[{\"tid\":\"18\"}]}"});
+        let mut tids = Vec::new();
+        collect_thread_ids(&value, &mut tids, 0);
+        assert_eq!(tids, vec!["18"]);
+        assert_eq!(thread_rows(&json!({"data": {"rows": []}})).unwrap().len(), 0);
+    }
 }
 impl Client {
     pub(super) fn origin(&self) -> &str {
@@ -254,8 +396,15 @@ impl Client {
                         bytes.extend_from_slice(&chunk);
                     }
                     let value: Value = serde_json::from_slice(&bytes).map_err(|_| Error::Invalid)?;
-                    let code = text(&value["code"]).parse::<i64>().map_err(|_| Error::Invalid)?;
-                    match code { 1 => Ok(value["data"].clone()), 401 => Err(Error::Unauthorized), 600 => Err(Error::Gate), other => Err(Error::Server(other)) }
+                    let code = text(&value["code"])
+                        .parse::<i64>()
+                        .map_err(|_| Error::Invalid)?;
+                    match code {
+                        1 => Ok(value["data"].clone()),
+                        401 => Err(Error::Unauthorized),
+                        600 => Err(Error::Gate),
+                        other => Err(Error::Server(other)),
+                    }
                 } => result,
             };
             if result != Err(Error::Network) || attempt + 1 == attempts {
@@ -348,6 +497,117 @@ impl Client {
             &value,
             super::progress::today(),
         ))
+    }
+    pub async fn thread_list(
+        &self,
+        cid: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<ThreadSummary>, Error> {
+        let value = self
+            .request(
+                "/Home/Threads/list",
+                &[
+                    ("cid".into(), cid.into()),
+                    ("onlyteacher".into(), "0".into()),
+                    ("page".into(), "1".into()),
+                    ("pagesize".into(), "12".into()),
+                    ("type".into(), "30".into()),
+                ],
+                false,
+                cancel,
+            )
+            .await?;
+        let mut tids = Vec::new();
+        if let Some(rows) = thread_rows(&value) {
+            for row in rows {
+                if let Some(tid) = [
+                    "tid",
+                    "thread_id",
+                    "threadId",
+                    "threadid",
+                    "topic_id",
+                    "topicId",
+                    "topicid",
+                    "id",
+                ]
+                .iter()
+                .find_map(|key| id(&row[*key]))
+                {
+                    tids.push(tid);
+                }
+            }
+        }
+        if tids.is_empty() {
+            collect_thread_ids(&value, &mut tids, 0);
+        }
+        Ok(tids
+            .into_iter()
+            .map(|tid| ThreadSummary { tid })
+            .collect())
+    }
+    pub async fn thread_details(
+        &self,
+        cid: &str,
+        tid: &str,
+        cancel: &CancellationToken,
+    ) -> Result<String, Error> {
+        let value = self
+            .request(
+                "/Home/Threads/details",
+                &[
+                    ("ask_page".into(), "1".into()),
+                    ("ask_pagesize".into(), "10".into()),
+                    ("cid".into(), cid.into()),
+                    ("page".into(), "1".into()),
+                    ("pagesize".into(), "20".into()),
+                    ("tid".into(), tid.into()),
+                ],
+                false,
+                cancel,
+            )
+            .await?;
+        find_thread_content(&value, 0).ok_or(Error::Invalid)
+    }
+    pub async fn reply_thread(
+        &self,
+        cid: &str,
+        tid: &str,
+        content: &str,
+        cancel: &CancellationToken,
+    ) -> Result<(), Error> {
+        self.request(
+            "/Home/Threads/reply",
+            &[
+                ("cid".into(), cid.into()),
+                ("content".into(), content.into()),
+                ("tid".into(), tid.into()),
+            ],
+            true,
+            cancel,
+        )
+        .await
+        .map(|_| ())
+    }
+    pub async fn post_thread(
+        &self,
+        cid: &str,
+        content: &str,
+        subject: &str,
+        cancel: &CancellationToken,
+    ) -> Result<(), Error> {
+        self.request(
+            "/Home/Threads/post",
+            &[
+                ("cid".into(), cid.into()),
+                ("content".into(), content.into()),
+                ("subject".into(), subject.into()),
+                ("type".into(), "30".into()),
+            ],
+            true,
+            cancel,
+        )
+        .await
+        .map(|_| ())
     }
     pub async fn catalog(
         &self,

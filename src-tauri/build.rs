@@ -80,6 +80,7 @@ fn main() {
             "refresh_uooc_progress",
             "start_uooc_checkin",
             "cancel_uooc_checkin",
+            "start_uooc_discussion",
             "refresh_uooc_session",
             "open_uooc_login",
             "logout_uooc",

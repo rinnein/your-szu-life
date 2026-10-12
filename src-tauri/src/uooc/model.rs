@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 
 pub(super) fn text(value: &Value) -> String {
     match value {
@@ -63,6 +64,21 @@ pub(crate) struct Settings {
     pub report_interval_sec: u64,
     pub speed_multiplier: f64,
     pub dry_run: bool,
+    #[serde(default = "default_discussion_enabled")]
+    pub discussion_enabled: bool,
+    #[serde(default = "default_discussion_content")]
+    pub discussion_content: String,
+    #[serde(default = "default_discussion_interval_min")]
+    pub discussion_interval_min: u64,
+}
+fn default_discussion_enabled() -> bool {
+    true
+}
+fn default_discussion_content() -> String {
+    "要好好学习".into()
+}
+fn default_discussion_interval_min() -> u64 {
+    30
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -71,6 +87,9 @@ impl Default for Settings {
             report_interval_sec: 20,
             speed_multiplier: 2.0,
             dry_run: false,
+            discussion_enabled: true,
+            discussion_content: default_discussion_content(),
+            discussion_interval_min: default_discussion_interval_min(),
         }
     }
 }
@@ -83,11 +102,57 @@ impl Settings {
             || !self.speed_multiplier.is_finite()
             || self.speed_multiplier <= 0.0
             || !(self.report_interval_sec as f64 * self.speed_multiplier).is_finite()
+            || (self.discussion_enabled && self.discussion_content.trim().is_empty())
+            || !(1..=1440).contains(&self.discussion_interval_min)
         {
-            return Err("并发数和间隔必须为正整数，间隔不超过一天，倍率必须为有效正数".into());
+            return Err(
+                "并发数和间隔必须为正整数，间隔不超过一天，倍率必须为有效正数，讨论文案不能为空"
+                    .into(),
+            );
         }
         Ok(())
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum DiscussionStatus {
+    #[default]
+    Idle,
+    WaitingCooldown,
+    Eligible,
+    Sending,
+    Completed,
+    Skipped,
+    Failed,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DiscussionCourseState {
+    pub status: DiscussionStatus,
+    pub message: String,
+    pub updated_at_ms: i64,
+    #[serde(default)]
+    pub last_tid: Option<String>,
+    #[serde(default)]
+    pub last_sent_at_ms: Option<i64>,
+    #[serde(default)]
+    pub processed_tids: Vec<String>,
+    #[serde(default)]
+    #[serde(alias = "lastPercent")]
+    pub last_completion_ratio: Option<f64>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DiscussionStoreState {
+    #[serde(default)]
+    pub account_id: String,
+    #[serde(default)]
+    pub last_sent_at_ms: Option<i64>,
+    #[serde(default)]
+    pub courses: BTreeMap<String, DiscussionCourseState>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -159,6 +224,8 @@ pub(super) struct SavedState {
     pub tasks: Vec<CourseTask>,
     #[serde(default)]
     pub quizzes: std::collections::BTreeMap<String, super::quiz::model::QuizState>,
+    #[serde(default)]
+    pub discussion: DiscussionStoreState,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -178,6 +245,10 @@ pub(crate) struct Snapshot {
     pub checkins: std::collections::HashMap<String, super::checkin::CheckinState>,
     #[serde(default)]
     pub quizzes: std::collections::BTreeMap<String, super::quiz::model::QuizState>,
+    #[serde(default)]
+    pub discussions: BTreeMap<String, DiscussionCourseState>,
+    #[serde(default)]
+    pub discussion_cooldown_until_ms: Option<i64>,
 }
 impl Default for Snapshot {
     fn default() -> Self {
@@ -193,6 +264,8 @@ impl Default for Snapshot {
             progress: Default::default(),
             checkins: Default::default(),
             quizzes: Default::default(),
+            discussions: Default::default(),
+            discussion_cooldown_until_ms: None,
         }
     }
 }

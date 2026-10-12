@@ -204,6 +204,14 @@ impl CourseProgress {
     pub fn video_complete(&self) -> bool {
         self.video.percent == Some(100.0)
     }
+    /// UOOC reports `discuss_score` as the earned weighted contribution and
+    /// `discuz` as the maximum weighted contribution.
+    pub fn discussion_completion_ratio(&self) -> Option<f64> {
+        let score = self.discussion.score?;
+        let weight = self.discussion.weight.filter(|weight| *weight > 0.0)?;
+        let ratio = score / weight;
+        ratio.is_finite().then_some(ratio.max(0.0))
+    }
     pub fn confirms_checkin(&self, before: &Self) -> bool {
         if self
             .signin
@@ -411,6 +419,7 @@ impl Service {
         };
         self.refresh_progress(ids).await;
         self.enqueue_automatic_checkins();
+        self.run_discussions().await;
     }
 }
 
@@ -425,15 +434,21 @@ pub(super) fn start_updates(service: &Arc<Service>) {
             // This timer belongs to the native service, not the UOOC page or video queue.
             // On wake/resume it catches up to today's Beijing date without replaying missed days.
             let _ = service.refresh_session(Some(today())).await;
-            let ids = service
-                .runtime
-                .lock()
-                .unwrap()
-                .workers
-                .keys()
-                .cloned()
-                .collect();
+            let ids = {
+                let runtime = service.runtime.lock().unwrap();
+                if runtime.snapshot.settings.discussion_enabled {
+                    runtime
+                        .snapshot
+                        .courses
+                        .iter()
+                        .map(|course| course.id.clone())
+                        .collect()
+                } else {
+                    runtime.workers.keys().cloned().collect()
+                }
+            };
             service.refresh_progress(ids).await;
+            service.run_discussions().await;
         }
     });
 }
