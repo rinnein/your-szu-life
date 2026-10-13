@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use sha2::{Digest, Sha256};
 use std::{
     env,
@@ -150,6 +152,29 @@ pub fn prepare() -> Result<(), String> {
         "cargo:rustc-env=SZU_LIFE_DDDDOCR_MODEL_PATH={}",
         path.display()
     );
+    Ok(())
+}
+
+pub fn stage_bundled() -> Result<(), String> {
+    let root =
+        PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").ok_or("missing Cargo manifest directory")?);
+    let manifest = Model::read(&root.join("resources/ocr/ddddocr/model.json"))?;
+    let cache = env::var_os("SZU_LIFE_MODEL_CACHE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.join("target/model-cache"));
+    let source = cache.join(format!("{}.onnx", manifest.sha256));
+    if !manifest.verify(&source) {
+        return Err(format!(
+            "bundled OCR build requires a verified model at {}",
+            source.display()
+        ));
+    }
+    let stage = root.join("target/bundled-ocr/common.onnx");
+    fs::create_dir_all(stage.parent().unwrap()).map_err(|e| e.to_string())?;
+    fs::copy(&source, &stage).map_err(|e| format!("cannot stage bundled OCR model: {e}"))?;
+    println!("cargo:rerun-if-env-changed=SZU_LIFE_BUNDLE_OCR_MODEL");
+    println!("cargo:rerun-if-env-changed=SZU_LIFE_MODEL_CACHE");
+    println!("cargo:rerun-if-changed={}", source.display());
     Ok(())
 }
 

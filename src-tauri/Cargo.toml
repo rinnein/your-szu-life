@@ -41,6 +41,7 @@ md-5 = "0.10"
 base64 = "0.22"
 argon2 = "0.5"
 rand = "0.9"
+chacha20poly1305 = "0.10.1"
 uuid = { version = "1", features = ["v4"] }
 tokio = { version = "1", features = ["sync", "time", "rt", "macros"] }
 tokio-util = { version = "0.7", features = ["rt"] }
@@ -79,7 +80,6 @@ soup3 = "0.5"
 gtk = "0.18"
 notify-rust = "4.18.1"
 keyring = { version = "3", features = ["linux-native", "sync-secret-service", "crypto-rust"] }
-chacha20poly1305 = "0.10.1"
 dbus = "0.9"
 libc = "0.2"
 zeroize = "1"

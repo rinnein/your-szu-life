@@ -154,7 +154,11 @@ impl Service {
                 json!({"status":"point","challengeId":id,"revision":revision,"index":points.len(),"point":point})
             }
             Err(e) => {
-                json!({"status":if e==captcha::RecognitionError::Structure {"structural"}else{"uncertain"}})
+                json!({"status":match e {
+                    captcha::RecognitionError::Structure => "structural",
+                    captcha::RecognitionError::ModelMissing => "modelMissing",
+                    captcha::RecognitionError::Uncertain => "uncertain",
+                }})
             }
         })
     }

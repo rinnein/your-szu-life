@@ -570,6 +570,9 @@ impl Service {
                     p
                 }
                 Err(error) => {
+                    if error == captcha::RecognitionError::ModelMissing {
+                        return Err(Error::new(Failure::Protocol, "ocr_model_missing"));
+                    }
                     if error == captcha::RecognitionError::Structure {
                         structural += 1;
                     } else {

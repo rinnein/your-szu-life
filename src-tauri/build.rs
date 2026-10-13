@@ -23,7 +23,9 @@ fn configured_value(name: &str, dotenv: &HashMap<String, String>) -> Option<Stri
 }
 
 fn main() {
-    ocr_model::prepare().expect("failed to prepare shared OCR model");
+    if env::var("SZU_LIFE_BUNDLE_OCR_MODEL").as_deref() == Ok("1") {
+        ocr_model::stage_bundled().expect("failed to stage bundled OCR model");
+    }
     let dotenv_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.env");
     let dotenv = load_dotenv(&dotenv_path);
     println!("cargo:rerun-if-changed={}", dotenv_path.display());
@@ -36,12 +38,16 @@ fn main() {
 
     println!("cargo:rerun-if-changed=../package.json");
     println!("cargo:rerun-if-changed=../github-accelerator.json");
+    println!("cargo:rerun-if-changed=resources/ocr/ddddocr/model.json");
     println!("cargo:rerun-if-changed=capabilities/authserver-credential-capture.json");
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
             "enrollment_command",
             "open_academic_portal",
             "open_enrollment_official",
+            "get_ocr_model_status",
+            "download_ocr_model",
+            "update_ocr_model",
             "load_oj_image",
             "save_oj_preferences",
             "configure_oj_companion",

@@ -28,8 +28,10 @@ const paint = () =>
   );
 export default function CaptchaInput({
   onAuthenticated,
+  onModelRequired,
 }: {
   onAuthenticated: (s: Snapshot) => void;
+  onModelRequired?: () => void;
 }) {
   const { run, errors } = useEnrollment();
   const [view, setView] = useState<View>({
@@ -79,6 +81,11 @@ export default function CaptchaInput({
     });
     const reply = await request("captchaPrepare", r);
     if (!valid(r)) return false;
+    if (reply?.status === "modelMissing") {
+      onModelRequired?.();
+      update({ phase: "manual", message: "请先安装本地 OCR 模型" });
+      return false;
+    }
     if (authenticated(reply)) return false;
     if (reply?.status !== "challenge" || !reply.image || !reply.challengeId) {
       update({ phase: "manual", message: "获取未完成，可重新获取验证码", id: undefined });
@@ -129,6 +136,11 @@ export default function CaptchaInput({
       const accepted = [...current.current.points];
       const reply = await request("captchaPoint", r, { challengeId: id, points: accepted });
       if (!valid(r)) return;
+      if (reply?.status === "modelMissing") {
+        onModelRequired?.();
+        update({ phase: "manual", message: "请先安装本地 OCR 模型" });
+        return;
+      }
       let retry = false;
       if (
         reply?.status === "point" &&

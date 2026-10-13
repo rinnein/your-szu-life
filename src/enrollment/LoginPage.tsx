@@ -11,6 +11,8 @@ import CaptchaInput from "./CaptchaInput";
 import AccessModes from "./AccessModes";
 import { cachePath, canSelect, useCacheMode } from "./view-mode";
 import type { Snapshot } from "./model";
+import { OcrModelRequiredDialog } from "../OcrModelGate";
+import { useOcrModelStatus } from "../OcrModelSettings";
 export function safeReturn(path?: string) {
   return path?.startsWith("/enrollment") &&
     !path.startsWith("/enrollment/login") &&
@@ -30,6 +32,8 @@ export default function LoginPage() {
   const nav = useLogicalNavigation();
   const { returnTo } = useSearch({ from: "/enrollment/login" });
   const [showCaptcha, setShowCaptcha] = useState(false);
+  const [ocrRequired, setOcrRequired] = useState(false);
+  const ocrStatus = useOcrModelStatus();
   const done = (value: Snapshot | undefined) => {
     if (value?.loggedIn) setShowCaptcha(false);
     if (canSelect(value)) void nav.replace(safeReturn(returnTo));
@@ -37,7 +41,16 @@ export default function LoginPage() {
   useEffect(() => {
     setShowCaptcha(false);
   }, [s?.context.student, s?.mode]);
-  const login = () => setShowCaptcha(true);
+  const login = () => {
+    if (!ocrStatus || ocrStatus.status === "ready") setShowCaptcha(true);
+    else setOcrRequired(true);
+  };
+  useEffect(() => {
+    if (ocrStatus?.status === "ready" && ocrRequired) {
+      setOcrRequired(false);
+      setShowCaptcha(true);
+    }
+  }, [ocrStatus?.status, ocrRequired]);
   useEffect(() => {
     let live = true;
     if (cacheOnly) {
@@ -59,6 +72,11 @@ export default function LoginPage() {
     );
   return (
     <PageShell>
+      <OcrModelRequiredDialog
+        status={ocrStatus}
+        isOpen={ocrRequired}
+        onOpenChange={setOcrRequired}
+      />
       <div className="mx-auto grid w-full max-w-2xl gap-7">
         <ModuleHeader title="登录选课系统" description="选择访问方式，进入本科选课工作台" />
         <Card>
@@ -136,7 +154,11 @@ export default function LoginPage() {
               不登录，查看只读缓存
             </Button>
             {showCaptcha && s && (
-              <CaptchaInput key={`${s.context.student}:${s.mode}`} onAuthenticated={done} />
+              <CaptchaInput
+                key={`${s.context.student}:${s.mode}`}
+                onAuthenticated={done}
+                onModelRequired={() => setOcrRequired(true)}
+              />
             )}
           </Card.Content>
         </Card>

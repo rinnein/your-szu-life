@@ -25,6 +25,9 @@ pub(crate) fn run() {
         .plugin(crate::notification::init())
         .setup(move |app| {
             crate::storage::initialize(app.handle())?;
+            if let Err(error) = crate::ocr::initialize(app.handle()) {
+                eprintln!("OCR 模型服务初始化失败: {error}");
+            }
             auth::webview::setup_login_injection(app.handle())?;
             crate::enrollment::initialize(app.handle(), academic_credentials.clone())?;
             if let Err(error) = oj::initialize(app.handle()) {
@@ -64,6 +67,9 @@ pub(crate) fn run() {
             crate::enrollment::commands::enrollment_command,
             crate::enrollment::commands::open_academic_portal,
             crate::enrollment::commands::open_enrollment_official,
+            crate::ocr::commands::get_ocr_model_status,
+            crate::ocr::commands::download_ocr_model,
+            crate::ocr::commands::update_ocr_model,
             oj::commands::load_oj_image,
             oj::commands::save_oj_preferences,
             oj::commands::configure_oj_companion,

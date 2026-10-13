@@ -5,5 +5,7 @@
   "sha256": "33b5cd351ee94e73a6bf8fa18c415ed8b819b3ffd342e267c30d8ad8334e34e8",
   "bytes": 54088400,
   "charset": "ddddocr-core 0.2.4 from_builtin_beta",
-  "normalization": "MinusOneToOne"
+  "normalization": "MinusOneToOne",
+  "huggingfaceUrl": "https://huggingface.co/bilabila/ddddocr/resolve/main/common.onnx",
+  "upstreamUrl": "https://raw.githubusercontent.com/sml2h3/ddddocr/c40f56f95412e10bcb9bd0bd24411e92f896d238/ddddocr/common.onnx"
 }

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "泥深",
+  "version": "../package.json",
+  "identifier": "in.rinne.your-szu-life",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [{ "title": "泥深", "width": 800, "height": 600 }],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "target/bundled-ocr/common.onnx": "resources/ocr/ddddocr/common.onnx",
+      "resources/ocr/ddddocr/model.json": "resources/ocr/ddddocr/model.json",
+      "resources/ocr/ddddocr/LICENSE-ddddocr": "resources/ocr/ddddocr/LICENSE-ddddocr",
+      "../node_modules/socket.io-client/LICENSE": "resources/licenses/socket.io-client.txt",
+      "resources/licenses/modern-monaco.txt": "resources/licenses/modern-monaco.txt",
+      "../node_modules/typescript-lsp/LICENSE.txt": "resources/licenses/typescript-lsp.txt",
+      "../node_modules/tm-grammars/LICENSE": "resources/licenses/tm-grammars.txt",
+      "../node_modules/tm-themes/LICENSE": "resources/licenses/tm-themes.txt"
+    }
+  }
+}

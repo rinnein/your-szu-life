@@ -25,6 +25,8 @@ import { CompanionSettings } from "./CompanionSettings";
 import { useAuth } from "../auth";
 import { notifySuccess } from "./feedback";
 import { ojProgressCache, progressScope } from "./progress-store";
+import { OcrModelRequiredDialog } from "../OcrModelGate";
+import { useOcrModelStatus } from "../OcrModelSettings";
 export function ErrorNotice({ message }: { message?: string }) {
   return message ? (
     <Alert status="warning">
@@ -48,6 +50,8 @@ export default function OjPage() {
   const [contests, setContests] = useState<Contest[]>([]);
   const [captcha, setCaptcha] = useState<{ token: string; image: string }>();
   const [answer, setAnswer] = useState("");
+  const [ocrRequired, setOcrRequired] = useState(false);
+  const ocrStatus = useOcrModelStatus();
   const site = snapshot?.sites.find((s) => s.id === search.site);
   const isOverview = !search.site && !search.group && !search.contest && !search.problem;
   useEffect(() => {
@@ -120,20 +124,25 @@ export default function OjPage() {
     };
   }, [site?.id, site?.username, site?.enabled, search.group, search.contest, refresh]);
   useEffect(() => {
+    if (ocrStatus?.status === "ready") setOcrRequired(false);
+  }, [ocrStatus?.status]);
+  useEffect(() => {
     setCaptcha(undefined);
     setAnswer("");
     let active = true;
-    if (site?.session === "captchaRequired")
+    if (site?.session === "captchaRequired" && ocrStatus?.status === "ready")
       void invoke<{ token: string; image: string }>("get_oj_captcha", {
         siteId: site.id,
         refresh: false,
       })
         .then((value) => active && setCaptcha(value))
         .catch((e) => active && setError(String(e)));
+    else if (site?.session === "captchaRequired" && ocrStatus && ocrStatus.status !== "ready")
+      setOcrRequired(true);
     return () => {
       active = false;
     };
-  }, [site?.id, site?.session]);
+  }, [site?.id, site?.session, ocrStatus?.status]);
   const connect = () =>
     action(async () => {
       await invoke("login_oj", {
@@ -152,6 +161,11 @@ export default function OjPage() {
     ) ?? [];
   return (
     <PageShell>
+      <OcrModelRequiredDialog
+        status={ocrStatus}
+        isOpen={ocrRequired}
+        onOpenChange={setOcrRequired}
+      />
       <Toast.Provider placement="bottom end" />
       <div className="oj-page">
         <ModuleHeader

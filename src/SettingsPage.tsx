@@ -6,10 +6,13 @@ import { Card, ModuleHeader, PageShell } from "./components";
 import { useAuth } from "./auth";
 import AiConnectionSettings from "./AiConnectionSettings";
 import SettingsTransfer from "./SettingsTransfer";
+import { OcrModelSettings } from "./OcrModelSettings";
+import { useSearch } from "@tanstack/react-router";
 
 export default function SettingsPage() {
   const { state, profile, setProfile } = useAuth();
   const navigation = useLogicalNavigation();
+  const { focus } = useSearch({ from: "/settings" });
   const [storage, setStorage] = useState<{ backend: string; available: boolean }>();
 
   useEffect(() => {
@@ -51,6 +54,8 @@ export default function SettingsPage() {
         )}
 
         <AiConnectionSettings />
+
+        <OcrModelSettings autoReturn={focus === "ocr"} />
 
         <SettingsTransfer />
 

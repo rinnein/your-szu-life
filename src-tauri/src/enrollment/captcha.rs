@@ -97,6 +97,7 @@ fn glyph(image: &DynamicImage, x: u32, y: u32, w: u32, h: u32) -> Result<String,
 pub enum RecognitionError {
     Structure,
     Uncertain,
+    ModelMissing,
 }
 #[derive(Clone, Copy, Debug)]
 struct BoxRect {
@@ -233,6 +234,12 @@ fn match_unique(targets: &[Vec<String>], candidates: &[Vec<String>]) -> Option<V
     }
 }
 pub fn recognize_next(bytes: &[u8], accepted: &[[u32; 2]]) -> Result<[u32; 2], RecognitionError> {
+    if crate::ocr::status()
+        .map(|s| s.status != "ready")
+        .unwrap_or(true)
+    {
+        return Err(RecognitionError::ModelMissing);
+    }
     if accepted.len() >= 4 || bytes.len() > 1024 * 1024 {
         return Err(RecognitionError::Structure);
     }
@@ -271,6 +278,12 @@ pub fn recognize_next(bytes: &[u8], accepted: &[[u32; 2]]) -> Result<[u32; 2], R
     Ok([b.x + b.w / 2, b.y + b.h / 2])
 }
 pub fn recognize(bytes: &[u8]) -> Result<Vec<[u32; 2]>, RecognitionError> {
+    if crate::ocr::status()
+        .map(|s| s.status != "ready")
+        .unwrap_or(true)
+    {
+        return Err(RecognitionError::ModelMissing);
+    }
     if bytes.len() > 1024 * 1024 {
         return Err(RecognitionError::Structure);
     }

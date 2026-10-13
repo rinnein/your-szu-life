@@ -401,11 +401,18 @@ impl Service {
                     .decode(raw)
                     .map_err(|_| "验证码编码无效")?;
                 let task = tauri::async_runtime::spawn_blocking(move || ocr::recognize(&bytes));
-                let answer = tokio::time::timeout(std::time::Duration::from_secs(15), task)
+                let answer_result = tokio::time::timeout(std::time::Duration::from_secs(15), task)
                     .await
                     .ok()
                     .and_then(Result::ok)
-                    .and_then(Result::ok)
+                    .unwrap_or_else(|| Err("captcha_recognition_failed".into()));
+                if let Err(error) = &answer_result {
+                    if error == "ocr_model_missing" || error == "ocr_model_invalid" {
+                        return Err(error.clone());
+                    }
+                }
+                let answer = answer_result
+                    .ok()
                     .filter(|s| !s.is_empty() && s.len() <= 32);
                 let Some(answer) = answer else {
                     self.update_status(
