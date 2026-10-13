@@ -345,4 +345,15 @@ jobs:
                 data: await fs.readFile(asset.file),
               });
             }
+            // Remove any stale assets that survived the replacement, keeping
+            // only the files produced by this workflow run.
+            const currentNames = new Set(assets.map(asset => asset.name));
+            const remainingAssets = await github.paginate(github.rest.repos.listReleaseAssets, {
+              ...repo, release_id: release.id, per_page: 100,
+            });
+            for (const asset of remainingAssets) {
+              if (!currentNames.has(asset.name)) {
+                await github.rest.repos.deleteReleaseAsset({ ...repo, asset_id: asset.id });
+              }
+            }
             core.info(`Uploaded ${assets.length} assets to ${release.html_url}`);
