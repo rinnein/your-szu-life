@@ -122,7 +122,7 @@ pub(super) fn clear_logs(app: &tauri::AppHandle, store: &CampusNetworkStore) -> 
     Ok(())
 }
 
-pub(super) fn record(app: &tauri::AppHandle, store: &CampusNetworkStore, entry: DebugLogEntry) {
+pub(crate) fn record(app: &tauri::AppHandle, store: &CampusNetworkStore, entry: DebugLogEntry) {
     if !store.debug_enabled.load(Ordering::Acquire) {
         return;
     }

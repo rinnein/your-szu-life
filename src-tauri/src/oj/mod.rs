@@ -9,7 +9,7 @@ mod protocol;
 #[cfg(test)]
 mod tests;
 mod work;
-use crate::{ocr, storage::SharedCredentialStore};
+use crate::{campus_network, ocr, storage::SharedCredentialStore};
 use client::Client;
 use model::*;
 use serde_json::{json, Value};
@@ -17,6 +17,7 @@ use std::{
     collections::BTreeMap,
     path::PathBuf,
     sync::{Arc, Mutex, OnceLock},
+    time::Instant,
 };
 use tauri::{Emitter, Manager};
 
@@ -166,6 +167,68 @@ impl Service {
     }
     fn persist(&self, r: &Runtime) -> Result<(), String> {
         persistence::write(&self.path, &r.data)
+    }
+    fn log_request(
+        &self,
+        stage: &str,
+        method: &str,
+        path: &str,
+        status: Option<u16>,
+        elapsed_ms: u64,
+        message: impl Into<String>,
+    ) {
+        let Some(app) = &self.app else { return };
+        let Some(store) = app.try_state::<campus_network::CampusNetworkStore>() else {
+            return;
+        };
+        campus_network::diagnostics::record(
+            app,
+            &store,
+            campus_network::model::DebugLogEntry {
+                timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
+                level: if status.is_some_and(|value| value >= 400) {
+                    "warn"
+                } else {
+                    "info"
+                }
+                .into(),
+                source: "oj".into(),
+                stage: stage.into(),
+                http_status: status,
+                elapsed_ms: Some(elapsed_ms),
+                error_kind: status.filter(|value| *value >= 400).map(|_| "http".into()),
+                message: Some(format!("{method} {path}: {}", message.into())),
+                ..Default::default()
+            },
+        );
+    }
+    async fn request(
+        &self,
+        id: &str,
+        e: &Entry,
+        stage: &str,
+        method: reqwest::Method,
+        path: &str,
+        query: &[(&str, String)],
+        body: Option<&Value>,
+    ) -> Result<Value, client::Error> {
+        let started = Instant::now();
+        let method_name = method.as_str().to_owned();
+        let result = e.client.request(method, path, query, body).await;
+        let (status, message) = match &result {
+            Ok(_) => (Some(200), "请求成功".to_owned()),
+            Err(error) => (error.status, error.message.clone()),
+        };
+        self.log_request(
+            stage,
+            &method_name,
+            path,
+            status,
+            started.elapsed().as_millis() as u64,
+            message,
+        );
+        let _ = id;
+        result
     }
     fn save_site(&self, input: SiteInput) -> Result<String, String> {
         let url = client::normalize(&input.url)?.to_string();
@@ -329,11 +392,18 @@ impl Service {
         Ok(())
     }
     async fn challenge(&self, id: &str, e: &Entry) -> Result<Captcha, String> {
-        let response = e
-            .client
-            .request(reqwest::Method::POST, "captcha/", &[], Some(&json!({})))
+        let response = self
+            .request(
+                id,
+                e,
+                "login.captcha",
+                reqwest::Method::POST,
+                "captcha/",
+                &[],
+                Some(&json!({})),
+            )
             .await
-            .map_err(|e| e.message)?;
+            .map_err(|e| e.display())?;
         let key = response["captcha_key"]
             .as_str()
             .ok_or("验证码响应不兼容")?
@@ -362,7 +432,18 @@ impl Service {
     ) -> Result<(), String> {
         self.update_status(id, e, Session::Connecting, "正在连接 OJ");
         if manual.is_none() {
-            if let Ok(profile) = e.client.get("user/profile/", &[]).await {
+            if let Ok(profile) = self
+                .request(
+                    id,
+                    e,
+                    "login.check-session",
+                    reqwest::Method::GET,
+                    "user/profile/",
+                    &[],
+                    None,
+                )
+                .await
+            {
                 if profile["username"].as_str() == Some(&e.username) {
                     self.update_status(id, e, Session::Ready, "");
                     return Ok(());
@@ -389,10 +470,21 @@ impl Service {
             }
             Some((challenge.1, value))
         } else {
-            let options = e.client.get("sys/options/", &[]).await.map_err(|error| {
-                self.update_status(id, e, Session::NetworkError, &error.message);
-                error.message
-            })?;
+            let options = self
+                .request(
+                    id,
+                    e,
+                    "login.options",
+                    reqwest::Method::GET,
+                    "sys/options/",
+                    &[],
+                    None,
+                )
+                .await
+                .map_err(|error| {
+                    self.update_status(id, e, Session::NetworkError, &error.message);
+                    error.display()
+                })?;
             if options["enable_captcha"].as_bool().unwrap_or(true) {
                 let c = self.challenge(id, e).await?;
                 use base64::Engine;
@@ -443,16 +535,34 @@ impl Service {
         if !self.current(id, e) {
             return Err("账号已变化".into());
         }
-        match e
-            .client
-            .request(reqwest::Method::POST, "user/login/", &[], Some(&body))
+        match self
+            .request(
+                id,
+                e,
+                "login.submit",
+                reqwest::Method::POST,
+                "user/login/",
+                &[],
+                Some(&body),
+            )
             .await
         {
             Ok(response) if response["id"].is_number() || response["id"].is_string() => {
-                let profile = e.client.get("user/profile/", &[]).await.map_err(|er| {
-                    self.update_status(id, e, Session::LoginFailed, "登录身份未确认，请重试");
-                    er.message
-                })?;
+                let profile = self
+                    .request(
+                        id,
+                        e,
+                        "login.verify",
+                        reqwest::Method::GET,
+                        "user/profile/",
+                        &[],
+                        None,
+                    )
+                    .await
+                    .map_err(|er| {
+                        self.update_status(id, e, Session::LoginFailed, "登录身份未确认，请重试");
+                        er.display()
+                    })?;
                 if profile["username"].as_str() != Some(e.username.as_str()) {
                     self.update_status(id, e, Session::LoginFailed, "登录身份未确认");
                     return Err("登录身份未确认".into());
@@ -465,7 +575,7 @@ impl Service {
             result => {
                 let message = result
                     .err()
-                    .map(|e| e.message)
+                    .map(|e| e.display())
                     .unwrap_or("登录返回异常".into());
                 let _ = self.challenge(id, e).await;
                 self.update_status(
@@ -495,12 +605,17 @@ impl Service {
         path: &str,
         query: &[(&str, String)],
     ) -> Result<Value, String> {
-        match e.client.get(path, query).await {
+        match self
+            .request(id, e, "read", reqwest::Method::GET, path, query, None)
+            .await
+        {
             Ok(v) => Ok(v),
             Err(error) if error.status == Some(401) => {
                 self.update_status(id, e, Session::Disabled, "登录已过期");
                 self.login(id, e, None).await?;
-                e.client.get(path, query).await.map_err(|e| e.message)
+                self.request(id, e, "read.retry", reqwest::Method::GET, path, query, None)
+                    .await
+                    .map_err(|e| e.display())
             }
             Err(error) => Err(error.message),
         }
@@ -512,7 +627,25 @@ impl Service {
         path: &str,
         query: &[(&str, String)],
     ) -> Result<Vec<Value>, String> {
-        match e.client.list(path, query).await {
+        let started = Instant::now();
+        let result = e.client.list(path, query).await;
+        self.log_request(
+            "list",
+            "GET",
+            path,
+            result
+                .as_ref()
+                .err()
+                .and_then(|error| error.status)
+                .or_else(|| result.as_ref().ok().map(|_| 200)),
+            started.elapsed().as_millis() as u64,
+            result
+                .as_ref()
+                .err()
+                .map(|error| error.message.clone())
+                .unwrap_or_else(|| "请求成功".into()),
+        );
+        match result {
             Ok(rows) => Ok(rows),
             Err(error) if error.status == Some(401) => {
                 self.update_status(id, e, Session::Disabled, "登录已过期");
@@ -520,9 +653,9 @@ impl Service {
                 e.client
                     .list(path, query)
                     .await
-                    .map_err(|error| error.message)
+                    .map_err(|error| error.display())
             }
-            Err(error) => Err(error.message),
+            Err(error) => Err(error.display()),
         }
     }
     async fn groups(&self, id: &str) -> Result<Vec<Group>, String> {

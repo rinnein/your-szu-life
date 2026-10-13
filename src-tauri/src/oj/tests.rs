@@ -334,6 +334,25 @@ async fn forbidden_is_not_session_expiry() {
     handle.join().unwrap();
 }
 #[tokio::test]
+async fn login_failure_includes_bounded_raw_response() {
+    let (url, handle) = server(vec![
+        (403, json!({"detail":"账号被拒绝","trace":"fixture"})),
+        (200, json!({"captcha_key":"key","captcha_image":"aW1hZ2U="})),
+    ]);
+    let (_dir, s) = setup();
+    let id = s.save_site(input(&url)).unwrap();
+    let e = s.entry(&id).unwrap();
+    e.state.lock().unwrap().captcha = Some(("token".into(), "server-key".into(), "image".into()));
+    let error = s
+        .login(&id, &e, Some(("token".into(), "ABCD".into())))
+        .await
+        .unwrap_err();
+    assert!(error.contains("HTTP 403"));
+    assert!(error.contains("账号被拒绝"));
+    assert!(error.contains("原始响应"));
+    handle.join().unwrap();
+}
+#[tokio::test]
 async fn failing_post_is_not_retried() {
     let (url, handle) = server(vec![(503, json!({}))]);
     let error = Client::new(&url, "")

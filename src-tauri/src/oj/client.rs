@@ -16,6 +16,7 @@ pub(super) struct Error {
     pub message: String,
     pub status: Option<u16>,
     pub uncertain: bool,
+    pub response: Option<String>,
 }
 impl Error {
     pub fn local(message: impl Into<String>) -> Self {
@@ -23,8 +24,33 @@ impl Error {
             message: message.into(),
             status: None,
             uncertain: false,
+            response: None,
         }
     }
+
+    pub fn display(&self) -> String {
+        let status = self
+            .status
+            .map(|value| format!(" HTTP {value}"))
+            .unwrap_or_default();
+        match self.response.as_deref() {
+            Some(response) if !response.is_empty() => {
+                format!("{}{status}\n原始响应：\n{response}", self.message)
+            }
+            _ => format!("{}{status}", self.message),
+        }
+    }
+}
+
+fn response_text(bytes: &[u8]) -> String {
+    const MAX_RESPONSE_BYTES: usize = 64 * 1024;
+    let truncated = bytes.len() > MAX_RESPONSE_BYTES;
+    let mut text =
+        String::from_utf8_lossy(&bytes[..bytes.len().min(MAX_RESPONSE_BYTES)]).into_owned();
+    if truncated {
+        text.push_str("\n[响应已截断]");
+    }
+    text
 }
 pub(super) fn normalize(raw: &str) -> Result<Url, String> {
     let mut url = Url::parse(raw.trim()).map_err(|_| "OJ 地址无效")?;
@@ -126,6 +152,7 @@ impl Client {
                 .into(),
                 status: None,
                 uncertain: write,
+                response: None,
             })?;
             let status = response.status();
             let mut bytes = vec![];
@@ -133,12 +160,14 @@ impl Client {
                 message: "响应中断，请检查操作结果".into(),
                 status: None,
                 uncertain: write,
+                response: None,
             })? {
                 if bytes.len() + chunk.len() > 12 * 1024 * 1024 {
                     return Err(Error {
                         message: "OJ 响应过大，请检查操作结果".into(),
                         status: None,
                         uncertain: write,
+                        response: None,
                     });
                 }
                 bytes.extend_from_slice(&chunk);
@@ -155,12 +184,14 @@ impl Client {
                     .into(),
                     status: Some(status.as_u16()),
                     uncertain: write && (status.is_server_error() || status.is_redirection()),
+                    response: Some(response_text(&bytes)),
                 });
             }
             serde_json::from_slice(&bytes).map_err(|_| Error {
                 message: "OJ 响应格式不兼容".into(),
                 status: None,
                 uncertain: write,
+                response: Some(response_text(&bytes)),
             })
         };
         tokio::select! { _=self.cancel.cancelled()=>Err(Error::local("操作已取消")), result=run=>result }
