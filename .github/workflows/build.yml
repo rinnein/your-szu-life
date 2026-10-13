@@ -46,14 +46,6 @@ jobs:
           cache: true
           run-install: false
 
-      - name: Cache Node dependencies
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-${{ matrix.name }}-node-${{ hashFiles('package.json', 'pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ matrix.name }}-node-
-
       - name: Cache Rust build artifacts
         uses: actions/cache@v4
         with:
