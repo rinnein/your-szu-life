@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Button, Card, FieldError, Form, Input, Label, Spinner, TextField } from "@heroui/react";
+import { Button, Card, Form, Input, Label, Spinner, TextField, toast } from "@heroui/react";
 import type { Profile } from "./auth";
 
 export function ProfileForm({
@@ -18,15 +18,22 @@ export function ProfileForm({
   const [campusCardNumber, setCampusCardNumber] = useState(initial?.campusCardNumber ?? "");
   const [displayName, setDisplayName] = useState(name ?? initial?.name ?? "");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setError("");
-    if (!/^\d{10}$/.test(studentId)) return setError("学号必须是 10 位数字");
-    if (!/^\d{6}$/.test(campusCardNumber)) return setError("校园卡号必须是 6 位数字");
-    if (!onlyCampusCard && !initial?.hasPassword && !password) return setError("密码不能为空");
+    if (!/^\d{10}$/.test(studentId)) {
+      toast.danger("学号必须是 10 位数字");
+      return;
+    }
+    if (!/^\d{6}$/.test(campusCardNumber)) {
+      toast.danger("校园卡号必须是 6 位数字");
+      return;
+    }
+    if (!onlyCampusCard && !initial?.hasPassword && !password) {
+      toast.danger("密码不能为空");
+      return;
+    }
     setSaving(true);
     try {
       await invoke("confirm_profile", {
@@ -39,7 +46,7 @@ export function ProfileForm({
       });
       await onSaved();
     } catch (err) {
-      setError(String(err));
+      toast.danger("保存账户资料失败", { description: String(err) });
     } finally {
       setSaving(false);
     }
@@ -95,11 +102,6 @@ export function ProfileForm({
                 onChange={(event) => setPassword(event.target.value)}
               />
             </TextField>
-          )}
-          {error && (
-            <div role="alert">
-              <FieldError className="form-error">{error}</FieldError>
-            </div>
           )}
           <Button fullWidth type="submit" variant="primary" isDisabled={saving}>
             {saving && <Spinner size="sm" color="current" />}

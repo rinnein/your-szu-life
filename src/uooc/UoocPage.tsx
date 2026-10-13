@@ -16,6 +16,7 @@ import {
   Switch,
   TextArea,
   Tabs,
+  toast,
 } from "@heroui/react";
 import {
   LuArrowLeft,
@@ -181,25 +182,25 @@ export default function UoocPage() {
     return () => window.clearInterval(timer);
   }, [cooldown, snapshot?.discussions]);
   const cooldownRemainingMs = cooldown ? Math.max(0, cooldown - clock) : 0;
-  const cooldownText = cooldownRemainingMs > 0
-    ? `讨论冷却中，${Math.ceil(cooldownRemainingMs / 60000)} 分钟后继续`
-    : undefined;
-  const cooldownClock = cooldownRemainingMs > 0
-    ? `${Math.floor(cooldownRemainingMs / 60000)}:${Math.floor((cooldownRemainingMs % 60000) / 1000)
-        .toString()
-        .padStart(2, "0")}`
-    : "现在可以发起";
+  const cooldownText =
+    cooldownRemainingMs > 0
+      ? `讨论冷却中，${Math.ceil(cooldownRemainingMs / 60000)} 分钟后继续`
+      : undefined;
+  const cooldownClock =
+    cooldownRemainingMs > 0
+      ? `${Math.floor(cooldownRemainingMs / 60000)}:${Math.floor(
+          (cooldownRemainingMs % 60000) / 1000,
+        )
+          .toString()
+          .padStart(2, "0")}`
+      : "现在可以发起";
   const discussionEligible = (cid: string) => {
     const progress = snapshot?.progress?.[cid]?.data?.discussion;
     const ratio =
       progress?.score != null && progress.weight != null && progress.weight > 0
         ? progress.score / progress.weight
         : undefined;
-    return (
-      ready &&
-      ratio != null &&
-      ratio < 1
-    );
+    return ready && ratio != null && ratio < 1;
   };
   const discussionCandidates = useMemo(
     () =>
@@ -216,7 +217,8 @@ export default function UoocPage() {
   const discussionStatus = (cid: string) => {
     const state = snapshot?.discussions?.[cid];
     const progress = snapshot?.progress?.[cid]?.data?.discussion;
-    const ratio = progress?.score != null && progress.weight ? progress.score / progress.weight : undefined;
+    const ratio =
+      progress?.score != null && progress.weight ? progress.score / progress.weight : undefined;
     if (!state && ratio == null) return undefined;
     if (ratio == null || ratio >= 1) return "无需讨论";
     if (state?.lastSentAtMs) {
@@ -252,7 +254,12 @@ export default function UoocPage() {
     if (await action("start_uooc_courses", { courseIds: ids }))
       await navigation.replace("/uooc?tab=tasks");
   };
-  const startDiscussion = (cid: string) => void action("start_uooc_discussion", { courseId: cid });
+  const startDiscussion = async (cid: string) => {
+    const ok = await action("start_uooc_discussion", { courseId: cid });
+    if (!ok) {
+      toast.danger("本次讨论未发送成功，请重试。");
+    }
+  };
   const checkinControls = (cid: string) => {
     const state = snapshot?.checkins?.[cid];
     const attendance = snapshot?.progress?.[cid]?.data?.attendance ?? "unknown";
@@ -303,11 +310,12 @@ export default function UoocPage() {
         ? progress.score / progress.weight
         : undefined;
     const needsDiscussion = ratio != null && ratio < 1;
-    const state = snapshot?.discussions?.[cid];
     return (
       <div className="grid gap-2">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-          <span role="status">{discussionStatus(cid) ?? (needsDiscussion ? "无需讨论" : "无需讨论")}</span>
+          <span role="status">
+            {discussionStatus(cid) ?? (needsDiscussion ? "无需讨论" : "无需讨论")}
+          </span>
         </div>
         {needsDiscussion && (
           <Button
@@ -320,7 +328,6 @@ export default function UoocPage() {
             立即参与一次讨论
           </Button>
         )}
-        {state?.status === "failed" && <span className="text-xs text-danger">本次讨论未发送成功，请重试。</span>}
       </div>
     );
   };
@@ -557,115 +564,115 @@ export default function UoocPage() {
               </div>
               {tasks.map((task) => (
                 <Card key={task.course.id} id={`uooc-course-${task.course.id}`}>
-                <Card.Header>
-                  <Card.Title>{task.course.title}</Card.Title>
-                  {(task.status === "completed" ||
-                    snapshot?.progress?.[task.course.id]?.data?.video.percent === 100) && (
-                    <Chip color="success" className="justify-self-start">
-                      <LuCheck aria-hidden="true" />
-                      <Chip.Label>视频已刷完</Chip.Label>
-                    </Chip>
-                  )}
-                  <Card.Description>
-                    {taskStatus[task.status]} · 完成{" "}
-                    {task.videos.filter((v) => v.status === "completed").length} /{" "}
-                    {task.videos.length} 个视频
-                  </Card.Description>
-                </Card.Header>
-                <Card.Content className="grid gap-3">
-                  <CourseProgressView
-                    course={task.course}
-                    entry={snapshot?.progress?.[task.course.id]}
-                    onRefresh={() => refreshDetails(task.course.id)}
-                  />
-                  {checkinControls(task.course.id)}
-                  {discussionControls(task.course.id)}
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      isDisabled={busy || !active(task)}
-                      onPress={() => control("pause", [task.course.id])}
-                    >
-                      暂停
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      isDisabled={busy || !ready || active(task)}
-                      onPress={() => control("resume", [task.course.id])}
-                    >
-                      {task.status === "completed" ? "继续测验" : "继续"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="tertiary"
-                      isDisabled={busy || task.status === "stopped"}
-                      onPress={() => control("stop", [task.course.id])}
-                    >
-                      停止
-                    </Button>
-                  </div>
-                  {task.message && (
-                    <p role="status" className="text-sm text-muted">
-                      {task.message}
-                    </p>
-                  )}
-                  <div className="grid max-h-96 gap-4 overflow-auto">
-                    {Object.values(snapshot?.quizzes ?? {})
-                      .filter((q) => q.cid === task.course.id && q.accountId === task.accountId)
-                      .map((q) => (
-                        <QuizPanel
-                          key={q.cid}
-                          active={active(task)}
-                          quiz={q}
-                          weight={snapshot?.progress?.[q.cid]?.data?.test.weight}
-                          dryRun={snapshot?.settings.dryRun ?? false}
-                          onSnapshot={apply}
-                        />
-                      ))}
-                    {task.videos.map((video) => (
-                      <div key={video.resourceId} className="grid gap-1">
-                        <div className="flex flex-wrap justify-between gap-2 text-sm">
-                          <span>{video.title}</span>
-                          {video.status === "completed" ? (
-                            <Chip color="success" size="sm">
-                              <LuCheck aria-hidden="true" />
-                              <Chip.Label>已刷完</Chip.Label>
-                            </Chip>
-                          ) : (
-                            <span className="text-muted">{taskStatus[video.status]}</span>
-                          )}
+                  <Card.Header>
+                    <Card.Title>{task.course.title}</Card.Title>
+                    {(task.status === "completed" ||
+                      snapshot?.progress?.[task.course.id]?.data?.video.percent === 100) && (
+                      <Chip color="success" className="justify-self-start">
+                        <LuCheck aria-hidden="true" />
+                        <Chip.Label>视频已刷完</Chip.Label>
+                      </Chip>
+                    )}
+                    <Card.Description>
+                      {taskStatus[task.status]} · 完成{" "}
+                      {task.videos.filter((v) => v.status === "completed").length} /{" "}
+                      {task.videos.length} 个视频
+                    </Card.Description>
+                  </Card.Header>
+                  <Card.Content className="grid gap-3">
+                    <CourseProgressView
+                      course={task.course}
+                      entry={snapshot?.progress?.[task.course.id]}
+                      onRefresh={() => refreshDetails(task.course.id)}
+                    />
+                    {checkinControls(task.course.id)}
+                    {discussionControls(task.course.id)}
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        isDisabled={busy || !active(task)}
+                        onPress={() => control("pause", [task.course.id])}
+                      >
+                        暂停
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        isDisabled={busy || !ready || active(task)}
+                        onPress={() => control("resume", [task.course.id])}
+                      >
+                        {task.status === "completed" ? "继续测验" : "继续"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="tertiary"
+                        isDisabled={busy || task.status === "stopped"}
+                        onPress={() => control("stop", [task.course.id])}
+                      >
+                        停止
+                      </Button>
+                    </div>
+                    {task.message && (
+                      <p role="status" className="text-sm text-muted">
+                        {task.message}
+                      </p>
+                    )}
+                    <div className="grid max-h-96 gap-4 overflow-auto">
+                      {Object.values(snapshot?.quizzes ?? {})
+                        .filter((q) => q.cid === task.course.id && q.accountId === task.accountId)
+                        .map((q) => (
+                          <QuizPanel
+                            key={q.cid}
+                            active={active(task)}
+                            quiz={q}
+                            weight={snapshot?.progress?.[q.cid]?.data?.test.weight}
+                            dryRun={snapshot?.settings.dryRun ?? false}
+                            onSnapshot={apply}
+                          />
+                        ))}
+                      {task.videos.map((video) => (
+                        <div key={video.resourceId} className="grid gap-1">
+                          <div className="flex flex-wrap justify-between gap-2 text-sm">
+                            <span>{video.title}</span>
+                            {video.status === "completed" ? (
+                              <Chip color="success" size="sm">
+                                <LuCheck aria-hidden="true" />
+                                <Chip.Label>已刷完</Chip.Label>
+                              </Chip>
+                            ) : (
+                              <span className="text-muted">{taskStatus[video.status]}</span>
+                            )}
+                          </div>
+                          <ProgressBar
+                            aria-label={`${video.title}进度`}
+                            value={
+                              video.status === "completed"
+                                ? 100
+                                : video.duration
+                                  ? Math.min(100, (video.position / video.duration) * 100)
+                                  : 0
+                            }
+                            color={video.status === "completed" ? "success" : "accent"}
+                            isIndeterminate={!video.duration && video.status === "running"}
+                          >
+                            <ProgressBar.Track>
+                              <ProgressBar.Fill />
+                            </ProgressBar.Track>
+                          </ProgressBar>
+                          <p className="text-xs text-muted">
+                            {seconds(video.position)} /{" "}
+                            {video.duration
+                              ? seconds(video.duration)
+                              : video.status === "completed"
+                                ? "时长未记录"
+                                : "等待时长"}
+                            {video.message && ` · ${video.message}`}
+                          </p>
                         </div>
-                        <ProgressBar
-                          aria-label={`${video.title}进度`}
-                          value={
-                            video.status === "completed"
-                              ? 100
-                              : video.duration
-                                ? Math.min(100, (video.position / video.duration) * 100)
-                                : 0
-                          }
-                          color={video.status === "completed" ? "success" : "accent"}
-                          isIndeterminate={!video.duration && video.status === "running"}
-                        >
-                          <ProgressBar.Track>
-                            <ProgressBar.Fill />
-                          </ProgressBar.Track>
-                        </ProgressBar>
-                        <p className="text-xs text-muted">
-                          {seconds(video.position)} /{" "}
-                          {video.duration
-                            ? seconds(video.duration)
-                            : video.status === "completed"
-                              ? "时长未记录"
-                              : "等待时长"}
-                          {video.message && ` · ${video.message}`}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </Card.Content>
+                      ))}
+                    </div>
+                  </Card.Content>
                 </Card>
               ))}
             </section>
@@ -675,7 +682,9 @@ export default function UoocPage() {
                   <h2 id="uooc-discussion-tasks" className="text-lg font-semibold">
                     讨论
                   </h2>
-                  <p className="text-sm text-muted">课程之间共享发送间隔，下一次只会发起一个课程的讨论。</p>
+                  <p className="text-sm text-muted">
+                    课程之间共享发送间隔，下一次只会发起一个课程的讨论。
+                  </p>
                 </div>
                 <LuMessageCircle className="text-muted" aria-hidden="true" />
               </div>
@@ -690,12 +699,15 @@ export default function UoocPage() {
                       {!discussionEnabled
                         ? "自动讨论已关闭，可使用课程卡片中的单次参与"
                         : discussionCandidates.length
-                        ? cooldownText ?? "满足条件后会自动发起"
-                        : "刷新课程进度后重新检查"}
+                          ? (cooldownText ?? "满足条件后会自动发起")
+                          : "刷新课程进度后重新检查"}
                     </span>
                   </div>
                   <div className="rounded-lg border border-separator/60 px-4 py-3 text-center">
-                    <span className="block font-mono text-xl font-semibold tabular-nums" aria-live="polite">
+                    <span
+                      className="block font-mono text-xl font-semibold tabular-nums"
+                      aria-live="polite"
+                    >
                       {discussionCandidates.length ? cooldownClock : "暂空"}
                     </span>
                     <span className="text-xs text-muted">全局冷却</span>
@@ -740,7 +752,13 @@ export default function UoocPage() {
                       { key: "concurrency", label: "视频并发数", min: 1, step: 1 },
                       { key: "reportIntervalSec", label: "上报间隔（秒）", min: 1, step: 1 },
                       { key: "speedMultiplier", label: "目标倍率", min: 0.1, step: 0.1 },
-                      { key: "discussionIntervalMin", label: "讨论间隔（分钟）", min: 1, max: 1440, step: 1 },
+                      {
+                        key: "discussionIntervalMin",
+                        label: "讨论间隔（分钟）",
+                        min: 1,
+                        max: 1440,
+                        step: 1,
+                      },
                     ] as const
                   ).map(({ key, label, min, step }) => (
                     <NumberField
@@ -773,9 +791,9 @@ export default function UoocPage() {
                     仅预览（dry-run），不提交视频进度
                   </Checkbox.Content>
                 </Checkbox>
-                  <p className="text-sm text-muted">
+                <p className="text-sm text-muted">
                   视频时长成功获取后会保存在本机，后续任务和重启后均直接复用。仅处理视频，测验、作业与考试需自行完成。
-                  </p>
+                </p>
                 <div className="grid gap-3 rounded-xl border border-separator/60 p-4">
                   <Switch
                     isSelected={discussionEnabled}
@@ -790,7 +808,8 @@ export default function UoocPage() {
                     <Switch.Content>
                       <Label>自动完成讨论</Label>
                       <span className="text-xs text-muted">
-                        仅处理有讨论权重且完成率未达 100% 的课程，课程之间至少间隔 {discussionIntervalMin} 分钟。
+                        仅处理有讨论权重且完成率未达 100% 的课程，课程之间至少间隔{" "}
+                        {discussionIntervalMin} 分钟。
                       </span>
                     </Switch.Content>
                   </Switch>

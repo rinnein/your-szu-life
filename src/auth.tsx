@@ -9,6 +9,7 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { toast } from "@heroui/react";
 
 export type Profile = {
   studentId: string;
@@ -192,8 +193,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ]) {
       void invoke<{ message?: string } | null>(command)
         .then((notice) => {
-          if (notice?.message && typeof window !== "undefined") {
-            window.setTimeout(() => window.alert(`校园网自动登录失败：${notice.message}`), 0);
+          if (notice?.message) {
+            toast.warning(`校园网自动登录失败：${notice.message}`);
           }
         })
         .catch(() => undefined);

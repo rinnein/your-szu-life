@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
-import { Button, Spinner } from "@heroui/react";
+import { Button, Spinner, toast } from "@heroui/react";
 import { useEnrollment } from "./use-enrollment";
 import type { Snapshot } from "./model";
 type Point = [number, number];
@@ -64,6 +64,14 @@ export default function CaptchaInput({
     }).catch(() => {});
     return r;
   };
+  const lastFlowErrorRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (errors.captchaFlow && errors.captchaFlow !== lastFlowErrorRef.current) {
+      lastFlowErrorRef.current = errors.captchaFlow;
+      toast.danger(errors.captchaFlow);
+    }
+  }, [errors.captchaFlow]);
+
   const authenticated = (reply: Reply | undefined) => {
     if (reply?.status === "authenticated" && reply.snapshot?.loggedIn) {
       notify.current(reply.snapshot);
@@ -274,11 +282,6 @@ export default function CaptchaInput({
           换一张
         </Button>
       </div>
-      {errors.captchaFlow && (
-        <p role="alert" className="text-sm text-danger">
-          {errors.captchaFlow}
-        </p>
-      )}
     </div>
   );
 }

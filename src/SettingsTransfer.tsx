@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Alert, Button, Card, Input, Label, TextArea, TextField } from "@heroui/react";
+import { Alert, Button, Card, Input, Label, TextArea, TextField, toast } from "@heroui/react";
 import { LuCheck, LuCopy, LuDownload, LuKeyRound, LuUpload } from "react-icons/lu";
 import { copyText } from "./clipboard";
 
@@ -50,8 +50,11 @@ export default function SettingsTransfer() {
       setExported(value);
       setExportPassword("");
       setMessage("加密字符串已生成。请与一次性密码分开保存并传送。");
+      toast.success("加密字符串已生成");
     } catch (e) {
-      setError(errorMessage(e, "设置导出失败"));
+      const err = errorMessage(e, "设置导出失败");
+      setError(err);
+      toast.danger(err);
     } finally {
       setBusy(false);
     }
@@ -66,7 +69,9 @@ export default function SettingsTransfer() {
       );
     } catch (e) {
       setPreview(undefined);
-      setError(errorMessage(e, "无法读取加密字符串"));
+      const err = errorMessage(e, "无法读取加密字符串");
+      setError(err);
+      toast.danger(err);
     } finally {
       setBusy(false);
     }
@@ -83,11 +88,15 @@ export default function SettingsTransfer() {
       });
       setPreview(result);
       setImportPassword("");
-      setMessage(
-        overwrite ? "设置已导入，冲突项已由导入内容覆盖。" : "设置已导入，冲突项保留本机内容。",
-      );
+      const msg = overwrite
+        ? "设置已导入，冲突项已由导入内容覆盖。"
+        : "设置已导入，冲突项保留本机内容。";
+      setMessage(msg);
+      toast.success(msg);
     } catch (e) {
-      setError(errorMessage(e, "设置导入失败"));
+      const err = errorMessage(e, "设置导入失败");
+      setError(err);
+      toast.danger(err);
     } finally {
       setBusy(false);
     }

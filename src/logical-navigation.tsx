@@ -5,13 +5,12 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState,
   type ReactNode,
 } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { supportsMultipleWindows } from "@tauri-apps/api/app";
 import { getCurrentWebviewWindow, WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { Alert } from "@heroui/react";
+import { toast } from "@heroui/react";
 
 export const CHILD_PARAMETER = "__szu_window";
 export function isChildDocument(href = window.location.href) {
@@ -93,7 +92,6 @@ export function LogicalNavigationProvider({ children }: { children: ReactNode })
   const router = useRouter();
   const child = isChildDocument();
   const opening = useRef(false);
-  const [error, setError] = useState<string>();
   const back = useCallback(async () => {
     if (window.SzuApplicationBack) {
       // Native chooses pop/overlay/Activity close using the same state as the
@@ -118,7 +116,6 @@ export function LogicalNavigationProvider({ children }: { children: ReactNode })
     async (path: string) => {
       if (opening.current) return;
       opening.current = true;
-      setError(undefined);
       try {
         if (nativeRuntime() && window.SzuApplicationBack && (await supportsMultipleWindows())) {
           await openLogicalWindow(path);
@@ -126,7 +123,9 @@ export function LogicalNavigationProvider({ children }: { children: ReactNode })
           await router.navigate({ to: path });
         }
       } catch {
-        setError("无法打开独立页面，请重试；当前页面已保留。");
+        toast.danger("页面未打开", {
+          description: "无法打开独立页面，请重试；当前页面已保留。",
+        });
       } finally {
         opening.current = false;
       }
@@ -158,19 +157,7 @@ export function LogicalNavigationProvider({ children }: { children: ReactNode })
     () => ({ push, replace, back, canBack: () => child || router.history.canGoBack() }),
     [push, replace, back, child, router],
   );
-  return (
-    <Context.Provider value={value}>
-      {error && (
-        <Alert status="danger" role="alert">
-          <Alert.Content>
-            <Alert.Title>页面未打开</Alert.Title>
-            <Alert.Description>{error}</Alert.Description>
-          </Alert.Content>
-        </Alert>
-      )}
-      {children}
-    </Context.Provider>
-  );
+  return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 export function useLogicalNavigation() {
   const value = useContext(Context);

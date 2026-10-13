@@ -11,6 +11,7 @@ import {
   Select,
   Spinner,
   TextField,
+  toast,
 } from "@heroui/react";
 import { LuZap } from "react-icons/lu";
 import { copyText } from "./clipboard";
@@ -224,7 +225,9 @@ export default function CampusPaymentsElectricityPage() {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canQuery) {
-      setError("请先选择校区、宿舍区域、楼栋并填写宿舍号。");
+      const msg = "请先选择校区、宿舍区域、楼栋并填写宿舍号。";
+      setError(msg);
+      toast.warning(msg);
       return;
     }
     const id = ++requestId.current;
@@ -243,10 +246,16 @@ export default function CampusPaymentsElectricityPage() {
         setResult(next);
         setEditing(false);
         setError(next.cache?.refreshError || undefined);
+        if (next.cache?.refreshError) {
+          toast.warning("电费刷新未完成", { description: next.cache.refreshError });
+        }
       }
     } catch (e) {
-      if (id === requestId.current)
-        setError(typeof e === "string" ? e : "电费查询失败，请检查宿舍信息和校园网连接。");
+      if (id === requestId.current) {
+        const msg = typeof e === "string" ? e : "电费查询失败，请检查宿舍信息和校园网连接。";
+        setError(msg);
+        toast.danger("查询未完成", { description: msg });
+      }
     } finally {
       if (id === requestId.current) setBusy(false);
     }

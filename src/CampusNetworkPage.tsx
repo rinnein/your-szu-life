@@ -6,13 +6,13 @@ import {
   AlertDialog,
   Button,
   Card,
-  FieldError,
   Input,
   Label,
   Spinner,
   Switch,
   Tabs,
   TextField,
+  toast,
 } from "@heroui/react";
 import { ModuleHeader, PageShell } from "./components";
 import StaffNetworkPanel from "./StaffNetworkPanel";
@@ -374,8 +374,11 @@ export default function CampusNetworkPage() {
       });
       if (settingsRevision === revisions.current.settings) applySettings(next);
       setPassword("");
+      toast.success("宿舍区设置已保存");
     } catch (cause) {
-      setError(String(cause));
+      const msg = String(cause);
+      setError(msg);
+      toast.danger("保存宿舍区设置失败", { description: msg });
     } finally {
       setBusy(false);
     }
@@ -387,7 +390,9 @@ export default function CampusNetworkPage() {
     try {
       await invoke("trigger_dorm_login");
     } catch (cause) {
-      setError(String(cause));
+      const msg = String(cause);
+      setError(msg);
+      toast.danger("校园网登录失败", { description: msg });
     } finally {
       setBusy(false);
     }
@@ -514,7 +519,6 @@ export default function CampusNetworkPage() {
                     </div>
                   </Tabs.Panel>
                 </Tabs>
-                {error && <FieldError className="form-error">{error}</FieldError>}
                 <div className="network-action-row">
                   <Button variant="primary" isDisabled={operationBusy} onPress={() => void save()}>
                     {busy && <Spinner size="sm" color="current" />}保存设置

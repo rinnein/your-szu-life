@@ -1,5 +1,5 @@
-import { Alert, Button, CloseButton, Label, ListBox, Select } from "@heroui/react";
-import { LuX } from "react-icons/lu";
+import { useEffect, useRef } from "react";
+import { Label, ListBox, Select, toast } from "@heroui/react";
 export { ModuleHeader } from "../components";
 export function OperationError({
   message,
@@ -10,24 +10,23 @@ export function OperationError({
   onRetry?: () => void;
   onDismiss?: () => void;
 }) {
-  if (!message) return null;
-  return (
-    <Alert status="warning">
-      <Alert.Content>
-        <Alert.Title>{message}</Alert.Title>
-        {onRetry && (
-          <Button size="sm" variant="secondary" onPress={onRetry}>
-            重试
-          </Button>
-        )}
-      </Alert.Content>
-      {onDismiss && (
-        <CloseButton aria-label="关闭提示" onPress={onDismiss}>
-          <LuX />
-        </CloseButton>
-      )}
-    </Alert>
-  );
+  const lastToastRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (message && message !== lastToastRef.current) {
+      lastToastRef.current = message;
+      toast.danger(message, {
+        actionProps: onRetry
+          ? {
+              children: "重试",
+              onPress: onRetry,
+            }
+          : undefined,
+        onClose: onDismiss,
+      });
+    }
+  }, [message, onRetry, onDismiss]);
+
+  return null;
 }
 export function Choice({
   label,

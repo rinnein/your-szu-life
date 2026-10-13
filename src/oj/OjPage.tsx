@@ -3,7 +3,6 @@ import { useSearch } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
-  Alert,
   Button,
   Card,
   Chip,
@@ -14,6 +13,7 @@ import {
   Spinner,
   TextField,
   Toast,
+  toast,
 } from "@heroui/react";
 import { ModuleHeader, PageShell } from "../components";
 import { useLogicalNavigation } from "../logical-navigation";
@@ -28,13 +28,14 @@ import { ojProgressCache, progressScope } from "./progress-store";
 import { OcrModelRequiredDialog } from "../OcrModelGate";
 import { useOcrModelStatus } from "../OcrModelSettings";
 export function ErrorNotice({ message }: { message?: string }) {
-  return message ? (
-    <Alert status="warning">
-      <Alert.Content>
-        <Alert.Title>{message}</Alert.Title>
-      </Alert.Content>
-    </Alert>
-  ) : null;
+  const lastRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (message && message !== lastRef.current) {
+      lastRef.current = message;
+      toast.danger(message);
+    }
+  }, [message]);
+  return null;
 }
 export default function OjPage() {
   const search = useSearch({ from: "/oj" });
@@ -328,40 +329,6 @@ export default function OjPage() {
                 )}
               </section>
             ))}
-            {!!snapshot?.notices.length && (
-              <section>
-                <h2>测验提醒</h2>
-                {[...snapshot.notices]
-                  .reverse()
-                  .filter((n) =>
-                    snapshot.sites.some(
-                      (s) => s.id === n.siteId && s.username === n.account && s.enabled,
-                    ),
-                  )
-                  .slice(0, 30)
-                  .map((n) => (
-                    <Card key={n.id}>
-                      <Card.Content className="oj-toolbar">
-                        <div>
-                          <strong>{n.title}</strong>
-                          <p>
-                            {n.message} · {new Date(n.timestamp).toLocaleString()}
-                          </p>
-                        </div>
-                        <Button
-                          variant="secondary"
-                          onPress={() => {
-                            void invoke("read_oj_notice", { id: n.id });
-                            void nav.push(route({ site: n.siteId, contest: n.contestId }));
-                          }}
-                        >
-                          查看测验
-                        </Button>
-                      </Card.Content>
-                    </Card>
-                  ))}
-              </section>
-            )}
           </>
         )}
         {site?.enabled && !search.contest && (

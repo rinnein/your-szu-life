@@ -11,6 +11,7 @@ import {
   Spinner,
   TextArea,
   TextField,
+  toast,
 } from "@heroui/react";
 import type { QuizAnswers, QuizState, UoocSnapshot } from "./types";
 
@@ -29,7 +30,6 @@ export function QuizPanel({
 }) {
   const [answers, setAnswers] = useState<QuizAnswers>(quiz.answers);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   const [manual, setManual] = useState(false);
   useEffect(() => {
     setAnswers(quiz.answers);
@@ -39,11 +39,11 @@ export function QuizPanel({
   const disabled = busy || running || !(typeof weight === "number" && weight > 0);
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
-    setError("");
     try {
       await fn();
     } catch (e) {
-      setError(typeof e === "string" ? e : "测验操作失败，请重试");
+      const msg = typeof e === "string" ? e : "测验操作失败，请重试";
+      toast.danger("测验操作失败", { description: msg });
     } finally {
       setBusy(false);
     }
@@ -238,7 +238,6 @@ export function QuizPanel({
         </div>
       )}
       {dryRun && <p className="text-xs text-muted">预览模式：草稿不会提交到官网。</p>}
-      {error && <p role="alert">{error}</p>}
     </section>
   );
 }

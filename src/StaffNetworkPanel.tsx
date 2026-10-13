@@ -10,6 +10,7 @@ import {
   Switch,
   Tabs,
   TextField,
+  toast,
 } from "@heroui/react";
 import {
   staffModeText,
@@ -89,9 +90,12 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
       if (mounted.current) {
         setCard(next.customCampusCardNumber ?? "");
         setPassword("");
+        toast.success("教工区设置已保存");
       }
     } catch (cause) {
-      if (mounted.current) setError(String(cause));
+      const msg = String(cause);
+      if (mounted.current) setError(msg);
+      toast.danger("保存教工区设置失败", { description: msg });
     } finally {
       if (mounted.current) setSaving(false);
     }
@@ -127,9 +131,16 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
       if (!mounted.current) return;
       if (result.outcome === "requiresConfirmation" && result.confirmationToken)
         setConfirmation(result);
-      else setFeedback(result);
+      else {
+        setFeedback(result);
+        if (result.outcome === "failed") {
+          toast.danger("教工区操作失败", { description: result.message });
+        }
+      }
     } catch (cause) {
-      if (mounted.current) setError(String(cause));
+      const msg = String(cause);
+      if (mounted.current) setError(msg);
+      toast.danger("教工区操作失败", { description: msg });
     } finally {
       applyingRef.current = false;
       if (mounted.current) setApplying(false);

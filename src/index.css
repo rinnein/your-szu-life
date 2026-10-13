@@ -1316,20 +1316,6 @@ p {
   overflow-wrap: anywhere;
 }
 
-.app-update-notice {
-  position: fixed;
-  z-index: 40;
-  right: 20px;
-  bottom: 20px;
-  width: min(410px, calc(100vw - 40px));
-  box-shadow: 0 12px 40px #25285820;
-  border-radius: 16px;
-}
-
-.app-update-notice button {
-  margin-top: 8px;
-}
-
 @media (max-width: 480px) {
   .about-header {
     padding-left: 44px;
