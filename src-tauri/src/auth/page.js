@@ -2,7 +2,7 @@ export default function authLoginPage(options) {
   if (
     location.protocol !== "https:" ||
     location.host !== "authserver.szu.edu.cn" ||
-    location.pathname !== "/authserver/login" ||
+    !["/authserver/login", "/authserver/login/"].includes(location.pathname) ||
     window !== window.top
   )
     return;

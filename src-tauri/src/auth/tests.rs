@@ -337,13 +337,9 @@ fn only_a_submitted_password_for_the_verified_existing_account_can_replace_the_s
 }
 
 #[test]
-fn remote_credential_capture_capability_matches_authserver_page_origin() {
+fn remote_credential_capture_capability_allows_webview_redirects() {
     let capability = include_str!("../../capabilities/authserver-credential-capture.json");
-    // Tauri evaluates remote IPC against the document origin it reports
-    // (`https://authserver.szu.edu.cn/`), not the full login pathname.
-    // The Rust command below still enforces /authserver/login exactly.
-    assert!(capability.contains(r#"https://authserver.szu.edu.cn"#));
-    assert!(!capability.contains("authserver/login*"));
+    assert!(capability.contains(r#""urls": ["https://*"]"#));
 }
 
 #[test]

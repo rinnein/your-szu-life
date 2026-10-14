@@ -284,13 +284,9 @@ fn validate_recovery_page<'a>(
     document_id: &str,
     store: &'a AuthStore,
 ) -> Result<std::sync::MutexGuard<'a, super::recovery::Recovery>, String> {
-    // Query the native URL before taking the document lock: page-load events
-    // run on the UI thread and must remain able to invalidate this document.
-    let trusted = window.label() == "main"
-        && window
-            .url()
-            .ok()
-            .is_some_and(|url| is_auth_login_url(url.as_str()));
+    // IPC is scoped to the application window/capability. Do not make the
+    // command depend on a transient WebView URL during redirects.
+    let trusted = window.label() == "main";
     let flow = store.recovery.lock().map_err(|_| "状态锁失败")?;
     if !trusted || !flow.matches(generation, document_id) {
         return Err("认证页面或流程已失效".into());

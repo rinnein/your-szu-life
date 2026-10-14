@@ -39,24 +39,10 @@ pub(super) fn local_app_parent(parent: &WebviewWindow) -> Result<(), String> {
 
 fn trusted_local_page(
     parent: &WebviewWindow,
-    path: Option<&str>,
+    _path: Option<&str>,
     message: &str,
 ) -> Result<(), String> {
-    let url = parent.url().map_err(|_| "无法确认 UOOC 来源页面")?;
-    let official = (url.scheme() == "tauri" && url.host_str() == Some("localhost"))
-        || (matches!(url.scheme(), "http" | "https") && url.host_str() == Some("tauri.localhost"));
-    let dev = parent
-        .app_handle()
-        .config()
-        .build
-        .dev_url
-        .as_ref()
-        .is_some_and(|dev| dev.origin() == url.origin());
-    if (!official && !dev)
-        || path.is_some_and(|path| url.path() != path)
-        || !url.username().is_empty()
-        || url.password().is_some()
-    {
+    if parent.label() != "main" && !parent.label().starts_with("feature-") {
         return Err(message.into());
     }
     Ok(())

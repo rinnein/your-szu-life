@@ -4,7 +4,7 @@ use super::{
     model::{parse_observation, NetworkFeePortalNotice, NoticeCode, PageObservation},
     scripts::{cancel_script, page_script},
     state::{Action, CampusPaymentsStore, Phase, MANUAL_MESSAGE},
-    urls::{application_return_url, same_application_origin},
+    urls::same_application_origin,
     PORTAL_URL,
 };
 use crate::auth;
@@ -24,14 +24,10 @@ pub(super) fn local_return_url(window: &WebviewWindow) -> Result<Url, String> {
     if window.label() != "main" && !window.label().starts_with("feature-") {
         return Err("请从应用内的校园卡/电费/网费页面打开网费服务。".into());
     }
-    let current = window.url().map_err(|_| "无法确认当前应用页面")?;
-    let dev_url = if cfg!(debug_assertions) {
-        window.app_handle().config().build.dev_url.as_ref()
-    } else {
-        None
-    };
-    application_return_url(&current, dev_url)
-        .ok_or_else(|| "请从应用内的校园卡/电费/网费页面打开网费服务。".into())
+    let mut current = window.url().map_err(|_| "无法确认当前应用页面")?;
+    current.set_query(None);
+    current.set_fragment(None);
+    Ok(current)
 }
 
 pub(super) fn open(parent: WebviewWindow) -> Result<(), String> {

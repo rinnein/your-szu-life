@@ -22,10 +22,11 @@ pub(super) fn is_auth_login_url(raw: &str) -> bool {
     let Ok(url) = raw.parse::<tauri::Url>() else {
         return false;
     };
+    let path = url.path().trim_end_matches('/');
     url.scheme() == "https"
         && url.host_str() == Some(AUTH_HOST)
         && url.port_or_known_default() == Some(443)
-        && url.path() == "/authserver/login"
+        && (path == "/authserver/login" || path.starts_with("/authserver/login;"))
 }
 
 pub(super) fn is_authserver_url(raw: &str) -> bool {
@@ -39,7 +40,7 @@ pub(super) fn is_auth_profile_url(raw: &str) -> bool {
     let Ok(url) = raw.parse::<tauri::Url>() else {
         return false;
     };
-    let path = url.path();
+    let path = url.path().trim_end_matches('/');
     is_authserver_url(raw) && (path == "/personalInfo" || path.starts_with("/personalInfo/"))
 }
 

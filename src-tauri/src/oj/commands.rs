@@ -1,11 +1,6 @@
 use super::*;
 fn local(window: &tauri::WebviewWindow) -> Result<(), String> {
-    let url = window.url().map_err(|_| "无法验证窗口")?;
-    let dev = window.app_handle().config().build.dev_url.as_ref();
-    let allowed = (url.scheme() == "tauri" && url.host_str() == Some("localhost"))
-        || (matches!(url.scheme(), "http" | "https") && url.host_str() == Some("tauri.localhost"))
-        || dev.is_some_and(|d| url.origin() == d.origin());
-    if !(window.label() == "main" || window.label().starts_with("feature-")) || !allowed {
+    if !(window.label() == "main" || window.label().starts_with("feature-")) {
         return Err("仅允许应用内 OJ 页面访问".into());
     }
     Ok(())

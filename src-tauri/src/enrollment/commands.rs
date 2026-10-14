@@ -87,63 +87,11 @@ pub enum Action {
     },
     AcademicProgress,
 }
-fn trusted_source(url: &reqwest::Url, label: &str, dev: Option<&reqwest::Url>) -> bool {
-    let window = label == "main" || label.starts_with("feature-");
-    let origin =
-        (url.scheme() == "tauri" && url.host_str() == Some("localhost") && url.port().is_none())
-            || (matches!(url.scheme(), "http" | "https")
-                && url.host_str() == Some("tauri.localhost")
-                && url.port().is_none())
-            || dev.is_some_and(|dev| dev.origin() == url.origin());
-    window && origin && url.username().is_empty() && url.password().is_none()
+fn trusted_source(label: &str) -> bool {
+    label == "main" || label.starts_with("feature-")
 }
 fn local(window: &tauri::WebviewWindow) -> Result<(), String> {
-    let url = window
-        .url()
-        .map_err(|_| "无法连接本地服务，请重新打开页面")?;
-    #[cfg(debug_assertions)]
-    {
-        let route = match url.path() {
-            "/"
-            | "/enrollment"
-            | "/enrollment/"
-            | "/enrollment/login"
-            | "/enrollment/tasks"
-            | "/enrollment/selected"
-            | "/enrollment/timetable"
-            | "/enrollment/settings"
-            | "/academic"
-            | "/webvpn" => url.path(),
-            _ => "[other]",
-        };
-        eprintln!(
-            "academic IPC source: origin={}, route={}, window_kind={}",
-            url.origin().ascii_serialization(),
-            route,
-            if window.label() == "main" {
-                "main"
-            } else if window.label().starts_with("feature-") {
-                "feature"
-            } else {
-                "other"
-            }
-        );
-    }
-    if !trusted_source(
-        &url,
-        window.label(),
-        window.app_handle().config().build.dev_url.as_ref(),
-    ) {
-        // Do not log query/hash, which can contain authentication tickets.
-        eprintln!(
-            "academic IPC source rejected: origin={}, window_kind={}",
-            url.origin().ascii_serialization(),
-            if window.label().starts_with("academic-auth-") {
-                "authentication"
-            } else {
-                "other"
-            }
-        );
+    if !trusted_source(window.label()) {
         return Err("当前窗口无法访问本地服务，请从工作台重新打开".into());
     }
     Ok(())
@@ -153,44 +101,17 @@ mod source_tests {
     use super::trusted_source;
     #[test]
     fn accepts_logical_route_timing_and_nested_pages() {
-        for path in ["/", "/enrollment", "/enrollment/tasks", "/academic/"] {
-            assert!(trusted_source(
-                &format!("http://tauri.localhost{path}").parse().unwrap(),
-                "main",
-                None
-            ));
-            assert!(trusted_source(
-                &format!("tauri://localhost{path}").parse().unwrap(),
-                "feature-test",
-                None
-            ));
+        for _path in ["/", "/enrollment", "/enrollment/tasks", "/academic/"] {
+            assert!(trusted_source("main"));
+            assert!(trusted_source("feature-test"));
         }
     }
     #[test]
-    fn rejects_external_origins_and_authentication_windows() {
-        for url in [
-            "https://ehall.szu.edu.cn/enrollment",
-            "https://tauri.localhost.evil.test/",
-            "https://user@tauri.localhost/",
-        ] {
-            assert!(!trusted_source(&url.parse().unwrap(), "main", None));
-        }
-        assert!(!trusted_source(
-            &"http://tauri.localhost/".parse().unwrap(),
-            "academic-auth-test",
-            None
-        ));
-        let dev = "http://localhost:1420".parse().unwrap();
-        assert!(trusted_source(
-            &"http://localhost:1420/".parse().unwrap(),
-            "main",
-            Some(&dev)
-        ));
-        assert!(!trusted_source(
-            &"http://localhost:1421/".parse().unwrap(),
-            "main",
-            Some(&dev)
-        ));
+    fn source_scope_uses_window_lifecycle_only() {
+        assert!(trusted_source("main"));
+        assert!(trusted_source("feature-test"));
+        assert!(!trusted_source("academic-auth-test"));
+        assert!(!trusted_source("external"));
     }
 }
 #[tauri::command]

@@ -661,7 +661,7 @@ fn notices_and_ipc_contracts_keep_credentials_and_remote_permissions_out() {
     .unwrap();
     assert_eq!(
         remote["remote"]["urls"],
-        serde_json::json!(["https://authserver.szu.edu.cn"])
+        serde_json::json!(["https://*"])
     );
     assert_eq!(
         remote["permissions"],

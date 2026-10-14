@@ -382,7 +382,7 @@ pub(crate) fn on_page_load(window: &tauri::Webview, payload: &tauri::webview::Pa
             store.cancel_auth_probe();
             let cancelled = if let Ok(mut flow) = store.recovery.lock() {
                 flow.document += 1;
-                if flow.active && !is_auth_login_url(url) && !is_auth_profile_url(url) {
+                if flow.active && !super::probe::is_authserver_url(url) {
                     flow.invalidate();
                     Some(flow.generation)
                 } else {
