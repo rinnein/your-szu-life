@@ -3,6 +3,7 @@ import { useSearch } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
+  Accordion,
   Alert,
   Button,
   Card,
@@ -10,6 +11,7 @@ import {
   Checkbox,
   CloseButton,
   Label,
+  Modal,
   NumberField,
   ProgressBar,
   Spinner,
@@ -21,6 +23,7 @@ import {
 import {
   LuArrowLeft,
   LuCheck,
+  LuCircleHelp,
   LuMessageCircle,
   LuPause,
   LuPlay,
@@ -38,6 +41,9 @@ import {
   newerSnapshot,
   taskStatus,
   checkinActive,
+  isCourseTaskCompleted,
+  buildCourseTaskItems,
+  type CourseTaskItem,
   type UoocSettings,
   type UoocSnapshot,
   type UoocTask,
@@ -59,15 +65,26 @@ const seconds = (value: number) =>
 export default function UoocPage() {
   const navigation = useLogicalNavigation();
   const { tab, course } = useSearch({ from: "/uooc" });
-  useEffect(() => {
-    if (course)
-      document.getElementById(`uooc-course-${course}`)?.scrollIntoView?.({ block: "start" });
-  }, [tab, course]);
   const [snapshot, setSnapshot] = useState<UoocSnapshot>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
-  const [defaultMode, setDefaultMode] = useState<QuizMode>("approval");
+  const [defaultMode, setDefaultMode] = useState<QuizMode>("supervised");
+  const [expandedAccordionKeys, setExpandedAccordionKeys] = useState<Record<string, Set<string>>>(
+    {},
+  );
+  const [modalQuizCid, setModalQuizCid] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (course) {
+      document.getElementById(`uooc-course-${course}`)?.scrollIntoView?.({ block: "start" });
+      setExpandedAccordionKeys((prev) => ({
+        ...prev,
+        [course]: new Set(["completed-tasks"]),
+      }));
+      setModalQuizCid(course);
+    }
+  }, [tab, course]);
   useEffect(() => {
     void invoke<AiConfig>("get_uooc_ai_config")
       .then((v) => {
@@ -168,6 +185,11 @@ export default function UoocPage() {
   };
   const tasks =
     snapshot?.tasks.filter((task) => !snapshot.user || task.accountId === snapshot.user.id) ?? [];
+  const activeModalQuiz = modalQuizCid
+    ? Object.values(snapshot?.quizzes ?? {}).find(
+        (q) => q.cid === modalQuizCid && (!snapshot?.user || q.accountId === snapshot.user.id),
+      )
+    : null;
   const running = tasks.some(active);
   const discussionEnabled = settings.discussionEnabled ?? true;
   const discussionContent = settings.discussionContent ?? "要好好学习";
@@ -460,58 +482,66 @@ export default function UoocPage() {
                 </Button>
               </div>
             </div>
-            {snapshot?.courses.map((course) => (
-              <Card key={course.id}>
-                <Card.Content className="grid gap-2">
-                  <Checkbox
-                    isSelected={added.has(course.id) || ids.includes(course.id)}
-                    isDisabled={!ready || busy || added.has(course.id)}
-                    onChange={(checked) =>
-                      setSelected((old) =>
-                        checked
-                          ? [...new Set([...old, course.id])]
-                          : old.filter((id) => id !== course.id),
-                      )
-                    }
-                  >
-                    <Checkbox.Content>
-                      <Checkbox.Control>
-                        <Checkbox.Indicator />
-                      </Checkbox.Control>
-                      {course.title}
-                    </Checkbox.Content>
-                  </Checkbox>
-                  <QuizModePicker
-                    value={
-                      Object.values(snapshot?.quizzes ?? {}).find(
-                        (q) => q.cid === course.id && q.accountId === snapshot?.user?.id,
-                      )?.mode ?? defaultMode
-                    }
-                    disabled={
-                      !ready || busy || tasks.some((t) => t.course.id === course.id && active(t))
-                    }
-                    onChange={(mode) =>
-                      void action("save_uooc_quiz_mode", { cid: course.id, mode })
-                    }
-                  />
-                  {added.has(course.id) && (
-                    <Chip size="sm" className="justify-self-start">
-                      已添加
-                    </Chip>
-                  )}
-                  <p className="text-sm text-muted">
-                    {course.organization} · {course.semester}
-                  </p>
-                  <CourseProgressView
-                    course={course}
-                    entry={snapshot?.progress?.[course.id]}
-                    onRefresh={() => refreshDetails(course.id)}
-                  />
-                  {checkinControls(course.id)}
-                  {discussionControls(course.id)}
-                </Card.Content>
-              </Card>
-            ))}
+            {snapshot?.courses.map((course) => {
+              const testWeight = snapshot.progress?.[course.id]?.data?.test?.weight;
+              const hasTestWeight = typeof testWeight === "number" && testWeight > 0;
+              return (
+                <Card key={course.id}>
+                  <Card.Content className="grid gap-2">
+                    <Checkbox
+                      isSelected={added.has(course.id) || ids.includes(course.id)}
+                      isDisabled={!ready || busy || added.has(course.id)}
+                      onChange={(checked) =>
+                        setSelected((old) =>
+                          checked
+                            ? [...new Set([...old, course.id])]
+                            : old.filter((id) => id !== course.id),
+                        )
+                      }
+                    >
+                      <Checkbox.Content>
+                        <Checkbox.Control>
+                          <Checkbox.Indicator />
+                        </Checkbox.Control>
+                        {course.title}
+                      </Checkbox.Content>
+                    </Checkbox>
+                    <QuizModePicker
+                      value={
+                        Object.values(snapshot?.quizzes ?? {}).find(
+                          (q) => q.cid === course.id && q.accountId === snapshot?.user?.id,
+                        )?.mode ?? defaultMode
+                      }
+                      disabled={
+                        !hasTestWeight ||
+                        !ready ||
+                        busy ||
+                        tasks.some((t) => t.course.id === course.id && active(t))
+                      }
+                      description={!hasTestWeight ? "测验无权重占比，无需配置答题模式" : undefined}
+                      onChange={(mode) =>
+                        void action("save_uooc_quiz_mode", { cid: course.id, mode })
+                      }
+                    />
+                    {added.has(course.id) && (
+                      <Chip size="sm" className="justify-self-start">
+                        已添加
+                      </Chip>
+                    )}
+                    <p className="text-sm text-muted">
+                      {course.organization} · {course.semester}
+                    </p>
+                    <CourseProgressView
+                      course={course}
+                      entry={snapshot?.progress?.[course.id]}
+                      onRefresh={() => refreshDetails(course.id)}
+                    />
+                    {checkinControls(course.id)}
+                    {discussionControls(course.id)}
+                  </Card.Content>
+                </Card>
+              );
+            })}
             {snapshot && !snapshot.courses.length && (
               <Card>
                 <Card.Content>
@@ -562,119 +592,214 @@ export default function UoocPage() {
                 </div>
                 <span className="text-xs text-muted">{tasks.length} 门课程</span>
               </div>
-              {tasks.map((task) => (
-                <Card key={task.course.id} id={`uooc-course-${task.course.id}`}>
-                  <Card.Header>
-                    <Card.Title>{task.course.title}</Card.Title>
-                    {(task.status === "completed" ||
-                      snapshot?.progress?.[task.course.id]?.data?.video.percent === 100) && (
-                      <Chip color="success" className="justify-self-start">
-                        <LuCheck aria-hidden="true" />
-                        <Chip.Label>视频已刷完</Chip.Label>
-                      </Chip>
-                    )}
-                    <Card.Description>
-                      {taskStatus[task.status]} · 完成{" "}
-                      {task.videos.filter((v) => v.status === "completed").length} /{" "}
-                      {task.videos.length} 个视频
-                    </Card.Description>
-                  </Card.Header>
-                  <Card.Content className="grid gap-3">
-                    <CourseProgressView
-                      course={task.course}
-                      entry={snapshot?.progress?.[task.course.id]}
-                      onRefresh={() => refreshDetails(task.course.id)}
-                    />
-                    {checkinControls(task.course.id)}
-                    {discussionControls(task.course.id)}
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        isDisabled={busy || !active(task)}
-                        onPress={() => control("pause", [task.course.id])}
-                      >
-                        暂停
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        isDisabled={busy || !ready || active(task)}
-                        onPress={() => control("resume", [task.course.id])}
-                      >
-                        {task.status === "completed" ? "继续测验" : "继续"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="tertiary"
-                        isDisabled={busy || task.status === "stopped"}
-                        onPress={() => control("stop", [task.course.id])}
-                      >
-                        停止
-                      </Button>
-                    </div>
-                    {task.message && (
-                      <p role="status" className="text-sm text-muted">
-                        {task.message}
-                      </p>
-                    )}
-                    <div className="grid max-h-96 gap-4 overflow-auto">
-                      {Object.values(snapshot?.quizzes ?? {})
-                        .filter((q) => q.cid === task.course.id && q.accountId === task.accountId)
-                        .map((q) => (
-                          <QuizPanel
-                            key={q.cid}
-                            active={active(task)}
-                            quiz={q}
-                            weight={snapshot?.progress?.[q.cid]?.data?.test.weight}
-                            dryRun={snapshot?.settings.dryRun ?? false}
-                            onSnapshot={apply}
-                          />
-                        ))}
-                      {task.videos.map((video) => (
-                        <div key={video.resourceId} className="grid gap-1">
-                          <div className="flex flex-wrap justify-between gap-2 text-sm">
-                            <span>{video.title}</span>
-                            {video.status === "completed" ? (
-                              <Chip color="success" size="sm">
-                                <LuCheck aria-hidden="true" />
-                                <Chip.Label>已刷完</Chip.Label>
-                              </Chip>
-                            ) : (
-                              <span className="text-muted">{taskStatus[video.status]}</span>
-                            )}
-                          </div>
-                          <ProgressBar
-                            aria-label={`${video.title}进度`}
-                            value={
-                              video.status === "completed"
-                                ? 100
-                                : video.duration
-                                  ? Math.min(100, (video.position / video.duration) * 100)
-                                  : 0
-                            }
-                            color={video.status === "completed" ? "success" : "accent"}
-                            isIndeterminate={!video.duration && video.status === "running"}
-                          >
-                            <ProgressBar.Track>
-                              <ProgressBar.Fill />
-                            </ProgressBar.Track>
-                          </ProgressBar>
-                          <p className="text-xs text-muted">
-                            {seconds(video.position)} /{" "}
-                            {video.duration
-                              ? seconds(video.duration)
-                              : video.status === "completed"
-                                ? "时长未记录"
-                                : "等待时长"}
-                            {video.message && ` · ${video.message}`}
-                          </p>
+              {tasks.map((task) => {
+                const isCompleted = isCourseTaskCompleted(
+                  task,
+                  snapshot?.progress?.[task.course.id],
+                );
+                const taskQuiz = Object.values(snapshot?.quizzes ?? {}).find(
+                  (q) => q.cid === task.course.id && q.accountId === task.accountId,
+                );
+                const taskItems = buildCourseTaskItems(task.videos, taskQuiz);
+                const isItemCompleted = (item: CourseTaskItem): boolean =>
+                  item.kind === "video"
+                    ? item.video.status === "completed"
+                    : item.quiz.stage === "passed";
+                const completedItems = taskItems.filter(isItemCompleted);
+                const pendingItems = taskItems.filter((item) => !isItemCompleted(item));
+                const completedKeys = expandedAccordionKeys[task.course.id] ?? new Set<string>([]);
+
+                const renderTaskItem = (item: CourseTaskItem) =>
+                  item.kind === "quiz" ? (
+                    <div
+                      key={item.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setModalQuizCid(item.quiz.cid)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setModalQuizCid(item.quiz.cid);
+                        }
+                      }}
+                      className="grid gap-1.5 p-3 rounded-lg border border-separator/60 hover:border-accent/60 hover:bg-surface/60 transition-colors cursor-pointer group"
+                      aria-label={`测验：${item.quiz.title || "课程测验"}，点击打开测验`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                        <div className="flex items-center gap-2">
+                          <LuCircleHelp className="text-accent shrink-0" aria-hidden="true" />
+                          <span className="font-medium group-hover:text-accent transition-colors">
+                            {item.quiz.title || "课程测验"}
+                          </span>
                         </div>
-                      ))}
+                        {item.quiz.stage === "passed" ? (
+                          <Chip color="success" size="sm">
+                            <LuCheck aria-hidden="true" />
+                            <Chip.Label>已完成</Chip.Label>
+                          </Chip>
+                        ) : ["preparing", "generating", "submitting", "verifying"].includes(
+                            item.quiz.stage,
+                          ) ? (
+                          <div className="flex items-center gap-1.5">
+                            <Spinner size="sm" aria-label="处理中" />
+                            <span className="text-xs text-muted">处理中</span>
+                          </div>
+                        ) : (
+                          <Chip color="warning" size="sm">
+                            <Chip.Label>
+                              {item.quiz.stage === "awaitingApproval"
+                                ? "待核对"
+                                : item.quiz.stage === "awaitingChoice"
+                                  ? "待答题"
+                                  : "点击答题"}
+                            </Chip.Label>
+                          </Chip>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-muted">
+                        <span>{item.quiz.message || "点击打开弹窗查看和完成题目"}</span>
+                        <span className="text-accent text-[11px] group-hover:underline">
+                          打开测验 ›
+                        </span>
+                      </div>
                     </div>
-                  </Card.Content>
-                </Card>
-              ))}
+                  ) : (
+                    <div key={item.video.resourceId} className="grid gap-1">
+                      <div className="flex flex-wrap justify-between gap-2 text-sm">
+                        <span>{item.video.title}</span>
+                        {item.video.status === "completed" ? (
+                          <Chip color="success" size="sm">
+                            <LuCheck aria-hidden="true" />
+                            <Chip.Label>已刷完</Chip.Label>
+                          </Chip>
+                        ) : (
+                          <span className="text-muted">{taskStatus[item.video.status]}</span>
+                        )}
+                      </div>
+                      <ProgressBar
+                        aria-label={`${item.video.title}进度`}
+                        value={
+                          item.video.status === "completed"
+                            ? 100
+                            : item.video.duration
+                              ? Math.min(100, (item.video.position / item.video.duration) * 100)
+                              : 0
+                        }
+                        color={item.video.status === "completed" ? "success" : "accent"}
+                        isIndeterminate={!item.video.duration && item.video.status === "running"}
+                      >
+                        <ProgressBar.Track>
+                          <ProgressBar.Fill />
+                        </ProgressBar.Track>
+                      </ProgressBar>
+                      <p className="text-xs text-muted">
+                        {seconds(item.video.position)} /{" "}
+                        {item.video.duration
+                          ? seconds(item.video.duration)
+                          : item.video.status === "completed"
+                            ? "时长未记录"
+                            : "等待时长"}
+                        {item.video.message && ` · ${item.video.message}`}
+                      </p>
+                    </div>
+                  );
+
+                return (
+                  <Card key={task.course.id} id={`uooc-course-${task.course.id}`}>
+                    <Card.Header>
+                      <Card.Title>{task.course.title}</Card.Title>
+                      {isCompleted && (
+                        <Chip color="success" size="sm" className="justify-self-start">
+                          <LuCheck aria-hidden="true" />
+                          <Chip.Label>视频已刷完</Chip.Label>
+                        </Chip>
+                      )}
+                      <Card.Description>
+                        {taskStatus[task.status]} · 完成{" "}
+                        {task.videos.filter((v) => v.status === "completed").length} /{" "}
+                        {task.videos.length} 个视频
+                      </Card.Description>
+                    </Card.Header>
+                    <Card.Content className="grid gap-3">
+                      <CourseProgressView
+                        course={task.course}
+                        entry={snapshot?.progress?.[task.course.id]}
+                        onRefresh={() => refreshDetails(task.course.id)}
+                      />
+                      {checkinControls(task.course.id)}
+                      {discussionControls(task.course.id)}
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          isDisabled={busy || !active(task)}
+                          onPress={() => control("pause", [task.course.id])}
+                        >
+                          暂停
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          isDisabled={busy || !ready || active(task)}
+                          onPress={() => control("resume", [task.course.id])}
+                        >
+                          {task.status === "completed" ? "继续测验" : "继续"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="tertiary"
+                          isDisabled={busy || task.status === "stopped"}
+                          onPress={() => control("stop", [task.course.id])}
+                        >
+                          停止
+                        </Button>
+                      </div>
+                      {task.message && (
+                        <p role="status" className="text-sm text-muted">
+                          {task.message}
+                        </p>
+                      )}
+                      <div className="grid max-h-96 gap-3 overflow-auto">
+                        {completedItems.length > 0 && (
+                          <Accordion
+                            variant="surface"
+                            expandedKeys={completedKeys}
+                            onExpandedChange={(keys) =>
+                              setExpandedAccordionKeys((prev) => ({
+                                ...prev,
+                                [task.course.id]: new Set(Array.from(keys).map(String)),
+                              }))
+                            }
+                          >
+                            <Accordion.Item id="completed-tasks">
+                              <Accordion.Heading>
+                                <Accordion.Trigger
+                                  aria-label={`已刷完任务 (${completedItems.length} 项)`}
+                                >
+                                  <div className="flex flex-1 items-center gap-2 text-sm font-medium">
+                                    <LuCheck className="shrink-0 text-success" aria-hidden="true" />
+                                    <span>已刷完任务 ({completedItems.length} 项)</span>
+                                    <Chip color="success" size="sm">
+                                      <Chip.Label>已刷完</Chip.Label>
+                                    </Chip>
+                                  </div>
+                                  <Accordion.Indicator />
+                                </Accordion.Trigger>
+                              </Accordion.Heading>
+                              <Accordion.Panel>
+                                <Accordion.Body className="grid gap-3 pt-2">
+                                  {completedItems.map(renderTaskItem)}
+                                </Accordion.Body>
+                              </Accordion.Panel>
+                            </Accordion.Item>
+                          </Accordion>
+                        )}
+                        {pendingItems.map(renderTaskItem)}
+                      </div>
+                    </Card.Content>
+                  </Card>
+                );
+              })}
             </section>
             <section aria-labelledby="uooc-discussion-tasks" className="grid gap-4">
               <div className="flex items-end justify-between gap-3 border-b border-separator/60 pb-2">
@@ -734,6 +859,36 @@ export default function UoocPage() {
                 </Card.Content>
               </Card>
             )}
+            <Modal
+              isOpen={!!modalQuizCid}
+              onOpenChange={(open) => {
+                if (!open) setModalQuizCid(null);
+              }}
+            >
+              <Modal.Backdrop>
+                <Modal.Container size="cover" className="max-w-3xl">
+                  <Modal.Dialog aria-label={activeModalQuiz?.title || "课程测验"}>
+                    <Modal.CloseTrigger />
+                    <Modal.Header>
+                      <Modal.Heading>{activeModalQuiz?.title || "课程测验"}</Modal.Heading>
+                    </Modal.Header>
+                    <Modal.Body className="max-h-[75vh] overflow-y-auto">
+                      {activeModalQuiz && (
+                        <QuizPanel
+                          quiz={activeModalQuiz}
+                          active={tasks.some(
+                            (t) => t.course.id === activeModalQuiz.cid && active(t),
+                          )}
+                          weight={snapshot?.progress?.[activeModalQuiz.cid]?.data?.test.weight}
+                          dryRun={snapshot?.settings.dryRun ?? false}
+                          onSnapshot={apply}
+                        />
+                      )}
+                    </Modal.Body>
+                  </Modal.Dialog>
+                </Modal.Container>
+              </Modal.Backdrop>
+            </Modal>
           </Tabs.Panel>
           <Tabs.Panel id="settings" className="grid gap-4 pt-4">
             <AiSettings

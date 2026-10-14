@@ -121,6 +121,7 @@ async fn approval_flow_is_atomic_and_never_leaks_credentials_to_ai() {
         model: "test".into(),
         key: "test-ai-key".into(),
     };
+    service.ai.lock().unwrap().default_mode = Mode::Approval;
     service.start(vec!["42".into()]).unwrap();
     wait_finished(&service).await;
     let q = service.snapshot().quizzes["7/42"].clone();

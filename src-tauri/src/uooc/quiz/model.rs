@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 #[serde(rename_all = "camelCase")]
 pub(crate) enum Mode {
     Yolo,
-    #[default]
     Approval,
+    #[default]
     Supervised,
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]

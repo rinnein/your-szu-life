@@ -17,18 +17,20 @@ import {
 import type { AiConfig, QuizMode } from "./types";
 
 export const modeLabels: Record<QuizMode, string> = {
+  supervised: "手动答题",
   approval: "请求批准",
-  supervised: "监督",
   yolo: "YOLO",
 };
 export function QuizModePicker({
   value,
   onChange,
   disabled = false,
+  description,
 }: {
   value: QuizMode;
   onChange: (value: QuizMode) => void;
   disabled?: boolean;
+  description?: string;
 }) {
   return (
     <Select
@@ -44,6 +46,7 @@ export function QuizModePicker({
         <Select.Value />
         <Select.Indicator />
       </Select.Trigger>
+      {description && <Description>{description}</Description>}
       <Select.Popover>
         <ListBox>
           {Object.entries(modeLabels).map(([key, label]) => (
@@ -241,7 +244,8 @@ export function AiSettings({
           onChange={(defaultMode) => setConfig({ ...config, defaultMode })}
         />
         <Description>
-          默认请求批准：先生成整卷答案，确认后才提交。YOLO 未通过时停止当前课程，其他课程继续。
+          默认手动答题：需自行作答或在弹窗中选择 AI
+          答题。请求批准：先生成整卷答案，确认后才提交。YOLO 未通过时停止当前课程，其他课程继续。
         </Description>
         <Button
           isDisabled={busy}

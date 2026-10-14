@@ -11,7 +11,7 @@ const config: AiConfig = {
   jev: { baseUrl: "https://api.typesafe.ai/v1", model: "jev-latest", hasKey: false },
   jevEnabled: false,
   confidence: 0.8,
-  defaultMode: "approval",
+  defaultMode: "supervised",
 };
 beforeEach(() => {
   vi.clearAllMocks();
@@ -48,7 +48,7 @@ it("keeps connection fields out of UOOC and saves only model preferences", async
         jevModel: "jev-latest",
         jevEnabled: false,
         confidence: 0.8,
-        defaultMode: "approval",
+        defaultMode: "supervised",
       },
     }),
   );

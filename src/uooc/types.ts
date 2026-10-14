@@ -200,3 +200,74 @@ export type AiConfig = {
   confidence: number;
   defaultMode: QuizMode;
 };
+
+export type CourseTaskItem =
+  | {
+      id: string;
+      kind: "video";
+      video: UoocVideo;
+    }
+  | {
+      id: string;
+      kind: "quiz";
+      quiz: QuizState;
+    };
+
+export function isCourseTaskCompleted(task: UoocTask, progressEntry?: ProgressEntry): boolean {
+  return (
+    task.status === "completed" ||
+    progressEntry?.data?.video.percent === 100 ||
+    (task.videos.length > 0 && task.videos.every((v) => v.status === "completed"))
+  );
+}
+
+export function buildCourseTaskItems(videos: UoocVideo[] = [], quiz?: QuizState): CourseTaskItem[] {
+  const videoItems: CourseTaskItem[] = videos.map((v) => ({
+    id: `video-${v.resourceId}`,
+    kind: "video",
+    video: v,
+  }));
+
+  if (
+    !quiz ||
+    quiz.stage === "disabled" ||
+    (!quiz.taskId && !quiz.title && quiz.stage === "idle")
+  ) {
+    return videoItems;
+  }
+
+  const quizItem: CourseTaskItem = {
+    id: `quiz-${quiz.cid}-${quiz.resourceId || quiz.taskId || "current"}`,
+    kind: "quiz",
+    quiz,
+  };
+
+  if (quiz.videoComplete) {
+    return [...videoItems, quizItem];
+  }
+
+  if (quiz.gated) {
+    let lastCompletedIdx = -1;
+    for (let i = videos.length - 1; i >= 0; i--) {
+      if (videos[i].status === "completed") {
+        lastCompletedIdx = i;
+        break;
+      }
+    }
+    if (lastCompletedIdx === -1) {
+      return [quizItem, ...videoItems];
+    }
+    const result = [...videoItems];
+    result.splice(lastCompletedIdx + 1, 0, quizItem);
+    return result;
+  }
+
+  const firstIncompleteIdx = videos.findIndex((v) => v.status !== "completed");
+  if (firstIncompleteIdx !== -1) {
+    const result = [...videoItems];
+    result.splice(firstIncompleteIdx, 0, quizItem);
+    return result;
+  }
+
+  return [...videoItems, quizItem];
+}

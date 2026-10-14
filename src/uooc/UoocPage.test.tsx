@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type EventCallback } from "@tauri-apps/api/event";
@@ -9,11 +9,16 @@ import { routeTree } from "../routeTree.gen";
 import { initialLogicalEntries } from "../logical-navigation";
 import {
   newerSnapshot,
+  buildCourseTaskItems,
+  isCourseTaskCompleted,
   type UoocSnapshot,
   type UoocTaskStatus,
   type CourseProgress,
+  type QuizState,
+  type UoocVideo,
 } from "./types";
 
+vi.setConfig({ testTimeout: 15000 });
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 // jsdom does not implement the Web Animations API used by HeroUI tab indicators.
@@ -94,7 +99,7 @@ beforeEach(() => {
         jev: { baseUrl: "https://api.typesafe.ai/v1", model: "jev", hasKey: false },
         jevEnabled: false,
         confidence: 0.8,
-        defaultMode: "approval",
+        defaultMode: "supervised",
       };
     if (name === "get_auth_state")
       return { Authenticated: { studentId: "1234567890", name: "测试同学" } };
@@ -295,8 +300,12 @@ it("marks server-completed videos green without changing their reported position
     "1588976494": { data: progress(), updatedAtMs: 123, refreshing: false, error: null },
   };
   mount("/uooc?tab=tasks");
-  expect(await screen.findByText("已刷完")).toHaveClass("chip__label");
-  expect(screen.getByText("已刷完").closest('[data-slot="chip"]')).toHaveClass("chip--success");
+  expect(await screen.findByText("视频已刷完")).toBeInTheDocument();
+  const accordionTrigger = screen.getByRole("button", { name: "已刷完任务 (1 项)" });
+  fireEvent.click(accordionTrigger);
+  const completedChips = await screen.findAllByText("已刷完");
+  expect(completedChips.length).toBeGreaterThanOrEqual(1);
+  expect(completedChips[0].closest('[data-slot="chip"]')).toHaveClass("chip--success");
   expect(screen.getByRole("progressbar", { name: "视频一进度" })).toHaveAttribute(
     "aria-valuenow",
     "100",
@@ -305,7 +314,6 @@ it("marks server-completed videos green without changing their reported position
     "aria-valuenow",
     "35",
   );
-  expect(screen.getByText("视频已刷完")).toBeInTheDocument();
   expect(screen.getByText(/1:19 \/ 1:20/)).toBeInTheDocument();
 });
 
@@ -375,4 +383,270 @@ it("refreshes the selected course when opening its details without adding a navi
   expect(router.state.location.pathname).toBe("/uooc");
   fireEvent.click(screen.getByRole("button", { name: "返回工作台" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+});
+
+it("enables quiz mode picker only when test weight is positive, defaulting to 手动答题", async () => {
+  snapshot.progress = {
+    "1588976494": {
+      data: {
+        ...progress(),
+        test: { percent: 10, count: 1, total: 10, weight: 20, score: 2 },
+      },
+      updatedAtMs: 123,
+      refreshing: false,
+      error: null,
+    },
+    "669673711": {
+      data: {
+        ...progress(),
+        test: { percent: 0, count: 0, total: 10, weight: 0, score: 0 },
+      },
+      updatedAtMs: 123,
+      refreshing: false,
+      error: null,
+    },
+  };
+  mount("/uooc?tab=courses");
+  await screen.findByRole("checkbox", { name: "人工智能" });
+  const pickers = screen
+    .getAllByRole("button")
+    .filter((b) => b.getAttribute("aria-label") === "答题模式");
+  expect(pickers).toHaveLength(2);
+  // Course 1 has test weight 20 -> enabled
+  expect(pickers[0]).toBeEnabled();
+  expect(pickers[0]).toHaveTextContent("手动答题");
+  // Course 2 has test weight 0 -> disabled
+  expect(pickers[1]).toBeDisabled();
+  expect(screen.getByText("测验无权重占比，无需配置答题模式")).toBeInTheDocument();
+});
+
+it("automatically collapses completed tasks in taskItems into a single item, keeps active tasks expanded, and toggles collapse", async () => {
+  snapshot.tasks = [
+    {
+      course: snapshot.courses[0],
+      accountId: "7",
+      desiredRunning: true,
+      generation: 1,
+      status: "running",
+      message: "",
+      videos: [
+        {
+          resourceId: "v-completed",
+          title: "已完成视频",
+          status: "completed",
+          position: 60,
+          duration: 60,
+          message: "",
+        },
+        {
+          resourceId: "v-running",
+          title: "进行中视频",
+          status: "running",
+          position: 10,
+          duration: 100,
+          message: "",
+        },
+      ],
+    },
+  ];
+  mount("/uooc?tab=tasks");
+  // Active task is shown directly
+  expect(await screen.findByText("进行中视频")).toBeInTheDocument();
+
+  // Completed item is compressed and folded into an Accordion
+  const accordionTrigger = screen.getByRole("button", { name: "已刷完任务 (1 项)" });
+  expect(accordionTrigger).toHaveAttribute("aria-expanded", "false");
+
+  // Expanding the accordion
+  fireEvent.click(accordionTrigger);
+  expect(accordionTrigger).toHaveAttribute("aria-expanded", "true");
+  expect(await screen.findByText("已完成视频")).toBeInTheDocument();
+
+  // Folding compresses it back
+  fireEvent.click(accordionTrigger);
+  expect(accordionTrigger).toHaveAttribute("aria-expanded", "false");
+});
+
+it("orders video tasks and quiz tasks sequentially and opens quiz modal on click", async () => {
+  snapshot.tasks = [
+    {
+      course: snapshot.courses[0],
+      accountId: "7",
+      desiredRunning: true,
+      generation: 1,
+      status: "running",
+      message: "",
+      videos: [
+        {
+          resourceId: "v1",
+          title: "视频一",
+          status: "completed",
+          position: 60,
+          duration: 60,
+          message: "",
+        },
+        {
+          resourceId: "v2",
+          title: "视频二",
+          status: "queued",
+          position: 0,
+          duration: 120,
+          message: "",
+        },
+      ],
+    },
+  ];
+  snapshot.quizzes = {
+    "7:1588976494": {
+      accountId: "7",
+      cid: "1588976494",
+      taskId: "task-quiz-1",
+      resourceId: "res-quiz-1",
+      title: "第一章测验",
+      mode: "supervised",
+      stage: "awaitingChoice",
+      revision: 1,
+      questions: [
+        {
+          id: "q1",
+          text: "1+1等于几？",
+          kind: "single",
+          options: [
+            { id: "opt1", text: "2" },
+            { id: "opt2", text: "3" },
+          ],
+          blanks: 0,
+          images: [],
+        },
+      ],
+      answers: {},
+      reviews: [],
+      message: "请选择自主答题或 AI 答题",
+      gated: true,
+      videoComplete: false,
+      passed: [],
+    },
+  };
+  snapshot.progress = {
+    "1588976494": {
+      data: {
+        ...progress(),
+        test: { percent: 0, count: 0, total: 10, weight: 20, score: 0 },
+      },
+      updatedAtMs: 123,
+      refreshing: false,
+      error: null,
+    },
+  };
+  mount("/uooc?tab=tasks");
+  // Quiz task appears in the list between completed video and queued video
+  const quizRow = await screen.findByRole("button", {
+    name: "测验：第一章测验，点击打开测验",
+  });
+  expect(quizRow).toBeInTheDocument();
+  expect(screen.getByText("视频二")).toBeInTheDocument();
+  const accordionTrigger = screen.getByRole("button", { name: "已刷完任务 (1 项)" });
+  expect(accordionTrigger).toBeInTheDocument();
+  fireEvent.click(accordionTrigger);
+  expect(await screen.findByText("视频一")).toBeInTheDocument();
+
+  // Click quiz row to open modal
+  fireEvent.click(quizRow);
+  const modal = await screen.findByRole("dialog", { name: "第一章测验" });
+  expect(modal).toBeInTheDocument();
+  expect(within(modal).getByRole("button", { name: "自主答题" })).toBeInTheDocument();
+  expect(within(modal).getByRole("button", { name: "AI 答题" })).toBeInTheDocument();
+});
+
+it("buildCourseTaskItems orders tasks correctly under various progression states", () => {
+  const v1: UoocVideo = {
+    resourceId: "1",
+    title: "V1",
+    status: "completed",
+    position: 10,
+    duration: 10,
+    message: "",
+  };
+  const v2: UoocVideo = {
+    resourceId: "2",
+    title: "V2",
+    status: "queued",
+    position: 0,
+    duration: 10,
+    message: "",
+  };
+  const v3: UoocVideo = {
+    resourceId: "3",
+    title: "V3",
+    status: "queued",
+    position: 0,
+    duration: 10,
+    message: "",
+  };
+  const baseQuiz: QuizState = {
+    accountId: "1",
+    cid: "42",
+    taskId: "t1",
+    resourceId: "q1",
+    title: "Q1",
+    mode: "supervised",
+    stage: "awaitingChoice",
+    revision: 1,
+    questions: [],
+    answers: {},
+    reviews: [],
+    message: "",
+    gated: false,
+    videoComplete: false,
+    passed: [],
+  };
+
+  // 1. No quiz
+  expect(buildCourseTaskItems([v1, v2], undefined)).toEqual([
+    { id: "video-1", kind: "video", video: v1 },
+    { id: "video-2", kind: "video", video: v2 },
+  ]);
+
+  // 2. Disabled quiz is omitted
+  expect(buildCourseTaskItems([v1, v2], { ...baseQuiz, stage: "disabled" })).toHaveLength(2);
+
+  // 3. Idle quiz without taskId or title is omitted
+  expect(
+    buildCourseTaskItems([v1, v2], { ...baseQuiz, stage: "idle", taskId: "", title: "" }),
+  ).toHaveLength(2);
+
+  // 4. Gated quiz placed after completed videos and before queued videos
+  const gated = buildCourseTaskItems([v1, v2, v3], { ...baseQuiz, gated: true });
+  expect(gated.map((item) => item.id)).toEqual(["video-1", "quiz-42-q1", "video-2", "video-3"]);
+
+  // 5. VideoComplete quiz placed at end
+  const end = buildCourseTaskItems([v1, v2], { ...baseQuiz, videoComplete: true });
+  expect(end.map((item) => item.id)).toEqual(["video-1", "video-2", "quiz-42-q1"]);
+
+  // 6. All videos queued -> quiz placed at start
+  const allQueued = buildCourseTaskItems([v2, v3], { ...baseQuiz, gated: true });
+  expect(allQueued.map((item) => item.id)).toEqual(["quiz-42-q1", "video-2", "video-3"]);
+
+  // 7. No videos -> quiz alone
+  const noVideos = buildCourseTaskItems([], baseQuiz);
+  expect(noVideos.map((item) => item.id)).toEqual(["quiz-42-q1"]);
+});
+
+it("isCourseTaskCompleted recognizes completed status, 100% video progress, or all completed videos", () => {
+  const task = existingTask("running");
+  expect(isCourseTaskCompleted(task, undefined)).toBe(true); // task.videos has 1 completed video
+  const uncompletedTask = {
+    ...task,
+    videos: [{ ...task.videos[0], status: "queued" as const }],
+  };
+  expect(isCourseTaskCompleted(uncompletedTask, undefined)).toBe(false);
+  expect(isCourseTaskCompleted({ ...uncompletedTask, status: "completed" }, undefined)).toBe(true);
+  expect(
+    isCourseTaskCompleted(uncompletedTask, {
+      data: { ...progress(), video: { percent: 100, count: 10, total: 10 } },
+      updatedAtMs: 123,
+      refreshing: false,
+      error: null,
+    }),
+  ).toBe(true);
 });

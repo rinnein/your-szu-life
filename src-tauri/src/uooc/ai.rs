@@ -32,7 +32,7 @@ impl Default for Config {
             },
             jev_enabled: false,
             confidence: 0.8,
-            default_mode: Mode::Approval,
+            default_mode: Mode::Supervised,
         }
     }
 }
