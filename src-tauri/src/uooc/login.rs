@@ -4,13 +4,29 @@ use super::{
     session, Service,
 };
 use std::{sync::Arc, time::Duration};
-use tauri::{Manager, WebviewWindow};
+use tauri::{Manager, Url, WebviewWindow};
 use tokio_util::sync::CancellationToken;
 
 pub(super) struct Attempt {
     pub label: String,
     parent: String,
     pub token: CancellationToken,
+}
+
+/// UOOC uses different post-login landing pages for desktop and mobile WebViews.
+/// Keep this deliberately broad: the hash route and intermediate home pages
+/// vary between WebView versions, while the host is already constrained by
+/// the login navigation flow.
+pub(super) fn is_completion_url(url: &Url) -> bool {
+    url.scheme() == "https"
+        && url.host_str() == Some("www.uooc.net.cn")
+        && url.port_or_known_default() == Some(443)
+        && url.username().is_empty()
+        && url.password().is_none()
+        && (url.path() == "/home"
+            || url.path().starts_with("/home/")
+            || url.path() == "/app/download"
+            || url.path().starts_with("/app/download/"))
 }
 
 pub(super) fn local_parent(parent: &WebviewWindow) -> Result<(), String> {
@@ -174,6 +190,12 @@ pub(super) async fn open(service: Arc<Service>, parent: WebviewWindow) -> Result
     tauri::async_runtime::spawn(async move {
         loop {
             tokio::select! { biased; _ = token.cancelled() => break, _ = tokio::time::sleep(Duration::from_secs(2)) => {} }
+            let Ok(url) = window.url() else {
+                continue;
+            };
+            if !is_completion_url(&url) {
+                continue;
+            }
             let capturing = window.clone();
             let jar =
                 match tauri::async_runtime::spawn_blocking(move || session::capture(&capturing))
@@ -193,9 +215,9 @@ pub(super) async fn open(service: Arc<Service>, parent: WebviewWindow) -> Result
             let Ok(user) = client.user(&token).await else {
                 continue;
             };
-            let Ok(courses) = client.courses(&token).await else {
-                continue;
-            };
+            // The user endpoint is the authoritative proof that the captured
+            // WebView cookies are usable. Course loading is follow-up data and
+            // must not keep a successful login window open indefinitely.
             {
                 let mut runtime = service.runtime.lock().unwrap();
                 if runtime.epoch != epoch || token.is_cancelled() {
@@ -207,7 +229,8 @@ pub(super) async fn open(service: Arc<Service>, parent: WebviewWindow) -> Result
                     continue;
                 }
                 *service.client.write().unwrap() = client;
-                runtime.snapshot.update_courses(user, courses);
+                runtime.snapshot.user = Some(user);
+                runtime.snapshot.courses.clear();
                 runtime.snapshot.session = SessionStatus::Ready;
                 runtime.snapshot.message.clear();
                 runtime.login.take();
@@ -215,8 +238,10 @@ pub(super) async fn open(service: Arc<Service>, parent: WebviewWindow) -> Result
             }
             let _ = window.destroy();
             let _ = parent.set_focus();
-            service.reconcile();
-            service.session_ready().await;
+            let refresh_service = service.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = refresh_service.refresh().await;
+            });
             return;
         }
         let _ = window.destroy();
@@ -302,4 +327,41 @@ pub(super) async fn logout(service: Arc<Service>, window: WebviewWindow) -> Resu
     })
     .await
     .map_err(|_| "无法清除 UOOC 网页会话".to_owned())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_completion_url;
+    use tauri::Url;
+
+    #[test]
+    fn accepts_desktop_and_mobile_post_login_landing_pages() {
+        for value in [
+            "https://www.uooc.net.cn/home#/center/course/learn",
+            "https://www.uooc.net.cn/home/center/course/learn",
+            "https://www.uooc.net.cn/home?from=login",
+            "https://www.uooc.net.cn/app/download",
+            "https://www.uooc.net.cn/app/download/#/course",
+        ] {
+            assert!(is_completion_url(&value.parse::<Url>().unwrap()), "{value}");
+        }
+    }
+
+    #[test]
+    fn rejects_login_and_untrusted_urls() {
+        for value in [
+            "https://www.uooc.net.cn/user/login",
+            "https://www.uooc.net.cn/other/home",
+            "https://www.uooc.net.cn/homepage",
+            "https://uooc.net.cn/home",
+            "http://www.uooc.net.cn/home",
+            "https://evil.example/home",
+            "https://user:pass@www.uooc.net.cn/home",
+        ] {
+            assert!(
+                !is_completion_url(&value.parse::<Url>().unwrap()),
+                "{value}"
+            );
+        }
+    }
 }
