@@ -28,8 +28,15 @@ pub(crate) struct NetworkSnapshot {
 
 #[cfg(not(target_os = "android"))]
 pub(super) fn command_text(command: &str, args: &[&str]) -> Option<String> {
-    Command::new(command)
-        .args(args)
+    let mut process = Command::new(command);
+    process.args(args);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW keeps GUI-subsystem builds from flashing conhost.
+        process.creation_flags(0x0800_0000);
+    }
+    process
         .output()
         .ok()
         .filter(|output| output.status.success())

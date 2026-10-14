@@ -281,14 +281,19 @@ pub(super) fn capture_auth_credentials(
 fn validate_recovery_page<'a>(
     window: &tauri::WebviewWindow,
     generation: &str,
-    document_id: &str,
+    _document_id: &str,
     store: &'a AuthStore,
 ) -> Result<std::sync::MutexGuard<'a, super::recovery::Recovery>, String> {
-    // IPC is scoped to the application window/capability. Do not make the
-    // command depend on a transient WebView URL during redirects.
+    // IPC is scoped to the application window/capability. WebView2 can deliver
+    // an old document's callback after navigation has already advanced the
+    // document counter, so the active authentication generation is the stable
+    // lifetime boundary here.
     let trusted = window.label() == "main";
     let flow = store.recovery.lock().map_err(|_| "状态锁失败")?;
-    if !trusted || !flow.matches(generation, document_id) {
+    if !trusted
+        || !flow.active
+        || generation.parse::<u64>().ok() != Some(flow.generation)
+    {
         return Err("认证页面或流程已失效".into());
     }
     Ok(flow)

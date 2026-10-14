@@ -399,7 +399,10 @@ pub(crate) fn on_page_load(window: &tauri::Webview, payload: &tauri::webview::Pa
             }
         }
     }
-    if is_finished && is_auth_login_url(url) {
+    // WebView2 can finish the document before the official page has rebuilt
+    // its live form. Start the bounded injection retry at both lifecycle
+    // points; Recovery deduplicates retries for the same document.
+    if (is_started || is_finished) && is_auth_login_url(url) {
         let app = window.app_handle();
         if let Some(store) = app.try_state::<AuthStore>() {
             store.cancel_auth_probe();
