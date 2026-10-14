@@ -22,15 +22,13 @@ jobs:
           - name: linux-x64
             os: ubuntu-latest
             bundles: deb appimage
-            paths: |
-              src-tauri/target/release/bundle/deb/*.deb
-              src-tauri/target/release/bundle/appimage/*.AppImage
+            platform: linux
+            arch: x64
           - name: windows-x64
             os: windows-latest
             bundles: nsis msi
-            paths: |
-              src-tauri/target/release/bundle/nsis/*.exe
-              src-tauri/target/release/bundle/msi/*.msi
+            platform: windows
+            arch: x64
 
     steps:
       - name: Check out repository
@@ -81,11 +79,36 @@ jobs:
       - name: Build desktop bundles
         run: vpr tauri build --ci --bundles ${{ matrix.bundles }}
 
+      - name: Normalize desktop bundle names
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -e "process.stdout.write(JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version)")"
+          output_dir="release-packages"
+          mkdir -p "$output_dir"
+          shopt -s nullglob
+          if [[ '${{ matrix.platform }}' == 'linux' ]]; then
+            files=(
+              src-tauri/target/release/bundle/deb/*.deb
+              src-tauri/target/release/bundle/appimage/*.AppImage
+            )
+          else
+            files=(
+              src-tauri/target/release/bundle/nsis/*.exe
+              src-tauri/target/release/bundle/msi/*.msi
+            )
+          fi
+          test "${#files[@]}" -gt 0
+          for file in "${files[@]}"; do
+            extension="${file##*.}"
+            cp "$file" "$output_dir/your-szu-life_${{ matrix.platform }}_${{ matrix.arch }}_${version}-release.${extension}"
+          done
+
       - name: Upload desktop bundles
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
-          path: ${{ matrix.paths }}
+          path: release-packages/*
           if-no-files-found: error
           retention-days: 14
 
@@ -200,36 +223,38 @@ jobs:
           keyPassword=changeit
           EOF
 
-      - name: Build Android APK and AAB
+      - name: Build Android APK
         # The release artifact is ARM64. Explicitly limit Tauri/Gradle to the
         # target that is built so the generated project does not require the
         # default armv7/x86 libraries that are intentionally not compiled.
-        run: vpr tauri android build --ci --apk --aab --target aarch64 --split-per-abi
+        run: vpr tauri android build --ci --apk --target aarch64 --split-per-abi
 
       - name: Verify Android signatures
         shell: bash
         run: |
           set -euo pipefail
-          apk="$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -print -quit)"
-          aab="$(find src-tauri/gen/android/app/build/outputs/bundle -name '*.aab' -print -quit)"
-          test -n "$apk"
-          test -n "$aab"
+          mapfile -d '' apks < <(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print0)
+          test "${#apks[@]}" -eq 1
+          apk="${apks[0]}"
           apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -1)"
           test -n "$apksigner"
           "$apksigner" verify --verbose "$apk"
-          # AABs are signed with the configured release key (or an ephemeral
-          # CI key). jarsigner may report a self-signed certificate as an
-          # untrusted chain, so verify the JAR signature without requiring
-          # the certificate to chain to the runner's trust store.
-          jarsigner -verify "$aab"
+
+      - name: Normalize Android APK name
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -e "process.stdout.write(JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version)")"
+          mkdir -p release-packages
+          mapfile -d '' apks < <(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print0)
+          test "${#apks[@]}" -eq 1
+          cp "${apks[0]}" "release-packages/your-szu-life_android_arm64_${version}-release.apk"
 
       - name: Upload Android packages
         uses: actions/upload-artifact@v7
         with:
           name: android
-          path: |
-            src-tauri/gen/android/app/build/outputs/apk/**/*.apk
-            src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
+          path: release-packages/*
           if-no-files-found: error
           retention-days: 14
 
@@ -239,24 +264,9 @@ jobs:
         run: rm -f src-tauri/gen/android/ci-*.keystore
           src-tauri/gen/android/keystore.properties
 
-  aur-source:
-    name: aur-source
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Upload AUR PKGBUILD
-        uses: actions/upload-artifact@v7
-        with:
-          name: aur-source
-          path: PKGBUILD
-          if-no-files-found: error
-          retention-days: 14
-
   canary:
     name: Publish canary prerelease
-    needs: [desktop, android, aur-source]
+    needs: [desktop, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -288,10 +298,10 @@ jobs:
             }
             await collect(root);
             if (!files.length) throw new Error('No packages downloaded');
-            // Include artifact/subdirectory names to avoid platform filename collisions.
+            // Each build job has already assigned a unique release filename.
             const assets = files.sort().map(file => ({
               file,
-              name: path.relative(root, file).split(path.sep).join('--'),
+              name: path.basename(file),
             }));
             if (new Set(assets.map(asset => asset.name)).size !== assets.length) {
               throw new Error('Duplicate release asset names');
