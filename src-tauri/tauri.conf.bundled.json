@@ -10,7 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{ "title": "泥深", "width": 800, "height": 600 }],
+    "windows": [{ "title": "泥深", "width": 800, "height": 600, "devtools": true }],
     "security": { "csp": null }
   },
   "bundle": {
