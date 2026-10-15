@@ -2,7 +2,7 @@ use crate::storage::SharedCredentialStore;
 use argon2::{Algorithm, Argon2, Params, Version};
 use chacha20poly1305::{
     aead::{Aead, KeyInit},
-    XChaCha20Poly1305, XNonce,
+    XChaCha20Poly1305,
 };
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
@@ -167,7 +167,7 @@ impl SettingsStore {
         let key = derive(password, &salt)?;
         let cipher = XChaCha20Poly1305::new((&key).into());
         let encrypted = cipher
-            .encrypt(XNonce::from_slice(&nonce), plain.as_ref())
+            .encrypt((&nonce).into(), plain.as_ref())
             .map_err(|_| "设置加密失败")?;
         let mut bytes = Vec::with_capacity(1 + SALT_LEN + NONCE_LEN + encrypted.len());
         bytes.push(FORMAT);
@@ -197,7 +197,7 @@ impl SettingsStore {
         let cipher = XChaCha20Poly1305::new((&key).into());
         let plain = cipher
             .decrypt(
-                XNonce::from_slice(&bytes[1 + SALT_LEN..1 + SALT_LEN + NONCE_LEN]),
+                bytes[1 + SALT_LEN..1 + SALT_LEN + NONCE_LEN].into(),
                 &bytes[1 + SALT_LEN + NONCE_LEN..],
             )
             .map_err(|_| "密码错误或设置包已损坏")?;
@@ -504,7 +504,7 @@ mod tests {
         let cipher = XChaCha20Poly1305::new((&key).into());
         let encrypted = cipher
             .encrypt(
-                XNonce::from_slice(&nonce),
+                (&nonce).into(),
                 serde_json::to_vec(package).unwrap().as_ref(),
             )
             .unwrap();

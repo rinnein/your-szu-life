@@ -24,7 +24,9 @@ export function QuizNotifications() {
       })
       .catch(() => {});
     void import("@tauri-apps/plugin-notification")
-      .then(({ onAction }) => onAction((n) => open(n.extra?.uoocCourse)))
+      .then(({ onAction }) =>
+        onAction((event) => open(event.notification?.extra?.uoocCourse)),
+      )
       .then((listener) => {
         if (live) dispose.push(() => void listener.unregister());
         else void listener.unregister();

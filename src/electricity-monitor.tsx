@@ -68,19 +68,18 @@ export function ElectricityMonitorProvider({ children }: { children: ReactNode }
     let stop: PluginListener | undefined;
     void import("@tauri-apps/plugin-notification")
       .then(async ({ onAction }) => {
-        const openRecharge = (notification: {
-          actionTypeId?: string;
-          extra?: { route?: string };
-        }) => {
+        const listener = await onAction((event) => {
+          const extra = event.notification?.extra as { route?: string } | undefined;
           if (
             active &&
-            (notification.extra?.route === "/campus-payments/recharge" ||
-              notification.actionTypeId === "electricity-low")
+            (extra?.route === "/campus-payments/recharge" ||
+              event.notification?.actionTypeId === "electricity-low" ||
+              event.actionId === "open-recharge" ||
+              event.actionId === "electricity-low")
           ) {
             void navigation.push("/campus-payments/recharge");
           }
-        };
-        const listener = await onAction(openRecharge);
+        });
         if (active) stop = listener;
         else await listener.unregister();
       })

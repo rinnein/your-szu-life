@@ -35,8 +35,9 @@ export function OjNotifications() {
     );
     void import("@tauri-apps/plugin-notification")
       .then(({ onAction }) =>
-        onAction((n) => {
-          if (n.extra?.ojNotice) void open(n.extra.ojNotice as Notice);
+        onAction((event) => {
+          const notice = event.notification?.extra?.ojNotice;
+          if (notice) void open(notice as Notice);
         }),
       )
       .then((listener) =>
