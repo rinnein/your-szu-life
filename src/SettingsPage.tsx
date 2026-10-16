@@ -32,6 +32,14 @@ export default function SettingsPage() {
     if (!("Checking" in state) && !("Authenticated" in state)) void navigation.back();
   }, [navigation, state]);
 
+  useEffect(() => {
+    if (focus === "ocr") {
+      document.getElementById("local-model-ocr")?.scrollIntoView({ behavior: "smooth" });
+    } else if (focus === "embedding") {
+      document.getElementById("local-model-embedding")?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [focus]);
+
   if (!("Authenticated" in state)) return null;
 
   return (
@@ -58,7 +66,7 @@ export default function SettingsPage() {
 
         <OcrModelSettings autoReturn={focus === "ocr"} />
 
-        <EmbeddingModelSettings />
+        <EmbeddingModelSettings autoReturn={focus === "embedding"} />
 
         <SettingsTransfer />
 

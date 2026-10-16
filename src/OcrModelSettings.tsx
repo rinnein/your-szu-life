@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Alert, Button, Card, Spinner } from "@heroui/react";
 import { LuCircleCheck, LuCpu, LuDownload, LuRefreshCw, LuTriangleAlert } from "react-icons/lu";
 import { useLogicalNavigation } from "./logical-navigation";
+import { ModelProgressBar, useModelDownloadProgress } from "./ModelDownloadProgress";
 
 export type OcrModelStatus = {
   status: "ready" | "missing" | "downloading" | "error" | string;
@@ -12,6 +13,9 @@ export type OcrModelStatus = {
   bytes: number;
   source?: string;
   error?: string;
+  downloadedBytes?: number;
+  totalBytes?: number;
+  speedBytesPerSec?: number;
 };
 
 export function formatModelSize(bytes: number) {
@@ -53,9 +57,16 @@ export function useOcrModelStatus() {
 export function OcrModelSettings({ autoReturn = false }: { autoReturn?: boolean }) {
   const navigation = useLogicalNavigation();
   const status = useOcrModelStatus();
+  const { progress } = useModelDownloadProgress("ocr");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>();
   const ready = status?.status === "ready";
+  const isDownloading =
+    busy || status?.status === "downloading" || (progress !== null && !ready);
+
+  const downloadedBytes = progress?.downloadedBytes ?? status?.downloadedBytes ?? 0;
+  const totalBytes = progress?.totalBytes ?? status?.totalBytes ?? status?.bytes ?? 2294200;
+  const speedBytesPerSec = progress?.speedBytesPerSec ?? status?.speedBytesPerSec ?? 0;
 
   const download = async (update: boolean) => {
     setBusy(true);
@@ -110,10 +121,13 @@ export function OcrModelSettings({ autoReturn = false }: { autoReturn?: boolean 
             </Alert.Content>
           </Alert>
         )}
-        {status?.status === "downloading" && (
-          <div className="flex items-center gap-2 text-sm text-muted" role="status">
-            <Spinner size="sm" /> 正在下载并校验模型，请保持网络连接
-          </div>
+        {isDownloading && (
+          <ModelProgressBar
+            downloadedBytes={downloadedBytes}
+            totalBytes={totalBytes}
+            speedBytesPerSec={speedBytesPerSec}
+            label="正在下载并校验 OCR 模型..."
+          />
         )}
         {status?.status === "error" && (
           <Alert status="danger">

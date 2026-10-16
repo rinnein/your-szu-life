@@ -33,6 +33,10 @@ release. Add a tool name to select part of the graph. For example, run
 
 ---
 
+前端实现时，任何通知、警告等，应当尽可能使用 HeroUI 的 Toast（用于显示某个操作的返回状态结果）、Alert（用于显示持久性的警告信息）、AlertDialog（用于显示需要用户确认的警告信息） 等组件，而最好不要通过 setXXXMessage() 等未封装的方法，alert()、console.log() 等原生方法来实现。
+
+---
+
 ## 逻辑页面与返回行为
 
 本项目的“返回”语义以**应用级逻辑导航栈**为准，不以 WebView 的 `window.history` 为准。实现或修改页面导航时遵循以下约定：

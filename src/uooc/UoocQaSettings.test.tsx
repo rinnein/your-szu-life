@@ -3,6 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "@heroui/react";
 import { UoocQaSettings, type EmbeddingVectorStatus, type QaAccountStatus } from "./UoocQaSettings";
 import { getQaAuthClient } from "./qaAuthClient";
 
@@ -80,7 +81,7 @@ afterEach(() => {
 it("renders initial status and downloads uooc qa vectors", async () => {
   render(<UoocQaSettings />);
   expect(await screen.findByText("尚未下载题库向量")).toBeInTheDocument();
-  expect(await screen.findByText("匿名账户（仅读与新写）")).toBeInTheDocument();
+  expect(await screen.findByText("匿名账户（读+新增）")).toBeInTheDocument();
 
   const downloadBtn = screen.getByRole("button", { name: "下载 UOOC 标记题库向量" });
   fireEvent.click(downloadBtn);
@@ -95,6 +96,7 @@ it("renders initial status and downloads uooc qa vectors", async () => {
 });
 
 it("syncs confirmed questions with backend", async () => {
+  const successSpy = vi.spyOn(toast, "success");
   render(<UoocQaSettings />);
   const syncBtn = await screen.findByRole("button", { name: "同步已确认题目至服务端" });
   fireEvent.click(syncBtn);
@@ -104,10 +106,13 @@ it("syncs confirmed questions with backend", async () => {
       serverUrl: "http://localhost:4321",
     }),
   );
-  expect(await screen.findByText(/已成功与后端比对并将 5 道缺失题目同步上传/)).toBeInTheDocument();
+  await waitFor(() =>
+    expect(successSpy).toHaveBeenCalledWith("已成功与后端比对并将 5 道缺失题目同步上传"),
+  );
 });
 
 it("saves custom api key", async () => {
+  const successSpy = vi.spyOn(toast, "success");
   render(<UoocQaSettings />);
   const keyInput = await screen.findByLabelText("题库 API Key");
   fireEvent.change(keyInput, { target: { value: "uooc_custom_secret_key" } });
@@ -120,7 +125,7 @@ it("saves custom api key", async () => {
       apiKey: "uooc_custom_secret_key",
     }),
   );
-  expect(await screen.findByText("题库 API Key 保存成功")).toBeInTheDocument();
+  await waitFor(() => expect(successSpy).toHaveBeenCalledWith("题库 API Key 保存成功"));
 });
 
 it("searches questions using local embedding calculation", async () => {
@@ -179,6 +184,7 @@ it("initiates device authorization and polls until completion", async () => {
     },
   } as unknown as ReturnType<typeof getQaAuthClient>);
 
+  const successSpy = vi.spyOn(toast, "success");
   render(<UoocQaSettings />);
   const deviceAuthBtn = await screen.findByRole("button", { name: /通过设备码登录/ });
   fireEvent.click(deviceAuthBtn);
@@ -188,9 +194,7 @@ it("initiates device authorization and polls until completion", async () => {
 
   await waitFor(
     () => {
-      expect(
-        screen.getByText(/设备码授权登录成功！已自动获取并绑定专属 API Key/),
-      ).toBeInTheDocument();
+      expect(successSpy).toHaveBeenCalledWith("设备码授权登录成功！已自动获取并绑定专属 API Key");
     },
     { timeout: 3000 },
   );
@@ -200,6 +204,7 @@ it("initiates device authorization and polls until completion", async () => {
 });
 
 it("performs manual full questions upload", async () => {
+  const successSpy = vi.spyOn(toast, "success");
   vi.mocked(invoke).mockImplementation(async (command) => {
     if (command === "get_uooc_embedding_status") return initialStatus;
     if (command === "get_uooc_qa_account_status") return anonAccount;
@@ -216,5 +221,25 @@ it("performs manual full questions upload", async () => {
       serverUrl: "http://localhost:4321",
     }),
   );
-  expect(await screen.findByText("已成功全量上传 42 道本地题目至题库共享平台")).toBeInTheDocument();
+  await waitFor(() =>
+    expect(successSpy).toHaveBeenCalledWith("已成功全量上传 42 道本地题目至题库共享平台"),
+  );
+});
+
+it("shows toast.danger when operation fails", async () => {
+  const dangerSpy = vi.spyOn(toast, "danger");
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "get_uooc_embedding_status") return initialStatus;
+    if (command === "get_uooc_qa_account_status") return anonAccount;
+    if (command === "sync_uooc_qa_bank") throw "服务连接超时";
+    return undefined;
+  });
+
+  render(<UoocQaSettings />);
+  const syncBtn = await screen.findByRole("button", { name: "同步已确认题目至服务端" });
+  fireEvent.click(syncBtn);
+
+  await waitFor(() =>
+    expect(dangerSpy).toHaveBeenCalledWith("同步题库失败", { description: "服务连接超时" }),
+  );
 });

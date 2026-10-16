@@ -32,6 +32,8 @@ import {
 } from "react-icons/lu";
 import { PageShell, SkeletonCard } from "../components";
 import { useLogicalNavigation } from "../logical-navigation";
+import { ModelDownloadModal } from "../ModelDownloadModal";
+import { useEmbeddingModelStatus } from "../EmbeddingModelSettings";
 import { AiSettings, QuizModePicker } from "./AiSettings";
 import { QuizPanel } from "./QuizPanel";
 import { UoocQaSettings } from "./UoocQaSettings";
@@ -75,6 +77,26 @@ export default function UoocPage() {
     {},
   );
   const [modalQuizCid, setModalQuizCid] = useState<string | null>(null);
+  const embeddingStatus = useEmbeddingModelStatus();
+  const [embeddingModalOpen, setEmbeddingModalOpen] = useState(false);
+  const [embeddingDismissed, setEmbeddingDismissed] = useState(false);
+
+  useEffect(() => {
+    if (
+      embeddingStatus &&
+      embeddingStatus.status !== "ready" &&
+      embeddingStatus.status !== "checking" &&
+      !embeddingDismissed
+    ) {
+      setEmbeddingModalOpen(true);
+    }
+  }, [embeddingStatus?.status, embeddingDismissed]);
+
+  useEffect(() => {
+    if (embeddingStatus?.status === "ready") {
+      setEmbeddingModalOpen(false);
+    }
+  }, [embeddingStatus?.status]);
 
   useEffect(() => {
     if (course) {
@@ -198,7 +220,9 @@ export default function UoocPage() {
       if (isUoocSnapshot(next)) apply(next);
       return true;
     } catch (cause) {
-      setError(typeof cause === "string" ? cause : "操作未完成，请重试。");
+      const msg = typeof cause === "string" ? cause : "操作未完成，请重试。";
+      setError(msg);
+      toast.danger("操作失败", { description: msg });
       return false;
     } finally {
       setBusy(false);
@@ -211,7 +235,11 @@ export default function UoocPage() {
       .then((next) => {
         if (isUoocSnapshot(next)) apply(next);
       })
-      .catch(() => setError("课程详情刷新失败，请重试。"));
+      .catch((e: unknown) => {
+        const msg = typeof e === "string" ? e : "课程详情刷新失败，请重试。";
+        setError(msg);
+        toast.danger("课程详情刷新失败", { description: msg });
+      });
   };
   const tasks =
     snapshot?.tasks.filter((task) => !snapshot.user || task.accountId === snapshot.user.id) ?? [];
@@ -386,6 +414,14 @@ export default function UoocPage() {
 
   return (
     <PageShell>
+      <ModelDownloadModal
+        kind="embedding"
+        isOpen={embeddingModalOpen}
+        onOpenChange={(open) => {
+          setEmbeddingModalOpen(open);
+          if (!open) setEmbeddingDismissed(true);
+        }}
+      />
       <div className="mx-auto grid w-full max-w-4xl min-w-0 gap-5">
         <header className="flex items-center gap-3">
           <CloseButton
@@ -440,15 +476,6 @@ export default function UoocPage() {
             )}
           </Card.Content>
         </Card>
-        {error && (
-          <Alert status="danger" role="alert">
-            <Alert.Indicator />
-            <Alert.Content>
-              <Alert.Title>操作未完成</Alert.Title>
-              <Alert.Description>{error}</Alert.Description>
-            </Alert.Content>
-          </Alert>
-        )}
         <Tabs
           selectedKey={tab}
           onSelectionChange={(key) => void navigation.replace(`/uooc?tab=${key}`)}
@@ -1029,7 +1056,10 @@ export default function UoocPage() {
               }
               debugEnabled={debugEnabled}
               disabled={running || busy || !snapshot}
-              onSaveSettings={() => void action("save_uooc_settings", { settings })}
+              onSaveSettings={async () => {
+                const ok = await action("save_uooc_settings", { settings });
+                if (ok) toast.success("题库服务设置已保存");
+              }}
             />
             <AiSettings
               onMode={setDefaultMode}

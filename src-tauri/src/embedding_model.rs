@@ -6,7 +6,7 @@ use std::{
     io::{Read, Write},
     path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tauri::{Emitter, Manager};
 
@@ -70,6 +70,14 @@ impl Manifest {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ModelDownloadProgress {
+    pub downloaded_bytes: u64,
+    pub total_bytes: u64,
+    pub speed_bytes_per_sec: u64,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct EmbeddingModelStatus {
@@ -79,6 +87,12 @@ pub(crate) struct EmbeddingModelStatus {
     pub bytes: u64,
     pub source: Option<String>,
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub downloaded_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speed_bytes_per_sec: Option<u64>,
 }
 
 struct ModelStore {
@@ -115,6 +129,9 @@ pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
         bytes: manifest.bytes,
         source: None,
         error: None,
+        downloaded_bytes: None,
+        total_bytes: None,
+        speed_bytes_per_sec: None,
     };
     let store = Arc::new(ModelStore {
         manifest,
@@ -158,6 +175,9 @@ fn store() -> Result<Arc<ModelStore>, String> {
                 bytes: manifest.bytes,
                 source: None,
                 error: None,
+                downloaded_bytes: None,
+                total_bytes: None,
+                speed_bytes_per_sec: None,
             }),
             manifest,
             cache,
@@ -184,6 +204,11 @@ impl ModelStore {
         value.status = status.into();
         value.source = source;
         value.error = error;
+        if status != "downloading" {
+            value.downloaded_bytes = None;
+            value.total_bytes = None;
+            value.speed_bytes_per_sec = None;
+        }
     }
 
     fn refresh_from_disk(&self) {
@@ -276,7 +301,7 @@ impl ModelStore {
         sources
     }
 
-    fn download(&self, force: bool) -> Result<(), String> {
+    fn download(&self, app: Option<&tauri::AppHandle>, force: bool) -> Result<(), String> {
         let _guard = self.operation.lock().unwrap();
         if !force {
             self.refresh_from_disk();
@@ -298,23 +323,77 @@ impl ModelStore {
         let mut last_error = String::from("没有可用的模型下载源");
         for (source, url) in self.sources() {
             let result = (|| -> Result<(), String> {
-                let response = client
+                let mut response = client
                     .get(url.clone())
                     .send()
                     .and_then(reqwest::blocking::Response::error_for_status)
                     .map_err(|e| e.to_string())?;
-                if response
-                    .content_length()
-                    .is_some_and(|size| size > self.manifest.bytes)
-                {
+                let content_len = response.content_length();
+                if content_len.is_some_and(|size| size > self.manifest.bytes) {
                     return Err("模型响应超过固定大小".into());
                 }
+                let total_bytes = content_len.unwrap_or(self.manifest.bytes);
                 let mut file = File::create(&temporary).map_err(|e| e.to_string())?;
-                std::io::copy(&mut response.take(self.manifest.bytes + 1), &mut file)
-                    .map_err(|e| e.to_string())?;
+
+                let mut buffer = [0_u8; 64 * 1024];
+                let mut downloaded_bytes: u64 = 0;
+                let mut last_emit = Instant::now();
+                let mut window_start = Instant::now();
+                let mut window_bytes: u64 = 0;
+                let mut current_speed: u64 = 0;
+
+                loop {
+                    let n = match response.read(&mut buffer) {
+                        Ok(0) => break,
+                        Ok(n) => n,
+                        Err(e) => return Err(e.to_string()),
+                    };
+                    file.write_all(&buffer[..n]).map_err(|e| e.to_string())?;
+                    downloaded_bytes += n as u64;
+                    window_bytes += n as u64;
+
+                    if downloaded_bytes > self.manifest.bytes {
+                        return Err("模型响应超过固定大小".into());
+                    }
+
+                    let now = Instant::now();
+                    let window_elapsed = now.duration_since(window_start);
+                    if window_elapsed >= Duration::from_millis(400) {
+                        current_speed = (window_bytes as f64 / window_elapsed.as_secs_f64()) as u64;
+                        window_bytes = 0;
+                        window_start = now;
+                    }
+
+                    if now.duration_since(last_emit) >= Duration::from_millis(100) {
+                        last_emit = now;
+                        let payload = ModelDownloadProgress {
+                            downloaded_bytes,
+                            total_bytes,
+                            speed_bytes_per_sec: current_speed,
+                        };
+                        if let Some(app) = app {
+                            let _ = app.emit("embedding-model-download-progress", payload);
+                        }
+                        let mut val = self.state.lock().unwrap();
+                        val.downloaded_bytes = Some(downloaded_bytes);
+                        val.total_bytes = Some(total_bytes);
+                        val.speed_bytes_per_sec = Some(current_speed);
+                    }
+                }
+
                 file.flush().map_err(|e| e.to_string())?;
                 file.sync_all().map_err(|e| e.to_string())?;
                 drop(file);
+
+                let final_payload = ModelDownloadProgress {
+                    downloaded_bytes,
+                    total_bytes,
+                    speed_bytes_per_sec: current_speed,
+                };
+                if let Some(app) = app {
+                    let _ = app.emit("embedding-model-download-progress", final_payload);
+                }
+
                 if !self.manifest.verify(&temporary) {
                     let _ = fs::remove_file(&temporary);
                     return Err("模型哈希或大小校验失败".into());
@@ -351,12 +430,15 @@ pub(crate) async fn download_command(
 ) -> Result<EmbeddingModelStatus, String> {
     let store = store()?;
     store.set_status("downloading", None, None);
-    let downloading_status = store.state.lock().unwrap().clone();
+    let mut downloading_status = store.state.lock().unwrap().clone();
+    downloading_status.downloaded_bytes = Some(0);
+    downloading_status.total_bytes = Some(downloading_status.bytes);
+    downloading_status.speed_bytes_per_sec = Some(0);
     let _ = app.emit("embedding-model-status-changed", downloading_status);
     let background = store.clone();
     let app_handle = app.clone();
     tokio::task::spawn_blocking(move || {
-        let result = background.download(force);
+        let result = background.download(Some(&app_handle), force);
         let status = background.state.lock().unwrap().clone();
         let _ = app_handle.emit("embedding-model-status-changed", status);
         result

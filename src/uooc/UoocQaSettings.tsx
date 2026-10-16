@@ -10,6 +10,7 @@ import {
   Label,
   Spinner,
   TextField,
+  toast,
 } from "@heroui/react";
 import {
   LuCircleCheck,
@@ -86,12 +87,9 @@ export function UoocQaSettings({
   } | null>(null);
   const [deviceAuthPolling, setDeviceAuthPolling] = useState(false);
   const [fullUploading, setFullUploading] = useState(false);
-  const [actionMessage, setActionMessage] = useState<string>();
-  const [errorMessage, setErrorMessage] = useState<string>();
 
   const refreshStatus = async () => {
     setLoading(true);
-    setErrorMessage(undefined);
     try {
       const [vStatus, aStatus] = await Promise.all([
         invoke<EmbeddingVectorStatus>("get_uooc_embedding_status"),
@@ -104,8 +102,10 @@ export function UoocQaSettings({
         setAccountStatus(aStatus);
         if (aStatus.apiKey) setCustomApiKey(aStatus.apiKey);
       }
-    } catch (e) {
-      setErrorMessage(typeof e === "string" ? e : "无法获取题库状态");
+    } catch (e: unknown) {
+      const msg =
+        typeof e === "string" ? e : (e as { message?: string })?.message || "无法获取题库状态";
+      toast.danger("无法获取题库状态", { description: msg });
     } finally {
       setLoading(false);
     }
@@ -117,16 +117,16 @@ export function UoocQaSettings({
 
   const handleDownload = async () => {
     setDownloading(true);
-    setActionMessage(undefined);
-    setErrorMessage(undefined);
     try {
       const next = await invoke<EmbeddingVectorStatus>("download_uooc_qa_vectors", {
         serverUrl: qaServerUrl,
       });
       setVectorStatus(next);
-      setActionMessage(`题库向量下载完成，已缓存 ${next.cachedCount} 条题目向量`);
-    } catch (e) {
-      setErrorMessage(typeof e === "string" ? e : "下载题库向量失败");
+      toast.success(`题库向量下载完成，已缓存 ${next.cachedCount} 条题目向量`);
+    } catch (e: unknown) {
+      const msg =
+        typeof e === "string" ? e : (e as { message?: string })?.message || "下载题库向量失败";
+      toast.danger("下载题库向量失败", { description: msg });
     } finally {
       setDownloading(false);
     }
@@ -134,19 +134,19 @@ export function UoocQaSettings({
 
   const handleSyncBank = async () => {
     setSyncing(true);
-    setActionMessage(undefined);
-    setErrorMessage(undefined);
     try {
       const count = await invoke<number>("sync_uooc_qa_bank", {
         serverUrl: qaServerUrl,
       });
-      setActionMessage(
+      toast.success(
         count > 0
           ? `已成功与后端比对并将 ${count} 道缺失题目同步上传`
           : "本地题目已与服务端保持最新同步",
       );
-    } catch (e) {
-      setErrorMessage(typeof e === "string" ? e : "同步题库失败");
+    } catch (e: unknown) {
+      const msg =
+        typeof e === "string" ? e : (e as { message?: string })?.message || "同步题库失败";
+      toast.danger("同步题库失败", { description: msg });
     } finally {
       setSyncing(false);
     }
@@ -156,8 +156,6 @@ export function UoocQaSettings({
     const trimmed = searchQuery.trim();
     if (!trimmed) return;
     setSearching(true);
-    setActionMessage(undefined);
-    setErrorMessage(undefined);
     try {
       const results = await invoke<QaSearchResultItem[]>("search_uooc_qa_questions", {
         query: trimmed,
@@ -165,10 +163,12 @@ export function UoocQaSettings({
       });
       setSearchResults(results);
       if (results.length === 0) {
-        setActionMessage("未找到相似题目，已在本地完成 1536 维特征向量计算");
+        toast.warning("未找到相似题目，已在本地完成 1536 维特征向量计算");
       }
-    } catch (e) {
-      setErrorMessage(typeof e === "string" ? e : "向量检索失败");
+    } catch (e: unknown) {
+      const msg =
+        typeof e === "string" ? e : (e as { message?: string })?.message || "向量检索失败";
+      toast.danger("向量检索失败", { description: msg });
     } finally {
       setSearching(false);
     }
@@ -176,14 +176,14 @@ export function UoocQaSettings({
 
   const handleSaveApiKey = async () => {
     setSavingKey(true);
-    setActionMessage(undefined);
-    setErrorMessage(undefined);
     try {
       await invoke("save_uooc_qa_api_key", { apiKey: customApiKey.trim() });
-      setActionMessage("题库 API Key 保存成功");
+      toast.success("题库 API Key 保存成功");
       await refreshStatus();
-    } catch (e) {
-      setErrorMessage(typeof e === "string" ? e : "保存 API Key 失败");
+    } catch (e: unknown) {
+      const msg =
+        typeof e === "string" ? e : (e as { message?: string })?.message || "保存 API Key 失败";
+      toast.danger("保存 API Key 失败", { description: msg });
     } finally {
       setSavingKey(false);
     }
@@ -191,15 +191,15 @@ export function UoocQaSettings({
 
   const handleResetApiKey = async () => {
     setSavingKey(true);
-    setActionMessage(undefined);
-    setErrorMessage(undefined);
     try {
       await invoke("reset_uooc_qa_api_key");
       setCustomApiKey("");
-      setActionMessage("题库凭据已重置");
+      toast.success("题库凭据已重置");
       await refreshStatus();
-    } catch (e) {
-      setErrorMessage(typeof e === "string" ? e : "重置凭据失败");
+    } catch (e: unknown) {
+      const msg =
+        typeof e === "string" ? e : (e as { message?: string })?.message || "重置凭据失败";
+      toast.danger("重置凭据失败", { description: msg });
     } finally {
       setSavingKey(false);
     }
@@ -207,8 +207,6 @@ export function UoocQaSettings({
 
   const handleStartDeviceAuth = async () => {
     setDeviceAuthPolling(true);
-    setActionMessage(undefined);
-    setErrorMessage(undefined);
     try {
       const client = getQaAuthClient(qaServerUrl);
       const res = await client.device.code({
@@ -239,11 +237,11 @@ export function UoocQaSettings({
       void openPublicUrl(fullCompleteUrl);
     } catch (e: unknown) {
       const err = e as { message?: string } | string;
-      setErrorMessage(
+      const msg =
         typeof err === "string"
           ? err
-          : err?.message || "发起设备码授权失败，请检查题库服务地址与连接",
-      );
+          : err?.message || "发起设备码授权失败，请检查题库服务地址与连接";
+      toast.danger("发起设备码授权失败", { description: msg });
       setDeviceAuthPolling(false);
     }
   };
@@ -275,7 +273,8 @@ export function UoocQaSettings({
           }
           setDeviceAuthInfo(null);
           setDeviceAuthPolling(false);
-          setErrorMessage(tokenRes.error.error_description || `授权失败: ${errCode}`);
+          const desc = tokenRes.error.error_description || `授权失败: ${errCode}`;
+          toast.danger("设备授权未完成", { description: desc });
           return;
         }
 
@@ -302,14 +301,15 @@ export function UoocQaSettings({
         setDeviceAuthInfo(null);
         setDeviceAuthPolling(false);
         setCustomApiKey(apiKey);
-        setActionMessage("设备码授权登录成功！已自动获取并绑定专属 API Key");
+        toast.success("设备码授权登录成功！已自动获取并绑定专属 API Key");
         await refreshStatus();
       } catch (e: unknown) {
         if (!active) return;
         const err = e as { message?: string } | string;
+        const msg = typeof err === "string" ? err : err?.message || "轮询设备授权失败";
         setDeviceAuthInfo(null);
         setDeviceAuthPolling(false);
-        setErrorMessage(typeof err === "string" ? err : err?.message || "轮询设备授权失败");
+        toast.danger("轮询设备授权失败", { description: msg });
       }
     };
 
@@ -326,17 +326,17 @@ export function UoocQaSettings({
 
   const handleFullUpload = async () => {
     setFullUploading(true);
-    setActionMessage(undefined);
-    setErrorMessage(undefined);
     try {
       const count = await invoke<number>("upload_all_uooc_qa_bank", {
         serverUrl: qaServerUrl,
       });
-      setActionMessage(
+      toast.success(
         count > 0 ? `已成功全量上传 ${count} 道本地题目至题库共享平台` : "本地题库中暂无题目可上传",
       );
-    } catch (e) {
-      setErrorMessage(typeof e === "string" ? e : "全量上传题库失败");
+    } catch (e: unknown) {
+      const msg =
+        typeof e === "string" ? e : (e as { message?: string })?.message || "全量上传题库失败";
+      toast.danger("全量上传题库失败", { description: msg });
     } finally {
       setFullUploading(false);
     }
@@ -509,23 +509,6 @@ export function UoocQaSettings({
                   ? `本地已缓存 ${vectorStatus.cachedCount} 条题目向量 · ${vectorStatus.totalDimension} 维浮点嵌入`
                   : "点击下方按钮下载题库标记向量，下载后可在本地高速检索或向服务端免计算搜题"}
               </Alert.Description>
-            </Alert.Content>
-          </Alert>
-        )}
-
-        {actionMessage && (
-          <Alert status="success">
-            <Alert.Content>
-              <Alert.Description>{actionMessage}</Alert.Description>
-            </Alert.Content>
-          </Alert>
-        )}
-
-        {errorMessage && (
-          <Alert status="danger">
-            <Alert.Content>
-              <Alert.Title>操作失败</Alert.Title>
-              <Alert.Description>{errorMessage}</Alert.Description>
             </Alert.Content>
           </Alert>
         )}

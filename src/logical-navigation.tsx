@@ -164,3 +164,4 @@ export function useLogicalNavigation() {
   if (!value) throw new Error("LogicalNavigationProvider is missing");
   return value;
 }
+export { Context as LogicalNavigationContext };

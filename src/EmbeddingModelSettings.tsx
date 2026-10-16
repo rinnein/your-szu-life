@@ -1,8 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useState } from "react";
 import { Alert, Button, Card, Spinner } from "@heroui/react";
 import { LuCircleCheck, LuCpu, LuDownload, LuRefreshCw, LuTriangleAlert } from "react-icons/lu";
+import { LogicalNavigationContext } from "./logical-navigation";
+import { ModelProgressBar, useModelDownloadProgress } from "./ModelDownloadProgress";
 
 export type EmbeddingModelStatus = {
   status: "ready" | "missing" | "downloading" | "error" | string;
@@ -11,6 +13,9 @@ export type EmbeddingModelStatus = {
   bytes: number;
   source?: string;
   error?: string;
+  downloadedBytes?: number;
+  totalBytes?: number;
+  speedBytesPerSec?: number;
 };
 
 export function formatModelSize(bytes: number) {
@@ -49,11 +54,19 @@ export function useEmbeddingModelStatus() {
   return status;
 }
 
-export function EmbeddingModelSettings() {
+export function EmbeddingModelSettings({ autoReturn = false }: { autoReturn?: boolean } = {}) {
+  const navigation = useContext(LogicalNavigationContext);
   const status = useEmbeddingModelStatus();
+  const { progress } = useModelDownloadProgress("embedding");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>();
   const ready = status?.status === "ready";
+  const isDownloading =
+    busy || status?.status === "downloading" || (progress !== null && !ready);
+
+  const downloadedBytes = progress?.downloadedBytes ?? status?.downloadedBytes ?? 0;
+  const totalBytes = progress?.totalBytes ?? status?.totalBytes ?? status?.bytes ?? 48942200;
+  const speedBytesPerSec = progress?.speedBytesPerSec ?? status?.speedBytesPerSec ?? 0;
 
   const download = async (update: boolean) => {
     setBusy(true);
@@ -62,6 +75,7 @@ export function EmbeddingModelSettings() {
       await invoke<EmbeddingModelStatus>(
         update ? "update_embedding_model" : "download_embedding_model",
       );
+      if (autoReturn && navigation) await navigation.back();
     } catch (error) {
       setMessage(String(error));
     } finally {
@@ -111,10 +125,13 @@ export function EmbeddingModelSettings() {
             </Alert.Content>
           </Alert>
         )}
-        {status?.status === "downloading" && (
-          <div className="flex items-center gap-2 text-sm text-muted" role="status">
-            <Spinner size="sm" /> 正在下载并校验 Embedding 模型，请保持网络连接
-          </div>
+        {isDownloading && (
+          <ModelProgressBar
+            downloadedBytes={downloadedBytes}
+            totalBytes={totalBytes}
+            speedBytesPerSec={speedBytesPerSec}
+            label="正在下载并校验 Embedding 模型..."
+          />
         )}
         {status?.status === "error" && (
           <Alert status="danger">

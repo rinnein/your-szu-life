@@ -33,6 +33,7 @@ export default function LoginPage() {
   const { returnTo } = useSearch({ from: "/enrollment/login" });
   const [showCaptcha, setShowCaptcha] = useState(false);
   const [ocrRequired, setOcrRequired] = useState(false);
+  const [ocrDismissed, setOcrDismissed] = useState(false);
   const ocrStatus = useOcrModelStatus();
   const done = (value: Snapshot | undefined) => {
     if (value?.loggedIn) setShowCaptcha(false);
@@ -43,8 +44,21 @@ export default function LoginPage() {
   }, [s?.context.student, s?.mode]);
   const login = () => {
     if (!ocrStatus || ocrStatus.status === "ready") setShowCaptcha(true);
-    else setOcrRequired(true);
+    else {
+      setOcrDismissed(false);
+      setOcrRequired(true);
+    }
   };
+  useEffect(() => {
+    if (
+      ocrStatus &&
+      ocrStatus.status !== "ready" &&
+      ocrStatus.status !== "checking" &&
+      !ocrDismissed
+    ) {
+      setOcrRequired(true);
+    }
+  }, [ocrStatus?.status, ocrDismissed]);
   useEffect(() => {
     if (ocrStatus?.status === "ready" && ocrRequired) {
       setOcrRequired(false);
@@ -75,7 +89,14 @@ export default function LoginPage() {
       <OcrModelRequiredDialog
         status={ocrStatus}
         isOpen={ocrRequired}
-        onOpenChange={setOcrRequired}
+        onOpenChange={(open) => {
+          setOcrRequired(open);
+          if (!open) setOcrDismissed(true);
+        }}
+        onSuccess={() => {
+          setOcrRequired(false);
+          setShowCaptcha(true);
+        }}
       />
       <div className="mx-auto grid w-full max-w-2xl gap-7">
         <ModuleHeader title="登录选课系统" description="选择访问方式，进入本科选课工作台" />
@@ -157,7 +178,10 @@ export default function LoginPage() {
               <CaptchaInput
                 key={`${s.context.student}:${s.mode}`}
                 onAuthenticated={done}
-                onModelRequired={() => setOcrRequired(true)}
+                onModelRequired={() => {
+                  setOcrDismissed(false);
+                  setOcrRequired(true);
+                }}
               />
             )}
           </Card.Content>

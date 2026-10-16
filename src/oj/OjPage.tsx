@@ -51,6 +51,7 @@ export default function OjPage() {
   const [captcha, setCaptcha] = useState<{ token: string; image: string }>();
   const [answer, setAnswer] = useState("");
   const [ocrRequired, setOcrRequired] = useState(false);
+  const [ocrDismissed, setOcrDismissed] = useState(false);
   const ocrStatus = useOcrModelStatus();
   const site = snapshot?.sites.find((s) => s.id === search.site);
   const isOverview = !search.site && !search.group && !search.contest && !search.problem;
@@ -127,6 +128,16 @@ export default function OjPage() {
     if (ocrStatus?.status === "ready") setOcrRequired(false);
   }, [ocrStatus?.status]);
   useEffect(() => {
+    if (
+      ocrStatus &&
+      ocrStatus.status !== "ready" &&
+      ocrStatus.status !== "checking" &&
+      !ocrDismissed
+    ) {
+      setOcrRequired(true);
+    }
+  }, [ocrStatus?.status, ocrDismissed]);
+  useEffect(() => {
     setCaptcha(undefined);
     setAnswer("");
     let active = true;
@@ -137,8 +148,10 @@ export default function OjPage() {
       })
         .then((value) => active && setCaptcha(value))
         .catch((e) => active && setError(String(e)));
-    else if (site?.session === "captchaRequired" && ocrStatus && ocrStatus.status !== "ready")
+    else if (site?.session === "captchaRequired" && ocrStatus && ocrStatus.status !== "ready") {
+      setOcrDismissed(false);
       setOcrRequired(true);
+    }
     return () => {
       active = false;
     };
@@ -164,7 +177,10 @@ export default function OjPage() {
       <OcrModelRequiredDialog
         status={ocrStatus}
         isOpen={ocrRequired}
-        onOpenChange={setOcrRequired}
+        onOpenChange={(open) => {
+          setOcrRequired(open);
+          if (!open) setOcrDismissed(true);
+        }}
       />
       <div className="oj-page">
         <ModuleHeader
