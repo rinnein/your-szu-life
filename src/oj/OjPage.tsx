@@ -12,7 +12,6 @@ import {
   Modal,
   Spinner,
   TextField,
-  Toast,
   toast,
 } from "@heroui/react";
 import { ModuleHeader, PageShell } from "../components";
@@ -167,7 +166,6 @@ export default function OjPage() {
         isOpen={ocrRequired}
         onOpenChange={setOcrRequired}
       />
-      <Toast.Provider placement="bottom end" />
       <div className="oj-page">
         <ModuleHeader
           title={site?.name ?? "OJ"}

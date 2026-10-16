@@ -130,6 +130,54 @@ it("copies original sample whitespace and leaves read-only fields selectable", a
   expect(markdown).toContain(value);
   expect(markdown).toContain("  \t\n```");
 });
+it("toggles visible spaces in sample field via overlay and handles original symbols", async () => {
+  const value = "1  ·  2 \t→ 3 ";
+  render(<SampleField sample={1} label="输出" value={value} />);
+  const field = screen.getByRole("textbox", { name: "样例 1 输出" }) as HTMLTextAreaElement;
+  expect(field).toHaveValue(value);
+
+  // Before toggle, overlay is not mounted
+  expect(screen.queryByTestId("whitespace-overlay")).toBeNull();
+
+  const toggleBtn = screen.getByRole("button", { name: "显示样例 1 输出空格" });
+  fireEvent.click(toggleBtn);
+
+  // After toggle, overlay is mounted
+  const overlay = screen.getByTestId("whitespace-overlay");
+  expect(overlay).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "隐藏样例 1 输出空格" })).toBeInTheDocument();
+
+  // The underlying textarea still has the untouched original value (including original '·' and '→')
+  expect(field).toHaveValue(value);
+
+  // Overlay contains space indicators and tab indicators
+  const spaceTokens = overlay.querySelectorAll('[data-whitespace="space"]');
+  expect(spaceTokens.length).toBeGreaterThan(0);
+  expect(spaceTokens[0]).toHaveTextContent("··");
+
+  const tabTokens = overlay.querySelectorAll('[data-whitespace="tab"]');
+  expect(tabTokens.length).toBe(1);
+
+  // The original symbols '·' and '→' are preserved as transparent text tokens, not whitespace indicators
+  const transparentTokens = overlay.querySelectorAll(".text-transparent");
+  const tokenTexts = Array.from(transparentTokens).map((el) => el.textContent);
+  expect(tokenTexts).toContain("·");
+  expect(tokenTexts).toContain("→");
+
+  // Copying via button still copies the original untouched string
+  fireEvent.click(screen.getByRole("button", { name: "复制样例 1 输出" }));
+  await waitFor(() => expect(copyText).toHaveBeenCalledWith(value));
+
+  // Scrolling textarea syncs overlay scroll position
+  fireEvent.scroll(field, { target: { scrollTop: 50, scrollLeft: 20 } });
+  expect(overlay.scrollTop).toBe(50);
+  expect(overlay.scrollLeft).toBe(20);
+
+  // Toggle off unmounts overlay
+  fireEvent.click(screen.getByRole("button", { name: "隐藏样例 1 输出空格" }));
+  expect(screen.queryByTestId("whitespace-overlay")).toBeNull();
+  expect(field).toHaveValue(value);
+});
 it("renders structured cases, units and safely escaped compiler errors", () => {
   const view = render(<JudgeResult submission={finished} polling={false} onRefresh={() => {}} />);
   expect(screen.getByRole("grid", { name: "测试点判题结果" })).toHaveTextContent("1001 ms");
