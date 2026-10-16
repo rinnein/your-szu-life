@@ -225,6 +225,136 @@ pub(crate) struct QaAccountStatus {
     pub can_overwrite: bool,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct QaDeviceCodeResponse {
+    #[serde(alias = "device_code")]
+    pub device_code: String,
+    #[serde(alias = "user_code")]
+    pub user_code: String,
+    #[serde(alias = "verification_uri")]
+    pub verification_uri: String,
+    #[serde(alias = "verification_uri_complete")]
+    pub verification_uri_complete: String,
+    #[serde(alias = "expires_in")]
+    pub expires_in: u64,
+    #[serde(alias = "interval")]
+    pub interval: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct QaDeviceTokenPollResult {
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct QaHttpRequest {
+    pub url: String,
+    pub method: String,
+    #[serde(default)]
+    pub headers: Option<BTreeMap<String, String>>,
+    #[serde(default)]
+    pub body: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct QaHttpResponse {
+    pub status: u16,
+    pub status_text: String,
+    pub headers: BTreeMap<String, String>,
+    pub body: String,
+}
+
+pub(crate) fn http_client_for_url(url: &str) -> Result<reqwest::Client, String> {
+    #[cfg(target_os = "android")]
+    crate::platform_tls::initialize_platform_verifier()?;
+
+    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(15));
+    if let Ok(parsed) = reqwest::Url::parse(url) {
+        if let Some(host) = parsed.host_str() {
+            let h = host.to_lowercase();
+            if h == "localhost"
+                || h == "127.0.0.1"
+                || h == "::1"
+                || h == "0.0.0.0"
+                || h.starts_with("192.168.")
+                || h.starts_with("10.")
+                || h.starts_with("172.")
+                || h.ends_with(".local")
+            {
+                builder = builder.no_proxy();
+            }
+        }
+    } else {
+        builder = builder.no_proxy();
+    }
+
+    builder.build().map_err(|e| format!("无法构建 HTTP 客户端: {e}"))
+}
+
+pub(crate) fn http_client() -> Result<reqwest::Client, String> {
+    http_client_for_url("http://localhost")
+}
+
+pub(crate) async fn execute_qa_http_request(
+    request: QaHttpRequest,
+) -> Result<QaHttpResponse, String> {
+    let client = http_client_for_url(&request.url)?;
+    let method = match request.method.to_uppercase().as_str() {
+        "POST" => reqwest::Method::POST,
+        "PUT" => reqwest::Method::PUT,
+        "DELETE" => reqwest::Method::DELETE,
+        "PATCH" => reqwest::Method::PATCH,
+        "HEAD" => reqwest::Method::HEAD,
+        _ => reqwest::Method::GET,
+    };
+
+    let mut req = client.request(method, &request.url);
+    if let Some(headers) = request.headers {
+        for (k, v) in headers {
+            if let (Ok(name), Ok(val)) = (
+                reqwest::header::HeaderName::from_bytes(k.as_bytes()),
+                reqwest::header::HeaderValue::from_str(&v),
+            ) {
+                req = req.header(name, val);
+            }
+        }
+    }
+
+    if let Some(body) = request.body {
+        req = req.body(body);
+    }
+
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("题库网络请求失败 ({}): {e}", request.url))?;
+
+    let status = resp.status().as_u16();
+    let status_text = resp.status().canonical_reason().unwrap_or("").to_string();
+    let mut resp_headers = BTreeMap::new();
+    for (k, v) in resp.headers() {
+        if let Ok(v_str) = v.to_str() {
+            resp_headers.insert(k.as_str().to_string(), v_str.to_string());
+        }
+    }
+    let body = resp.text().await.unwrap_or_default();
+
+    Ok(QaHttpResponse {
+        status,
+        status_text,
+        headers: resp_headers,
+        body,
+    })
+}
+
 pub(crate) async fn get_qa_account_status(
     server_url: &str,
     api_key: Option<&str>,
@@ -271,6 +401,196 @@ pub(crate) async fn get_qa_account_status(
             can_overwrite: false,
         }),
     }
+}
+
+pub(crate) fn resolve_auth_base(server_url: &str) -> String {
+    let base = server_url.trim().trim_end_matches('/');
+    if base.ends_with("/api/auth") {
+        base.to_string()
+    } else if base.ends_with("/api") {
+        format!("{base}/auth")
+    } else {
+        format!("{base}/api/auth")
+    }
+}
+
+pub(crate) fn resolve_api_base(server_url: &str) -> String {
+    let base = server_url.trim().trim_end_matches('/');
+    if base.ends_with("/api/auth") {
+        base.trim_end_matches("/auth").to_string()
+    } else if base.ends_with("/api") {
+        base.to_string()
+    } else {
+        format!("{base}/api")
+    }
+}
+
+pub(crate) async fn request_device_code(server_url: &str) -> Result<QaDeviceCodeResponse, String> {
+    let auth_base = resolve_auth_base(server_url);
+    let url = format!("{auth_base}/device/code");
+    let client = http_client()?;
+    let payload = serde_json::json!({
+        "client_id": "your-szu-life",
+        "scope": "read write",
+    });
+    let resp = client
+        .post(&url)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("请求设备码失败（无法连接到服务 {url}）: {e}"))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let err_text = resp.text().await.unwrap_or_default();
+        let detail = if err_text.trim().is_empty() {
+            format!("HTTP {status}")
+        } else if let Ok(json) = serde_json::from_str::<serde_json::Value>(&err_text) {
+            let desc = json["error_description"]
+                .as_str()
+                .or_else(|| json["message"].as_str())
+                .or_else(|| json["error"].as_str())
+                .unwrap_or(&err_text);
+            format!("HTTP {status}: {desc}")
+        } else {
+            format!("HTTP {status}: {err_text}")
+        };
+        return Err(format!("申请设备码服务端返回错误 ({detail})，请求地址: {url}"));
+    }
+
+    let mut code_resp = resp
+        .json::<QaDeviceCodeResponse>()
+        .await
+        .map_err(|e| format!("解析设备码响应失败: {e}"))?;
+
+    let root_origin = {
+        if let Ok(parsed) = reqwest::Url::parse(server_url) {
+            let port_part = parsed.port().map(|p| format!(":{p}")).unwrap_or_default();
+            format!("{}://{}{port_part}", parsed.scheme(), parsed.host_str().unwrap_or("localhost"))
+        } else {
+            server_url.trim().trim_end_matches('/').to_string()
+        }
+    };
+
+    if code_resp.verification_uri.starts_with('/') {
+        code_resp.verification_uri = format!("{root_origin}{}", code_resp.verification_uri);
+    }
+    if code_resp.verification_uri_complete.starts_with('/') {
+        code_resp.verification_uri_complete = format!("{root_origin}{}", code_resp.verification_uri_complete);
+    }
+
+    Ok(code_resp)
+}
+
+pub(crate) async fn poll_device_token(
+    server_url: &str,
+    device_code: &str,
+) -> Result<QaDeviceTokenPollResult, String> {
+    let auth_base = resolve_auth_base(server_url);
+    let token_url = format!("{auth_base}/device/token");
+    let client = http_client()?;
+    let payload = serde_json::json!({
+        "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+        "device_code": device_code,
+        "client_id": "your-szu-life",
+    });
+    let resp = client
+        .post(&token_url)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("轮询设备授权状态失败: {e}"))?;
+
+    let status = resp.status();
+    if status == reqwest::StatusCode::BAD_REQUEST {
+        let body: serde_json::Value = resp.json().await.unwrap_or_default();
+        let error_code = body["error"].as_str().unwrap_or("unknown_error");
+        if error_code == "authorization_pending" || error_code == "slow_down" {
+            return Ok(QaDeviceTokenPollResult {
+                status: "pending".into(),
+                api_key: None,
+                error: None,
+            });
+        }
+        let desc = body["error_description"].as_str().unwrap_or(error_code);
+        return Ok(QaDeviceTokenPollResult {
+            status: "error".into(),
+            api_key: None,
+            error: Some(format!("授权未完成或已失效: {desc}")),
+        });
+    }
+
+    if !status.is_success() {
+        let err_text = resp.text().await.unwrap_or_default();
+        return Ok(QaDeviceTokenPollResult {
+            status: "error".into(),
+            api_key: None,
+            error: Some(format!("轮询返回异常状态 HTTP {status}: {err_text}")),
+        });
+    }
+
+    let token_data: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("解析 Token 响应失败: {e}"))?;
+
+    if let Some(error_code) = token_data["error"].as_str() {
+        if error_code == "authorization_pending" || error_code == "slow_down" {
+            return Ok(QaDeviceTokenPollResult {
+                status: "pending".into(),
+                api_key: None,
+                error: None,
+            });
+        }
+        let desc = token_data["error_description"].as_str().unwrap_or(error_code);
+        return Ok(QaDeviceTokenPollResult {
+            status: "error".into(),
+            api_key: None,
+            error: Some(format!("授权失败: {desc}")),
+        });
+    }
+
+    let access_token = token_data["access_token"]
+        .as_str()
+        .ok_or_else(|| "响应中缺少 access_token".to_string())?;
+
+    // Request API Key creation with the access_token
+    let api_key_url = format!("{auth_base}/api-key/create");
+    let create_payload = serde_json::json!({
+        "name": "your-szu-life",
+        "prefix": "uooc_",
+        "expiresIn": 31536000,
+    });
+
+    let key_resp = client
+        .post(&api_key_url)
+        .header(reqwest::header::AUTHORIZATION, format!("Bearer {access_token}"))
+        .json(&create_payload)
+        .send()
+        .await
+        .map_err(|e| format!("获取 API Key 失败: {e}"))?;
+
+    let key_status = key_resp.status();
+    if !key_status.is_success() {
+        let err_text = key_resp.text().await.unwrap_or_default();
+        return Err(format!("通过设备凭据创建 API Key 失败 (HTTP {key_status}): {err_text}"));
+    }
+
+    let key_data: serde_json::Value = key_resp
+        .json()
+        .await
+        .map_err(|e| format!("解析 API Key 响应失败: {e}"))?;
+
+    let key = key_data["key"]
+        .as_str()
+        .or_else(|| key_data["apiKey"].as_str())
+        .ok_or_else(|| "创建响应中缺少 key 字段".to_string())?;
+
+    Ok(QaDeviceTokenPollResult {
+        status: "success".into(),
+        api_key: Some(key.to_string()),
+        error: None,
+    })
 }
 
 /// Normalize stem according to uooc-qa-share specification:
@@ -393,15 +713,6 @@ pub(crate) fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
     (dot as f64).clamp(-1.0, 1.0)
 }
 
-fn http_client() -> Result<reqwest::Client, String> {
-    #[cfg(target_os = "android")]
-    crate::platform_tls::initialize_platform_verifier()?;
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("无法构建 HTTP 客户端: {e}"))
-}
-
 /// Automatically acquire or verify an API key via /api/auth/anonymous-key.
 pub(crate) async fn ensure_api_key(server_url: &str, stored_key: Option<&str>) -> Option<String> {
     if let Some(key) = stored_key {
@@ -411,8 +722,8 @@ pub(crate) async fn ensure_api_key(server_url: &str, stored_key: Option<&str>) -
         }
     }
 
-    let base = server_url.trim_end_matches('/');
-    let url = format!("{base}/api/auth/anonymous-key");
+    let auth_base = resolve_auth_base(server_url);
+    let url = format!("{auth_base}/anonymous-key");
     let client = http_client().ok()?;
     let resp = client.post(&url).send().await.ok()?;
     if !resp.status().is_success() {
@@ -433,10 +744,10 @@ pub(crate) async fn query_task_answers(
     tid: &str,
     cid: Option<&str>,
 ) -> Result<Vec<QaQuestion>, String> {
-    let base = server_url.trim_end_matches('/');
+    let api_base = resolve_api_base(server_url);
     let url = match cid {
-        Some(cid) if !cid.is_empty() => format!("{base}/api/courses/{cid}/tasks/{tid}"),
-        _ => format!("{base}/api/tasks/{tid}"),
+        Some(cid) if !cid.is_empty() => format!("{api_base}/courses/{cid}/tasks/{tid}"),
+        _ => format!("{api_base}/tasks/{tid}"),
     };
 
     let client = http_client()?;
@@ -469,8 +780,8 @@ pub(crate) async fn upload_batch(
     api_key: Option<&str>,
     payload: &QaBatchUploadPayload,
 ) -> Result<QaBatchUploadResponse, String> {
-    let base = server_url.trim_end_matches('/');
-    let url = format!("{base}/api/upload/batch");
+    let api_base = resolve_api_base(server_url);
+    let url = format!("{api_base}/upload/batch");
 
     let client = http_client()?;
     let mut req = client.post(&url).json(payload);
@@ -866,8 +1177,8 @@ pub(crate) async fn sync_missing_to_server(
         local_question_ids: None,
     };
 
-    let base = server_url.trim_end_matches('/');
-    let url = format!("{base}/api/automation/match");
+    let api_base = resolve_api_base(server_url);
+    let url = format!("{api_base}/automation/match");
     let client = http_client()?;
     let mut req = client.post(&url).json(&payload);
     if let Some(key) = api_key {
@@ -963,6 +1274,345 @@ pub(crate) async fn sync_missing_to_server(
 
     let _ = save_local_bank(bank_path, &bank);
     Ok(uploaded_count)
+}
+
+/// 手动全量上传本地题库的所有题目至服务端，按 (cid, tid) 分组打包提交
+pub(crate) async fn upload_all_local_bank(
+    bank_path: &Path,
+    server_url: &str,
+    api_key: Option<&str>,
+) -> Result<usize, String> {
+    let mut bank = load_local_bank(bank_path);
+    if bank.is_empty() {
+        return Ok(0);
+    }
+
+    let mut grouped: BTreeMap<(String, String), Vec<LocalBankQuestion>> = BTreeMap::new();
+    for (_, q) in bank.iter() {
+        grouped
+            .entry((q.cid.clone(), q.tid.clone()))
+            .or_default()
+            .push(q.clone());
+    }
+
+    let mut total_uploaded = 0;
+    for ((cid, tid), questions) in grouped {
+        let upload_questions: Vec<QaUploadQuestion> = questions
+            .iter()
+            .map(|q| {
+                let embedding = q.stem.as_deref().map(compute_local_embedding);
+                QaUploadQuestion {
+                    question_id: q.question_id.clone(),
+                    question_type: q.question_type.clone(),
+                    stem: q.stem.clone(),
+                    options: q.options.clone(),
+                    blanks: q.blanks,
+                    correct_answers: Some(q.correct_answers.clone()),
+                    wrong_answers: None,
+                    embedding,
+                }
+            })
+            .collect();
+
+        let payload = QaBatchUploadPayload {
+            tid: tid.clone(),
+            cid: Some(cid),
+            task_name: None,
+            course_name: None,
+            questions: upload_questions,
+        };
+
+        let res = upload_batch(server_url, api_key, &payload)
+            .await
+            .map_err(|e| format!("全量上传任务 {tid} 失败: {e}"))?;
+
+        if res.ok {
+            for q in questions {
+                let k = bank_key(&q.tid, &q.question_id);
+                if let Some(item) = bank.get_mut(&k) {
+                    item.uploaded = true;
+                    total_uploaded += 1;
+                }
+            }
+        }
+    }
+
+    let _ = save_local_bank(bank_path, &bank);
+    Ok(total_uploaded)
+}
+
+/// 解析 /exam/view 返回的已提交测验数据（支持 JSON 和 HTML 两种形态）
+pub(crate) fn parse_exam_view(raw: &[u8]) -> Option<(Vec<Question>, Answers)> {
+    if let Ok(val) = serde_json::from_slice::<serde_json::Value>(raw) {
+        if let Some((questions, answers)) = parse_exam_view_json(&val) {
+            if !questions.is_empty() {
+                return Some((questions, answers));
+            }
+        }
+    }
+
+    if let Ok(html_str) = String::from_utf8(raw.to_vec()) {
+        if html_str.contains('<') {
+            return parse_exam_view_html(&html_str);
+        }
+    }
+
+    None
+}
+
+fn parse_exam_view_json(val: &serde_json::Value) -> Option<(Vec<Question>, Answers)> {
+    let list = val["data"]["questions"]
+        .as_array()
+        .or_else(|| val["questions"].as_array())
+        .or_else(|| val["data"]["list"].as_array())
+        .or_else(|| val["data"].as_array())
+        .or_else(|| val["paper"]["questions"].as_array())?;
+
+    let mut questions = Vec::new();
+    let mut answers = BTreeMap::new();
+
+    for (index, item) in list.iter().enumerate() {
+        let qid = item["question_id"]
+            .as_str()
+            .or_else(|| item["id"].as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("q{index}"));
+
+        let stem = item["stem"]
+            .as_str()
+            .or_else(|| item["title"].as_str())
+            .or_else(|| item["content"].as_str())
+            .or_else(|| item["question"].as_str())
+            .unwrap_or_default()
+            .to_string();
+
+        let type_str = item["type"]
+            .as_str()
+            .or_else(|| item["question_type"].as_str())
+            .unwrap_or("single");
+
+        let kind = match type_str {
+            "multiple" => Kind::Multiple,
+            "text" => Kind::Text,
+            _ => Kind::Single,
+        };
+
+        let mut options = Vec::new();
+        if let Some(opts) = item["options"].as_array() {
+            for (opt_idx, opt) in opts.iter().enumerate() {
+                let opt_id = opt["id"]
+                    .as_str()
+                    .or_else(|| opt["value"].as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| {
+                        let letter = (b'A' + opt_idx as u8) as char;
+                        letter.to_string()
+                    });
+                let opt_text = opt["text"]
+                    .as_str()
+                    .or_else(|| opt["title"].as_str())
+                    .or_else(|| opt["content"].as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                options.push(OptionItem {
+                    id: opt_id,
+                    text: opt_text,
+                });
+            }
+        }
+
+        let mut correct = Vec::new();
+        if let Some(arr) = item["correct_answers"]
+            .as_array()
+            .or_else(|| item["answers"].as_array())
+            .or_else(|| item["answer"].as_array())
+        {
+            for a in arr {
+                if let Some(s) = a.as_str() {
+                    correct.push(s.to_string());
+                }
+            }
+        } else if let Some(s) = item["correct_answer"]
+            .as_str()
+            .or_else(|| item["right_answer"].as_str())
+            .or_else(|| item["standard_answer"].as_str())
+            .or_else(|| item["answer"].as_str())
+        {
+            for part in s.split(|c| c == ',' || c == '，' || c == '、' || c == ' ') {
+                let trimmed = part.trim();
+                if !trimmed.is_empty() {
+                    correct.push(trimmed.to_string());
+                }
+            }
+        }
+
+        if !correct.is_empty() {
+            answers.insert(qid.clone(), correct);
+        }
+
+        questions.push(Question {
+            id: qid,
+            text: stem,
+            kind,
+            options,
+            blanks: 0,
+            images: Vec::new(),
+        });
+    }
+
+    if questions.is_empty() {
+        None
+    } else {
+        Some((questions, answers))
+    }
+}
+
+fn parse_exam_view_html(html: &str) -> Option<(Vec<Question>, Answers)> {
+    let doc = scraper::Html::parse_document(html);
+    let container_sel = scraper::Selector::parse(".queContainer,.que-item,.question-item,.ti-item").ok()?;
+    let stem_sel = scraper::Selector::parse(".ti-q,.que-title,.question-title").ok()?;
+    let option_sel = scraper::Selector::parse(".ti-a,label,.option").ok()?;
+    let input_sel = scraper::Selector::parse("input[type=radio],input[type=checkbox]").ok()?;
+    let answer_sel = scraper::Selector::parse(".rightAnswer,.right-answer,.correct-answer,.da-an,.daan,.standard-answer").ok()?;
+
+    let mut questions = Vec::new();
+    let mut answers = BTreeMap::new();
+
+    for (index, elem) in doc.select(&container_sel).enumerate() {
+        let qid = elem
+            .value()
+            .attr("id")
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| format!("q{index}"));
+
+        let stem = elem
+            .select(&stem_sel)
+            .next()
+            .map(|e| e.text().collect::<Vec<_>>().join(" ").trim().to_string())
+            .unwrap_or_default();
+
+        let mut options = Vec::new();
+        let mut has_checkbox = false;
+
+        for (opt_idx, opt_elem) in elem.select(&option_sel).enumerate() {
+            let input = opt_elem.select(&input_sel).next();
+            if let Some(inp) = input {
+                if inp.value().attr("type") == Some("checkbox") {
+                    has_checkbox = true;
+                }
+            }
+            let opt_id = input
+                .and_then(|inp| inp.value().attr("value"))
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| {
+                    let letter = (b'A' + opt_idx as u8) as char;
+                    letter.to_string()
+                });
+            let opt_text = opt_elem.text().collect::<Vec<_>>().join(" ").trim().to_string();
+            options.push(OptionItem {
+                id: opt_id,
+                text: opt_text,
+            });
+        }
+
+        let kind = if has_checkbox {
+            Kind::Multiple
+        } else if !options.is_empty() {
+            Kind::Single
+        } else {
+            Kind::Text
+        };
+
+        let mut correct = Vec::new();
+
+        // 1. Check dedicated answer selector
+        if let Some(ans_elem) = elem.select(&answer_sel).next() {
+            let ans_text = ans_elem.text().collect::<Vec<_>>().join(" ");
+            extract_answer_tokens(&ans_text, &options, &mut correct);
+        }
+
+        // 2. Search in container text for patterns like "正确答案：A"
+        if correct.is_empty() {
+            let full_text = elem.text().collect::<Vec<_>>().join(" ");
+            extract_answer_tokens(&full_text, &options, &mut correct);
+        }
+
+        // 3. Check for elements with class "right" or "correct"
+        if correct.is_empty() {
+            for opt_elem in elem.select(&option_sel) {
+                let classes = opt_elem.value().classes().collect::<Vec<_>>();
+                if classes.iter().any(|c| *c == "right" || *c == "correct" || *c == "is-correct") {
+                    let input = opt_elem.select(&input_sel).next();
+                    if let Some(val) = input.and_then(|i| i.value().attr("value")) {
+                        correct.push(val.to_string());
+                    }
+                }
+            }
+        }
+
+        if !correct.is_empty() {
+            answers.insert(qid.clone(), correct);
+        }
+
+        questions.push(Question {
+            id: qid,
+            text: stem,
+            kind,
+            options,
+            blanks: 0,
+            images: Vec::new(),
+        });
+    }
+
+    if questions.is_empty() {
+        None
+    } else {
+        Some((questions, answers))
+    }
+}
+
+fn extract_answer_tokens(text: &str, options: &[OptionItem], out: &mut Vec<String>) {
+    for marker in &["正确答案", "标准答案", "参考答案"] {
+        if let Some(pos) = text.find(marker) {
+            let after = &text[pos + marker.len()..];
+            let cleaned = after.trim_start_matches(|c: char| c == ':' || c == '：' || c.is_whitespace());
+            for word in cleaned.split(|c: char| {
+                c == ',' || c == '，' || c == '、' || c == ' ' || c == '\n' || c == '\t' || c == '；' || c == ';'
+            }) {
+                let trimmed = word.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                if trimmed.len() <= 2 && trimmed.chars().all(|c| c.is_ascii_alphabetic()) {
+                    let upper = trimmed.to_uppercase();
+                    if let Some(opt) = options.iter().find(|o| o.id.eq_ignore_ascii_case(&upper)) {
+                        if !out.contains(&opt.id) {
+                            out.push(opt.id.clone());
+                        }
+                    } else if !out.contains(&upper) {
+                        out.push(upper);
+                    }
+                } else if trimmed == "正确" || trimmed == "对" || trimmed == "T" {
+                    if let Some(opt) = options.iter().find(|o| o.text.contains("正确") || o.text.contains("对")) {
+                        if !out.contains(&opt.id) {
+                            out.push(opt.id.clone());
+                        }
+                    }
+                } else if trimmed == "错误" || trimmed == "错" || trimmed == "F" {
+                    if let Some(opt) = options.iter().find(|o| o.text.contains("错误") || o.text.contains("错")) {
+                        if !out.contains(&opt.id) {
+                            out.push(opt.id.clone());
+                        }
+                    }
+                }
+            }
+            if !out.is_empty() {
+                return;
+            }
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1380,5 +2030,170 @@ mod tests {
         // Check local bank marked as uploaded
         let updated_bank = load_local_bank(&bank_path);
         assert_eq!(updated_bank.get("100:q1").unwrap().uploaded, true);
+    }
+
+    #[tokio::test]
+    async fn device_auth_and_api_key_retrieval_flow() {
+        use crate::uooc::tests::Server;
+        use serde_json::json;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let poll_count = Arc::new(AtomicUsize::new(0));
+        let poll_count_clone = poll_count.clone();
+
+        let server = Server::new(move |request| {
+            if request.path == "/api/auth/device/code" && request.method == "POST" {
+                return json!({
+                    "device_code": "dev-code-12345",
+                    "user_code": "ABCD-1234",
+                    "verification_uri": "http://localhost:4321/device",
+                    "verification_uri_complete": "http://localhost:4321/device?user_code=ABCD-1234",
+                    "expires_in": 1800,
+                    "interval": 5
+                });
+            }
+            if request.path == "/api/auth/device/token" && request.method == "POST" {
+                let call = poll_count_clone.fetch_add(1, Ordering::SeqCst);
+                if call == 0 {
+                    // First poll is pending (simulate 400 Bad Request with error: authorization_pending)
+                    // Server::new returns 200 by default, so we can check bytes below or return error field
+                    return json!({ "error": "authorization_pending" });
+                }
+                return json!({
+                    "access_token": "mock-access-token-xyz",
+                    "token_type": "Bearer",
+                    "expires_in": 2678400
+                });
+            }
+            if request.path == "/api/auth/api-key/create" && request.method == "POST" {
+                assert!(request.headers.iter().any(|(k, v)| k.eq_ignore_ascii_case("authorization") && v.contains("mock-access-token-xyz")));
+                return json!({
+                    "key": "uooc_device_auth_key_8888",
+                    "id": "key_id_1"
+                });
+            }
+            json!({ "error": "unmatched route" })
+        });
+
+        // 1. Request device code
+        let code_res = request_device_code(&server.base).await.unwrap();
+        assert_eq!(code_res.device_code, "dev-code-12345");
+        assert_eq!(code_res.user_code, "ABCD-1234");
+        assert_eq!(code_res.verification_uri_complete, "http://localhost:4321/device?user_code=ABCD-1234");
+
+        // 2. Poll token endpoint: first call returns pending
+        let poll1 = poll_device_token(&server.base, &code_res.device_code).await.unwrap();
+        assert_eq!(poll1.status, "pending");
+
+        // 3. Second call returns success with created API Key
+        let token_res = poll_device_token(&server.base, &code_res.device_code).await.unwrap();
+        assert_eq!(token_res.status, "success");
+        assert_eq!(token_res.api_key.as_deref(), Some("uooc_device_auth_key_8888"));
+    }
+
+    #[tokio::test]
+    async fn manual_upload_all_local_bank() {
+        use crate::uooc::tests::Server;
+        use serde_json::json;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let bank_path = dir.path().join("qa-bank.json");
+
+        let mut answers1 = Answers::new();
+        answers1.insert("q1".into(), vec!["A".into()]);
+        let questions1 = vec![Question {
+            id: "q1".into(),
+            text: "测试单选1".into(),
+            kind: Kind::Single,
+            options: vec![
+                OptionItem { id: "A".into(), text: "选项A".into() },
+                OptionItem { id: "B".into(), text: "选项B".into() },
+            ],
+            blanks: 0,
+            images: vec![],
+        }];
+        record_passed_quiz(&bank_path, "10", "101", &questions1, &answers1).unwrap();
+
+        let mut answers2 = Answers::new();
+        answers2.insert("q2".into(), vec!["B".into(), "C".into()]);
+        let questions2 = vec![Question {
+            id: "q2".into(),
+            text: "测试多选2".into(),
+            kind: Kind::Multiple,
+            options: vec![
+                OptionItem { id: "A".into(), text: "A".into() },
+                OptionItem { id: "B".into(), text: "B".into() },
+                OptionItem { id: "C".into(), text: "C".into() },
+            ],
+            blanks: 0,
+            images: vec![],
+        }];
+        record_passed_quiz(&bank_path, "10", "102", &questions2, &answers2).unwrap();
+
+        let upload_calls = Arc::new(AtomicUsize::new(0));
+        let upload_calls_clone = upload_calls.clone();
+
+        let server = Server::new(move |request| {
+            if request.path == "/api/upload/batch" && request.method == "POST" {
+                upload_calls_clone.fetch_add(1, Ordering::SeqCst);
+                return json!({ "ok": true, "results": [] });
+            }
+            json!({ "error": "not found" })
+        });
+
+        let uploaded_count = upload_all_local_bank(&bank_path, &server.base, Some("mock-key")).await.unwrap();
+        assert_eq!(uploaded_count, 2);
+        assert_eq!(upload_calls.load(Ordering::SeqCst), 2); // 2 different tids (101 and 102)
+
+        let bank = load_local_bank(&bank_path);
+        assert!(bank.get("101:q1").unwrap().uploaded);
+        assert!(bank.get("102:q2").unwrap().uploaded);
+    }
+
+    #[test]
+    fn parse_exam_view_json_and_html_variants() {
+        // Test JSON format
+        let json_data = serde_json::json!({
+            "code": 1,
+            "data": {
+                "questions": [
+                    {
+                        "id": "q100",
+                        "stem": "关于微积分基本定理",
+                        "type": "single",
+                        "options": [
+                            { "id": "A", "text": "连续函数一定可积" },
+                            { "id": "B", "text": "可积函数一定连续" }
+                        ],
+                        "answer": "A"
+                    }
+                ]
+            }
+        });
+        let raw_json = serde_json::to_vec(&json_data).unwrap();
+        let (qs, ans) = parse_exam_view(&raw_json).unwrap();
+        assert_eq!(qs.len(), 1);
+        assert_eq!(qs[0].id, "q100");
+        assert_eq!(ans.get("q100"), Some(&vec!["A".into()]));
+
+        // Test HTML format with .queContainer
+        let html = r#"
+            <div class="exam-review">
+                <div class="queContainer" id="que_101">
+                    <div class="ti-q">深圳大学建校于哪一年？</div>
+                    <label class="ti-a"><input type="radio" value="1980">1980年</label>
+                    <label class="ti-a"><input type="radio" value="1983">1983年</label>
+                    <div class="rightAnswer">正确答案：B (1983年)</div>
+                </div>
+            </div>
+        "#;
+        let (qs_html, ans_html) = parse_exam_view(html.as_bytes()).unwrap();
+        assert_eq!(qs_html.len(), 1);
+        assert_eq!(qs_html[0].id, "que_101");
+        assert_eq!(ans_html.get("que_101"), Some(&vec!["B".into()]));
     }
 }

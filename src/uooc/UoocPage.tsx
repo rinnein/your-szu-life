@@ -142,6 +142,7 @@ export default function UoocPage() {
           if (isUoocSnapshot(next)) {
             apply(next);
             if (next.session === "ready") {
+              void invoke("build_uooc_local_bank").catch(() => {});
               const progress = await invoke("refresh_uooc_progress", { courseIds: [] });
               if (mounted && isUoocSnapshot(progress)) apply(progress);
             }
@@ -156,6 +157,12 @@ export default function UoocPage() {
       stop?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (snapshot?.session === "ready") {
+      void invoke("build_uooc_local_bank").catch(() => {});
+    }
+  }, [snapshot?.session]);
 
   const saved = snapshot?.settings;
   useEffect(() => {
@@ -914,10 +921,6 @@ export default function UoocPage() {
             </Modal>
           </Tabs.Panel>
           <Tabs.Panel id="settings" className="grid gap-4 pt-4">
-            <AiSettings
-              onMode={setDefaultMode}
-              onOpenAiSettings={() => void navigation.push("/settings")}
-            />
             <Card>
               <Card.Header>
                 <Card.Title>运行设置</Card.Title>
@@ -1021,10 +1024,16 @@ export default function UoocPage() {
             </Card>
             <UoocQaSettings
               qaServerUrl={settings.qaServerUrl ?? "http://localhost:4321"}
-              onQaServerUrlChange={(value) => setSettings((old) => ({ ...old, qaServerUrl: value }))}
+              onQaServerUrlChange={(value) =>
+                setSettings((old) => ({ ...old, qaServerUrl: value }))
+              }
               debugEnabled={debugEnabled}
               disabled={running || busy || !snapshot}
               onSaveSettings={() => void action("save_uooc_settings", { settings })}
+            />
+            <AiSettings
+              onMode={setDefaultMode}
+              onOpenAiSettings={() => void navigation.push("/settings")}
             />
           </Tabs.Panel>
         </Tabs>

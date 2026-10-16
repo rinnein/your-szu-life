@@ -234,10 +234,13 @@ pub(crate) fn get_uooc_embedding_status(
 #[tauri::command]
 pub(crate) async fn download_uooc_qa_vectors(
     app: tauri::AppHandle,
+    server_url: Option<String>,
 ) -> Result<super::quiz::qa::EmbeddingModelStatus, String> {
     let service = service(&app)?;
     let cache_path = service.path.parent().unwrap().join("qa-vector-cache.json");
-    let server_url = service.snapshot().settings.qa_server_url.clone();
+    let url = server_url
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
     let api_key = service.qa_api_key().await;
     let cids: Vec<String> = service
         .snapshot()
@@ -245,21 +248,24 @@ pub(crate) async fn download_uooc_qa_vectors(
         .into_iter()
         .map(|c| c.id)
         .collect();
-    super::quiz::qa::download_qa_vectors(&cache_path, &server_url, api_key.as_deref(), &cids).await
+    super::quiz::qa::download_qa_vectors(&cache_path, &url, api_key.as_deref(), &cids).await
 }
 
 #[tauri::command]
 pub(crate) async fn search_uooc_qa_questions(
     app: tauri::AppHandle,
     query: String,
+    server_url: Option<String>,
 ) -> Result<Vec<super::quiz::qa::QaSearchResultItem>, String> {
     let service = service(&app)?;
     let cache_path = service.path.parent().unwrap().join("qa-vector-cache.json");
-    let server_url = service.snapshot().settings.qa_server_url.clone();
+    let url = server_url
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
     let api_key = service.qa_api_key().await;
     super::quiz::qa::search_questions_with_local_embedding(
         &cache_path,
-        &server_url,
+        &url,
         api_key.as_deref(),
         &query,
         15,
@@ -268,22 +274,30 @@ pub(crate) async fn search_uooc_qa_questions(
 }
 
 #[tauri::command]
-pub(crate) async fn sync_uooc_qa_bank(app: tauri::AppHandle) -> Result<usize, String> {
+pub(crate) async fn sync_uooc_qa_bank(
+    app: tauri::AppHandle,
+    server_url: Option<String>,
+) -> Result<usize, String> {
     let service = service(&app)?;
     let bank_path = service.path.parent().unwrap().join("qa-bank.json");
-    let server_url = service.snapshot().settings.qa_server_url.clone();
+    let url = server_url
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
     let api_key = service.qa_api_key().await;
-    super::quiz::qa::sync_missing_to_server(&bank_path, &server_url, api_key.as_deref(), None, None).await
+    super::quiz::qa::sync_missing_to_server(&bank_path, &url, api_key.as_deref(), None, None).await
 }
 
 #[tauri::command]
 pub(crate) async fn get_uooc_qa_account_status(
     app: tauri::AppHandle,
+    server_url: Option<String>,
 ) -> Result<super::quiz::qa::QaAccountStatus, String> {
     let service = service(&app)?;
-    let server_url = service.snapshot().settings.qa_server_url.clone();
+    let url = server_url
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
     let api_key = service.qa_api_key().await;
-    super::quiz::qa::get_qa_account_status(&server_url, api_key.as_deref()).await
+    super::quiz::qa::get_qa_account_status(&url, api_key.as_deref()).await
 }
 
 #[tauri::command]
@@ -297,5 +311,64 @@ pub(crate) fn reset_uooc_qa_api_key(app: tauri::AppHandle) -> Result<(), String>
     let service = service(&app)?;
     service.reset_qa_api_key()
 }
+
+#[tauri::command]
+pub(crate) async fn start_uooc_qa_device_auth(
+    app: tauri::AppHandle,
+    server_url: Option<String>,
+) -> Result<super::quiz::qa::QaDeviceCodeResponse, String> {
+    let service = service(&app)?;
+    let url = server_url
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
+    super::quiz::qa::request_device_code(&url).await
+}
+
+#[tauri::command]
+pub(crate) async fn poll_uooc_qa_device_auth(
+    app: tauri::AppHandle,
+    device_code: String,
+    server_url: Option<String>,
+) -> Result<super::quiz::qa::QaDeviceTokenPollResult, String> {
+    let service = service(&app)?;
+    let url = server_url
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
+    let res = super::quiz::qa::poll_device_token(&url, &device_code).await?;
+    if res.status == "success" {
+        if let Some(key) = &res.api_key {
+            let _ = service.save_qa_api_key(key.clone());
+        }
+    }
+    Ok(res)
+}
+
+#[tauri::command]
+pub(crate) async fn upload_all_uooc_qa_bank(
+    app: tauri::AppHandle,
+    server_url: Option<String>,
+) -> Result<usize, String> {
+    let service = service(&app)?;
+    let bank_path = service.path.parent().unwrap().join("qa-bank.json");
+    let url = server_url
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
+    let api_key = service.qa_api_key().await;
+    super::quiz::qa::upload_all_local_bank(&bank_path, &url, api_key.as_deref()).await
+}
+
+#[tauri::command]
+pub(crate) async fn build_uooc_local_bank(app: tauri::AppHandle) -> Result<usize, String> {
+    let service = service(&app)?;
+    service.build_local_bank().await
+}
+
+#[tauri::command]
+pub(crate) async fn uooc_qa_http_request(
+    request: super::quiz::qa::QaHttpRequest,
+) -> Result<super::quiz::qa::QaHttpResponse, String> {
+    super::quiz::qa::execute_qa_http_request(request).await
+}
+
 
 

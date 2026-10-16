@@ -15,6 +15,7 @@
     "prepare": "vp config"
   },
   "dependencies": {
+    "@better-auth/api-key": "^1.7.10",
     "@codemirror/lang-cpp": "^6.0.3",
     "@codemirror/lang-go": "^6.0.1",
     "@codemirror/lang-java": "^6.0.2",
@@ -36,6 +37,7 @@
     "@tauri-apps/plugin-notification": "^2.7.0",
     "@tauri-apps/plugin-opener": "^2.7.1",
     "@xyflow/react": "^12.12.0",
+    "better-auth": "^1.7.10",
     "codemirror": "^6.0.2",
     "dompurify": "^3.4.17",
     "katex": "^0.19.0",

@@ -1052,3 +1052,82 @@ pub(super) fn window_closed(service: &Arc<Service>, label: &str) {
         }
     }
 }
+
+pub(crate) async fn build_local_bank(service: &Arc<Service>) -> Result<usize, String> {
+    let Ok(_guard) = service.bank_building.try_lock() else {
+        let bank_path = service.path.parent().unwrap().join("qa-bank.json");
+        return Ok(qa::load_local_bank(&bank_path).len());
+    };
+
+    let bank_path = service.path.parent().unwrap().join("qa-bank.json");
+    {
+        let mut runtime = service.runtime.lock().unwrap();
+        runtime.snapshot.logs.push("开始构建本地题库...".into());
+        service.publish(&mut runtime);
+    }
+
+    // 1. Record completed quizzes from current snapshot
+    {
+        let runtime = service.runtime.lock().unwrap();
+        for (_, q) in &runtime.snapshot.quizzes {
+            if !q.questions.is_empty() && !q.answers.is_empty() {
+                let _ = qa::record_passed_quiz(
+                    &bank_path,
+                    &q.cid,
+                    &q.task_id,
+                    &q.questions,
+                    &q.answers,
+                );
+            }
+        }
+    }
+
+    // 2. Scan enrolled courses
+    let (client, courses) = {
+        let r = service.runtime.lock().unwrap();
+        (service.client(), r.snapshot.courses.clone())
+    };
+
+    let cancel = CancellationToken::new();
+    for course in &courses {
+        let Ok(rows) = client.quiz_list(&course.id, &cancel).await else {
+            continue;
+        };
+        for row in rows {
+            let Some(_rid) = protocol::resource_id(&row) else {
+                continue;
+            };
+            let Ok(Some((_, item))) = locate_row(&client, &course.id, &row, &cancel).await else {
+                continue;
+            };
+            if number(&item["finished"]) != 0.0 {
+                let Some(task_id) = id(&item["task_id"]) else {
+                    continue;
+                };
+                let view_url = format!("{}/exam/view?cid={}&tid={}", client.origin(), course.id, task_id);
+                if let Ok(bytes) = client.quiz_http(&view_url, None, &cancel).await {
+                    if let Some((questions, answers)) = qa::parse_exam_view(&bytes) {
+                        if !questions.is_empty() && !answers.is_empty() {
+                            let _ = qa::record_passed_quiz(
+                                &bank_path,
+                                &course.id,
+                                &task_id,
+                                &questions,
+                                &answers,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let total = qa::load_local_bank(&bank_path).len();
+    {
+        let mut runtime = service.runtime.lock().unwrap();
+        runtime.snapshot.logs.push(format!("本地题库构建完成，当前收录 {total} 道题目"));
+        service.publish(&mut runtime);
+    }
+
+    Ok(total)
+}

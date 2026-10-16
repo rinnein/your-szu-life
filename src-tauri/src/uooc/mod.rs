@@ -67,6 +67,7 @@ pub(super) struct Service {
     ai: Mutex<ai::Config>,
     ai_permits: Semaphore,
     discussion_lock: tokio::sync::Mutex<()>,
+    pub(super) bank_building: Arc<tokio::sync::Mutex<()>>,
 }
 impl Service {
     fn new(
@@ -120,6 +121,7 @@ impl Service {
             ai: Mutex::new(ai),
             ai_permits: Semaphore::new(2),
             discussion_lock: tokio::sync::Mutex::new(()),
+            bank_building: Arc::new(tokio::sync::Mutex::new(())),
             permits: RwLock::new(Arc::new(Semaphore::new(saved.settings.concurrency))),
             client: RwLock::new(Arc::new(Client::new(jar)?)),
             refresh_lock: tokio::sync::Mutex::new(()),
@@ -406,6 +408,9 @@ impl Service {
         r.qa_api_key = None;
         self.publish(&mut r);
         Ok(())
+    }
+    pub(crate) async fn build_local_bank(self: &Arc<Self>) -> Result<usize, String> {
+        quiz::build_local_bank(self).await
     }
     fn start(self: &Arc<Self>, ids: Vec<String>) -> Result<(), String> {
         if ids.is_empty() {

@@ -77,7 +77,8 @@ export function EmbeddingModelSettings() {
           本地模型-Embedding
         </Card.Title>
         <Card.Description>
-          用于文本语义嵌入与向量检索（BGE-small-zh-v1.5 量化版）。模型保存在本机应用数据目录，支持离线高速向量特征计算。
+          用于文本语义嵌入与向量检索（BGE-small-zh-v1.5
+          量化版）。模型保存在本机应用数据目录，支持离线高速向量特征计算。
         </Card.Description>
       </Card.Header>
       <Card.Content className="grid gap-4">
@@ -104,7 +105,8 @@ export function EmbeddingModelSettings() {
             <Alert.Content>
               <Alert.Title>尚未安装 Embedding 模型</Alert.Title>
               <Alert.Description>
-                首次下载约 {formatModelSize(status.bytes)}，下载后可离线进行 BGE-small-zh-v1.5 语义向量计算。
+                首次下载约 {formatModelSize(status.bytes)}，下载后可离线进行 BGE-small-zh-v1.5
+                语义向量计算。
               </Alert.Description>
             </Alert.Content>
           </Alert>

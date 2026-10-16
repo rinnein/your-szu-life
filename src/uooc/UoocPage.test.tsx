@@ -272,6 +272,11 @@ it("displays and saves qa server url field when debug mode is enabled", async ()
   );
 });
 
+it("starts local bank build immediately when entering uooc page with ready session", async () => {
+  mount("/uooc");
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith("build_uooc_local_bank"));
+});
+
 it("does not label a real run as a preview when the settings edit has not been saved", async () => {
   const router = mount("/uooc?tab=settings");
   const preview = await screen.findByRole("checkbox", { name: /仅预览/ });

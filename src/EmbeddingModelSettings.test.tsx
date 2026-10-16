@@ -53,7 +53,5 @@ it("renders status and downloads embedding model", async () => {
   const downloadBtn = screen.getByRole("button", { name: "下载 Embedding 模型" });
   fireEvent.click(downloadBtn);
 
-  await waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith("download_embedding_model"),
-  );
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith("download_embedding_model"));
 });
