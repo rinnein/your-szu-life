@@ -11,7 +11,8 @@ use std::{
 use tauri::{Emitter, Manager};
 
 const MANIFEST: &str = include_str!("../resources/embedding/bge-small-zh-v1.5/model.json");
-const ACCELERATORS: &str = include_str!("../../huggingface-accelerator.json");
+const GITHUB_ACCELERATORS: &str = include_str!("../../github-accelerator.json");
+const HUGGINGFACE_ACCELERATORS: &str = include_str!("../../huggingface-accelerator.json");
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -22,10 +23,7 @@ struct Manifest {
     revision: String,
     sha256: String,
     bytes: u64,
-    #[serde(default)]
-    huggingface_url: Option<String>,
-    #[serde(default)]
-    upstream_url: Option<String>,
+    url: String,
 }
 
 impl Manifest {
@@ -40,22 +38,14 @@ impl Manifest {
         {
             return Err("Embedding 模型配置未通过校验".into());
         }
-        for value in [
-            manifest.huggingface_url.as_deref(),
-            manifest.upstream_url.as_deref(),
-        ]
-        .into_iter()
-        .flatten()
+        let url = Url::parse(&manifest.url).map_err(|_| "Embedding 模型下载地址无效")?;
+        if url.scheme() != "https"
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
         {
-            let url = Url::parse(value).map_err(|_| "Embedding 模型下载地址无效")?;
-            if url.scheme() != "https"
-                || !url.username().is_empty()
-                || url.password().is_some()
-                || url.query().is_some()
-                || url.fragment().is_some()
-            {
-                return Err("Embedding 模型下载地址必须是无凭据 HTTPS 地址".into());
-            }
+            return Err("Embedding 模型下载地址必须是无凭据 HTTPS 地址".into());
         }
         Ok(manifest)
     }
@@ -240,39 +230,49 @@ impl ModelStore {
 
     fn sources(&self) -> Vec<(String, Url)> {
         let mut sources = Vec::new();
-        let primary = self
-            .manifest
-            .huggingface_url
-            .as_deref()
-            .and_then(|v| Url::parse(v).ok());
-        if let Some(primary) = primary {
+        let Ok(primary) = Url::parse(&self.manifest.url) else {
+            return sources;
+        };
+        let host = primary.host_str().unwrap_or_default();
+
+        if host.contains("huggingface") {
             sources.push(("huggingface".into(), primary.clone()));
-            if let Ok(values) = serde_json::from_str::<Vec<String>>(ACCELERATORS) {
+            if let Ok(values) = serde_json::from_str::<Vec<String>>(HUGGINGFACE_ACCELERATORS) {
                 for prefix in values {
-                    let Ok(prefix) = Url::parse(&prefix) else {
+                    let Ok(base) = Url::parse(&prefix) else {
                         continue;
                     };
-                    if prefix.scheme() != "https"
-                        || !prefix.username().is_empty()
-                        || prefix.password().is_some()
+                    if base.scheme() != "https"
+                        || !base.username().is_empty()
+                        || base.password().is_some()
                     {
                         continue;
                     }
                     let path = primary.path().trim_start_matches('/');
-                    if let Ok(url) = prefix.join(path) {
-                        sources.push(("accelerator".into(), url));
+                    if let Ok(url) = base.join(path) {
+                        sources.push(("huggingface-accelerator".into(), url));
                     }
                 }
             }
+        } else if host.contains("github") {
+            sources.push(("github".into(), primary.clone()));
+            if let Ok(values) = serde_json::from_str::<Vec<String>>(GITHUB_ACCELERATORS) {
+                for prefix in values {
+                    let candidate = format!("{prefix}{primary}");
+                    if let Ok(url) = Url::parse(&candidate) {
+                        if url.scheme() == "https"
+                            && url.username().is_empty()
+                            && url.password().is_none()
+                        {
+                            sources.push(("github-accelerator".into(), url));
+                        }
+                    }
+                }
+            }
+        } else {
+            sources.push(("direct".into(), primary.clone()));
         }
-        if let Some(upstream) = self
-            .manifest
-            .upstream_url
-            .as_deref()
-            .and_then(|v| Url::parse(v).ok())
-        {
-            sources.push(("upstream".into(), upstream));
-        }
+
         sources
     }
 

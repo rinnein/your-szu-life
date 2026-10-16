@@ -6,6 +6,5 @@
   "bytes": 54088400,
   "charset": "ddddocr-core 0.2.4 from_builtin_beta",
   "normalization": "MinusOneToOne",
-  "huggingfaceUrl": "https://huggingface.co/bilabila/ddddocr/resolve/main/common.onnx",
-  "upstreamUrl": "https://raw.githubusercontent.com/sml2h3/ddddocr/c40f56f95412e10bcb9bd0bd24411e92f896d238/ddddocr/common.onnx"
+  "url": "https://raw.githubusercontent.com/sml2h3/ddddocr/c40f56f95412e10bcb9bd0bd24411e92f896d238/ddddocr/common.onnx"
 }
