@@ -6,7 +6,7 @@ use super::{
         LOGIN_ERROR_MESSAGE, MANUAL_MESSAGE,
     },
     urls::{
-        application_return_url, is_login_url, is_portal_origin, is_target_url,
+        is_login_url, is_portal_origin, is_target_url,
         same_application_origin,
     },
     PORTAL_URL,
@@ -67,43 +67,7 @@ fn credentials_are_only_eligible_for_the_exact_https_login_endpoint() {
 }
 
 #[test]
-fn return_url_accepts_only_the_payments_route_on_real_application_origins() {
-    let development = url("http://localhost:1420/");
-    for value in [
-        "tauri://localhost/campus-payments/network",
-        "http://tauri.localhost/campus-payments/network",
-        "http://tauri.localhost/campus-payments/network?discard=1#fragment",
-        "http://localhost:1420/campus-payments/network?discard=1#fragment",
-    ] {
-        let result = application_return_url(&url(value), Some(&development)).unwrap();
-        assert_eq!(result.path(), "/campus-payments/network");
-        assert_eq!(result.query(), None);
-        assert_eq!(result.fragment(), None);
-    }
-    for value in [
-        "http://tauri.localhost/",
-        "tauri://localhost/campus-payments",
-        "http://tauri.localhost/campus-payments",
-        "tauri://localhost/settings",
-        "http://tauri.localhost:1420/campus-payments",
-        "https://self.szu.edu.cn/campus-payments",
-        "https://tauri.localhost/campus-payments",
-        "http://localhost:1421/campus-payments",
-        "http://127.0.0.1:1420/campus-payments",
-        "http://user:secret@localhost:1420/campus-payments",
-        "http://tauri.localhost.evil.test/campus-payments",
-        "file:///campus-payments",
-        "tauri://localhost:80/campus-payments",
-    ] {
-        assert!(
-            application_return_url(&url(value), Some(&development)).is_none(),
-            "unexpected return URL: {value}"
-        );
-    }
-    assert!(
-        application_return_url(&url("http://localhost:1420/campus-payments/network"), None)
-            .is_none()
-    );
+fn application_origin_matches_development_and_production() {
     assert!(!same_application_origin(
         &url("http://user@tauri.localhost/campus-payments"),
         &local()

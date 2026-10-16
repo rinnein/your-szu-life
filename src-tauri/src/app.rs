@@ -28,6 +28,9 @@ pub(crate) fn run() {
             if let Err(error) = crate::ocr::initialize(app.handle()) {
                 eprintln!("OCR 模型服务初始化失败: {error}");
             }
+            if let Err(error) = crate::embedding_model::initialize(app.handle()) {
+                eprintln!("Embedding 模型服务初始化失败: {error}");
+            }
             auth::webview::setup_login_injection(app.handle())?;
             crate::enrollment::initialize(app.handle(), academic_credentials.clone())?;
             if let Err(error) = oj::initialize(app.handle()) {
@@ -70,6 +73,9 @@ pub(crate) fn run() {
             crate::ocr::commands::get_ocr_model_status,
             crate::ocr::commands::download_ocr_model,
             crate::ocr::commands::update_ocr_model,
+            crate::embedding_model::commands::get_embedding_model_status,
+            crate::embedding_model::commands::download_embedding_model,
+            crate::embedding_model::commands::update_embedding_model,
             oj::commands::load_oj_image,
             oj::commands::save_oj_preferences,
             oj::commands::configure_oj_companion,
@@ -120,6 +126,10 @@ pub(crate) fn run() {
             uooc::commands::save_uooc_settings,
             uooc::commands::start_uooc_courses,
             uooc::commands::control_uooc_tasks,
+            uooc::commands::get_uooc_embedding_status,
+            uooc::commands::download_uooc_qa_vectors,
+            uooc::commands::search_uooc_qa_questions,
+            uooc::commands::sync_uooc_qa_bank,
             app_content::commands::get_app_content_snapshot,
             app_content::commands::refresh_app_content,
             app_content::commands::get_contributors,

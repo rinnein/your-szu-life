@@ -1,4 +1,5 @@
 pub(crate) mod model;
+pub(crate) mod qa;
 mod protocol;
 #[cfg(test)]
 mod tests;
@@ -362,6 +363,32 @@ pub(super) async fn run(
                 q.stage = Stage::Preparing;
             }
         });
+        if !unchanged {
+            let qa_url = service.snapshot().settings.qa_server_url.clone();
+            let qa_key = service.qa_api_key().await;
+            if let Ok(qa_qs) =
+                qa::query_task_answers(&qa_url, qa_key.as_deref(), &task, Some(&cid)).await
+            {
+                let match_res = qa::match_answers(&qa_qs, &fresh.questions);
+                if !match_res.matched_answers.is_empty() || !match_res.reviews.is_empty() {
+                    let all_matched = match_res.matched_answers.len() == fresh.questions.len()
+                        && !fresh.questions.is_empty();
+                    update(&service, &ctx, |q| {
+                        q.answers.extend(match_res.matched_answers);
+                        q.reviews = match_res.reviews;
+                        if all_matched {
+                            q.stage =
+                                if q.mode == Mode::Yolo && !service.snapshot().settings.dry_run {
+                                    Stage::Preparing
+                                } else {
+                                    Stage::AwaitingApproval
+                                };
+                            q.message = "已从 UOOC 题库匹配全部标准答案".into();
+                        }
+                    });
+                }
+            }
+        }
         if unchanged
             && matches!(
                 old.stage,
@@ -370,7 +397,15 @@ pub(super) async fn run(
         {
             return Ok(TaskStatus::AwaitingDecision);
         }
-        let mode = state(&service, &ctx).mode;
+        let current_state = state(&service, &ctx);
+        if current_state.answers.len() == fresh.questions.len()
+            && !fresh.questions.is_empty()
+            && current_state.mode == Mode::Yolo
+            && !service.snapshot().settings.dry_run
+        {
+            return submit(&service, &client, &ctx, &cancel).await;
+        }
+        let mode = current_state.mode;
         if mode == Mode::Supervised {
             update(&service, &ctx, |q| {
                 q.stage = Stage::AwaitingChoice;
@@ -405,30 +440,82 @@ pub(super) async fn run(
 async fn generate(service: &Arc<Service>, ctx: &Context, cancel: &CancellationToken) -> bool {
     update(service, ctx, |q| {
         q.stage = Stage::Generating;
-        q.message = "AI 正在生成答案草稿…".into();
+        q.message = "正在查询题库并生成答案草稿…".into();
     });
-    let q = state(service, ctx);
-    let result = tokio::select! {biased;_=cancel.cancelled()=>return false,r=ai::generate(service,&q.questions,cancel)=>r};
+    let mut q = state(service, ctx);
+
+    if q.answers.is_empty() {
+        let qa_url = service.snapshot().settings.qa_server_url.clone();
+        let qa_key = service.qa_api_key().await;
+        if let Ok(qa_qs) =
+            qa::query_task_answers(&qa_url, qa_key.as_deref(), &q.task_id, Some(&ctx.cid)).await
+        {
+            let matched = qa::match_answers(&qa_qs, &q.questions);
+            if !matched.matched_answers.is_empty() || !matched.reviews.is_empty() {
+                update(service, ctx, |state| {
+                    state.answers.extend(matched.matched_answers);
+                    for r in matched.reviews {
+                        if let Some(existing) =
+                            state.reviews.iter_mut().find(|ex| ex.question_id == r.question_id)
+                        {
+                            *existing = r;
+                        } else {
+                            state.reviews.push(r);
+                        }
+                    }
+                });
+                q = state(service, ctx);
+            }
+        }
+    }
+
+    let needed: Vec<_> = q
+        .questions
+        .iter()
+        .filter(|item| !q.answers.get(&item.id).is_some_and(|a| !a.is_empty()))
+        .cloned()
+        .collect();
+
+    let (ai_answers, ai_reviews, err) = if needed.is_empty() {
+        (Answers::new(), vec![], None)
+    } else {
+        tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return false,
+            r = ai::generate(service, &needed, cancel) => r,
+        }
+    };
+
     if !current(service, ctx) {
         return false;
     }
-    let ok = result.2.is_none();
+
+    let ok = err.is_none();
     let automatic = q.mode == Mode::Yolo && !service.snapshot().settings.dry_run && ok;
+
     update(service, ctx, |q| {
-        q.answers = result.0;
-        q.reviews = result.1;
+        for (k, v) in ai_answers {
+            q.answers.insert(k, v);
+        }
+        for r in ai_reviews {
+            if let Some(existing) = q.reviews.iter_mut().find(|ex| ex.question_id == r.question_id)
+            {
+                *existing = r;
+            } else {
+                q.reviews.push(r);
+            }
+        }
         q.stage = if automatic {
             Stage::Preparing
         } else {
             Stage::AwaitingApproval
         };
-        q.message = result.2.unwrap_or_else(|| {
+        q.message = err.unwrap_or_else(|| {
             if automatic {
-                "AI 答案已生成，准备核对并提交"
+                "答案已准备完毕，准备核对并提交".into()
             } else {
-                "请检查、修改并确认整份测验答案"
+                "请检查、修改并确认整份测验答案".into()
             }
-            .into()
         });
     });
     ok
@@ -505,6 +592,23 @@ async fn submit(
             q.submission_uncertain = false;
             q.message = "测验未通过或提交被拒绝，已停止本课程；请查看官网结果".into();
         });
+        let qa_url = service.snapshot().settings.qa_server_url.clone();
+        let qa_key = service.qa_api_key().await;
+        let course_name = service
+            .snapshot()
+            .courses
+            .iter()
+            .find(|c| c.id == ctx.cid)
+            .map(|c| c.title.clone());
+        let payload = qa::build_failed_payload(
+            &ctx.cid,
+            course_name.as_deref(),
+            &q.task_id,
+            &q.title,
+            &q.questions,
+            &q.answers,
+        );
+        let _ = qa::upload_batch(&qa_url, qa_key.as_deref(), &payload).await;
         return Ok(TaskStatus::Failed);
     }
     update(service, ctx, |q| {
@@ -523,6 +627,35 @@ async fn submit(
                 q.message = "测验已通过服务端确认，继续课程".into();
             });
             service.fetch_progress(&ctx.cid, cancel).await?;
+            let qa_url = service.snapshot().settings.qa_server_url.clone();
+            let qa_key = service.qa_api_key().await;
+            let course_name = service
+                .snapshot()
+                .courses
+                .iter()
+                .find(|c| c.id == ctx.cid)
+                .map(|c| c.title.clone());
+            let payload = qa::build_passed_payload(
+                &ctx.cid,
+                course_name.as_deref(),
+                &q.task_id,
+                &q.title,
+                &q.questions,
+                &q.answers,
+            );
+            let _ = qa::upload_batch(&qa_url, qa_key.as_deref(), &payload).await;
+
+            let bank_path = service.path.parent().unwrap().join("qa-bank.json");
+            let _ = qa::record_passed_quiz(&bank_path, &ctx.cid, &q.task_id, &q.questions, &q.answers);
+            let _ = qa::sync_missing_to_server(
+                &bank_path,
+                &qa_url,
+                qa_key.as_deref(),
+                Some(&ctx.cid),
+                Some(&q.task_id),
+            )
+            .await;
+
             return Ok(TaskStatus::Queued);
         }
         tokio::select! {biased;_=cancel.cancelled()=>return Err(Error::Cancelled),_=tokio::time::sleep(std::time::Duration::from_secs(2))=>{}}
@@ -536,12 +669,102 @@ async fn submit(
     Ok(TaskStatus::AwaitingDecision)
 }
 
+async fn match_qa_action(service: &Arc<Service>, ctx: &Context, cancel: &CancellationToken) {
+    update(service, ctx, |q| {
+        q.stage = Stage::Preparing;
+        q.message = "正在从题库检索答案并同步本地题目…".into();
+    });
+    let q = state(service, ctx);
+    let qa_url = service.snapshot().settings.qa_server_url.clone();
+    let qa_key = service.qa_api_key().await;
+    let bank_path = service.path.parent().unwrap().join("qa-bank.json");
+
+    // 自动比对后端是否存在缺失题目，并将后端缺失的题目上传
+    let _ = qa::sync_missing_to_server(
+        &bank_path,
+        &qa_url,
+        qa_key.as_deref(),
+        Some(&ctx.cid),
+        Some(&q.task_id),
+    )
+    .await;
+
+    let res = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return,
+        r = qa::query_task_answers(&qa_url, qa_key.as_deref(), &q.task_id, Some(&ctx.cid)) => r,
+    };
+    if !current(service, ctx) {
+        return;
+    }
+
+    // 先检查本地题库是否有确认答案
+    let local_bank = qa::load_local_bank(&bank_path);
+    let mut local_hits = 0;
+    for question in &q.questions {
+        let key = qa::bank_key(&q.task_id, &question.id);
+        if let Some(entry) = local_bank.get(&key) {
+            if !entry.correct_answers.is_empty() {
+                local_hits += 1;
+                update(service, ctx, |state| {
+                    state.answers.insert(question.id.clone(), entry.correct_answers.clone());
+                    state.reviews.push(Review {
+                        question_id: question.id.clone(),
+                        answers: entry.correct_answers.clone(),
+                        probabilities: Default::default(),
+                        message: "本地题库命中已确认答案".into(),
+                    });
+                });
+            }
+        }
+    }
+
+    match res {
+        Ok(qs) => {
+            let matched = qa::match_answers(&qs, &q.questions);
+            let count = matched.matched_answers.len() + local_hits;
+            update(service, ctx, |q| {
+                q.answers.extend(matched.matched_answers);
+                for r in matched.reviews {
+                    if let Some(existing) =
+                        q.reviews.iter_mut().find(|ex| ex.question_id == r.question_id)
+                    {
+                        *existing = r;
+                    } else {
+                        q.reviews.push(r);
+                    }
+                }
+                q.stage = Stage::AwaitingApproval;
+                q.message = if count > 0 {
+                    format!("已从题库匹配 {count} 道题目的标准答案")
+                } else {
+                    "题库中暂未收录该测验的标准答案".into()
+                };
+            });
+        }
+        Err(e) => {
+            if local_hits > 0 {
+                update(service, ctx, |q| {
+                    q.stage = Stage::AwaitingApproval;
+                    q.message = format!("远程题库连接失败，但已从本地题库命中 {local_hits} 道题目答案");
+                });
+            } else {
+                update(service, ctx, |q| {
+                    q.stage = Stage::AwaitingChoice;
+                    q.message = format!("题库检索失败: {e}");
+                });
+            }
+        }
+    }
+}
+
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum Action {
     Generate,
     Submit,
     Check,
+    MatchQa,
 }
 impl Service {
     pub(super) fn quiz_policy(&self, cid: String, mode: Mode) -> Result<(), String> {
@@ -672,6 +895,16 @@ impl Service {
                                 q.message = "新答案已生成，请确认后提交".into();
                             });
                         }
+                        Ok(TaskStatus::AwaitingDecision)
+                    }
+                    Action::MatchQa => {
+                        let q = state(&service, &ctx);
+                        let p = paper(&client, &q.task_id, &cancel).await?;
+                        update(&service, &ctx, |q| {
+                            q.signature = p.signature;
+                            q.questions = p.questions;
+                        });
+                        match_qa_action(&service, &ctx, &cancel).await;
                         Ok(TaskStatus::AwaitingDecision)
                     }
                     Action::Submit => submit(&service, &client, &ctx, &cancel).await,

@@ -221,3 +221,58 @@ pub(crate) async fn start_uooc_discussion(
     service.start_discussion_once(&course_id).await?;
     Ok(service.snapshot())
 }
+
+#[tauri::command]
+pub(crate) fn get_uooc_embedding_status(
+    app: tauri::AppHandle,
+) -> Result<super::quiz::qa::EmbeddingModelStatus, String> {
+    let service = service(&app)?;
+    let cache_path = service.path.parent().unwrap().join("qa-vector-cache.json");
+    Ok(super::quiz::qa::get_vector_status(&cache_path))
+}
+
+#[tauri::command]
+pub(crate) async fn download_uooc_qa_vectors(
+    app: tauri::AppHandle,
+) -> Result<super::quiz::qa::EmbeddingModelStatus, String> {
+    let service = service(&app)?;
+    let cache_path = service.path.parent().unwrap().join("qa-vector-cache.json");
+    let server_url = service.snapshot().settings.qa_server_url.clone();
+    let api_key = service.qa_api_key().await;
+    let cids: Vec<String> = service
+        .snapshot()
+        .courses
+        .into_iter()
+        .map(|c| c.id)
+        .collect();
+    super::quiz::qa::download_qa_vectors(&cache_path, &server_url, api_key.as_deref(), &cids).await
+}
+
+#[tauri::command]
+pub(crate) async fn search_uooc_qa_questions(
+    app: tauri::AppHandle,
+    query: String,
+) -> Result<Vec<super::quiz::qa::QaSearchResultItem>, String> {
+    let service = service(&app)?;
+    let cache_path = service.path.parent().unwrap().join("qa-vector-cache.json");
+    let server_url = service.snapshot().settings.qa_server_url.clone();
+    let api_key = service.qa_api_key().await;
+    super::quiz::qa::search_questions_with_local_embedding(
+        &cache_path,
+        &server_url,
+        api_key.as_deref(),
+        &query,
+        15,
+    )
+    .await
+}
+
+#[tauri::command]
+pub(crate) async fn sync_uooc_qa_bank(app: tauri::AppHandle) -> Result<usize, String> {
+    let service = service(&app)?;
+    let bank_path = service.path.parent().unwrap().join("qa-bank.json");
+    let server_url = service.snapshot().settings.qa_server_url.clone();
+    let api_key = service.qa_api_key().await;
+    super::quiz::qa::sync_missing_to_server(&bank_path, &server_url, api_key.as_deref(), None, None).await
+}
+

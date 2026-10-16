@@ -51,6 +51,7 @@ struct Runtime {
     checkins: checkin::Checkins,
     quiz_windows: HashMap<String, (u64, String)>,
     discussion: DiscussionStoreState,
+    qa_api_key: Option<String>,
 }
 pub(super) struct Service {
     app: Option<tauri::AppHandle>,
@@ -144,6 +145,7 @@ impl Service {
                 checkins: checkin::Checkins::default(),
                 quiz_windows: HashMap::new(),
                 discussion: saved.discussion,
+                qa_api_key: saved.qa_api_key,
             }),
         }))
     }
@@ -178,6 +180,7 @@ impl Service {
                     tasks: runtime.snapshot.tasks.clone(),
                     quizzes,
                     discussion: runtime.discussion.clone(),
+                    qa_api_key: runtime.qa_api_key.clone(),
                 }
             });
         if let Err(error) = saved.and_then(|saved| persistence::write(&self.path, &saved)) {
@@ -360,8 +363,9 @@ impl Service {
         }
         Ok(())
     }
-    fn set_settings(&self, settings: Settings) -> Result<(), String> {
+    fn set_settings(&self, mut settings: Settings) -> Result<(), String> {
         settings.validate()?;
+        settings.qa_server_url = normalize_qa_url(&settings.qa_server_url)?;
         let mut runtime = self.runtime.lock().unwrap();
         if !runtime.workers.is_empty() {
             return Err("请先暂停全部任务再修改设置".into());
@@ -370,6 +374,25 @@ impl Service {
         runtime.snapshot.settings = settings;
         self.publish(&mut runtime);
         Ok(())
+    }
+    pub(crate) async fn qa_api_key(&self) -> Option<String> {
+        let (server_url, key) = {
+            let r = self.runtime.lock().unwrap();
+            (
+                r.snapshot.settings.qa_server_url.clone(),
+                r.qa_api_key.clone(),
+            )
+        };
+        if let Some(key) = &key {
+            if !key.trim().is_empty() {
+                return Some(key.clone());
+            }
+        }
+        let new_key = quiz::qa::ensure_api_key(&server_url, None).await?;
+        let mut r = self.runtime.lock().unwrap();
+        r.qa_api_key = Some(new_key.clone());
+        self.publish(&mut r);
+        Some(new_key)
     }
     fn start(self: &Arc<Self>, ids: Vec<String>) -> Result<(), String> {
         if ids.is_empty() {

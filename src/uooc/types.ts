@@ -14,6 +14,7 @@ export type UoocSettings = {
   discussionEnabled?: boolean;
   discussionContent?: string;
   discussionIntervalMin?: number;
+  qaServerUrl?: string;
 };
 export type UoocTaskStatus =
   | "queued"

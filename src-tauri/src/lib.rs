@@ -5,6 +5,7 @@ mod campus_network;
 mod campus_payments;
 #[cfg(desktop)]
 mod desktop;
+mod embedding_model;
 mod enrollment;
 mod notification;
 mod ocr;

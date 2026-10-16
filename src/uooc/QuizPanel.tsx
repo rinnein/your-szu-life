@@ -48,7 +48,7 @@ export function QuizPanel({
       setBusy(false);
     }
   };
-  const control = async (action: "generate" | "check") => {
+  const control = async (action: "generate" | "check" | "matchQa") => {
     onSnapshot(
       await invoke<UoocSnapshot>("control_uooc_quiz", {
         cid: quiz.cid,
@@ -181,6 +181,13 @@ export function QuizPanel({
               自主答题
             </Button>
           )}
+          <Button
+            variant="secondary"
+            isDisabled={disabled || quiz.questions.length === 0}
+            onPress={() => void run(() => control("matchQa"))}
+          >
+            匹配题库
+          </Button>
           <Button
             variant="secondary"
             isDisabled={disabled || quiz.questions.length === 0}

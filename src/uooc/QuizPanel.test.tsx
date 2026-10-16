@@ -120,3 +120,19 @@ it("supervision waits for an explicit choice and dry-run cannot submit", () => {
   expect(screen.getByRole("radio", { name: "4" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "确认答案并提交" })).toBeDisabled();
 });
+
+it("calls control_uooc_quiz with matchQa action when clicking 匹配题库", async () => {
+  const q = quiz();
+  vi.mocked(invoke).mockResolvedValue(response(q));
+  render(<QuizPanel quiz={q} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
+  const matchBtn = screen.getByRole("button", { name: "匹配题库" });
+  expect(matchBtn).toBeEnabled();
+  fireEvent.click(matchBtn);
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("control_uooc_quiz", {
+      cid: "42",
+      revision: 7,
+      action: "matchQa",
+    }),
+  );
+});

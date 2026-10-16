@@ -70,6 +70,8 @@ pub(crate) struct Settings {
     pub discussion_content: String,
     #[serde(default = "default_discussion_interval_min")]
     pub discussion_interval_min: u64,
+    #[serde(default = "default_qa_server_url")]
+    pub qa_server_url: String,
 }
 fn default_discussion_enabled() -> bool {
     true
@@ -79,6 +81,20 @@ fn default_discussion_content() -> String {
 }
 fn default_discussion_interval_min() -> u64 {
     30
+}
+fn default_qa_server_url() -> String {
+    "http://localhost:4321".into()
+}
+pub(crate) fn normalize_qa_url(raw: &str) -> Result<String, String> {
+    let raw = raw.trim().trim_end_matches('/');
+    if raw.is_empty() {
+        return Ok("http://localhost:4321".into());
+    }
+    let url = reqwest::Url::parse(raw).map_err(|_| "题库服务地址无效")?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        return Err("题库服务地址需使用 HTTP 或 HTTPS，不能包含凭据或路径错误".into());
+    }
+    Ok(url.as_str().trim_end_matches('/').into())
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -90,6 +106,7 @@ impl Default for Settings {
             discussion_enabled: true,
             discussion_content: default_discussion_content(),
             discussion_interval_min: default_discussion_interval_min(),
+            qa_server_url: default_qa_server_url(),
         }
     }
 }
@@ -109,6 +126,9 @@ impl Settings {
                 "并发数和间隔必须为正整数，间隔不超过一天，倍率必须为有效正数，讨论文案不能为空"
                     .into(),
             );
+        }
+        if !self.qa_server_url.trim().is_empty() {
+            normalize_qa_url(&self.qa_server_url)?;
         }
         Ok(())
     }
@@ -226,6 +246,8 @@ pub(super) struct SavedState {
     pub quizzes: std::collections::BTreeMap<String, super::quiz::model::QuizState>,
     #[serde(default)]
     pub discussion: DiscussionStoreState,
+    #[serde(default)]
+    pub qa_api_key: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

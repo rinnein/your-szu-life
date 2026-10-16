@@ -34,6 +34,7 @@ import { PageShell, SkeletonCard } from "../components";
 import { useLogicalNavigation } from "../logical-navigation";
 import { AiSettings, QuizModePicker } from "./AiSettings";
 import { QuizPanel } from "./QuizPanel";
+import { UoocQaSettings } from "./UoocQaSettings";
 import type { AiConfig, QuizMode } from "./types";
 import { CourseProgressView } from "./CourseProgressView";
 import {
@@ -92,6 +93,26 @@ export default function UoocPage() {
       })
       .catch(() => {});
   }, []);
+  const [debugEnabled, setDebugEnabled] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void invoke("get_debug_mode")
+      .then((value) => {
+        if (active) setDebugEnabled(Boolean((value as { enabled?: boolean })?.enabled));
+      })
+      .catch(() => undefined);
+    let unlisten: (() => void) | undefined;
+    void listen<{ enabled: boolean }>("debug-mode-changed", (event) => {
+      if (active) setDebugEnabled(event.payload.enabled);
+    }).then((stop) => {
+      if (active) unlisten = stop;
+      else stop();
+    });
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, []);
   const [selected, setSelected] = useState<string[]>([]);
   const [settings, setSettings] = useState<UoocSettings>({
     concurrency: 3,
@@ -147,6 +168,7 @@ export default function UoocPage() {
         discussionEnabled: saved.discussionEnabled ?? true,
         discussionContent: saved.discussionContent ?? "要好好学习",
         discussionIntervalMin: saved.discussionIntervalMin ?? 30,
+        ...(saved.qaServerUrl !== undefined ? { qaServerUrl: saved.qaServerUrl } : {}),
       });
     }
     // Only actual settings changes replace edits, not progress events.
@@ -158,6 +180,7 @@ export default function UoocPage() {
     saved?.discussionEnabled,
     saved?.discussionContent,
     saved?.discussionIntervalMin,
+    saved?.qaServerUrl,
   ]);
 
   const action = async (command: string, args?: Record<string, unknown>) => {
@@ -996,6 +1019,13 @@ export default function UoocPage() {
                 </Button>
               </Card.Content>
             </Card>
+            <UoocQaSettings
+              qaServerUrl={settings.qaServerUrl ?? "http://localhost:4321"}
+              onQaServerUrlChange={(value) => setSettings((old) => ({ ...old, qaServerUrl: value }))}
+              debugEnabled={debugEnabled}
+              disabled={running || busy || !snapshot}
+              onSaveSettings={() => void action("save_uooc_settings", { settings })}
+            />
           </Tabs.Panel>
         </Tabs>
       </div>

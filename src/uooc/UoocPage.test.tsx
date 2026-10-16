@@ -227,6 +227,51 @@ it("opens global AI connection settings from UOOC runtime settings", async () =>
   await waitFor(() => expect(router.state.location.pathname).toBe("/settings"));
 });
 
+it("does not display qa server url field when debug mode is disabled", async () => {
+  mount("/uooc?tab=settings");
+  await screen.findByRole("button", { name: "保存设置" });
+  expect(screen.queryByLabelText(/题库共享后端地址/)).not.toBeInTheDocument();
+});
+
+it("displays and saves qa server url field when debug mode is enabled", async () => {
+  vi.mocked(invoke).mockImplementation(async (name) => {
+    if (name === "get_debug_mode") return { enabled: true, logCount: 0 };
+    if (
+      name === "get_uooc_snapshot" ||
+      name === "start_uooc_courses" ||
+      name === "save_uooc_settings" ||
+      name === "control_uooc_tasks"
+    )
+      return structuredClone(snapshot);
+    if (name === "get_uooc_ai_config")
+      return {
+        main: { baseUrl: "https://example.org/v1", model: "main", hasKey: true },
+        jev: { baseUrl: "https://api.typesafe.ai/v1", model: "jev", hasKey: false },
+        jevEnabled: false,
+        confidence: 0.8,
+        defaultMode: "supervised",
+      };
+    return undefined;
+  });
+
+  mount("/uooc?tab=settings");
+  const qaInput = await screen.findByLabelText(/题库共享后端地址/);
+  expect(qaInput).toBeInTheDocument();
+  expect(qaInput).toHaveValue("http://localhost:4321");
+
+  fireEvent.change(qaInput, { target: { value: "http://custom-qa.example:5000" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存题库地址" }));
+
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("save_uooc_settings", {
+      settings: {
+        ...snapshot.settings,
+        qaServerUrl: "http://custom-qa.example:5000",
+      },
+    }),
+  );
+});
+
 it("does not label a real run as a preview when the settings edit has not been saved", async () => {
   const router = mount("/uooc?tab=settings");
   const preview = await screen.findByRole("checkbox", { name: /仅预览/ });
