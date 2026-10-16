@@ -276,3 +276,26 @@ pub(crate) async fn sync_uooc_qa_bank(app: tauri::AppHandle) -> Result<usize, St
     super::quiz::qa::sync_missing_to_server(&bank_path, &server_url, api_key.as_deref(), None, None).await
 }
 
+#[tauri::command]
+pub(crate) async fn get_uooc_qa_account_status(
+    app: tauri::AppHandle,
+) -> Result<super::quiz::qa::QaAccountStatus, String> {
+    let service = service(&app)?;
+    let server_url = service.snapshot().settings.qa_server_url.clone();
+    let api_key = service.qa_api_key().await;
+    super::quiz::qa::get_qa_account_status(&server_url, api_key.as_deref()).await
+}
+
+#[tauri::command]
+pub(crate) fn save_uooc_qa_api_key(app: tauri::AppHandle, api_key: String) -> Result<(), String> {
+    let service = service(&app)?;
+    service.save_qa_api_key(api_key)
+}
+
+#[tauri::command]
+pub(crate) fn reset_uooc_qa_api_key(app: tauri::AppHandle) -> Result<(), String> {
+    let service = service(&app)?;
+    service.reset_qa_api_key()
+}
+
+

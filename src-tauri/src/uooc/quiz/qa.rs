@@ -214,6 +214,65 @@ pub(crate) struct QaSearchResultItem {
     pub source: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct QaAccountStatus {
+    pub api_key: Option<String>,
+    pub is_anonymous: bool,
+    pub user_id: Option<String>,
+    pub user_name: Option<String>,
+    pub permission_level: String,
+    pub can_overwrite: bool,
+}
+
+pub(crate) async fn get_qa_account_status(
+    server_url: &str,
+    api_key: Option<&str>,
+) -> Result<QaAccountStatus, String> {
+    let Some(key) = api_key.filter(|k| !k.trim().is_empty()) else {
+        return Ok(QaAccountStatus {
+            api_key: None,
+            is_anonymous: true,
+            user_id: None,
+            user_name: None,
+            permission_level: "unregistered".into(),
+            can_overwrite: false,
+        });
+    };
+
+    let base = server_url.trim_end_matches('/');
+    let url = format!("{base}/api/automation/tasks?limit=1");
+    let client = http_client()?;
+    let resp = client.get(&url).header("x-api-key", key.trim()).send().await;
+
+    match resp {
+        Ok(res) if res.status().is_success() => {
+            let data: serde_json::Value = res.json().await.unwrap_or_default();
+            let account = &data["account"];
+            let level = account["permissionLevel"].as_str().unwrap_or("anonymous");
+            let is_anon = account["isAnonymous"].as_bool().unwrap_or(true);
+            let can_overwrite = level == "authenticated" || level == "admin";
+
+            Ok(QaAccountStatus {
+                api_key: Some(key.to_string()),
+                is_anonymous: is_anon,
+                user_id: account["userId"].as_str().map(str::to_string),
+                user_name: account["userName"].as_str().map(str::to_string),
+                permission_level: level.to_string(),
+                can_overwrite,
+            })
+        }
+        _ => Ok(QaAccountStatus {
+            api_key: Some(key.to_string()),
+            is_anonymous: true,
+            user_id: None,
+            user_name: None,
+            permission_level: "unknown".into(),
+            can_overwrite: false,
+        }),
+    }
+}
+
 /// Normalize stem according to uooc-qa-share specification:
 /// strip HTML tags, strip HTML entities, collapse whitespace, trim, lowercase.
 pub(crate) fn normalize_stem(raw: &str) -> String {

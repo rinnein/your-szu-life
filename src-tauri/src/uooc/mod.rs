@@ -394,6 +394,19 @@ impl Service {
         self.publish(&mut r);
         Some(new_key)
     }
+    pub(crate) fn save_qa_api_key(&self, key: String) -> Result<(), String> {
+        let trimmed = key.trim().to_string();
+        let mut r = self.runtime.lock().unwrap();
+        r.qa_api_key = if trimmed.is_empty() { None } else { Some(trimmed) };
+        self.publish(&mut r);
+        Ok(())
+    }
+    pub(crate) fn reset_qa_api_key(&self) -> Result<(), String> {
+        let mut r = self.runtime.lock().unwrap();
+        r.qa_api_key = None;
+        self.publish(&mut r);
+        Ok(())
+    }
     fn start(self: &Arc<Self>, ids: Vec<String>) -> Result<(), String> {
         if ids.is_empty() {
             return Err("请先选择课程".into());

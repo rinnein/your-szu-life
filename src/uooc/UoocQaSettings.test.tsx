@@ -3,9 +3,10 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
-import { UoocQaSettings, type EmbeddingVectorStatus } from "./UoocQaSettings";
+import { UoocQaSettings, type EmbeddingVectorStatus, type QaAccountStatus } from "./UoocQaSettings";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("../app-content/external", () => ({ openPublicUrl: vi.fn() }));
 
 const initialStatus: EmbeddingVectorStatus = {
   status: "empty",
@@ -23,6 +24,15 @@ const downloadedStatus: EmbeddingVectorStatus = {
   message: "本地已缓存 88 条题目向量",
 };
 
+const anonAccount: QaAccountStatus = {
+  apiKey: "uooc_anon_12345",
+  isAnonymous: true,
+  userId: "anon_user_1",
+  userName: "Anonymous",
+  permissionLevel: "anonymous",
+  canOverwrite: false,
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal(
@@ -36,8 +46,10 @@ beforeEach(() => {
   Element.prototype.getAnimations = () => [];
   vi.mocked(invoke).mockImplementation(async (command) => {
     if (command === "get_uooc_embedding_status") return initialStatus;
+    if (command === "get_uooc_qa_account_status") return anonAccount;
     if (command === "download_uooc_qa_vectors") return downloadedStatus;
     if (command === "sync_uooc_qa_bank") return 5;
+    if (command === "save_uooc_qa_api_key") return undefined;
     if (command === "search_uooc_qa_questions")
       return [
         {
@@ -63,6 +75,7 @@ afterEach(() => {
 it("renders initial status and downloads uooc qa vectors", async () => {
   render(<UoocQaSettings />);
   expect(await screen.findByText("尚未下载题库向量")).toBeInTheDocument();
+  expect(await screen.findByText("匿名账户（仅读与新写）")).toBeInTheDocument();
 
   const downloadBtn = screen.getByRole("button", { name: "下载 UOOC 标记题库向量" });
   fireEvent.click(downloadBtn);
@@ -79,6 +92,22 @@ it("syncs confirmed questions with backend", async () => {
 
   await waitFor(() => expect(invoke).toHaveBeenCalledWith("sync_uooc_qa_bank"));
   expect(await screen.findByText(/已成功与后端比对并将 5 道缺失题目同步上传/)).toBeInTheDocument();
+});
+
+it("saves custom api key", async () => {
+  render(<UoocQaSettings />);
+  const keyInput = await screen.findByLabelText("题库 API Key");
+  fireEvent.change(keyInput, { target: { value: "uooc_custom_secret_key" } });
+
+  const saveKeyBtn = screen.getByRole("button", { name: "保存 Key" });
+  fireEvent.click(saveKeyBtn);
+
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("save_uooc_qa_api_key", {
+      apiKey: "uooc_custom_secret_key",
+    }),
+  );
+  expect(await screen.findByText("题库 API Key 保存成功")).toBeInTheDocument();
 });
 
 it("searches questions using local embedding calculation", async () => {
