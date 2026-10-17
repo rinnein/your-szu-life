@@ -61,8 +61,7 @@ export function OcrModelSettings({ autoReturn = false }: { autoReturn?: boolean 
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>();
   const ready = status?.status === "ready";
-  const isDownloading =
-    busy || status?.status === "downloading" || (progress !== null && !ready);
+  const isDownloading = busy || status?.status === "downloading" || (progress !== null && !ready);
 
   const downloadedBytes = progress?.downloadedBytes ?? status?.downloadedBytes ?? 0;
   const totalBytes = progress?.totalBytes ?? status?.totalBytes ?? status?.bytes ?? 2294200;

@@ -10,16 +10,16 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() =
 
 const initialStatus: EmbeddingModelStatus = {
   status: "missing",
-  revision: "ba24e2e75e6eb1a25c19f972c3d97f5a8c2b7f3b",
-  sha256: "81f18544e39ec2f8b668079fef3f94e1d53039d91f4b8cf6b41295ea9f5e317c",
-  bytes: 48942200,
+  revision: "75c43b069aac4d136ba6bc1122f995fedcfd2781",
+  sha256: "15b717c382bcb518ba457b93ea6850ede7f4f1cd8937454aa06972366cd19bcc",
+  bytes: 24010842,
 };
 
 const readyStatus: EmbeddingModelStatus = {
   status: "ready",
-  revision: "ba24e2e75e6eb1a25c19f972c3d97f5a8c2b7f3b",
-  sha256: "81f18544e39ec2f8b668079fef3f94e1d53039d91f4b8cf6b41295ea9f5e317c",
-  bytes: 48942200,
+  revision: "75c43b069aac4d136ba6bc1122f995fedcfd2781",
+  sha256: "15b717c382bcb518ba457b93ea6850ede7f4f1cd8937454aa06972366cd19bcc",
+  bytes: 24010842,
   source: "cache",
 };
 
@@ -61,11 +61,11 @@ it("renders progress bar and real-time speed when embedding model is downloading
     if (command === "get_embedding_model_status") {
       return {
         status: "downloading",
-        revision: "ba24e2e75e6eb1a25c19f972c3d97f5a8c2b7f3b",
-        sha256: "81f18544e39ec2f8b668079fef3f94e1d53039d91f4b8cf6b41295ea9f5e317c",
-        bytes: 48942200,
-        downloadedBytes: 24471100,
-        totalBytes: 48942200,
+        revision: "75c43b069aac4d136ba6bc1122f995fedcfd2781",
+        sha256: "15b717c382bcb518ba457b93ea6850ede7f4f1cd8937454aa06972366cd19bcc",
+        bytes: 24010842,
+        downloadedBytes: 12005421,
+        totalBytes: 24010842,
         speedBytesPerSec: 1048576,
       };
     }
@@ -76,5 +76,5 @@ it("renders progress bar and real-time speed when embedding model is downloading
 
   expect(await screen.findByText("50%")).toBeInTheDocument();
   expect(screen.getByText("1.0 MB/s")).toBeInTheDocument();
-  expect(screen.getByText("23.3 MB / 46.7 MB")).toBeInTheDocument();
+  expect(screen.getByText("11.4 MB / 22.9 MB")).toBeInTheDocument();
 });

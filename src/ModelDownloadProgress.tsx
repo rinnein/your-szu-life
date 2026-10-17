@@ -85,9 +85,7 @@ export function ModelProgressBar({
         <span>
           {formatModelBytes(downloadedBytes)} / {formatModelBytes(totalBytes)}
         </span>
-        <span className="font-medium text-foreground">
-          {formatDownloadSpeed(speedBytesPerSec)}
-        </span>
+        <span className="font-medium text-foreground">{formatDownloadSpeed(speedBytesPerSec)}</span>
       </div>
     </div>
   );

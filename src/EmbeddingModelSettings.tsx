@@ -42,7 +42,7 @@ export function useEmbeddingModelStatus() {
             status: "ready",
             revision: "",
             sha256: "",
-            bytes: 48942200,
+            bytes: 24010842,
             source: "web-preview",
           }),
       );
@@ -61,11 +61,10 @@ export function EmbeddingModelSettings({ autoReturn = false }: { autoReturn?: bo
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>();
   const ready = status?.status === "ready";
-  const isDownloading =
-    busy || status?.status === "downloading" || (progress !== null && !ready);
+  const isDownloading = busy || status?.status === "downloading" || (progress !== null && !ready);
 
   const downloadedBytes = progress?.downloadedBytes ?? status?.downloadedBytes ?? 0;
-  const totalBytes = progress?.totalBytes ?? status?.totalBytes ?? status?.bytes ?? 48942200;
+  const totalBytes = progress?.totalBytes ?? status?.totalBytes ?? status?.bytes ?? 24010842;
   const speedBytesPerSec = progress?.speedBytesPerSec ?? status?.speedBytesPerSec ?? 0;
 
   const download = async (update: boolean) => {

@@ -33,8 +33,8 @@ const MODEL_INFO: Record<
     title: "需要安装本地 Embedding 模型",
     description:
       "UOOC 题库检索与语义相似度计算（BGE-small-zh-v1.5 量化版）需要本地向量模型，支持离线高速向量特征计算。",
-    sizeHint: "约 46.7 MB",
-    approxBytes: 48942200,
+    sizeHint: "约 22.9 MB",
+    approxBytes: 24010842,
     downloadCommand: "download_embedding_model",
     settingsFocus: "embedding",
   },

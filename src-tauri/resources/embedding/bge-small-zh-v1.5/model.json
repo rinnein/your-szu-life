@@ -1,8 +1,8 @@
 {
-  "repository": "https://huggingface.co/BAAI/bge-small-zh-v1.5",
-  "revision": "ba24e2e75e6eb1a25c19f972c3d97f5a8c2b7f3b",
+  "repository": "https://huggingface.co/Xenova/bge-small-zh-v1.5",
+  "revision": "75c43b069aac4d136ba6bc1122f995fedcfd2781",
   "file": "onnx/model_quantized.onnx",
-  "sha256": "81f18544e39ec2f8b668079fef3f94e1d53039d91f4b8cf6b41295ea9f5e317c",
-  "bytes": 48942200,
+  "sha256": "15b717c382bcb518ba457b93ea6850ede7f4f1cd8937454aa06972366cd19bcc",
+  "bytes": 24010842,
   "url": "https://huggingface.co/Xenova/bge-small-zh-v1.5/resolve/main/onnx/model_quantized.onnx"
 }

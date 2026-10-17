@@ -447,3 +447,60 @@ pub(crate) async fn download_command(
     .map_err(|_| "Embedding 模型下载任务崩溃".to_owned())??;
     status()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_manifest_loads_and_validates() {
+        let manifest = Manifest::load().expect("Manifest should load successfully");
+        assert_eq!(manifest.revision, "75c43b069aac4d136ba6bc1122f995fedcfd2781");
+        assert_eq!(
+            manifest.sha256,
+            "15b717c382bcb518ba457b93ea6850ede7f4f1cd8937454aa06972366cd19bcc"
+        );
+        assert_eq!(manifest.bytes, 24010842);
+        assert_eq!(
+            manifest.url,
+            "https://huggingface.co/Xenova/bge-small-zh-v1.5/resolve/main/onnx/model_quantized.onnx"
+        );
+    }
+
+    #[test]
+    fn test_sources_generation() {
+        let manifest = Manifest::load().expect("Manifest should load");
+        let store = ModelStore {
+            manifest,
+            cache: PathBuf::from("/tmp"),
+            bundled: None,
+            state: Mutex::new(EmbeddingModelStatus {
+                status: "missing".into(),
+                revision: "".into(),
+                sha256: "".into(),
+                bytes: 0,
+                source: None,
+                error: None,
+                downloaded_bytes: None,
+                total_bytes: None,
+                speed_bytes_per_sec: None,
+            }),
+            operation: Mutex::new(()),
+        };
+        let sources = store.sources();
+        assert!(!sources.is_empty());
+        assert_eq!(sources[0].0, "huggingface");
+        assert!(sources.iter().any(|(name, _)| name == "huggingface-accelerator"));
+    }
+
+    #[test]
+    fn test_verify_detects_hash_and_size_mismatch() {
+        let manifest = Manifest::load().expect("Manifest should load");
+        let temp_dir = std::env::temp_dir();
+        let test_file = temp_dir.join("test_embedding_verify.bin");
+        // Incorrect size
+        fs::write(&test_file, b"corrupted data").unwrap();
+        assert!(!manifest.verify(&test_file));
+        let _ = fs::remove_file(&test_file);
+    }
+}

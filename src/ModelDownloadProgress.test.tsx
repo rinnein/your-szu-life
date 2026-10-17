@@ -2,11 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
 import { expect, it } from "vite-plus/test";
-import {
-  formatDownloadSpeed,
-  formatModelBytes,
-  ModelProgressBar,
-} from "./ModelDownloadProgress";
+import { formatDownloadSpeed, formatModelBytes, ModelProgressBar } from "./ModelDownloadProgress";
 
 it("formats speed values accurately", () => {
   expect(formatDownloadSpeed(0)).toBe("0 B/s");
