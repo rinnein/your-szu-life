@@ -222,6 +222,10 @@ pub(crate) struct VideoState {
     pub position: f64,
     pub duration: Option<f64>,
     pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -318,6 +322,8 @@ pub(super) struct Video {
     pub title: String,
     pub source: String,
     pub position: f64,
+    pub task_type: String,
+    pub task_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -326,6 +332,7 @@ pub(crate) enum TaskAction {
     Pause,
     Resume,
     Stop,
+    Delete,
 }
 
 pub(super) fn multiplier(request: usize, target: f64) -> f64 {

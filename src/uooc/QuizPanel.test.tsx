@@ -136,3 +136,50 @@ it("calls control_uooc_quiz with matchQa action when clicking 匹配题库", asy
     }),
   );
 });
+
+it("allows clicking 查看测验 to force fetch completed quiz when quiz is passed", async () => {
+  const passedQuiz: QuizState = {
+    ...quiz(),
+    stage: "passed",
+    message: "当前测验已由服务端确认完成",
+    questions: [],
+    answers: {},
+  };
+  const onSnapshot = vi.fn();
+  vi.mocked(invoke).mockResolvedValue(
+    response({
+      ...passedQuiz,
+      questions: [
+        {
+          id: "q1",
+          text: "微积分定理证明",
+          kind: "single",
+          options: [{ id: "a", text: "4" }],
+          blanks: 0,
+          images: [],
+        },
+      ],
+      answers: { q1: ["a"] },
+    }),
+  );
+
+  render(
+    <QuizPanel
+      quiz={passedQuiz}
+      active={false}
+      dryRun={false}
+      weight={20}
+      onSnapshot={onSnapshot}
+    />,
+  );
+  const viewBtn = screen.getByRole("button", { name: "查看测验" });
+  expect(viewBtn).toBeEnabled();
+  fireEvent.click(viewBtn);
+
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("fetch_uooc_completed_quiz", {
+      cid: "42",
+    }),
+  );
+  expect(onSnapshot).toHaveBeenCalled();
+});

@@ -409,6 +409,25 @@ impl Service {
         self.publish(&mut r);
         Ok(())
     }
+    pub(crate) fn log_debug(&self, stage: &str, message: impl Into<String>) {
+        let msg = message.into();
+        let Some(app) = &self.app else { return };
+        let Some(store) = app.try_state::<crate::campus_network::CampusNetworkStore>() else {
+            return;
+        };
+        crate::campus_network::diagnostics::record(
+            app,
+            &store,
+            crate::campus_network::model::DebugLogEntry {
+                timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
+                level: "info".into(),
+                source: "uooc".into(),
+                stage: stage.into(),
+                message: Some(msg),
+                ..Default::default()
+            },
+        );
+    }
     pub(crate) async fn build_local_bank(self: &Arc<Self>) -> Result<usize, String> {
         quiz::build_local_bank(self).await
     }
@@ -517,38 +536,54 @@ impl Service {
                         t.status,
                         TaskStatus::Completed | TaskStatus::DryRun | TaskStatus::Stopped
                     ),
+                    TaskAction::Delete => true,
                 })
                 .map(|t| t.course.id.clone())
                 .collect();
-            if background_generation.is_some() && matches!(action, TaskAction::Stop) {
-                checkin::cancel_locked(&mut runtime, &[], "已停止后台任务");
+            if matches!(action, TaskAction::Delete) {
+                for id in &targets {
+                    if let Some((_, token)) = runtime.workers.remove(id) {
+                        token.cancel();
+                    }
+                    runtime.snapshot.quizzes.remove(id);
+                    runtime.snapshot.discussions.remove(id);
+                    runtime.discussion.courses.remove(id);
+                    runtime.snapshot.checkins.remove(id);
+                }
+                runtime.snapshot.tasks.retain(|t| !targets.contains(&t.course.id));
+                self.publish(&mut runtime);
+            } else {
+                if background_generation.is_some() && matches!(action, TaskAction::Stop) {
+                    checkin::cancel_locked(&mut runtime, &[], "已停止后台任务");
+                }
+                for id in targets {
+                    if matches!(action, TaskAction::Resume) {
+                        resuming.insert(id.clone());
+                    }
+                    if let Some((_, token)) = runtime.workers.remove(&id) {
+                        token.cancel();
+                    }
+                    let task = runtime
+                        .snapshot
+                        .tasks
+                        .iter_mut()
+                        .find(|t| t.course.id == id)
+                        .unwrap();
+                    task.generation += 1;
+                    task.desired_running = matches!(action, TaskAction::Resume);
+                    task.status = match action {
+                        TaskAction::Pause => TaskStatus::Paused,
+                        TaskAction::Resume => TaskStatus::Queued,
+                        TaskAction::Stop => TaskStatus::Stopped,
+                        TaskAction::Delete => unreachable!(),
+                    };
+                    task.message.clear();
+                    for video in task.videos.iter_mut().filter(|v| v.status.active()) {
+                        video.status = task.status.clone();
+                    }
+                }
+                self.publish(&mut runtime);
             }
-            for id in targets {
-                if matches!(action, TaskAction::Resume) {
-                    resuming.insert(id.clone());
-                }
-                if let Some((_, token)) = runtime.workers.remove(&id) {
-                    token.cancel();
-                }
-                let task = runtime
-                    .snapshot
-                    .tasks
-                    .iter_mut()
-                    .find(|t| t.course.id == id)
-                    .unwrap();
-                task.generation += 1;
-                task.desired_running = matches!(action, TaskAction::Resume);
-                task.status = match action {
-                    TaskAction::Pause => TaskStatus::Paused,
-                    TaskAction::Resume => TaskStatus::Queued,
-                    TaskAction::Stop => TaskStatus::Stopped,
-                };
-                task.message.clear();
-                for video in task.videos.iter_mut().filter(|v| v.status.active()) {
-                    video.status = task.status.clone();
-                }
-            }
-            self.publish(&mut runtime);
         }
         if !resuming.is_empty() {
             self.reconcile_selected(Some(&resuming));
@@ -684,13 +719,15 @@ impl Service {
                     _ => String::new(),
                 };
             }
-            runtime.snapshot.logs.push(format!(
+            let log_msg = format!(
                 "课程 {cid}：{}",
                 result
                     .as_ref()
                     .map(|s| format!("{s:?}"))
                     .unwrap_or_else(|e| e.message())
-            ));
+            );
+            self.log_debug("task", &log_msg);
+            runtime.snapshot.logs.push(log_msg);
             if let Err(error) = self.save_session(client) {
                 runtime.snapshot.message = error;
             }

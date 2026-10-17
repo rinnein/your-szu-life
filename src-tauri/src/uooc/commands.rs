@@ -358,6 +358,16 @@ pub(crate) async fn upload_all_uooc_qa_bank(
 }
 
 #[tauri::command]
+pub(crate) async fn fetch_uooc_completed_quiz(
+    app: tauri::AppHandle,
+    cid: String,
+) -> Result<Snapshot, String> {
+    let service = service(&app)?;
+    service.fetch_completed_quiz(&cid).await?;
+    Ok(service.snapshot())
+}
+
+#[tauri::command]
 pub(crate) fn get_uooc_local_bank_questions(
     app: tauri::AppHandle,
 ) -> Result<Vec<super::quiz::qa::LocalBankQuestion>, String> {

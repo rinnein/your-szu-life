@@ -369,6 +369,8 @@ fn adding_existing_tasks_is_idempotent_for_every_status() {
                     position: 79.0,
                     duration: Some(80.0),
                     message: String::new(),
+                    task_type: Some("video".into()),
+                    task_id: None,
                 }],
             }]
         });

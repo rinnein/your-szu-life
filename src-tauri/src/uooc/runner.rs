@@ -29,6 +29,31 @@ fn source(item: &Value) -> Option<String> {
         .find(|s| !s.is_empty())
         .map(str::to_owned)
 }
+pub(super) fn collect_flat_catalog(
+    nodes: &[Value],
+    chapter_id: Option<&str>,
+    out: &mut Vec<(Value, String, String)>,
+) {
+    for node in nodes {
+        let current_id = id(&node["id"]).unwrap_or_default();
+        let effective_chapter = chapter_id.unwrap_or(&current_id);
+
+        let children = node["children"].as_array().filter(|c| !c.is_empty());
+        let has_icons = node["icon_list"]
+            .as_array()
+            .map_or(false, |icons| !icons.is_empty());
+        let has_task_id = id(&node["task_id"]).is_some_and(|tid| tid != "0");
+
+        if children.is_none() || has_icons || has_task_id {
+            out.push((node.clone(), effective_chapter.to_string(), current_id.clone()));
+        }
+
+        if let Some(children_arr) = children {
+            collect_flat_catalog(children_arr, Some(effective_chapter), out);
+        }
+    }
+}
+
 pub(super) fn catalog_nodes(
     cid: &str,
     catalog: Vec<Value>,
@@ -54,6 +79,8 @@ pub(super) fn catalog_nodes(
                     title: String::new(),
                     source: String::new(),
                     position: 0.0,
+                    task_type: "video".into(),
+                    task_id: None,
                 },
             ));
         }
@@ -78,37 +105,88 @@ async fn discover(
         if nodes > 10000 {
             return Err(Error::Invalid);
         }
-        let items = match client.unit(&context, cancel).await {
-            Ok(items) => items,
-            Err(Error::Gate) => return Ok((videos, completed, true)),
-            Err(error) => return Err(error),
-        };
-        for item in items {
-            let Some(source) = source(&item) else {
-                continue;
-            };
-            let resource = id(&item["id"]).ok_or(Error::Invalid)?;
-            if !seen.insert(resource.clone()) {
-                continue;
+
+        // 识别任务类别：优先基于 icon_list[0] 的 type 和 type_name
+        let first_icon = node["icon_list"].as_array().and_then(|arr| arr.first());
+        let icon_type = first_icon.map(|i| text(&i["type"])).unwrap_or_default();
+        let type_name = first_icon.map(|i| text(&i["type_name"])).unwrap_or_default();
+
+        let is_quiz_node = icon_type == "80"
+            || type_name.contains("测验")
+            || (id(&node["task_id"]).is_some_and(|tid| tid != "0") && text(&node["name"]).contains("测验"));
+
+        if is_quiz_node {
+            let quiz_task_id = id(&node["task_id"]).filter(|tid| tid != "0");
+            let quiz_res_id = first_icon
+                .and_then(|i| id(&i["id"]))
+                .unwrap_or_else(|| id(&node["id"]).unwrap_or_else(|| context.section.clone()));
+
+            if seen.insert(quiz_res_id.clone()) {
+                let quiz_video = Video {
+                    resource: quiz_res_id,
+                    title: text(&node["name"]),
+                    source: String::new(),
+                    position: 0.0,
+                    task_type: "quiz".into(),
+                    task_id: quiz_task_id,
+                    ..context.clone()
+                };
+                if number(&node["finished"]) != 0.0 {
+                    completed.push(quiz_video);
+                }
             }
-            let video = Video {
-                resource,
-                title: text(&item["title"]),
-                source,
-                position: number(&item["video_pos"]).max(0.0),
-                ..context.clone()
+        } else {
+            // 视频任务：调用 unit 查询单元项（涵盖视频和单元内嵌测验）
+            let items = match client.unit(&context, cancel).await {
+                Ok(items) => items,
+                Err(Error::Gate) => return Ok((videos, completed, true)),
+                Err(error) => return Err(error),
             };
-            if number(&item["finished"]) != 0.0 {
-                completed.push(video);
-            } else {
-                videos.push(video);
+            for item in items {
+                let Some(resource) = id(&item["id"]) else {
+                    continue;
+                };
+                if !seen.insert(resource.clone()) {
+                    continue;
+                }
+                let src = source(&item).unwrap_or_default();
+                let is_finished = number(&item["finished"]) != 0.0;
+                let item_type = number(&item["type"]);
+                let is_quiz = item_type == 80.0;
+                let tid = id(&item["task_id"]);
+                let is_video_type = item_type == 10.0 || !src.is_empty() || item.get("video_pos").is_some();
+                if is_quiz || is_video_type || is_finished {
+                    let video = Video {
+                        resource,
+                        title: text(&item["title"]),
+                        source: src,
+                        position: number(&item["video_pos"]).max(0.0),
+                        task_type: if is_quiz { "quiz".into() } else { "video".into() },
+                        task_id: tid,
+                        ..context.clone()
+                    };
+                    if is_finished {
+                        completed.push(video);
+                    } else if !is_quiz && !video.source.is_empty() {
+                        videos.push(video);
+                    }
+                }
             }
         }
+
+        // 递归遍历子节点 (subsections)
         if let Some(children) = node["children"].as_array() {
-            for child in children.iter().rev() {
+            for child in children {
                 let mut child_context = context.clone();
-                child_context.subsection = Some(id(&child["id"]).ok_or(Error::Invalid)?);
-                queue.push_front((child.clone(), child_context));
+                if let Some(sub_id) = id(&child["id"]) {
+                    if child_context.subsection.is_none() {
+                        child_context.subsection = Some(sub_id);
+                    } else {
+                        child_context.section = child_context.subsection.unwrap();
+                        child_context.subsection = Some(sub_id);
+                    }
+                }
+                queue.push_back((child.clone(), child_context));
             }
         }
     }
@@ -129,6 +207,37 @@ pub(super) async fn run(
         .await?
         .video_complete()
     {
+        // 如果视频已全部刷完，尝试同步平台侧已完成的任务项，使任务列表中完整按顺序展示所有任务项
+        if let Ok((_pending, completed, _gate)) = discover(&client, &cid, &cancel).await {
+            service.task_change(&cid, generation, |task| {
+                for video in completed {
+                    let duration = service.durations.cached(&cid, &video.resource);
+                    let state = VideoState {
+                        resource_id: video.resource.clone(),
+                        title: video.title,
+                        status: TaskStatus::Completed,
+                        position: video.position,
+                        duration,
+                        message: String::new(),
+                        task_type: Some(video.task_type.clone()),
+                        task_id: video.task_id.clone(),
+                    };
+                    if let Some(old) = task
+                        .videos
+                        .iter_mut()
+                        .find(|v| v.resource_id == video.resource)
+                    {
+                        old.status = TaskStatus::Completed;
+                        old.duration = old.duration.or(duration);
+                        old.task_type = old.task_type.clone().or_else(|| Some(video.task_type.clone()));
+                        old.task_id = old.task_id.clone().or_else(|| video.task_id.clone());
+                        old.message.clear();
+                    } else {
+                        task.videos.push(state);
+                    }
+                }
+            });
+        }
         return super::quiz::run(service, client, cid, generation, false, cancel).await;
     }
     service.task_change(&cid, generation, |t| t.status = TaskStatus::Running);
@@ -147,6 +256,8 @@ pub(super) async fn run(
                     position: video.position,
                     duration,
                     message: String::new(),
+                    task_type: Some(video.task_type.clone()),
+                    task_id: video.task_id.clone(),
                 };
                 if let Some(old) = task
                     .videos
@@ -156,6 +267,8 @@ pub(super) async fn run(
                     // A sparse server response must not erase the last position confirmed in this run.
                     old.status = TaskStatus::Completed;
                     old.duration = old.duration.or(duration);
+                    old.task_type = old.task_type.clone().or_else(|| Some(video.task_type.clone()));
+                    old.task_id = old.task_id.clone().or_else(|| video.task_id.clone());
                     old.message.clear();
                 } else {
                     task.videos.push(state);
@@ -203,6 +316,8 @@ pub(super) async fn run(
                     position: v.position,
                     duration: service.durations.cached(&cid, &v.resource),
                     message: String::new(),
+                    task_type: Some(v.task_type.clone()),
+                    task_id: v.task_id.clone(),
                 };
                 if let Some(old) = task
                     .videos

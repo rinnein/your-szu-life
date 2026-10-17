@@ -65,6 +65,7 @@ permissions = [
   "allow-start-uooc-qa-device-auth",
   "allow-poll-uooc-qa-device-auth",
   "allow-upload-all-uooc-qa-bank",
+  "allow-fetch-uooc-completed-quiz",
   "allow-get-uooc-local-bank-questions",
   "allow-get-uooc-course-title",
   "allow-build-uooc-local-bank",

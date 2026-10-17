@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import {
   Accordion,
   Alert,
+  AlertDialog,
   Button,
   Card,
   Chip,
@@ -29,6 +30,7 @@ import {
   LuPlay,
   LuRefreshCw,
   LuSquare,
+  LuTrash2,
 } from "react-icons/lu";
 import { PageShell, SkeletonCard } from "../components";
 import { useLogicalNavigation } from "../logical-navigation";
@@ -77,6 +79,8 @@ export default function UoocPage() {
     {},
   );
   const [modalQuizCid, setModalQuizCid] = useState<string | null>(null);
+  const [taskToDelete, setTaskToDelete] = useState<UoocTask | null>(null);
+  const [confirmDeleteCompleted, setConfirmDeleteCompleted] = useState(false);
   const embeddingStatus = useEmbeddingModelStatus();
   const [embeddingModalOpen, setEmbeddingModalOpen] = useState(false);
   const [embeddingDismissed, setEmbeddingDismissed] = useState(false);
@@ -323,7 +327,7 @@ export default function UoocPage() {
           !checkinActive(snapshot.checkins?.[course.id]),
       )
       .map((course) => course.id) ?? [];
-  const control = (actionName: "pause" | "resume" | "stop", courseIds: string[] = []) =>
+  const control = (actionName: "pause" | "resume" | "stop" | "delete", courseIds: string[] = []) =>
     void action("control_uooc_tasks", { courseIds, action: actionName });
   const start = async () => {
     if (window.SzuApplicationBack) {
@@ -639,6 +643,17 @@ export default function UoocPage() {
                 <LuSquare aria-hidden="true" />
                 停止全部
               </Button>
+              {tasks.some((t) => t.status === "completed") && (
+                <Button
+                  variant="tertiary"
+                  isDisabled={busy}
+                  className="text-danger hover:text-danger hover:bg-danger/10"
+                  onPress={() => setConfirmDeleteCompleted(true)}
+                >
+                  <LuTrash2 aria-hidden="true" />
+                  删除已完成任务
+                </Button>
+              )}
             </div>
             <p className="text-sm text-muted">
               离开本页后任务继续运行。重启时自动恢复上次运行的课程；主动暂停或停止的任务不会自动恢复。
@@ -665,7 +680,7 @@ export default function UoocPage() {
                 const isItemCompleted = (item: CourseTaskItem): boolean =>
                   item.kind === "video"
                     ? item.video.status === "completed"
-                    : item.quiz.stage === "passed";
+                    : item.quiz.stage === "passed" || item.quiz.videoComplete;
                 const completedItems = taskItems.filter(isItemCompleted);
                 const pendingItems = taskItems.filter((item) => !isItemCompleted(item));
                 const completedKeys = expandedAccordionKeys[task.course.id] ?? new Set<string>([]);
@@ -814,6 +829,16 @@ export default function UoocPage() {
                         >
                           停止
                         </Button>
+                        <Button
+                          size="sm"
+                          variant="tertiary"
+                          isDisabled={busy}
+                          className="text-danger hover:text-danger hover:bg-danger/10"
+                          onPress={() => setTaskToDelete(task)}
+                        >
+                          <LuTrash2 aria-hidden="true" />
+                          删除
+                        </Button>
                       </div>
                       {task.message && (
                         <p role="status" className="text-sm text-muted">
@@ -856,6 +881,7 @@ export default function UoocPage() {
                           </Accordion>
                         )}
                         {pendingItems.map(renderTaskItem)}
+                        {taskItems.length === 0 && <p className="text-sm text-muted">暂无任务项</p>}
                       </div>
                     </Card.Content>
                   </Card>
@@ -906,20 +932,6 @@ export default function UoocPage() {
                 <Card.Content>选择课程并开始后，任务会显示在这里。</Card.Content>
               </Card>
             )}
-            {!!snapshot?.logs.length && (
-              <Card>
-                <Card.Header>
-                  <Card.Title>运行记录</Card.Title>
-                </Card.Header>
-                <Card.Content>
-                  <div role="log" className="max-h-48 overflow-auto text-sm text-muted">
-                    {snapshot.logs.map((line, index) => (
-                      <p key={`${index}-${line}`}>{line}</p>
-                    ))}
-                  </div>
-                </Card.Content>
-              </Card>
-            )}
             <Modal
               isOpen={!!modalQuizCid}
               onOpenChange={(open) => {
@@ -950,6 +962,95 @@ export default function UoocPage() {
                 </Modal.Container>
               </Modal.Backdrop>
             </Modal>
+            <AlertDialog
+              isOpen={!!taskToDelete}
+              onOpenChange={(open) => {
+                if (!open) setTaskToDelete(null);
+              }}
+            >
+              <AlertDialog.Backdrop>
+                <AlertDialog.Container size="sm">
+                  <AlertDialog.Dialog>
+                    <AlertDialog.Icon status="danger" />
+                    <AlertDialog.Header>
+                      <AlertDialog.Heading>确认删除任务？</AlertDialog.Heading>
+                    </AlertDialog.Header>
+                    <AlertDialog.Body>
+                      确定要删除课程「{taskToDelete?.course.title}
+                      」的运行任务吗？如果该任务正在运行将会立即停止。已记录的学情进度不会丢失，之后仍可从课程列表重新添加。
+                    </AlertDialog.Body>
+                    <AlertDialog.Footer>
+                      <AlertDialog.CloseTrigger className="dialog-cancel">
+                        取消
+                      </AlertDialog.CloseTrigger>
+                      <Button
+                        variant="danger"
+                        isDisabled={busy}
+                        onPress={async () => {
+                          if (!taskToDelete) return;
+                          const cid = taskToDelete.course.id;
+                          const title = taskToDelete.course.title;
+                          setTaskToDelete(null);
+                          const ok = await action("control_uooc_tasks", {
+                            courseIds: [cid],
+                            action: "delete",
+                          });
+                          if (ok) {
+                            toast.success(`已删除课程「${title}」的任务`);
+                          } else {
+                            toast.danger("删除任务失败，请重试");
+                          }
+                        }}
+                      >
+                        确认删除
+                      </Button>
+                    </AlertDialog.Footer>
+                  </AlertDialog.Dialog>
+                </AlertDialog.Container>
+              </AlertDialog.Backdrop>
+            </AlertDialog>
+            <AlertDialog isOpen={confirmDeleteCompleted} onOpenChange={setConfirmDeleteCompleted}>
+              <AlertDialog.Backdrop>
+                <AlertDialog.Container size="sm">
+                  <AlertDialog.Dialog>
+                    <AlertDialog.Icon status="danger" />
+                    <AlertDialog.Header>
+                      <AlertDialog.Heading>确认删除所有已完成任务？</AlertDialog.Heading>
+                    </AlertDialog.Header>
+                    <AlertDialog.Body>
+                      将从任务列表中移除所有状态为「已完成」的课程任务。已记录的学情进度不会丢失。
+                    </AlertDialog.Body>
+                    <AlertDialog.Footer>
+                      <AlertDialog.CloseTrigger className="dialog-cancel">
+                        取消
+                      </AlertDialog.CloseTrigger>
+                      <Button
+                        variant="danger"
+                        isDisabled={busy}
+                        onPress={async () => {
+                          setConfirmDeleteCompleted(false);
+                          const completedIds = tasks
+                            .filter((t) => t.status === "completed")
+                            .map((t) => t.course.id);
+                          if (!completedIds.length) return;
+                          const ok = await action("control_uooc_tasks", {
+                            courseIds: completedIds,
+                            action: "delete",
+                          });
+                          if (ok) {
+                            toast.success(`已删除 ${completedIds.length} 个已完成任务`);
+                          } else {
+                            toast.danger("删除任务失败，请重试");
+                          }
+                        }}
+                      >
+                        确认删除
+                      </Button>
+                    </AlertDialog.Footer>
+                  </AlertDialog.Dialog>
+                </AlertDialog.Container>
+              </AlertDialog.Backdrop>
+            </AlertDialog>
           </Tabs.Panel>
           <Tabs.Panel id="settings" className="grid gap-4 pt-4">
             <Card>

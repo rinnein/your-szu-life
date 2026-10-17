@@ -35,6 +35,8 @@ export type UoocVideo = {
   position: number;
   duration: number | null;
   message: string;
+  taskType?: "video" | "quiz" | string;
+  taskId?: string | null;
 };
 export type UoocTask = {
   course: UoocCourse;
@@ -223,18 +225,59 @@ export function isCourseTaskCompleted(task: UoocTask, progressEntry?: ProgressEn
 }
 
 export function buildCourseTaskItems(videos: UoocVideo[] = [], quiz?: QuizState): CourseTaskItem[] {
-  const videoItems: CourseTaskItem[] = videos.map((v) => ({
-    id: `video-${v.resourceId}`,
-    kind: "video",
-    video: v,
-  }));
+  const items: CourseTaskItem[] = videos.map((v) => {
+    const isQuiz = v.taskType === "quiz" || (!v.duration && v.title.includes("测验"));
+    if (isQuiz) {
+      const isCompleted = v.status === "completed";
+      const itemQuiz: QuizState = {
+        accountId: quiz?.accountId ?? "",
+        cid: quiz?.cid ?? "",
+        taskId: v.taskId ?? "",
+        resourceId: v.resourceId,
+        title: v.title,
+        mode: quiz?.mode ?? "supervised",
+        stage: isCompleted
+          ? "passed"
+          : quiz?.resourceId === v.resourceId
+            ? quiz.stage
+            : "awaitingApproval",
+        revision: quiz?.resourceId === v.resourceId ? quiz.revision : 1,
+        questions: quiz?.resourceId === v.resourceId ? quiz.questions : [],
+        answers: quiz?.resourceId === v.resourceId ? quiz.answers : {},
+        reviews: quiz?.resourceId === v.resourceId ? quiz.reviews : [],
+        message: isCompleted
+          ? "当前测验已由服务端确认完成"
+          : quiz?.resourceId === v.resourceId
+            ? quiz.message
+            : "",
+        gated: quiz?.gated ?? false,
+        videoComplete: isCompleted,
+        passed: isCompleted ? [v.resourceId] : (quiz?.passed ?? []),
+      };
+      return {
+        id: `quiz-${v.resourceId}`,
+        kind: "quiz",
+        quiz: itemQuiz,
+      };
+    }
+    return {
+      id: `video-${v.resourceId}`,
+      kind: "video",
+      video: v,
+    };
+  });
 
   if (
     !quiz ||
     quiz.stage === "disabled" ||
-    (!quiz.taskId && !quiz.title && quiz.stage === "idle")
+    (!quiz.taskId && !quiz.title && quiz.stage === "idle") ||
+    items.some(
+      (item) =>
+        item.kind === "quiz" &&
+        (item.quiz.resourceId === quiz.resourceId || item.quiz.taskId === quiz.taskId),
+    )
   ) {
-    return videoItems;
+    return items;
   }
 
   const quizItem: CourseTaskItem = {
@@ -244,33 +287,38 @@ export function buildCourseTaskItems(videos: UoocVideo[] = [], quiz?: QuizState)
   };
 
   if (quiz.videoComplete) {
-    return [...videoItems, quizItem];
+    return [...items, quizItem];
   }
 
   if (quiz.gated) {
     let lastCompletedIdx = -1;
-    for (let i = videos.length - 1; i >= 0; i--) {
-      if (videos[i].status === "completed") {
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i];
+      const isDone =
+        item.kind === "video" ? item.video.status === "completed" : item.quiz.stage === "passed";
+      if (isDone) {
         lastCompletedIdx = i;
         break;
       }
     }
     if (lastCompletedIdx === -1) {
-      return [quizItem, ...videoItems];
+      return [quizItem, ...items];
     }
-    const result = [...videoItems];
+    const result = [...items];
     result.splice(lastCompletedIdx + 1, 0, quizItem);
     return result;
   }
 
-  const firstIncompleteIdx = videos.findIndex((v) => v.status !== "completed");
+  const firstIncompleteIdx = items.findIndex((item) => {
+    return item.kind === "video" ? item.video.status !== "completed" : item.quiz.stage !== "passed";
+  });
   if (firstIncompleteIdx !== -1) {
-    const result = [...videoItems];
+    const result = [...items];
     result.splice(firstIncompleteIdx, 0, quizItem);
     return result;
   }
 
-  return [...videoItems, quizItem];
+  return [...items, quizItem];
 }
 
 export type LocalBankQuestion = {

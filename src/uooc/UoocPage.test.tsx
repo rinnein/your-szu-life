@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/rea
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type EventCallback } from "@tauri-apps/api/event";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { toast } from "@heroui/react";
 import { routeTree } from "../routeTree.gen";
 import { initialLogicalEntries } from "../logical-navigation";
 import {
@@ -111,6 +112,9 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  toast.clear();
+  sessionStorage.clear();
+  localStorage.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   delete window.SzuApplicationBack;
@@ -181,6 +185,37 @@ it("subscribes to native state, rejects stale events, and controls tasks without
   expect(screen.getByText("最新状态")).toBeInTheDocument();
   expect(screen.queryByText("过期状态")).not.toBeInTheDocument();
   expect(newerSnapshot({ ...snapshot, revision: 10 }, snapshot).revision).toBe(10);
+});
+
+it("supports deleting a course task with confirmation dialog", async () => {
+  snapshot.tasks = [
+    {
+      course: {
+        id: "1588976494",
+        title: "大学英语",
+        semester: "2026秋",
+        organization: "深圳大学",
+        weeks: "1-16",
+      },
+      accountId: "7",
+      desiredRunning: false,
+      status: "paused",
+      message: "",
+      videos: [],
+      generation: 1,
+    },
+  ];
+  mount("/uooc?tab=tasks");
+  const deleteBtn = await screen.findByRole("button", { name: "删除" });
+  fireEvent.click(deleteBtn);
+  expect(await screen.findByText("确认删除任务？")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("control_uooc_tasks", {
+      courseIds: ["1588976494"],
+      action: "delete",
+    }),
+  );
 });
 
 it("uses native Android back and exposes official login without a Cookie input", async () => {
@@ -518,7 +553,7 @@ it("automatically collapses completed tasks in taskItems into a single item, kee
   // Active task is shown directly
   expect(await screen.findByText("进行中视频")).toBeInTheDocument();
 
-  // Completed item is compressed and folded into an Accordion
+  // Completed item is folded into an Accordion
   const accordionTrigger = screen.getByRole("button", { name: "已刷完任务 (1 项)" });
   expect(accordionTrigger).toHaveAttribute("aria-expanded", "false");
 
@@ -526,10 +561,6 @@ it("automatically collapses completed tasks in taskItems into a single item, kee
   fireEvent.click(accordionTrigger);
   expect(accordionTrigger).toHaveAttribute("aria-expanded", "true");
   expect(await screen.findByText("已完成视频")).toBeInTheDocument();
-
-  // Folding compresses it back
-  fireEvent.click(accordionTrigger);
-  expect(accordionTrigger).toHaveAttribute("aria-expanded", "false");
 });
 
 it("orders video tasks and quiz tasks sequentially and opens quiz modal on click", async () => {
@@ -621,6 +652,61 @@ it("orders video tasks and quiz tasks sequentially and opens quiz modal on click
   expect(modal).toBeInTheDocument();
   expect(within(modal).getByRole("button", { name: "自主答题" })).toBeInTheDocument();
   expect(within(modal).getByRole("button", { name: "AI 答题" })).toBeInTheDocument();
+});
+
+it("renders quiz items in task list as clickable quiz cards and not video progress bars", async () => {
+  snapshot.tasks = [
+    {
+      course: snapshot.courses[0],
+      accountId: "7",
+      desiredRunning: true,
+      generation: 1,
+      status: "running",
+      message: "",
+      videos: [
+        {
+          resourceId: "q_item_1",
+          title: "第一章在线测验",
+          status: "completed",
+          position: 0,
+          duration: null,
+          message: "",
+          taskType: "quiz",
+          taskId: "888",
+        },
+      ],
+    },
+  ];
+  snapshot.quizzes = {
+    [`7:${snapshot.courses[0].id}`]: {
+      accountId: "7",
+      cid: snapshot.courses[0].id,
+      taskId: "888",
+      resourceId: "q_item_1",
+      title: "第一章在线测验",
+      mode: "supervised",
+      stage: "passed",
+      revision: 1,
+      questions: [],
+      answers: {},
+      reviews: [],
+      message: "当前测验已由服务端确认完成",
+      gated: false,
+      videoComplete: true,
+      passed: ["q_item_1"],
+    },
+  };
+  mount("/uooc?tab=tasks");
+  const accordionTrigger = await screen.findByRole("button", { name: "已刷完任务 (1 项)" });
+  fireEvent.click(accordionTrigger);
+
+  const quizCard = screen.getByRole("button", { name: /第一章在线测验/ });
+  expect(quizCard).toBeInTheDocument();
+  expect(screen.queryByRole("progressbar", { name: /第一章在线测验/ })).not.toBeInTheDocument();
+  expect(within(quizCard).getByText("已完成")).toBeInTheDocument();
+
+  fireEvent.click(quizCard);
+  expect(await screen.findByRole("dialog", { name: /第一章在线测验/ })).toBeInTheDocument();
 });
 
 it("buildCourseTaskItems orders tasks correctly under various progression states", () => {

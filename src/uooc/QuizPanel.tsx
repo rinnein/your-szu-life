@@ -71,10 +71,30 @@ export function QuizPanel({
   const set = (id: string, values: string[]) => setAnswers((old) => ({ ...old, [id]: values }));
   return (
     <section className="grid gap-3" aria-label="课程测验">
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 className="font-semibold">{quiz.title || "课程测验"}</h3>
-        {quiz.stage === "passed" && <Chip color="success">测验已完成</Chip>}
-        {running && <Spinner size="sm" aria-label="测验处理中" />}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="font-semibold">{quiz.title || "课程测验"}</h3>
+          {quiz.stage === "passed" && <Chip color="success">测验已完成</Chip>}
+          {running && <Spinner size="sm" aria-label="测验处理中" />}
+        </div>
+        {(quiz.stage === "passed" || quiz.message.includes("当前测验已由服务端确认完成")) && (
+          <Button
+            variant="secondary"
+            size="sm"
+            isDisabled={busy || running}
+            onPress={() =>
+              void run(async () => {
+                const next = await invoke<UoocSnapshot>("fetch_uooc_completed_quiz", {
+                  cid: quiz.cid,
+                });
+                onSnapshot(next);
+                toast.success("已成功拉取当前测验已完成的题目与答案");
+              })
+            }
+          >
+            查看测验
+          </Button>
+        )}
       </div>
       <p role="status" className="text-sm text-muted">
         {quiz.message || "视频完成或遇到闯关测验时开始处理"}

@@ -367,6 +367,8 @@ async fn list_pagination_auth_and_subsection_parameters_are_preserved() {
         title: String::new(),
         source: String::new(),
         position: 0.0,
+        task_type: "video".into(),
+        task_id: None,
     };
     client.unit(&video, &cancel).await.unwrap();
     assert!(client.mark(&video, 99.0, 50.0, &cancel).await.unwrap());
@@ -668,6 +670,9 @@ async fn startup_restores_only_running_courses_after_identity_and_course_checks(
         if request.path.starts_with("/home/member/user") {
             return ok(json!({"id":7,"name":"test"}));
         }
+        if request.path.starts_with("/home/learn/getCatalogList") {
+            return ok(json!([]));
+        }
         assert!(request.path.starts_with("/home/course/progress"));
         assert!(["42", "43"].contains(&request.fields()["cid"].as_str()));
         calls.fetch_add(1, Ordering::SeqCst);
@@ -798,5 +803,127 @@ async fn tail_requires_server_confirmation_and_pause_stops_future_reports() {
     tokio::time::sleep(Duration::from_millis(1200)).await;
     assert_eq!(marks.load(Ordering::SeqCst), 4);
     assert_eq!(service.snapshot().tasks[0].status, TaskStatus::Paused);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn nested_catalog_quizzes_are_identified_by_icon_list_without_calling_unit() {
+    let root = root();
+    let service = service_test(root.clone());
+    let server = Server::new(move |request| {
+        if request.path.starts_with("/home/course/progress") {
+            return ok(json!({"video_progress_value": 100}));
+        }
+        if request.path.starts_with("/home/learn/getCatalogList") {
+            return ok(json!([
+                {
+                    "id": 2000,
+                    "name": "绪论",
+                    "children": [
+                        {
+                            "id": 2001,
+                            "name": "第1节 绪论",
+                            "finished": 1,
+                            "icon_list": [{"id": 3001, "type": "10", "type_name": "视频"}]
+                        },
+                        {
+                            "id": 2002,
+                            "name": "绪论测验",
+                            "task_id": 141304783,
+                            "finished": 1,
+                            "icon_list": [{"id": 3002, "type": "80", "type_name": "测验"}]
+                        }
+                    ]
+                }
+            ]));
+        }
+        if request.path.starts_with("/home/learn/getUnitLearn") {
+            let section = request.fields()["section_id"].clone();
+            assert_ne!(section, "2002", "测验节点不应调用 getUnitLearn 视频接口");
+            return ok(json!([
+                {
+                    "id": 101,
+                    "finished": 1,
+                    "title": "第1节 绪论",
+                    "video_pos": "100",
+                    "video_url": {"hd": {"source": "https://example.invalid/video.mp4"}}
+                }
+            ]));
+        }
+        ok(json!({"code": 1}))
+    });
+    *service.client.write().unwrap() =
+        Arc::new(Client::with_base(session::load(None).unwrap(), &server.base).unwrap());
+    service.change(|s| {
+        s.session = SessionStatus::Ready;
+        s.user = Some(User {
+            id: "7".into(),
+            name: "test".into(),
+        });
+        s.courses = vec![course("42")];
+    });
+    service.start(vec!["42".into()]).unwrap();
+    wait_finished(&service).await;
+    let tasks = service.snapshot().tasks;
+    assert_eq!(tasks.len(), 1);
+    let videos = &tasks[0].videos;
+    assert_eq!(videos.len(), 2);
+    let quiz_item = videos.iter().find(|v| v.task_type.as_deref() == Some("quiz")).expect("需包含识别出的测验项");
+    assert_eq!(quiz_item.resource_id, "3002");
+    assert_eq!(quiz_item.title, "绪论测验");
+    assert_eq!(quiz_item.task_id.as_deref(), Some("141304783"));
+    assert_eq!(quiz_item.status, TaskStatus::Completed);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn deleting_tasks_cancels_workers_and_removes_from_snapshot() {
+    let root = root();
+    let service = service_test(root.clone());
+    service.change(|s| {
+        s.session = SessionStatus::Ready;
+        s.user = Some(User {
+            id: "7".into(),
+            name: "test".into(),
+        });
+        s.courses = vec![course("42"), course("43")];
+        s.tasks = vec![
+            CourseTask {
+                course: course("42"),
+                account_id: "7".into(),
+                desired_running: true,
+                status: TaskStatus::Paused,
+                message: String::new(),
+                generation: 1,
+                videos: vec![],
+            },
+            CourseTask {
+                course: course("43"),
+                account_id: "7".into(),
+                desired_running: false,
+                status: TaskStatus::Completed,
+                message: String::new(),
+                generation: 1,
+                videos: vec![],
+            },
+        ];
+    });
+
+    assert_eq!(service.snapshot().tasks.len(), 2);
+
+    // 删除单个任务 "42"
+    service.control(vec!["42".into()], TaskAction::Delete).unwrap();
+    let tasks = service.snapshot().tasks;
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks[0].course.id, "43");
+
+    // 删除剩余任务 "43"
+    service.control(vec!["43".into()], TaskAction::Delete).unwrap();
+    assert!(service.snapshot().tasks.is_empty());
+
+    // 重新打开服务，确认持久化存储中任务也已移除
+    let reopened = service_test(root.clone());
+    assert!(reopened.snapshot().tasks.is_empty());
+
     std::fs::remove_dir_all(root).unwrap();
 }
