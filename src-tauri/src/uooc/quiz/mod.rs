@@ -202,6 +202,16 @@ async fn paper(
         .parse()
         .map_err(|_| Error::Invalid)?;
     let mut paper = protocol::parse(&html, &url, task).map_err(Error::Quiz)?;
+
+    // 防混淆策略：请求官方 /exam/getTaskPaper 获取无混淆标准题单，
+    // 将 DOM 题目规范化对齐为服务端真实全局单题 ID，并纯净化题干与选项文本
+    let tp_url = format!("{}/exam/getTaskPaper?tid={task}", client.origin());
+    if let Ok(tp_bytes) = client.quiz_http(&tp_url, None, cancel).await {
+        if let Some((tp_questions, _)) = qa::parse_task_paper(&tp_bytes) {
+            qa::align_paper_with_task_paper(&mut paper.questions, &tp_questions);
+        }
+    }
+
     let mut size = 0;
     for (q, urls) in paper.questions.iter_mut().zip(&paper.image_urls) {
         for url in urls {
@@ -1104,9 +1114,11 @@ pub(crate) async fn build_local_bank(service: &Arc<Service>) -> Result<usize, St
                 let Some(task_id) = id(&item["task_id"]) else {
                     continue;
                 };
-                let view_url = format!("{}/exam/view?cid={}&tid={}", client.origin(), course.id, task_id);
-                if let Ok(bytes) = client.quiz_http(&view_url, None, &cancel).await {
-                    if let Some((questions, answers)) = qa::parse_exam_view(&bytes) {
+                let mut loaded = false;
+                // 1. 优先尝试请求 /exam/getTaskPaper 获取无混淆题单与官方标准答案
+                let tp_url = format!("{}/exam/getTaskPaper?tid={}", client.origin(), task_id);
+                if let Ok(tp_bytes) = client.quiz_http(&tp_url, None, &cancel).await {
+                    if let Some((questions, answers)) = qa::parse_task_paper(&tp_bytes) {
                         if !questions.is_empty() && !answers.is_empty() {
                             let _ = qa::record_passed_quiz(
                                 &bank_path,
@@ -1115,6 +1127,25 @@ pub(crate) async fn build_local_bank(service: &Arc<Service>) -> Result<usize, St
                                 &questions,
                                 &answers,
                             );
+                            loaded = true;
+                        }
+                    }
+                }
+
+                // 2. 若 getTaskPaper 未提供答案，再请求 /exam/view
+                if !loaded {
+                    let view_url = format!("{}/exam/view?cid={}&tid={}", client.origin(), course.id, task_id);
+                    if let Ok(bytes) = client.quiz_http(&view_url, None, &cancel).await {
+                        if let Some((questions, answers)) = qa::parse_exam_view(&bytes) {
+                            if !questions.is_empty() && !answers.is_empty() {
+                                let _ = qa::record_passed_quiz(
+                                    &bank_path,
+                                    &course.id,
+                                    &task_id,
+                                    &questions,
+                                    &answers,
+                                );
+                            }
                         }
                     }
                 }

@@ -857,8 +857,9 @@ pub(crate) fn match_answers(
 
         // Extract correct answers
         let correct_ans = qa.answers.iter().find(|a| a.is_correct && !a.values.is_empty());
+        let qa_opts = qa.options.as_deref();
         if let Some(correct) = correct_ans {
-            let mapped_values = map_option_values(&correct.values, &local_q.options);
+            let mapped_values = map_option_values(&correct.values, &local_q.options, qa_opts);
             if !mapped_values.is_empty() || local_q.kind == Kind::Text {
                 let ans = if local_q.kind == Kind::Text {
                     correct.values.clone()
@@ -880,7 +881,7 @@ pub(crate) fn match_answers(
             .answers
             .iter()
             .filter(|a| !a.is_correct)
-            .flat_map(|a| map_option_values(&a.values, &local_q.options))
+            .flat_map(|a| map_option_values(&a.values, &local_q.options, qa_opts))
             .collect();
         if !wrongs.is_empty() {
             let mut unique_wrongs = wrongs.clone();
@@ -915,31 +916,122 @@ pub(crate) fn match_answers(
     result
 }
 
-fn map_option_values(values: &[String], options: &[OptionItem]) -> Vec<String> {
-    if options.is_empty() {
+fn map_option_values(
+    values: &[String],
+    local_options: &[OptionItem],
+    qa_options: Option<&[QaOption]>,
+) -> Vec<String> {
+    if local_options.is_empty() {
         return values.to_vec();
     }
     let mut mapped = Vec::new();
     for v in values {
         let v_trim = v.trim();
-        // Exact option id match
-        if let Some(opt) = options.iter().find(|o| o.id == v_trim || o.id.eq_ignore_ascii_case(v_trim)) {
-            mapped.push(opt.id.clone());
+        if v_trim.is_empty() {
             continue;
         }
-        // Match by index letter ("A" -> 0, "B" -> 1, etc.)
+
+        // 1. 优先直接文本比对（防选项乱序核心机制）
+        let norm_v = normalize_stem(v_trim);
+        let mut matched_opt = local_options.iter().find(|o| {
+            let norm_o = normalize_stem(&o.text);
+            if norm_o == norm_v || o.text.trim() == v_trim {
+                return true;
+            }
+            if norm_v.len() >= 4 && (norm_o.contains(&norm_v) || norm_v.contains(&norm_o)) {
+                return true;
+            }
+            false
+        });
+
+        // 2. 若 v 未直接命中本地选项文本，且题库提供了旧选项列表：
+        // 在题库旧选项中查找 id 等于 v 的项，取出其文本再与本地选项做文本比对
+        if matched_opt.is_none() {
+            if let Some(qa_opts) = qa_options {
+                if let Some(old_qa_opt) = qa_opts.iter().find(|qo| qo.id.eq_ignore_ascii_case(v_trim)) {
+                    let norm_old = normalize_stem(&old_qa_opt.text);
+                    matched_opt = local_options.iter().find(|o| {
+                        let norm_o = normalize_stem(&o.text);
+                        norm_o == norm_old || o.text.trim() == old_qa_opt.text.trim()
+                    });
+                }
+            }
+        }
+
+        // 3. 命中选项文本，取出当前选项在当前试卷中的真实 ID
+        if let Some(opt) = matched_opt {
+            if !mapped.contains(&opt.id) {
+                mapped.push(opt.id.clone());
+            }
+            continue;
+        }
+
+        // 4. 回退匹配：匹配选项精确 ID
+        if let Some(opt) = local_options.iter().find(|o| o.id == v_trim || o.id.eq_ignore_ascii_case(v_trim)) {
+            if !mapped.contains(&opt.id) {
+                mapped.push(opt.id.clone());
+            }
+            continue;
+        }
+
+        // 5. 回退匹配：按字母下标（A -> 0, B -> 1 等）
         if v_trim.len() == 1 {
             let ch = v_trim.chars().next().unwrap().to_ascii_uppercase();
             if ch.is_ascii_alphabetic() {
                 let idx = (ch as u8 - b'A') as usize;
-                if idx < options.len() {
-                    mapped.push(options[idx].id.clone());
+                if idx < local_options.len() {
+                    let opt_id = local_options[idx].id.clone();
+                    if !mapped.contains(&opt_id) {
+                        mapped.push(opt_id);
+                    }
                     continue;
                 }
             }
         }
+
+        // 6. 判断题语义比对
+        if v_trim == "正确" || v_trim == "对" || v_trim.eq_ignore_ascii_case("true") || v_trim.eq_ignore_ascii_case("t") {
+            if let Some(opt) = local_options.iter().find(|o| o.text.contains("正确") || o.text.contains("对")) {
+                if !mapped.contains(&opt.id) {
+                    mapped.push(opt.id.clone());
+                }
+                continue;
+            }
+        } else if v_trim == "错误" || v_trim == "错" || v_trim.eq_ignore_ascii_case("false") || v_trim.eq_ignore_ascii_case("f") {
+            if let Some(opt) = local_options.iter().find(|o| o.text.contains("错误") || o.text.contains("错")) {
+                if !mapped.contains(&opt.id) {
+                    mapped.push(opt.id.clone());
+                }
+                continue;
+            }
+        }
     }
     mapped
+}
+
+/// 提取选项文本内容作为答案载体，实现跨批次、跨账号防选项乱序
+pub(crate) fn extract_answers_content(
+    answers: &Answers,
+    questions: &[Question],
+) -> Answers {
+    let mut result = Answers::new();
+    for q in questions {
+        if let Some(ans_list) = answers.get(&q.id) {
+            let content_list: Vec<String> = ans_list
+                .iter()
+                .map(|val| {
+                    if let Some(opt) = q.options.iter().find(|o| o.id == *val || o.id.eq_ignore_ascii_case(val)) {
+                        if !opt.text.trim().is_empty() {
+                            return opt.text.trim().to_string();
+                        }
+                    }
+                    val.clone()
+                })
+                .collect();
+            result.insert(q.id.clone(), content_list);
+        }
+    }
+    result
 }
 
 /// Build batch upload payload when quiz is confirmed passed.
@@ -951,10 +1043,11 @@ pub(crate) fn build_passed_payload(
     questions: &[Question],
     answers: &Answers,
 ) -> QaBatchUploadPayload {
+    let content_answers = extract_answers_content(answers, questions);
     let upload_questions = questions
         .iter()
         .map(|q| {
-            let correct = answers.get(&q.id).cloned();
+            let correct = content_answers.get(&q.id).cloned();
             QaUploadQuestion {
                 question_id: q.id.clone(),
                 question_type: match q.kind {
@@ -1002,10 +1095,11 @@ pub(crate) fn build_failed_payload(
     questions: &[Question],
     answers: &Answers,
 ) -> QaBatchUploadPayload {
+    let content_answers = extract_answers_content(answers, questions);
     let upload_questions = questions
         .iter()
         .map(|q| {
-            let wrong = answers.get(&q.id).cloned();
+            let wrong = content_answers.get(&q.id).cloned();
             QaUploadQuestion {
                 question_id: q.id.clone(),
                 question_type: match q.kind {
@@ -1077,9 +1171,10 @@ pub(crate) fn record_passed_quiz(
     let mut bank = load_local_bank(bank_path);
     let mut count = 0;
     let now = chrono::Utc::now().timestamp_millis();
+    let content_answers = extract_answers_content(answers, questions);
 
     for q in questions {
-        if let Some(ans) = answers.get(&q.id) {
+        if let Some(ans) = content_answers.get(&q.id) {
             if !ans.is_empty() {
                 let key = bank_key(task_id, &q.id);
                 let already_uploaded = bank
@@ -1341,9 +1436,203 @@ pub(crate) async fn upload_all_local_bank(
     Ok(total_uploaded)
 }
 
+/// 解析 UOOC 官方 /exam/getTaskPaper 接口返回的标准无混淆题单（含全局真实单题 ID、选项和答案）
+pub(crate) fn parse_task_paper(raw: &[u8]) -> Option<(Vec<Question>, Answers)> {
+    let val: serde_json::Value = serde_json::from_slice(raw).ok()?;
+    parse_task_paper_json(&val)
+}
+
+pub(crate) fn parse_task_paper_json(val: &serde_json::Value) -> Option<(Vec<Question>, Answers)> {
+    let list = val["data"]["questions"]
+        .as_array()
+        .or_else(|| val["questions"].as_array())
+        .or_else(|| val["data"].as_array())?;
+
+    let mut questions = Vec::new();
+    let mut answers = BTreeMap::new();
+
+    for (index, item) in list.iter().enumerate() {
+        let qid = item["id"]
+            .as_i64()
+            .map(|n| n.to_string())
+            .or_else(|| item["id"].as_str().map(str::to_string))
+            .or_else(|| item["question_id"].as_i64().map(|n| n.to_string()))
+            .or_else(|| item["question_id"].as_str().map(str::to_string))
+            .unwrap_or_else(|| format!("{index}"));
+
+        let stem = item["question"]
+            .as_str()
+            .or_else(|| item["stem"].as_str())
+            .or_else(|| item["title"].as_str())
+            .or_else(|| item["content"].as_str())
+            .unwrap_or_default()
+            .to_string();
+
+        let type_str = item["type"].as_str().unwrap_or("");
+        let kind = match type_str {
+            "11" | "multiple" => Kind::Multiple,
+            "20" | "judge" => Kind::Single,
+            "30" | "text" => Kind::Text,
+            _ => Kind::Single,
+        };
+
+        let mut options = Vec::new();
+        if let Some(opts) = item["options_app"].as_array().or_else(|| item["options"].as_array()) {
+            for (opt_idx, opt) in opts.iter().enumerate() {
+                let opt_id = opt["key"]
+                    .as_str()
+                    .or_else(|| opt["id"].as_str())
+                    .or_else(|| opt["value"].as_str().filter(|v| v.len() <= 2))
+                    .map(str::to_string)
+                    .unwrap_or_else(|| {
+                        let letter = (b'A' + opt_idx as u8) as char;
+                        letter.to_string()
+                    });
+                let opt_text = opt["value"]
+                    .as_str()
+                    .or_else(|| opt["text"].as_str())
+                    .or_else(|| opt["title"].as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                options.push(OptionItem {
+                    id: opt_id,
+                    text: opt_text,
+                });
+            }
+        }
+
+        let mut correct = Vec::new();
+        let ans_val = &item["answer"];
+        let ans_arr = ans_val
+            .as_array()
+            .or_else(|| item["answers"].as_array())
+            .or_else(|| item["standard_answer"].as_array());
+
+        if let Some(arr) = ans_arr {
+            for a in arr {
+                if let Some(s) = a.as_str() {
+                    correct.push(s.to_string());
+                } else if let Some(n) = a.as_i64() {
+                    correct.push(n.to_string());
+                }
+            }
+        } else if let Some(s) = ans_val.as_str().or_else(|| item["standard_answer"].as_str()) {
+            for part in s.split(|c| c == ',' || c == '，' || c == '、' || c == ' ') {
+                let trimmed = part.trim();
+                if !trimmed.is_empty() {
+                    correct.push(trimmed.to_string());
+                }
+            }
+        }
+
+        // 防选项乱序处理：若答案包含字母标签，将其解析提取为对应的选项文本内容
+        let text_answers: Vec<String> = correct
+            .iter()
+            .map(|ans_key| {
+                if let Some(opt) = options.iter().find(|o| o.id.eq_ignore_ascii_case(ans_key)) {
+                    if !opt.text.trim().is_empty() {
+                        return opt.text.trim().to_string();
+                    }
+                }
+                ans_key.clone()
+            })
+            .collect();
+
+        if !text_answers.is_empty() {
+            answers.insert(qid.clone(), text_answers);
+        }
+
+        questions.push(Question {
+            id: qid,
+            text: stem,
+            kind,
+            options,
+            blanks: 0,
+            images: Vec::new(),
+        });
+    }
+
+    if questions.is_empty() {
+        None
+    } else {
+        Some((questions, answers))
+    }
+}
+
+/// 将 DOM 解析的题目（携带表单提交 binding）与 getTaskPaper 解析的真实题单对齐
+/// 从而将 DOM 题目 ID 规范化为真实单题数字 ID，同时纯净化题干与选项文本
+pub(crate) fn align_paper_with_task_paper(
+    paper_questions: &mut [Question],
+    task_paper_questions: &[Question],
+) {
+    if paper_questions.is_empty() || task_paper_questions.is_empty() {
+        return;
+    }
+
+    let mut used_tp_indices = std::collections::HashSet::new();
+    let total_dom = paper_questions.len();
+    let total_tp = task_paper_questions.len();
+
+    for dom_q in paper_questions.iter_mut() {
+        let dom_norm = normalize_stem(&dom_q.text);
+
+        // 1. 尝试通过题干匹配
+        let mut matched_idx = None;
+        for (tp_idx, tp_q) in task_paper_questions.iter().enumerate() {
+            if used_tp_indices.contains(&tp_idx) {
+                continue;
+            }
+            let tp_norm = normalize_stem(&tp_q.text);
+            if tp_norm == dom_norm
+                || (!tp_norm.is_empty() && (dom_norm.contains(&tp_norm) || tp_norm.contains(&dom_norm)))
+            {
+                matched_idx = Some(tp_idx);
+                break;
+            }
+        }
+
+        // 2. 如果未通过题干匹配上，且题目数量相同，使用未使用的同位置索引
+        if matched_idx.is_none() && total_dom == total_tp {
+            for (tp_idx, _) in task_paper_questions.iter().enumerate() {
+                if !used_tp_indices.contains(&tp_idx) {
+                    matched_idx = Some(tp_idx);
+                    break;
+                }
+            }
+        }
+
+        if let Some(tp_idx) = matched_idx {
+            used_tp_indices.insert(tp_idx);
+            let tp_q = &task_paper_questions[tp_idx];
+
+            // 更新为全局真实单题数字 ID
+            dom_q.id = tp_q.id.clone();
+
+            // 若 tp_q 拥有纯净题干，补充题干
+            if !tp_q.text.is_empty() {
+                dom_q.text = tp_q.text.clone();
+            }
+
+            // 更新选项文本：通过 ID 或相对顺序把纯净文本对齐进 DOM 选项
+            for dom_opt in dom_q.options.iter_mut() {
+                if let Some(tp_opt) = tp_q.options.iter().find(|o| o.id.eq_ignore_ascii_case(&dom_opt.id)) {
+                    if !tp_opt.text.is_empty() {
+                        dom_opt.text = tp_opt.text.clone();
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// 解析 /exam/view 返回的已提交测验数据（支持 JSON 和 HTML 两种形态）
 pub(crate) fn parse_exam_view(raw: &[u8]) -> Option<(Vec<Question>, Answers)> {
     if let Ok(val) = serde_json::from_slice::<serde_json::Value>(raw) {
+        if let Some((questions, answers)) = parse_task_paper_json(&val) {
+            if !questions.is_empty() {
+                return Some((questions, answers));
+            }
+        }
         if let Some((questions, answers)) = parse_exam_view_json(&val) {
             if !questions.is_empty() {
                 return Some((questions, answers));
@@ -1372,10 +1661,12 @@ fn parse_exam_view_json(val: &serde_json::Value) -> Option<(Vec<Question>, Answe
     let mut answers = BTreeMap::new();
 
     for (index, item) in list.iter().enumerate() {
-        let qid = item["question_id"]
-            .as_str()
-            .or_else(|| item["id"].as_str())
-            .map(|s| s.to_string())
+        let qid = item["id"]
+            .as_i64()
+            .map(|n| n.to_string())
+            .or_else(|| item["id"].as_str().map(str::to_string))
+            .or_else(|| item["question_id"].as_i64().map(|n| n.to_string()))
+            .or_else(|| item["question_id"].as_str().map(str::to_string))
             .unwrap_or_else(|| format!("q{index}"));
 
         let stem = item["stem"]
@@ -1392,24 +1683,27 @@ fn parse_exam_view_json(val: &serde_json::Value) -> Option<(Vec<Question>, Answe
             .unwrap_or("single");
 
         let kind = match type_str {
-            "multiple" => Kind::Multiple,
-            "text" => Kind::Text,
+            "11" | "multiple" => Kind::Multiple,
+            "20" | "judge" => Kind::Single,
+            "30" | "text" => Kind::Text,
             _ => Kind::Single,
         };
 
         let mut options = Vec::new();
-        if let Some(opts) = item["options"].as_array() {
+        if let Some(opts) = item["options_app"].as_array().or_else(|| item["options"].as_array()) {
             for (opt_idx, opt) in opts.iter().enumerate() {
-                let opt_id = opt["id"]
+                let opt_id = opt["key"]
                     .as_str()
-                    .or_else(|| opt["value"].as_str())
+                    .or_else(|| opt["id"].as_str())
+                    .or_else(|| opt["value"].as_str().filter(|v| v.len() <= 2))
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| {
                         let letter = (b'A' + opt_idx as u8) as char;
                         letter.to_string()
                     });
-                let opt_text = opt["text"]
+                let opt_text = opt["value"]
                     .as_str()
+                    .or_else(|| opt["text"].as_str())
                     .or_else(|| opt["title"].as_str())
                     .or_else(|| opt["content"].as_str())
                     .unwrap_or_default()
@@ -1430,6 +1724,8 @@ fn parse_exam_view_json(val: &serde_json::Value) -> Option<(Vec<Question>, Answe
             for a in arr {
                 if let Some(s) = a.as_str() {
                     correct.push(s.to_string());
+                } else if let Some(n) = a.as_i64() {
+                    correct.push(n.to_string());
                 }
             }
         } else if let Some(s) = item["correct_answer"]
@@ -1446,8 +1742,21 @@ fn parse_exam_view_json(val: &serde_json::Value) -> Option<(Vec<Question>, Answe
             }
         }
 
-        if !correct.is_empty() {
-            answers.insert(qid.clone(), correct);
+        // 提取文本答案以对冲乱序
+        let text_answers: Vec<String> = correct
+            .iter()
+            .map(|ans_key| {
+                if let Some(opt) = options.iter().find(|o| o.id.eq_ignore_ascii_case(ans_key)) {
+                    if !opt.text.trim().is_empty() {
+                        return opt.text.trim().to_string();
+                    }
+                }
+                ans_key.clone()
+            })
+            .collect();
+
+        if !text_answers.is_empty() {
+            answers.insert(qid.clone(), text_answers);
         }
 
         questions.push(Question {
@@ -2156,18 +2465,18 @@ mod tests {
 
     #[test]
     fn parse_exam_view_json_and_html_variants() {
-        // Test JSON format
+        // Test JSON format (with anti-confusion option text extraction)
         let json_data = serde_json::json!({
             "code": 1,
             "data": {
                 "questions": [
                     {
-                        "id": "q100",
+                        "id": 2057971114,
                         "stem": "关于微积分基本定理",
                         "type": "single",
-                        "options": [
-                            { "id": "A", "text": "连续函数一定可积" },
-                            { "id": "B", "text": "可积函数一定连续" }
+                        "options_app": [
+                            { "key": "A", "value": "连续函数一定可积" },
+                            { "key": "B", "value": "可积函数一定连续" }
                         ],
                         "answer": "A"
                     }
@@ -2177,8 +2486,9 @@ mod tests {
         let raw_json = serde_json::to_vec(&json_data).unwrap();
         let (qs, ans) = parse_exam_view(&raw_json).unwrap();
         assert_eq!(qs.len(), 1);
-        assert_eq!(qs[0].id, "q100");
-        assert_eq!(ans.get("q100"), Some(&vec!["A".into()]));
+        assert_eq!(qs[0].id, "2057971114");
+        // Anti-confusion ensures answer is stored as the option text content
+        assert_eq!(ans.get("2057971114"), Some(&vec!["连续函数一定可积".into()]));
 
         // Test HTML format with .queContainer
         let html = r#"
@@ -2195,5 +2505,126 @@ mod tests {
         assert_eq!(qs_html.len(), 1);
         assert_eq!(qs_html[0].id, "que_101");
         assert_eq!(ans_html.get("que_101"), Some(&vec!["B".into()]));
+    }
+
+    #[test]
+    fn anti_confusion_text_matching_against_shuffled_options() {
+        // 模拟题库中收录的答案：存放的是文本内容 "ALphaGo围棋比赛大获全胜"（或旧选项在 C）
+        let qa_questions = vec![QaQuestion {
+            id: Some(1),
+            tid: Some("t1".into()),
+            question_id: Some("2057971114".into()),
+            question_type: Some("single".into()),
+            stem: Some("人工智能发展的第三次高潮期的典型代表是（   ）。".into()),
+            stem_hash: Some(hash_stem("人工智能发展的第三次高潮期的典型代表是（   ）。")),
+            options: Some(vec![
+                QaOption { id: "A".into(), text: "美国达特茅斯学院“侃谈会”的举办".into() },
+                QaOption { id: "B".into(), text: "国际互联网技术的发展".into() },
+                QaOption { id: "C".into(), text: "ALphaGo围棋比赛大获全胜".into() },
+            ]),
+            answers: vec![
+                QaAnswer {
+                    id: Some(101),
+                    // 题库中存的是文本内容（防混淆标准载体）
+                    values: vec!["ALphaGo围棋比赛大获全胜".into()],
+                    is_correct: true,
+                    confidence: Some(1.0),
+                },
+                QaAnswer {
+                    id: Some(102),
+                    // 题库中已排除错误选项
+                    values: vec!["国际互联网技术的发展".into()],
+                    is_correct: false,
+                    confidence: Some(0.5),
+                },
+            ],
+            stem_embedding: None,
+        }];
+
+        // 当前试卷打开时，UOOC 选项顺序被随机打乱："ALphaGo" 被打乱到了 A，"国际互联网" 被打乱到了 C
+        let local_shuffled_questions = vec![Question {
+            id: "2057971114".into(),
+            text: "人工智能发展的第三次高潮期的典型代表是（   ）。".into(),
+            kind: Kind::Single,
+            options: vec![
+                OptionItem { id: "current_A".into(), text: "ALphaGo围棋比赛大获全胜".into() },
+                OptionItem { id: "current_B".into(), text: "美国达特茅斯学院“侃谈会”的举办".into() },
+                OptionItem { id: "current_C".into(), text: "国际互联网技术的发展".into() },
+            ],
+            blanks: 0,
+            images: vec![],
+        }];
+
+        let result = match_answers(&qa_questions, &local_shuffled_questions);
+        // 核心验证：通过文本内容反查，正确选中国当前的真实 ID "current_A"，彻底对冲乱序
+        assert_eq!(result.matched_answers.get("2057971114"), Some(&vec!["current_A".into()]));
+        // 核心验证：错误选项排除也准确反查到了当前被打乱为 "current_C" 的选项
+        assert_eq!(result.wrong_options.get("2057971114"), Some(&vec!["current_C".into()]));
+    }
+
+    #[test]
+    fn parse_and_align_task_paper_with_real_id() {
+        let tp_json = serde_json::json!({
+            "code": 1,
+            "data": {
+                "questions": [
+                    {
+                        "id": 2057971114,
+                        "type": "10",
+                        "question": "1 + 1 = ?",
+                        "options_app": [
+                            { "key": "A", "value": "2" },
+                            { "key": "B", "value": "3" }
+                        ],
+                        "answer": "A"
+                    }
+                ]
+            }
+        });
+        let raw = serde_json::to_vec(&tp_json).unwrap();
+        let (tp_questions, tp_answers) = parse_task_paper(&raw).unwrap();
+        assert_eq!(tp_questions.len(), 1);
+        assert_eq!(tp_questions[0].id, "2057971114");
+        assert_eq!(tp_answers.get("2057971114"), Some(&vec!["2".into()]));
+
+        // DOM 解析出的临时 ID（如 q0:answers[1]）
+        let mut dom_questions = vec![Question {
+            id: "q0:answers[1]".into(),
+            text: "1. 1 + 1 = ?".into(),
+            kind: Kind::Single,
+            options: vec![
+                OptionItem { id: "A".into(), text: "选项 2".into() },
+                OptionItem { id: "B".into(), text: "选项 3".into() },
+            ],
+            blanks: 0,
+            images: vec![],
+        }];
+
+        align_paper_with_task_paper(&mut dom_questions, &tp_questions);
+        // 题目 ID 对齐为服务端的真实单题 ID
+        assert_eq!(dom_questions[0].id, "2057971114");
+        // 题干纯净化为 getTaskPaper 里的标准题干
+        assert_eq!(dom_questions[0].text, "1 + 1 = ?");
+    }
+
+    #[test]
+    fn extract_answers_content_converts_ids_to_text() {
+        let questions = vec![Question {
+            id: "q10".into(),
+            text: "测试题".into(),
+            kind: Kind::Single,
+            options: vec![
+                OptionItem { id: "opt_1".into(), text: "正确答案文本".into() },
+                OptionItem { id: "opt_2".into(), text: "错误答案文本".into() },
+            ],
+            blanks: 0,
+            images: vec![],
+        }];
+
+        let mut answers = Answers::new();
+        answers.insert("q10".into(), vec!["opt_1".into()]);
+
+        let content_answers = extract_answers_content(&answers, &questions);
+        assert_eq!(content_answers.get("q10"), Some(&vec!["正确答案文本".into()]));
     }
 }

@@ -96,6 +96,9 @@ async fn approval_flow_is_atomic_and_never_leaks_credentials_to_ai() {
                 json!([{"id":21,"type":80,"task_id":99,"title":"测验","finished":if marked.load(Ordering::SeqCst){1}else{0}}]),
             ));
         }
+        if request.path.starts_with("/exam/getTaskPaper") {
+            return (404, b"".to_vec(), String::new());
+        }
         if request.path == "/exam/99" {
             return (
                 200,
@@ -178,6 +181,9 @@ async fn supervised_dry_run_never_calls_ai_or_submits_without_user_choice() {
             return json_response(ok(
                 json!([{"id":21,"type":80,"task_id":99,"title":"测验","finished":0}]),
             ));
+        }
+        if request.path.starts_with("/exam/getTaskPaper") {
+            return (404, b"".to_vec(), String::new());
         }
         assert_eq!(request.path, "/exam/99");
         (200, HTML.as_bytes().to_vec(), String::new())
@@ -374,6 +380,9 @@ async fn yolo_gate_resumes_video_only_after_confirmed_quiz_completion() {
             }
             recorded.lock().unwrap().push(format!("video-{rid}"));
             return json_response(ok(json!({"finished":1})));
+        }
+        if request.path.starts_with("/exam/getTaskPaper") {
+            return (404, b"".to_vec(), String::new());
         }
         if request.path == "/exam/99" {
             return (200, HTML.as_bytes().to_vec(), String::new());
