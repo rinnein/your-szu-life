@@ -137,6 +137,8 @@ pub(crate) struct LocalBankQuestion {
     pub correct_answers: Vec<String>,
     pub uploaded: bool,
     pub updated_at_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub course_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1209,6 +1211,7 @@ pub(crate) fn record_passed_quiz(
                     correct_answers: ans.clone(),
                     uploaded: already_uploaded,
                     updated_at_ms: now,
+                    course_name: None,
                 };
                 bank.insert(key, record);
                 count += 1;

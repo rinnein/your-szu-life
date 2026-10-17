@@ -106,6 +106,8 @@ fn main() {
             "start_uooc_qa_device_auth",
             "poll_uooc_qa_device_auth",
             "upload_all_uooc_qa_bank",
+            "get_uooc_local_bank_questions",
+            "get_uooc_course_title",
             "build_uooc_local_bank",
             "uooc_qa_http_request",
             "get_app_content_snapshot",

@@ -227,13 +227,13 @@ it("opens global AI connection settings from UOOC runtime settings", async () =>
   await waitFor(() => expect(router.state.location.pathname).toBe("/settings"));
 });
 
-it("does not display qa server url field when debug mode is disabled", async () => {
+it("does not display qa server url field on settings tab", async () => {
   mount("/uooc?tab=settings");
   await screen.findByRole("button", { name: "保存设置" });
   expect(screen.queryByLabelText(/题库共享后端地址/)).not.toBeInTheDocument();
 });
 
-it("displays and saves qa server url field when debug mode is enabled", async () => {
+it("displays and saves qa server url field on qa tab", async () => {
   vi.mocked(invoke).mockImplementation(async (name) => {
     if (name === "get_debug_mode") return { enabled: true, logCount: 0 };
     if (
@@ -243,6 +243,21 @@ it("displays and saves qa server url field when debug mode is enabled", async ()
       name === "control_uooc_tasks"
     )
       return structuredClone(snapshot);
+    if (name === "get_uooc_embedding_status")
+      return {
+        status: "ready",
+        cachedCount: 10,
+        totalDimension: 1536,
+        updatedAtMs: 1,
+        message: "",
+      };
+    if (name === "get_uooc_qa_account_status")
+      return {
+        isAnonymous: true,
+        permissionLevel: "anonymous",
+        canOverwrite: false,
+      };
+    if (name === "get_uooc_local_bank_questions") return [];
     if (name === "get_uooc_ai_config")
       return {
         main: { baseUrl: "https://example.org/v1", model: "main", hasKey: true },
@@ -254,7 +269,7 @@ it("displays and saves qa server url field when debug mode is enabled", async ()
     return undefined;
   });
 
-  mount("/uooc?tab=settings");
+  mount("/uooc?tab=qa");
   const qaInput = await screen.findByLabelText(/题库共享后端地址/);
   expect(qaInput).toBeInTheDocument();
   expect(qaInput).toHaveValue("http://localhost:4321");

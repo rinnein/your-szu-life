@@ -56,6 +56,7 @@ beforeEach(() => {
     if (command === "download_uooc_qa_vectors") return downloadedStatus;
     if (command === "sync_uooc_qa_bank") return 5;
     if (command === "save_uooc_qa_api_key") return undefined;
+    if (command === "get_uooc_local_bank_questions") return [];
     if (command === "search_uooc_qa_questions")
       return [
         {
@@ -241,5 +242,125 @@ it("shows toast.danger when operation fails", async () => {
 
   await waitFor(() =>
     expect(dangerSpy).toHaveBeenCalledWith("同步题库失败", { description: "服务连接超时" }),
+  );
+});
+
+it("browses local question bank with annotated sync status and filters", async () => {
+  const mockQuestions = [
+    {
+      cid: "course_1",
+      tid: "task_100",
+      questionId: "q_2001",
+      questionType: "single",
+      stem: "关于定积分与微积分基本定理",
+      options: [
+        { id: "A", text: "连续必可积" },
+        { id: "B", text: "可积必连续" },
+      ],
+      blanks: 0,
+      correctAnswers: ["连续必可积"],
+      uploaded: true,
+      updatedAtMs: 1700000000000,
+    },
+    {
+      cid: "course_2",
+      tid: "task_200",
+      questionId: "q_2002",
+      questionType: "multiple",
+      stem: "人工智能的主要研究分支包括",
+      options: [
+        { id: "A", text: "机器学习" },
+        { id: "B", text: "计算机视觉" },
+      ],
+      blanks: 0,
+      correctAnswers: ["机器学习", "计算机视觉"],
+      uploaded: false,
+      updatedAtMs: 1700001000000,
+    },
+  ];
+
+  const mockCourses = [
+    {
+      id: "course_1",
+      title: "高等数学（微积分）",
+      semester: "秋季",
+      organization: "深圳大学",
+      weeks: "5/7",
+    },
+    {
+      id: "course_2",
+      title: "人工智能概论",
+      semester: "秋季",
+      organization: "深圳大学",
+      weeks: "5/7",
+    },
+  ];
+
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "get_uooc_embedding_status") return initialStatus;
+    if (command === "get_uooc_qa_account_status") return anonAccount;
+    if (command === "get_uooc_local_bank_questions") return mockQuestions;
+    if (command === "build_uooc_local_bank") return 2;
+    if (command === "get_uooc_course_title") {
+      const cid = (args as { cid?: string })?.cid;
+      if (cid === "course_1") return "高等数学（微积分）";
+      if (cid === "course_2") return "人工智能概论";
+      return `课程 ${cid}`;
+    }
+    return undefined;
+  });
+
+  render(<UoocQaSettings courses={mockCourses} />);
+
+  // 1. Verify course-grouped entries and summary
+  expect(await screen.findByText("本地题库内容浏览")).toBeInTheDocument();
+  expect(screen.getByText("全部课程")).toBeInTheDocument();
+  expect(await screen.findByText("高等数学（微积分）")).toBeInTheDocument();
+  expect(await screen.findByText("人工智能概论")).toBeInTheDocument();
+
+  // Summary counts
+  expect(screen.getByText(/全部收录: 2 道/)).toBeInTheDocument();
+  expect(screen.getByText(/已同步至服务端: 1 道/)).toBeInTheDocument();
+  expect(screen.getByText(/待同步（仅本地）: 1 道/)).toBeInTheDocument();
+
+  // 2. Click "全部课程" to open modal
+  const viewAllBtn = screen.getByRole("button", { name: "浏览全部题目" });
+  fireEvent.click(viewAllBtn);
+
+  // In modal: verify questions and sync status badges
+  expect(await screen.findByText("全部课程题库")).toBeInTheDocument();
+  expect(screen.getByText("关于定积分与微积分基本定理")).toBeInTheDocument();
+  expect(screen.getByText("人工智能的主要研究分支包括")).toBeInTheDocument();
+
+  // Annotated sync statuses inside modal
+  expect(screen.getByText("已同步至服务端")).toBeInTheDocument();
+  expect(screen.getByText("待同步（仅本地）")).toBeInTheDocument();
+
+  // Option keys in standard answers
+  // The answer includes real option key "A" and text "连续必可积"
+  expect(screen.getAllByText("A").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("连续必可积").length).toBeGreaterThan(0);
+
+  // 题单选择器呈现
+  expect(screen.getByLabelText("选择题单")).toBeInTheDocument();
+
+  // Filter by status: click "已同步" inside modal
+  const filterSyncedBtn = screen.getByRole("button", { name: /^已同步 \(1\)/ });
+  fireEvent.click(filterSyncedBtn);
+  expect(screen.getByText("关于定积分与微积分基本定理")).toBeInTheDocument();
+  expect(screen.queryByText("人工智能的主要研究分支包括")).not.toBeInTheDocument();
+
+  // Close modal to return to main view
+  const closeBtn = screen.getByRole("button", { name: "关闭" });
+  fireEvent.click(closeBtn);
+
+  // Test rebuilding bank button
+  const successSpy = vi.spyOn(toast, "success");
+  const rebuildBtn = await screen.findByRole("button", { name: "重新构建题库" });
+  fireEvent.click(rebuildBtn);
+
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith("build_uooc_local_bank"));
+  await waitFor(() =>
+    expect(successSpy).toHaveBeenCalledWith("本地题库已重新构建完成，共收录 2 道题目"),
   );
 });

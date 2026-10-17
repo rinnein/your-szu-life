@@ -358,6 +358,53 @@ pub(crate) async fn upload_all_uooc_qa_bank(
 }
 
 #[tauri::command]
+pub(crate) fn get_uooc_local_bank_questions(
+    app: tauri::AppHandle,
+) -> Result<Vec<super::quiz::qa::LocalBankQuestion>, String> {
+    let service = service(&app)?;
+    let bank_path = service.path.parent().unwrap().join("qa-bank.json");
+    let bank = super::quiz::qa::load_local_bank(&bank_path);
+    let courses = {
+        let r = service.runtime.lock().unwrap();
+        r.snapshot.courses.clone()
+    };
+    let mut list: Vec<_> = bank.into_values().collect();
+    for q in &mut list {
+        if q.course_name.is_none() {
+            if let Some(c) = courses.iter().find(|c| c.id == q.cid) {
+                q.course_name = Some(c.title.clone());
+            }
+        }
+    }
+    list.sort_by(|a, b| b.updated_at_ms.cmp(&a.updated_at_ms));
+    Ok(list)
+}
+
+#[tauri::command]
+pub(crate) async fn get_uooc_course_title(
+    app: tauri::AppHandle,
+    cid: String,
+) -> Result<String, String> {
+    let service = service(&app)?;
+    // 1. From snapshot courses
+    {
+        let r = service.runtime.lock().unwrap();
+        if let Some(c) = r.snapshot.courses.iter().find(|c| c.id == cid) {
+            return Ok(c.title.clone());
+        }
+    }
+    // 2. Query via UOOC client
+    let client = service.client();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    if let Ok(courses) = client.courses(&cancel).await {
+        if let Some(c) = courses.iter().find(|c| c.id == cid) {
+            return Ok(c.title.clone());
+        }
+    }
+    Ok(format!("课程 {cid}"))
+}
+
+#[tauri::command]
 pub(crate) async fn build_uooc_local_bank(app: tauri::AppHandle) -> Result<usize, String> {
     let service = service(&app)?;
     service.build_local_bank().await

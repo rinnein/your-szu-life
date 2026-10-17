@@ -136,6 +136,8 @@ pub(crate) fn run() {
             uooc::commands::start_uooc_qa_device_auth,
             uooc::commands::poll_uooc_qa_device_auth,
             uooc::commands::upload_all_uooc_qa_bank,
+            uooc::commands::get_uooc_local_bank_questions,
+            uooc::commands::get_uooc_course_title,
             uooc::commands::build_uooc_local_bank,
             uooc::commands::uooc_qa_http_request,
             app_content::commands::get_app_content_snapshot,

@@ -490,6 +490,10 @@ export default function UoocPage() {
                 任务{tasks.length ? ` (${tasks.length})` : ""}
                 <Tabs.Indicator />
               </Tabs.Tab>
+              <Tabs.Tab id="qa">
+                题库
+                <Tabs.Indicator />
+              </Tabs.Tab>
               <Tabs.Tab id="settings">
                 运行设置
                 <Tabs.Indicator />
@@ -1049,7 +1053,15 @@ export default function UoocPage() {
                 </Button>
               </Card.Content>
             </Card>
+            <AiSettings
+              onMode={setDefaultMode}
+              onOpenAiSettings={() => void navigation.push("/settings")}
+            />
+          </Tabs.Panel>
+          <Tabs.Panel id="qa" className="grid gap-6 pt-4">
             <UoocQaSettings
+              courses={snapshot?.courses ?? []}
+              quizzes={snapshot?.quizzes}
               qaServerUrl={settings.qaServerUrl ?? "http://localhost:4321"}
               onQaServerUrlChange={(value) =>
                 setSettings((old) => ({ ...old, qaServerUrl: value }))
@@ -1060,10 +1072,6 @@ export default function UoocPage() {
                 const ok = await action("save_uooc_settings", { settings });
                 if (ok) toast.success("题库服务设置已保存");
               }}
-            />
-            <AiSettings
-              onMode={setDefaultMode}
-              onOpenAiSettings={() => void navigation.push("/settings")}
             />
           </Tabs.Panel>
         </Tabs>
