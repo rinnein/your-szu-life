@@ -334,16 +334,27 @@ export function buildCourseTaskItems(videos: UoocVideo[] = [], quiz?: QuizState)
   return [...items, quizItem];
 }
 
+export type LocalBankAnswer = {
+  id?: number;
+  values: unknown[];
+  isCorrect: boolean;
+  source: string;
+  confidence: number;
+};
+
 export type LocalBankQuestion = {
   cid: string;
   tid: string;
   questionId: string;
   questionType: string;
+  type?: string;
   stem?: string | null;
   options?: { id: string; text: string }[] | null;
   blanks?: number | null;
-  correctAnswers: string[];
+  answers?: LocalBankAnswer[];
+  correctAnswers?: string[];
   uploaded: boolean;
   updatedAtMs: number;
   courseName?: string | null;
+  taskName?: string | null;
 };

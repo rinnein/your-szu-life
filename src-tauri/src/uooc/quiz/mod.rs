@@ -1199,7 +1199,7 @@ impl Service {
                         .into_iter()
                         .map(|o| OptionItem { id: o.id, text: o.text })
                         .collect(),
-                    blanks: q.blanks.unwrap_or(0) as usize,
+                    blanks: q.blanks,
                     images: vec![],
                 };
                 if !q.correct_answers.is_empty() {

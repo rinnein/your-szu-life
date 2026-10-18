@@ -222,24 +222,52 @@ struct AnonymousKeyResponse {
     pub api_key: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocalBankAnswer {
+    #[serde(default)]
+    pub id: Option<i64>,
+    pub values: Vec<serde_json::Value>,
+    #[serde(rename = "isCorrect")]
+    pub is_correct: bool,
+    #[serde(default = "default_answer_source")]
+    pub source: String,
+    #[serde(default = "default_confidence")]
+    pub confidence: f64,
+}
+
+fn default_answer_source() -> String {
+    "local".into()
+}
+
+fn default_confidence() -> f64 {
+    1.0
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LocalBankQuestion {
     pub cid: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub course_name: Option<String>,
     pub tid: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_name: Option<String>,
     pub question_id: String,
+    #[serde(rename = "type")]
     pub question_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stem: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub options: Option<Vec<QaUploadOption>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub blanks: Option<usize>,
+    #[serde(default)]
+    pub blanks: usize,
+    #[serde(default)]
+    pub answers: Vec<LocalBankAnswer>,
+    #[serde(default)]
     pub correct_answers: Vec<String>,
     pub uploaded: bool,
     pub updated_at_ms: i64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub course_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1606,10 +1634,20 @@ pub(crate) fn build_upload_question_from_local_bank(q: &LocalBankQuestion) -> Qa
         (opts, payload_opts)
     };
 
-    let norm_correct = normalize_answers_for_upload(q_type, &clean_opts, &q.correct_answers);
+    let norm_correct = if let Some(ans_obj) = q.answers.iter().find(|a| a.is_correct) {
+        let raw_strs: Vec<String> = ans_obj.values.iter().map(|v| match v {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Bool(b) => if *b { "A".to_string() } else { "B".to_string() },
+            serde_json::Value::Number(n) => n.to_string(),
+            other => other.to_string(),
+        }).collect();
+        normalize_answers_for_upload(q_type, &clean_opts, &raw_strs)
+    } else {
+        normalize_answers_for_upload(q_type, &clean_opts, &q.correct_answers)
+    };
 
     let blanks = if q_type == "text" {
-        Some(norm_correct.as_ref().map_or(q.blanks.unwrap_or(1).max(1), |a| a.len()))
+        Some(norm_correct.as_ref().map_or(q.blanks.max(1), |a| a.len()))
     } else {
         None
     };
@@ -1685,16 +1723,63 @@ pub(crate) fn record_passed_quiz(
             .map(str::to_string)
             .or_else(|| existing.and_then(|e| e.course_name.clone()));
 
+        let q_type_str = match q.kind {
+            Kind::Single => {
+                if q.options.len() == 2 {
+                    let opt0 = q.options[0].text.trim().to_lowercase();
+                    let opt1 = q.options[1].text.trim().to_lowercase();
+                    if (opt0.contains("正确") || opt0.contains("对") || opt0 == "t" || opt0 == "true" || opt0 == "a")
+                        && (opt1.contains("错误") || opt1.contains("错") || opt1 == "f" || opt1 == "false" || opt1 == "b")
+                    {
+                        "judge"
+                    } else {
+                        "single"
+                    }
+                } else {
+                    "single"
+                }
+            }
+            Kind::Multiple => "multiple",
+            Kind::Text => "text",
+        };
+
+        let mut bank_answers = Vec::new();
+        if !ans.is_empty() {
+            let values: Vec<serde_json::Value> = if q_type_str == "judge" {
+                ans.iter().map(|s| {
+                    let st = s.trim().to_lowercase();
+                    let b = st == "a" || st == "true" || st == "正确" || st == "对" || st == "t" || st.starts_with("a.");
+                    serde_json::Value::Bool(b)
+                }).collect()
+            } else if q_type_str == "single" || q_type_str == "multiple" {
+                ans.iter().map(|s| {
+                    if let Some(opt) = q.options.iter().find(|o| o.text.trim() == s.trim() || o.id.eq_ignore_ascii_case(s.trim())) {
+                        serde_json::Value::String(opt.id.clone())
+                    } else {
+                        serde_json::Value::String(s.clone())
+                    }
+                }).collect()
+            } else {
+                ans.iter().map(|s| serde_json::Value::String(s.clone())).collect()
+            };
+
+            bank_answers.push(LocalBankAnswer {
+                id: None,
+                values,
+                is_correct: true,
+                source: "local".into(),
+                confidence: 1.0,
+            });
+        }
+
         let record = LocalBankQuestion {
             cid: cid.to_string(),
+            course_name: c_name,
             tid: task_id.to_string(),
+            task_name: None,
             question_id: q.id.clone(),
-            question_type: match q.kind {
-                Kind::Single => "single".into(),
-                Kind::Multiple => "multiple".into(),
-                Kind::Text => "text".into(),
-            },
-            stem: Some(q.text.clone()),
+            question_type: q_type_str.into(),
+            stem: if q.text.trim().is_empty() { None } else { Some(strip_html_tags(&q.text)) },
             options: if q.options.is_empty() {
                 None
             } else {
@@ -1702,17 +1787,17 @@ pub(crate) fn record_passed_quiz(
                     q.options
                         .iter()
                         .map(|o| QaUploadOption {
-                            id: o.id.clone(),
-                            text: o.text.clone(),
+                            id: strip_html_tags(&o.id),
+                            text: strip_html_tags(&o.text),
                         })
                         .collect(),
                 )
             },
-            blanks: if q.blanks > 0 { Some(q.blanks) } else { None },
+            blanks: q.blanks,
+            answers: bank_answers,
             correct_answers: ans,
             uploaded: already_uploaded,
             updated_at_ms: now,
-            course_name: c_name,
         };
         bank.insert(key, record);
         count += 1;

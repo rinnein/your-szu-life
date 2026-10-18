@@ -70,6 +70,84 @@ export type QaSearchResultItem = {
   source: string;
 };
 
+const typeBadgeStyles: Record<string, string> = {
+  single:
+    "bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-200 border border-blue-200 dark:border-blue-800",
+  multiple:
+    "bg-purple-100 text-purple-800 dark:bg-purple-900/60 dark:text-purple-200 border border-purple-200 dark:border-purple-800",
+  judge:
+    "bg-orange-100 text-orange-800 dark:bg-orange-900/60 dark:text-orange-200 border border-orange-200 dark:border-orange-800",
+  text: "bg-green-100 text-green-800 dark:bg-green-900/60 dark:text-green-200 border border-green-200 dark:border-green-800",
+};
+
+function isOptionSelected(
+  values: unknown[],
+  optId: string,
+  optText: string,
+  qType?: string,
+): boolean {
+  if (!Array.isArray(values)) return false;
+  const optIdLower = optId.toLowerCase();
+  const optTextTrim = optText.trim();
+  return values.some((val) => {
+    if (typeof val === "boolean" || qType === "judge") {
+      if (
+        (val === true || val === "true") &&
+        (optIdLower === "a" || optTextTrim.includes("正确") || optTextTrim.includes("对"))
+      )
+        return true;
+      if (
+        (val === false || val === "false") &&
+        (optIdLower === "b" || optTextTrim.includes("错误") || optTextTrim.includes("错"))
+      )
+        return true;
+    }
+    const valStr = String(val).trim();
+    if (valStr.toLowerCase() === optIdLower) return true;
+    if (
+      valStr === optTextTrim ||
+      optTextTrim.replace(/\s+/g, "").includes(valStr.replace(/\s+/g, ""))
+    )
+      return true;
+    return false;
+  });
+}
+
+function formatAnswerValues(
+  values: unknown[],
+  options?: { id: string; text: string }[] | null,
+  qType?: string,
+): string {
+  if (!Array.isArray(values)) return String(values || "");
+  if (qType === "text" && values.length > 1) {
+    return values.map((v, i) => `第 ${i + 1} 空: ${String(v)}`).join("; ");
+  }
+  return values
+    .map((v) => {
+      if (typeof v === "boolean" || qType === "judge") {
+        if (v === true || v === "true" || v === "正确" || v === "对" || v === "A") return "A. 正确";
+        if (v === false || v === "false" || v === "错误" || v === "错" || v === "B")
+          return "B. 错误";
+      }
+      const valStr = String(v).trim();
+      const matchedOpt = options?.find(
+        (o) =>
+          o.id === valStr ||
+          o.id.toLowerCase() === valStr.toLowerCase() ||
+          o.text.trim() === valStr ||
+          o.text.replace(/\s+/g, "").includes(valStr.replace(/\s+/g, "")) ||
+          valStr.replace(/\s+/g, "").includes(o.text.replace(/\s+/g, "")),
+      );
+      if (matchedOpt) {
+        return matchedOpt.text
+          ? `${matchedOpt.id.toUpperCase()}. ${matchedOpt.text}`
+          : matchedOpt.id.toUpperCase();
+      }
+      return valStr;
+    })
+    .join(", ");
+}
+
 export function UoocQaSettings({
   courses,
   quizzes,
@@ -544,7 +622,8 @@ export function UoocQaSettings({
           item.questionId.toLowerCase().includes(qText) ||
           item.tid.toLowerCase().includes(qText) ||
           item.cid.toLowerCase().includes(qText) ||
-          item.correctAnswers.some((a) => a.toLowerCase().includes(qText)),
+          (item.correctAnswers && item.correctAnswers.some((a) => a.toLowerCase().includes(qText))) ||
+          (item.answers && item.answers.some((a) => (a.values || []).some((v) => String(v).toLowerCase().includes(qText)))),
       );
     }
     return list;
@@ -1183,17 +1262,41 @@ export function UoocQaSettings({
                 ) : (
                   <div className="grid gap-3.5">
                     {paginatedQuestions.map((q) => {
+                      const qType = q.type || q.questionType || "single";
                       const answerDetails = formatCorrectAnswers(q);
+                      const displayAnswers =
+                        q.answers && q.answers.length > 0
+                          ? q.answers
+                          : q.correctAnswers && q.correctAnswers.length > 0
+                            ? [
+                                {
+                                  values: q.correctAnswers,
+                                  isCorrect: true,
+                                  source: "local",
+                                  confidence: 1.0,
+                                },
+                              ]
+                            : [];
+                      const correctRecords = displayAnswers.filter((a) => a.isCorrect);
+                      const wrongRecords = displayAnswers.filter((a) => !a.isCorrect);
+
                       return (
                         <div
                           key={`${q.tid}-${q.questionId}`}
-                          className="grid gap-2.5 rounded-xl border border-separator/50 bg-surface/50 p-4 transition-colors hover:border-separator"
+                          className="grid gap-3 rounded-xl border border-separator/50 bg-surface/50 p-4 transition-colors hover:border-separator"
                         >
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="flex flex-wrap items-center gap-2">
-                              <Chip size="sm" color="accent">
-                                {typeLabels[q.questionType] ?? q.questionType}
-                              </Chip>
+                              <span
+                                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border ${typeBadgeStyles[qType] ?? "bg-surface text-foreground border-separator"}`}
+                              >
+                                {typeLabels[qType] ?? qType}
+                              </span>
+                              {qType === "text" && (q.blanks || 0) > 0 && (
+                                <span className="text-xs text-muted font-mono">
+                                  共 {q.blanks} 空
+                                </span>
+                              )}
                               {/* 标注同步状态 */}
                               {q.uploaded ? (
                                 <Chip
@@ -1214,45 +1317,57 @@ export function UoocQaSettings({
                               )}
                             </div>
                             <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-muted">
-                              <span>题组: {q.tid}</span>
+                              <span>tid: {q.tid}</span>
                               <span>·</span>
-                              <span>题号: {q.questionId}</span>
+                              <span>#{q.questionId}</span>
                               <span>·</span>
-                              <span>课程: {q.cid}</span>
+                              <span>{q.courseName || `cid: ${q.cid}`}</span>
                             </div>
                           </div>
 
                           <p className="font-medium whitespace-pre-wrap text-foreground">
-                            <DimmedHtmlText text={q.stem || "（暂无题干文本）"} />
+                            <DimmedHtmlText text={q.stem || "（题干未录入）"} />
                           </p>
 
-                          {/* 选项列表（标出真实选项 A、B、C 等，并高亮标记正确选项） */}
+                          {/* 选项列表（标出真实选项 A、B、C 等，并依据正确/排除状态高亮与划线） */}
                           {q.options && q.options.length > 0 && (
                             <div className="grid gap-1.5 rounded-lg border border-separator/40 bg-surface/40 p-2.5 text-xs">
-                              <span className="font-semibold text-muted">选项列表：</span>
+                              <span className="font-semibold text-muted text-[11px]">选项列表</span>
                               {q.options.map((opt) => {
-                                const isCorrect = answerDetails.some(
-                                  (a) =>
-                                    a.key === opt.id ||
-                                    a.text === opt.text ||
-                                    opt.text.trim() === a.text.trim(),
+                                const isCorrect =
+                                  correctRecords.some((a) =>
+                                    isOptionSelected(a.values, opt.id, opt.text, qType),
+                                  ) ||
+                                  answerDetails.some(
+                                    (ad) => ad.key === opt.id || ad.text === opt.text,
+                                  );
+                                const isWrong = wrongRecords.some((a) =>
+                                  isOptionSelected(a.values, opt.id, opt.text, qType),
                                 );
+
                                 return (
                                   <div
                                     key={opt.id}
-                                    className={`flex items-start gap-1.5 rounded px-2 py-1 ${
+                                    className={`flex items-start gap-2 rounded-lg border px-3 py-1.5 text-xs transition-colors ${
                                       isCorrect
-                                        ? "bg-success/15 font-medium text-success dark:text-success"
-                                        : "text-foreground/90"
+                                        ? "border-green-500 bg-green-50/80 text-green-800 dark:bg-green-950/60 dark:text-green-200 font-medium"
+                                        : isWrong
+                                          ? "border-red-400 bg-red-50/70 text-red-700 line-through dark:bg-red-950/50 dark:text-red-300"
+                                          : "border-separator/40 bg-surface/30 text-foreground/90"
                                     }`}
                                   >
-                                    <span className="font-bold text-foreground">{opt.id}.</span>
+                                    <span className="font-bold shrink-0">{opt.id}.</span>
                                     <span className="flex-1">
                                       <DimmedHtmlText text={opt.text} />
                                     </span>
                                     {isCorrect && (
-                                      <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-success">
+                                      <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-green-600 dark:text-green-400 shrink-0">
                                         <LuCircleCheck aria-hidden="true" /> 正确项
+                                      </span>
+                                    )}
+                                    {isWrong && (
+                                      <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-red-500 dark:text-red-400 shrink-0">
+                                        ✗ 已排除
                                       </span>
                                     )}
                                   </div>
@@ -1261,30 +1376,88 @@ export function UoocQaSettings({
                             </div>
                           )}
 
-                          {/* 标准答案：显式包含真实答案选项字母 (A、B、C、D等) 与文本内容 */}
-                          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-xs text-success-foreground dark:text-success">
-                            <span className="font-bold">标准答案：</span>
-                            {answerDetails.length > 0 ? (
-                              <div className="flex flex-wrap items-center gap-2">
-                                {answerDetails.map((a, idx) => (
-                                  <span
-                                    key={idx}
-                                    className="inline-flex items-center gap-1 font-medium"
-                                  >
-                                    {a.key && (
-                                      <span className="rounded bg-success/20 px-1.5 py-0.5 font-bold font-mono text-foreground">
-                                        {a.key}
-                                      </span>
-                                    )}
-                                    <span>{a.text}</span>
-                                    {idx < answerDetails.length - 1 && (
-                                      <span className="text-muted">，</span>
-                                    )}
-                                  </span>
-                                ))}
+                          {/* 答案记录卡片区（严格遵循 QuestionDetail 架构展示） */}
+                          <div className="grid gap-1.5 pt-1 border-t border-separator/30 text-xs">
+                            <span className="font-semibold text-muted text-[11px]">答案记录</span>
+                            {displayAnswers.length > 0 ? (
+                              displayAnswers.map((a, aIdx) => (
+                                <div
+                                  key={aIdx}
+                                  className={`flex flex-col gap-1 rounded-lg border px-3 py-2 text-xs ${
+                                    a.isCorrect
+                                      ? "border-green-300 bg-green-50/60 text-green-900 dark:border-green-800 dark:bg-green-950/50 dark:text-green-200"
+                                      : "border-red-300 bg-red-50/60 text-red-900 dark:border-red-800 dark:bg-red-950/50 dark:text-red-200"
+                                  }`}
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="flex flex-wrap items-center gap-1.5 font-bold">
+                                      {a.isCorrect ? (
+                                        <span className="text-green-600 dark:text-green-400 flex items-center gap-1">
+                                          <LuCircleCheck aria-hidden="true" /> 标准答案：
+                                        </span>
+                                      ) : (
+                                        <span className="text-red-500 flex items-center gap-1">
+                                          ✗ 排除答案：
+                                        </span>
+                                      )}
+                                      {a.isCorrect && answerDetails.length > 0 ? (
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          {answerDetails.map((ad, idx) => (
+                                            <span
+                                              key={idx}
+                                              className="inline-flex items-center gap-1 font-medium text-foreground"
+                                            >
+                                              {ad.key && (
+                                                <span className="rounded bg-success/20 px-1.5 py-0.5 font-bold font-mono text-foreground text-xs">
+                                                  {ad.key}
+                                                </span>
+                                              )}
+                                              <span>{ad.text}</span>
+                                              {idx < answerDetails.length - 1 && (
+                                                <span className="text-muted">，</span>
+                                              )}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <span className="font-semibold text-foreground">
+                                          {formatAnswerValues(a.values, q.options, qType)}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-[10px] text-muted font-mono shrink-0">
+                                      来源: {a.source || "local"} · 置信度:{" "}
+                                      {Math.round((a.confidence ?? 1) * 100)}%
+                                    </span>
+                                  </div>
+                                </div>
+                              ))
+                            ) : answerDetails.length > 0 ? (
+                              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-xs text-success-foreground dark:text-success">
+                                <span className="font-bold">标准答案：</span>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {answerDetails.map((a, idx) => (
+                                    <span
+                                      key={idx}
+                                      className="inline-flex items-center gap-1 font-medium"
+                                    >
+                                      {a.key && (
+                                        <span className="rounded bg-success/20 px-1.5 py-0.5 font-bold font-mono text-foreground">
+                                          {a.key}
+                                        </span>
+                                      )}
+                                      <span>{a.text}</span>
+                                      {idx < answerDetails.length - 1 && (
+                                        <span className="text-muted">，</span>
+                                      )}
+                                    </span>
+                                  ))}
+                                </div>
                               </div>
                             ) : (
-                              <span>（空）</span>
+                              <div className="rounded-lg border border-separator/40 bg-surface/30 px-3 py-2 text-muted italic">
+                                <span>暂无答案记录</span>
+                              </div>
                             )}
                           </div>
 
