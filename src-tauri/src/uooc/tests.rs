@@ -927,3 +927,285 @@ async fn deleting_tasks_cancels_workers_and_removes_from_snapshot() {
 
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn build_local_bank_discovers_all_course_quizzes_via_task_list_logic() {
+    let root = root();
+    let service = service_test(root.clone());
+    let server = Server::new(move |request| {
+        if request.path.starts_with("/home/learn/getCatalogList") {
+            return ok(json!([
+                {
+                    "id": 1,
+                    "name": "绪论",
+                    "children": [
+                        {
+                            "id": 101,
+                            "name": "绪论测验",
+                            "task_id": 901,
+                            "finished": 1,
+                            "icon_list": [{"id": 501, "type": "80", "type_name": "测验"}]
+                        }
+                    ]
+                },
+                {
+                    "id": 2,
+                    "name": "第一章",
+                    "children": [
+                        {
+                            "id": 102,
+                            "name": "第一章测验",
+                            "task_id": 902,
+                            "finished": 1,
+                            "icon_list": [{"id": 502, "type": "80", "type_name": "测验"}]
+                        }
+                    ]
+                }
+            ]));
+        }
+        if request.path.starts_with("/exam/getTaskPaper") {
+            let tid = request.fields().get("tid").cloned().unwrap_or_default();
+            return json!({
+                "code": 1,
+                "data": {
+                    "questions": [
+                        {
+                            "id": format!("q_{tid}"),
+                            "question": format!("题目内容 {tid}"),
+                            "type": "10",
+                            "options_app": [
+                                {"key": "A", "value": "正确答案"}
+                            ],
+                            "answer": "A"
+                        }
+                    ]
+                }
+            });
+        }
+        ok(json!({"code": 1}))
+    });
+
+    *service.client.write().unwrap() =
+        Arc::new(Client::with_base(session::load(None).unwrap(), &server.base).unwrap());
+    service.change(|s| {
+        s.session = SessionStatus::Ready;
+        s.user = Some(User {
+            id: "7".into(),
+            name: "test".into(),
+        });
+        s.courses = vec![course("42")];
+    });
+
+    let count = service.build_local_bank().await.unwrap();
+    assert_eq!(count, 2);
+
+    let bank_path = root.join("qa-bank.json");
+    let bank = super::quiz::qa::load_local_bank(&bank_path);
+    assert_eq!(bank.len(), 2);
+    assert!(bank.values().any(|q| q.tid == "901"));
+    assert!(bank.values().any(|q| q.tid == "902"));
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn build_local_bank_creates_new_tid_on_server_even_if_not_found_in_course_and_logs() {
+    let root = root();
+    let service = service_test(root.clone());
+
+    let upload_batch_calls = Arc::new(AtomicUsize::new(0));
+    let upload_batch_calls_clone = upload_batch_calls.clone();
+    let upload_bodies = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let upload_bodies_clone = upload_bodies.clone();
+
+    // Mock uooc-qa-share server
+    let qa_server = Server::new(move |request| {
+        if request.path == "/api/courses/42" && request.method == "GET" {
+            // Server has no task groups for this course yet
+            return json!({
+                "course": { "cid": "42", "name": "测试课程 42" },
+                "taskGroups": []
+            });
+        }
+        if request.path == "/api/courses/42/tasks/901" && request.method == "GET" {
+            // Returns the exact error: "Task group not found in this course"
+            return json!({
+                "error": "Task group not found in this course"
+            });
+        }
+        if request.path == "/api/upload/batch" && request.method == "POST" {
+            upload_batch_calls_clone.fetch_add(1, Ordering::SeqCst);
+            upload_bodies_clone.lock().unwrap().push(request.body.clone());
+            return json!({
+                "ok": true,
+                "results": [{ "question_id": "q_901", "action": "added_question" }]
+            });
+        }
+        json!({ "error": "not found" })
+    });
+
+    // Mock UOOC server
+    let server = Server::new(move |request| {
+        if request.path.starts_with("/home/learn/getCatalogList") {
+            return ok(json!([
+                {
+                    "id": 1,
+                    "name": "第一章",
+                    "children": [
+                        {
+                            "id": 101,
+                            "name": "测验一",
+                            "task_id": 901,
+                            "finished": 1,
+                            "icon_list": [{"id": 501, "type": "80", "type_name": "测验"}]
+                        }
+                    ]
+                }
+            ]));
+        }
+        if request.path.starts_with("/exam/getTaskPaper") {
+            return json!({
+                "code": 1,
+                "data": {
+                    "questions": [
+                        {
+                            "id": "q_901",
+                            "question": "测试题目 901",
+                            "type": "10",
+                            "options_app": [{"key": "A", "value": "选项A"}],
+                            "answer": "A"
+                        }
+                    ]
+                }
+            });
+        }
+        ok(json!({"code": 1}))
+    });
+
+    *service.client.write().unwrap() =
+        Arc::new(Client::with_base(session::load(None).unwrap(), &server.base).unwrap());
+    service.change(|s| {
+        s.session = SessionStatus::Ready;
+        s.user = Some(User {
+            id: "7".into(),
+            name: "test".into(),
+        });
+        s.courses = vec![course("42")];
+        s.settings.qa_server_url = qa_server.base.clone();
+    });
+
+    let count = service.build_local_bank().await.unwrap();
+    assert_eq!(count, 1);
+
+    // Verify upload/batch was called to create the new tid on the server
+    assert_eq!(upload_batch_calls.load(Ordering::SeqCst), 1);
+    let bodies = upload_bodies.lock().unwrap();
+    assert_eq!(bodies.len(), 1);
+    let payload: serde_json::Value = serde_json::from_str(&bodies[0]).unwrap();
+    assert_eq!(payload["tid"], "901");
+    assert_eq!(payload["cid"], "42");
+    assert_eq!(payload["questions"][0]["question_id"], "q_901");
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn build_local_bank_fetches_exam_view_for_completed_quiz_and_records_standard_answers() {
+    let root = root();
+    let service = service_test(root.clone());
+
+    let exam_view_called = Arc::new(AtomicUsize::new(0));
+    let exam_view_called_clone = exam_view_called.clone();
+
+    // Mock UOOC server
+    let server = Server::new(move |request| {
+        if request.path.starts_with("/home/learn/getCatalogList") {
+            return ok(json!([
+                {
+                    "id": 1,
+                    "name": "第一章",
+                    "children": [
+                        {
+                            "id": 101,
+                            "name": "已考测验",
+                            "task_id": 999,
+                            "finished": 1,
+                            "icon_list": [{"id": 501, "type": "80", "type_name": "测验"}]
+                        }
+                    ]
+                }
+            ]));
+        }
+        // /exam/getTaskPaper only returns questions, without answers
+        if request.path.starts_with("/exam/getTaskPaper") {
+            return json!({
+                "code": 1,
+                "data": {
+                    "questions": [
+                        {
+                            "id": "q_999",
+                            "question": "我国第一部现代白话文小说是？",
+                            "type": "10",
+                            "options_app": [
+                                {"key": "A", "value": "狂人日记"},
+                                {"key": "B", "value": "阿Q正传"}
+                            ],
+                            "answer": ""
+                        }
+                    ]
+                }
+            });
+        }
+        // /exam/view returns the completed exam with user's submitted answer and standard answer!
+        if request.path.starts_with("/exam/view") {
+            exam_view_called_clone.fetch_add(1, Ordering::SeqCst);
+            return json!({
+                "code": 1,
+                "data": {
+                    "questions": [
+                        {
+                            "id": "q_999",
+                            "stem": "我国第一部现代白话文小说是？",
+                            "type": "single",
+                            "options_app": [
+                                {"key": "A", "value": "狂人日记"},
+                                {"key": "B", "value": "阿Q正传"}
+                            ],
+                            "user_answer": "A",
+                            "standard_answer": "A",
+                            "is_right": 1
+                        }
+                    ]
+                }
+            });
+        }
+        ok(json!({"code": 1}))
+    });
+
+    *service.client.write().unwrap() =
+        Arc::new(Client::with_base(session::load(None).unwrap(), &server.base).unwrap());
+    service.change(|s| {
+        s.session = SessionStatus::Ready;
+        s.user = Some(User {
+            id: "7".into(),
+            name: "test".into(),
+        });
+        s.courses = vec![course("42")];
+    });
+
+    let count = service.build_local_bank().await.unwrap();
+    assert_eq!(count, 1);
+
+    // Verify /exam/view was called because the quiz is finished
+    assert!(exam_view_called.load(Ordering::SeqCst) >= 1);
+
+    let bank_path = root.join("qa-bank.json");
+    let bank = super::quiz::qa::load_local_bank(&bank_path);
+    assert_eq!(bank.len(), 1);
+    let question = bank.get("999:q_999").expect("question should exist");
+    // Standard answer MUST NOT be empty!
+    assert!(!question.correct_answers.is_empty());
+    assert_eq!(question.correct_answers, vec!["狂人日记".to_string()]);
+
+    std::fs::remove_dir_all(root).unwrap();
+}

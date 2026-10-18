@@ -29,31 +29,6 @@ fn source(item: &Value) -> Option<String> {
         .find(|s| !s.is_empty())
         .map(str::to_owned)
 }
-pub(super) fn collect_flat_catalog(
-    nodes: &[Value],
-    chapter_id: Option<&str>,
-    out: &mut Vec<(Value, String, String)>,
-) {
-    for node in nodes {
-        let current_id = id(&node["id"]).unwrap_or_default();
-        let effective_chapter = chapter_id.unwrap_or(&current_id);
-
-        let children = node["children"].as_array().filter(|c| !c.is_empty());
-        let has_icons = node["icon_list"]
-            .as_array()
-            .map_or(false, |icons| !icons.is_empty());
-        let has_task_id = id(&node["task_id"]).is_some_and(|tid| tid != "0");
-
-        if children.is_none() || has_icons || has_task_id {
-            out.push((node.clone(), effective_chapter.to_string(), current_id.clone()));
-        }
-
-        if let Some(children_arr) = children {
-            collect_flat_catalog(children_arr, Some(effective_chapter), out);
-        }
-    }
-}
-
 pub(super) fn catalog_nodes(
     cid: &str,
     catalog: Vec<Value>,
@@ -87,7 +62,7 @@ pub(super) fn catalog_nodes(
     }
     Ok(queue)
 }
-async fn discover(
+pub(super) async fn discover(
     client: &Client,
     cid: &str,
     cancel: &CancellationToken,
@@ -133,6 +108,8 @@ async fn discover(
                 };
                 if number(&node["finished"]) != 0.0 {
                     completed.push(quiz_video);
+                } else {
+                    videos.push(quiz_video);
                 }
             }
         } else {
@@ -279,7 +256,8 @@ pub(super) async fn run(
             .into_iter()
             .filter(|v| processed.insert(v.resource.clone()))
             .collect();
-        if pending.is_empty() {
+        let has_pending_videos = pending.iter().any(|v| v.task_type != "quiz");
+        if !has_pending_videos {
             if !failed && !settings.dry_run {
                 let result = super::quiz::run(
                     service.clone(),
@@ -349,6 +327,9 @@ pub(super) async fn run(
                 permit = permits.clone().acquire_owned(), if !pending.is_empty() => {
                     let permit = permit.map_err(|_| Error::Cancelled)?;
                     let video = pending.pop_front().unwrap();
+                    if video.task_type == "quiz" {
+                        continue;
+                    }
                     let service = service.clone(); let client = client.clone(); let cancel = cancel.clone(); let settings = settings.clone();
                     running.spawn(async move { let _permit = permit; process_video(service, client, video, generation, settings, cancel).await });
                     tokio::task::yield_now().await;

@@ -284,7 +284,7 @@ pub(crate) async fn sync_uooc_qa_bank(
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
     let api_key = service.qa_api_key().await;
-    super::quiz::qa::sync_missing_to_server(&bank_path, &url, api_key.as_deref(), None, None).await
+    super::quiz::qa::sync_missing_to_server(&bank_path, &url, api_key.as_deref(), None, None, Some(&service)).await
 }
 
 #[tauri::command]
@@ -354,16 +354,20 @@ pub(crate) async fn upload_all_uooc_qa_bank(
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
     let api_key = service.qa_api_key().await;
-    super::quiz::qa::upload_all_local_bank(&bank_path, &url, api_key.as_deref()).await
+    super::quiz::qa::upload_all_local_bank(&bank_path, &url, api_key.as_deref(), Some(&service)).await
 }
 
 #[tauri::command]
 pub(crate) async fn fetch_uooc_completed_quiz(
     app: tauri::AppHandle,
     cid: String,
+    task_id: Option<String>,
+    resource_id: Option<String>,
 ) -> Result<Snapshot, String> {
     let service = service(&app)?;
-    service.fetch_completed_quiz(&cid).await?;
+    service
+        .fetch_completed_quiz(&cid, task_id.as_deref(), resource_id.as_deref())
+        .await?;
     Ok(service.snapshot())
 }
 
@@ -418,6 +422,20 @@ pub(crate) async fn get_uooc_course_title(
 pub(crate) async fn build_uooc_local_bank(app: tauri::AppHandle) -> Result<usize, String> {
     let service = service(&app)?;
     service.build_local_bank().await
+}
+
+#[tauri::command]
+pub(crate) fn clear_uooc_local_bank(app: tauri::AppHandle) -> Result<usize, String> {
+    let service = service(&app)?;
+    let bank_path = service.path.parent().unwrap().join("qa-bank.json");
+    if bank_path.exists() {
+        let count = super::quiz::qa::load_local_bank(&bank_path).len();
+        let _ = std::fs::remove_file(&bank_path);
+        service.log_debug("bank", format!("已清空本地题库（共 {count} 道题目）"));
+        Ok(count)
+    } else {
+        Ok(0)
+    }
 }
 
 #[tauri::command]

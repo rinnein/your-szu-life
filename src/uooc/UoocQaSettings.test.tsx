@@ -8,6 +8,7 @@ import { UoocQaSettings, type EmbeddingVectorStatus, type QaAccountStatus } from
 import { getQaAuthClient } from "./qaAuthClient";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock("../app-content/external", () => ({ openPublicUrl: vi.fn() }));
 vi.mock("./qaAuthClient", () => ({
   normalizeQaBaseUrl: (url?: string) => url || "http://localhost:4321",
@@ -363,4 +364,45 @@ it("browses local question bank with annotated sync status and filters", async (
   await waitFor(() =>
     expect(successSpy).toHaveBeenCalledWith("本地题库已重新构建完成，共收录 2 道题目"),
   );
+});
+
+it("allows clearing local question bank when debugEnabled is true", async () => {
+  const successSpy = vi.spyOn(toast, "success");
+  const mockQuestions = [
+    {
+      cid: "course_1",
+      tid: "task_100",
+      questionId: "q_2001",
+      questionType: "single",
+      stem: "关于定积分与微积分基本定理",
+      options: [
+        { id: "A", text: "连续必可积" },
+        { id: "B", text: "可积必连续" },
+      ],
+      blanks: 0,
+      correctAnswers: ["连续必可积"],
+      uploaded: true,
+      updatedAtMs: 1710000000000,
+    },
+  ];
+
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "get_uooc_embedding_status") return initialStatus;
+    if (command === "get_uooc_qa_account_status") return anonAccount;
+    if (command === "get_uooc_local_bank_questions") return mockQuestions;
+    if (command === "clear_uooc_local_bank") return 1;
+    return undefined;
+  });
+
+  render(<UoocQaSettings debugEnabled={true} />);
+
+  const clearBtn = await screen.findByRole("button", { name: "清空本地题库" });
+  expect(clearBtn).toBeInTheDocument();
+  fireEvent.click(clearBtn);
+
+  expect(await screen.findByText("确认清空本地题库？")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "确认清空" }));
+
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith("clear_uooc_local_bank"));
+  await waitFor(() => expect(successSpy).toHaveBeenCalledWith("已清空本地题库（共清除 1 道题目）"));
 });

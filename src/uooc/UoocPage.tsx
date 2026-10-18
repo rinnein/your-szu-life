@@ -49,6 +49,7 @@ import {
   isCourseTaskCompleted,
   buildCourseTaskItems,
   type CourseTaskItem,
+  type QuizState,
   type UoocSettings,
   type UoocSnapshot,
   type UoocTask,
@@ -78,6 +79,7 @@ export default function UoocPage() {
   const [expandedAccordionKeys, setExpandedAccordionKeys] = useState<Record<string, Set<string>>>(
     {},
   );
+  const [selectedQuiz, setSelectedQuiz] = useState<QuizState | null>(null);
   const [modalQuizCid, setModalQuizCid] = useState<string | null>(null);
   const [taskToDelete, setTaskToDelete] = useState<UoocTask | null>(null);
   const [confirmDeleteCompleted, setConfirmDeleteCompleted] = useState(false);
@@ -247,11 +249,19 @@ export default function UoocPage() {
   };
   const tasks =
     snapshot?.tasks.filter((task) => !snapshot.user || task.accountId === snapshot.user.id) ?? [];
-  const activeModalQuiz = modalQuizCid
-    ? Object.values(snapshot?.quizzes ?? {}).find(
-        (q) => q.cid === modalQuizCid && (!snapshot?.user || q.accountId === snapshot.user.id),
-      )
-    : null;
+  const activeModalQuiz = selectedQuiz
+    ? (Object.values(snapshot?.quizzes ?? {}).find(
+        (q) =>
+          q.cid === selectedQuiz.cid &&
+          (!snapshot?.user || q.accountId === snapshot.user.id) &&
+          ((q.taskId && q.taskId === selectedQuiz.taskId) ||
+            (q.resourceId && q.resourceId === selectedQuiz.resourceId)),
+      ) ?? selectedQuiz)
+    : modalQuizCid
+      ? (Object.values(snapshot?.quizzes ?? {}).find(
+          (q) => q.cid === modalQuizCid && (!snapshot?.user || q.accountId === snapshot.user.id),
+        ) ?? null)
+      : null;
   const running = tasks.some(active);
   const discussionEnabled = settings.discussionEnabled ?? true;
   const discussionContent = settings.discussionContent ?? "要好好学习";
@@ -691,11 +701,11 @@ export default function UoocPage() {
                       key={item.id}
                       role="button"
                       tabIndex={0}
-                      onClick={() => setModalQuizCid(item.quiz.cid)}
+                      onClick={() => setSelectedQuiz(item.quiz)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          setModalQuizCid(item.quiz.cid);
+                          setSelectedQuiz(item.quiz);
                         }
                       }}
                       className="grid gap-1.5 p-3 rounded-lg border border-separator/60 hover:border-accent/60 hover:bg-surface/60 transition-colors cursor-pointer group"
@@ -933,9 +943,12 @@ export default function UoocPage() {
               </Card>
             )}
             <Modal
-              isOpen={!!modalQuizCid}
+              isOpen={!!activeModalQuiz}
               onOpenChange={(open) => {
-                if (!open) setModalQuizCid(null);
+                if (!open) {
+                  setSelectedQuiz(null);
+                  setModalQuizCid(null);
+                }
               }}
             >
               <Modal.Backdrop>
@@ -980,9 +993,7 @@ export default function UoocPage() {
                       」的运行任务吗？如果该任务正在运行将会立即停止。已记录的学情进度不会丢失，之后仍可从课程列表重新添加。
                     </AlertDialog.Body>
                     <AlertDialog.Footer>
-                      <AlertDialog.CloseTrigger className="dialog-cancel">
-                        取消
-                      </AlertDialog.CloseTrigger>
+                      <AlertDialog.CloseTrigger />
                       <Button
                         variant="danger"
                         isDisabled={busy}
@@ -1021,9 +1032,7 @@ export default function UoocPage() {
                       将从任务列表中移除所有状态为「已完成」的课程任务。已记录的学情进度不会丢失。
                     </AlertDialog.Body>
                     <AlertDialog.Footer>
-                      <AlertDialog.CloseTrigger className="dialog-cancel">
-                        取消
-                      </AlertDialog.CloseTrigger>
+                      <AlertDialog.CloseTrigger />
                       <Button
                         variant="danger"
                         isDisabled={busy}

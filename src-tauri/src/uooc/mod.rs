@@ -209,6 +209,11 @@ impl Service {
             let _ = app.emit("uooc-state-changed", Self::visible_snapshot(runtime));
         }
     }
+    pub(crate) fn emit_bank_progress(&self, progress: &model::BankRebuildProgress) {
+        if let Some(app) = &self.app {
+            let _ = app.emit("uooc-bank-rebuild-progress", progress);
+        }
+    }
     fn change(&self, f: impl FnOnce(&mut Snapshot)) {
         let mut runtime = self.runtime.lock().unwrap();
         f(&mut runtime.snapshot);

@@ -179,6 +179,8 @@ it("allows clicking 查看测验 to force fetch completed quiz when quiz is pass
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("fetch_uooc_completed_quiz", {
       cid: "42",
+      taskId: "99",
+      resourceId: "21",
     }),
   );
   expect(onSnapshot).toHaveBeenCalled();

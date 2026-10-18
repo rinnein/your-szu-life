@@ -108,6 +108,7 @@ fn main() {
             "upload_all_uooc_qa_bank",
             "fetch_uooc_completed_quiz",
             "get_uooc_local_bank_questions",
+            "clear_uooc_local_bank",
             "get_uooc_course_title",
             "build_uooc_local_bank",
             "uooc_qa_http_request",

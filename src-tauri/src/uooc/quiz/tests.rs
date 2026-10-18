@@ -109,6 +109,9 @@ async fn approval_flow_is_atomic_and_never_leaks_credentials_to_ai() {
         if request.path.starts_with("/home/learn/getCatalogList") {
             return json_response(ok(json!([])));
         }
+        if request.path.starts_with("/exam/view") {
+            return json_response(ok(json!({})));
+        }
         if request.path == "/exam/commit" {
             assert_eq!(request.method, "POST");
             assert_eq!(request.fields()["nonce"], "private-form-token");
@@ -395,6 +398,9 @@ async fn yolo_gate_resumes_video_only_after_confirmed_quiz_completion() {
         }
         if request.path.starts_with("/home/learn/getCatalogList") {
             return json_response(ok(json!([])));
+        }
+        if request.path.starts_with("/exam/view") {
+            return json_response(ok(json!({})));
         }
         if request.path == "/exam/commit" {
             assert!(first.load(Ordering::SeqCst));

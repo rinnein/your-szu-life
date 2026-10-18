@@ -138,6 +138,7 @@ pub(crate) fn run() {
             uooc::commands::upload_all_uooc_qa_bank,
             uooc::commands::fetch_uooc_completed_quiz,
             uooc::commands::get_uooc_local_bank_questions,
+            uooc::commands::clear_uooc_local_bank,
             uooc::commands::get_uooc_course_title,
             uooc::commands::build_uooc_local_bank,
             uooc::commands::uooc_qa_http_request,

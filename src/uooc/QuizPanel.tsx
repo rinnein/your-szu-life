@@ -13,6 +13,7 @@ import {
   TextField,
   toast,
 } from "@heroui/react";
+import { DimmedHtmlText } from "./DimmedHtmlText";
 import type { QuizAnswers, QuizState, UoocSnapshot } from "./types";
 
 export function QuizPanel({
@@ -86,6 +87,8 @@ export function QuizPanel({
               void run(async () => {
                 const next = await invoke<UoocSnapshot>("fetch_uooc_completed_quiz", {
                   cid: quiz.cid,
+                  taskId: quiz.taskId || undefined,
+                  resourceId: quiz.resourceId || undefined,
                 });
                 onSnapshot(next);
                 toast.success("已成功拉取当前测验已完成的题目与答案");
@@ -103,7 +106,7 @@ export function QuizPanel({
         quiz.questions.map((q, i) => (
           <div key={q.id} className="grid gap-2">
             <p className="whitespace-pre-wrap">
-              {i + 1}. {q.text}
+              {i + 1}. <DimmedHtmlText text={q.text} />
             </p>
             {q.images.map((src, index) => (
               <img
@@ -126,7 +129,7 @@ export function QuizPanel({
                       <Radio.Control>
                         <Radio.Indicator />
                       </Radio.Control>
-                      {o.text}
+                      <DimmedHtmlText text={o.text} />
                     </Radio.Content>
                   </Radio>
                 ))}
@@ -143,7 +146,9 @@ export function QuizPanel({
                     <Checkbox.Control>
                       <Checkbox.Indicator />
                     </Checkbox.Control>
-                    <Checkbox.Content>{o.text}</Checkbox.Content>
+                    <Checkbox.Content>
+                      <DimmedHtmlText text={o.text} />
+                    </Checkbox.Content>
                   </Checkbox>
                 ))}
               </CheckboxGroup>

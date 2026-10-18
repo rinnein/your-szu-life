@@ -328,6 +328,21 @@ pub(super) struct Video {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct BankRebuildProgress {
+    pub stage: String,
+    pub cid: String,
+    pub course_name: String,
+    pub tid: Option<String>,
+    pub task_name: Option<String>,
+    pub question_id: Option<String>,
+    pub question_stem: Option<String>,
+    pub current: usize,
+    pub total: usize,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) enum TaskAction {
     Pause,
     Resume,

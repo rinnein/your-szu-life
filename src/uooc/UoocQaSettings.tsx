@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  AlertDialog,
   Button,
   ButtonGroup,
   Card,
@@ -31,12 +32,15 @@ import {
   LuSearch,
   LuShieldAlert,
   LuShieldCheck,
+  LuTrash2,
   LuUpload,
   LuUser,
 } from "react-icons/lu";
 import { openPublicUrl } from "../app-content/external";
 import { getQaAuthClient, normalizeQaBaseUrl } from "./qaAuthClient";
 import type { LocalBankQuestion, QuizState, UoocCourse } from "./types";
+import { BankRebuildModal } from "./BankRebuildModal";
+import { DimmedHtmlText } from "./DimmedHtmlText";
 
 export type EmbeddingVectorStatus = {
   status: "ready" | "empty" | "downloading" | string;
@@ -106,6 +110,9 @@ export function UoocQaSettings({
   const [localQuestions, setLocalQuestions] = useState<LocalBankQuestion[]>([]);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [rebuildingBank, setRebuildingBank] = useState(false);
+  const [rebuildModalOpen, setRebuildModalOpen] = useState(false);
+  const [clearingBank, setClearingBank] = useState(false);
+  const [confirmClearBank, setConfirmClearBank] = useState(false);
   const [courseTitles, setCourseTitles] = useState<Record<string, string>>({});
 
   // 弹窗浏览状态 ("all" 表示全部课程，具体数字表示指定 cid)
@@ -413,6 +420,7 @@ export function UoocQaSettings({
 
   const handleRebuildBank = async () => {
     setRebuildingBank(true);
+    setRebuildModalOpen(true);
     try {
       const count = await invoke<number>("build_uooc_local_bank");
       toast.success(`本地题库已重新构建完成，共收录 ${count} 道题目`);
@@ -869,6 +877,18 @@ export function UoocQaSettings({
                 <LuRefreshCw aria-hidden="true" />
                 刷新列表
               </Button>
+              {debugEnabled && (
+                <Button
+                  variant="tertiary"
+                  size="sm"
+                  className="text-danger hover:text-danger hover:bg-danger/10"
+                  isDisabled={clearingBank || loadingQuestions || localQuestions.length === 0}
+                  onPress={() => setConfirmClearBank(true)}
+                >
+                  {clearingBank ? <Spinner size="sm" /> : <LuTrash2 aria-hidden="true" />}
+                  清空本地题库
+                </Button>
+              )}
             </div>
           </div>
         </Card.Header>
@@ -1203,7 +1223,7 @@ export function UoocQaSettings({
                           </div>
 
                           <p className="font-medium whitespace-pre-wrap text-foreground">
-                            {q.stem || "（暂无题干文本）"}
+                            <DimmedHtmlText text={q.stem || "（暂无题干文本）"} />
                           </p>
 
                           {/* 选项列表（标出真实选项 A、B、C 等，并高亮标记正确选项） */}
@@ -1227,7 +1247,9 @@ export function UoocQaSettings({
                                     }`}
                                   >
                                     <span className="font-bold text-foreground">{opt.id}.</span>
-                                    <span className="flex-1">{opt.text}</span>
+                                    <span className="flex-1">
+                                      <DimmedHtmlText text={opt.text} />
+                                    </span>
                                     {isCorrect && (
                                       <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-success">
                                         <LuCircleCheck aria-hidden="true" /> 正确项
@@ -1399,6 +1421,55 @@ export function UoocQaSettings({
           )}
         </Card.Content>
       </Card>
+
+      <AlertDialog isOpen={confirmClearBank} onOpenChange={setConfirmClearBank}>
+        <AlertDialog.Backdrop>
+          <AlertDialog.Container size="sm">
+            <AlertDialog.Dialog>
+              <AlertDialog.Icon status="danger" />
+              <AlertDialog.Header>
+                <AlertDialog.Heading>确认清空本地题库？</AlertDialog.Heading>
+              </AlertDialog.Header>
+              <AlertDialog.Body>
+                确定要清空本地所有已收录的试题缓存文件（qa-bank.json）吗？清空后如需恢复，可随时点击【重新构建题库】或通过测验流程自动重新发现与收录。
+              </AlertDialog.Body>
+              <AlertDialog.Footer>
+                <AlertDialog.CloseTrigger className="dialog-cancel" />
+                <Button
+                  variant="danger"
+                  isDisabled={clearingBank}
+                  onPress={async () => {
+                    setConfirmClearBank(false);
+                    setClearingBank(true);
+                    try {
+                      const count = await invoke<number>("clear_uooc_local_bank");
+                      toast.success(`已清空本地题库（共清除 ${count} 道题目）`);
+                      await refreshLocalQuestions();
+                    } catch (e: unknown) {
+                      const msg =
+                        typeof e === "string"
+                          ? e
+                          : (e as { message?: string })?.message || "清空本地题库失败";
+                      toast.danger("清空本地题库失败", { description: msg });
+                    } finally {
+                      setClearingBank(false);
+                    }
+                  }}
+                >
+                  确认清空
+                </Button>
+              </AlertDialog.Footer>
+            </AlertDialog.Dialog>
+          </AlertDialog.Container>
+        </AlertDialog.Backdrop>
+      </AlertDialog>
+
+      <BankRebuildModal
+        isOpen={rebuildModalOpen}
+        onOpenChange={setRebuildModalOpen}
+        isBuilding={rebuildingBank}
+        onComplete={() => void refreshLocalQuestions()}
+      />
     </div>
   );
 }

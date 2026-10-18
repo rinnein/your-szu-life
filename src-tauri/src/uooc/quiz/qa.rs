@@ -1,9 +1,29 @@
 use super::model::{Answers, Kind, OptionItem, Question, Review};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::LazyLock;
 use std::time::Duration;
+
+static HTML_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)<(?:[a-zA-Z/][a-zA-Z0-9:-]*\b[^>]*|!--[\s\S]*?--)>").unwrap()
+});
+
+/// 去除字符串中的所有 HTML 标签并解析常见实体字符，保证输出纯文本
+pub(crate) fn strip_html_tags(raw: &str) -> String {
+    let stripped = HTML_TAG_RE.replace_all(raw, " ");
+    let unescaped = stripped
+        .replace("&nbsp;", " ")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'");
+    unescaped.split_whitespace().collect::<Vec<_>>().join(" ")
+}
 
 pub(crate) const EMBEDDING_DIMENSIONS: usize = 1536;
 
@@ -60,6 +80,8 @@ pub(crate) struct QaTaskResponse {
     pub task_group: Option<QaTaskGroup>,
     #[serde(default)]
     pub questions: Vec<QaQuestion>,
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -80,9 +102,9 @@ pub(crate) struct QaUploadQuestion {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub blanks: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub correct_answers: Option<Vec<String>>,
+    pub correct_answers: Option<Vec<serde_json::Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub wrong_answers: Option<Vec<String>>,
+    pub wrong_answers: Option<Vec<serde_json::Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub embedding: Option<Vec<f32>>,
 }
@@ -773,6 +795,9 @@ pub(crate) async fn query_task_answers(
         .json::<QaTaskResponse>()
         .await
         .map_err(|e| format!("解析题库数据失败: {e}"))?;
+    if let Some(err) = data.error {
+        return Err(err);
+    }
     Ok(data.questions)
 }
 
@@ -781,9 +806,26 @@ pub(crate) async fn upload_batch(
     server_url: &str,
     api_key: Option<&str>,
     payload: &QaBatchUploadPayload,
+    service: Option<&crate::uooc::Service>,
 ) -> Result<QaBatchUploadResponse, String> {
     let api_base = resolve_api_base(server_url);
     let url = format!("{api_base}/upload/batch");
+
+    let payload_json = serde_json::to_string_pretty(payload)
+        .or_else(|_| serde_json::to_string(payload))
+        .unwrap_or_default();
+    if let Some(svc) = service {
+        svc.log_debug(
+            "bank",
+            format!(
+                "[uooc-qa-share POST] 发送题库批量上传请求: URL={url}, tid={}, cid={:?}, task_name={:?}, 包含题目数={}\n请求体详情 (Payload):\n{payload_json}",
+                payload.tid,
+                payload.cid,
+                payload.task_name,
+                payload.questions.len(),
+            ),
+        );
+    }
 
     let client = http_client()?;
     let mut req = client.post(&url).json(payload);
@@ -794,18 +836,52 @@ pub(crate) async fn upload_batch(
         }
     }
 
-    let resp = req
-        .send()
-        .await
-        .map_err(|e| format!("上报题库数据失败: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("上报题库数据被拒绝，状态码: {}", resp.status()));
+    let resp = match req.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let err_msg = format!("上报题库数据失败: {e}");
+            if let Some(svc) = service {
+                svc.log_debug(
+                    "bank",
+                    format!("[uooc-qa-share POST] 请求发生错误: URL={url}, 错误={err_msg}"),
+                );
+            }
+            return Err(err_msg);
+        }
+    };
+
+    let status = resp.status();
+    let resp_bytes = match resp.bytes().await {
+        Ok(b) => b,
+        Err(e) => {
+            let err_msg = format!("读取上报题库响应内容失败: {e}");
+            if let Some(svc) = service {
+                svc.log_debug(
+                    "bank",
+                    format!("[uooc-qa-share POST] 读取响应失败: URL={url}, HTTP状态码={status}, 错误={err_msg}"),
+                );
+            }
+            return Err(err_msg);
+        }
+    };
+
+    let resp_text = String::from_utf8_lossy(&resp_bytes);
+    if let Some(svc) = service {
+        svc.log_debug(
+            "bank",
+            format!(
+                "[uooc-qa-share POST] 收到响应: URL={url}, HTTP状态码={}, 响应体:\n{resp_text}",
+                status.as_u16(),
+            ),
+        );
     }
 
-    let data = resp
-        .json::<QaBatchUploadResponse>()
-        .await
-        .map_err(|e| format!("解析上报结果失败: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("上报题库数据被拒绝，状态码: {}, 响应: {}", status, resp_text));
+    }
+
+    let data = serde_json::from_slice::<QaBatchUploadResponse>(&resp_bytes)
+        .map_err(|e| format!("解析上报结果失败: {e}，响应原内容: {resp_text}"))?;
     Ok(data)
 }
 
@@ -1037,6 +1113,7 @@ pub(crate) fn extract_answers_content(
 }
 
 /// Build batch upload payload when quiz is confirmed passed.
+#[allow(dead_code)]
 pub(crate) fn build_passed_payload(
     cid: &str,
     course_name: Option<&str>,
@@ -1045,37 +1122,11 @@ pub(crate) fn build_passed_payload(
     questions: &[Question],
     answers: &Answers,
 ) -> QaBatchUploadPayload {
-    let content_answers = extract_answers_content(answers, questions);
     let upload_questions = questions
         .iter()
         .map(|q| {
-            let correct = content_answers.get(&q.id).cloned();
-            QaUploadQuestion {
-                question_id: q.id.clone(),
-                question_type: match q.kind {
-                    Kind::Single => "single".into(),
-                    Kind::Multiple => "multiple".into(),
-                    Kind::Text => "text".into(),
-                },
-                stem: Some(q.text.clone()),
-                options: if q.options.is_empty() {
-                    None
-                } else {
-                    Some(
-                        q.options
-                            .iter()
-                            .map(|o| QaUploadOption {
-                                id: o.id.clone(),
-                                text: o.text.clone(),
-                            })
-                            .collect(),
-                    )
-                },
-                blanks: if q.blanks > 0 { Some(q.blanks) } else { None },
-                correct_answers: correct,
-                wrong_answers: None,
-                embedding: None,
-            }
+            let correct = answers.get(&q.id).map(|v| v.as_slice());
+            build_qa_upload_question(q, correct, None, false)
         })
         .collect();
 
@@ -1097,37 +1148,11 @@ pub(crate) fn build_failed_payload(
     questions: &[Question],
     answers: &Answers,
 ) -> QaBatchUploadPayload {
-    let content_answers = extract_answers_content(answers, questions);
     let upload_questions = questions
         .iter()
         .map(|q| {
-            let wrong = content_answers.get(&q.id).cloned();
-            QaUploadQuestion {
-                question_id: q.id.clone(),
-                question_type: match q.kind {
-                    Kind::Single => "single".into(),
-                    Kind::Multiple => "multiple".into(),
-                    Kind::Text => "text".into(),
-                },
-                stem: Some(q.text.clone()),
-                options: if q.options.is_empty() {
-                    None
-                } else {
-                    Some(
-                        q.options
-                            .iter()
-                            .map(|o| QaUploadOption {
-                                id: o.id.clone(),
-                                text: o.text.clone(),
-                            })
-                            .collect(),
-                    )
-                },
-                blanks: if q.blanks > 0 { Some(q.blanks) } else { None },
-                correct_answers: None,
-                wrong_answers: wrong,
-                embedding: None,
-            }
+            let wrong = answers.get(&q.id).map(|v| v.as_slice());
+            build_qa_upload_question(q, None, wrong, false)
         })
         .collect();
 
@@ -1162,6 +1187,303 @@ pub(crate) fn save_local_bank(
     crate::uooc::persistence::write(bank_path, bank)
 }
 
+fn normalize_answers_for_upload(
+    q_type: &str,
+    clean_opts: &[QaUploadOption],
+    raw_answers: &[String],
+) -> Option<Vec<serde_json::Value>> {
+    if raw_answers.is_empty() {
+        return None;
+    }
+
+    if q_type == "judge" {
+        // 判断题规范：永远只有 A. 正确、B. 错误 两个选项，答案统一以唯一的 boolean 项存储（正确为 [true]，错误为 [false]）
+        for item in raw_answers {
+            let s = item.trim().to_lowercase();
+            if s == "true"
+                || s == "1"
+                || s == "a"
+                || s == "正确"
+                || s == "对"
+                || s == "t"
+                || s.starts_with("a.")
+                || s.starts_with("a、")
+            {
+                return Some(vec![serde_json::Value::Bool(true)]);
+            }
+            if s == "false"
+                || s == "0"
+                || s == "b"
+                || s == "错误"
+                || s == "错"
+                || s == "f"
+                || s.starts_with("b.")
+                || s.starts_with("b、")
+            {
+                return Some(vec![serde_json::Value::Bool(false)]);
+            }
+        }
+        return Some(vec![serde_json::Value::Bool(true)]);
+    }
+
+    if q_type == "single" || q_type == "multiple" {
+        // 单选/多选题答案：仅需保存对应 options[].id 值的选项（如 ["A"] 或 ["A", "C"]），严禁在答案项中保存实际选项文本内容
+        let mut chosen_ids = Vec::new();
+        for raw in raw_answers {
+            let raw_trim = raw.trim();
+            if raw_trim.is_empty() {
+                continue;
+            }
+
+            // 1. 直接匹配 option.id（如 "A"）
+            if let Some(opt) = clean_opts.iter().find(|o| o.id.eq_ignore_ascii_case(raw_trim)) {
+                if !chosen_ids.contains(&opt.id) {
+                    chosen_ids.push(opt.id.clone());
+                }
+                continue;
+            }
+
+            // 2. 匹配选项文本内容
+            let raw_clean = strip_html_tags(raw_trim);
+            if let Some(opt) = clean_opts.iter().find(|o| {
+                o.text.trim() == raw_clean
+                    || o.text.replace(' ', "") == raw_clean.replace(' ', "")
+            }) {
+                if !chosen_ids.contains(&opt.id) {
+                    chosen_ids.push(opt.id.clone());
+                }
+                continue;
+            }
+
+            // 3. 前缀匹配如 "A. 选项A内容" 或 "A、选项A内容"
+            if let Some(caps) = Regex::new(r"^([A-Za-z0-9]+)[.、:：\s]").ok().and_then(|re| re.captures(raw_trim)) {
+                let candidate = &caps[1];
+                if let Some(opt) = clean_opts.iter().find(|o| o.id.eq_ignore_ascii_case(candidate)) {
+                    if !chosen_ids.contains(&opt.id) {
+                        chosen_ids.push(opt.id.clone());
+                    }
+                    continue;
+                }
+            }
+
+            // 4. 字母解析（如单选 "A" 或多选无空格拼接 "ABC"）
+            if raw_trim.len() <= 6 && raw_trim.chars().all(|c| c.is_ascii_alphabetic()) {
+                for ch in raw_trim.chars() {
+                    let letter = ch.to_ascii_uppercase().to_string();
+                    if clean_opts.iter().any(|o| o.id == letter) {
+                        if !chosen_ids.contains(&letter) {
+                            chosen_ids.push(letter);
+                        }
+                    }
+                }
+            }
+        }
+
+        if chosen_ids.is_empty() {
+            None
+        } else {
+            Some(chosen_ids.into_iter().map(serde_json::Value::String).collect())
+        }
+    } else {
+        // 填空题 (text)：保存纯文本数组
+        let text_vals: Vec<serde_json::Value> = raw_answers
+            .iter()
+            .map(|s| strip_html_tags(s))
+            .filter(|s| !s.is_empty())
+            .map(serde_json::Value::String)
+            .collect();
+        if text_vals.is_empty() {
+            None
+        } else {
+            Some(text_vals)
+        }
+    }
+}
+
+/// Helper to construct a `QaUploadQuestion` adhering to uooc-qa-share specifications:
+/// 1. HTML tags in stem and options are strictly stripped.
+/// 2. Choice answers (single/multiple) MUST contain only option IDs (e.g. ["A"], ["B"]), never option text.
+/// 3. Judge questions MUST have options A. 正确, B. 错误, and answers must be a single boolean [true] or [false].
+/// 4. Text questions MUST NOT have options, and blanks matches answer count.
+pub(crate) fn build_qa_upload_question(
+    q: &Question,
+    correct_answers: Option<&[String]>,
+    wrong_answers: Option<&[String]>,
+    with_embedding: bool,
+) -> QaUploadQuestion {
+    let clean_stem = strip_html_tags(&q.text);
+
+    let mut q_type = match q.kind {
+        Kind::Multiple => "multiple",
+        Kind::Text => "text",
+        Kind::Single => "single",
+    };
+
+    if q.kind == Kind::Single && q.options.len() == 2 {
+        let opt0 = strip_html_tags(&q.options[0].text).to_lowercase();
+        let opt1 = strip_html_tags(&q.options[1].text).to_lowercase();
+        let is_judge = (opt0.contains("正确") || opt0.contains("对") || opt0 == "t" || opt0 == "true" || opt0 == "a")
+            && (opt1.contains("错误") || opt1.contains("错") || opt1 == "f" || opt1 == "false" || opt1 == "b");
+        if is_judge {
+            q_type = "judge";
+        }
+    }
+
+    let (clean_opts, options_for_payload) = if q_type == "judge" {
+        let opts = vec![
+            QaUploadOption { id: "A".into(), text: "正确".into() },
+            QaUploadOption { id: "B".into(), text: "错误".into() },
+        ];
+        (opts.clone(), Some(opts))
+    } else if q_type == "text" {
+        (Vec::new(), None)
+    } else {
+        let mut opts = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for (idx, opt) in q.options.iter().enumerate() {
+            let opt_id = strip_html_tags(&opt.id);
+            let opt_id = if opt_id.is_empty() {
+                ((b'A' + idx as u8) as char).to_string()
+            } else {
+                opt_id
+            };
+            let opt_text = strip_html_tags(&opt.text);
+            if !opt_text.is_empty() && seen.insert(opt_id.clone()) {
+                opts.push(QaUploadOption { id: opt_id, text: opt_text });
+            }
+        }
+        let payload_opts = if opts.len() >= 2 { Some(opts.clone()) } else { None };
+        (opts, payload_opts)
+    };
+
+    let norm_correct = correct_answers.and_then(|ans| normalize_answers_for_upload(q_type, &clean_opts, ans));
+    let norm_wrong = wrong_answers.and_then(|ans| normalize_answers_for_upload(q_type, &clean_opts, ans));
+
+    let blanks = if q_type == "text" {
+        Some(norm_correct.as_ref().map_or(q.blanks.max(1), |a| a.len()))
+    } else {
+        None
+    };
+
+    let embedding = if with_embedding && !clean_stem.is_empty() {
+        Some(compute_local_embedding(&clean_stem))
+    } else {
+        None
+    };
+
+    QaUploadQuestion {
+        question_id: q.id.clone(),
+        question_type: q_type.to_string(),
+        stem: if clean_stem.is_empty() { None } else { Some(clean_stem) },
+        options: options_for_payload,
+        blanks,
+        correct_answers: norm_correct,
+        wrong_answers: norm_wrong,
+        embedding,
+    }
+}
+
+pub(crate) fn build_upload_question_from_local_bank(q: &LocalBankQuestion) -> QaUploadQuestion {
+    let clean_stem = q.stem.as_deref().map(strip_html_tags);
+
+    let mut q_type = match q.question_type.as_str() {
+        "11" | "multiple" => "multiple",
+        "20" | "judge" => "judge",
+        "30" | "text" => "text",
+        _ => "single",
+    };
+
+    if q_type == "single" {
+        if let Some(ref opts) = q.options {
+            if opts.len() == 2 {
+                let opt0 = strip_html_tags(&opts[0].text).to_lowercase();
+                let opt1 = strip_html_tags(&opts[1].text).to_lowercase();
+                if (opt0.contains("正确") || opt0.contains("对") || opt0 == "t" || opt0 == "true" || opt0 == "a")
+                    && (opt1.contains("错误") || opt1.contains("错") || opt1 == "f" || opt1 == "false" || opt1 == "b")
+                {
+                    q_type = "judge";
+                }
+            }
+        }
+    }
+
+    let (clean_opts, options_for_payload) = if q_type == "judge" {
+        let opts = vec![
+            QaUploadOption { id: "A".into(), text: "正确".into() },
+            QaUploadOption { id: "B".into(), text: "错误".into() },
+        ];
+        (opts.clone(), Some(opts))
+    } else if q_type == "text" {
+        (Vec::new(), None)
+    } else {
+        let mut opts = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        if let Some(ref raw_opts) = q.options {
+            for (idx, opt) in raw_opts.iter().enumerate() {
+                let opt_id = strip_html_tags(&opt.id);
+                let opt_id = if opt_id.is_empty() {
+                    ((b'A' + idx as u8) as char).to_string()
+                } else {
+                    opt_id
+                };
+                let opt_text = strip_html_tags(&opt.text);
+                if !opt_text.is_empty() && seen.insert(opt_id.clone()) {
+                    opts.push(QaUploadOption { id: opt_id, text: opt_text });
+                }
+            }
+        }
+        let payload_opts = if opts.len() >= 2 { Some(opts.clone()) } else { None };
+        (opts, payload_opts)
+    };
+
+    let norm_correct = normalize_answers_for_upload(q_type, &clean_opts, &q.correct_answers);
+
+    let blanks = if q_type == "text" {
+        Some(norm_correct.as_ref().map_or(q.blanks.unwrap_or(1).max(1), |a| a.len()))
+    } else {
+        None
+    };
+
+    let embedding = clean_stem.as_deref().map(compute_local_embedding);
+
+    QaUploadQuestion {
+        question_id: q.question_id.clone(),
+        question_type: q_type.to_string(),
+        stem: clean_stem,
+        options: options_for_payload,
+        blanks,
+        correct_answers: norm_correct,
+        wrong_answers: None,
+        embedding,
+    }
+}
+
+/// Helper to construct a `QaBatchUploadPayload` from questions and answers.
+pub(crate) fn build_batch_upload_payload(
+    tid: &str,
+    cid: Option<&str>,
+    task_name: Option<&str>,
+    course_name: Option<&str>,
+    questions: &[Question],
+    answers: &Answers,
+) -> QaBatchUploadPayload {
+    let upload_questions: Vec<QaUploadQuestion> = questions
+        .iter()
+        .map(|q| {
+            let q_answers = answers.get(&q.id).map(|v| v.as_slice());
+            build_qa_upload_question(q, q_answers, None, true)
+        })
+        .collect();
+
+    QaBatchUploadPayload {
+        tid: tid.to_string(),
+        cid: cid.map(str::to_string),
+        task_name: task_name.map(str::to_string),
+        course_name: course_name.map(str::to_string),
+        questions: upload_questions,
+    }
+}
+
 /// 录入已通过并确认答案的测验试题到本地题库表，标记 uploaded 状态
 pub(crate) fn record_passed_quiz(
     bank_path: &Path,
@@ -1169,6 +1491,7 @@ pub(crate) fn record_passed_quiz(
     task_id: &str,
     questions: &[Question],
     answers: &Answers,
+    course_name: Option<&str>,
 ) -> Result<usize, String> {
     let mut bank = load_local_bank(bank_path);
     let mut count = 0;
@@ -1176,47 +1499,53 @@ pub(crate) fn record_passed_quiz(
     let content_answers = extract_answers_content(answers, questions);
 
     for q in questions {
-        if let Some(ans) = content_answers.get(&q.id) {
-            if !ans.is_empty() {
-                let key = bank_key(task_id, &q.id);
-                let already_uploaded = bank
-                    .get(&key)
-                    .map(|old| old.uploaded && old.correct_answers == *ans)
-                    .unwrap_or(false);
+        let key = bank_key(task_id, &q.id);
+        let existing = bank.get(&key);
+        let ans = content_answers
+            .get(&q.id)
+            .cloned()
+            .or_else(|| existing.map(|e| e.correct_answers.clone()))
+            .unwrap_or_default();
 
-                let record = LocalBankQuestion {
-                    cid: cid.to_string(),
-                    tid: task_id.to_string(),
-                    question_id: q.id.clone(),
-                    question_type: match q.kind {
-                        Kind::Single => "single".into(),
-                        Kind::Multiple => "multiple".into(),
-                        Kind::Text => "text".into(),
-                    },
-                    stem: Some(q.text.clone()),
-                    options: if q.options.is_empty() {
-                        None
-                    } else {
-                        Some(
-                            q.options
-                                .iter()
-                                .map(|o| QaUploadOption {
-                                    id: o.id.clone(),
-                                    text: o.text.clone(),
-                                })
-                                .collect(),
-                        )
-                    },
-                    blanks: if q.blanks > 0 { Some(q.blanks) } else { None },
-                    correct_answers: ans.clone(),
-                    uploaded: already_uploaded,
-                    updated_at_ms: now,
-                    course_name: None,
-                };
-                bank.insert(key, record);
-                count += 1;
-            }
-        }
+        let already_uploaded = existing
+            .map(|old| old.uploaded && old.correct_answers == ans && !ans.is_empty())
+            .unwrap_or(false);
+
+        let c_name = course_name
+            .map(str::to_string)
+            .or_else(|| existing.and_then(|e| e.course_name.clone()));
+
+        let record = LocalBankQuestion {
+            cid: cid.to_string(),
+            tid: task_id.to_string(),
+            question_id: q.id.clone(),
+            question_type: match q.kind {
+                Kind::Single => "single".into(),
+                Kind::Multiple => "multiple".into(),
+                Kind::Text => "text".into(),
+            },
+            stem: Some(q.text.clone()),
+            options: if q.options.is_empty() {
+                None
+            } else {
+                Some(
+                    q.options
+                        .iter()
+                        .map(|o| QaUploadOption {
+                            id: o.id.clone(),
+                            text: o.text.clone(),
+                        })
+                        .collect(),
+                )
+            },
+            blanks: if q.blanks > 0 { Some(q.blanks) } else { None },
+            correct_answers: ans,
+            uploaded: already_uploaded,
+            updated_at_ms: now,
+            course_name: c_name,
+        };
+        bank.insert(key, record);
+        count += 1;
     }
 
     save_local_bank(bank_path, &bank)?;
@@ -1231,6 +1560,7 @@ pub(crate) async fn sync_missing_to_server(
     api_key: Option<&str>,
     cid: Option<&str>,
     tid: Option<&str>,
+    service: Option<&crate::uooc::Service>,
 ) -> Result<usize, String> {
     let mut bank = load_local_bank(bank_path);
     if bank.is_empty() {
@@ -1271,12 +1601,28 @@ pub(crate) async fn sync_missing_to_server(
     let payload = BankMatchPayload {
         cid: cid.map(str::to_string),
         tid: tid.map(str::to_string),
-        items: Some(match_items),
+        items: Some(match_items.clone()),
         local_question_ids: None,
     };
 
     let api_base = resolve_api_base(server_url);
     let url = format!("{api_base}/automation/match");
+
+    let payload_json = serde_json::to_string_pretty(&payload)
+        .or_else(|_| serde_json::to_string(&payload))
+        .unwrap_or_default();
+    if let Some(svc) = service {
+        svc.log_debug(
+            "bank",
+            format!(
+                "[uooc-qa-share POST] 发送题目缺失比对请求: URL={url}, cid={:?}, tid={:?}, 比对题目数量={}\n请求体详情 (Payload):\n{payload_json}",
+                cid,
+                tid,
+                match_items.len(),
+            ),
+        );
+    }
+
     let client = http_client()?;
     let mut req = client.post(&url).json(&payload);
     if let Some(key) = api_key {
@@ -1286,15 +1632,52 @@ pub(crate) async fn sync_missing_to_server(
         }
     }
 
-    let resp = req.send().await.map_err(|e| format!("匹配题库请求失败: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("匹配题库响应失败，状态码: {}", resp.status()));
+    let resp = match req.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let err_msg = format!("匹配题库请求失败: {e}");
+            if let Some(svc) = service {
+                svc.log_debug(
+                    "bank",
+                    format!("[uooc-qa-share POST] 比对请求发生错误: URL={url}, 错误={err_msg}"),
+                );
+            }
+            return Err(err_msg);
+        }
+    };
+
+    let status = resp.status();
+    let resp_bytes = match resp.bytes().await {
+        Ok(b) => b,
+        Err(e) => {
+            let err_msg = format!("读取比对响应失败: {e}");
+            if let Some(svc) = service {
+                svc.log_debug(
+                    "bank",
+                    format!("[uooc-qa-share POST] 读取比对响应失败: URL={url}, HTTP状态码={status}, 错误={err_msg}"),
+                );
+            }
+            return Err(err_msg);
+        }
+    };
+
+    let resp_text = String::from_utf8_lossy(&resp_bytes);
+    if let Some(svc) = service {
+        svc.log_debug(
+            "bank",
+            format!(
+                "[uooc-qa-share POST] 收到比对响应: URL={url}, HTTP状态码={}, 响应体:\n{resp_text}",
+                status.as_u16(),
+            ),
+        );
     }
 
-    let match_res: BankMatchResponse = resp
-        .json()
-        .await
-        .map_err(|e| format!("解析匹配题库响应失败: {e}"))?;
+    if !status.is_success() {
+        return Err(format!("匹配题库响应失败，状态码: {}, 响应: {}", status, resp_text));
+    }
+
+    let match_res: BankMatchResponse = serde_json::from_slice(&resp_bytes)
+        .map_err(|e| format!("解析匹配题库响应失败: {e}，响应原内容: {resp_text}"))?;
 
     // 汇总服务端缺失以及本地尚未成功标记上传的题目 key
     let mut to_upload_keys = std::collections::HashSet::new();
@@ -1337,27 +1720,19 @@ pub(crate) async fn sync_missing_to_server(
     let mut uploaded_count = 0;
     for (t, qs) in by_tid {
         let first_cid = qs.first().map(|q| q.cid.clone());
+        let first_course_name = qs.first().and_then(|q| q.course_name.clone());
         let upload_payload = QaBatchUploadPayload {
             tid: t,
             cid: first_cid,
             task_name: None,
-            course_name: None,
+            course_name: first_course_name,
             questions: qs
                 .iter()
-                .map(|q| QaUploadQuestion {
-                    question_id: q.question_id.clone(),
-                    question_type: q.question_type.clone(),
-                    stem: q.stem.clone(),
-                    options: q.options.clone(),
-                    blanks: q.blanks,
-                    correct_answers: Some(q.correct_answers.clone()),
-                    wrong_answers: None,
-                    embedding: None,
-                })
+                .map(build_upload_question_from_local_bank)
                 .collect(),
         };
 
-        if let Ok(res) = upload_batch(server_url, api_key, &upload_payload).await {
+        if let Ok(res) = upload_batch(server_url, api_key, &upload_payload, service).await {
             if res.ok {
                 for q in qs {
                     let k = bank_key(&q.tid, &q.question_id);
@@ -1379,6 +1754,7 @@ pub(crate) async fn upload_all_local_bank(
     bank_path: &Path,
     server_url: &str,
     api_key: Option<&str>,
+    service: Option<&crate::uooc::Service>,
 ) -> Result<usize, String> {
     let mut bank = load_local_bank(bank_path);
     if bank.is_empty() {
@@ -1395,32 +1771,21 @@ pub(crate) async fn upload_all_local_bank(
 
     let mut total_uploaded = 0;
     for ((cid, tid), questions) in grouped {
+        let first_course_name = questions.first().and_then(|q| q.course_name.clone());
         let upload_questions: Vec<QaUploadQuestion> = questions
             .iter()
-            .map(|q| {
-                let embedding = q.stem.as_deref().map(compute_local_embedding);
-                QaUploadQuestion {
-                    question_id: q.question_id.clone(),
-                    question_type: q.question_type.clone(),
-                    stem: q.stem.clone(),
-                    options: q.options.clone(),
-                    blanks: q.blanks,
-                    correct_answers: Some(q.correct_answers.clone()),
-                    wrong_answers: None,
-                    embedding,
-                }
-            })
+            .map(build_upload_question_from_local_bank)
             .collect();
 
         let payload = QaBatchUploadPayload {
             tid: tid.clone(),
             cid: Some(cid),
             task_name: None,
-            course_name: None,
+            course_name: first_course_name,
             questions: upload_questions,
         };
 
-        let res = upload_batch(server_url, api_key, &payload)
+        let res = upload_batch(server_url, api_key, &payload, service)
             .await
             .map_err(|e| format!("全量上传任务 {tid} 失败: {e}"))?;
 
@@ -1631,12 +1996,21 @@ pub(crate) fn align_paper_with_task_paper(
 /// 解析 /exam/view 返回的已提交测验数据（支持 JSON 和 HTML 两种形态）
 pub(crate) fn parse_exam_view(raw: &[u8]) -> Option<(Vec<Question>, Answers)> {
     if let Ok(val) = serde_json::from_slice::<serde_json::Value>(raw) {
-        if let Some((questions, answers)) = parse_task_paper_json(&val) {
+        // 优先使用专门的 parse_exam_view_json 解析包含已批改答案/用户提交答案的试卷数据
+        if let Some((questions, answers)) = parse_exam_view_json(&val) {
+            if !questions.is_empty() && !answers.is_empty() {
+                return Some((questions, answers));
+            }
             if !questions.is_empty() {
+                if let Some((tp_qs, tp_ans)) = parse_task_paper_json(&val) {
+                    if !tp_ans.is_empty() {
+                        return Some((tp_qs, tp_ans));
+                    }
+                }
                 return Some((questions, answers));
             }
         }
-        if let Some((questions, answers)) = parse_exam_view_json(&val) {
+        if let Some((questions, answers)) = parse_task_paper_json(&val) {
             if !questions.is_empty() {
                 return Some((questions, answers));
             }
@@ -1657,8 +2031,10 @@ fn parse_exam_view_json(val: &serde_json::Value) -> Option<(Vec<Question>, Answe
         .as_array()
         .or_else(|| val["questions"].as_array())
         .or_else(|| val["data"]["list"].as_array())
-        .or_else(|| val["data"].as_array())
-        .or_else(|| val["paper"]["questions"].as_array())?;
+        .or_else(|| val["data"]["paper"]["questions"].as_array())
+        .or_else(|| val["data"]["paper"]["question_list"].as_array())
+        .or_else(|| val["paper"]["questions"].as_array())
+        .or_else(|| val["data"].as_array())?;
 
     let mut questions = Vec::new();
     let mut answers = BTreeMap::new();
@@ -1719,11 +2095,20 @@ fn parse_exam_view_json(val: &serde_json::Value) -> Option<(Vec<Question>, Answe
         }
 
         let mut correct = Vec::new();
-        if let Some(arr) = item["correct_answers"]
+
+        // 1. 优先提取显式标准答案
+        let std_arr = item["standard_answer"]
             .as_array()
+            .or_else(|| item["standardAnswer"].as_array())
+            .or_else(|| item["right_answer"].as_array())
+            .or_else(|| item["rightAnswer"].as_array())
+            .or_else(|| item["correct_answers"].as_array())
+            .or_else(|| item["correct_answer"].as_array())
+            .or_else(|| item["correctAnswer"].as_array())
             .or_else(|| item["answers"].as_array())
-            .or_else(|| item["answer"].as_array())
-        {
+            .or_else(|| item["answer"].as_array());
+
+        if let Some(arr) = std_arr {
             for a in arr {
                 if let Some(s) = a.as_str() {
                     correct.push(s.to_string());
@@ -1731,16 +2116,86 @@ fn parse_exam_view_json(val: &serde_json::Value) -> Option<(Vec<Question>, Answe
                     correct.push(n.to_string());
                 }
             }
-        } else if let Some(s) = item["correct_answer"]
+        } else if let Some(s) = item["standard_answer"]
             .as_str()
+            .or_else(|| item["standardAnswer"].as_str())
             .or_else(|| item["right_answer"].as_str())
-            .or_else(|| item["standard_answer"].as_str())
+            .or_else(|| item["rightAnswer"].as_str())
+            .or_else(|| item["correct_answer"].as_str())
+            .or_else(|| item["correctAnswer"].as_str())
             .or_else(|| item["answer"].as_str())
         {
-            for part in s.split(|c| c == ',' || c == '，' || c == '、' || c == ' ') {
-                let trimmed = part.trim();
+            for part in s.split(|c| c == ',' || c == '，' || c == '、' || c == ' ' || c == ';') {
+                let trimmed = part.trim().trim_matches(|c: char| !c.is_alphanumeric());
                 if !trimmed.is_empty() {
-                    correct.push(trimmed.to_string());
+                    if trimmed.chars().all(|c| c.is_ascii_alphabetic())
+                        && trimmed.len() > 1
+                        && trimmed.len() <= 6
+                        && !options.iter().any(|o| o.id == trimmed)
+                    {
+                        for ch in trimmed.chars() {
+                            correct.push(ch.to_ascii_uppercase().to_string());
+                        }
+                    } else {
+                        correct.push(trimmed.to_string());
+                    }
+                }
+            }
+        }
+
+        // 2. 提取用户提交的答案（判对或无独立标答时作为有效答案来源）
+        if correct.is_empty() {
+            let is_right = item["is_right"]
+                .as_i64()
+                .map(|n| n != 0)
+                .or_else(|| item["is_right"].as_str().map(|s| s == "1" || s == "true"))
+                .or_else(|| item["is_correct"].as_bool())
+                .or_else(|| item["is_correct"].as_i64().map(|n| n != 0))
+                .or_else(|| item["score"].as_f64().map(|s| s > 0.0))
+                .unwrap_or(true);
+
+            if is_right {
+                let user_arr = item["user_answer"]
+                    .as_array()
+                    .or_else(|| item["userAnswer"].as_array())
+                    .or_else(|| item["user_answers"].as_array())
+                    .or_else(|| item["my_answer"].as_array())
+                    .or_else(|| item["myAnswer"].as_array())
+                    .or_else(|| item["student_answer"].as_array())
+                    .or_else(|| item["submit_answer"].as_array());
+
+                if let Some(arr) = user_arr {
+                    for a in arr {
+                        if let Some(s) = a.as_str() {
+                            correct.push(s.to_string());
+                        } else if let Some(n) = a.as_i64() {
+                            correct.push(n.to_string());
+                        }
+                    }
+                } else if let Some(s) = item["user_answer"]
+                    .as_str()
+                    .or_else(|| item["userAnswer"].as_str())
+                    .or_else(|| item["my_answer"].as_str())
+                    .or_else(|| item["myAnswer"].as_str())
+                    .or_else(|| item["student_answer"].as_str())
+                    .or_else(|| item["submit_answer"].as_str())
+                {
+                    for part in s.split(|c| c == ',' || c == '，' || c == '、' || c == ' ' || c == ';') {
+                        let trimmed = part.trim().trim_matches(|c: char| !c.is_alphanumeric());
+                        if !trimmed.is_empty() {
+                            if trimmed.chars().all(|c| c.is_ascii_alphabetic())
+                                && trimmed.len() > 1
+                                && trimmed.len() <= 6
+                                && !options.iter().any(|o| o.id == trimmed)
+                            {
+                                for ch in trimmed.chars() {
+                                    correct.push(ch.to_ascii_uppercase().to_string());
+                                }
+                            } else {
+                                correct.push(trimmed.to_string());
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1781,11 +2236,12 @@ fn parse_exam_view_json(val: &serde_json::Value) -> Option<(Vec<Question>, Answe
 
 fn parse_exam_view_html(html: &str) -> Option<(Vec<Question>, Answers)> {
     let doc = scraper::Html::parse_document(html);
-    let container_sel = scraper::Selector::parse(".queContainer,.que-item,.question-item,.ti-item").ok()?;
-    let stem_sel = scraper::Selector::parse(".ti-q,.que-title,.question-title").ok()?;
-    let option_sel = scraper::Selector::parse(".ti-a,label,.option").ok()?;
+    let container_sel = scraper::Selector::parse(".queContainer,.que-item,.question-item,.ti-item,.test-item").ok()?;
+    let stem_sel = scraper::Selector::parse(".ti-q,.que-title,.question-title,.stem").ok()?;
+    let option_sel = scraper::Selector::parse(".ti-a,label,.option,.option-item").ok()?;
     let input_sel = scraper::Selector::parse("input[type=radio],input[type=checkbox]").ok()?;
-    let answer_sel = scraper::Selector::parse(".rightAnswer,.right-answer,.correct-answer,.da-an,.daan,.standard-answer").ok()?;
+    let answer_sel = scraper::Selector::parse(".rightAnswer,.right-answer,.correct-answer,.da-an,.daan,.standard-answer,.ti-daan,.standardAnswer").ok()?;
+    let user_ans_sel = scraper::Selector::parse(".userAnswer,.user-answer,.myAnswer,.my-answer").ok()?;
 
     let mut questions = Vec::new();
     let mut answers = BTreeMap::new();
@@ -1839,23 +2295,23 @@ fn parse_exam_view_html(html: &str) -> Option<(Vec<Question>, Answers)> {
 
         let mut correct = Vec::new();
 
-        // 1. Check dedicated answer selector
+        // 1. 优先从专门的标准答案标签提取
         if let Some(ans_elem) = elem.select(&answer_sel).next() {
             let ans_text = ans_elem.text().collect::<Vec<_>>().join(" ");
             extract_answer_tokens(&ans_text, &options, &mut correct);
         }
 
-        // 2. Search in container text for patterns like "正确答案：A"
+        // 2. 检查整个题干区域文本中的模式（如 "正确答案：A"、"标准答案：B"）
         if correct.is_empty() {
             let full_text = elem.text().collect::<Vec<_>>().join(" ");
             extract_answer_tokens(&full_text, &options, &mut correct);
         }
 
-        // 3. Check for elements with class "right" or "correct"
+        // 3. 检查带有 class="right" / "correct" / "is-correct" / "dui" 的选项
         if correct.is_empty() {
             for opt_elem in elem.select(&option_sel) {
                 let classes = opt_elem.value().classes().collect::<Vec<_>>();
-                if classes.iter().any(|c| *c == "right" || *c == "correct" || *c == "is-correct") {
+                if classes.iter().any(|c| *c == "right" || *c == "correct" || *c == "is-correct" || *c == "dui") {
                     let input = opt_elem.select(&input_sel).next();
                     if let Some(val) = input.and_then(|i| i.value().attr("value")) {
                         correct.push(val.to_string());
@@ -1864,8 +2320,47 @@ fn parse_exam_view_html(html: &str) -> Option<(Vec<Question>, Answers)> {
             }
         }
 
+        // 4. 提取用户提交的答案（当题目判对或有作答记录时作为补充）
+        if correct.is_empty() {
+            let full_text = elem.text().collect::<Vec<_>>().join(" ");
+            let is_judged_right = full_text.contains("回答正确")
+                || full_text.contains("得分")
+                || elem.select(&scraper::Selector::parse(".icon-dui,.dui,.icon-right,.icon-check").unwrap()).next().is_some();
+
+            if is_judged_right {
+                for opt_elem in elem.select(&option_sel) {
+                    let input = opt_elem.select(&input_sel).next();
+                    if let Some(inp) = input {
+                        if inp.value().attr("checked").is_some() {
+                            if let Some(val) = inp.value().attr("value") {
+                                correct.push(val.to_string());
+                            }
+                        }
+                    }
+                }
+                if correct.is_empty() {
+                    if let Some(user_elem) = elem.select(&user_ans_sel).next() {
+                        let u_text = user_elem.text().collect::<Vec<_>>().join(" ");
+                        extract_user_answer_tokens(&u_text, &options, &mut correct);
+                    }
+                }
+            }
+        }
+
         if !correct.is_empty() {
-            answers.insert(qid.clone(), correct);
+            // 防选项乱序处理：若答案包含字母标签，将其解析提取为对应的选项文本内容
+            let text_answers: Vec<String> = correct
+                .iter()
+                .map(|ans_key| {
+                    if let Some(opt) = options.iter().find(|o| o.id.eq_ignore_ascii_case(ans_key)) {
+                        if !opt.text.trim().is_empty() {
+                            return opt.text.trim().to_string();
+                        }
+                    }
+                    ans_key.clone()
+                })
+                .collect();
+            answers.insert(qid.clone(), text_answers);
         }
 
         questions.push(Question {
@@ -1886,42 +2381,180 @@ fn parse_exam_view_html(html: &str) -> Option<(Vec<Question>, Answers)> {
 }
 
 fn extract_answer_tokens(text: &str, options: &[OptionItem], out: &mut Vec<String>) {
-    for marker in &["正确答案", "标准答案", "参考答案"] {
+    let markers = ["正确答案", "标准答案", "参考答案", "正确选项", "判定答案", "答案"];
+    for marker in &markers {
         if let Some(pos) = text.find(marker) {
             let after = &text[pos + marker.len()..];
-            let cleaned = after.trim_start_matches(|c: char| c == ':' || c == '：' || c.is_whitespace());
-            for word in cleaned.split(|c: char| {
-                c == ',' || c == '，' || c == '、' || c == ' ' || c == '\n' || c == '\t' || c == '；' || c == ';'
+            let cleaned = after.trim_start_matches(|c: char| c == ':' || c == '：' || c.is_whitespace() || c == '【' || c == '[' || c == '“' || c == '"');
+
+            let end_idx = cleaned
+                .find(|c: char| c == '\n' || c == '\r' || c == '；' || c == ';')
+                .unwrap_or(cleaned.len().min(120));
+            let segment = &cleaned[..end_idx];
+
+            // 优先截取括号注释前的内容（如 "B (1983年)" 中的 "B"）
+            let before_paren = segment.split(|c| c == '(' || c == '（').next().unwrap_or(segment).trim();
+            let to_parse = if !before_paren.is_empty() { before_paren } else { segment };
+
+            let mut extracted = Vec::new();
+            for raw_word in to_parse.split(|c: char| {
+                c == ',' || c == '，' || c == '、' || c == ' ' || c == '\t' || c == '；' || c == ';' || c == '/'
             }) {
-                let trimmed = word.trim();
+                let trimmed = raw_word.trim().trim_matches(|c: char| !c.is_alphanumeric());
                 if trimmed.is_empty() {
                     continue;
                 }
-                if trimmed.len() <= 2 && trimmed.chars().all(|c| c.is_ascii_alphabetic()) {
-                    let upper = trimmed.to_uppercase();
-                    if let Some(opt) = options.iter().find(|o| o.id.eq_ignore_ascii_case(&upper)) {
-                        if !out.contains(&opt.id) {
-                            out.push(opt.id.clone());
+                // 字母型选项（单选 A 或多选如 ABCD）
+                if trimmed.chars().all(|c| c.is_ascii_alphabetic()) && trimmed.len() <= 6 {
+                    if let Some(opt) = options.iter().find(|o| o.id.eq_ignore_ascii_case(trimmed)) {
+                        if !extracted.contains(&opt.id) {
+                            extracted.push(opt.id.clone());
                         }
-                    } else if !out.contains(&upper) {
-                        out.push(upper);
+                    } else {
+                        for ch in trimmed.chars() {
+                            let letter = ch.to_ascii_uppercase().to_string();
+                            if let Some(opt) = options.iter().find(|o| o.id.eq_ignore_ascii_case(&letter)) {
+                                if !extracted.contains(&opt.id) {
+                                    extracted.push(opt.id.clone());
+                                }
+                            } else if !extracted.contains(&letter) {
+                                extracted.push(letter);
+                            }
+                        }
                     }
-                } else if trimmed == "正确" || trimmed == "对" || trimmed == "T" {
+                } else if trimmed == "正确" || trimmed == "对" || trimmed == "T" || trimmed == "true" {
                     if let Some(opt) = options.iter().find(|o| o.text.contains("正确") || o.text.contains("对")) {
-                        if !out.contains(&opt.id) {
-                            out.push(opt.id.clone());
+                        if !extracted.contains(&opt.id) {
+                            extracted.push(opt.id.clone());
                         }
+                    } else if !extracted.contains(&"A".to_string()) {
+                        extracted.push("A".to_string());
                     }
-                } else if trimmed == "错误" || trimmed == "错" || trimmed == "F" {
+                } else if trimmed == "错误" || trimmed == "错" || trimmed == "F" || trimmed == "false" {
                     if let Some(opt) = options.iter().find(|o| o.text.contains("错误") || o.text.contains("错")) {
-                        if !out.contains(&opt.id) {
-                            out.push(opt.id.clone());
+                        if !extracted.contains(&opt.id) {
+                            extracted.push(opt.id.clone());
+                        }
+                    } else if !extracted.contains(&"B".to_string()) {
+                        extracted.push("B".to_string());
+                    }
+                } else if let Some(opt) = options.iter().find(|o| {
+                    !o.text.trim().is_empty() && (o.text.trim() == trimmed || trimmed.contains(&o.text.trim()))
+                }) {
+                    if !extracted.contains(&opt.id) {
+                        extracted.push(opt.id.clone());
+                    }
+                }
+            }
+
+            if !extracted.is_empty() {
+                for ans in extracted {
+                    if !out.contains(&ans) {
+                        out.push(ans);
+                    }
+                }
+                return;
+            }
+        }
+    }
+}
+
+fn extract_user_answer_tokens(text: &str, options: &[OptionItem], out: &mut Vec<String>) {
+    let markers = ["我的答案", "考生答案", "学生答案", "你的答案", "所选答案"];
+    for marker in &markers {
+        if let Some(pos) = text.find(marker) {
+            let after = &text[pos + marker.len()..];
+            let cleaned = after.trim_start_matches(|c: char| c == ':' || c == '：' || c.is_whitespace() || c == '【' || c == '[');
+            for word in cleaned.split(|c: char| c == ',' || c == '，' || c == '、' || c == ' ' || c == ';' || c == '\n') {
+                let trimmed = word.trim().trim_matches(|c: char| !c.is_alphanumeric());
+                if !trimmed.is_empty() {
+                    if trimmed.chars().all(|c| c.is_ascii_alphabetic()) && trimmed.len() <= 6 {
+                        if let Some(opt) = options.iter().find(|o| o.id.eq_ignore_ascii_case(trimmed)) {
+                            if !out.contains(&opt.id) {
+                                out.push(opt.id.clone());
+                            }
+                        } else {
+                            for ch in trimmed.chars() {
+                                let letter = ch.to_ascii_uppercase().to_string();
+                                if !out.contains(&letter) {
+                                    out.push(letter);
+                                }
+                            }
                         }
                     }
                 }
             }
             if !out.is_empty() {
                 return;
+            }
+        }
+    }
+}
+
+/// 将从 /exam/view 解析出的试题答案对齐到规范的单题列表（支持按 ID、题干或顺序匹配）
+pub(crate) fn align_view_answers_to_questions(
+    view_questions: &[Question],
+    view_answers: &Answers,
+    target_questions: &[Question],
+    out_answers: &mut Answers,
+) {
+    for (v_idx, vq) in view_questions.iter().enumerate() {
+        let Some(ans_list) = view_answers.get(&vq.id) else {
+            continue;
+        };
+        if ans_list.is_empty() {
+            continue;
+        }
+
+        // 寻找 target_questions 中的对应题目：1. id 匹配 2. 题干匹配 3. 顺序索引匹配
+        let v_norm = normalize_stem(&vq.text);
+        let matched_tq = target_questions
+            .iter()
+            .find(|tq| tq.id == vq.id || tq.id.contains(&vq.id) || vq.id.contains(&tq.id))
+            .or_else(|| {
+                target_questions.iter().find(|tq| {
+                    let t_norm = normalize_stem(&tq.text);
+                    !t_norm.is_empty()
+                        && (t_norm == v_norm || t_norm.contains(&v_norm) || v_norm.contains(&t_norm))
+                })
+            })
+            .or_else(|| {
+                if target_questions.len() == view_questions.len() {
+                    target_questions.get(v_idx)
+                } else {
+                    None
+                }
+            });
+
+        if let Some(tq) = matched_tq {
+            let mut resolved_ans = Vec::new();
+            for ans_item in ans_list {
+                let ans_trim = ans_item.trim();
+                // 优先看 ans_item 是否是 vq 的选项字母或文本，转换到对应选项的文本内容
+                if let Some(v_opt) = vq
+                    .options
+                    .iter()
+                    .find(|o| o.id.eq_ignore_ascii_case(ans_trim) || o.text.trim() == ans_trim)
+                {
+                    if !v_opt.text.trim().is_empty() {
+                        resolved_ans.push(v_opt.text.trim().to_string());
+                        continue;
+                    }
+                }
+                if let Some(t_opt) = tq
+                    .options
+                    .iter()
+                    .find(|o| o.id.eq_ignore_ascii_case(ans_trim) || o.text.trim() == ans_trim)
+                {
+                    if !t_opt.text.trim().is_empty() {
+                        resolved_ans.push(t_opt.text.trim().to_string());
+                        continue;
+                    }
+                }
+                resolved_ans.push(ans_trim.to_string());
+            }
+            if !resolved_ans.is_empty() {
+                out_answers.insert(tq.id.clone(), resolved_ans);
             }
         }
     }
@@ -2162,6 +2795,77 @@ mod tests {
     use super::*;
 
     #[test]
+    fn strip_html_tags_removes_tags_and_preserves_clean_text() {
+        assert_eq!(strip_html_tags("<p>题干内容</p>"), "题干内容");
+        assert_eq!(strip_html_tags("选项A<br/>"), "选项A");
+        assert_eq!(strip_html_tags("<span style='color:red;'>高亮</span>"), "高亮");
+        assert_eq!(strip_html_tags("<!-- 注释 -->题干"), "题干");
+        assert_eq!(
+            strip_html_tags("若 x < y 且 z > 0，则下列结论正确的是？"),
+            "若 x < y 且 z > 0，则下列结论正确的是？"
+        );
+    }
+
+    #[test]
+    fn build_qa_upload_question_normalizes_to_option_ids_and_strips_html() {
+        // 1. Single choice: HTML stripped from stem and options, answers normalized to option IDs
+        let q_choice = Question {
+            id: "101".into(),
+            text: "<p>以下关于矩阵初等变换的说法中正确的是？</p>".into(),
+            kind: Kind::Single,
+            options: vec![
+                OptionItem { id: "A".into(), text: "<p>初等变换改变矩阵的秩</p>".into() },
+                OptionItem { id: "B".into(), text: "<span>初等变换不改变矩阵的秩</span>".into() },
+            ],
+            blanks: 0,
+            images: vec![],
+        };
+        // Answer given as option text content
+        let answers_text = vec!["初等变换不改变矩阵的秩".to_string()];
+        let upload_q = build_qa_upload_question(&q_choice, Some(&answers_text), None, false);
+
+        assert_eq!(upload_q.stem.as_deref(), Some("以下关于矩阵初等变换的说法中正确的是？"));
+        let opts = upload_q.options.unwrap();
+        assert_eq!(opts[0].text, "初等变换改变矩阵的秩");
+        assert_eq!(opts[1].text, "初等变换不改变矩阵的秩");
+        // MUST BE option ID ["B"], NOT text!
+        assert_eq!(upload_q.correct_answers, Some(vec![serde_json::Value::String("B".into())]));
+
+        // 2. Judge question: answer normalized to boolean [true] or [false]
+        let q_judge = Question {
+            id: "102".into(),
+            text: "<p>所有初等函数在其定义域内均连续。</p>".into(),
+            kind: Kind::Single,
+            options: vec![
+                OptionItem { id: "A".into(), text: "正确".into() },
+                OptionItem { id: "B".into(), text: "错误".into() },
+            ],
+            blanks: 0,
+            images: vec![],
+        };
+        let answers_judge = vec!["正确".to_string()];
+        let upload_judge = build_qa_upload_question(&q_judge, Some(&answers_judge), None, false);
+        assert_eq!(upload_judge.question_type, "judge");
+        assert_eq!(upload_judge.correct_answers, Some(vec![serde_json::Value::Bool(true)]));
+
+        // 3. Text question: no options, blanks set
+        let q_text = Question {
+            id: "103".into(),
+            text: "<p>微积分基本公式又称作____公式。</p>".into(),
+            kind: Kind::Text,
+            options: vec![],
+            blanks: 1,
+            images: vec![],
+        };
+        let answers_fill = vec!["牛顿-莱布尼茨".to_string()];
+        let upload_text = build_qa_upload_question(&q_text, Some(&answers_fill), None, false);
+        assert_eq!(upload_text.question_type, "text");
+        assert!(upload_text.options.is_none());
+        assert_eq!(upload_text.blanks, Some(1));
+        assert_eq!(upload_text.correct_answers, Some(vec![serde_json::Value::String("牛顿-莱布尼茨".into())]));
+    }
+
+    #[test]
     fn stem_normalization_and_hashing_matches_specification() {
         let raw = "<p> 关于微积分基本定理，下列说法正确的是？ &nbsp; </p>";
         let normalized = normalize_stem(raw);
@@ -2297,7 +3001,7 @@ mod tests {
         }];
 
         // 1. Record passed quiz into local bank
-        let recorded = record_passed_quiz(&bank_path, "200", "100", &questions, &answers).unwrap();
+        let recorded = record_passed_quiz(&bank_path, "200", "100", &questions, &answers, None).unwrap();
         assert_eq!(recorded, 1);
         let bank = load_local_bank(&bank_path);
         assert_eq!(bank.len(), 1);
@@ -2332,7 +3036,7 @@ mod tests {
             json!({ "error": "not found" })
         });
 
-        let uploaded_count = sync_missing_to_server(&bank_path, &server.base, Some("test_key"), Some("200"), Some("100"))
+        let uploaded_count = sync_missing_to_server(&bank_path, &server.base, Some("test_key"), Some("200"), Some("100"), None)
             .await
             .unwrap();
         assert_eq!(uploaded_count, 1);
@@ -2428,7 +3132,7 @@ mod tests {
             blanks: 0,
             images: vec![],
         }];
-        record_passed_quiz(&bank_path, "10", "101", &questions1, &answers1).unwrap();
+        record_passed_quiz(&bank_path, "10", "101", &questions1, &answers1, None).unwrap();
 
         let mut answers2 = Answers::new();
         answers2.insert("q2".into(), vec!["B".into(), "C".into()]);
@@ -2444,7 +3148,7 @@ mod tests {
             blanks: 0,
             images: vec![],
         }];
-        record_passed_quiz(&bank_path, "10", "102", &questions2, &answers2).unwrap();
+        record_passed_quiz(&bank_path, "10", "102", &questions2, &answers2, None).unwrap();
 
         let upload_calls = Arc::new(AtomicUsize::new(0));
         let upload_calls_clone = upload_calls.clone();
@@ -2457,7 +3161,7 @@ mod tests {
             json!({ "error": "not found" })
         });
 
-        let uploaded_count = upload_all_local_bank(&bank_path, &server.base, Some("mock-key")).await.unwrap();
+        let uploaded_count = upload_all_local_bank(&bank_path, &server.base, Some("mock-key"), None).await.unwrap();
         assert_eq!(uploaded_count, 2);
         assert_eq!(upload_calls.load(Ordering::SeqCst), 2); // 2 different tids (101 and 102)
 

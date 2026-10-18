@@ -165,7 +165,7 @@ function LogoutDialog({
               这会清除本机认证数据，需要重新完成深圳大学统一认证。
             </AlertDialog.Body>
             <AlertDialog.Footer>
-              <AlertDialog.CloseTrigger className="dialog-cancel">取消</AlertDialog.CloseTrigger>
+              <AlertDialog.CloseTrigger />
               <Button variant="danger" isDisabled={isBusy} onPress={onConfirm}>
                 {isBusy && <Spinner size="sm" color="current" />}
                 {isBusy ? "注销中…" : "确认注销"}
