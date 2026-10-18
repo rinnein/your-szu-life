@@ -1,18 +1,19 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  Alert,
   Button,
   Card,
   Checkbox,
   ComboBox,
   Description,
-  Alert,
   Input,
   Label,
   ListBox,
   NumberField,
   Select,
   Spinner,
+  toast,
 } from "@heroui/react";
 import type { AiConfig, QuizMode } from "./types";
 
@@ -70,8 +71,7 @@ export function AiSettings({
   const [config, setConfig] = useState<AiConfig>();
   const [models, setModels] = useState<{ main: string[]; jev: string[] }>({ main: [], jev: [] });
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
   useEffect(() => {
     let live = true;
     void invoke<AiConfig>("get_uooc_ai_config")
@@ -83,7 +83,7 @@ export function AiSettings({
       })
       .catch((cause) => {
         if (live)
-          setError(
+          setLoadError(
             typeof cause === "string"
               ? cause
               : cause instanceof Error
@@ -110,14 +110,28 @@ export function AiSettings({
     onMode(next.defaultMode);
     return next;
   };
-  const run = async (fn: () => Promise<unknown>) => {
+  const handleSave = async () => {
     setBusy(true);
-    setMessage("");
-    setError("");
     try {
-      await fn();
+      await save();
+      toast.success("配置已保存");
     } catch (e) {
-      setError(typeof e === "string" ? e : e instanceof Error ? e.message : "操作失败，请检查配置");
+      const msg =
+        typeof e === "string" ? e : e instanceof Error ? e.message : "保存配置失败，请检查配置";
+      toast.danger("保存配置失败", { description: msg });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const handleLoadModels = async (provider: "main" | "jev") => {
+    setBusy(true);
+    try {
+      const found = await invoke<string[]>("list_uooc_ai_models", { provider });
+      setModels((old) => ({ ...old, [provider]: found }));
+      toast.success(`已加载 ${found.length} 个模型，选择后保存配置`);
+    } catch (e) {
+      const msg = typeof e === "string" ? e : e instanceof Error ? e.message : "加载模型列表失败";
+      toast.danger("加载模型列表失败", { description: msg });
     } finally {
       setBusy(false);
     }
@@ -129,11 +143,11 @@ export function AiSettings({
           <Card.Title>测验 AI</Card.Title>
         </Card.Header>
         <Card.Content>
-          {error ? (
+          {loadError ? (
             <Alert status="danger" role="alert">
               <Alert.Content>
                 <Alert.Title>AI 配置出错</Alert.Title>
-                <Alert.Description>{error}</Alert.Description>
+                <Alert.Description>{loadError}</Alert.Description>
               </Alert.Content>
             </Alert>
           ) : (
@@ -154,21 +168,6 @@ export function AiSettings({
         </Button>
       </Card.Header>
       <Card.Content className="grid gap-4">
-        {error && (
-          <Alert status="danger" role="alert">
-            <Alert.Content>
-              <Alert.Title>AI 配置出错</Alert.Title>
-              <Alert.Description>{error}</Alert.Description>
-            </Alert.Content>
-          </Alert>
-        )}
-        {message && (
-          <Alert status="success" role="status">
-            <Alert.Content>
-              <Alert.Title>{message}</Alert.Title>
-            </Alert.Content>
-          </Alert>
-        )}
         {(["main", "jev"] as const).map((provider) => (
           <div className="grid gap-3" key={provider}>
             <h3 className="font-semibold">
@@ -201,13 +200,7 @@ export function AiSettings({
             <Button
               variant="secondary"
               isDisabled={busy}
-              onPress={() =>
-                void run(async () => {
-                  const found = await invoke<string[]>("list_uooc_ai_models", { provider });
-                  setModels((old) => ({ ...old, [provider]: found }));
-                  setMessage(`已加载 ${found.length} 个模型，选择后保存配置`);
-                })
-              }
+              onPress={() => void handleLoadModels(provider)}
             >
               加载{provider === "main" ? "主模型" : "Jev"}列表
             </Button>
@@ -267,15 +260,7 @@ export function AiSettings({
           默认手动答题：需自行作答或在弹窗中选择 AI
           答题。请求批准：先生成整卷答案，确认后才提交。YOLO 未通过时停止当前课程，其他课程继续。
         </Description>
-        <Button
-          isDisabled={busy}
-          onPress={() =>
-            void run(async () => {
-              await save();
-              setMessage("配置已保存");
-            })
-          }
-        >
+        <Button isDisabled={busy} onPress={() => void handleSave()}>
           保存运行设置
         </Button>
         {busy && <Spinner aria-label="正在处理 AI 配置" />}

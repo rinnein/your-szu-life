@@ -3,6 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "@heroui/react";
 import { AiSettings } from "./AiSettings";
 import type { AiConfig } from "./types";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -33,6 +34,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 it("keeps connection fields out of UOOC and saves only model preferences", async () => {
+  const successSpy = vi.spyOn(toast, "success");
   render(<AiSettings onMode={vi.fn()} onOpenAiSettings={vi.fn()} />);
   await screen.findByRole("combobox", { name: "主模型名称" });
   expect(screen.queryByLabelText("主模型 API Key")).not.toBeInTheDocument();
@@ -53,15 +55,19 @@ it("keeps connection fields out of UOOC and saves only model preferences", async
       },
     }),
   );
+  await waitFor(() => expect(successSpy).toHaveBeenCalledWith("配置已保存"));
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 it("loads model autocomplete through the configured native provider", async () => {
+  const successSpy = vi.spyOn(toast, "success");
   render(<AiSettings onMode={vi.fn()} onOpenAiSettings={vi.fn()} />);
   await screen.findByRole("combobox", { name: "主模型名称" });
   fireEvent.click(screen.getByRole("button", { name: "加载主模型列表" }));
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("list_uooc_ai_models", { provider: "main" }),
   );
-  expect(await screen.findByText("已加载 2 个模型，选择后保存配置")).toBeInTheDocument();
+  await waitFor(() => expect(successSpy).toHaveBeenCalledWith("已加载 2 个模型，选择后保存配置"));
 });
 
 it("opens the global AI connection settings from the model settings", async () => {
@@ -72,15 +78,24 @@ it("opens the global AI connection settings from the model settings", async () =
   expect(onOpenAiSettings).toHaveBeenCalledOnce();
 });
 
-it("shows UOOC AI save failures in a visible alert above the form", async () => {
+it("shows UOOC AI save failures via toast.danger instead of form alerts", async () => {
+  const dangerSpy = vi.spyOn(toast, "danger");
   render(<AiSettings onMode={vi.fn()} onOpenAiSettings={vi.fn()} />);
   await screen.findByRole("combobox", { name: "主模型名称" });
   vi.mocked(invoke).mockRejectedValueOnce("运行设置保存失败");
   fireEvent.click(screen.getByRole("button", { name: "保存运行设置" }));
+  await waitFor(() =>
+    expect(dangerSpy).toHaveBeenCalledWith("保存配置失败", {
+      description: "运行设置保存失败",
+    }),
+  );
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+
+it("shows alert when reading initial AI config fails", async () => {
+  vi.mocked(invoke).mockRejectedValueOnce("无法读取 AI 配置");
+  render(<AiSettings onMode={vi.fn()} onOpenAiSettings={vi.fn()} />);
   const alert = await screen.findByRole("alert");
-  expect(alert).toHaveTextContent("运行设置保存失败");
-  expect(
-    alert.compareDocumentPosition(screen.getByRole("combobox", { name: "主模型名称" })) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
+  expect(alert).toHaveTextContent("无法读取 AI 配置");
 });
