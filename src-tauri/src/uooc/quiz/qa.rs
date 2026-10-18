@@ -27,9 +27,79 @@ pub(crate) fn strip_html_tags(raw: &str) -> String {
 
 pub(crate) const EMBEDDING_DIMENSIONS: usize = 1536;
 
+fn deserialize_flex_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct FlexStringVisitor;
+    impl<'de> serde::de::Visitor<'de> for FlexStringVisitor {
+        type Value = String;
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a string, number, or boolean")
+        }
+        fn visit_str<E>(self, v: &str) -> Result<String, E> {
+            Ok(v.to_string())
+        }
+        fn visit_string<E>(self, v: String) -> Result<String, E> {
+            Ok(v)
+        }
+        fn visit_i64<E>(self, v: i64) -> Result<String, E> {
+            Ok(v.to_string())
+        }
+        fn visit_u64<E>(self, v: u64) -> Result<String, E> {
+            Ok(v.to_string())
+        }
+        fn visit_f64<E>(self, v: f64) -> Result<String, E> {
+            Ok(v.to_string())
+        }
+        fn visit_bool<E>(self, v: bool) -> Result<String, E> {
+            Ok(v.to_string())
+        }
+    }
+    deserializer.deserialize_any(FlexStringVisitor)
+}
+
+fn deserialize_opt_flex_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let val = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(val.map(|v| match v {
+        serde_json::Value::String(s) => s,
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        other => other.to_string(),
+    }))
+}
+
+fn deserialize_flex_values<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw_list = Vec::<serde_json::Value>::deserialize(deserializer)?;
+    let string_list = raw_list
+        .into_iter()
+        .map(|v| match v {
+            serde_json::Value::String(s) => s,
+            serde_json::Value::Bool(b) => {
+                if b {
+                    "A".to_string()
+                } else {
+                    "B".to_string()
+                }
+            }
+            serde_json::Value::Number(n) => n.to_string(),
+            other => other.to_string(),
+        })
+        .collect();
+    Ok(string_list)
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct QaOption {
+    #[serde(default, deserialize_with = "deserialize_flex_string")]
     pub id: String,
+    #[serde(default, deserialize_with = "deserialize_flex_string")]
     pub text: String,
 }
 
@@ -37,11 +107,19 @@ pub(crate) struct QaOption {
 pub(crate) struct QaAnswer {
     #[serde(default)]
     pub id: Option<i64>,
+    #[serde(default, deserialize_with = "deserialize_flex_values")]
     pub values: Vec<String>,
-    #[serde(rename = "isCorrect")]
+    #[serde(default, rename = "isCorrect")]
     pub is_correct: bool,
     #[serde(default)]
     pub confidence: Option<f64>,
+}
+
+impl QaAnswer {
+    #[allow(dead_code)]
+    pub fn string_values(&self) -> Vec<String> {
+        self.values.clone()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -50,12 +128,13 @@ pub(crate) struct QaQuestion {
     pub id: Option<i64>,
     #[serde(default)]
     pub tid: Option<String>,
-    #[serde(rename = "questionId")]
+    #[serde(default, rename = "questionId", deserialize_with = "deserialize_opt_flex_string")]
     pub question_id: Option<String>,
-    #[serde(rename = "type")]
+    #[serde(default, rename = "type")]
     pub question_type: Option<String>,
+    #[serde(default)]
     pub stem: Option<String>,
-    #[serde(rename = "stemHash")]
+    #[serde(default, rename = "stemHash")]
     pub stem_hash: Option<String>,
     #[serde(default)]
     pub options: Option<Vec<QaOption>>,
@@ -76,7 +155,7 @@ pub(crate) struct QaTaskGroup {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct QaTaskResponse {
-    #[serde(rename = "taskGroup")]
+    #[serde(default, rename = "taskGroup")]
     pub task_group: Option<QaTaskGroup>,
     #[serde(default)]
     pub questions: Vec<QaQuestion>,
@@ -769,13 +848,34 @@ pub(crate) async fn query_task_answers(
     cid: Option<&str>,
 ) -> Result<Vec<QaQuestion>, String> {
     let api_base = resolve_api_base(server_url);
-    let url = match cid {
-        Some(cid) if !cid.is_empty() => format!("{api_base}/courses/{cid}/tasks/{tid}"),
-        _ => format!("{api_base}/tasks/{tid}"),
-    };
-
     let client = http_client()?;
-    let mut req = client.get(&url);
+
+    // 1. 如果指定了 cid，优先请求带课程作用域的接口 /api/courses/{cid}/tasks/{tid}
+    if let Some(c) = cid.filter(|s| !s.trim().is_empty()) {
+        let course_url = format!("{api_base}/courses/{c}/tasks/{tid}");
+        let mut req = client.get(&course_url);
+        if let Some(key) = api_key {
+            let trimmed = key.trim();
+            if !trimmed.is_empty() {
+                req = req.header("x-api-key", trimmed);
+            }
+        }
+        if let Ok(resp) = req.send().await {
+            if resp.status().is_success() {
+                if let Ok(bytes) = resp.bytes().await {
+                    if let Ok(data) = serde_json::from_slice::<QaTaskResponse>(&bytes) {
+                        if data.error.is_none() && !data.questions.is_empty() {
+                            return Ok(data.questions);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. 回退请求通用题单接口 /api/tasks/{tid}（跨课程、全题库收录的标准入口）
+    let task_url = format!("{api_base}/tasks/{tid}");
+    let mut req = client.get(&task_url);
     if let Some(key) = api_key {
         let trimmed = key.trim();
         if !trimmed.is_empty() {
@@ -791,13 +891,26 @@ pub(crate) async fn query_task_answers(
         return Err(format!("题库请求失败，状态码: {}", resp.status()));
     }
 
-    let data = resp
-        .json::<QaTaskResponse>()
+    let resp_bytes = resp
+        .bytes()
         .await
-        .map_err(|e| format!("解析题库数据失败: {e}"))?;
-    if let Some(err) = data.error {
-        return Err(err);
+        .map_err(|e| format!("读取题库响应内容失败: {e}"))?;
+    let resp_text = String::from_utf8_lossy(&resp_bytes);
+
+    let data: QaTaskResponse = match serde_json::from_slice(&resp_bytes) {
+        Ok(d) => d,
+        Err(e) => {
+            return Err(format!("解析题库数据失败: {e}，响应原内容: {resp_text}"));
+        }
+    };
+
+    // 如果服务端返回业务上的未找到，表示服务端题库暂未收录该题单，连接本身是成功的
+    if let Some(ref err) = data.error {
+        if err.contains("not found") {
+            return Ok(vec![]);
+        }
     }
+
     Ok(data.questions)
 }
 
@@ -1627,13 +1740,12 @@ pub(crate) async fn sync_missing_to_server(
     let candidate_keys: Vec<String> = bank
         .iter()
         .filter(|(_, q)| {
-            if let Some(target_cid) = cid {
-                if q.cid != target_cid {
-                    return false;
-                }
-            }
             if let Some(target_tid) = tid {
                 if q.tid != target_tid {
+                    return false;
+                }
+            } else if let Some(target_cid) = cid {
+                if q.cid != target_cid {
                     return false;
                 }
             }
@@ -1655,11 +1767,17 @@ pub(crate) async fn sync_missing_to_server(
         })
         .collect();
 
+    let local_qids: Vec<String> = candidate_keys
+        .iter()
+        .filter_map(|k| bank.get(k))
+        .map(|q| q.question_id.clone())
+        .collect();
+
     let payload = BankMatchPayload {
         cid: cid.map(str::to_string),
         tid: tid.map(str::to_string),
         items: Some(match_items.clone()),
-        local_question_ids: None,
+        local_question_ids: Some(local_qids),
     };
 
     let api_base = resolve_api_base(server_url);

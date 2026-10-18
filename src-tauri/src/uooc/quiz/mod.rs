@@ -780,6 +780,10 @@ async fn match_qa_action(service: &Arc<Service>, ctx: &Context, cancel: &Cancell
         Ok(qs) => {
             let matched = qa::match_answers(&qs, &q.questions);
             let count = matched.matched_answers.len() + local_hits;
+            service.log_debug(
+                "bank",
+                format!("[题库匹配] 本地命中={local_hits}, 远程题目数={}, 最终合并命中={count}", qs.len()),
+            );
             update(service, ctx, |q| {
                 q.answers.extend(matched.matched_answers);
                 for r in matched.reviews {
@@ -793,17 +797,22 @@ async fn match_qa_action(service: &Arc<Service>, ctx: &Context, cancel: &Cancell
                 }
                 q.stage = Stage::AwaitingApproval;
                 q.message = if count > 0 {
-                    format!("已从题库匹配 {count} 道题目的标准答案")
+                    if qs.is_empty() {
+                        format!("已从本地题库命中 {local_hits} 道题目答案（远程题库暂未收录该测验）")
+                    } else {
+                        format!("已从题库匹配 {count} 道题目的标准答案")
+                    }
                 } else {
                     "题库中暂未收录该测验的标准答案".into()
                 };
             });
         }
         Err(e) => {
+            service.log_debug("bank", format!("[题库匹配] 远程题库请求发生网络/服务异常: {e}"));
             if local_hits > 0 {
                 update(service, ctx, |q| {
                     q.stage = Stage::AwaitingApproval;
-                    q.message = format!("远程题库连接失败，但已从本地题库命中 {local_hits} 道题目答案");
+                    q.message = format!("远程题库连接异常（{e}），已从本地题库命中 {local_hits} 道题目答案");
                 });
             } else {
                 update(service, ctx, |q| {
