@@ -968,7 +968,43 @@ pub(crate) fn match_answers(
             result
                 .wrong_options
                 .insert(local_q.id.clone(), unique_wrongs.clone());
-            if !result.matched_answers.contains_key(&local_q.id) {
+
+            // 逻辑排除推导：
+            // 1. 若为判断题（2个选项），确认到 1 个错误答案，自动确定另外一个为唯一正确答案；
+            // 2. 若为单选题（N个选项），确认到 N - 1 个错误选项，自动确定剩下的唯一个为唯一正确答案！
+            let total_opts = local_q.options.len();
+            let is_judge = local_q.kind == Kind::Single && total_opts == 2 && {
+                let opt0 = local_q.options[0].text.trim().to_lowercase();
+                let opt1 = local_q.options[1].text.trim().to_lowercase();
+                (opt0.contains("正确") || opt0.contains("对") || opt0 == "t" || opt0 == "true" || opt0 == "a")
+                    && (opt1.contains("错误") || opt1.contains("错") || opt1 == "f" || opt1 == "false" || opt1 == "b")
+            };
+            let is_single = local_q.kind == Kind::Single;
+
+            let auto_deduced = if !result.matched_answers.contains_key(&local_q.id) {
+                if (is_judge && !unique_wrongs.is_empty()) || (is_single && total_opts >= 2 && unique_wrongs.len() >= total_opts - 1) {
+                    local_q.options.iter().find(|o| !unique_wrongs.contains(&o.id))
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            if let Some(deduced_opt) = auto_deduced {
+                let ans = vec![deduced_opt.id.clone()];
+                result.matched_answers.insert(local_q.id.clone(), ans.clone());
+                result.reviews.push(Review {
+                    question_id: local_q.id.clone(),
+                    answers: ans,
+                    probabilities: Default::default(),
+                    message: if is_judge {
+                        "题库已排除错误选项，自动推导出唯一正确答案".into()
+                    } else {
+                        format!("题库已排除 {} 个错误选项，自动推导出唯一正确答案", unique_wrongs.len())
+                    },
+                });
+            } else if !result.matched_answers.contains_key(&local_q.id) {
                 let label_text = unique_wrongs
                     .iter()
                     .map(|id| {
@@ -983,7 +1019,7 @@ pub(crate) fn match_answers(
                     .join("、");
                 result.reviews.push(Review {
                     question_id: local_q.id.clone(),
-                    answers: vec![],
+                    answers: unique_wrongs.clone(),
                     probabilities: Default::default(),
                     message: format!("题库已排除错误选项：{label_text}，请勿选择"),
                 });
@@ -992,6 +1028,27 @@ pub(crate) fn match_answers(
     }
 
     result
+}
+
+pub(crate) fn map_answers_to_option_ids(
+    answers: &[String],
+    options: &[OptionItem],
+) -> Vec<String> {
+    let mut mapped = Vec::new();
+    for ans in answers {
+        let ans_trim = ans.trim();
+        if ans_trim.is_empty() {
+            continue;
+        }
+        if let Some(opt) = options.iter().find(|o| o.id.eq_ignore_ascii_case(ans_trim) || o.text.trim() == ans_trim) {
+            if !mapped.contains(&opt.id) {
+                mapped.push(opt.id.clone());
+            }
+        } else {
+            mapped.push(ans_trim.to_string());
+        }
+    }
+    mapped
 }
 
 fn map_option_values(
@@ -2970,9 +3027,11 @@ mod tests {
 
         let result = match_answers(&qa_questions, &local_questions);
         assert_eq!(result.matched_answers.get("q1"), Some(&vec!["opt-a".into()]));
+        // q2 为单选/判断且 A 被排除，通过逻辑排除法自动推导 B 为唯一正确答案
+        assert_eq!(result.matched_answers.get("q2"), Some(&vec!["B".into()]));
         assert_eq!(result.wrong_options.get("q2"), Some(&vec!["A".into()]));
         assert!(result.reviews.iter().any(|r| r.question_id == "q1" && r.message.contains("命中标准答案")));
-        assert!(result.reviews.iter().any(|r| r.question_id == "q2" && r.message.contains("排除错误选项")));
+        assert!(result.reviews.iter().any(|r| r.question_id == "q2" && r.message.contains("自动推导")));
     }
 
     #[tokio::test]

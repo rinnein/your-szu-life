@@ -95,7 +95,7 @@ pub(crate) fn save_uooc_quiz_answers(
     Ok(service.snapshot())
 }
 #[tauri::command]
-pub(crate) fn control_uooc_quiz(
+pub(crate) async fn control_uooc_quiz(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     cid: String,
@@ -104,7 +104,7 @@ pub(crate) fn control_uooc_quiz(
 ) -> Result<Snapshot, String> {
     login::local_parent(&window)?;
     let service = service(&app)?;
-    service.quiz_action(cid, revision, action)?;
+    service.quiz_action(cid, revision, action).await?;
     Ok(service.snapshot())
 }
 #[tauri::command]

@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { QuizPanel } from "./QuizPanel";
 import type { QuizState, UoocSnapshot } from "./types";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubGlobal(
@@ -184,4 +185,129 @@ it("allows clicking 查看测验 to force fetch completed quiz when quiz is pass
     }),
   );
   expect(onSnapshot).toHaveBeenCalled();
+});
+
+it("displays question type chip, option label badges beside options and no bottom annotation", () => {
+  render(<QuizPanel quiz={quiz()} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
+
+  // 1. Question type chip
+  expect(screen.getByText("单选题")).toBeInTheDocument();
+  // 2. Question index and ID
+  expect(screen.getByText("第 1 题")).toBeInTheDocument();
+  expect(screen.getByText("ID: q1")).toBeInTheDocument();
+  // 3. Option labels (A., B.)
+  expect(screen.getByText("A.")).toBeInTheDocument();
+  expect(screen.getByText("B.")).toBeInTheDocument();
+  // 4. 标注器不在下方显示
+  expect(screen.queryByText(/当前作答 \/ 匹配答案/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/标准答案：/)).not.toBeInTheDocument();
+});
+
+it("displays 标准答案 and 排除答案 beside options and selection modification does not alter standard answer", () => {
+  const matchedQuiz: QuizState = {
+    ...quiz(),
+    answers: { q1: ["a"] },
+    reviews: [
+      {
+        questionId: "q1",
+        answers: ["a"],
+        probabilities: {},
+        message: "题库命中标准答案",
+      },
+      {
+        questionId: "q1",
+        answers: ["b"],
+        probabilities: {},
+        message: "题库已排除错误选项：b，请勿选择",
+      },
+    ],
+  };
+
+  render(<QuizPanel quiz={matchedQuiz} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
+
+  // Option A displays 标准答案, Option B displays 排除答案
+  expect(screen.getByText("标准答案")).toBeInTheDocument();
+  expect(screen.getByText("排除答案")).toBeInTheDocument();
+
+  // Initially Option A has 已选
+  expect(screen.getByText("已选")).toBeInTheDocument();
+
+  // User clicks Option B to modify answer
+  fireEvent.click(screen.getByRole("radio", { name: /5/ }));
+
+  // 标准答案 MUST STILL be on Option A and NOT altered to Option B!
+  expect(screen.getByText("标准答案")).toBeInTheDocument();
+  expect(screen.getByText("排除答案")).toBeInTheDocument();
+});
+
+it("automatically selects option when bank matches standard answer even if answers was initially empty", () => {
+  const matchedQuiz: QuizState = {
+    ...quiz(),
+    answers: {},
+    reviews: [
+      {
+        questionId: "q1",
+        answers: ["a"],
+        probabilities: {},
+        message: "题库命中标准答案",
+      },
+    ],
+  };
+
+  render(<QuizPanel quiz={matchedQuiz} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
+
+  // Option A automatically displays 标准答案 AND 已选
+  expect(screen.getByText("标准答案")).toBeInTheDocument();
+  expect(screen.getByText("已选")).toBeInTheDocument();
+  const radioA = screen.getByRole("radio", { name: /4/ });
+  expect(radioA).toBeChecked();
+});
+
+it("pops up execution flow modal with AI session when clicking AI 答题", async () => {
+  const q: QuizState = {
+    ...quiz(),
+    answers: {},
+    aiSessions: [
+      {
+        batchIndex: 1,
+        questionIds: ["q1"],
+        questionTitles: ["2+2?"],
+        model: "gpt-4o-mini",
+        prompt: "{\"question\": \"2+2?\"}",
+        response: "{\"answers\": {\"q1\": [\"a\"]}}",
+        answers: { q1: ["a"] },
+        status: "completed",
+      },
+    ],
+  };
+  vi.mocked(invoke).mockResolvedValue(response(q));
+  render(<QuizPanel quiz={q} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
+
+  const aiBtn = screen.getByRole("button", { name: "AI 答题" });
+  fireEvent.click(aiBtn);
+
+  // Execution flow modal appears with AI session details
+  await waitFor(() => {
+    expect(screen.getByText("AI 智能答题流程")).toBeInTheDocument();
+    expect(screen.getByText(/AI 会话调用 Session/)).toBeInTheDocument();
+    expect(screen.getByText(/模型: gpt-4o-mini/)).toBeInTheDocument();
+    expect(screen.getByText("{\"question\": \"2+2?\"}")).toBeInTheDocument();
+    expect(screen.getByText("{\"answers\": {\"q1\": [\"a\"]}}")).toBeInTheDocument();
+  });
+});
+
+it("pops up execution flow modal when clicking 匹配题库", async () => {
+  const q = quiz();
+  vi.mocked(invoke).mockResolvedValue(response(q));
+  render(<QuizPanel quiz={q} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
+
+  const matchBtn = screen.getByRole("button", { name: "匹配题库" });
+  fireEvent.click(matchBtn);
+
+  // Execution flow modal appears
+  await waitFor(() => {
+    expect(screen.getByText("题库匹配流程")).toBeInTheDocument();
+    expect(screen.getByText(/题库平台比对/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查看试卷与作答结果" })).toBeInTheDocument();
+  });
 });

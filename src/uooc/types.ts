@@ -171,6 +171,17 @@ export type QuizQuestion = {
   images: string[];
 };
 export type QuizAnswers = Record<string, string[]>;
+export type AiSessionEntry = {
+  batchIndex: number;
+  questionIds: string[];
+  questionTitles: string[];
+  model: string;
+  prompt: string;
+  response: string;
+  answers: Record<string, string[]>;
+  status: "pending" | "completed" | "error";
+  error?: string | null;
+};
 export type QuizState = {
   accountId: string;
   cid: string;
@@ -192,6 +203,7 @@ export type QuizState = {
   gated: boolean;
   videoComplete: boolean;
   passed: string[];
+  aiSessions?: AiSessionEntry[];
 };
 export type AiProvider = { baseUrl: string; model: string; hasKey: boolean };
 export type AiConnectionProvider = { baseUrl: string; hasKey: boolean };
@@ -202,6 +214,7 @@ export type AiConfig = {
   jevEnabled: boolean;
   confidence: number;
   defaultMode: QuizMode;
+  batchSize?: number;
 };
 
 export type CourseTaskItem =

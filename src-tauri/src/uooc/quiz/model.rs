@@ -58,6 +58,21 @@ pub(crate) struct Review {
     pub probabilities: BTreeMap<String, f64>,
     pub message: String,
 }
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AiSessionEntry {
+    pub batch_index: usize,
+    pub question_ids: Vec<String>,
+    pub question_titles: Vec<String>,
+    pub model: String,
+    pub prompt: String,
+    pub response: String,
+    pub answers: BTreeMap<String, Vec<String>>,
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct QuizState {
@@ -80,6 +95,8 @@ pub(crate) struct QuizState {
     pub submission_uncertain: bool,
     pub passed: Vec<String>,
     pub notified: String,
+    #[serde(default)]
+    pub ai_sessions: Vec<AiSessionEntry>,
 }
 pub(crate) fn validate_answers(
     questions: &[Question],

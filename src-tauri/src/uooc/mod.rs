@@ -214,6 +214,11 @@ impl Service {
             let _ = app.emit("uooc-bank-rebuild-progress", progress);
         }
     }
+    pub(crate) fn emit_ai_session(&self, entry: &quiz::model::AiSessionEntry) {
+        if let Some(app) = &self.app {
+            let _ = app.emit("uooc-ai-session-progress", entry);
+        }
+    }
     fn change(&self, f: impl FnOnce(&mut Snapshot)) {
         let mut runtime = self.runtime.lock().unwrap();
         f(&mut runtime.snapshot);

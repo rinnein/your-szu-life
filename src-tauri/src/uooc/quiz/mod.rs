@@ -435,7 +435,7 @@ pub(super) async fn run(
             });
             return Ok(TaskStatus::AwaitingDecision);
         }
-        if !generate(&service, &ctx, &cancel).await {
+        if !generate(&service, &ctx, &cancel, false).await {
             return Ok(TaskStatus::AwaitingDecision);
         }
         if mode != Mode::Yolo || service.snapshot().settings.dry_run {
@@ -459,52 +459,102 @@ pub(super) async fn run(
         TaskStatus::Completed
     })
 }
-async fn generate(service: &Arc<Service>, ctx: &Context, cancel: &CancellationToken) -> bool {
+async fn generate(
+    service: &Arc<Service>,
+    ctx: &Context,
+    cancel: &CancellationToken,
+    _force_all: bool,
+) -> bool {
     update(service, ctx, |q| {
         q.stage = Stage::Generating;
-        q.message = "正在查询题库并生成答案草稿…".into();
+        q.message = "正在匹配题库与调用 AI 模型生成题目答案…".into();
     });
     let mut q = state(service, ctx);
 
-    if q.answers.is_empty() {
-        let qa_url = service.snapshot().settings.qa_server_url.clone();
-        let qa_key = service.qa_api_key().await;
-        if let Ok(qa_qs) =
-            qa::query_task_answers(&qa_url, qa_key.as_deref(), &q.task_id, Some(&ctx.cid)).await
-        {
-            let matched = qa::match_answers(&qa_qs, &q.questions);
-            if !matched.matched_answers.is_empty() || !matched.reviews.is_empty() {
+    // 1. AI 判题前，先自动尝试匹配本地题库与远程题库！
+    let qa_url = service.snapshot().settings.qa_server_url.clone();
+    let qa_key = service.qa_api_key().await;
+    let bank_path = service.path.parent().unwrap().join("qa-bank.json");
+
+    let mut confirmed_correct_ids = HashSet::new();
+    let mut wrong_options_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
+    // 先检查本地题库确认答案
+    let local_bank = qa::load_local_bank(&bank_path);
+    for question in &q.questions {
+        let key = qa::bank_key(&q.task_id, &question.id);
+        if let Some(entry) = local_bank.get(&key) {
+            if !entry.correct_answers.is_empty() {
+                let mapped = qa::map_answers_to_option_ids(&entry.correct_answers, &question.options);
+                let final_ans = if !mapped.is_empty() { mapped } else { entry.correct_answers.clone() };
+                confirmed_correct_ids.insert(question.id.clone());
                 update(service, ctx, |state| {
-                    state.answers.extend(matched.matched_answers);
-                    for r in matched.reviews {
-                        if let Some(existing) =
-                            state.reviews.iter_mut().find(|ex| ex.question_id == r.question_id)
-                        {
-                            *existing = r;
-                        } else {
-                            state.reviews.push(r);
-                        }
-                    }
+                    state.answers.insert(question.id.clone(), final_ans.clone());
+                    state.reviews.push(Review {
+                        question_id: question.id.clone(),
+                        answers: final_ans,
+                        probabilities: Default::default(),
+                        message: "本地题库命中已确认答案".into(),
+                    });
                 });
-                q = state(service, ctx);
             }
         }
     }
 
+    // 再比对远程题库返回的结果
+    if let Ok(qa_qs) = qa::query_task_answers(&qa_url, qa_key.as_deref(), &q.task_id, Some(&ctx.cid)).await {
+        let matched = qa::match_answers(&qa_qs, &q.questions);
+        for (qid, wrongs) in matched.wrong_options {
+            wrong_options_map.insert(qid, wrongs);
+        }
+        for (qid, ans) in matched.matched_answers {
+            confirmed_correct_ids.insert(qid.clone());
+            update(service, ctx, |state| {
+                state.answers.insert(qid.clone(), ans.clone());
+            });
+        }
+        update(service, ctx, |state| {
+            for r in matched.reviews {
+                if let Some(existing) = state.reviews.iter_mut().find(|ex| ex.question_id == r.question_id) {
+                    *existing = r;
+                } else {
+                    state.reviews.push(r);
+                }
+            }
+        });
+    }
+
+    q = state(service, ctx);
+
+    // 2. 过滤：如果有确定了正确答案的，直接标定那些题的答案并过滤，交给 AI 判断的只有没有确定正确答案的！
     let needed: Vec<_> = q
         .questions
         .iter()
-        .filter(|item| !q.answers.get(&item.id).is_some_and(|a| !a.is_empty()))
+        .filter(|item| !confirmed_correct_ids.contains(&item.id))
         .cloned()
         .collect();
 
-    let (ai_answers, ai_reviews, err) = if needed.is_empty() {
-        (Answers::new(), vec![], None)
+    // 3. 流式推送进度回调
+    let service_clone = service.clone();
+    let ctx_clone = ctx.clone();
+    let callback = move |entry: &AiSessionEntry| {
+        service_clone.emit_ai_session(entry);
+        update(&service_clone, &ctx_clone, |state| {
+            if let Some(existing) = state.ai_sessions.iter_mut().find(|s| s.batch_index == entry.batch_index) {
+                *existing = entry.clone();
+            } else {
+                state.ai_sessions.push(entry.clone());
+            }
+        });
+    };
+
+    let (ai_answers, ai_reviews, ai_sessions, err) = if needed.is_empty() {
+        (Answers::new(), vec![], vec![], None)
     } else {
         tokio::select! {
             biased;
             _ = cancel.cancelled() => return false,
-            r = ai::generate(service, &needed, cancel) => r,
+            r = ai::generate(service, &needed, &wrong_options_map, cancel, Some(&callback)) => r,
         }
     };
 
@@ -527,6 +577,9 @@ async fn generate(service: &Arc<Service>, ctx: &Context, cancel: &CancellationTo
                 q.reviews.push(r);
             }
         }
+        if !ai_sessions.is_empty() {
+            q.ai_sessions = ai_sessions;
+        }
         q.stage = if automatic {
             Stage::Preparing
         } else {
@@ -536,7 +589,11 @@ async fn generate(service: &Arc<Service>, ctx: &Context, cancel: &CancellationTo
             if automatic {
                 "答案已准备完毕，准备核对并提交".into()
             } else {
-                "请检查、修改并确认整份测验答案".into()
+                format!(
+                    "已完成题库匹配（命中 {} 题）与 AI 答题（生成 {} 题）",
+                    confirmed_correct_ids.len(),
+                    needed.len()
+                )
             }
         });
     });
@@ -704,11 +761,13 @@ async fn match_qa_action(service: &Arc<Service>, ctx: &Context, cancel: &Cancell
         if let Some(entry) = local_bank.get(&key) {
             if !entry.correct_answers.is_empty() {
                 local_hits += 1;
+                let mapped = qa::map_answers_to_option_ids(&entry.correct_answers, &question.options);
+                let final_ans = if !mapped.is_empty() { mapped } else { entry.correct_answers.clone() };
                 update(service, ctx, |state| {
-                    state.answers.insert(question.id.clone(), entry.correct_answers.clone());
+                    state.answers.insert(question.id.clone(), final_ans.clone());
                     state.reviews.push(Review {
                         question_id: question.id.clone(),
-                        answers: entry.correct_answers.clone(),
+                        answers: final_ans,
                         probabilities: Default::default(),
                         message: "本地题库命中已确认答案".into(),
                     });
@@ -822,7 +881,7 @@ impl Service {
         self.publish(&mut r);
         Ok(())
     }
-    pub(super) fn quiz_action(
+    pub(super) async fn quiz_action(
         self: &Arc<Self>,
         cid: String,
         revision: u64,
@@ -854,68 +913,78 @@ impl Service {
                     return Err("提交结果尚未确认，请先检查官网".into());
                 }
             }
-            let task = r
+            let generation = if let Some(task) = r
                 .snapshot
                 .tasks
                 .iter_mut()
                 .find(|t| t.account_id == account && t.course.id == cid)
-                .ok_or("请先在任务页启动课程")?;
-            task.generation += 1;
-            task.status = TaskStatus::Running;
-            task.desired_running = true;
-            let generation = task.generation;
+            {
+                task.generation += 1;
+                task.status = TaskStatus::Running;
+                task.desired_running = true;
+                task.generation
+            } else {
+                r.epoch += 1;
+                r.epoch
+            };
             let cancel = CancellationToken::new();
             r.workers.insert(cid.clone(), (generation, cancel.clone()));
             self.publish(&mut r);
             (generation, cancel)
         };
-        let service = self.clone();
-        tauri::async_runtime::spawn(async move {
-            let client = service.client();
-            let result = async {
-                service.sync_platform().map_err(Error::Quiz)?;
-                let ctx = context(&service, &cid, generation)?;
-                if !allowed(&service, &cid, &cancel).await? {
-                    return Err(Error::Quiz("测验权重为零或尚未确认，答题已禁用".into()));
-                }
-                match action {
-                    Action::Generate => {
-                        let q = state(&service, &ctx);
-                        let p = paper(&client, &q.task_id, &cancel).await?;
-                        update(&service, &ctx, |q| {
-                            q.signature = p.signature;
-                            q.questions = p.questions;
-                        });
-                        generate(&service, &ctx, &cancel).await;
-                        if state(&service, &ctx).stage == Stage::Preparing {
-                            update(&service, &ctx, |q| {
-                                q.stage = Stage::AwaitingApproval;
-                                q.message = "新答案已生成，请确认后提交".into();
+
+        let client = self.client();
+        let result = async {
+            self.sync_platform().map_err(Error::Quiz)?;
+            let ctx = context(self, &cid, generation)?;
+            if matches!(action, Action::Submit) && !allowed(self, &cid, &cancel).await? {
+                return Err(Error::Quiz("测验权重为零或尚未确认，答题已禁用".into()));
+            }
+            match action {
+                Action::Generate => {
+                    let q = state(self, &ctx);
+                    if q.questions.is_empty() {
+                        if let Ok(p) = paper(&client, &q.task_id, &cancel).await {
+                            update(self, &ctx, |q| {
+                                q.signature = p.signature;
+                                q.questions = p.questions;
                             });
                         }
-                        Ok(TaskStatus::AwaitingDecision)
                     }
-                    Action::MatchQa => {
-                        let q = state(&service, &ctx);
-                        let p = paper(&client, &q.task_id, &cancel).await?;
-                        update(&service, &ctx, |q| {
-                            q.signature = p.signature;
-                            q.questions = p.questions;
+                    generate(self, &ctx, &cancel, true).await;
+                    if state(self, &ctx).stage == Stage::Preparing {
+                        update(self, &ctx, |q| {
+                            q.stage = Stage::AwaitingApproval;
+                            q.message = "新答案已生成，请确认后提交".into();
                         });
-                        match_qa_action(&service, &ctx, &cancel).await;
-                        Ok(TaskStatus::AwaitingDecision)
                     }
-                    Action::Submit => submit(&service, &client, &ctx, &cancel).await,
-                    Action::Check => Ok(TaskStatus::Queued),
+                    Ok(TaskStatus::AwaitingDecision)
                 }
+                Action::MatchQa => {
+                    let q = state(self, &ctx);
+                    if q.questions.is_empty() {
+                        if let Ok(p) = paper(&client, &q.task_id, &cancel).await {
+                            update(self, &ctx, |q| {
+                                q.signature = p.signature;
+                                q.questions = p.questions;
+                            });
+                        }
+                    }
+                    match_qa_action(self, &ctx, &cancel).await;
+                    Ok(TaskStatus::AwaitingDecision)
+                }
+                Action::Submit => submit(self, &client, &ctx, &cancel).await,
+                Action::Check => Ok(TaskStatus::Queued),
             }
-            .await;
-            service.finish(&cid, generation, result.clone(), &client);
-            if result == Ok(TaskStatus::Queued) {
-                service.reconcile();
-            }
-        });
-        Ok(())
+        }
+        .await;
+
+        self.finish(&cid, generation, result.clone(), &client);
+        if result == Ok(TaskStatus::Queued) {
+            self.reconcile();
+        }
+
+        result.map(|_| ()).map_err(|e| e.message())
     }
     pub(super) async fn quiz_portal(
         self: &Arc<Self>,
@@ -1201,7 +1270,10 @@ pub(super) fn window_closed(service: &Arc<Service>, label: &str) {
                 .map(|q| q.revision)
         };
         if let Some(revision) = revision {
-            let _ = service.quiz_action(cid, revision, Action::Check);
+            let svc = service.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = svc.quiz_action(cid, revision, Action::Check).await;
+            });
         }
     }
 }

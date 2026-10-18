@@ -952,25 +952,20 @@ export default function UoocPage() {
               }}
             >
               <Modal.Backdrop>
-                <Modal.Container size="cover" className="max-w-3xl">
-                  <Modal.Dialog aria-label={activeModalQuiz?.title || "课程测验"}>
+                <Modal.Container size="cover" className="max-w-4xl">
+                  <Modal.Dialog aria-label={activeModalQuiz?.title || "课程测验"} className="flex flex-col max-h-[85vh]">
                     <Modal.CloseTrigger />
-                    <Modal.Header>
-                      <Modal.Heading>{activeModalQuiz?.title || "课程测验"}</Modal.Heading>
-                    </Modal.Header>
-                    <Modal.Body className="max-h-[75vh] overflow-y-auto">
-                      {activeModalQuiz && (
-                        <QuizPanel
-                          quiz={activeModalQuiz}
-                          active={tasks.some(
-                            (t) => t.course.id === activeModalQuiz.cid && active(t),
-                          )}
-                          weight={snapshot?.progress?.[activeModalQuiz.cid]?.data?.test.weight}
-                          dryRun={snapshot?.settings.dryRun ?? false}
-                          onSnapshot={apply}
-                        />
-                      )}
-                    </Modal.Body>
+                    {activeModalQuiz && (
+                      <QuizPanel
+                        quiz={activeModalQuiz}
+                        active={tasks.some(
+                          (t) => t.course.id === activeModalQuiz.cid && active(t),
+                        )}
+                        weight={snapshot?.progress?.[activeModalQuiz.cid]?.data?.test.weight}
+                        dryRun={snapshot?.settings.dryRun ?? false}
+                        onSnapshot={apply}
+                      />
+                    )}
                   </Modal.Dialog>
                 </Modal.Container>
               </Modal.Backdrop>

@@ -49,6 +49,7 @@ it("keeps connection fields out of UOOC and saves only model preferences", async
         jevEnabled: false,
         confidence: 0.8,
         defaultMode: "supervised",
+        batchSize: 5,
       },
     }),
   );

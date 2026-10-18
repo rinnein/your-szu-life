@@ -150,9 +150,11 @@ async fn approval_flow_is_atomic_and_never_leaks_credentials_to_ai() {
     let q = service.snapshot().quizzes["7/42"].clone();
     service
         .quiz_action("42".into(), q.revision, Action::Submit)
+        .await
         .unwrap();
     assert!(service
         .quiz_action("42".into(), q.revision, Action::Submit)
+        .await
         .is_err());
     wait_finished(&service).await;
     assert!(passed.load(Ordering::SeqCst));
@@ -217,6 +219,7 @@ async fn supervised_dry_run_never_calls_ai_or_submits_without_user_choice() {
     let q = service.snapshot().quizzes["7/42"].clone();
     assert!(service
         .quiz_action("42".into(), q.revision, Action::Submit)
+        .await
         .is_err());
     assert!(calls.lock().unwrap().iter().all(|p| !p.contains("commit")));
     std::fs::remove_dir_all(root).unwrap();
@@ -479,8 +482,8 @@ async fn jev_uses_systemone_and_requests_only_one_main_model_recheck() {
     )
     .unwrap()
     .questions;
-    let (answers, reviews, error) =
-        ai::generate(&service, &questions, &CancellationToken::new()).await;
+    let (answers, reviews, _sessions, error) =
+        ai::generate(&service, &questions, &std::collections::BTreeMap::new(), &CancellationToken::new(), None).await;
     assert!(error.is_none());
     assert_eq!(answers["q1"], ["b"]);
     assert_eq!(reviews.len(), 1);

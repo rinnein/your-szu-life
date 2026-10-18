@@ -103,6 +103,7 @@ export function AiSettings({
       jevEnabled: config.jevEnabled,
       confidence: config.confidence,
       defaultMode: config.defaultMode,
+      batchSize: config.batchSize ?? 5,
     };
     const next = await invoke<AiConfig>("save_uooc_ai_preferences", { preferences });
     setConfig(next);
@@ -237,6 +238,25 @@ export function AiSettings({
             <NumberField.IncrementButton />
           </NumberField.Group>
           <Description>阈值用于转交人工，不代表答案正确率；图片题不经过 Jev 复核。</Description>
+        </NumberField>
+        <NumberField
+          minValue={1}
+          maxValue={20}
+          step={1}
+          value={config.batchSize ?? 10}
+          onChange={(batchSize) => setConfig({ ...config, batchSize })}
+          isDisabled={busy}
+        >
+          <Label>题目合并批次大小</Label>
+          <NumberField.Group>
+            <NumberField.DecrementButton />
+            <NumberField.Input />
+            <NumberField.IncrementButton />
+          </NumberField.Group>
+          <Description>
+            每次向 AI 发起请求时合并处理的最大题目数量（1-20，默认
+            10）。合并题目可减少多轮会话反复新开并注入上下文的开销。
+          </Description>
         </NumberField>
         <QuizModePicker
           value={config.defaultMode}
