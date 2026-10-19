@@ -91,7 +91,7 @@ export function ModelDownloadModal({
     setNavigating(true);
     try {
       onOpenChange(false);
-      await navigation.push(`/settings?focus=${info.settingsFocus}`);
+      await navigation.push(`/settings?tab=models&focus=${info.settingsFocus}`);
     } finally {
       setNavigating(false);
     }

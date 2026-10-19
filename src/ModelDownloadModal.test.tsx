@@ -108,7 +108,7 @@ it("renders Embedding model guidance modal and navigates to settings", async () 
 
   await waitFor(() => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
-    expect(nav.push).toHaveBeenCalledWith("/settings?focus=embedding");
+    expect(nav.push).toHaveBeenCalledWith("/settings?tab=models&focus=embedding");
   });
 });
 

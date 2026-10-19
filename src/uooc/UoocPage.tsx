@@ -1165,7 +1165,7 @@ export default function UoocPage() {
             </Card>
             <AiSettings
               onMode={setDefaultMode}
-              onOpenAiSettings={() => void navigation.push("/settings")}
+              onOpenAiSettings={() => void navigation.push("/settings?tab=ai")}
             />
           </Tabs.Panel>
           <Tabs.Panel id="qa" className="grid gap-6 pt-4">
