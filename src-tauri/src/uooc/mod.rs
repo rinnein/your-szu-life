@@ -52,6 +52,7 @@ struct Runtime {
     quiz_windows: HashMap<String, (u64, String)>,
     discussion: DiscussionStoreState,
     qa_api_key: Option<String>,
+    initial_qa_bootstrapped_accounts: HashSet<String>,
 }
 pub(super) struct Service {
     app: Option<tauri::AppHandle>,
@@ -148,6 +149,7 @@ impl Service {
                 quiz_windows: HashMap::new(),
                 discussion: saved.discussion,
                 qa_api_key: saved.qa_api_key,
+                initial_qa_bootstrapped_accounts: saved.initial_qa_bootstrapped_accounts,
             }),
         }))
     }
@@ -183,6 +185,7 @@ impl Service {
                     quizzes,
                     discussion: runtime.discussion.clone(),
                     qa_api_key: runtime.qa_api_key.clone(),
+                    initial_qa_bootstrapped_accounts: runtime.initial_qa_bootstrapped_accounts.clone(),
                 }
             });
         if let Err(error) = saved.and_then(|saved| persistence::write(&self.path, &saved)) {
@@ -444,6 +447,51 @@ impl Service {
     }
     pub(crate) async fn build_local_bank(self: &Arc<Self>) -> Result<usize, String> {
         quiz::build_local_bank(self).await
+    }
+    pub(crate) async fn full_qa_sync(self: &Arc<Self>) {
+        let (_account_id, cids, qa_server_url) = {
+            let r = self.runtime.lock().unwrap();
+            let Some(user_id) = r.snapshot.user.as_ref().map(|u| u.id.clone()) else {
+                return;
+            };
+            let cids: Vec<String> = r.snapshot.courses.iter().map(|c| c.id.clone()).collect();
+            let server_url = r.snapshot.settings.qa_server_url.clone();
+            (user_id, cids, server_url)
+        };
+
+        if cids.is_empty() {
+            return;
+        }
+
+        self.log_debug(
+            "qa",
+            format!("完成登录，开始全量同步已添加的 {} 门课程服务端题库向量缓存…", cids.len()),
+        );
+
+        let cache_path = self.path.parent().unwrap().join("qa-vector-cache.json");
+        let api_key = self.qa_api_key_for_server(Some(&qa_server_url)).await;
+
+        match quiz::qa::download_qa_vectors(&cache_path, &qa_server_url, api_key.as_deref(), &cids).await {
+            Ok(status) => {
+                self.log_debug(
+                    "qa",
+                    format!("服务端题库向量缓存拉取成功，已缓存 {} 条题目向量", status.cached_count),
+                );
+            }
+            Err(err) => {
+                self.log_debug("qa", format!("拉取服务端题库向量缓存失败: {err}"));
+            }
+        }
+
+        self.log_debug("qa", "开始全量题库构建…");
+        match self.build_local_bank().await {
+            Ok(count) => {
+                self.log_debug("qa", format!("全量题库构建完成，共收录 {count} 道题目"));
+            }
+            Err(err) => {
+                self.log_debug("qa", format!("全量题库构建失败: {err}"));
+            }
+        }
     }
     fn start(self: &Arc<Self>, ids: Vec<String>) -> Result<(), String> {
         if ids.is_empty() {

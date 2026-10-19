@@ -1633,6 +1633,10 @@ pub(crate) async fn build_single_task_group(
         ).await;
     }
 
+    // 完成题目收录后，部分同步该课程的向量缓存
+    let cache_path = service.path.parent().unwrap().join("qa-vector-cache.json");
+    let _ = qa::download_qa_vectors(&cache_path, &qa_url, qa_key.as_deref(), &[cid.to_string()]).await;
+
     service.emit_bank_progress(&super::model::BankRebuildProgress {
         stage: "task_complete".into(),
         cid: cid.to_string(),

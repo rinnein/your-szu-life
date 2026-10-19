@@ -227,6 +227,7 @@ pub(super) async fn open(service: Arc<Service>, parent: WebviewWindow) -> Result
             let refresh_service = service.clone();
             tauri::async_runtime::spawn(async move {
                 let _ = refresh_service.refresh().await;
+                refresh_service.full_qa_sync().await;
             });
             return;
         }

@@ -45,7 +45,7 @@ describe("BankRebuildModal", () => {
       />,
     );
 
-    expect(screen.getByText("本地题库构建流程进度")).toBeInTheDocument();
+    expect(screen.getByText("题库构建流程进度")).toBeInTheDocument();
     expect(screen.getByText("正在解析收录")).toBeInTheDocument();
 
     // 1. 发送 course 进度事件

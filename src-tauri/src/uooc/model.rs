@@ -252,6 +252,8 @@ pub(super) struct SavedState {
     pub discussion: DiscussionStoreState,
     #[serde(default)]
     pub qa_api_key: Option<String>,
+    #[serde(default)]
+    pub initial_qa_bootstrapped_accounts: std::collections::HashSet<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

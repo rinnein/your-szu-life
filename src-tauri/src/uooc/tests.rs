@@ -655,6 +655,7 @@ async fn startup_restores_only_running_courses_after_identity_and_course_checks(
             quizzes: Default::default(),
             discussion: Default::default(),
             qa_api_key: None,
+            initial_qa_bootstrapped_accounts: Default::default(),
         },
     )
     .unwrap();

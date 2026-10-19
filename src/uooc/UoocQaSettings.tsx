@@ -310,7 +310,7 @@ export function UoocQaSettings({
       toast.success(
         count > 0
           ? `已成功与后端比对并将 ${count} 道缺失题目同步上传`
-          : "本地题目已与服务端保持最新同步",
+          : "题目已与服务端保持最新同步",
       );
       await refreshLocalQuestions();
     } catch (e: unknown) {
@@ -333,7 +333,7 @@ export function UoocQaSettings({
       });
       setSearchResults(results);
       if (results.length === 0) {
-        toast.warning("未找到相似题目，已在本地完成 1536 维特征向量计算");
+        toast.warning("未找到相似题目，已完成 1536 维特征向量计算");
       }
     } catch (e: unknown) {
       const msg =
@@ -499,7 +499,7 @@ export function UoocQaSettings({
         serverUrl: qaServerUrl,
       });
       toast.success(
-        count > 0 ? `已成功全量上传 ${count} 道本地题目至题库共享平台` : "本地题库中暂无题目可上传",
+        count > 0 ? `已成功全量上传 ${count} 道题目至题库共享平台` : "题库中暂无题目可上传",
       );
       await refreshLocalQuestions();
     } catch (e: unknown) {
@@ -516,12 +516,12 @@ export function UoocQaSettings({
     setRebuildModalOpen(true);
     try {
       const count = await invoke<number>("build_uooc_local_bank");
-      toast.success(`本地题库已重新构建完成，共收录 ${count} 道题目`);
+      toast.success(`题库已重新构建完成，共收录 ${count} 道题目`);
       await refreshLocalQuestions();
     } catch (e: unknown) {
       const msg =
-        typeof e === "string" ? e : (e as { message?: string })?.message || "构建本地题库失败";
-      toast.danger("构建本地题库失败", { description: msg });
+        typeof e === "string" ? e : (e as { message?: string })?.message || "构建题库失败";
+      toast.danger("构建题库失败", { description: msg });
     } finally {
       setRebuildingBank(false);
     }
@@ -926,8 +926,8 @@ export function UoocQaSettings({
                 </Alert.Title>
                 <Alert.Description>
                   {vectorStatus.cachedCount > 0
-                    ? `本地已缓存 ${vectorStatus.cachedCount} 条题目向量 · ${vectorStatus.totalDimension} 维浮点嵌入`
-                    : "点击下方按钮下载题库标记向量，下载后可在本地高速检索或向服务端免计算搜题"}
+                    ? `已缓存 ${vectorStatus.cachedCount} 条题目向量 · ${vectorStatus.totalDimension} 维浮点嵌入`
+                    : "点击下方按钮下载题库标记向量，下载后可高速检索或向服务端免计算搜题"}
                 </Alert.Description>
               </Alert.Content>
             </Alert>
@@ -980,9 +980,9 @@ export function UoocQaSettings({
         <Card.Header>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <Card.Title id="uooc-qa-bank-title">本地题库内容浏览</Card.Title>
+              <Card.Title id="uooc-qa-bank-title">题库浏览</Card.Title>
               <Card.Description>
-                本地题库按课程归类展示。点击任意课程或【全部课程】可在弹窗中进行详细的单题过滤浏览。
+                题库按课程归类展示。点击任意课程或【全部课程】可在弹窗中进行详细的单题过滤浏览。
               </Card.Description>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -1013,7 +1013,7 @@ export function UoocQaSettings({
                   onPress={() => setConfirmClearBank(true)}
                 >
                   {clearingBank ? <Spinner size="sm" /> : <LuTrash2 aria-hidden="true" />}
-                  清空本地题库
+                  清空题库缓存
                 </Button>
               )}
             </div>
@@ -1031,7 +1031,7 @@ export function UoocQaSettings({
               </div>
               <div>
                 <h4 className="font-semibold text-foreground text-base">全部课程</h4>
-                <p className="text-xs text-muted">汇总浏览本地题库中收录的全部课程试题</p>
+                <p className="text-xs text-muted">汇总浏览题库中收录的全部课程试题</p>
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -1043,7 +1043,7 @@ export function UoocQaSettings({
               </Chip>
               {pendingCount > 0 && (
                 <Chip size="sm" color="warning">
-                  待同步（仅本地）: {pendingCount} 道
+                  待同步: {pendingCount} 道
                 </Chip>
               )}
               <Button variant="primary" size="sm" onPress={() => handleOpenCourseModal("all")}>
@@ -1055,11 +1055,11 @@ export function UoocQaSettings({
           {/* 各课程卡片网格 */}
           {loadingQuestions ? (
             <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted">
-              <Spinner size="sm" /> 正在读取本地题库...
+              <Spinner size="sm" /> 正在读取题库...
             </div>
           ) : courseGroups.length === 0 ? (
             <div className="rounded-xl border border-dashed border-separator/60 p-8 text-center text-sm text-muted">
-              本地题库暂无已记录的题目。进入测验或点击“重新构建题库”可自动解析已完成测验的标准答案。
+              题库暂无已记录的题目。进入测验或点击“重新构建题库”可自动解析已完成测验的标准答案。
             </div>
           ) : (
             <div className="grid gap-3.5 sm:grid-cols-2">
@@ -1360,7 +1360,7 @@ export function UoocQaSettings({
                                   color="warning"
                                   className="flex items-center gap-1 font-medium"
                                 >
-                                  <LuClock aria-hidden="true" /> 待同步（仅本地）
+                                  <LuClock aria-hidden="true" /> 待同步
                                 </Chip>
                               )}
                             </div>
@@ -1566,25 +1566,25 @@ export function UoocQaSettings({
         </Modal.Backdrop>
       </Modal>
 
-      {/* 本地向量搜题测试卡片 */}
+      {/* 题目搜索卡片 */}
       <Card id="uooc-qa-vector-search" aria-labelledby="uooc-qa-search-title">
         <Card.Header>
-          <Card.Title id="uooc-qa-search-title">本地向量搜题测试</Card.Title>
+          <Card.Title id="uooc-qa-search-title">题目搜索</Card.Title>
           <Card.Description>
-            自动在本地进行 1536 维特征向量投影，结合本地向量缓存与服务端高速检索。
+            结合特征向量投影与服务端共享题库，支持按题干语义或关键词高速检索。
           </Card.Description>
         </Card.Header>
         <Card.Content className="grid gap-3">
           <div className="flex flex-col gap-2 sm:flex-row">
             <div className="flex-1">
               <TextField
-                aria-label="本地向量搜题"
+                aria-label="题目搜索"
                 value={searchQuery}
                 isDisabled={searching}
                 onChange={setSearchQuery}
               >
                 <Input
-                  placeholder="输入题干文本或关键词，在本地完成向量化计算后检索..."
+                  placeholder="输入题干文本或关键词检索题目..."
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
@@ -1593,7 +1593,7 @@ export function UoocQaSettings({
                   }}
                 />
                 <Description>
-                  自动在本地进行 1536 维特征向量投影，结合本地向量缓存与服务端高速检索
+                  支持 1536 维语义特征向量与关键词匹配，结合向量缓存与服务端高速检索
                 </Description>
               </TextField>
             </div>
@@ -1604,7 +1604,7 @@ export function UoocQaSettings({
               onPress={() => void handleSearch()}
             >
               {searching ? <Spinner size="sm" /> : <LuSearch aria-hidden="true" />}
-              向量搜索
+              题目搜索
             </Button>
           </div>
 
@@ -1649,10 +1649,10 @@ export function UoocQaSettings({
             <AlertDialog.Dialog>
               <AlertDialog.Icon status="danger" />
               <AlertDialog.Header>
-                <AlertDialog.Heading>确认清空本地题库？</AlertDialog.Heading>
+                <AlertDialog.Heading>确认清空题库缓存？</AlertDialog.Heading>
               </AlertDialog.Header>
               <AlertDialog.Body>
-                确定要清空本地所有已收录的试题缓存文件（qa-bank.json）吗？清空后如需恢复，可随时点击【重新构建题库】或通过测验流程自动重新发现与收录。
+                确定要清空已收录的试题缓存文件（qa-bank.json）吗？清空后如需恢复，可随时点击【重新构建题库】或通过测验流程自动重新发现与收录。
               </AlertDialog.Body>
               <AlertDialog.Footer>
                 <AlertDialog.CloseTrigger className="dialog-cancel" />
@@ -1664,14 +1664,14 @@ export function UoocQaSettings({
                     setClearingBank(true);
                     try {
                       const count = await invoke<number>("clear_uooc_local_bank");
-                      toast.success(`已清空本地题库（共清除 ${count} 道题目）`);
+                      toast.success(`已清空题库缓存（共清除 ${count} 道题目）`);
                       await refreshLocalQuestions();
                     } catch (e: unknown) {
                       const msg =
                         typeof e === "string"
                           ? e
-                          : (e as { message?: string })?.message || "清空本地题库失败";
-                      toast.danger("清空本地题库失败", { description: msg });
+                          : (e as { message?: string })?.message || "清空题库缓存失败";
+                      toast.danger("清空题库缓存失败", { description: msg });
                     } finally {
                       setClearingBank(false);
                     }

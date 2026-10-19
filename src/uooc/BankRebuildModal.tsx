@@ -155,11 +155,11 @@ export function BankRebuildModal({
     >
       <Modal.Backdrop>
         <Modal.Container size="cover" className="max-w-4xl">
-          <Modal.Dialog aria-label="本地题库构建流程进度">
+          <Modal.Dialog aria-label="题库构建流程进度">
             <Modal.Header>
               <div className="flex flex-wrap items-center justify-between gap-3 w-full pr-6">
                 <div>
-                  <Modal.Heading>本地题库构建流程进度</Modal.Heading>
+                  <Modal.Heading>题库构建流程进度</Modal.Heading>
                   <p className="text-xs text-muted mt-1">
                     实时层级追踪：cid (课程) → tid (测验题单) → 题目 ID (真实全局题目)
                   </p>

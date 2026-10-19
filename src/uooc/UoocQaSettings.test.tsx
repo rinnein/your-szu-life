@@ -136,7 +136,7 @@ it("searches questions using local embedding calculation", async () => {
   const input = await screen.findByPlaceholderText(/输入题干文本或关键词/);
   fireEvent.change(input, { target: { value: "积分中值定理" } });
 
-  const searchBtn = screen.getByRole("button", { name: "向量搜索" });
+  const searchBtn = screen.getByRole("button", { name: "题目搜索" });
   expect(searchBtn).toBeEnabled();
   fireEvent.click(searchBtn);
 
@@ -225,7 +225,7 @@ it("performs manual full questions upload", async () => {
     }),
   );
   await waitFor(() =>
-    expect(successSpy).toHaveBeenCalledWith("已成功全量上传 42 道本地题目至题库共享平台"),
+    expect(successSpy).toHaveBeenCalledWith("已成功全量上传 42 道题目至题库共享平台"),
   );
 });
 
@@ -315,7 +315,7 @@ it("browses local question bank with annotated sync status and filters", async (
   render(<UoocQaSettings courses={mockCourses} />);
 
   // 1. Verify course-grouped entries and summary
-  expect(await screen.findByText("本地题库内容浏览")).toBeInTheDocument();
+  expect(await screen.findByText("题库浏览")).toBeInTheDocument();
   expect(screen.getByText("全部课程")).toBeInTheDocument();
   expect(await screen.findByText("高等数学（微积分）")).toBeInTheDocument();
   expect(await screen.findByText("人工智能概论")).toBeInTheDocument();
@@ -323,7 +323,7 @@ it("browses local question bank with annotated sync status and filters", async (
   // Summary counts
   expect(screen.getByText(/全部收录: 2 道/)).toBeInTheDocument();
   expect(screen.getByText(/已同步至服务端: 1 道/)).toBeInTheDocument();
-  expect(screen.getByText(/待同步（仅本地）: 1 道/)).toBeInTheDocument();
+  expect(screen.getByText(/待同步: 1 道/)).toBeInTheDocument();
 
   // 2. Click "全部课程" to open modal
   const viewAllBtn = screen.getByRole("button", { name: "浏览全部题目" });
@@ -336,7 +336,7 @@ it("browses local question bank with annotated sync status and filters", async (
 
   // Annotated sync statuses inside modal
   expect(screen.getByText("已同步至服务端")).toBeInTheDocument();
-  expect(screen.getByText("待同步（仅本地）")).toBeInTheDocument();
+  expect(screen.getByText("待同步")).toBeInTheDocument();
 
   // Option keys in standard answers
   // The answer includes real option key "A" and text "连续必可积"
@@ -363,7 +363,7 @@ it("browses local question bank with annotated sync status and filters", async (
 
   await waitFor(() => expect(invoke).toHaveBeenCalledWith("build_uooc_local_bank"));
   await waitFor(() =>
-    expect(successSpy).toHaveBeenCalledWith("本地题库已重新构建完成，共收录 2 道题目"),
+    expect(successSpy).toHaveBeenCalledWith("题库已重新构建完成，共收录 2 道题目"),
   );
 });
 
@@ -397,15 +397,15 @@ it("allows clearing local question bank when debugEnabled is true", async () => 
 
   render(<UoocQaSettings debugEnabled={true} />);
 
-  const clearBtn = await screen.findByRole("button", { name: "清空本地题库" });
+  const clearBtn = await screen.findByRole("button", { name: "清空题库缓存" });
   expect(clearBtn).toBeInTheDocument();
   fireEvent.click(clearBtn);
 
-  expect(await screen.findByText("确认清空本地题库？")).toBeInTheDocument();
+  expect(await screen.findByText("确认清空题库缓存？")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "确认清空" }));
 
   await waitFor(() => expect(invoke).toHaveBeenCalledWith("clear_uooc_local_bank"));
-  await waitFor(() => expect(successSpy).toHaveBeenCalledWith("已清空本地题库（共清除 1 道题目）"));
+  await waitFor(() => expect(successSpy).toHaveBeenCalledWith("已清空题库缓存（共清除 1 道题目）"));
 });
 
 it("injects apikey parameter when opening auth login website with existing account status key", async () => {
