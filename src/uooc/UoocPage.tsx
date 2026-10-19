@@ -964,6 +964,10 @@ export default function UoocPage() {
                         weight={snapshot?.progress?.[activeModalQuiz.cid]?.data?.test.weight}
                         dryRun={snapshot?.settings.dryRun ?? false}
                         onSnapshot={apply}
+                        onClose={() => {
+                          setSelectedQuiz(null);
+                          setModalQuizCid(null);
+                        }}
                       />
                     )}
                   </Modal.Dialog>

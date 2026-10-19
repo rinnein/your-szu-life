@@ -3,12 +3,18 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
-import { QuizPanel } from "./QuizPanel";
+import {
+  QuizPanel,
+  getQuizCacheKey,
+  loadQuizCache,
+  saveQuizCache,
+} from "./QuizPanel";
 import type { QuizState, UoocSnapshot } from "./types";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -20,6 +26,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   vi.unstubAllGlobals();
 });
 function quiz(): QuizState {
@@ -310,4 +317,160 @@ it("pops up execution flow modal when clicking 匹配题库", async () => {
     expect(screen.getByText(/题库平台比对/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "查看试卷与作答结果" })).toBeInTheDocument();
   });
+});
+
+it("automatically caches selected radio option to localStorage upon modification", () => {
+  const q = quiz();
+  const cacheKey = getQuizCacheKey(q.accountId, q.cid, q.taskId, q.resourceId);
+  expect(loadQuizCache(cacheKey)).toBeNull();
+
+  render(<QuizPanel quiz={q} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
+  fireEvent.click(screen.getByRole("radio", { name: "4" }));
+
+  expect(loadQuizCache(cacheKey)).toEqual({ q1: ["a"] });
+});
+
+it("automatically caches multiple choice checkboxes to localStorage upon modification", () => {
+  const multiQuiz: QuizState = {
+    ...quiz(),
+    questions: [
+      {
+        id: "q_multi",
+        text: "下列哪些属于偶数？",
+        kind: "multiple",
+        options: [
+          { id: "a", text: "2" },
+          { id: "b", text: "3" },
+          { id: "c", text: "4" },
+        ],
+        blanks: 0,
+        images: [],
+      },
+    ],
+    answers: { q_multi: ["a"] },
+  };
+  const cacheKey = getQuizCacheKey(
+    multiQuiz.accountId,
+    multiQuiz.cid,
+    multiQuiz.taskId,
+    multiQuiz.resourceId,
+  );
+
+  render(<QuizPanel quiz={multiQuiz} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
+  fireEvent.click(screen.getByRole("checkbox", { name: "4" }));
+
+  const cached = loadQuizCache(cacheKey);
+  expect(cached?.q_multi).toContain("a");
+  expect(cached?.q_multi).toContain("c");
+});
+
+it("automatically caches fill-in-the-blank text to localStorage upon modification", () => {
+  const textQuiz: QuizState = {
+    ...quiz(),
+    questions: [
+      {
+        id: "q_text",
+        text: "中国的首都是______。",
+        kind: "text",
+        options: [],
+        blanks: 1,
+        images: [],
+      },
+    ],
+    answers: {},
+  };
+  const cacheKey = getQuizCacheKey(
+    textQuiz.accountId,
+    textQuiz.cid,
+    textQuiz.taskId,
+    textQuiz.resourceId,
+  );
+
+  render(<QuizPanel quiz={textQuiz} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
+  const textarea = screen.getByRole("textbox");
+  fireEvent.change(textarea, { target: { value: "北京" } });
+
+  expect(loadQuizCache(cacheKey)).toEqual({ q_text: ["北京"] });
+});
+
+it("restores cached answers from localStorage on mount", () => {
+  const q = quiz();
+  const cacheKey = getQuizCacheKey(q.accountId, q.cid, q.taskId, q.resourceId);
+  saveQuizCache(cacheKey, { q1: ["a"] });
+
+  render(<QuizPanel quiz={q} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
+  const radioA = screen.getByRole("radio", { name: /4/ });
+  expect(radioA).toBeChecked();
+});
+
+it("manually clicking 保存答案草稿 saves answers to server", async () => {
+  const q = quiz();
+  vi.mocked(invoke).mockResolvedValue(response({ ...q, revision: 8, answers: { q1: ["a"] } }));
+
+  render(<QuizPanel quiz={q} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
+  fireEvent.click(screen.getByRole("radio", { name: "4" }));
+  fireEvent.click(screen.getByRole("button", { name: "保存答案草稿" }));
+
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("save_uooc_quiz_answers", {
+      cid: "42",
+      revision: 7,
+      answers: { q1: ["a"] },
+    }),
+  );
+});
+
+it("automatically saves answers to server when modal closes (unmount) if answers were modified", async () => {
+  const q = quiz();
+  vi.mocked(invoke).mockResolvedValue(response({ ...q, revision: 8, answers: { q1: ["a"] } }));
+
+  const { unmount } = render(
+    <QuizPanel quiz={q} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />,
+  );
+
+  // Modify option
+  fireEvent.click(screen.getByRole("radio", { name: "4" }));
+  expect(invoke).not.toHaveBeenCalledWith("save_uooc_quiz_answers", expect.anything());
+
+  // Modal closes (unmount)
+  unmount();
+
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("save_uooc_quiz_answers", {
+      cid: "42",
+      revision: 7,
+      answers: { q1: ["a"] },
+    }),
+  );
+});
+
+it("does not save to server on unmount if answers were not modified", () => {
+  const q = quiz();
+  const { unmount } = render(
+    <QuizPanel quiz={q} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />,
+  );
+
+  unmount();
+
+  expect(invoke).not.toHaveBeenCalledWith("save_uooc_quiz_answers", expect.anything());
+});
+
+it("calls onClose when clicking 关闭 button", () => {
+  const q = quiz();
+  const onClose = vi.fn();
+  render(
+    <QuizPanel
+      quiz={q}
+      active={false}
+      dryRun={false}
+      weight={20}
+      onSnapshot={vi.fn()}
+      onClose={onClose}
+    />,
+  );
+
+  const closeBtn = screen.getByRole("button", { name: "关闭" });
+  fireEvent.click(closeBtn);
+
+  expect(onClose).toHaveBeenCalled();
 });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -25,20 +25,120 @@ import {
 import { DimmedHtmlText } from "./DimmedHtmlText";
 import type { AiSessionEntry, QuizAnswers, QuizQuestion, QuizState, UoocSnapshot } from "./types";
 
+export function getQuizCacheKey(
+  accountId?: string,
+  cid?: string,
+  taskId?: string,
+  resourceId?: string,
+): string {
+  return `uooc_quiz_cache_${accountId || "anon"}_${cid || "unknown"}_${taskId || resourceId || "default"}`;
+}
+
+export function loadQuizCache(key: string): QuizAnswers | null {
+  try {
+    if (typeof localStorage === "undefined") return null;
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as QuizAnswers;
+  } catch {
+    return null;
+  }
+}
+
+export function saveQuizCache(key: string, answers: QuizAnswers): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(key, JSON.stringify(answers));
+  } catch {
+    // Ignore quota or private mode errors
+  }
+}
+
+export function clearQuizCache(key: string): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.removeItem(key);
+  } catch {
+    // Ignore
+  }
+}
+
+export function sanitizeAnswersForDraft(
+  questions: QuizQuestion[],
+  answers: QuizAnswers,
+): QuizAnswers {
+  const result: QuizAnswers = {};
+  for (const q of questions) {
+    const vals = answers[q.id];
+    if (!vals || vals.length === 0) continue;
+    if (q.kind === "text") {
+      if (vals.length === q.blanks && vals.every((v) => v.trim().length > 0)) {
+        result[q.id] = vals;
+      }
+    } else {
+      const valid = vals
+        .map((v) => {
+          const found = q.options.find(
+            (o) =>
+              o.id === v ||
+              o.id.toLowerCase() === v.toLowerCase() ||
+              o.text.trim() === v.trim(),
+          );
+          return found ? found.id : v;
+        })
+        .filter((v) => q.options.some((o) => o.id === v));
+      if (valid.length > 0) {
+        if (q.kind === "single" && valid.length === 1) {
+          result[q.id] = valid;
+        } else if (q.kind === "multiple") {
+          result[q.id] = valid;
+        }
+      }
+    }
+  }
+  return result;
+}
+
+export function hasAnswersDifferences(a: QuizAnswers, b: QuizAnswers): boolean {
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return true;
+  for (const k of keysA) {
+    const arrA = a[k] ?? [];
+    const arrB = b[k] ?? [];
+    if (arrA.length !== arrB.length) return true;
+    for (let i = 0; i < arrA.length; i++) {
+      if (arrA[i] !== arrB[i]) return true;
+    }
+  }
+  return false;
+}
+
 export function QuizPanel({
   quiz,
   dryRun,
   weight,
   onSnapshot,
   active,
+  onClose,
 }: {
   quiz: QuizState;
   dryRun: boolean;
   weight?: number | null;
   onSnapshot: (v: UoocSnapshot) => void;
   active: boolean;
+  onClose?: () => void;
 }) {
-  const [answers, setAnswers] = useState<QuizAnswers>(quiz.answers);
+  const cacheKey = getQuizCacheKey(quiz.accountId, quiz.cid, quiz.taskId, quiz.resourceId);
+  const [answers, setAnswers] = useState<QuizAnswers>(() => {
+    if (quiz.stage !== "passed") {
+      const cached = loadQuizCache(cacheKey);
+      if (cached && Object.keys(cached).length > 0) {
+        return { ...quiz.answers, ...cached };
+      }
+    }
+    return quiz.answers;
+  });
   const [busy, setBusy] = useState(false);
   const [manual, setManual] = useState(false);
   const [actionModal, setActionModal] = useState<{
@@ -50,6 +150,27 @@ export function QuizPanel({
   } | null>(null);
 
   const [liveSessions, setLiveSessions] = useState<AiSessionEntry[]>(quiz.aiSessions ?? []);
+
+  const isDirtyRef = useRef(false);
+  const submittedRef = useRef(false);
+  const answersRef = useRef(answers);
+  answersRef.current = answers;
+  const quizRef = useRef(quiz);
+  quizRef.current = quiz;
+  const revisionRef = useRef(quiz.revision);
+  useEffect(() => {
+    revisionRef.current = quiz.revision;
+  }, [quiz.revision]);
+  const weightRef = useRef(weight);
+  useEffect(() => {
+    weightRef.current = weight;
+  }, [weight]);
+  const onSnapshotRef = useRef(onSnapshot);
+  useEffect(() => {
+    onSnapshotRef.current = onSnapshot;
+  }, [onSnapshot]);
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
 
   useEffect(() => {
     if (quiz.aiSessions && quiz.aiSessions.length > 0) {
@@ -81,7 +202,15 @@ export function QuizPanel({
 
   // 监听 quiz 变化，自动将答案值规范化为对应选项的 option.id；若未作答但有题库或 AI 推荐答案，自动完成选中
   useEffect(() => {
-    const nextAnswers: QuizAnswers = { ...quiz.answers };
+    const isPassed = quiz.stage === "passed";
+    const cached = !isPassed ? loadQuizCache(cacheKey) : null;
+    const baseAnswers: QuizAnswers =
+      cached && Object.keys(cached).length > 0
+        ? { ...quiz.answers, ...cached }
+        : { ...quiz.answers };
+    const nextAnswers: QuizAnswers = { ...baseAnswers };
+    let hasAutoSelected = false;
+
     for (const q of quiz.questions) {
       const curr = nextAnswers[q.id];
       if (curr && curr.length > 0) {
@@ -114,6 +243,7 @@ export function QuizPanel({
             return found ? found.id : ans;
           });
           nextAnswers[q.id] = stdMapped;
+          hasAutoSelected = true;
         } else {
           // 自动选择 2：自动选中 AI 判定的推荐答案
           const aiRev = quiz.reviews.find(
@@ -133,12 +263,52 @@ export function QuizPanel({
               return found ? found.id : ans;
             });
             nextAnswers[q.id] = aiMapped;
+            hasAutoSelected = true;
           }
         }
       }
     }
     setAnswers(nextAnswers);
-  }, [quiz.revision, quiz.answers, quiz.reviews, quiz.questions]);
+
+    if (!isPassed) {
+      if (cached && hasAnswersDifferences(cached, quiz.answers)) {
+        isDirtyRef.current = true;
+      }
+      if (hasAutoSelected) {
+        saveQuizCache(cacheKey, nextAnswers);
+      }
+    }
+  }, [quiz.revision, quiz.answers, quiz.reviews, quiz.questions, cacheKey, quiz.stage]);
+
+  // 当 modal 关闭时（组件卸载），若答案有更新且未提交，自动执行服务端保存
+  useEffect(() => {
+    return () => {
+      if (submittedRef.current) return;
+      if (busyRef.current) return;
+      const currentQuiz = quizRef.current;
+      if (!currentQuiz) return;
+      if (currentQuiz.stage === "passed") return;
+      if (currentQuiz.questions.length === 0) return;
+      if (!(typeof weightRef.current === "number" && weightRef.current > 0)) return;
+      if (!isDirtyRef.current) return;
+
+      const currentAnswers = answersRef.current;
+      const sanitized = sanitizeAnswersForDraft(currentQuiz.questions, currentAnswers);
+
+      void invoke<UoocSnapshot>("save_uooc_quiz_answers", {
+        cid: currentQuiz.cid,
+        revision: revisionRef.current,
+        answers: sanitized,
+      })
+        .then((state) => {
+          if (state) {
+            onSnapshotRef.current?.(state);
+            toast.success("测验草稿已自动保存");
+          }
+        })
+        .catch(() => {});
+    };
+  }, []);
 
   const running =
     active && ["preparing", "generating", "submitting", "verifying"].includes(quiz.stage);
@@ -160,7 +330,7 @@ export function QuizPanel({
   const control = async (action: "generate" | "check" | "matchQa") => {
     const nextSnapshot = await invoke<UoocSnapshot>("control_uooc_quiz", {
       cid: quiz.cid,
-      revision: quiz.revision,
+      revision: revisionRef.current,
       action,
     });
     onSnapshot(nextSnapshot);
@@ -168,7 +338,9 @@ export function QuizPanel({
       (q) => q.accountId === quiz.accountId && q.cid === quiz.cid,
     );
     if (nextQuiz) {
+      revisionRef.current = nextQuiz.revision;
       setAnswers(nextQuiz.answers);
+      saveQuizCache(cacheKey, nextQuiz.answers);
       if (nextQuiz.aiSessions && nextQuiz.aiSessions.length > 0) {
         setLiveSessions(nextQuiz.aiSessions);
       }
@@ -177,18 +349,35 @@ export function QuizPanel({
   };
 
   const save = async () => {
+    const sanitized = sanitizeAnswersForDraft(quiz.questions, answers);
     const state = await invoke<UoocSnapshot>("save_uooc_quiz_answers", {
       cid: quiz.cid,
-      revision: quiz.revision,
-      answers,
+      revision: revisionRef.current,
+      answers: sanitized,
     });
-    onSnapshot(state);
-    return Object.values(state.quizzes ?? {}).find(
-      (q) => q.accountId === quiz.accountId && q.cid === quiz.cid,
-    );
+    isDirtyRef.current = false;
+    saveQuizCache(cacheKey, answers);
+    if (state) {
+      onSnapshot(state);
+      const updated = Object.values(state?.quizzes ?? {}).find(
+        (q) => q.accountId === quiz.accountId && q.cid === quiz.cid,
+      );
+      if (updated) {
+        revisionRef.current = updated.revision;
+      }
+      return updated;
+    }
+    return undefined;
   };
 
-  const set = (id: string, values: string[]) => setAnswers((old) => ({ ...old, [id]: values }));
+  const set = (id: string, values: string[]) => {
+    setAnswers((old) => {
+      const next = { ...old, [id]: values };
+      saveQuizCache(cacheKey, next);
+      isDirtyRef.current = true;
+      return next;
+    });
+  };
 
   const handleActionWithModal = async (
     action: "matchQa" | "generate" | "submit",
@@ -201,14 +390,21 @@ export function QuizPanel({
     await run(async () => {
       let nextSnapshot: UoocSnapshot | undefined;
       if (action === "submit") {
-        const saved = await save();
-        if (!saved) throw new Error("草稿已失效");
-        nextSnapshot = await invoke<UoocSnapshot>("control_uooc_quiz", {
-          cid: quiz.cid,
-          revision: saved.revision,
-          action: "submit",
-        });
-        onSnapshot(nextSnapshot);
+        submittedRef.current = true;
+        try {
+          const saved = await save();
+          if (!saved) throw new Error("草稿已失效");
+          nextSnapshot = await invoke<UoocSnapshot>("control_uooc_quiz", {
+            cid: quiz.cid,
+            revision: saved.revision,
+            action: "submit",
+          });
+          onSnapshot(nextSnapshot);
+          clearQuizCache(cacheKey);
+        } catch (e) {
+          submittedRef.current = false;
+          throw e;
+        }
       } else {
         nextSnapshot = await control(action);
       }
@@ -729,6 +925,11 @@ export function QuizPanel({
           >
             我已在官网处理，检查并继续
           </Button>
+          {onClose && (
+            <Button variant="tertiary" onPress={onClose}>
+              关闭
+            </Button>
+          )}
         </Modal.Footer>
       )}
 
