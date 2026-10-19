@@ -215,13 +215,6 @@ pub(crate) struct QaBatchUploadResponse {
     pub results: Vec<QaUploadActionResult>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-struct AnonymousKeyResponse {
-    pub ok: bool,
-    #[serde(rename = "apiKey")]
-    pub api_key: Option<String>,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LocalBankAnswer {
@@ -856,16 +849,23 @@ pub(crate) async fn ensure_api_key(server_url: &str, stored_key: Option<&str>) -
     let auth_base = resolve_auth_base(server_url);
     let url = format!("{auth_base}/anonymous-key");
     let client = http_client().ok()?;
-    let resp = client.post(&url).send().await.ok()?;
+    let resp = client
+        .post(&url)
+        .header("content-type", "application/json")
+        .body("{}")
+        .send()
+        .await
+        .ok()?;
     if !resp.status().is_success() {
         return None;
     }
-    let data = resp.json::<AnonymousKeyResponse>().await.ok()?;
-    if data.ok {
-        data.api_key
-    } else {
-        None
-    }
+    let data = resp.json::<serde_json::Value>().await.ok()?;
+    data.get("apiKey")
+        .or_else(|| data.get("key"))
+        .or_else(|| data.get("token"))
+        .or_else(|| data.get("data").and_then(|d| d.get("apiKey").or_else(|| d.get("key"))))
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
 }
 
 /// Query QA platform for questions and known answers of a task group.

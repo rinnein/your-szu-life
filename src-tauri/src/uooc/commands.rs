@@ -241,7 +241,7 @@ pub(crate) async fn download_uooc_qa_vectors(
     let url = server_url
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
-    let api_key = service.qa_api_key().await;
+    let api_key = service.qa_api_key_for_server(Some(&url)).await;
     let cids: Vec<String> = service
         .snapshot()
         .courses
@@ -262,7 +262,7 @@ pub(crate) async fn search_uooc_qa_questions(
     let url = server_url
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
-    let api_key = service.qa_api_key().await;
+    let api_key = service.qa_api_key_for_server(Some(&url)).await;
     super::quiz::qa::search_questions_with_local_embedding(
         &cache_path,
         &url,
@@ -283,7 +283,7 @@ pub(crate) async fn sync_uooc_qa_bank(
     let url = server_url
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
-    let api_key = service.qa_api_key().await;
+    let api_key = service.qa_api_key_for_server(Some(&url)).await;
     super::quiz::qa::sync_missing_to_server(&bank_path, &url, api_key.as_deref(), None, None, Some(&service)).await
 }
 
@@ -296,7 +296,7 @@ pub(crate) async fn get_uooc_qa_account_status(
     let url = server_url
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
-    let api_key = service.qa_api_key().await;
+    let api_key = service.qa_api_key_for_server(Some(&url)).await;
     super::quiz::qa::get_qa_account_status(&url, api_key.as_deref()).await
 }
 
@@ -353,7 +353,7 @@ pub(crate) async fn upload_all_uooc_qa_bank(
     let url = server_url
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
-    let api_key = service.qa_api_key().await;
+    let api_key = service.qa_api_key_for_server(Some(&url)).await;
     super::quiz::qa::upload_all_local_bank(&bank_path, &url, api_key.as_deref(), Some(&service)).await
 }
 

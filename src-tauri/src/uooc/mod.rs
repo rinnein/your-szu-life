@@ -388,12 +388,16 @@ impl Service {
         Ok(())
     }
     pub(crate) async fn qa_api_key(&self) -> Option<String> {
+        self.qa_api_key_for_server(None).await
+    }
+    pub(crate) async fn qa_api_key_for_server(&self, server: Option<&str>) -> Option<String> {
         let (server_url, key) = {
             let r = self.runtime.lock().unwrap();
-            (
-                r.snapshot.settings.qa_server_url.clone(),
-                r.qa_api_key.clone(),
-            )
+            let target = server
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| r.snapshot.settings.qa_server_url.clone());
+            (target, r.qa_api_key.clone())
         };
         if let Some(key) = &key {
             if !key.trim().is_empty() {

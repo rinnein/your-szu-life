@@ -215,7 +215,10 @@ export function UoocQaSettings({
       ]);
       setVectorStatus(vStatus);
       if (aStatus) {
-        setAccountStatus(aStatus);
+        setAccountStatus((prev) => ({
+          ...aStatus,
+          apiKey: aStatus.apiKey || prev?.apiKey || customApiKey.trim() || undefined,
+        }));
         if (aStatus.apiKey) setCustomApiKey(aStatus.apiKey);
       }
     } catch (e: unknown) {
@@ -242,6 +245,18 @@ export function UoocQaSettings({
   useEffect(() => {
     void refreshStatus();
   }, [qaServerUrl]);
+
+  useEffect(() => {
+    const onFocus = () => {
+      if (!accountStatus?.canOverwrite) {
+        void refreshStatus();
+      }
+    };
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [qaServerUrl, accountStatus?.canOverwrite]);
 
   useEffect(() => {
     void refreshLocalQuestions();
@@ -512,11 +527,36 @@ export function UoocQaSettings({
     }
   };
 
-  const handleOpenLogin = () => {
+  const handleOpenLogin = async () => {
     const base = (qaServerUrl || "http://localhost:4321").replace(/\/+$/, "");
-    const keyParam = accountStatus?.apiKey
-      ? `?apiKey=${encodeURIComponent(accountStatus.apiKey)}`
-      : "";
+    let key = accountStatus?.apiKey || customApiKey.trim() || undefined;
+
+    if (!key) {
+      try {
+        const next = await invoke<QaAccountStatus>("get_uooc_qa_account_status", {
+          serverUrl: qaServerUrl,
+        });
+        if (next?.apiKey) {
+          key = next.apiKey;
+          setAccountStatus((prev) => ({
+            ...(prev || next),
+            ...next,
+            apiKey: next.apiKey,
+          }));
+          setCustomApiKey(next.apiKey);
+        }
+      } catch {
+        // 忽略网络或调用异常
+      }
+    }
+
+    if (!key) {
+      toast.warning(
+        "未能自动获取到题库凭据，已直接打开登录页面。若需认证请确认题库服务正常后重试。",
+      );
+    }
+
+    const keyParam = key ? `?apiKey=${encodeURIComponent(key)}` : "";
     const loginUrl = `${base}/login${keyParam}`;
     void openPublicUrl(loginUrl);
   };
@@ -622,8 +662,12 @@ export function UoocQaSettings({
           item.questionId.toLowerCase().includes(qText) ||
           item.tid.toLowerCase().includes(qText) ||
           item.cid.toLowerCase().includes(qText) ||
-          (item.correctAnswers && item.correctAnswers.some((a) => a.toLowerCase().includes(qText))) ||
-          (item.answers && item.answers.some((a) => (a.values || []).some((v) => String(v).toLowerCase().includes(qText)))),
+          (item.correctAnswers &&
+            item.correctAnswers.some((a) => a.toLowerCase().includes(qText))) ||
+          (item.answers &&
+            item.answers.some((a) =>
+              (a.values || []).some((v) => String(v).toLowerCase().includes(qText)),
+            )),
       );
     }
     return list;
@@ -770,7 +814,11 @@ export function UoocQaSettings({
             </p>
 
             <div className="flex flex-wrap items-center gap-2 pt-1">
-              <Button variant="primary" isDisabled={disabled} onPress={handleOpenLogin}>
+              <Button
+                variant="primary"
+                isDisabled={disabled}
+                onPress={() => void handleOpenLogin()}
+              >
                 <LuExternalLink aria-hidden="true" />
                 {accountStatus?.canOverwrite ? "个人中心" : "认证账号"}
               </Button>

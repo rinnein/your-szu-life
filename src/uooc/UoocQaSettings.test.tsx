@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "@heroui/react";
 import { UoocQaSettings, type EmbeddingVectorStatus, type QaAccountStatus } from "./UoocQaSettings";
 import { getQaAuthClient } from "./qaAuthClient";
+import { openPublicUrl } from "../app-content/external";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
@@ -405,4 +406,55 @@ it("allows clearing local question bank when debugEnabled is true", async () => 
 
   await waitFor(() => expect(invoke).toHaveBeenCalledWith("clear_uooc_local_bank"));
   await waitFor(() => expect(successSpy).toHaveBeenCalledWith("已清空本地题库（共清除 1 道题目）"));
+});
+
+it("injects apikey parameter when opening auth login website with existing account status key", async () => {
+  render(<UoocQaSettings qaServerUrl="http://localhost:4321" />);
+  const authBtn = await screen.findByRole("button", { name: "认证账号" });
+  fireEvent.click(authBtn);
+
+  await waitFor(() => {
+    expect(openPublicUrl).toHaveBeenCalledWith(
+      "http://localhost:4321/login?apiKey=uooc_anon_12345",
+    );
+  });
+});
+
+it("dynamically fetches apikey when initial account status has no key upon clicking auth login", async () => {
+  const emptyAccount: QaAccountStatus = {
+    apiKey: null,
+    isAnonymous: true,
+    userId: null,
+    userName: null,
+    permissionLevel: "unregistered",
+    canOverwrite: false,
+  };
+  const dynamicallyEnsuredAccount: QaAccountStatus = {
+    apiKey: "uooc_new_dynamic_anon_key",
+    isAnonymous: true,
+    userId: null,
+    userName: null,
+    permissionLevel: "anonymous",
+    canOverwrite: false,
+  };
+
+  let callCount = 0;
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "get_uooc_embedding_status") return initialStatus;
+    if (command === "get_uooc_qa_account_status") {
+      callCount++;
+      return callCount === 1 ? emptyAccount : dynamicallyEnsuredAccount;
+    }
+    return undefined;
+  });
+
+  render(<UoocQaSettings qaServerUrl="https://qa.local" />);
+  const authBtn = await screen.findByRole("button", { name: "认证账号" });
+  fireEvent.click(authBtn);
+
+  await waitFor(() => {
+    expect(openPublicUrl).toHaveBeenCalledWith(
+      "https://qa.local/login?apiKey=uooc_new_dynamic_anon_key",
+    );
+  });
 });
