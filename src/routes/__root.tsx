@@ -10,6 +10,7 @@ import { OjCompanionBridge } from "../oj/OjCompanionBridge";
 import { OjProgressBridge } from "../oj/OjProgressBridge";
 import { OjNotifications } from "../oj/OjNotifications";
 import { QuizNotifications } from "../uooc/QuizNotifications";
+import { CommandPalette } from "../command-palette";
 
 if (typeof window !== "undefined") {
   if (typeof window.matchMedia !== "function") {
@@ -47,6 +48,7 @@ export const Route = createRootRoute({
             <OjNotifications />
             <OjProgressBridge />
             <OjCompanionBridge />
+            <CommandPalette />
             <Outlet />
             <UpdateNotice />
           </AuthProvider>

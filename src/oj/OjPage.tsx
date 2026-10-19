@@ -57,6 +57,18 @@ export default function OjPage() {
   useEffect(() => {
     if (!isOverview) setConfigurationOpen(false);
   }, [isOverview]);
+  useEffect(() => {
+    if (search.site && search.group) {
+      try {
+        localStorage.setItem(
+          "oj_last_visited",
+          JSON.stringify({ siteId: search.site, groupId: search.group }),
+        );
+      } catch {
+        // ignore
+      }
+    }
+  }, [search.site, search.group]);
   const refresh = useCallback(
     async () => setSnapshot(await invoke<Snapshot>("get_oj_snapshot")),
     [],

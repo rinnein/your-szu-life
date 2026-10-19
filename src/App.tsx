@@ -3,7 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { type NavigateOptions } from "@tanstack/react-router";
-import { Alert, AlertDialog, Button, Card, Dropdown, Spinner } from "@heroui/react";
+import { Alert, AlertDialog, Button, Card, Dropdown, Kbd, Spinner } from "@heroui/react";
+import { LuSearch } from "react-icons/lu";
+import { openCommandPalette } from "./command-palette";
 import { authFailureFor, useAuth } from "./auth";
 import { ProfileForm } from "./ProfileForm";
 import { BrandMark, PageShell, Section } from "./components";
@@ -356,6 +358,27 @@ export default function App() {
             </Dropdown.Popover>
           </Dropdown>
         </header>
+
+        <div>
+          <Button
+            variant="outline"
+            className="w-full justify-between text-muted hover:text-foreground h-11 px-3.5 bg-default-100/50 border-default-200"
+            onPress={() => openCommandPalette()}
+            aria-label="打开命令面板快捷搜索"
+          >
+            <span className="flex items-center gap-2.5 text-sm">
+              <LuSearch className="size-4 text-primary" aria-hidden="true" />
+              <span>搜索功能或输入快捷指令</span>
+            </span>
+            <span className="hidden sm:inline-flex items-center gap-1">
+              <Kbd>
+                <Kbd.Abbr keyValue="command" />
+                <Kbd.Abbr keyValue="shift" />
+                <Kbd.Content>P</Kbd.Content>
+              </Kbd>
+            </span>
+          </Button>
+        </div>
 
         <AnnouncementBoard />
 

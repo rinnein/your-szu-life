@@ -82,14 +82,15 @@ describe("SettingsPage multi-tab and unified local model card", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders 4 tabs and defaults to 个人信息 without privacy storage card", async () => {
+  it("renders 5 tabs and defaults to 个人信息 without privacy storage card", async () => {
     renderRouterApp("/settings");
 
-    // Check all 4 tabs exist
+    // Check all 5 tabs exist
     expect(await screen.findByRole("tab", { name: /个人信息/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /本地模型/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /AI配置/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /设置迁移/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /快捷键/ })).toBeInTheDocument();
 
     // Default tab shows ProfileForm
     expect(screen.getByText("确认账户资料")).toBeInTheDocument();
@@ -143,6 +144,27 @@ describe("SettingsPage multi-tab and unified local model card", () => {
 
     expect(await screen.findByText("加密导出")).toBeInTheDocument();
     expect(screen.getByText("导入到此设备")).toBeInTheDocument();
+  });
+
+  it("switches to 快捷键 tab and displays ShortcutsTable", async () => {
+    const { testRouter } = renderRouterApp("/settings");
+
+    await screen.findByRole("tab", { name: /快捷键/ });
+    fireEvent.click(screen.getByRole("tab", { name: /快捷键/ }));
+
+    await waitFor(() => {
+      expect(testRouter.state.location.search).toMatchObject({ tab: "shortcuts" });
+    });
+
+    expect(await screen.findByText("命令面板快捷指令对照表")).toBeInTheDocument();
+    expect(screen.getByText("上课时间表")).toBeInTheDocument();
+    expect(screen.getByText("OJ首页")).toBeInTheDocument();
+    expect(screen.getByText("最近班级测验")).toBeInTheDocument();
+    expect(screen.getByText("UOOC任务tab")).toBeInTheDocument();
+    expect(screen.getByText("校园网登录页面")).toBeInTheDocument();
+    expect(screen.getByText("校园卡tab")).toBeInTheDocument();
+    expect(screen.getByText("查电量tab")).toBeInTheDocument();
+    expect(screen.getByText("充电费tab")).toBeInTheDocument();
   });
 
   it("direct navigation to /settings?focus=ocr opens the 本地模型 tab directly", async () => {

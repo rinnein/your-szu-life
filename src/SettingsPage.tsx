@@ -2,13 +2,14 @@ import { useLogicalNavigation } from "./logical-navigation";
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Tabs } from "@heroui/react";
-import { LuArrowUpDown, LuCpu, LuSparkles, LuUser } from "react-icons/lu";
+import { LuArrowUpDown, LuCpu, LuKeyboard, LuSparkles, LuUser } from "react-icons/lu";
 import { ProfileForm } from "./ProfileForm";
 import { ModuleHeader, PageShell } from "./components";
 import { useAuth } from "./auth";
 import AiConnectionSettings from "./AiConnectionSettings";
 import SettingsTransfer from "./SettingsTransfer";
 import { LocalModelsSettings } from "./LocalModelSettings";
+import { ShortcutsTable } from "./command-palette";
 import { useSearch } from "@tanstack/react-router";
 import type { SettingsTab } from "./routes/settings";
 
@@ -68,6 +69,11 @@ export default function SettingsPage() {
                 设置迁移
                 <Tabs.Indicator />
               </Tabs.Tab>
+              <Tabs.Tab id="shortcuts" className="flex items-center gap-2">
+                <LuKeyboard aria-hidden="true" className="size-4" />
+                快捷键
+                <Tabs.Indicator />
+              </Tabs.Tab>
             </Tabs.List>
           </Tabs.ListContainer>
 
@@ -92,6 +98,10 @@ export default function SettingsPage() {
 
           <Tabs.Panel id="transfer" className="grid gap-6 pt-4">
             <SettingsTransfer />
+          </Tabs.Panel>
+
+          <Tabs.Panel id="shortcuts" className="grid gap-6 pt-4">
+            <ShortcutsTable />
           </Tabs.Panel>
         </Tabs>
       </div>
