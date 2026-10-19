@@ -1,4 +1,6 @@
 # Maintainer: rinnein
+# GCC LTO objects from bundled C libraries cannot be linked by Rust's LLD.
+options=('!lto')
 pkgname=your-szu-life-git
 pkgver=r1.g0000000
 pkgrel=1
