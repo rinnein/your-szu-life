@@ -3,12 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
-import {
-  QuizPanel,
-  getQuizCacheKey,
-  loadQuizCache,
-  saveQuizCache,
-} from "./QuizPanel";
+import { QuizPanel, getQuizCacheKey, loadQuizCache, saveQuizCache } from "./QuizPanel";
 import type { QuizState, UoocSnapshot } from "./types";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
@@ -195,7 +190,9 @@ it("allows clicking 查看测验 to force fetch completed quiz when quiz is pass
 });
 
 it("displays question type chip, option label badges beside options and no bottom annotation", () => {
-  render(<QuizPanel quiz={quiz()} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
+  render(
+    <QuizPanel quiz={quiz()} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />,
+  );
 
   // 1. Question type chip
   expect(screen.getByText("单选题")).toBeInTheDocument();
@@ -230,7 +227,9 @@ it("displays 标准答案 and 排除答案 beside options and selection modifica
     ],
   };
 
-  render(<QuizPanel quiz={matchedQuiz} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
+  render(
+    <QuizPanel quiz={matchedQuiz} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />,
+  );
 
   // Option A displays 标准答案, Option B displays 排除答案
   expect(screen.getByText("标准答案")).toBeInTheDocument();
@@ -261,7 +260,9 @@ it("automatically selects option when bank matches standard answer even if answe
     ],
   };
 
-  render(<QuizPanel quiz={matchedQuiz} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
+  render(
+    <QuizPanel quiz={matchedQuiz} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />,
+  );
 
   // Option A automatically displays 标准答案 AND 已选
   expect(screen.getByText("标准答案")).toBeInTheDocument();
@@ -313,7 +314,15 @@ it("correctly displays student answers and exclusions without falsifying wrong o
     ],
   };
 
-  render(<QuizPanel quiz={passedQuizWithWrongs} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
+  render(
+    <QuizPanel
+      quiz={passedQuizWithWrongs}
+      active={false}
+      dryRun={false}
+      weight={20}
+      onSnapshot={vi.fn()}
+    />,
+  );
 
   // 1. Overall score in message
   expect(screen.getByText("测验已完成，得分：70.00 / 100.00 分")).toBeInTheDocument();
@@ -336,8 +345,8 @@ it("pops up execution flow modal with AI session when clicking AI 答题", async
         questionIds: ["q1"],
         questionTitles: ["2+2?"],
         model: "gpt-4o-mini",
-        prompt: "{\"question\": \"2+2?\"}",
-        response: "{\"answers\": {\"q1\": [\"a\"]}}",
+        prompt: '{"question": "2+2?"}',
+        response: '{"answers": {"q1": ["a"]}}',
         answers: { q1: ["a"] },
         status: "completed",
       },
@@ -354,8 +363,8 @@ it("pops up execution flow modal with AI session when clicking AI 答题", async
     expect(screen.getByText("AI 智能答题流程")).toBeInTheDocument();
     expect(screen.getByText(/AI 会话调用 Session/)).toBeInTheDocument();
     expect(screen.getByText(/模型: gpt-4o-mini/)).toBeInTheDocument();
-    expect(screen.getByText("{\"question\": \"2+2?\"}")).toBeInTheDocument();
-    expect(screen.getByText("{\"answers\": {\"q1\": [\"a\"]}}")).toBeInTheDocument();
+    expect(screen.getByText('{"question": "2+2?"}')).toBeInTheDocument();
+    expect(screen.getByText('{"answers": {"q1": ["a"]}}')).toBeInTheDocument();
   });
 });
 
@@ -412,7 +421,9 @@ it("automatically caches multiple choice checkboxes to localStorage upon modific
     multiQuiz.resourceId,
   );
 
-  render(<QuizPanel quiz={multiQuiz} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
+  render(
+    <QuizPanel quiz={multiQuiz} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />,
+  );
   fireEvent.click(screen.getByRole("checkbox", { name: "4" }));
 
   const cached = loadQuizCache(cacheKey);
@@ -442,7 +453,9 @@ it("automatically caches fill-in-the-blank text to localStorage upon modificatio
     textQuiz.resourceId,
   );
 
-  render(<QuizPanel quiz={textQuiz} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
+  render(
+    <QuizPanel quiz={textQuiz} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />,
+  );
   const textarea = screen.getByRole("textbox");
   fireEvent.change(textarea, { target: { value: "北京" } });
 
@@ -529,4 +542,151 @@ it("calls onClose when clicking 关闭 button", () => {
   fireEvent.click(closeBtn);
 
   expect(onClose).toHaveBeenCalled();
+});
+
+it("displays AI reasoning and explanation under question when review contains 理由/解析", () => {
+  const quizWithReasoning: QuizState = {
+    ...quiz(),
+    reviews: [
+      {
+        questionId: "q1",
+        answers: ["a"],
+        probabilities: {},
+        message:
+          "AI 模型 (deepseek-r1) 判定推荐答案\n理由/解析：根据微积分基本定理，连续函数必可积，故选A。",
+      },
+    ],
+  };
+
+  render(
+    <QuizPanel
+      quiz={quizWithReasoning}
+      active={false}
+      dryRun={false}
+      weight={20}
+      onSnapshot={vi.fn()}
+    />,
+  );
+  expect(screen.getByText(/AI 模型 \(deepseek-r1\) 判定推荐答案/)).toBeInTheDocument();
+  expect(screen.getByText(/理由\/解析：根据微积分基本定理/)).toBeInTheDocument();
+});
+
+it("accurately marks option badges and selects option when options contain HTML tags and bank/AI returns plain text", () => {
+  const htmlTaggedQuiz: QuizState = {
+    ...quiz(),
+    answers: {},
+    questions: [
+      {
+        id: "q_html",
+        text: "<p>下列关于微积分说法正确的是？</p>",
+        kind: "single",
+        options: [
+          { id: "A", text: "<p>连续函数一定可积</p>" },
+          { id: "B", text: "<span>可积函数一定连续</span>" },
+        ],
+        blanks: 0,
+        images: [],
+      },
+    ],
+    reviews: [
+      {
+        questionId: "q_html",
+        // Bank / AI returns plain text without HTML tags!
+        answers: ["连续函数一定可积"],
+        probabilities: {},
+        message: "题库命中标准答案",
+      },
+    ],
+  };
+
+  render(
+    <QuizPanel
+      quiz={htmlTaggedQuiz}
+      active={false}
+      dryRun={false}
+      weight={20}
+      onSnapshot={vi.fn()}
+    />,
+  );
+
+  // Option A with HTML tag <p> matches plain text "连续函数一定可积"
+  expect(screen.getByText("标准答案")).toBeInTheDocument();
+  expect(screen.getByText("已选")).toBeInTheDocument();
+  const radioA = screen.getByRole("radio", { name: /连续函数一定可积/ });
+  expect(radioA).toBeChecked();
+});
+
+it("automatically switches selected option to AI-judged answer upon AI judgment completion", async () => {
+  // Initially user had selected option "b" (or initial default)
+  const initialQuiz: QuizState = {
+    ...quiz(),
+    answers: { q1: ["b"] },
+    reviews: [],
+  };
+
+  // After AI judgment, AI review determines option "a" is the recommendation
+  const aiCompletedQuiz: QuizState = {
+    ...initialQuiz,
+    revision: 8,
+    answers: { q1: ["a"] },
+    reviews: [
+      {
+        questionId: "q1",
+        answers: ["a"],
+        probabilities: {},
+        message: "AI 模型 (deepseek-r1) 判定推荐答案",
+      },
+    ],
+  };
+
+  vi.mocked(invoke).mockResolvedValue(response(aiCompletedQuiz));
+
+  const onSnapshot = vi.fn();
+  const { rerender } = render(
+    <QuizPanel
+      quiz={initialQuiz}
+      active={false}
+      dryRun={false}
+      weight={20}
+      onSnapshot={onSnapshot}
+    />,
+  );
+
+  // Initially Option B is selected
+  const radioB = screen.getByRole("radio", { name: /5/ });
+  expect(radioB).toBeChecked();
+
+  // User clicks AI 答题
+  const aiBtn = screen.getByRole("button", { name: "AI 答题" });
+  fireEvent.click(aiBtn);
+
+  await waitFor(() => {
+    expect(invoke).toHaveBeenCalledWith("control_uooc_quiz", {
+      cid: "42",
+      revision: 7,
+      action: "generate",
+    });
+  });
+
+  // Re-render with the snapshot returned by AI
+  rerender(
+    <QuizPanel
+      quiz={aiCompletedQuiz}
+      active={false}
+      dryRun={false}
+      weight={20}
+      onSnapshot={onSnapshot}
+    />,
+  );
+
+  // Close the execution modal to return to the paper view
+  const viewResultBtn = await screen.findByRole("button", { name: "查看试卷与作答结果" });
+  fireEvent.click(viewResultBtn);
+
+  // Option A should now be automatically selected and marked with AI判定!
+  await waitFor(() => {
+    const radioA = screen.getByRole("radio", { name: /4/ });
+    expect(radioA).toBeChecked();
+    expect(screen.getByText("AI判定")).toBeInTheDocument();
+  });
 });

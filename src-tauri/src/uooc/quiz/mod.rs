@@ -479,11 +479,40 @@ async fn generate(
     let mut confirmed_correct_ids = HashSet::new();
     let mut wrong_options_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
-    // 先检查本地题库确认答案
+    // 1. 先从已有评测/作答记录搜集已排除的错误选项
+    for rev in &q.reviews {
+        if rev.message.contains("排除") {
+            let entry = wrong_options_map.entry(rev.question_id.clone()).or_default();
+            for ans in &rev.answers {
+                if !entry.contains(ans) {
+                    entry.push(ans.clone());
+                }
+            }
+        }
+    }
+
+    // 2. 先检查本地题库确认答案与排除选项
     let local_bank = qa::load_local_bank(&bank_path);
     for question in &q.questions {
         let key = qa::bank_key(&q.task_id, &question.id);
         if let Some(entry) = local_bank.get(&key) {
+            // 搜集本地题库中确认错误的选项
+            for a in &entry.answers {
+                if !a.is_correct {
+                    for v in &a.values {
+                        let w_str = match v {
+                            serde_json::Value::String(s) => s.clone(),
+                            serde_json::Value::Bool(b) => if *b { "A".into() } else { "B".into() },
+                            serde_json::Value::Number(n) => n.to_string(),
+                            other => other.to_string(),
+                        };
+                        let w_entry = wrong_options_map.entry(question.id.clone()).or_default();
+                        if !w_entry.contains(&w_str) {
+                            w_entry.push(w_str);
+                        }
+                    }
+                }
+            }
             if !entry.correct_answers.is_empty() {
                 let mapped = qa::map_answers_to_option_ids(&entry.correct_answers, &question.options);
                 let final_ans = if !mapped.is_empty() { mapped } else { entry.correct_answers.clone() };
@@ -501,11 +530,16 @@ async fn generate(
         }
     }
 
-    // 再比对远程题库返回的结果
+    // 3. 再比对远程题库返回的结果
     if let Ok(qa_qs) = qa::query_task_answers(&qa_url, qa_key.as_deref(), &q.task_id, Some(&ctx.cid)).await {
         let matched = qa::match_answers(&qa_qs, &q.questions);
         for (qid, wrongs) in matched.wrong_options {
-            wrong_options_map.insert(qid, wrongs);
+            let entry = wrong_options_map.entry(qid).or_default();
+            for w in wrongs {
+                if !entry.contains(&w) {
+                    entry.push(w);
+                }
+            }
         }
         for (qid, ans) in matched.matched_answers {
             confirmed_correct_ids.insert(qid.clone());

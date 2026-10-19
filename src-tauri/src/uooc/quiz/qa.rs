@@ -917,6 +917,310 @@ pub(crate) fn build_embedding_text(
     parts.join("\n")
 }
 
+// ─────────────────────────────────────────────────────────────
+// Rig Embedding 模型适配 (Local BGE 512 维向量适配器)
+// ─────────────────────────────────────────────────────────────
+
+use rig_core::driver::{Exchange, Local, Model, Opened, Opening, Step, Transport, DynModel};
+use rig_core::wire::Capabilities;
+use rig_core::embeddings::{Embedding, EmbeddingResponse};
+use rig_core::error::ProviderError;
+pub use rig_core::vector_store::in_memory_store::InMemoryVectorStore;
+use rusqlite::{params, Connection};
+
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LocalBgeEmbeddings;
+
+#[allow(dead_code)]
+pub type LocalBgeEmbeddingModel = Model<Local<rig_core::operation::Embedding>, LocalBgeEmbeddings>;
+
+#[allow(dead_code)]
+impl LocalBgeEmbeddings {
+    pub fn model() -> LocalBgeEmbeddingModel {
+        Model::new(
+            Local::new("local-bge").with_capabilities(Capabilities::embedding(256, EMBEDDING_DIMENSIONS)),
+            Self,
+        )
+    }
+
+    pub fn dyn_model() -> DynModel<rig_core::operation::Embedding> {
+        Self::model().erase()
+    }
+
+    pub fn embed(texts: Vec<String>) -> EmbeddingResponse {
+        let embeddings = texts
+            .into_iter()
+            .map(|text| {
+                let v_f32 = compute_local_embedding(&text);
+                let vec = v_f32.into_iter().map(|x| x as f64).collect();
+                Embedding {
+                    document: text,
+                    vec,
+                }
+            })
+            .collect();
+        EmbeddingResponse {
+            provider: "local-bge".to_owned(),
+            ..EmbeddingResponse::new(embeddings)
+        }
+    }
+}
+
+impl Transport<Local<rig_core::operation::Embedding>> for LocalBgeEmbeddings {
+    fn send(
+        &self,
+        texts: Vec<String>,
+        _exchange: Exchange,
+    ) -> Opening<Step<rig_core::operation::Embedding>> {
+        let response = Self::embed(texts);
+        Opening::ready(Opened::new(futures_util::stream::iter([
+            Ok::<_, ProviderError>(Step::End(response)),
+        ])))
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Rig In-Memory + SQLite 题库 RAG 文档与持久化
+// ─────────────────────────────────────────────────────────────
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionRagDocument {
+    pub question_id: String,
+    pub tid: Option<String>,
+    pub cid: Option<String>,
+    pub stem: String,
+    pub question_type: String,
+    pub options: Vec<String>,
+    pub answers: Vec<String>,
+}
+
+impl QuestionRagDocument {
+    pub fn to_embed_text(&self) -> String {
+        let opts = self.options.join("\n");
+        if opts.is_empty() {
+            self.stem.clone()
+        } else {
+            format!("{}\n选项：\n{}", self.stem, opts)
+        }
+    }
+}
+
+pub struct QuizQaBankDb(pub Connection);
+
+impl QuizQaBankDb {
+    pub fn open(db_path: &Path) -> Result<Self, String> {
+        let conn = Connection::open(db_path).map_err(|e| format!("无法打开题库 SQLite 数据库: {e}"))?;
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA synchronous=NORMAL;
+             CREATE TABLE IF NOT EXISTS quiz_qa_bank (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                 question_id TEXT NOT NULL UNIQUE,
+                 cid TEXT,
+                 tid TEXT,
+                 question_type TEXT NOT NULL,
+                 stem TEXT NOT NULL,
+                 stem_hash TEXT NOT NULL,
+                 options_json TEXT,
+                 answers_json TEXT NOT NULL,
+                 embedding_blob BLOB,
+                 updated_at_ms INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_qa_bank_hash ON quiz_qa_bank(stem_hash);
+             CREATE INDEX IF NOT EXISTS idx_qa_bank_cid ON quiz_qa_bank(cid);
+             CREATE INDEX IF NOT EXISTS idx_qa_bank_tid ON quiz_qa_bank(tid);"
+        ).map_err(|e| format!("无法初始化题库表结构: {e}"))?;
+        Ok(Self(conn))
+    }
+
+    pub fn upsert_question(
+        &self,
+        q: &LocalBankQuestion,
+        cid: Option<&str>,
+        tid: Option<&str>,
+    ) -> Result<(), String> {
+        let stem = q.stem.clone().unwrap_or_default();
+        let stem_h = hash_stem(&stem);
+        let options_json = serde_json::to_string(&q.options).unwrap_or_default();
+        let answers_json = serde_json::to_string(&q.correct_answers).unwrap_or_default();
+
+        let clean_opts: Option<Vec<QaUploadOption>> = q.options.as_ref().map(|opts| {
+            opts.iter().map(|o| QaUploadOption { id: o.id.clone(), text: o.text.clone() }).collect()
+        });
+        let embed_text = build_embedding_text(Some(&stem), clean_opts.as_deref());
+        let vec_f32 = compute_local_embedding(&embed_text);
+        let embedding_blob = vector_to_blob(&vec_f32);
+
+        self.0.execute(
+            "INSERT INTO quiz_qa_bank (question_id, cid, tid, question_type, stem, stem_hash, options_json, answers_json, embedding_blob, updated_at_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             ON CONFLICT(question_id) DO UPDATE SET
+                 cid=coalesce(excluded.cid, quiz_qa_bank.cid),
+                 tid=coalesce(excluded.tid, quiz_qa_bank.tid),
+                 stem=excluded.stem,
+                 stem_hash=excluded.stem_hash,
+                 options_json=excluded.options_json,
+                 answers_json=excluded.answers_json,
+                 embedding_blob=excluded.embedding_blob,
+                 updated_at_ms=excluded.updated_at_ms",
+            params![
+                q.question_id,
+                cid,
+                tid,
+                q.question_type,
+                stem,
+                stem_h,
+                options_json,
+                answers_json,
+                embedding_blob,
+                q.updated_at_ms,
+            ],
+        ).map_err(|e| format!("题库保存失败: {e}"))?;
+        Ok(())
+    }
+
+    pub fn load_rag_documents(
+        &self,
+        cid: Option<&str>,
+        tid: Option<&str>,
+    ) -> Result<Vec<(QuestionRagDocument, Vec<f32>)>, String> {
+        let mut sql = "SELECT question_id, cid, tid, question_type, stem, options_json, answers_json, embedding_blob FROM quiz_qa_bank WHERE 1=1".to_string();
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        if let Some(c) = cid {
+            sql.push_str(" AND (cid=? OR cid IS NULL)");
+            params_vec.push(Box::new(c.to_string()));
+        }
+        if let Some(t) = tid {
+            sql.push_str(" AND (tid=? OR tid IS NULL)");
+            params_vec.push(Box::new(t.to_string()));
+        }
+        sql.push_str(" ORDER BY updated_at_ms DESC LIMIT 3000");
+
+        let mut stmt = self.0.prepare(&sql).map_err(|e| e.to_string())?;
+        let params_slice: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| &**b).collect();
+        let rows = stmt.query_map(params_slice.as_slice(), |row| {
+            let question_id: String = row.get(0)?;
+            let cid_val: Option<String> = row.get(1)?;
+            let tid_val: Option<String> = row.get(2)?;
+            let question_type: String = row.get(3)?;
+            let stem: String = row.get(4)?;
+            let options_json: Option<String> = row.get(5)?;
+            let answers_json: String = row.get(6)?;
+            let blob: Option<Vec<u8>> = row.get(7)?;
+
+            let options: Vec<String> = options_json
+                .and_then(|s| serde_json::from_str::<Vec<QaUploadOption>>(&s).ok())
+                .map(|opts| opts.into_iter().map(|o| format!("{}. {}", o.id, o.text)).collect())
+                .unwrap_or_default();
+            let answers: Vec<String> = serde_json::from_str(&answers_json).unwrap_or_default();
+
+            let vec = if let Some(b) = blob {
+                blob_to_vector(&b)
+            } else {
+                compute_local_embedding(&stem)
+            };
+
+            Ok((
+                QuestionRagDocument {
+                    question_id,
+                    tid: tid_val,
+                    cid: cid_val,
+                    stem,
+                    question_type,
+                    options,
+                    answers,
+                },
+                vec,
+            ))
+        }).map_err(|e| e.to_string())?;
+
+        let mut out = Vec::new();
+        for r in rows {
+            if let Ok(item) = r {
+                out.push(item);
+            }
+        }
+        Ok(out)
+    }
+
+    pub fn build_in_memory_store(
+        &self,
+        cid: Option<&str>,
+        tid: Option<&str>,
+    ) -> Result<InMemoryVectorStore<QuestionRagDocument>, String> {
+        let docs = self.load_rag_documents(cid, tid)?;
+        let mut store = InMemoryVectorStore::default();
+        let formatted = docs
+            .into_iter()
+            .map(|(doc, v_f32)| {
+                let embed_text = doc.to_embed_text();
+                let vec_f64: Vec<f64> = v_f32.into_iter().map(|x| x as f64).collect();
+                let qid = doc.question_id.clone();
+                (qid, doc, vec![Embedding { document: embed_text, vec: vec_f64 }])
+            });
+        store.add_documents_with_ids(formatted);
+        Ok(store)
+    }
+}
+
+pub(crate) fn vector_to_blob(vec: &[f32]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(vec.len() * 4);
+    for f in vec {
+        bytes.extend_from_slice(&f.to_le_bytes());
+    }
+    bytes
+}
+
+pub(crate) fn blob_to_vector(bytes: &[u8]) -> Vec<f32> {
+    bytes
+        .chunks_exact(4)
+        .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap_or_default()))
+        .collect()
+}
+
+pub(crate) fn query_rag_candidates(
+    store: &InMemoryVectorStore<QuestionRagDocument>,
+    query: &str,
+    limit: usize,
+    threshold: f64,
+) -> Vec<(f64, QuestionRagDocument)> {
+    let q_vec_f32 = compute_local_embedding(query);
+    let mut scored: Vec<(f64, QuestionRagDocument)> = Vec::new();
+
+    let q_norm = normalize_stem(query);
+
+    for (_id, (doc, embs)) in store.iter() {
+        let mut best_sim = -1.0_f64;
+        for emb in embs {
+            let sim = cosine_similarity_f32_f64(&q_vec_f32, &emb.vec);
+            if sim > best_sim {
+                best_sim = sim;
+            }
+        }
+        let stem_norm = normalize_stem(&doc.stem);
+        let keyword_match = !stem_norm.is_empty() && (stem_norm.contains(&q_norm) || q_norm.contains(&stem_norm));
+        if best_sim >= threshold || keyword_match {
+            let final_score = if keyword_match && best_sim < 0.5 { 0.5 } else { best_sim };
+            scored.push((final_score, doc.clone()));
+        }
+    }
+
+    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    scored.truncate(limit);
+    scored
+}
+
+fn cosine_similarity_f32_f64(a: &[f32], b: &[f64]) -> f64 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+    let dot: f64 = a.iter().zip(b.iter()).map(|(&x, &y)| (x as f64) * y).sum();
+    dot.clamp(-1.0, 1.0)
+}
+
 /// Automatically acquire or verify an API key via /api/auth/anonymous-key.
 pub(crate) async fn ensure_api_key(server_url: &str, stored_key: Option<&str>) -> Option<String> {
     if let Some(key) = stored_key {
@@ -1251,6 +1555,28 @@ pub(crate) fn match_answers(
     result
 }
 
+pub(crate) fn is_option_match(opt: &OptionItem, target: &str) -> bool {
+    let t = target.trim();
+    if t.is_empty() {
+        return false;
+    }
+    if opt.id.eq_ignore_ascii_case(t) || opt.text.trim() == t {
+        return true;
+    }
+    let clean_target = strip_html_tags(t);
+    let clean_opt = strip_html_tags(&opt.text);
+    if !clean_opt.is_empty() && !clean_target.is_empty() {
+        if clean_opt.trim() == clean_target.trim()
+            || clean_opt.trim().eq_ignore_ascii_case(clean_target.trim())
+        {
+            return true;
+        }
+    }
+    let norm_opt = normalize_stem(&opt.text);
+    let norm_target = normalize_stem(t);
+    !norm_opt.is_empty() && norm_opt == norm_target
+}
+
 pub(crate) fn map_answers_to_option_ids(
     answers: &[String],
     options: &[OptionItem],
@@ -1261,7 +1587,7 @@ pub(crate) fn map_answers_to_option_ids(
         if ans_trim.is_empty() {
             continue;
         }
-        if let Some(opt) = options.iter().find(|o| o.id.eq_ignore_ascii_case(ans_trim) || o.text.trim() == ans_trim) {
+        if let Some(opt) = options.iter().find(|o| is_option_match(o, ans_trim)) {
             if !mapped.contains(&opt.id) {
                 mapped.push(opt.id.clone());
             }
@@ -1862,7 +2188,7 @@ pub(crate) fn record_passed_quiz_with_details(
                 }).collect()
             } else if q_type_str == "single" || q_type_str == "multiple" {
                 ans.iter().map(|s| {
-                    if let Some(opt) = q.options.iter().find(|o| o.text.trim() == s.trim() || o.id.eq_ignore_ascii_case(s.trim())) {
+                    if let Some(opt) = q.options.iter().find(|o| is_option_match(o, s)) {
                         serde_json::Value::String(opt.id.clone())
                     } else {
                         serde_json::Value::String(s.clone())
@@ -1884,7 +2210,7 @@ pub(crate) fn record_passed_quiz_with_details(
         // 记录已知错误选项为 is_correct = false
         if let Some(w_list) = wrongs {
             for w in w_list {
-                let val = if let Some(opt) = q.options.iter().find(|o| o.text.trim() == w.trim() || o.id.eq_ignore_ascii_case(w.trim())) {
+                let val = if let Some(opt) = q.options.iter().find(|o| is_option_match(o, w)) {
                     serde_json::Value::String(opt.id.clone())
                 } else {
                     serde_json::Value::String(w.clone())
@@ -1926,8 +2252,14 @@ pub(crate) fn record_passed_quiz_with_details(
             uploaded: already_uploaded,
             updated_at_ms: now,
         };
-        bank.insert(key, record);
+        bank.insert(key, record.clone());
         count += 1;
+
+        // 同步落库 SQLite 题库
+        let db_path = bank_path.with_file_name("quiz_qa_bank.db");
+        if let Ok(db) = QuizQaBankDb::open(&db_path) {
+            let _ = db.upsert_question(&record, Some(cid), Some(clean_tid));
+        }
     }
 
     save_local_bank(bank_path, &bank)?;
@@ -3102,7 +3434,7 @@ pub(crate) fn align_view_answers_to_questions(
                 if let Some(v_opt) = vq
                     .options
                     .iter()
-                    .find(|o| o.id.eq_ignore_ascii_case(ans_trim) || o.text.trim() == ans_trim)
+                    .find(|o| is_option_match(o, ans_trim))
                 {
                     if !v_opt.text.trim().is_empty() {
                         resolved_ans.push(v_opt.text.trim().to_string());
@@ -3112,7 +3444,7 @@ pub(crate) fn align_view_answers_to_questions(
                 if let Some(t_opt) = tq
                     .options
                     .iter()
-                    .find(|o| o.id.eq_ignore_ascii_case(ans_trim) || o.text.trim() == ans_trim)
+                    .find(|o| is_option_match(o, ans_trim))
                 {
                     if !t_opt.text.trim().is_empty() {
                         resolved_ans.push(t_opt.text.trim().to_string());
@@ -4360,5 +4692,70 @@ mod tests {
         let q1_record = bank.get(&q1_key).expect("Q1 应存在于题库");
         assert_eq!(q1_record.correct_answers, vec!["南宋汪元量".to_string()]);
         assert!(q1_record.answers.iter().any(|a| a.is_correct));
+    }
+
+    #[test]
+    fn quiz_qa_bank_sqlite_and_rig_in_memory_rag_flow() {
+        use tempfile::tempdir;
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("quiz_qa_bank.db");
+
+        let db = QuizQaBankDb::open(&db_path).expect("初始化题库 SQLite 成功");
+
+        let q1 = LocalBankQuestion {
+            cid: "cid_szu".into(),
+            course_name: Some("深大概况".into()),
+            tid: "tid_szu".into(),
+            task_name: Some("测试1".into()),
+            question_id: "q_sqlite_1".into(),
+            question_type: "single".into(),
+            stem: Some("深圳大学建校于哪一年？".into()),
+            options: Some(vec![
+                QaUploadOption { id: "A".into(), text: "1980年".into() },
+                QaUploadOption { id: "B".into(), text: "1983年".into() },
+            ]),
+            blanks: 0,
+            answers: vec![],
+            correct_answers: vec!["B".into()],
+            uploaded: false,
+            updated_at_ms: chrono::Utc::now().timestamp_millis(),
+        };
+
+        let q2 = LocalBankQuestion {
+            cid: "cid_math".into(),
+            course_name: Some("高等数学".into()),
+            tid: "tid_math".into(),
+            task_name: Some("测试2".into()),
+            question_id: "q_sqlite_2".into(),
+            question_type: "single".into(),
+            stem: Some("高等数学中拉格朗日中值定理的结论是？".into()),
+            options: Some(vec![
+                QaUploadOption { id: "A".into(), text: "f(b)-f(a)=f'(ξ)(b-a)".into() },
+                QaUploadOption { id: "B".into(), text: "f'(ξ)=0".into() },
+            ]),
+            blanks: 0,
+            answers: vec![],
+            correct_answers: vec!["A".into()],
+            uploaded: false,
+            updated_at_ms: chrono::Utc::now().timestamp_millis(),
+        };
+
+        db.upsert_question(&q1, Some("cid_szu"), Some("tid_szu")).unwrap();
+        db.upsert_question(&q2, Some("cid_math"), Some("tid_math")).unwrap();
+
+        // 验证从 SQLite 加载 RAG 候选
+        let docs = db.load_rag_documents(Some("cid_szu"), None).unwrap();
+        assert_eq!(docs.len(), 1);
+        assert_eq!(docs[0].0.question_id, "q_sqlite_1");
+        assert_eq!(docs[0].1.len(), EMBEDDING_DIMENSIONS);
+
+        // 验证构建 Rig In-Memory 向量库并检索
+        let store = db.build_in_memory_store(None, None).unwrap();
+        assert_eq!(store.len(), 2);
+
+        let matches = query_rag_candidates(&store, "深大哪一年建校", 3, 0.15);
+        assert!(!matches.is_empty());
+        assert_eq!(matches[0].1.question_id, "q_sqlite_1");
+        assert_eq!(matches[0].1.answers, vec!["B".to_string()]);
     }
 }

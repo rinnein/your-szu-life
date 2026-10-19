@@ -16,12 +16,7 @@ import {
   TextField,
   toast,
 } from "@heroui/react";
-import {
-  LuBot,
-  LuCircleCheck,
-  LuDatabase,
-  LuSparkles,
-} from "react-icons/lu";
+import { LuBot, LuCircleCheck, LuDatabase, LuSparkles } from "react-icons/lu";
 import { DimmedHtmlText } from "./DimmedHtmlText";
 import type { AiSessionEntry, QuizAnswers, QuizQuestion, QuizState, UoocSnapshot } from "./types";
 
@@ -63,6 +58,83 @@ export function clearQuizCache(key: string): void {
   }
 }
 
+export function stripHtml(raw?: string | null): string {
+  if (!raw) return "";
+  return raw
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .split(/\s+/)
+    .join(" ")
+    .trim();
+}
+
+export function isOptionMatch(opt: { id: string; text: string }, target?: string | null): boolean {
+  if (!target) return false;
+  const t = target.trim();
+  if (!t) return false;
+
+  const tLower = t.toLowerCase();
+  const oId = opt.id.trim();
+  const oIdLower = oId.toLowerCase();
+
+  // 1. 直接 ID 比对 (如 "A" === "a", "opt_1" === "opt_1")
+  if (oIdLower === tLower) return true;
+
+  // 1.1 括号前 ID 比对，如 "B (1983年)" -> "B"
+  const beforeParen = t.split(/[(（]/)[0]?.trim();
+  if (beforeParen && beforeParen.toLowerCase() === oIdLower) return true;
+
+  // 2. 原始文本匹配
+  const oTextTrim = opt.text.trim();
+  if (oTextTrim === t || oTextTrim.toLowerCase() === tLower) return true;
+
+  // 3. 去除 HTML 标签后纯文本匹配
+  const cleanTarget = stripHtml(t);
+  const cleanOpt = stripHtml(opt.text);
+  if (cleanOpt.length > 0 && cleanTarget.length > 0) {
+    if (cleanOpt === cleanTarget || cleanOpt.toLowerCase() === cleanTarget.toLowerCase()) {
+      return true;
+    }
+  }
+
+  // 4. 剥离前缀序号匹配 (如 "A. 选项内容" vs "选项内容")
+  const stripPrefix = (s: string) => s.replace(/^[a-zA-Z0-9][.、:：\s]+/, "").trim();
+  const strippedOpt = stripPrefix(cleanOpt);
+  const strippedTarget = stripPrefix(cleanTarget);
+  if (strippedOpt.length > 0) {
+    if (
+      strippedOpt === cleanTarget ||
+      strippedOpt === strippedTarget ||
+      strippedOpt.toLowerCase() === cleanTarget.toLowerCase() ||
+      strippedOpt.toLowerCase() === strippedTarget.toLowerCase()
+    ) {
+      return true;
+    }
+  }
+
+  // 4.1 选项文本去括号后比对，如 "1983年" vs "1983年 (建校)"
+  const cleanTargetBeforeParen = stripHtml(beforeParen);
+  if (
+    cleanTargetBeforeParen &&
+    (cleanOpt === cleanTargetBeforeParen || strippedOpt === cleanTargetBeforeParen)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+export function findMatchingOptionId(options: { id: string; text: string }[], val: string): string {
+  const found = options.find((o) => isOptionMatch(o, val));
+  return found ? found.id : val;
+}
+
 export function sanitizeAnswersForDraft(
   questions: QuizQuestion[],
   answers: QuizAnswers,
@@ -77,15 +149,7 @@ export function sanitizeAnswersForDraft(
       }
     } else {
       const valid = vals
-        .map((v) => {
-          const found = q.options.find(
-            (o) =>
-              o.id === v ||
-              o.id.toLowerCase() === v.toLowerCase() ||
-              o.text.trim() === v.trim(),
-          );
-          return found ? found.id : v;
-        })
+        .map((v) => findMatchingOptionId(q.options, v))
         .filter((v) => q.options.some((o) => o.id === v));
       if (valid.length > 0) {
         if (q.kind === "single" && valid.length === 1) {
@@ -202,84 +266,71 @@ export function QuizPanel({
     };
   }, []);
 
-  // 监听 quiz 变化，自动将答案值规范化为对应选项的 option.id；若未作答但有题库或 AI 推荐答案，自动完成选中
+  // 监听 quiz 变化，自动将答案值规范化为对应选项的 option.id；当有题库标准答案或 AI 判定推荐答案时，自动切换选中该答案
   useEffect(() => {
     const isPassed = quiz.stage === "passed";
     const cached = !isPassed ? loadQuizCache(cacheKey) : null;
     const baseAnswers: QuizAnswers =
-      cached && Object.keys(cached).length > 0
-        ? { ...quiz.answers, ...cached }
-        : isPassed && quiz.studentAnswers && Object.keys(quiz.studentAnswers).length > 0
-          ? { ...quiz.answers, ...quiz.studentAnswers }
+      isPassed && quiz.studentAnswers && Object.keys(quiz.studentAnswers).length > 0
+        ? { ...quiz.answers, ...quiz.studentAnswers }
+        : cached && Object.keys(cached).length > 0
+          ? { ...quiz.answers, ...cached }
           : { ...quiz.answers };
     const nextAnswers: QuizAnswers = { ...baseAnswers };
     let hasAutoSelected = false;
 
     for (const q of quiz.questions) {
-      const curr = nextAnswers[q.id];
-      if (curr && curr.length > 0) {
-        const mapped = curr.map((val) => {
-          const found = q.options.find(
-            (o) =>
-              o.id === val ||
-              o.id.toLowerCase() === val.toLowerCase() ||
-              o.text.trim() === val.trim(),
-          );
-          return found ? found.id : val;
-        });
-        nextAnswers[q.id] = mapped;
-      } else {
-        // 自动选择 1：优先自动选中题库匹配的标准答案
-        const stdReview = quiz.reviews.find(
-          (r) =>
-            r.questionId === q.id &&
-            (r.message.includes("题库") || r.message.includes("标准答案") || r.message.includes("已确认答案")) &&
-            !r.message.includes("排除"),
-        );
-        if (stdReview && stdReview.answers.length > 0) {
-          const stdMapped = stdReview.answers.map((ans) => {
-            const found = q.options.find(
-              (o) =>
-                o.id === ans ||
-                o.id.toLowerCase() === ans.toLowerCase() ||
-                o.text.trim() === ans.trim(),
-            );
-            return found ? found.id : ans;
-          });
-          nextAnswers[q.id] = stdMapped;
+      if (isPassed) {
+        const curr = nextAnswers[q.id];
+        if (curr && curr.length > 0) {
+          nextAnswers[q.id] = curr.map((val) => findMatchingOptionId(q.options, val));
+        }
+        continue;
+      }
+
+      // 1. 优先找题库匹配的标准答案 (来自题库 review 或已确认答案)
+      const stdReview = quiz.reviews.find(
+        (r) =>
+          r.questionId === q.id &&
+          (r.message.includes("题库") ||
+            r.message.includes("标准答案") ||
+            r.message.includes("已确认答案")) &&
+          !r.message.includes("排除"),
+      );
+      // 2. 其次找 AI 判定推荐答案 (来自 AI review)
+      const aiReview = quiz.reviews.find(
+        (r) =>
+          r.questionId === q.id &&
+          !r.message.includes("题库") &&
+          !r.message.includes("已确认答案") &&
+          !r.message.includes("排除") &&
+          r.answers.length > 0,
+      );
+
+      // AI判题或题库匹配得到结果后，自动将选项切换到判定出来的标准答案/推荐答案
+      const targetReview = stdReview ?? aiReview;
+      if (targetReview && targetReview.answers.length > 0) {
+        const mapped = targetReview.answers.map((ans) => findMatchingOptionId(q.options, ans));
+        const prev = nextAnswers[q.id];
+        if (!prev || prev.length !== mapped.length || prev.some((v, i) => v !== mapped[i])) {
+          nextAnswers[q.id] = mapped;
           hasAutoSelected = true;
-        } else {
-          // 自动选择 2：自动选中 AI 判定的推荐答案
-          const aiRev = quiz.reviews.find(
-            (r) =>
-              r.questionId === q.id &&
-              r.answers.length > 0 &&
-              !r.message.includes("排除"),
-          );
-          if (aiRev && aiRev.answers.length > 0) {
-            const aiMapped = aiRev.answers.map((ans) => {
-              const found = q.options.find(
-                (o) =>
-                  o.id === ans ||
-                  o.id.toLowerCase() === ans.toLowerCase() ||
-                  o.text.trim() === ans.trim(),
-              );
-              return found ? found.id : ans;
-            });
-            nextAnswers[q.id] = aiMapped;
-            hasAutoSelected = true;
-          }
+        }
+      } else {
+        const curr = nextAnswers[q.id];
+        if (curr && curr.length > 0) {
+          nextAnswers[q.id] = curr.map((val) => findMatchingOptionId(q.options, val));
         }
       }
     }
     setAnswers(nextAnswers);
 
     if (!isPassed) {
-      if (cached && hasAnswersDifferences(cached, quiz.answers)) {
-        isDirtyRef.current = true;
-      }
       if (hasAutoSelected) {
         saveQuizCache(cacheKey, nextAnswers);
+        isDirtyRef.current = true;
+      } else if (cached && hasAnswersDifferences(cached, nextAnswers)) {
+        isDirtyRef.current = true;
       }
     }
   }, [quiz.revision, quiz.answers, quiz.reviews, quiz.questions, cacheKey, quiz.stage]);
@@ -323,7 +374,8 @@ export function QuizPanel({
     try {
       await fn();
     } catch (e) {
-      const msg = typeof e === "string" ? e : (e as { message?: string })?.message || "测验操作失败，请重试";
+      const msg =
+        typeof e === "string" ? e : (e as { message?: string })?.message || "测验操作失败，请重试";
       toast.danger("测验操作失败", { description: msg });
       setActionModal(null);
     } finally {
@@ -343,8 +395,40 @@ export function QuizPanel({
     );
     if (nextQuiz) {
       revisionRef.current = nextQuiz.revision;
-      setAnswers(nextQuiz.answers);
-      saveQuizCache(cacheKey, nextQuiz.answers);
+
+      const updatedAnswers: QuizAnswers = { ...nextQuiz.answers };
+      for (const q of nextQuiz.questions) {
+        const stdRev = nextQuiz.reviews.find(
+          (r) =>
+            r.questionId === q.id &&
+            (r.message.includes("题库") ||
+              r.message.includes("标准答案") ||
+              r.message.includes("已确认答案")) &&
+            !r.message.includes("排除"),
+        );
+        const aiRev = nextQuiz.reviews.find(
+          (r) =>
+            r.questionId === q.id &&
+            !r.message.includes("题库") &&
+            !r.message.includes("已确认答案") &&
+            !r.message.includes("排除") &&
+            r.answers.length > 0,
+        );
+        const targetRev = stdRev ?? aiRev;
+        if (targetRev && targetRev.answers.length > 0) {
+          updatedAnswers[q.id] = targetRev.answers.map((ans) =>
+            findMatchingOptionId(q.options, ans),
+          );
+        } else if (nextQuiz.answers[q.id]) {
+          updatedAnswers[q.id] = nextQuiz.answers[q.id].map((ans) =>
+            findMatchingOptionId(q.options, ans),
+          );
+        }
+      }
+
+      setAnswers(updatedAnswers);
+      saveQuizCache(cacheKey, updatedAnswers);
+      isDirtyRef.current = true;
       if (nextQuiz.aiSessions && nextQuiz.aiSessions.length > 0) {
         setLiveSessions(nextQuiz.aiSessions);
       }
@@ -418,7 +502,9 @@ export function QuizPanel({
           )
         : undefined;
       const summaryMsg = updatedQuiz?.message;
-      setActionModal((prev) => (prev ? { ...prev, step: 3, completed: true, summary: summaryMsg } : null));
+      setActionModal((prev) =>
+        prev ? { ...prev, step: 3, completed: true, summary: summaryMsg } : null,
+      );
     });
   };
 
@@ -446,26 +532,23 @@ export function QuizPanel({
     optText: string,
     currentSelected: string[],
   ) => {
-    const optIdLower = optId.toLowerCase();
-    const optTextTrim = optText.trim();
+    const optObj = { id: optId, text: optText };
 
     // 1. 题库匹配的标准答案 (来自题库 review 或已通过状态的官方确认答案)
     const isPassed = quiz.stage === "passed";
     const passedAnswers = isPassed ? (quiz.answers[q.id] ?? []) : [];
-    const passedMatch = passedAnswers.some(
-      (ans) => ans.toLowerCase() === optIdLower || ans.trim() === optTextTrim,
-    );
+    const passedMatch = passedAnswers.some((ans) => isOptionMatch(optObj, ans));
 
     const bankReview = quiz.reviews.find(
       (r) =>
         r.questionId === q.id &&
-        (r.message.includes("题库") || r.message.includes("已确认答案") || r.message.includes("标准答案")) &&
+        (r.message.includes("题库") ||
+          r.message.includes("已确认答案") ||
+          r.message.includes("标准答案")) &&
         !r.message.includes("排除"),
     );
     const bankMatch = bankReview
-      ? bankReview.answers.some(
-          (ans) => ans.toLowerCase() === optIdLower || ans.trim() === optTextTrim,
-        )
+      ? bankReview.answers.some((ans) => isOptionMatch(optObj, ans))
       : false;
 
     const isStandard = passedMatch || bankMatch;
@@ -473,17 +556,15 @@ export function QuizPanel({
     // 2. 题库排除答案 (来自题库排除 review)
     const excludeReview = quiz.reviews.find(
       (r) =>
-        r.questionId === q.id &&
-        (r.message.includes("排除") || r.message.includes("请勿选择")),
+        r.questionId === q.id && (r.message.includes("排除") || r.message.includes("请勿选择")),
     );
+    const cleanOptText = stripHtml(optText);
     const isExcluded =
       !isStandard &&
       (excludeReview
-        ? excludeReview.answers.some(
-            (ans) => ans.toLowerCase() === optIdLower || ans.trim() === optTextTrim,
-          ) ||
+        ? excludeReview.answers.some((ans) => isOptionMatch(optObj, ans)) ||
           excludeReview.message.includes(optId.toUpperCase()) ||
-          (optTextTrim.length >= 2 && excludeReview.message.includes(optTextTrim))
+          (cleanOptText.length >= 2 && excludeReview.message.includes(cleanOptText))
         : false);
 
     // 3. AI 判定答案 (来自 AI review 推荐选项，非题库标准答案)
@@ -498,17 +579,11 @@ export function QuizPanel({
     const isAiJudged =
       !isStandard &&
       !isExcluded &&
-      (aiReview
-        ? aiReview.answers.some(
-            (ans) => ans.toLowerCase() === optIdLower || ans.trim() === optTextTrim,
-          )
-        : false);
+      (aiReview ? aiReview.answers.some((ans) => isOptionMatch(optObj, ans)) : false);
 
     // 4. 用户当前是否在界面上选择/勾选了该项（支持自动选择标准答案与 AI 判定答案）
     const isSelected =
-      currentSelected.some(
-        (ans) => ans.toLowerCase() === optIdLower || ans.trim() === optTextTrim,
-      ) ||
+      currentSelected.some((ans) => isOptionMatch(optObj, ans)) ||
       (currentSelected.length === 0 && (isStandard || isAiJudged));
 
     return {
@@ -523,12 +598,7 @@ export function QuizPanel({
   const getSelectedRadioValue = (q: QuizQuestion): string => {
     const current = answers[q.id]?.[0];
     if (current) {
-      const matched = q.options.find(
-        (o) =>
-          o.id === current ||
-          o.id.toLowerCase() === current.toLowerCase() ||
-          o.text.trim() === current.trim(),
-      );
+      const matched = q.options.find((o) => isOptionMatch(o, current));
       if (matched) return matched.id;
       return current;
     }
@@ -545,12 +615,7 @@ export function QuizPanel({
     const current = answers[q.id];
     if (current && current.length > 0) {
       return current.map((val) => {
-        const matched = q.options.find(
-          (o) =>
-            o.id === val ||
-            o.id.toLowerCase() === val.toLowerCase() ||
-            o.text.trim() === val.trim(),
-        );
+        const matched = q.options.find((o) => isOptionMatch(o, val));
         return matched ? matched.id : val;
       });
     }
@@ -616,7 +681,9 @@ export function QuizPanel({
             const bankReview = quiz.reviews.find(
               (r) =>
                 r.questionId === q.id &&
-                (r.message.includes("题库") || r.message.includes("已确认答案") || r.message.includes("标准答案")),
+                (r.message.includes("题库") ||
+                  r.message.includes("已确认答案") ||
+                  r.message.includes("标准答案")),
             );
             const aiReview = quiz.reviews.find(
               (r) =>
@@ -634,9 +701,7 @@ export function QuizPanel({
                 {/* 题号与题目类型 Chip */}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-sm text-foreground">
-                      第 {i + 1} 题
-                    </span>
+                    <span className="font-semibold text-sm text-foreground">第 {i + 1} 题</span>
                     <Chip size="sm" color="accent">
                       {typeLabel}
                     </Chip>
@@ -824,12 +889,12 @@ export function QuizPanel({
                           <div className="flex items-center gap-1.5 shrink-0">
                             {stdText && (
                               <Chip size="sm" color="success">
-                                标准答案: {stdText}
+                                标准答案: {stripHtml(stdText)}
                               </Chip>
                             )}
                             {!stdText && aiText && (
                               <Chip size="sm" color="accent">
-                                AI判定: {aiText}
+                                AI判定: {stripHtml(aiText)}
                               </Chip>
                             )}
                           </div>
@@ -840,12 +905,16 @@ export function QuizPanel({
                   })
                 )}
 
-                {/* AI / Jev 附加概率分布或错误排除说明（如果有） */}
+                {/* AI 推荐解析 / Jev 概率分布或错误排除说明（如果有） */}
                 {quiz.reviews
                   .filter(
                     (r) =>
                       r.questionId === q.id &&
-                      (r.message.includes("Jev") || Object.keys(r.probabilities).length > 0 || r.message.includes("排除")),
+                      (r.message.includes("Jev") ||
+                        Object.keys(r.probabilities).length > 0 ||
+                        r.message.includes("排除") ||
+                        r.message.includes("理由") ||
+                        r.message.includes("解析")),
                   )
                   .map((review, j) => (
                     <div
@@ -853,10 +922,14 @@ export function QuizPanel({
                       className={`grid gap-1 rounded-lg border p-2.5 text-xs ${
                         review.message.includes("排除")
                           ? "border-danger/30 bg-danger/5 text-danger"
-                          : "border-accent/25 bg-accent/5 text-muted"
+                          : review.message.includes("理由") || review.message.includes("解析")
+                            ? "border-accent/35 bg-accent/10 text-foreground"
+                            : "border-accent/25 bg-accent/5 text-muted"
                       }`}
                     >
-                      <p className="font-medium text-foreground">{review.message}</p>
+                      <p className="font-medium text-foreground whitespace-pre-wrap">
+                        {review.message}
+                      </p>
                       {Object.keys(review.probabilities).length > 0 && (
                         <p className="text-[11px] text-muted">
                           概率分布：
@@ -929,7 +1002,11 @@ export function QuizPanel({
           <Button
             variant="tertiary"
             isDisabled={busy || running}
-            onPress={() => void run(async () => { await control("check"); })}
+            onPress={() =>
+              void run(async () => {
+                await control("check");
+              })
+            }
           >
             我已在官网处理，检查并继续
           </Button>
@@ -970,12 +1047,16 @@ export function QuizPanel({
                 <div className="rounded-xl border border-separator/50 bg-surface/40 p-4 grid gap-2.5">
                   <div className="flex items-center justify-between text-xs text-muted">
                     <span>当前执行状态</span>
-                    <span className={`font-mono ${isModalFinished ? "text-success font-semibold" : "text-accent"}`}>
+                    <span
+                      className={`font-mono ${isModalFinished ? "text-success font-semibold" : "text-accent"}`}
+                    >
                       {isModalFinished ? "已完成" : "进行中"}
                     </span>
                   </div>
                   <p className="font-medium text-foreground">
-                    {actionModal?.summary || quiz.message || (isModalFinished ? "流程已处理完成" : "正在处理测验任务...")}
+                    {actionModal?.summary ||
+                      quiz.message ||
+                      (isModalFinished ? "流程已处理完成" : "正在处理测验任务...")}
                   </p>
                   {!isModalFinished && <ProgressBar isIndeterminate size="sm" color="accent" />}
                 </div>
@@ -1044,7 +1125,9 @@ export function QuizPanel({
                           )}
                           <span className="flex items-center gap-1 text-foreground">
                             <LuSparkles aria-hidden="true" />{" "}
-                            {isModalFinished ? "答案草稿已提交至服务端判题确认" : "提交答案草稿至服务端判题确认"}
+                            {isModalFinished
+                              ? "答案草稿已提交至服务端判题确认"
+                              : "提交答案草稿至服务端判题确认"}
                           </span>
                         </>
                       )}
@@ -1070,7 +1153,8 @@ export function QuizPanel({
                   <div className="rounded-xl border border-separator/50 bg-surface/30 p-3.5 grid gap-3 mt-1">
                     <div className="flex items-center justify-between text-xs font-semibold text-foreground">
                       <span className="flex items-center gap-1.5">
-                        <LuBot className="text-accent text-sm" aria-hidden="true" /> AI 会话调用 Session
+                        <LuBot className="text-accent text-sm" aria-hidden="true" /> AI 会话调用
+                        Session
                         {liveSessions.length > 0 ? ` (批次数量: ${liveSessions.length})` : ""}
                       </span>
                       {liveSessions[0]?.model && (
@@ -1108,12 +1192,15 @@ export function QuizPanel({
                                     <span className="text-success font-bold text-xs">✓</span>
                                   )}
                                   <span className="font-semibold">
-                                    批次 {session.batchIndex} (共 {session.questionIds?.length || 1} 题)
+                                    批次 {session.batchIndex} (共 {session.questionIds?.length || 1}{" "}
+                                    题)
                                   </span>
                                 </div>
                                 <span className="text-[11px] font-mono text-accent shrink-0">
                                   {isBatchPending
-                                    ? "正在请求模型..."
+                                    ? session.response
+                                      ? "正在实时响应与工具调用..."
+                                      : "正在请求模型..."
                                     : isBatchError
                                       ? "调用失败"
                                       : `已生成 ${Object.keys(session.answers || {}).length} 题答案`}
@@ -1123,7 +1210,8 @@ export function QuizPanel({
                               <div className="mt-1 text-[11px] text-muted">
                                 <span>包含题目：</span>
                                 <span className="font-mono">
-                                  {session.questionTitles?.join("、 ") || session.questionIds?.join(", ")}
+                                  {session.questionTitles?.join("、 ") ||
+                                    session.questionIds?.join(", ")}
                                 </span>
                               </div>
 
@@ -1137,20 +1225,30 @@ export function QuizPanel({
                                   </pre>
                                 </div>
 
-                                {session.response ? (
-                                  <div>
-                                    <span className="font-semibold text-muted">
-                                      AI 原始回复内容 (Response):
+                                <div>
+                                  <div className="flex items-center justify-between font-semibold text-muted mb-1">
+                                    <span>
+                                      {isBatchPending
+                                        ? "AI 实时响应与工具调用 (Live):"
+                                        : "AI 原始回复内容 (Response):"}
                                     </span>
-                                    <pre className="mt-1 p-2 rounded bg-background/80 font-mono text-[10px] overflow-x-auto whitespace-pre-wrap text-accent font-medium max-h-36">
+                                    {isBatchPending && (
+                                      <span className="flex items-center gap-1.5 text-accent text-[10px] font-normal">
+                                        <Spinner size="sm" /> 实时交互中...
+                                      </span>
+                                    )}
+                                  </div>
+                                  {session.response ? (
+                                    <pre className="p-2 rounded bg-background/80 font-mono text-[10px] overflow-x-auto whitespace-pre-wrap text-accent font-medium max-h-48 scroll-smooth border border-accent/20">
                                       {session.response}
                                     </pre>
-                                  </div>
-                                ) : isBatchPending ? (
-                                  <div className="flex items-center gap-2 text-muted italic text-[11px] py-1">
-                                    <Spinner size="sm" /> 正在等待模型返回作答内容...
-                                  </div>
-                                ) : null}
+                                  ) : isBatchPending ? (
+                                    <div className="flex items-center gap-2 text-muted italic text-[11px] py-1.5 p-2 rounded bg-background/40">
+                                      <Spinner size="sm" />{" "}
+                                      正在向模型发起请求，等待首字或工具调用...
+                                    </div>
+                                  ) : null}
+                                </div>
 
                                 {session.error && (
                                   <div className="text-danger text-[11px] p-2 rounded bg-danger/10 border border-danger/20">

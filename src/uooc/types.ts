@@ -216,6 +216,9 @@ export type AiConfig = {
   confidence: number;
   defaultMode: QuizMode;
   batchSize?: number;
+  reasoningEffort?: string;
+  includeReasoning?: boolean;
+  webSearch?: boolean;
 };
 
 export type CourseTaskItem =

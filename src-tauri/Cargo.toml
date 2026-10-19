@@ -64,6 +64,9 @@ async-openai = { version = "0.42.1", default-features = false, features = [
   "model",
   "rustls",
 ] }
+rig-core = "0.44.0"
+rig-agent = "0.44.0"
+futures-util = "0.3"
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 keyring = { version = "3", features = ["linux-native", "apple-native", "windows-native"] }

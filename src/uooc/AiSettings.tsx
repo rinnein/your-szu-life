@@ -22,6 +22,54 @@ export const modeLabels: Record<QuizMode, string> = {
   approval: "请求批准",
   yolo: "YOLO",
 };
+
+export const reasoningEffortLabels: Record<string, string> = {
+  default: "默认 (由模型自行决定)",
+  low: "低推理强度 (Low)",
+  medium: "中等推理强度 (Medium)",
+  high: "高推理强度 (High)",
+};
+
+export function ReasoningEffortPicker({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Select
+      aria-label="AI 推理强度"
+      value={value || "default"}
+      onChange={(v) => {
+        if (typeof v === "string") onChange(v);
+      }}
+      isDisabled={disabled}
+    >
+      <Label>AI 推理强度 (Reasoning Effort)</Label>
+      <Select.Trigger>
+        <Select.Value />
+        <Select.Indicator />
+      </Select.Trigger>
+      <Description>
+        针对支持思考链的模型（如 o1、o3、DeepSeek R1 等兼容推理模型）调整推理预算与思考深度。
+      </Description>
+      <Select.Popover>
+        <ListBox>
+          {Object.entries(reasoningEffortLabels).map(([key, label]) => (
+            <ListBox.Item key={key} id={key} textValue={label}>
+              {label}
+              <ListBox.ItemIndicator />
+            </ListBox.Item>
+          ))}
+        </ListBox>
+      </Select.Popover>
+    </Select>
+  );
+}
+
 export function QuizModePicker({
   value,
   onChange,
@@ -104,6 +152,9 @@ export function AiSettings({
       confidence: config.confidence,
       defaultMode: config.defaultMode,
       batchSize: config.batchSize ?? 5,
+      reasoningEffort: config.reasoningEffort ?? "default",
+      includeReasoning: config.includeReasoning ?? true,
+      webSearch: config.webSearch ?? true,
     };
     const next = await invoke<AiConfig>("save_uooc_ai_preferences", { preferences });
     setConfig(next);
@@ -251,6 +302,38 @@ export function AiSettings({
             10）。合并题目可减少多轮会话反复新开并注入上下文的开销。
           </Description>
         </NumberField>
+        <ReasoningEffortPicker
+          value={config.reasoningEffort ?? "default"}
+          onChange={(reasoningEffort) => setConfig({ ...config, reasoningEffort })}
+          disabled={busy}
+        />
+        <Checkbox
+          isSelected={config.includeReasoning ?? true}
+          onChange={(includeReasoning) => setConfig({ ...config, includeReasoning })}
+          isDisabled={busy}
+        >
+          <Checkbox.Control>
+            <Checkbox.Indicator />
+          </Checkbox.Control>
+          <Checkbox.Content>在提示词中要求 AI 返回推理过程与解题理由</Checkbox.Content>
+        </Checkbox>
+        <Description className="text-xs text-muted -mt-2">
+          启用后，AI 判题将在每道题目下方展示得出该结论的理由/解析，便于人工复核与审查。
+        </Description>
+        <Checkbox
+          isSelected={config.webSearch ?? true}
+          onChange={(webSearch) => setConfig({ ...config, webSearch })}
+          isDisabled={busy}
+        >
+          <Checkbox.Control>
+            <Checkbox.Indicator />
+          </Checkbox.Control>
+          <Checkbox.Content>要求 AI 使用联网搜索工具</Checkbox.Content>
+        </Checkbox>
+        <Description className="text-xs text-muted -mt-2">
+          在遇到有疑问的题目或冷门知识点时，允许 AI 自动发起 web_search
+          工具调用检索互联网权威资料后再作答。
+        </Description>
         <QuizModePicker
           value={config.defaultMode}
           disabled={busy}
