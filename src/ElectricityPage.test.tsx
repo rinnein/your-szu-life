@@ -137,6 +137,67 @@ it("imports into the draft without saving, rejects invalid imports without repla
   expect(await screen.findByText("配置码格式错误")).toBeInTheDocument();
   expect(screen.getByRole("textbox", { name: "宿舍号" })).toHaveValue("602");
 });
+it.each([
+  ["yuehai", "粤海校区", "yuehai-main", "粤海校区宿舍", "sims"],
+  ["yuehai", "粤海校区", "yuehai-xinzhai", "深大新斋区", "sims"],
+  ["canghai", "沧海校区", "canghai-main", "沧海校区宿舍", "sims"],
+  ["xili", "西丽校区", "xili-main", "丽湖校区宿舍", "sims"],
+  ["xili", "西丽校区", "xili-lihuo-phase2", "丽湖二期", "lihuoPhase2"],
+])(
+  "derives floors and validates rooms for %s / %s / %s / %s",
+  async (campusId, campusName, areaId, areaName, provider) => {
+    mock((command) => {
+      if (command === "get_electricity_settings") return null;
+      if (command === "get_electricity_options")
+        return [
+          {
+            id: campusId,
+            name: campusName,
+            areas: [
+              {
+                id: areaId,
+                name: areaName,
+                campusId,
+                provider,
+                buildings: [{ id: "b1", name: "测试楼栋" }],
+              },
+            ],
+          },
+        ];
+      return undefined;
+    });
+    render(<CampusPaymentsElectricityPage />);
+    await waitFor(() => expect(screen.getByRole("button", { name: /校区/ })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: /校区/ }));
+    fireEvent.click(await screen.findByRole("option", { name: campusName }));
+    const room = screen.getByRole("textbox", { name: "宿舍号" });
+    const floor = screen.getByRole("textbox", { name: "楼层范围" });
+    for (const [roomName, expected] of [
+      ["601", "6 层"],
+      ["1201", "12 层"],
+    ]) {
+      fireEvent.change(room, { target: { value: roomName } });
+      expect(floor).toHaveValue(expected);
+      expect(screen.getByRole("button", { name: "查询电费" })).toBeEnabled();
+    }
+    for (const invalid of ["51", "50001", "5A01", "１２０１"]) {
+      fireEvent.change(room, { target: { value: invalid } });
+      expect(floor).toHaveValue("");
+      expect(screen.getByText("房间号应为一至两位楼层加两位房间号。")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "查询电费" })).toBeDisabled();
+    }
+    expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "query_electricity")).toBe(
+      false,
+    );
+    fireEvent.change(room, { target: { value: "1201" } });
+    fireEvent.click(screen.getByRole("button", { name: "查询电费" }));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("query_electricity", {
+        input: { campusId, areaId, buildingId: "b1", buildingName: "测试楼栋", roomName: "1201" },
+      }),
+    );
+  },
+);
 it("retries only recharge data while keeping usage details visible", async () => {
   mock((command) =>
     command === "query_electricity"

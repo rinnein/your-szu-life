@@ -48,6 +48,11 @@ export type ElectricityResult = {
   cache?: { fromCache: boolean; updatedAtMs: number | null; refreshError: string | null } | null;
 };
 export type ElectricityConstants = { yuanPerKwh: number };
+export function getElectricityRoomFloor(roomName: string): number | null {
+  const normalized = roomName.trim();
+  if (!/^\d{3,4}$/.test(normalized)) return null;
+  return Number(normalized.slice(0, -2));
+}
 /** Backend-owned tariff; no duplicate frontend rate or silently assumed fallback. */
 let constantsRequest: Promise<ElectricityConstants> | undefined;
 export function getElectricityConstants() {

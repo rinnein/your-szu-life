@@ -69,6 +69,7 @@ fn query_windows(input: &ElectricityQueryInput) -> Result<Vec<ElectricityQueryIn
             .unwrap_or(end)
             .min(end);
         let mut chunk = input.clone();
+        chunk.room_name = input.room_name.trim().to_owned();
         chunk.begin_date = start.to_string();
         chunk.end_date = finish.to_string();
         windows.push(chunk);
@@ -339,10 +340,16 @@ fn query_date(value: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(value.trim(), "%Y-%m-%d").ok()
 }
 
-fn validate(input: &ElectricityQueryInput) -> Result<(), String> {
-    if input.room_name.trim().is_empty() || input.room_name.len() > 32 {
-        return Err("请输入有效的宿舍号".into());
+fn validate_room_name(room_name: &str) -> Result<(), String> {
+    let room_name = room_name.trim();
+    if !(3..=4).contains(&room_name.len()) || !room_name.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err("宿舍号需为一至两位楼层加两位房间号，例如 601 或 1201".into());
     }
+    Ok(())
+}
+
+fn validate(input: &ElectricityQueryInput) -> Result<(), String> {
+    validate_room_name(&input.room_name)?;
     let (Some(begin_date), Some(end_date)) =
         (query_date(&input.begin_date), query_date(&input.end_date))
     else {
@@ -975,6 +982,41 @@ mod tests {
             Some(4.0)
         );
     }
+    #[test]
+    fn validates_room_names_before_fetching_for_every_area() {
+        for area_id in SIMS_AREAS
+            .iter()
+            .map(|area| area.id)
+            .chain(["xili-lihuo-phase2"])
+        {
+            let mut input = ElectricityQueryInput {
+                campus_id: "xili".into(),
+                area_id: area_id.into(),
+                building_id: "01".into(),
+                building_name: "测试楼栋".into(),
+                room_name: "601".into(),
+                begin_date: "2026-01-01".into(),
+                end_date: "2026-01-02".into(),
+            };
+            for room in ["601", "1201", " 601 "] {
+                input.room_name = room.into();
+                let rows =
+                    query_in_windows(&input, |chunk| Ok(vec![chunk.room_name.clone()])).unwrap();
+                assert_eq!(rows, vec![room.trim().to_owned()], "{area_id}");
+            }
+            for room in ["", "51", "50001", "5A01", "１２０１"] {
+                input.room_name = room.into();
+                let mut requested = false;
+                let result = query_in_windows::<()>(&input, |_| {
+                    requested = true;
+                    Ok(vec![])
+                });
+                assert!(result.is_err(), "{area_id} accepted {room}");
+                assert!(!requested, "{area_id} requested invalid room {room}");
+            }
+        }
+    }
+
     #[test]
     fn validates_dates_and_room() {
         let input = ElectricityQueryInput {

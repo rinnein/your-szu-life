@@ -20,9 +20,7 @@ pub(super) fn validate_shape(s: &ElectricityLocationSettings) -> Result<(), Stri
             return Err("宿舍配置字段无效".into());
         }
     }
-    if s.room_name.len() > 32 {
-        return Err("宿舍号过长".into());
-    }
+    super::validate_room_name(&s.room_name)?;
     Ok(())
 }
 pub(crate) fn encode_settings(settings: ElectricityLocationSettings) -> Result<String, String> {
@@ -95,6 +93,36 @@ mod tests {
             room_name: "601".into(),
         }
     }
+    #[test]
+    fn rejects_invalid_rooms_in_saved_and_shared_settings_for_every_area() {
+        for area in [
+            "yuehai-main",
+            "yuehai-xinzhai",
+            "canghai-main",
+            "xili-main",
+            "xili-lihuo-phase2",
+        ] {
+            let mut location = settings();
+            location.area_id = area.into();
+            for room in ["601", "1201"] {
+                location.room_name = room.into();
+                assert!(validate_shape(&location).is_ok());
+            }
+            for room in ["51", "50001", "5A01", "１２０１"] {
+                location.room_name = room.into();
+                assert!(validate_shape(&location).is_err());
+                assert!(encode_settings(location.clone()).is_err());
+                let data = serde_json::to_vec(&Share {
+                    version: 1,
+                    location: location.clone(),
+                })
+                .unwrap();
+                let code = String::from_utf16(&Base16384::encode(&data)).unwrap();
+                assert!(decode_settings(&code).is_err());
+            }
+        }
+    }
+
     #[test]
     fn sharing_roundtrip_is_versioned_and_rejects_malformed_data() {
         let s = settings();
