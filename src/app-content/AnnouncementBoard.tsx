@@ -7,12 +7,19 @@ import { useAppContent } from "./context";
 import { contentTime, openPublicUrl } from "./external";
 import type { Announcement } from "./types";
 import { EMPTY_ELECTRICITY_STATUS, useElectricityMonitor } from "../electricity-monitor";
+import { useActiveOjContests } from "../oj/active-contests";
 
-type LocalAnnouncement = {
-  kind: "electricity-low";
-  title: string;
-  url: "/campus-payments/recharge";
-};
+type LocalAnnouncement =
+  | {
+      kind: "electricity-low";
+      title: string;
+      url: "/campus-payments/recharge";
+    }
+  | {
+      kind: "oj-active";
+      title: string;
+      url: string;
+    };
 type AnnouncementUnit = Announcement | LocalAnnouncement;
 
 export function AnnouncementImage({
@@ -154,19 +161,28 @@ function AnnouncementCard({ unit }: { unit: AnnouncementUnit }) {
 export function AnnouncementBoard() {
   const { snapshot, error, refreshing } = useAppContent();
   const electricity = useElectricityMonitor() ?? EMPTY_ELECTRICITY_STATUS;
+  const activeOjContests = useActiveOjContests();
   const feed = snapshot?.announcements;
   const units = feed?.data?.announcements;
-  const localUnit: LocalAnnouncement | undefined =
-    electricity.low && electricity.remaining != null
-      ? {
-          kind: "electricity-low",
-          title: `当前剩余电量：${electricity.remaining.toFixed(2)} 度${electricity.warningReason ? ` · ${electricity.warningReason}` : ""}`,
-          url: "/campus-payments/recharge",
-        }
-      : undefined;
-  const displayUnits: AnnouncementUnit[] = localUnit
-    ? [localUnit, ...(units ?? [])]
-    : (units ?? []);
+
+  const localUnits: LocalAnnouncement[] = [];
+  if (electricity.low && electricity.remaining != null) {
+    localUnits.push({
+      kind: "electricity-low",
+      title: `当前剩余电量：${electricity.remaining.toFixed(2)} 度${electricity.warningReason ? ` · ${electricity.warningReason}` : ""}`,
+      url: "/campus-payments/recharge",
+    });
+  }
+
+  for (const contest of activeOjContests) {
+    localUnits.push({
+      kind: "oj-active",
+      title: `进行中测验：${contest.title}`,
+      url: contest.url,
+    });
+  }
+
+  const displayUnits: AnnouncementUnit[] = [...localUnits, ...(units ?? [])];
   const unavailable =
     snapshot?.configuration.status !== "ready" &&
     !(snapshot?.configuration.status === "unconfigured" && snapshot.repository);

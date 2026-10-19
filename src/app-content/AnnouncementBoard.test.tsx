@@ -8,6 +8,16 @@ import { AnnouncementBoard, AnnouncementImage } from "./AnnouncementBoard";
 import { useAppContent } from "./context";
 import type { Announcement, AppContentSnapshot, ContentError } from "./types";
 import { EMPTY_ELECTRICITY_STATUS, useElectricityMonitor } from "../electricity-monitor";
+import { useActiveOjContests } from "../oj/active-contests";
+
+const { nav } = vi.hoisted(() => ({
+  nav: {
+    push: vi.fn(),
+    replace: vi.fn(),
+    back: vi.fn(),
+    canBack: () => false,
+  },
+}));
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -22,13 +32,12 @@ vi.mock("../electricity-monitor", async (importOriginal) => ({
   useElectricityMonitor: vi.fn(),
 }));
 
+vi.mock("../oj/active-contests", () => ({
+  useActiveOjContests: vi.fn().mockReturnValue([]),
+}));
+
 vi.mock("../logical-navigation", () => ({
-  useLogicalNavigation: () => ({
-    push: vi.fn(),
-    replace: vi.fn(),
-    back: vi.fn(),
-    canBack: () => false,
-  }),
+  useLogicalNavigation: () => nav,
 }));
 
 const announcements: Announcement[] = [
@@ -82,6 +91,7 @@ describe("AnnouncementBoard carousel", () => {
   beforeEach(() => {
     vi.mocked(invoke).mockResolvedValue("data:image/png;base64,AA==");
     vi.mocked(useElectricityMonitor).mockReturnValue(EMPTY_ELECTRICITY_STATUS);
+    vi.mocked(useActiveOjContests).mockReturnValue([]);
   });
 
   afterEach(() => {
@@ -217,5 +227,57 @@ describe("AnnouncementBoard carousel", () => {
     expect(screen.getByText("本次公告获取失败")).toBeInTheDocument();
     expect(screen.getByText("网络暂不可用")).toBeInTheDocument();
     expect(screen.getByText("公告一")).toBeInTheDocument();
+  });
+
+  it("renders an OJ ongoing contest announcement card and navigates to the contest", async () => {
+    vi.mocked(useActiveOjContests).mockReturnValue([
+      {
+        siteId: "test-site",
+        siteName: "测试 OJ",
+        contestId: "contest-101",
+        title: "期中程序设计测验",
+        begin: Date.now() - 10000,
+        end: Date.now() + 3600000,
+        url: "/oj?site=test-site&contest=contest-101",
+      },
+    ]);
+    mockContent(makeSnapshot([announcements[0]]));
+    render(<AnnouncementBoard />);
+
+    const ojBtn = screen.getByRole("button", { name: "进行中测验：期中程序设计测验" });
+    expect(ojBtn).toBeInTheDocument();
+
+    fireEvent.click(ojBtn);
+    expect(nav.push).toHaveBeenCalledWith("/oj?site=test-site&contest=contest-101");
+  });
+
+  it("renders both electricity low warning and ongoing OJ contest cards in carousel", async () => {
+    vi.mocked(useElectricityMonitor).mockReturnValue({
+      ...EMPTY_ELECTRICITY_STATUS,
+      low: true,
+      remaining: 8.5,
+    });
+    vi.mocked(useActiveOjContests).mockReturnValue([
+      {
+        siteId: "test-site",
+        siteName: "测试 OJ",
+        contestId: "contest-102",
+        title: "期末大作业测验",
+        begin: Date.now() - 10000,
+        end: Date.now() + 3600000,
+        url: "/oj?site=test-site&contest=contest-102",
+      },
+    ]);
+    mockContent(makeSnapshot([]));
+    render(<AnnouncementBoard />);
+
+    // First slide is electricity
+    expect(screen.getByText("当前剩余电量：8.50 度")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "第 1 条公告，共 2 条" })).toBeInTheDocument();
+
+    // Next slide is OJ contest
+    fireEvent.click(screen.getByRole("button", { name: "下一条公告" }));
+    expect(screen.getByText("进行中测验：期末大作业测验")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "第 2 条公告，共 2 条" })).toBeInTheDocument();
   });
 });
