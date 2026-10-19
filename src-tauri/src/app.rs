@@ -87,6 +87,7 @@ pub(crate) fn run() {
             oj::commands::remove_oj_site,
             oj::commands::login_oj,
             oj::commands::get_oj_captcha,
+            oj::commands::auto_recognize_oj_captcha,
             oj::commands::get_oj_groups,
             oj::commands::get_oj_contests,
             oj::commands::get_oj_paper,

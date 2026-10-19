@@ -21,6 +21,7 @@ import { type Site, type Snapshot, type Group, type Contest, route, sessionName 
 import "./oj.css";
 import { ContestTable } from "./ContestTable";
 import { CompanionSettings } from "./CompanionSettings";
+import OjCaptchaInput from "./OjCaptchaInput";
 import { useAuth } from "../auth";
 import { notifySuccess } from "./feedback";
 import { ojProgressCache, progressScope } from "./progress-store";
@@ -48,8 +49,6 @@ export default function OjPage() {
   const [query, setQuery] = useState("");
   const [groups, setGroups] = useState<Group[]>([]);
   const [contests, setContests] = useState<Contest[]>([]);
-  const [captcha, setCaptcha] = useState<{ token: string; image: string }>();
-  const [answer, setAnswer] = useState("");
   const [ocrRequired, setOcrRequired] = useState(false);
   const [ocrDismissed, setOcrDismissed] = useState(false);
   const ocrStatus = useOcrModelStatus();
@@ -138,32 +137,18 @@ export default function OjPage() {
     }
   }, [ocrStatus?.status, ocrDismissed]);
   useEffect(() => {
-    setCaptcha(undefined);
-    setAnswer("");
-    let active = true;
-    if (site?.session === "captchaRequired" && ocrStatus?.status === "ready")
-      void invoke<{ token: string; image: string }>("get_oj_captcha", {
-        siteId: site.id,
-        refresh: false,
-      })
-        .then((value) => active && setCaptcha(value))
-        .catch((e) => active && setError(String(e)));
-    else if (site?.session === "captchaRequired" && ocrStatus && ocrStatus.status !== "ready") {
+    if (site?.session === "captchaRequired" && ocrStatus && ocrStatus.status !== "ready") {
       setOcrDismissed(false);
       setOcrRequired(true);
     }
-    return () => {
-      active = false;
-    };
-  }, [site?.id, site?.session, ocrStatus?.status]);
+  }, [site?.session, ocrStatus?.status]);
   const connect = () =>
     action(async () => {
       await invoke("login_oj", {
         siteId: site!.id,
-        token: captcha?.token ?? null,
-        value: captcha ? answer : null,
+        token: null,
+        value: null,
       });
-      setCaptcha(undefined);
       if (search.group)
         setContests(await invoke("get_oj_contests", { siteId: site!.id, groupId: search.group }));
       else setGroups(await invoke("get_oj_groups", { siteId: site!.id }));
@@ -263,38 +248,31 @@ export default function OjPage() {
             </Chip>
             <span>{site.username}</span>
             <span className="oj-muted">{site.message}</span>
-            {site.enabled && site.session !== "ready" && (
-              <Button
-                variant="secondary"
-                isDisabled={busy || (!!captcha && !answer)}
-                onPress={() => void connect()}
-              >
-                {captcha ? "使用验证码登录" : "连接"}
+            {site.enabled && site.session !== "ready" && site.session !== "captchaRequired" && (
+              <Button variant="secondary" isDisabled={busy} onPress={() => void connect()}>
+                连接
               </Button>
             )}
           </div>
         )}
-        {captcha && site && (
-          <Card>
-            <Card.Content className="oj-actions">
-              <img src={captcha.image} alt="OJ 登录验证码" width={180} height={80} />
-              <TextField value={answer} onChange={setAnswer}>
-                <Label>验证码</Label>
-                <Input autoComplete="off" placeholder="输入图片中的验证码" />
-              </TextField>
-              <Button
-                variant="secondary"
-                onPress={() =>
-                  void action(async () => {
-                    setCaptcha(await invoke("get_oj_captcha", { siteId: site.id, refresh: true }));
-                    setAnswer("");
-                  })
-                }
-              >
-                换一张
-              </Button>
-            </Card.Content>
-          </Card>
+        {site && site.enabled && site.session === "captchaRequired" && (
+          <OjCaptchaInput
+            site={site}
+            onAuthenticated={async () => {
+              await refresh();
+              if (search.group) {
+                setContests(
+                  await invoke("get_oj_contests", { siteId: site.id, groupId: search.group }),
+                );
+              } else {
+                setGroups(await invoke("get_oj_groups", { siteId: site.id }));
+              }
+            }}
+            onModelRequired={() => {
+              setOcrDismissed(false);
+              setOcrRequired(true);
+            }}
+          />
         )}
         {!site && (
           <>

@@ -62,6 +62,7 @@ fn main() {
             "remove_oj_site",
             "login_oj",
             "get_oj_captcha",
+            "auto_recognize_oj_captcha",
             "get_oj_groups",
             "get_oj_contests",
             "get_oj_paper",

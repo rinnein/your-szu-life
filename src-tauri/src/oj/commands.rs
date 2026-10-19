@@ -71,6 +71,46 @@ pub(crate) async fn get_oj_captcha(
     s.challenge(&site_id, &e).await
 }
 #[tauri::command]
+pub(crate) async fn auto_recognize_oj_captcha(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    site_id: String,
+) -> Result<String, String> {
+    local(&window)?;
+    let s = service(&app)?;
+    let e = s.entry(&site_id)?;
+    let _guard = e.gate.lock().await;
+    let image = {
+        let state = e.state.lock().unwrap();
+        state
+            .captcha
+            .as_ref()
+            .map(|c| c.2.clone())
+            .ok_or_else(|| "当前没有可识别的验证码".to_string())?
+    };
+    use base64::Engine;
+    let raw = image.split_once(',').ok_or("验证码格式不支持")?.1;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(raw)
+        .map_err(|_| "验证码编码无效")?;
+    let task = tauri::async_runtime::spawn_blocking(move || crate::ocr::recognize(&bytes));
+    let answer_result = tokio::time::timeout(std::time::Duration::from_secs(15), task)
+        .await
+        .map_err(|_| "识别超时".to_string())?
+        .map_err(|e| e.to_string())?;
+    let answer = answer_result.map_err(|e| {
+        if e == "ocr_model_missing" || e == "ocr_model_invalid" {
+            e
+        } else {
+            "captcha_recognition_failed".to_string()
+        }
+    })?;
+    if answer.is_empty() {
+        return Err("captcha_recognition_failed".into());
+    }
+    Ok(answer)
+}
+#[tauri::command]
 pub(crate) async fn get_oj_groups(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
