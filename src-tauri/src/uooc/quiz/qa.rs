@@ -336,6 +336,8 @@ pub(crate) struct QaSearchResultItem {
     pub similarity: f64,
     pub answers: Vec<String>,
     pub source: String,
+    #[serde(default)]
+    pub options: Option<Vec<QaUploadOption>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -835,6 +837,56 @@ pub(crate) fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
     }
     let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
     (dot as f64).clamp(-1.0, 1.0)
+}
+
+/// 构建用于计算语义向量的文本：将题干与各选项一并组装，提高向量检索的命中率。
+pub(crate) fn build_embedding_text(
+    stem: Option<&str>,
+    options: Option<&[QaUploadOption]>,
+) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(s) = stem {
+        let trimmed = s.trim();
+        if !trimmed.is_empty() {
+            parts.push(trimmed.to_string());
+        }
+    }
+
+    if let Some(opts) = options {
+        let mut opt_lines: Vec<String> = Vec::new();
+        for opt in opts {
+            let id = opt.id.trim();
+            let text = opt.text.trim();
+            if text.is_empty() {
+                continue;
+            }
+            if !id.is_empty() {
+                let starts_with_prefix = text
+                    .chars()
+                    .next()
+                    .map(|c| c.to_ascii_uppercase() == id.chars().next().unwrap_or(' ').to_ascii_uppercase())
+                    .unwrap_or(false)
+                    && (text.starts_with(&format!("{id}."))
+                        || text.starts_with(&format!("{id}、"))
+                        || text.starts_with(&format!("{id}:"))
+                        || text.starts_with(&format!("{id}："))
+                        || text.starts_with(&format!("{id} ")));
+
+                if starts_with_prefix {
+                    opt_lines.push(text.to_string());
+                } else {
+                    opt_lines.push(format!("{id}. {text}"));
+                }
+            } else {
+                opt_lines.push(text.to_string());
+            }
+        }
+        if !opt_lines.is_empty() {
+            parts.push(opt_lines.join("\n"));
+        }
+    }
+
+    parts.join("\n")
 }
 
 /// Automatically acquire or verify an API key via /api/auth/anonymous-key.
@@ -1563,8 +1615,12 @@ pub(crate) fn build_qa_upload_question(
         None
     };
 
-    let embedding = if with_embedding && !clean_stem.is_empty() {
-        Some(compute_local_embedding(&clean_stem))
+    let embedding_text = build_embedding_text(
+        if clean_stem.is_empty() { None } else { Some(&clean_stem) },
+        options_for_payload.as_deref(),
+    );
+    let embedding = if with_embedding && !embedding_text.is_empty() {
+        Some(compute_local_embedding(&embedding_text))
     } else {
         None
     };
@@ -1652,7 +1708,15 @@ pub(crate) fn build_upload_question_from_local_bank(q: &LocalBankQuestion) -> Qa
         None
     };
 
-    let embedding = clean_stem.as_deref().map(compute_local_embedding);
+    let embedding_text = build_embedding_text(
+        clean_stem.as_deref(),
+        options_for_payload.as_deref(),
+    );
+    let embedding = if !embedding_text.is_empty() {
+        Some(compute_local_embedding(&embedding_text))
+    } else {
+        None
+    };
 
     QaUploadQuestion {
         question_id: q.question_id.clone(),
@@ -2918,9 +2982,17 @@ pub(crate) async fn download_qa_vectors(
                 let key = format!("{tid}:{qid}");
                 if seen_ids.insert(key) {
                     let stem_text = q.stem.clone().unwrap_or_default();
+                    let clean_opts: Option<Vec<QaUploadOption>> = q.options.as_ref().map(|opts| {
+                        opts.iter()
+                            .map(|o| QaUploadOption { id: o.id.clone(), text: o.text.clone() })
+                            .collect()
+                    });
                     let embedding = match q.stem_embedding {
                         Some(ref v) if v.len() == EMBEDDING_DIMENSIONS => v.clone(),
-                        _ => compute_local_embedding(&stem_text),
+                        _ => {
+                            let text = build_embedding_text(Some(&stem_text), clean_opts.as_deref());
+                            compute_local_embedding(&text)
+                        }
                     };
 
                     let answers = q
@@ -2954,9 +3026,10 @@ pub(crate) async fn download_qa_vectors(
     Ok(get_vector_status(cache_path))
 }
 
-/// 本地完成 512 维向量计算后搜索题目（结合本地向量缓存余弦相似度与服务端远程搜索）
+/// 本地完成 512 维向量计算后搜索题目（优先结合本地向量缓存与本地题库余弦相似度，若网络可用结合服务端远程搜索）
 pub(crate) async fn search_questions_with_local_embedding(
     cache_path: &Path,
+    bank_path: &Path,
     server_url: &str,
     api_key: Option<&str>,
     query: &str,
@@ -2973,7 +3046,7 @@ pub(crate) async fn search_questions_with_local_embedding(
     let mut results: Vec<QaSearchResultItem> = Vec::new();
     let mut seen_qids = std::collections::HashSet::new();
 
-    // 2. 本地已下载缓存的向量库检索 (余弦相似度计算)
+    // 2. 本地已下载缓存的向量库检索 (余弦相似度与关键词检索)
     let cached = load_vector_cache(cache_path);
     for item in &cached {
         let sim = cosine_similarity(&local_vector, &item.embedding);
@@ -2987,56 +3060,129 @@ pub(crate) async fn search_questions_with_local_embedding(
                 question_type: item.question_type.clone(),
                 similarity: sim,
                 answers: item.answers.clone(),
-                source: "本地题库向量检索".into(),
+                source: "题库向量检索".into(),
+                options: item.options.clone(),
             });
         }
     }
 
-    // 3. 远程调用 POST /api/questions/search 加速搜索（传递本地向量，服务端免计算直接余弦排序）
-    let base = server_url.trim_end_matches('/');
-    let url = format!("{base}/api/questions/search");
-    let client = http_client()?;
-    let search_payload = serde_json::json!({
-        "q": trimmed,
-        "embedding": local_vector,
-        "limit": limit.min(20),
-    });
-
-    let mut req = client.post(&url).json(&search_payload);
-    if let Some(key) = api_key {
-        let trimmed_key = key.trim();
-        if !trimmed_key.is_empty() {
-            req = req.header("x-api-key", trimmed_key);
+    // 3. 检索本地已收录题库 (qa-bank.json)，即使离线也能完整检索
+    if bank_path.exists() {
+        let bank = load_local_bank(bank_path);
+        for q in bank.values() {
+            if seen_qids.contains(&q.question_id) {
+                continue;
+            }
+            let clean_stem = q.stem.as_deref().map(strip_html_tags).unwrap_or_default();
+            let clean_opts: Option<Vec<QaUploadOption>> = q.options.as_ref().map(|opts| {
+                opts.iter()
+                    .map(|o| QaUploadOption {
+                        id: o.id.clone(),
+                        text: strip_html_tags(&o.text),
+                    })
+                    .collect()
+            });
+            let text = build_embedding_text(Some(&clean_stem), clean_opts.as_deref());
+            let q_vec = compute_local_embedding(&text);
+            let sim = cosine_similarity(&local_vector, &q_vec);
+            if sim > 0.3 || normalize_stem(&clean_stem).contains(&normalize_stem(trimmed)) {
+                seen_qids.insert(q.question_id.clone());
+                let answers = if !q.correct_answers.is_empty() {
+                    q.correct_answers.clone()
+                } else {
+                    q.answers
+                        .iter()
+                        .filter(|a| a.is_correct)
+                        .flat_map(|a| {
+                            a.values.iter().map(|v| match v {
+                                serde_json::Value::String(s) => s.clone(),
+                                serde_json::Value::Bool(true) => "A".to_string(),
+                                serde_json::Value::Bool(false) => "B".to_string(),
+                                other => other.to_string(),
+                            })
+                        })
+                        .collect()
+                };
+                results.push(QaSearchResultItem {
+                    question_id: q.question_id.clone(),
+                    tid: Some(q.tid.clone()),
+                    cid: Some(q.cid.clone()),
+                    stem: clean_stem,
+                    question_type: q.question_type.clone(),
+                    similarity: sim,
+                    answers,
+                    source: "题库语义检索".into(),
+                    options: clean_opts,
+                });
+            }
         }
     }
 
-    if let Ok(resp) = req.send().await {
-        if resp.status().is_success() {
-            if let Ok(data) = resp.json::<serde_json::Value>().await {
-                if let Some(list) = data["results"].as_array() {
-                    for row in list {
-                        let qid = row["questionId"]
-                            .as_str()
-                            .or_else(|| row["question_id"].as_str())
-                            .or_else(|| row["id"].as_i64().map(|id| id.to_string().leak() as &str))
-                            .unwrap_or("")
-                            .to_string();
+    // 4. 若网络可用，向远程服务端发起检索补充跨课程数据
+    if let Ok(client) = http_client() {
+        let base = server_url.trim_end_matches('/');
+        let url = format!("{base}/api/questions/search");
+        let search_payload = serde_json::json!({
+            "q": trimmed,
+            "embedding": local_vector,
+            "limit": limit.min(20),
+        });
 
-                        if !qid.is_empty() && !seen_qids.contains(&qid) {
-                            seen_qids.insert(qid.clone());
-                            let sim = row["similarity"].as_f64().unwrap_or(0.85);
-                            let stem = row["stem"].as_str().unwrap_or("").to_string();
-                            let q_type = row["type"].as_str().unwrap_or("single").to_string();
-                            results.push(QaSearchResultItem {
-                                question_id: qid,
-                                tid: row["tid"].as_str().map(str::to_string),
-                                cid: row["cid"].as_str().map(str::to_string),
-                                stem,
-                                question_type: q_type,
-                                similarity: sim,
-                                answers: vec![],
-                                source: "服务端向量加速检索".into(),
-                            });
+        let mut req = client.post(&url).json(&search_payload);
+        if let Some(key) = api_key {
+            let trimmed_key = key.trim();
+            if !trimmed_key.is_empty() {
+                req = req.header("x-api-key", trimmed_key);
+            }
+        }
+
+        if let Ok(resp) = req.send().await {
+            if resp.status().is_success() {
+                if let Ok(data) = resp.json::<serde_json::Value>().await {
+                    if let Some(list) = data["results"].as_array() {
+                        for row in list {
+                            let qid = row["questionId"]
+                                .as_str()
+                                .or_else(|| row["question_id"].as_str())
+                                .or_else(|| row["id"].as_i64().map(|id| id.to_string().leak() as &str))
+                                .unwrap_or("")
+                                .to_string();
+
+                            if !qid.is_empty() && !seen_qids.contains(&qid) {
+                                seen_qids.insert(qid.clone());
+                                let sim = row["similarity"].as_f64().unwrap_or(0.85);
+                                let stem = row["stem"].as_str().unwrap_or("").to_string();
+                                let q_type = row["type"].as_str().unwrap_or("single").to_string();
+                                let opts = row["options"].as_array().map(|arr| {
+                                    arr.iter()
+                                        .filter_map(|o| {
+                                            Some(QaUploadOption {
+                                                id: o["id"].as_str()?.to_string(),
+                                                text: o["text"].as_str()?.to_string(),
+                                            })
+                                        })
+                                        .collect()
+                                });
+                                let answers = row["answers"]
+                                    .as_array()
+                                    .map(|arr| {
+                                        arr.iter()
+                                            .filter_map(|v| v.as_str().map(str::to_string))
+                                            .collect()
+                                    })
+                                    .unwrap_or_default();
+                                results.push(QaSearchResultItem {
+                                    question_id: qid,
+                                    tid: row["tid"].as_str().map(str::to_string),
+                                    cid: row["cid"].as_str().map(str::to_string),
+                                    stem,
+                                    question_type: q_type,
+                                    similarity: sim,
+                                    answers,
+                                    source: "服务端共享题库".into(),
+                                    options: opts,
+                                });
+                            }
                         }
                     }
                 }
@@ -3595,5 +3741,58 @@ mod tests {
 
         let content_answers = extract_answers_content(&answers, &questions);
         assert_eq!(content_answers.get("q10"), Some(&vec!["正确答案文本".into()]));
+    }
+
+    #[test]
+    fn build_embedding_text_combines_stem_and_options() {
+        let stem = "关于定积分中值定理的说法";
+        let options = vec![
+            QaUploadOption { id: "A".into(), text: "连续函数在闭区间上必可积".into() },
+            QaUploadOption { id: "B".into(), text: "B. 可导函数必连续".into() },
+        ];
+        let text = build_embedding_text(Some(stem), Some(&options));
+        assert!(text.contains("关于定积分中值定理的说法"));
+        assert!(text.contains("A. 连续函数在闭区间上必可积"));
+        assert!(text.contains("B. 可导函数必连续"));
+    }
+
+    #[tokio::test]
+    async fn search_questions_works_offline_with_local_bank_and_cache() {
+        use tempfile::tempdir;
+        let dir = tempdir().unwrap();
+        let cache_path = dir.path().join("qa-vector-cache.json");
+        let bank_path = dir.path().join("qa-bank.json");
+
+        // 写入本地题库
+        let mut answers = Answers::new();
+        answers.insert("local_q1".into(), vec!["A".into()]);
+        let questions = vec![Question {
+            id: "local_q1".into(),
+            text: "离线本地高等数学定积分中值定理题目".into(),
+            kind: Kind::Single,
+            options: vec![
+                OptionItem { id: "A".into(), text: "连续函数在闭区间上可积".into() },
+                OptionItem { id: "B".into(), text: "不连续函数一定不可积".into() },
+            ],
+            blanks: 0,
+            images: vec![],
+        }];
+        record_passed_quiz(&bank_path, "101", "201", &questions, &answers, None).unwrap();
+
+        // 当给出一个完全不存在且连不上的服务器地址时（离线状况）
+        let results = search_questions_with_local_embedding(
+            &cache_path,
+            &bank_path,
+            "http://127.0.0.1:54321", // 不可达的离线地址
+            None,
+            "高等数学定积分",
+            10,
+        )
+        .await
+        .unwrap();
+
+        // 离线状况下依然可以完成向量与题库检索
+        assert!(!results.is_empty());
+        assert!(results.iter().any(|r| r.question_id == "local_q1"));
     }
 }

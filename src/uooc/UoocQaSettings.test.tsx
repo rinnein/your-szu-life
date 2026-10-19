@@ -458,3 +458,15 @@ it("dynamically fetches apikey when initial account status has no key upon click
     );
   });
 });
+
+it("displays search results in a dedicated modal reusing the question card module", async () => {
+  render(<UoocQaSettings />);
+  const input = await screen.findByPlaceholderText(/输入题干文本或关键词/);
+  fireEvent.change(input, { target: { value: "极限" } });
+  const searchBtn = screen.getByRole("button", { name: "题目搜索" });
+  fireEvent.click(searchBtn);
+
+  expect(await screen.findByRole("dialog", { name: "题目搜索结果" })).toBeInTheDocument();
+  expect(screen.getByText(/搜索词：「极限」/)).toBeInTheDocument();
+  expect(screen.getByText("关于定积分中值定理，以下表述正确的是？")).toBeInTheDocument();
+});

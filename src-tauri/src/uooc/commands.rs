@@ -259,16 +259,18 @@ pub(crate) async fn search_uooc_qa_questions(
 ) -> Result<Vec<super::quiz::qa::QaSearchResultItem>, String> {
     let service = service(&app)?;
     let cache_path = service.path.parent().unwrap().join("qa-vector-cache.json");
+    let bank_path = service.path.parent().unwrap().join("qa-bank.json");
     let url = server_url
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
     let api_key = service.qa_api_key_for_server(Some(&url)).await;
     super::quiz::qa::search_questions_with_local_embedding(
         &cache_path,
+        &bank_path,
         &url,
         api_key.as_deref(),
         &query,
-        15,
+        20,
     )
     .await
 }
