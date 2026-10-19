@@ -282,7 +282,7 @@ it("displays and saves qa server url field on qa tab", async () => {
       return {
         status: "ready",
         cachedCount: 10,
-        totalDimension: 1536,
+        totalDimension: 512,
         updatedAtMs: 1,
         message: "",
       };

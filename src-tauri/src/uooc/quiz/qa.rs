@@ -25,7 +25,7 @@ pub(crate) fn strip_html_tags(raw: &str) -> String {
     unescaped.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-pub(crate) const EMBEDDING_DIMENSIONS: usize = 1536;
+pub(crate) const EMBEDDING_DIMENSIONS: usize = 512;
 
 fn deserialize_flex_string<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
@@ -775,7 +775,7 @@ pub(crate) fn hash_stem(raw: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-/// Compute a deterministic 1536-dimensional L2-normalized semantic feature vector.
+/// Compute a deterministic 512-dimensional L2-normalized semantic feature vector.
 pub(crate) fn compute_local_embedding(text: &str) -> Vec<f32> {
     let normalized = normalize_stem(text);
     let mut vector = vec![0.0_f32; EMBEDDING_DIMENSIONS];
@@ -2854,7 +2854,7 @@ pub(crate) fn get_vector_status(cache_path: &Path) -> EmbeddingModelStatus {
     }
 }
 
-/// 从服务端批量拉取题目并缓存 1536 维向量
+/// 从服务端批量拉取题目并缓存 512 维向量
 pub(crate) async fn download_qa_vectors(
     cache_path: &Path,
     server_url: &str,
@@ -2954,7 +2954,7 @@ pub(crate) async fn download_qa_vectors(
     Ok(get_vector_status(cache_path))
 }
 
-/// 本地完成 1536 维向量计算后搜索题目（结合本地向量缓存余弦相似度与服务端远程搜索）
+/// 本地完成 512 维向量计算后搜索题目（结合本地向量缓存余弦相似度与服务端远程搜索）
 pub(crate) async fn search_questions_with_local_embedding(
     cache_path: &Path,
     server_url: &str,
@@ -2967,7 +2967,7 @@ pub(crate) async fn search_questions_with_local_embedding(
         return Ok(vec![]);
     }
 
-    // 1. 本地计算 1536 维特征向量
+    // 1. 本地计算 512 维特征向量
     let local_vector = compute_local_embedding(trimmed);
 
     let mut results: Vec<QaSearchResultItem> = Vec::new();

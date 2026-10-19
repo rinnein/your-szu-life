@@ -19,7 +19,7 @@ vi.mock("./qaAuthClient", () => ({
 const initialStatus: EmbeddingVectorStatus = {
   status: "empty",
   cachedCount: 0,
-  totalDimension: 1536,
+  totalDimension: 512,
   updatedAtMs: 1000,
   message: "尚未下载题库向量",
 };
@@ -27,7 +27,7 @@ const initialStatus: EmbeddingVectorStatus = {
 const downloadedStatus: EmbeddingVectorStatus = {
   status: "ready",
   cachedCount: 88,
-  totalDimension: 1536,
+  totalDimension: 512,
   updatedAtMs: 2000,
   message: "本地已缓存 88 条题目向量",
 };

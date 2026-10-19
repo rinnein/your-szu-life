@@ -333,7 +333,7 @@ export function UoocQaSettings({
       });
       setSearchResults(results);
       if (results.length === 0) {
-        toast.warning("未找到相似题目，已完成 1536 维特征向量计算");
+        toast.warning("未找到相似题目，已完成 512 维特征向量计算");
       }
     } catch (e: unknown) {
       const msg =
@@ -1593,7 +1593,7 @@ export function UoocQaSettings({
                   }}
                 />
                 <Description>
-                  支持 1536 维语义特征向量与关键词匹配，结合向量缓存与服务端高速检索
+                  支持 512 维语义特征向量与关键词匹配，结合向量缓存与服务端高速检索
                 </Description>
               </TextField>
             </div>
