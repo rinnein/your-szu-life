@@ -136,6 +136,8 @@ export function QuizPanel({
       if (cached && Object.keys(cached).length > 0) {
         return { ...quiz.answers, ...cached };
       }
+    } else if (quiz.studentAnswers && Object.keys(quiz.studentAnswers).length > 0) {
+      return { ...quiz.answers, ...quiz.studentAnswers };
     }
     return quiz.answers;
   });
@@ -207,7 +209,9 @@ export function QuizPanel({
     const baseAnswers: QuizAnswers =
       cached && Object.keys(cached).length > 0
         ? { ...quiz.answers, ...cached }
-        : { ...quiz.answers };
+        : isPassed && quiz.studentAnswers && Object.keys(quiz.studentAnswers).length > 0
+          ? { ...quiz.answers, ...quiz.studentAnswers }
+          : { ...quiz.answers };
     const nextAnswers: QuizAnswers = { ...baseAnswers };
     let hasAutoSelected = false;
 
@@ -836,17 +840,21 @@ export function QuizPanel({
                   })
                 )}
 
-                {/* AI / Jev 附加概率分布说明（如果有） */}
+                {/* AI / Jev 附加概率分布或错误排除说明（如果有） */}
                 {quiz.reviews
                   .filter(
                     (r) =>
                       r.questionId === q.id &&
-                      (r.message.includes("Jev") || Object.keys(r.probabilities).length > 0),
+                      (r.message.includes("Jev") || Object.keys(r.probabilities).length > 0 || r.message.includes("排除")),
                   )
                   .map((review, j) => (
                     <div
                       key={j}
-                      className="grid gap-1 rounded-lg border border-accent/25 bg-accent/5 p-2.5 text-xs text-muted"
+                      className={`grid gap-1 rounded-lg border p-2.5 text-xs ${
+                        review.message.includes("排除")
+                          ? "border-danger/30 bg-danger/5 text-danger"
+                          : "border-accent/25 bg-accent/5 text-muted"
+                      }`}
                     >
                       <p className="font-medium text-foreground">{review.message}</p>
                       {Object.keys(review.probabilities).length > 0 && (

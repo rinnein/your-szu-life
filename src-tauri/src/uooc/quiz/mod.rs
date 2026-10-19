@@ -1171,61 +1171,26 @@ impl Service {
         }
 
         let (task_id, task_title, is_finished) = target_quiz.ok_or("该课程下未找到测验")?;
+        let clean_tid = qa::sanitize_task_id(&task_id);
 
         // 针对该单个题组执行构建题库流程（获取题目+答案、存入本地共享题库并同步至服务端）
-        let _ = build_single_task_group(self, cid, &task_id, Some(is_finished)).await;
+        let (_, mut details) = build_single_task_group(self, cid, clean_tid, Some(is_finished)).await?;
 
-        // 从共享本地题库或接口加载该测验的题目与答案展现到测验面板中
-        let bank_path = self.path.parent().unwrap().join("qa-bank.json");
-        let bank = qa::load_local_bank(&bank_path);
-        let mut questions = Vec::new();
-        let mut answers = Answers::new();
-        for q in bank.values() {
-            if q.cid == cid && q.tid == task_id {
-                let kind = match q.question_type.as_str() {
-                    "11" | "multiple" => Kind::Multiple,
-                    "20" | "judge" => Kind::Single,
-                    "30" | "text" => Kind::Text,
-                    _ => Kind::Single,
-                };
-                let q_item = Question {
-                    id: q.question_id.clone(),
-                    text: q.stem.clone().unwrap_or_default(),
-                    kind,
-                    options: q
-                        .options
-                        .clone()
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(|o| OptionItem { id: o.id, text: o.text })
-                        .collect(),
-                    blanks: q.blanks,
-                    images: vec![],
-                };
-                if !q.correct_answers.is_empty() {
-                    answers.insert(q.question_id.clone(), q.correct_answers.clone());
-                }
-                questions.push(q_item);
-            }
+        if details.questions.is_empty() {
+            details = fetch_task_group_content(&client, cid, clean_tid, is_finished, &cancel).await?;
         }
 
-        if questions.is_empty() {
-            let (qs, ans) = fetch_task_group_content(&client, cid, &task_id, is_finished, &cancel).await?;
-            questions = qs;
-            answers = ans;
-        }
-
-        if questions.is_empty() {
+        if details.questions.is_empty() {
             return Err("未能获取测验试卷题目，可能尚未开放或需要重新登录".into());
         }
 
-        // 映射选项文本或字母，使 answers 能够匹配到题目选项
-        for q in &questions {
-            if let Some(ans_list) = answers.get_mut(&q.id) {
+        // 规范化答案值匹配到选项
+        for q in &details.questions {
+            if let Some(ans_list) = details.answers.get_mut(&q.id) {
                 let mut mapped = Vec::new();
                 for val in ans_list.iter() {
                     let val_trim = val.trim();
-                    if let Some(opt) = q.options.iter().find(|o| o.id == val_trim || o.text.trim() == val_trim) {
+                    if let Some(opt) = q.options.iter().find(|o| o.id.eq_ignore_ascii_case(val_trim) || o.text.trim() == val_trim) {
                         mapped.push(opt.id.clone());
                     } else {
                         mapped.push(val.clone());
@@ -1233,23 +1198,45 @@ impl Service {
                 }
                 *ans_list = mapped;
             }
+            if let Some(stu_list) = details.student_answers.get_mut(&q.id) {
+                let mut mapped = Vec::new();
+                for val in stu_list.iter() {
+                    let val_trim = val.trim();
+                    if let Some(opt) = q.options.iter().find(|o| o.id.eq_ignore_ascii_case(val_trim) || o.text.trim() == val_trim) {
+                        mapped.push(opt.id.clone());
+                    } else {
+                        mapped.push(val.clone());
+                    }
+                }
+                *stu_list = mapped;
+            }
         }
+
+        let message = if let Some(score) = details.grade_score {
+            if let Some(total) = details.total_score {
+                format!("测验已完成，得分：{:.2} / {:.2} 分", score, total)
+            } else {
+                format!("测验已完成，得分：{:.2} 分", score)
+            }
+        } else if is_finished {
+            "已拉取已完成测验的题目与作答情况".into()
+        } else {
+            "已拉取测验题目，可继续答题".into()
+        };
 
         // 更新 Snapshot 中的测验状态
         let mut r = self.runtime.lock().unwrap();
         let q = r.snapshot.quizzes.entry(key(&account, cid)).or_default();
         q.account_id = account;
         q.cid = cid.to_string();
-        q.task_id = task_id;
-        q.title = task_title;
-        q.questions = questions;
-        q.answers = answers;
+        q.task_id = clean_tid.to_string();
+        q.title = details.task_title.unwrap_or(task_title);
+        q.questions = details.questions;
+        q.answers = details.answers;
+        q.reviews = details.reviews;
+        q.student_answers = details.student_answers;
         q.stage = if is_finished { Stage::Passed } else { Stage::AwaitingApproval };
-        q.message = if is_finished {
-            "已强制拉取并展示测验题目与答案".into()
-        } else {
-            "已拉取测验题目，可继续答题".into()
-        };
+        q.message = message;
         q.revision += 1;
         self.publish(&mut r);
 
@@ -1293,86 +1280,85 @@ async fn fetch_task_group_content(
     tid: &str,
     is_finished: bool,
     cancel: &CancellationToken,
-) -> Result<(Vec<Question>, Answers), String> {
-    let mut questions = Vec::new();
-    let mut answers = Answers::new();
+) -> Result<qa::ExamViewDetails, String> {
+    let clean_tid = qa::sanitize_task_id(tid);
+    let view_url = format!("{}/exam/view?cid={cid}&tid={clean_tid}", client.origin());
+    let tp_url = format!("{}/exam/getTaskPaper?tid={clean_tid}", client.origin());
 
-    let view_url = format!("{}/exam/view?cid={cid}&tid={tid}", client.origin());
-    let tp_url = format!("{}/exam/getTaskPaper?tid={tid}", client.origin());
+    let mut details = qa::ExamViewDetails::default();
 
     if is_finished {
-        // 1. 已提交判题的题目：强制走 https://www.uooc.net.cn/exam/view?cid=&tid= 获取题目+用户提交答案+标准答案
-        let mut view_qs = Vec::new();
-        let mut view_ans = Answers::new();
+        // 1. 已提交判题的题目：强制走 https://www.uooc.net.cn/exam/view?cid=&tid= 获取题目+作答+标准答案+评分
         if let Ok(view_bytes) = client.quiz_http(&view_url, None, cancel).await {
-            if let Some((v_qs, v_ans)) = qa::parse_exam_view(&view_bytes) {
-                view_qs = v_qs;
-                view_ans = v_ans;
+            if let Some(d) = qa::parse_exam_view_details(&view_bytes) {
+                details = d;
             }
         }
 
         // 尝试补充 getTaskPaper 获取单题全局数字 ID 与纯净选项
-        let mut tp_qs = Vec::new();
-        let mut tp_ans = Answers::new();
         if let Ok(tp_bytes) = client.quiz_http(&tp_url, None, cancel).await {
-            if let Some((t_qs, t_ans)) = qa::parse_task_paper(&tp_bytes) {
-                tp_qs = t_qs;
-                tp_ans = t_ans;
+            if let Some((tp_qs, tp_ans)) = qa::parse_task_paper(&tp_bytes) {
+                if details.questions.is_empty() {
+                    details.questions = tp_qs;
+                    details.answers = tp_ans;
+                } else {
+                    for (qid, ans) in tp_ans {
+                        details.answers.entry(qid).or_insert(ans);
+                    }
+                }
             }
-        }
-
-        if !tp_qs.is_empty() {
-            questions = tp_qs;
-            answers = tp_ans;
-            // 将从 /exam/view 解析出来的作答与标准答案精准对齐填充
-            qa::align_view_answers_to_questions(&view_qs, &view_ans, &questions, &mut answers);
-        } else if !view_qs.is_empty() {
-            questions = view_qs;
-            answers = view_ans;
         }
     } else {
         // 2. 未确定是否已提交：先尝试从 /exam/getTaskPaper 获取题单
         if let Ok(tp_bytes) = client.quiz_http(&tp_url, None, cancel).await {
             if let Some((tp_qs, tp_ans)) = qa::parse_task_paper(&tp_bytes) {
                 if !tp_qs.is_empty() {
-                    questions = tp_qs;
-                    answers = tp_ans;
+                    details.questions = tp_qs;
+                    details.answers = tp_ans;
                 }
             }
         }
 
         // 若用户还未提交过题目，则临时保存答案一次(请求保存草稿api)，此时再获取题目
-        if questions.is_empty() {
-            if let Ok(p) = paper(client, tid, cancel).await {
+        if details.questions.is_empty() {
+            if let Ok(p) = paper(client, clean_tid, cancel).await {
                 // 保存答案 API（POST /exam/{tid} 保存草稿）
-                let save_url = format!("{}/exam/{tid}", client.origin());
+                let save_url = format!("{}/exam/{clean_tid}", client.origin());
                 let _ = client.quiz_http(&save_url, Some(&p.fields), cancel).await;
 
                 // 临时保存后再执行获取题目
                 if let Ok(tp_bytes) = client.quiz_http(&tp_url, None, cancel).await {
                     if let Some((tp_qs, tp_ans)) = qa::parse_task_paper(&tp_bytes) {
                         if !tp_qs.is_empty() {
-                            questions = tp_qs;
-                            answers = tp_ans;
+                            details.questions = tp_qs;
+                            details.answers = tp_ans;
                         }
                     }
                 }
-                if questions.is_empty() {
-                    questions = p.questions;
+                if details.questions.is_empty() {
+                    details.questions = p.questions;
                 }
             }
         }
 
         // 关键兜底：用户可能在加入列表前已经在 UOOC 官网答过题并提交！
         // 若标准答案依然为空，尝试请求 /exam/view?cid=&tid= 获取用户提交答案与标准答案
-        if answers.is_empty() {
+        if details.answers.is_empty() {
             if let Ok(view_bytes) = client.quiz_http(&view_url, None, cancel).await {
-                if let Some((view_qs, view_ans)) = qa::parse_exam_view(&view_bytes) {
-                    if !questions.is_empty() {
-                        qa::align_view_answers_to_questions(&view_qs, &view_ans, &questions, &mut answers);
-                    } else if !view_qs.is_empty() {
-                        questions = view_qs;
-                        answers = view_ans;
+                if let Some(v_details) = qa::parse_exam_view_details(&view_bytes) {
+                    if !details.questions.is_empty() {
+                        qa::align_view_details_to_questions(
+                            &v_details,
+                            &details.questions,
+                            &mut details.answers,
+                            &mut details.reviews,
+                            &mut details.student_answers,
+                        );
+                        details.wrong_answers = v_details.wrong_answers;
+                        details.grade_score = v_details.grade_score;
+                        details.total_score = v_details.total_score;
+                    } else if !v_details.questions.is_empty() {
+                        details = v_details;
                     }
                 }
             }
@@ -1380,25 +1366,31 @@ async fn fetch_task_group_content(
     }
 
     // 兜底：如果依然为空，尝试从 HTML 解析
-    if questions.is_empty() {
-        if let Ok(p) = paper(client, tid, cancel).await {
-            questions = p.questions;
+    if details.questions.is_empty() {
+        if let Ok(p) = paper(client, clean_tid, cancel).await {
+            details.questions = p.questions;
         }
     }
 
     // 终极保护：只要题目不为空但答案为空，始终请求一次 /exam/view 确保不漏掉官网已作答的答案
-    if !questions.is_empty() && answers.is_empty() {
+    if !details.questions.is_empty() && details.answers.is_empty() {
         if let Ok(view_bytes) = client.quiz_http(&view_url, None, cancel).await {
-            if let Some((view_qs, view_ans)) = qa::parse_exam_view(&view_bytes) {
-                qa::align_view_answers_to_questions(&view_qs, &view_ans, &questions, &mut answers);
-                if answers.is_empty() && !view_ans.is_empty() {
-                    answers = view_ans;
-                }
+            if let Some(v_details) = qa::parse_exam_view_details(&view_bytes) {
+                qa::align_view_details_to_questions(
+                    &v_details,
+                    &details.questions,
+                    &mut details.answers,
+                    &mut details.reviews,
+                    &mut details.student_answers,
+                );
+                details.wrong_answers = v_details.wrong_answers;
+                details.grade_score = v_details.grade_score;
+                details.total_score = v_details.total_score;
             }
         }
     }
 
-    Ok((questions, answers))
+    Ok(details)
 }
 
 pub(crate) async fn build_single_task_group(
@@ -1406,7 +1398,8 @@ pub(crate) async fn build_single_task_group(
     cid: &str,
     tid: &str,
     known_finished: Option<bool>,
-) -> Result<usize, String> {
+) -> Result<(usize, qa::ExamViewDetails), String> {
+    let clean_tid = qa::sanitize_task_id(tid);
     let (client, qa_url, qa_key) = {
         let r = service.runtime.lock().unwrap();
         (
@@ -1434,10 +1427,10 @@ pub(crate) async fn build_single_task_group(
             .and_then(|t| {
                 t.videos
                     .iter()
-                    .find(|v| v.task_id.as_deref() == Some(tid))
+                    .find(|v| v.task_id.as_deref().map(qa::sanitize_task_id) == Some(clean_tid))
                     .map(|v| v.title.clone())
             })
-            .unwrap_or_else(|| format!("测验 {tid}"));
+            .unwrap_or_else(|| format!("测验 {clean_tid}"));
         (c_name, t_name)
     };
 
@@ -1445,13 +1438,13 @@ pub(crate) async fn build_single_task_group(
         stage: "task".into(),
         cid: cid.to_string(),
         course_name: course_title.clone(),
-        tid: Some(tid.to_string()),
+        tid: Some(clean_tid.to_string()),
         task_name: Some(task_title.clone()),
         question_id: None,
         question_stem: None,
         current: 0,
         total: 0,
-        message: format!("正在解析测验「{}」(tid: {})...", task_title, tid),
+        message: format!("正在解析测验「{}」(tid: {})...", task_title, clean_tid),
     });
 
     // 1. 判断该题单 finished 是 true 还是 false（检测任务列表、完成记录与 getCatalogList）
@@ -1463,12 +1456,12 @@ pub(crate) async fn build_single_task_group(
             {
                 let r = service.runtime.lock().unwrap();
                 if let Some(task) = r.snapshot.tasks.iter().find(|t| t.course.id == cid) {
-                    if task.videos.iter().any(|v| v.task_id.as_deref() == Some(tid) && v.status == TaskStatus::Completed) {
+                    if task.videos.iter().any(|v| v.task_id.as_deref().map(qa::sanitize_task_id) == Some(clean_tid) && v.status == TaskStatus::Completed) {
                         fin = true;
                     }
                 }
                 if !fin {
-                    if r.snapshot.quizzes.values().any(|q| q.cid == cid && q.task_id == tid && q.stage == Stage::Passed) {
+                    if r.snapshot.quizzes.values().any(|q| q.cid == cid && qa::sanitize_task_id(&q.task_id) == clean_tid && q.stage == Stage::Passed) {
                         fin = true;
                     }
                 }
@@ -1482,7 +1475,7 @@ pub(crate) async fn build_single_task_group(
                     while let Some(n) = queue.pop_front() {
                         let node_tid = id(&n["task_id"]).unwrap_or_default();
                         let node_id = id(&n["id"]).unwrap_or_default();
-                        if node_tid == tid || node_id == tid {
+                        if qa::sanitize_task_id(&node_tid) == clean_tid || qa::sanitize_task_id(&node_id) == clean_tid {
                             fin = number(&n["finished"]) != 0.0;
                             break;
                         }
@@ -1499,22 +1492,22 @@ pub(crate) async fn build_single_task_group(
     };
 
     // 2. 按照核心流程获取题目与答案
-    let (questions, mut answers) = fetch_task_group_content(&client, cid, tid, is_finished, &cancel)
+    let mut details = fetch_task_group_content(&client, cid, clean_tid, is_finished, &cancel)
         .await
         .unwrap_or_default();
 
-    for (q_idx, q) in questions.iter().enumerate() {
+    for (q_idx, q) in details.questions.iter().enumerate() {
         let snippet = q.text.chars().take(40).collect::<String>();
         service.emit_bank_progress(&super::model::BankRebuildProgress {
             stage: "question".into(),
             cid: cid.to_string(),
             course_name: course_title.clone(),
-            tid: Some(tid.to_string()),
+            tid: Some(clean_tid.to_string()),
             task_name: Some(task_title.clone()),
             question_id: Some(q.id.clone()),
             question_stem: Some(snippet),
             current: q_idx + 1,
-            total: questions.len(),
+            total: details.questions.len(),
             message: format!("已解析题目 [ID: {}]", q.id),
         });
     }
@@ -1523,7 +1516,7 @@ pub(crate) async fn build_single_task_group(
 
     // 3. 从服务端尝试拉取已有众包答案，并检测题组在服务端的存在状态
     let mut server_lacks_task_group = false;
-    match qa::query_task_answers(&qa_url, qa_key.as_deref(), tid, Some(cid)).await {
+    match qa::query_task_answers(&qa_url, qa_key.as_deref(), clean_tid, Some(cid)).await {
         Ok(server_qs) => {
             let mut server_answers = Answers::new();
             for sq in &server_qs {
@@ -1536,32 +1529,35 @@ pub(crate) async fn build_single_task_group(
                 }
             }
             if !server_answers.is_empty() {
-                answers.extend(server_answers);
+                for (qid, ans) in server_answers {
+                    details.answers.entry(qid).or_insert(ans);
+                }
             }
         }
         Err(e) if e.contains("Task group not found in this course") => {
             service.log_debug(
                 "bank",
-                format!("服务端提示「Task group not found in this course」[cid: {cid}, tid: {tid}]，需要创建该新题组到服务器"),
+                format!("服务端提示「Task group not found in this course」[cid: {cid}, tid: {clean_tid}]，需要创建该新题组到服务器"),
             );
             server_lacks_task_group = true;
         }
         Err(e) => {
             service.log_debug(
                 "bank",
-                format!("查询服务端题组失败 [cid: {cid}, tid: {tid}]: {e}"),
+                format!("查询服务端题组失败 [cid: {cid}, tid: {clean_tid}]: {e}"),
             );
         }
     }
 
     // 4. 记录到共享本地题库 (qa-bank.json)
-    if !questions.is_empty() {
-        let _ = qa::record_passed_quiz(
+    if !details.questions.is_empty() {
+        let _ = qa::record_passed_quiz_with_details(
             &bank_path,
             cid,
-            tid,
-            &questions,
-            &answers,
+            clean_tid,
+            &details.questions,
+            &details.answers,
+            &details.wrong_answers,
             Some(&course_title),
         );
     }
@@ -1582,7 +1578,7 @@ pub(crate) async fn build_single_task_group(
                 if let Ok(val) = resp.json::<serde_json::Value>().await {
                     if let Some(groups) = val["taskGroups"].as_array() {
                         for g in groups {
-                            if id(&g["tid"]).as_deref() == Some(tid) {
+                            if id(&g["tid"]).as_deref().map(qa::sanitize_task_id) == Some(clean_tid) {
                                 server_has_tid = true;
                                 break;
                             }
@@ -1599,21 +1595,21 @@ pub(crate) async fn build_single_task_group(
     if server_lacks_task_group {
         service.log_debug(
             "bank",
-            format!("服务端缺少测验题组 [cid: {cid}, tid: {tid}, task: {task_title}]，正在创建新题组并上传试题至服务端..."),
+            format!("服务端缺少测验题组 [cid: {cid}, tid: {clean_tid}, task: {task_title}]，正在创建新题组并上传试题至服务端..."),
         );
         let upload_payload = qa::build_batch_upload_payload(
-            tid,
+            clean_tid,
             Some(cid),
             Some(&task_title),
             Some(&course_title),
-            &questions,
-            &answers,
+            &details.questions,
+            &details.answers,
         );
         if let Ok(res) = qa::upload_batch(&qa_url, qa_key.as_deref(), &upload_payload, Some(service)).await {
-            if res.ok && !questions.is_empty() {
+            if res.ok && !details.questions.is_empty() {
                 let mut bank = qa::load_local_bank(&bank_path);
-                for q in &questions {
-                    let key = qa::bank_key(tid, &q.id);
+                for q in &details.questions {
+                    let key = qa::bank_key(clean_tid, &q.id);
                     if let Some(item) = bank.get_mut(&key) {
                         item.uploaded = true;
                     }
@@ -1628,7 +1624,7 @@ pub(crate) async fn build_single_task_group(
             &qa_url,
             qa_key.as_deref(),
             Some(cid),
-            Some(tid),
+            Some(clean_tid),
             Some(service),
         ).await;
     }
@@ -1641,16 +1637,16 @@ pub(crate) async fn build_single_task_group(
         stage: "task_complete".into(),
         cid: cid.to_string(),
         course_name: course_title.clone(),
-        tid: Some(tid.to_string()),
+        tid: Some(clean_tid.to_string()),
         task_name: Some(task_title.clone()),
         question_id: None,
         question_stem: None,
-        current: questions.len(),
-        total: questions.len(),
-        message: format!("测验「{}」已完成收录（共 {} 道题目）", task_title, questions.len()),
+        current: details.questions.len(),
+        total: details.questions.len(),
+        message: format!("测验「{}」已完成收录（共 {} 道题目）", task_title, details.questions.len()),
     });
 
-    Ok(questions.len())
+    Ok((details.questions.len(), details))
 }
 
 pub(crate) async fn build_local_bank(service: &Arc<Service>) -> Result<usize, String> {

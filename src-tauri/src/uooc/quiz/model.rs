@@ -97,6 +97,8 @@ pub(crate) struct QuizState {
     pub notified: String,
     #[serde(default)]
     pub ai_sessions: Vec<AiSessionEntry>,
+    #[serde(default)]
+    pub student_answers: Answers,
 }
 pub(crate) fn validate_answers(
     questions: &[Question],

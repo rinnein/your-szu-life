@@ -270,6 +270,62 @@ it("automatically selects option when bank matches standard answer even if answe
   expect(radioA).toBeChecked();
 });
 
+it("correctly displays student answers and exclusions without falsifying wrong options as standard answers in passed quiz", () => {
+  const passedQuizWithWrongs: QuizState = {
+    ...quiz(),
+    stage: "passed",
+    message: "测验已完成，得分：70.00 / 100.00 分",
+    // q1 was answered correctly with option "a"
+    // q2 was answered incorrectly with option "b", so answers does not contain q2!
+    answers: { q1: ["a"] },
+    studentAnswers: { q1: ["a"], q2: ["b"] },
+    questions: [
+      {
+        id: "q1",
+        text: "第一道题目（做对）",
+        kind: "single",
+        options: [
+          { id: "a", text: "正确选项内容" },
+          { id: "b", text: "干扰项" },
+        ],
+        blanks: 0,
+        images: [],
+      },
+      {
+        id: "q2",
+        text: "第二道题目（做错）",
+        kind: "single",
+        options: [
+          { id: "a", text: "真·标准答案内容" },
+          { id: "b", text: "用户选错的选项内容" },
+        ],
+        blanks: 0,
+        images: [],
+      },
+    ],
+    reviews: [
+      {
+        questionId: "q2",
+        answers: ["b"],
+        probabilities: {},
+        message: "作答未得分，已排除错误选项：b",
+      },
+    ],
+  };
+
+  render(<QuizPanel quiz={passedQuizWithWrongs} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
+
+  // 1. Overall score in message
+  expect(screen.getByText("测验已完成，得分：70.00 / 100.00 分")).toBeInTheDocument();
+
+  // 2. Q1 (correct): Option a has 标准答案 and 已选
+  expect(screen.getByText("标准答案")).toBeInTheDocument();
+
+  // 3. Q2 (wrong): Option b has 排除答案 and 已选, and DOES NOT have 标准答案!
+  expect(screen.getByText("排除答案")).toBeInTheDocument();
+  expect(screen.getByText("作答未得分，已排除错误选项：b")).toBeInTheDocument();
+});
+
 it("pops up execution flow modal with AI session when clicking AI 答题", async () => {
   const q: QuizState = {
     ...quiz(),

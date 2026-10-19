@@ -204,6 +204,7 @@ export type QuizState = {
   videoComplete: boolean;
   passed: string[];
   aiSessions?: AiSessionEntry[];
+  studentAnswers?: QuizAnswers;
 };
 export type AiProvider = { baseUrl: string; model: string; hasKey: boolean };
 export type AiConnectionProvider = { baseUrl: string; hasKey: boolean };

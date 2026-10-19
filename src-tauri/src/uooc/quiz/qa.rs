@@ -269,6 +269,19 @@ pub(crate) struct BankMatchItem {
     pub question_id: String,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ExamViewDetails {
+    pub questions: Vec<Question>,
+    pub answers: Answers,
+    pub reviews: Vec<Review>,
+    pub student_answers: Answers,
+    pub wrong_answers: Answers,
+    pub total_score: Option<f64>,
+    pub grade_score: Option<f64>,
+    pub task_title: Option<String>,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct BankMatchPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -717,6 +730,21 @@ pub(crate) async fn poll_device_token(
         api_key: Some(key.to_string()),
         error: None,
     })
+}
+
+/// Sanitize task id by stripping URL fragments or anchor parameters (e.g. `1243266098##anchor1086731163` or `1243266098%23%23...`)
+pub(crate) fn sanitize_task_id(tid: &str) -> &str {
+    let mut s = tid.trim();
+    if let Some(pos) = s.find("##") {
+        s = &s[..pos];
+    }
+    if let Some(pos) = s.find("%23%23") {
+        s = &s[..pos];
+    }
+    if let Some(pos) = s.find('#') {
+        s = &s[..pos];
+    }
+    s.trim()
 }
 
 /// Normalize stem according to uooc-qa-share specification:
@@ -1756,28 +1784,45 @@ pub(crate) fn build_batch_upload_payload(
     }
 }
 
-/// 录入已通过并确认答案的测验试题到本地题库表，标记 uploaded 状态
-pub(crate) fn record_passed_quiz(
+/// 录入已通过并确认答案（及已知错误选项）的测验试题到本地题库表，标记 uploaded 状态
+pub(crate) fn record_passed_quiz_with_details(
     bank_path: &Path,
     cid: &str,
     task_id: &str,
     questions: &[Question],
     answers: &Answers,
+    wrong_answers: &Answers,
     course_name: Option<&str>,
 ) -> Result<usize, String> {
+    let clean_tid = sanitize_task_id(task_id);
     let mut bank = load_local_bank(bank_path);
     let mut count = 0;
     let now = chrono::Utc::now().timestamp_millis();
     let content_answers = extract_answers_content(answers, questions);
 
     for q in questions {
-        let key = bank_key(task_id, &q.id);
+        let key = bank_key(clean_tid, &q.id);
         let existing = bank.get(&key);
-        let ans = content_answers
+        let mut ans = content_answers
             .get(&q.id)
             .cloned()
             .or_else(|| existing.map(|e| e.correct_answers.clone()))
             .unwrap_or_default();
+
+        let wrongs = wrong_answers.get(&q.id);
+
+        // 关键清理保护：如果已知错误答案曾经被错误写入 correct_answers，坚决移除！
+        if let Some(w_list) = wrongs {
+            ans.retain(|a| {
+                !w_list.iter().any(|w| {
+                    w.eq_ignore_ascii_case(a)
+                        || q.options.iter().any(|o| {
+                            (o.id.eq_ignore_ascii_case(w) || o.text.trim() == w.trim())
+                                && (o.id.eq_ignore_ascii_case(a) || o.text.trim() == a.trim())
+                        })
+                })
+            });
+        }
 
         let already_uploaded = existing
             .map(|old| old.uploaded && old.correct_answers == ans && !ans.is_empty())
@@ -1836,10 +1881,28 @@ pub(crate) fn record_passed_quiz(
             });
         }
 
+        // 记录已知错误选项为 is_correct = false
+        if let Some(w_list) = wrongs {
+            for w in w_list {
+                let val = if let Some(opt) = q.options.iter().find(|o| o.text.trim() == w.trim() || o.id.eq_ignore_ascii_case(w.trim())) {
+                    serde_json::Value::String(opt.id.clone())
+                } else {
+                    serde_json::Value::String(w.clone())
+                };
+                bank_answers.push(LocalBankAnswer {
+                    id: None,
+                    values: vec![val],
+                    is_correct: false,
+                    source: "local".into(),
+                    confidence: 1.0,
+                });
+            }
+        }
+
         let record = LocalBankQuestion {
             cid: cid.to_string(),
             course_name: c_name,
-            tid: task_id.to_string(),
+            tid: clean_tid.to_string(),
             task_name: None,
             question_id: q.id.clone(),
             question_type: q_type_str.into(),
@@ -1869,6 +1932,26 @@ pub(crate) fn record_passed_quiz(
 
     save_local_bank(bank_path, &bank)?;
     Ok(count)
+}
+
+/// 录入已通过并确认答案的测验试题到本地题库表，标记 uploaded 状态
+pub(crate) fn record_passed_quiz(
+    bank_path: &Path,
+    cid: &str,
+    task_id: &str,
+    questions: &[Question],
+    answers: &Answers,
+    course_name: Option<&str>,
+) -> Result<usize, String> {
+    record_passed_quiz_with_details(
+        bank_path,
+        cid,
+        task_id,
+        questions,
+        answers,
+        &Answers::new(),
+        course_name,
+    )
 }
 
 /// 针对本地维护的确认答案题目列表，调用 POST /api/automation/match 进行服务端缺失确认，
@@ -2317,40 +2400,89 @@ pub(crate) fn align_paper_with_task_paper(
     }
 }
 
-/// 解析 /exam/view 返回的已提交测验数据（支持 JSON 和 HTML 两种形态）
-pub(crate) fn parse_exam_view(raw: &[u8]) -> Option<(Vec<Question>, Answers)> {
-    if let Ok(val) = serde_json::from_slice::<serde_json::Value>(raw) {
-        // 优先使用专门的 parse_exam_view_json 解析包含已批改答案/用户提交答案的试卷数据
-        if let Some((questions, answers)) = parse_exam_view_json(&val) {
-            if !questions.is_empty() && !answers.is_empty() {
-                return Some((questions, answers));
-            }
-            if !questions.is_empty() {
-                if let Some((tp_qs, tp_ans)) = parse_task_paper_json(&val) {
-                    if !tp_ans.is_empty() {
-                        return Some((tp_qs, tp_ans));
-                    }
+fn parse_score_val(val: &serde_json::Value) -> Option<f64> {
+    if let Some(n) = val.as_f64() {
+        Some(n)
+    } else if let Some(s) = val.as_str() {
+        s.trim().parse::<f64>().ok()
+    } else {
+        None
+    }
+}
+
+fn parse_string_list(val: &serde_json::Value) -> Vec<String> {
+    let mut list = Vec::new();
+    if let Some(arr) = val.as_array() {
+        for a in arr {
+            if let Some(s) = a.as_str() {
+                let trimmed = s.trim();
+                if !trimmed.is_empty() {
+                    list.push(trimmed.to_string());
                 }
-                return Some((questions, answers));
+            } else if let Some(n) = a.as_i64() {
+                list.push(n.to_string());
             }
+        }
+    } else if let Some(s) = val.as_str() {
+        for part in s.split(|c| c == ',' || c == '，' || c == '、' || c == ' ' || c == ';') {
+            let trimmed = part.trim().trim_matches(|c: char| !c.is_alphanumeric());
+            if !trimmed.is_empty() {
+                list.push(trimmed.to_string());
+            }
+        }
+    }
+    list
+}
+
+/// 解析 /exam/view 返回的已提交测验详细数据（支持 JSON 和 HTML 两种形态）
+pub(crate) fn parse_exam_view_details(raw: &[u8]) -> Option<ExamViewDetails> {
+    if let Ok(val) = serde_json::from_slice::<serde_json::Value>(raw) {
+        if let Some(details) = parse_exam_view_json_details(&val) {
+            return Some(details);
         }
         if let Some((questions, answers)) = parse_task_paper_json(&val) {
             if !questions.is_empty() {
-                return Some((questions, answers));
+                return Some(ExamViewDetails {
+                    questions,
+                    answers,
+                    reviews: Vec::new(),
+                    student_answers: BTreeMap::new(),
+                    wrong_answers: BTreeMap::new(),
+                    total_score: None,
+                    grade_score: None,
+                    task_title: None,
+                });
             }
         }
     }
 
     if let Ok(html_str) = String::from_utf8(raw.to_vec()) {
         if html_str.contains('<') {
-            return parse_exam_view_html(&html_str);
+            if let Some((questions, answers)) = parse_exam_view_html(&html_str) {
+                return Some(ExamViewDetails {
+                    questions,
+                    answers,
+                    reviews: Vec::new(),
+                    student_answers: BTreeMap::new(),
+                    wrong_answers: BTreeMap::new(),
+                    total_score: None,
+                    grade_score: None,
+                    task_title: None,
+                });
+            }
         }
     }
 
     None
 }
 
-fn parse_exam_view_json(val: &serde_json::Value) -> Option<(Vec<Question>, Answers)> {
+/// 解析 /exam/view 返回的已提交测验数据（支持 JSON 和 HTML 两种形态）
+#[allow(dead_code)]
+pub(crate) fn parse_exam_view(raw: &[u8]) -> Option<(Vec<Question>, Answers)> {
+    parse_exam_view_details(raw).map(|d| (d.questions, d.answers))
+}
+
+pub(crate) fn parse_exam_view_json_details(val: &serde_json::Value) -> Option<ExamViewDetails> {
     let list = val["data"]["questions"]
         .as_array()
         .or_else(|| val["questions"].as_array())
@@ -2362,6 +2494,13 @@ fn parse_exam_view_json(val: &serde_json::Value) -> Option<(Vec<Question>, Answe
 
     let mut questions = Vec::new();
     let mut answers = BTreeMap::new();
+    let mut reviews = Vec::new();
+    let mut student_answers = BTreeMap::new();
+    let mut wrong_answers = BTreeMap::new();
+    let mut total_earned_score = 0.0;
+    let mut total_max_score = 0.0;
+    let mut has_any_grade_score = false;
+    let mut has_any_max_score = false;
 
     for (index, item) in list.iter().enumerate() {
         let qid = item["id"]
@@ -2372,28 +2511,40 @@ fn parse_exam_view_json(val: &serde_json::Value) -> Option<(Vec<Question>, Answe
             .or_else(|| item["question_id"].as_str().map(str::to_string))
             .unwrap_or_else(|| format!("q{index}"));
 
-        let stem = item["stem"]
+        let stem = item["question"]
             .as_str()
+            .or_else(|| item["stem"].as_str())
             .or_else(|| item["title"].as_str())
             .or_else(|| item["content"].as_str())
-            .or_else(|| item["question"].as_str())
             .unwrap_or_default()
             .to_string();
 
         let type_str = item["type"]
             .as_str()
             .or_else(|| item["question_type"].as_str())
-            .unwrap_or("single");
-
-        let kind = match type_str {
-            "11" | "multiple" => Kind::Multiple,
-            "20" | "judge" => Kind::Single,
-            "30" | "text" => Kind::Text,
-            _ => Kind::Single,
+            .unwrap_or("");
+        let type_int = item["type"].as_i64();
+        let kind = match (type_str, type_int) {
+            ("11", _) | (_, Some(11)) | ("multiple", _) => Kind::Multiple,
+            ("20", _) | (_, Some(20)) | ("judge", _) => Kind::Single,
+            ("30", _) | (_, Some(30)) | ("text", _) => Kind::Text,
+            _ => {
+                if let Some(text) = item["type_text"].as_str() {
+                    if text.contains("多选") {
+                        Kind::Multiple
+                    } else if text.contains("填空") {
+                        Kind::Text
+                    } else {
+                        Kind::Single
+                    }
+                } else {
+                    Kind::Single
+                }
+            }
         };
 
         let mut options = Vec::new();
-        if let Some(opts) = item["options_app"].as_array().or_else(|| item["options"].as_array()) {
+        if let Some(opts) = item["options_app"].as_array() {
             for (opt_idx, opt) in opts.iter().enumerate() {
                 let opt_id = opt["key"]
                     .as_str()
@@ -2416,112 +2567,174 @@ fn parse_exam_view_json(val: &serde_json::Value) -> Option<(Vec<Question>, Answe
                     text: opt_text,
                 });
             }
+        } else if let Some(opts) = item["options"].as_array() {
+            for (opt_idx, opt) in opts.iter().enumerate() {
+                let opt_id = opt["key"]
+                    .as_str()
+                    .or_else(|| opt["id"].as_str())
+                    .or_else(|| opt["value"].as_str().filter(|v| v.len() <= 2))
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| {
+                        let letter = (b'A' + opt_idx as u8) as char;
+                        letter.to_string()
+                    });
+                let opt_text = opt["value"]
+                    .as_str()
+                    .or_else(|| opt["text"].as_str())
+                    .or_else(|| opt["title"].as_str())
+                    .or_else(|| opt["content"].as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                options.push(OptionItem {
+                    id: opt_id,
+                    text: opt_text,
+                });
+            }
+        } else if let Some(map) = item["options"].as_object() {
+            let mut entries: Vec<_> = map.iter().collect();
+            entries.sort_by_key(|(k, _)| (*k).clone());
+            for (opt_key, opt_val) in entries {
+                let opt_text = opt_val
+                    .as_str()
+                    .or_else(|| opt_val["value"].as_str())
+                    .or_else(|| opt_val["text"].as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                options.push(OptionItem {
+                    id: opt_key.clone(),
+                    text: opt_text,
+                });
+            }
         }
+
+        // 1. 标准答案（若不公开，通常为空数组 []）
+        let std_answers = parse_string_list(&item["answer"])
+            .into_iter()
+            .chain(parse_string_list(&item["answers"]))
+            .chain(parse_string_list(&item["standard_answer"]))
+            .chain(parse_string_list(&item["standardAnswer"]))
+            .chain(parse_string_list(&item["right_answer"]))
+            .chain(parse_string_list(&item["rightAnswer"]))
+            .chain(parse_string_list(&item["correct_answers"]))
+            .chain(parse_string_list(&item["correct_answer"]))
+            .collect::<Vec<_>>();
+        let has_explicit_std = !std_answers.is_empty();
+
+        // 2. 学生作答选项
+        let student_ans = parse_string_list(&item["student_answer"])
+            .into_iter()
+            .chain(parse_string_list(&item["user_answer"]))
+            .chain(parse_string_list(&item["userAnswer"]))
+            .chain(parse_string_list(&item["user_answers"]))
+            .chain(parse_string_list(&item["my_answer"]))
+            .chain(parse_string_list(&item["myAnswer"]))
+            .chain(parse_string_list(&item["submit_answer"]))
+            .collect::<Vec<_>>();
+
+        // 3. 评分解析 (grade_score 为得分，score 为本题满分)
+        let grade_score = parse_score_val(&item["grade_score"])
+            .or_else(|| parse_score_val(&item["gradeScore"]))
+            .or_else(|| parse_score_val(&item["user_score"]))
+            .or_else(|| parse_score_val(&item["userScore"]));
+
+        let question_total_score = parse_score_val(&item["score"])
+            .or_else(|| parse_score_val(&item["total_score"]))
+            .or_else(|| parse_score_val(&item["totalScore"]));
+
+        if let Some(gs) = grade_score {
+            total_earned_score += gs;
+            has_any_grade_score = true;
+        }
+        if let Some(ts) = question_total_score {
+            total_max_score += ts;
+            has_any_max_score = true;
+        }
+
+        let is_student_correct = match (grade_score, question_total_score) {
+            (Some(grade), Some(total)) => {
+                if total > 0.0 {
+                    grade >= total - 1e-4
+                } else {
+                    grade > 0.0
+                }
+            }
+            (Some(grade), None) => {
+                if grade <= 0.0 {
+                    false
+                } else {
+                    item["is_right"]
+                        .as_bool()
+                        .or_else(|| item["is_right"].as_i64().map(|n| n != 0))
+                        .or_else(|| item["is_correct"].as_bool())
+                        .unwrap_or(true)
+                }
+            }
+            (None, _) => {
+                item["is_right"]
+                    .as_bool()
+                    .or_else(|| item["is_right"].as_i64().map(|n| n != 0))
+                    .or_else(|| item["is_right"].as_str().map(|s| s == "1" || s.eq_ignore_ascii_case("true")))
+                    .or_else(|| item["is_correct"].as_bool())
+                    .or_else(|| item["is_correct"].as_i64().map(|n| n != 0))
+                    .unwrap_or(false)
+            }
+        };
 
         let mut correct = Vec::new();
+        let mut wrong = Vec::new();
 
-        // 1. 优先提取显式标准答案
-        let std_arr = item["standard_answer"]
-            .as_array()
-            .or_else(|| item["standardAnswer"].as_array())
-            .or_else(|| item["right_answer"].as_array())
-            .or_else(|| item["rightAnswer"].as_array())
-            .or_else(|| item["correct_answers"].as_array())
-            .or_else(|| item["correct_answer"].as_array())
-            .or_else(|| item["correctAnswer"].as_array())
-            .or_else(|| item["answers"].as_array())
-            .or_else(|| item["answer"].as_array());
-
-        if let Some(arr) = std_arr {
-            for a in arr {
-                if let Some(s) = a.as_str() {
-                    correct.push(s.to_string());
-                } else if let Some(n) = a.as_i64() {
-                    correct.push(n.to_string());
-                }
-            }
-        } else if let Some(s) = item["standard_answer"]
-            .as_str()
-            .or_else(|| item["standardAnswer"].as_str())
-            .or_else(|| item["right_answer"].as_str())
-            .or_else(|| item["rightAnswer"].as_str())
-            .or_else(|| item["correct_answer"].as_str())
-            .or_else(|| item["correctAnswer"].as_str())
-            .or_else(|| item["answer"].as_str())
-        {
-            for part in s.split(|c| c == ',' || c == '，' || c == '、' || c == ' ' || c == ';') {
-                let trimmed = part.trim().trim_matches(|c: char| !c.is_alphanumeric());
-                if !trimmed.is_empty() {
-                    if trimmed.chars().all(|c| c.is_ascii_alphabetic())
-                        && trimmed.len() > 1
-                        && trimmed.len() <= 6
-                        && !options.iter().any(|o| o.id == trimmed)
-                    {
-                        for ch in trimmed.chars() {
-                            correct.push(ch.to_ascii_uppercase().to_string());
-                        }
-                    } else {
-                        correct.push(trimmed.to_string());
-                    }
+        if has_explicit_std {
+            correct = std_answers;
+        } else if is_student_correct && !student_ans.is_empty() {
+            // 得满分时，用户的选择即为标准答案
+            correct = student_ans.clone();
+        } else if !student_ans.is_empty() {
+            // 得分为 0 或未得满分，用户所选选项被判定为错误答案，绝不能录入标准答案！
+            wrong = student_ans.clone();
+            // 逻辑排除推导：若为判断题（2个选项）且学生作答判错，则另一个选项必然为正确答案！
+            let is_judge = kind == Kind::Single && options.len() == 2;
+            if is_judge && wrong.len() == 1 {
+                let wrong_key = &wrong[0];
+                if let Some(deduced) = options.iter().find(|o| !o.id.eq_ignore_ascii_case(wrong_key) && o.text.trim() != wrong_key.trim()) {
+                    correct = vec![deduced.id.clone()];
+                    reviews.push(Review {
+                        question_id: qid.clone(),
+                        answers: vec![deduced.id.clone()],
+                        probabilities: Default::default(),
+                        message: "题库已排除错误选项，自动推导出唯一正确答案".into(),
+                    });
                 }
             }
         }
 
-        // 2. 提取用户提交的答案（判对或无独立标答时作为有效答案来源）
-        if correct.is_empty() {
-            let is_right = item["is_right"]
-                .as_i64()
-                .map(|n| n != 0)
-                .or_else(|| item["is_right"].as_str().map(|s| s == "1" || s == "true"))
-                .or_else(|| item["is_correct"].as_bool())
-                .or_else(|| item["is_correct"].as_i64().map(|n| n != 0))
-                .or_else(|| item["score"].as_f64().map(|s| s > 0.0))
-                .unwrap_or(true);
-
-            if is_right {
-                let user_arr = item["user_answer"]
-                    .as_array()
-                    .or_else(|| item["userAnswer"].as_array())
-                    .or_else(|| item["user_answers"].as_array())
-                    .or_else(|| item["my_answer"].as_array())
-                    .or_else(|| item["myAnswer"].as_array())
-                    .or_else(|| item["student_answer"].as_array())
-                    .or_else(|| item["submit_answer"].as_array());
-
-                if let Some(arr) = user_arr {
-                    for a in arr {
-                        if let Some(s) = a.as_str() {
-                            correct.push(s.to_string());
-                        } else if let Some(n) = a.as_i64() {
-                            correct.push(n.to_string());
+        if !wrong.is_empty() {
+            let wrong_label = wrong
+                .iter()
+                .map(|k| {
+                    if let Some(opt) = options.iter().find(|o| o.id.eq_ignore_ascii_case(k)) {
+                        let clean = strip_html_tags(&opt.text);
+                        if !clean.trim().is_empty() {
+                            format!("{k} ({})", clean.trim())
+                        } else {
+                            k.clone()
                         }
+                    } else {
+                        k.clone()
                     }
-                } else if let Some(s) = item["user_answer"]
-                    .as_str()
-                    .or_else(|| item["userAnswer"].as_str())
-                    .or_else(|| item["my_answer"].as_str())
-                    .or_else(|| item["myAnswer"].as_str())
-                    .or_else(|| item["student_answer"].as_str())
-                    .or_else(|| item["submit_answer"].as_str())
-                {
-                    for part in s.split(|c| c == ',' || c == '，' || c == '、' || c == ' ' || c == ';') {
-                        let trimmed = part.trim().trim_matches(|c: char| !c.is_alphanumeric());
-                        if !trimmed.is_empty() {
-                            if trimmed.chars().all(|c| c.is_ascii_alphabetic())
-                                && trimmed.len() > 1
-                                && trimmed.len() <= 6
-                                && !options.iter().any(|o| o.id == trimmed)
-                            {
-                                for ch in trimmed.chars() {
-                                    correct.push(ch.to_ascii_uppercase().to_string());
-                                }
-                            } else {
-                                correct.push(trimmed.to_string());
-                            }
-                        }
-                    }
-                }
-            }
+                })
+                .collect::<Vec<_>>()
+                .join("、");
+            reviews.push(Review {
+                question_id: qid.clone(),
+                answers: wrong.clone(),
+                probabilities: Default::default(),
+                message: format!("作答未得分，已排除错误选项：{wrong_label}"),
+            });
+            wrong_answers.insert(qid.clone(), wrong);
+        }
+
+        if !student_ans.is_empty() {
+            student_answers.insert(qid.clone(), student_ans);
         }
 
         // 提取文本答案以对冲乱序
@@ -2529,8 +2742,9 @@ fn parse_exam_view_json(val: &serde_json::Value) -> Option<(Vec<Question>, Answe
             .iter()
             .map(|ans_key| {
                 if let Some(opt) = options.iter().find(|o| o.id.eq_ignore_ascii_case(ans_key)) {
-                    if !opt.text.trim().is_empty() {
-                        return opt.text.trim().to_string();
+                    let clean = strip_html_tags(&opt.text);
+                    if !clean.trim().is_empty() {
+                        return clean.trim().to_string();
                     }
                 }
                 ans_key.clone()
@@ -2552,10 +2766,34 @@ fn parse_exam_view_json(val: &serde_json::Value) -> Option<(Vec<Question>, Answe
     }
 
     if questions.is_empty() {
-        None
-    } else {
-        Some((questions, answers))
+        return None;
     }
+
+    let task_title = val["data"]["task"]["name"]
+        .as_str()
+        .or_else(|| val["task"]["name"].as_str())
+        .map(str::to_string);
+
+    let task_grade_score = parse_score_val(&val["data"]["task"]["score"])
+        .or_else(|| parse_score_val(&val["task"]["score"]))
+        .or_else(|| if has_any_grade_score { Some(total_earned_score) } else { None });
+
+    let final_total_score = if has_any_max_score {
+        Some(total_max_score)
+    } else {
+        None
+    };
+
+    Some(ExamViewDetails {
+        questions,
+        answers,
+        reviews,
+        student_answers,
+        wrong_answers,
+        total_score: final_total_score,
+        grade_score: task_grade_score,
+        task_title,
+    })
 }
 
 fn parse_exam_view_html(html: &str) -> Option<(Vec<Question>, Answers)> {
@@ -2647,9 +2885,15 @@ fn parse_exam_view_html(html: &str) -> Option<(Vec<Question>, Answers)> {
         // 4. 提取用户提交的答案（当题目判对或有作答记录时作为补充）
         if correct.is_empty() {
             let full_text = elem.text().collect::<Vec<_>>().join(" ");
-            let is_judged_right = full_text.contains("回答正确")
-                || full_text.contains("得分")
-                || elem.select(&scraper::Selector::parse(".icon-dui,.dui,.icon-right,.icon-check").unwrap()).next().is_some();
+            let is_wrong = full_text.contains("回答错误")
+                || full_text.contains("得分：0")
+                || full_text.contains("得分: 0")
+                || full_text.contains("得分:0")
+                || full_text.contains("得分0");
+            let is_judged_right = !is_wrong
+                && (full_text.contains("回答正确")
+                    || (full_text.contains("得分") && !full_text.contains("0分"))
+                    || elem.select(&scraper::Selector::parse(".icon-dui,.dui,.icon-right,.icon-check").unwrap()).next().is_some());
 
             if is_judged_right {
                 for opt_elem in elem.select(&option_sel) {
@@ -2879,6 +3123,59 @@ pub(crate) fn align_view_answers_to_questions(
             }
             if !resolved_ans.is_empty() {
                 out_answers.insert(tq.id.clone(), resolved_ans);
+            }
+        }
+    }
+}
+
+/// 将从 /exam/view 解析出的详细数据（答案、排除评价、学生作答）精准对齐到目标试题列表
+pub(crate) fn align_view_details_to_questions(
+    view_details: &ExamViewDetails,
+    target_questions: &[Question],
+    out_answers: &mut Answers,
+    out_reviews: &mut Vec<Review>,
+    out_student_answers: &mut Answers,
+) {
+    align_view_answers_to_questions(
+        &view_details.questions,
+        &view_details.answers,
+        target_questions,
+        out_answers,
+    );
+
+    for (v_idx, vq) in view_details.questions.iter().enumerate() {
+        let v_norm = normalize_stem(&vq.text);
+        let matched_tq = target_questions
+            .iter()
+            .find(|tq| tq.id == vq.id || tq.id.contains(&vq.id) || vq.id.contains(&tq.id))
+            .or_else(|| {
+                target_questions.iter().find(|tq| {
+                    let t_norm = normalize_stem(&tq.text);
+                    !t_norm.is_empty()
+                        && (t_norm == v_norm || t_norm.contains(&v_norm) || v_norm.contains(&t_norm))
+                })
+            })
+            .or_else(|| {
+                if target_questions.len() == view_details.questions.len() {
+                    target_questions.get(v_idx)
+                } else {
+                    None
+                }
+            });
+
+        let Some(tq) = matched_tq else { continue };
+
+        if let Some(stu_list) = view_details.student_answers.get(&vq.id) {
+            let mapped = map_answers_to_option_ids(stu_list, &tq.options);
+            out_student_answers.insert(tq.id.clone(), mapped);
+        }
+
+        for rev in &view_details.reviews {
+            if rev.question_id == vq.id {
+                let mut aligned_rev = rev.clone();
+                aligned_rev.question_id = tq.id.clone();
+                aligned_rev.answers = map_answers_to_option_ids(&rev.answers, &tq.options);
+                out_reviews.push(aligned_rev);
             }
         }
     }
@@ -3794,5 +4091,274 @@ mod tests {
         // 离线状况下依然可以完成向量与题库检索
         assert!(!results.is_empty());
         assert!(results.iter().any(|r| r.question_id == "local_q1"));
+    }
+
+    #[test]
+    fn completed_exam_view_with_user_response_parsing_and_grading() {
+        use tempfile::tempdir;
+
+        // 1. Verify sanitize_task_id handles URL anchors
+        assert_eq!(sanitize_task_id("1243266098%23%23anchor1086731163"), "1243266098");
+        assert_eq!(sanitize_task_id("1243266098##anchor1086731163"), "1243266098");
+        assert_eq!(sanitize_task_id("1243266098"), "1243266098");
+
+        // 2. Parse real API response where finished:true, answer: [], student_answer provided, grade_score vs score
+        let json_data = serde_json::json!({
+            "code": 1,
+            "msg": "",
+            "data": {
+                "questions": [
+                    {
+                        "id": 1936609374,
+                        "course_id": "16669",
+                        "type": "10",
+                        "question": "有关《送琴师毛敏仲北行》的朝代和作者说法正确的是？",
+                        "level": "10",
+                        "options": {
+                            "A": "唐代杜甫",
+                            "B": "<p>北宋汪元量</p>",
+                            "C": "南宋汪元量",
+                            "D": "汉代杨雄"
+                        },
+                        "answer": [],
+                        "tips": "",
+                        "parent": 1163945558,
+                        "is_subjective": 0,
+                        "level_text": "易",
+                        "type_text": "单选题",
+                        "score": "10.00",
+                        "grade_score": "10.00",
+                        "student_answer": ["C"],
+                        "options_app": [
+                            { "key": "A", "value": "唐代杜甫" },
+                            { "key": "B", "value": "<p>北宋汪元量</p>" },
+                            { "key": "C", "value": "南宋汪元量" },
+                            { "key": "D", "value": "汉代杨雄" }
+                        ]
+                    },
+                    {
+                        "id": 1364977843,
+                        "course_id": "16669",
+                        "type": "10",
+                        "question": "诗句“徒把金戈挽落晖，南冠无奈北风吹。”里的南冠和北风分别指的是什么？",
+                        "options": {
+                            "A": "南冠是汉人，北风是蒙古人",
+                            "B": "南冠是蒙古人，北风是汉人"
+                        },
+                        "answer": [],
+                        "score": "10.00",
+                        "grade_score": "10.00",
+                        "student_answer": ["A"],
+                        "options_app": [
+                            { "key": "A", "value": "南冠是汉人，北风是蒙古人" },
+                            { "key": "B", "value": "南冠是蒙古人，北风是汉人" }
+                        ]
+                    },
+                    {
+                        "id": 368453321,
+                        "course_id": "16669",
+                        "type": "10",
+                        "question": "李清照为他写了一首脍炙人口的诗：“生当作人杰,死亦为鬼雄。”，这个“他”是指谁？",
+                        "options": { "A": "诸葛亮", "D": "项羽" },
+                        "answer": [],
+                        "score": "10.00",
+                        "grade_score": "10.00",
+                        "student_answer": ["D"],
+                        "options_app": [
+                            { "key": "A", "value": "诸葛亮" },
+                            { "key": "D", "value": "项羽" }
+                        ]
+                    },
+                    {
+                        "id": 1086731163,
+                        "course_id": "16669",
+                        "type": "10",
+                        "question": "历史上，南北统一几次？",
+                        "options": { "A": "五", "B": "六", "C": "七", "D": "八" },
+                        "answer": [],
+                        "score": "10.00",
+                        "grade_score": 0,
+                        "student_answer": ["C"],
+                        "options_app": [
+                            { "key": "A", "value": "五" },
+                            { "key": "B", "value": "六" },
+                            { "key": "C", "value": "七" },
+                            { "key": "D", "value": "八" }
+                        ]
+                    },
+                    {
+                        "id": 649316604,
+                        "course_id": "16669",
+                        "type": "10",
+                        "question": "<p>中国古代南北分裂时间最长的是哪段时间？</p>",
+                        "options": { "A": "<p>汉代</p>", "B": "<p>东晋十六国南北朝</p>" },
+                        "answer": [],
+                        "score": "10.00",
+                        "grade_score": "10.00",
+                        "student_answer": ["B"],
+                        "options_app": [
+                            { "key": "A", "value": "<p>汉代</p>" },
+                            { "key": "B", "value": "<p>东晋十六国南北朝</p>" }
+                        ]
+                    },
+                    {
+                        "id": 993779479,
+                        "course_id": "16669",
+                        "type": "20",
+                        "question": "“唐标铁柱”说的是唐朝统一南方并且安定南方的一个重要举措",
+                        "options": { "A": "正确", "B": "错误" },
+                        "answer": [],
+                        "score": "10.00",
+                        "grade_score": "10.00",
+                        "student_answer": ["A"],
+                        "options_app": [
+                            { "key": "A", "value": "正确" },
+                            { "key": "B", "value": "错误" }
+                        ]
+                    },
+                    {
+                        "id": 434730056,
+                        "course_id": "16669",
+                        "type": "20",
+                        "question": "“元跨革囊”当时元朝的版图空前广大，一直扩大到了现在印度尼西亚的土地",
+                        "options": { "A": "正确", "B": "错误" },
+                        "answer": [],
+                        "score": "10.00",
+                        "grade_score": "10.00",
+                        "student_answer": ["B"],
+                        "options_app": [
+                            { "key": "A", "value": "正确" },
+                            { "key": "B", "value": "错误" }
+                        ]
+                    },
+                    {
+                        "id": 1179880071,
+                        "course_id": "16669",
+                        "type": "10",
+                        "question": "下列不属于南方建筑特色的是",
+                        "options": { "A": "吊脚楼", "B": "四合院", "C": "骑楼", "D": "竹楼" },
+                        "answer": [],
+                        "score": "10.00",
+                        "grade_score": 0,
+                        "student_answer": ["D"],
+                        "options_app": [
+                            { "key": "A", "value": "吊脚楼" },
+                            { "key": "B", "value": "四合院" },
+                            { "key": "C", "value": "骑楼" },
+                            { "key": "D", "value": "竹楼" }
+                        ]
+                    },
+                    {
+                        "id": 604054520,
+                        "course_id": "16669",
+                        "type": "10",
+                        "question": "“白玉长堤路，乌篷不划船”，坐着本地的乌篷船，沿着长长的古道航行，这句话描写的地方可能是",
+                        "options": { "A": "天津市", "B": "塔里木河下游", "C": "浙江绍兴", "D": "山东临沂" },
+                        "answer": [],
+                        "score": "10.00",
+                        "grade_score": 0,
+                        "student_answer": ["B"],
+                        "options_app": [
+                            { "key": "A", "value": "天津市" },
+                            { "key": "B", "value": "塔里木河下游" },
+                            { "key": "C", "value": "浙江绍兴" },
+                            { "key": "D", "value": "山东临沂" }
+                        ]
+                    },
+                    {
+                        "id": 838784495,
+                        "course_id": "16669",
+                        "type": "20",
+                        "question": "魏晋户口下降的原因在于魏晋时期封建大土地所有制的发展，使大量人口沦为私家的佃客。",
+                        "options": { "A": "正确", "B": "错误" },
+                        "answer": [],
+                        "score": "10.00",
+                        "grade_score": "10.00",
+                        "student_answer": ["A"],
+                        "options_app": [
+                            { "key": "A", "value": "正确" },
+                            { "key": "B", "value": "错误" }
+                        ]
+                    }
+                ],
+                "task": {
+                    "name": "第2讲测试",
+                    "answer_hint": "1",
+                    "allow_view_score": 1,
+                    "allow_view_paper": 1,
+                    "answer_review": "0",
+                    "_type": "10",
+                    "type": "测验",
+                    "course_title": "2026年秋季学期",
+                    "student": "xxx",
+                    "dotime": "2026-10-08 19:15:09",
+                    "score": "70.00"
+                }
+            }
+        });
+
+        let raw_bytes = serde_json::to_vec(&json_data).unwrap();
+        let details = parse_exam_view_details(&raw_bytes).unwrap();
+
+        // 3. 验证题目总数与得分汇总
+        assert_eq!(details.questions.len(), 10);
+        assert_eq!(details.grade_score, Some(70.0));
+        assert_eq!(details.total_score, Some(100.0));
+        assert_eq!(details.task_title.as_deref(), Some("第2讲测试"));
+
+        // 4. 验证满分题目被录入为标准答案（共7道题）
+        assert_eq!(details.answers.len(), 7);
+        assert_eq!(details.answers.get("1936609374"), Some(&vec!["南宋汪元量".into()]));
+        assert_eq!(details.answers.get("1364977843"), Some(&vec!["南冠是汉人，北风是蒙古人".into()]));
+        assert_eq!(details.answers.get("368453321"), Some(&vec!["项羽".into()]));
+        assert_eq!(details.answers.get("649316604"), Some(&vec!["东晋十六国南北朝".into()]));
+        assert_eq!(details.answers.get("993779479"), Some(&vec!["正确".into()]));
+        assert_eq!(details.answers.get("434730056"), Some(&vec!["错误".into()]));
+        assert_eq!(details.answers.get("838784495"), Some(&vec!["正确".into()]));
+
+        // 5. 核心断言：未得分的错题（1086731163, 1179880071, 604054520）绝对不可被当作正确答案！
+        assert_eq!(details.answers.get("1086731163"), None);
+        assert_eq!(details.answers.get("1179880071"), None);
+        assert_eq!(details.answers.get("604054520"), None);
+
+        // 6. 验证错误选项被精准捕获为 wrong_answers 和排除评价
+        assert_eq!(details.wrong_answers.len(), 3);
+        assert_eq!(details.wrong_answers.get("1086731163"), Some(&vec!["C".into()]));
+        assert_eq!(details.wrong_answers.get("1179880071"), Some(&vec!["D".into()]));
+        assert_eq!(details.wrong_answers.get("604054520"), Some(&vec!["B".into()]));
+
+        assert!(details.reviews.iter().any(|r| r.question_id == "1086731163" && r.message.contains("排除错误选项")));
+        assert!(details.reviews.iter().any(|r| r.question_id == "1179880071" && r.message.contains("排除错误选项")));
+        assert!(details.reviews.iter().any(|r| r.question_id == "604054520" && r.message.contains("排除错误选项")));
+
+        // 7. 验证全部10道题的学生实际作答被完整记录
+        assert_eq!(details.student_answers.len(), 10);
+        assert_eq!(details.student_answers.get("1086731163"), Some(&vec!["C".into()]));
+        assert_eq!(details.student_answers.get("1936609374"), Some(&vec!["C".into()]));
+
+        // 8. 录入题库验证：错题不录入为 correct_answers，而是标记为 is_correct = false
+        let dir = tempdir().unwrap();
+        let bank_path = dir.path().join("qa-bank.json");
+        record_passed_quiz_with_details(
+            &bank_path,
+            "1809008735",
+            "1243266098%23%23anchor1086731163",
+            &details.questions,
+            &details.answers,
+            &details.wrong_answers,
+            Some("2026年秋季学期"),
+        ).unwrap();
+
+        let bank = load_local_bank(&bank_path);
+        // 确认 key 用的是干净的 1243266098
+        let q4_key = bank_key("1243266098", "1086731163");
+        let q4_record = bank.get(&q4_key).expect("Q4 应存在于题库");
+        assert!(q4_record.correct_answers.is_empty(), "Q4 的正确答案必须为空，绝不能包含错误答案 C");
+        assert!(q4_record.answers.iter().any(|a| !a.is_correct && a.values.contains(&serde_json::Value::String("C".into()))), "Q4 必须有 is_correct = false 的 C 选项记录");
+
+        let q1_key = bank_key("1243266098", "1936609374");
+        let q1_record = bank.get(&q1_key).expect("Q1 应存在于题库");
+        assert_eq!(q1_record.correct_answers, vec!["南宋汪元量".to_string()]);
+        assert!(q1_record.answers.iter().any(|a| a.is_correct));
     }
 }
