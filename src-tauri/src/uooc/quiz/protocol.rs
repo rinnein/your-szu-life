@@ -4,7 +4,7 @@ use serde_json::Value;
 use sha1::{Digest, Sha1};
 use std::collections::HashSet;
 
-pub(super) struct Paper {
+pub(crate) struct Paper {
     pub questions: Vec<Question>,
     pub signature: String,
     pub fields: Vec<(String, String)>,
@@ -33,7 +33,7 @@ fn text(e: ElementRef<'_>) -> String {
     walk(e, &mut out);
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
-pub(super) fn parse(html: &str, url: &reqwest::Url, task_id: &str) -> Result<Paper, String> {
+pub(crate) fn parse(html: &str, url: &reqwest::Url, task_id: &str) -> Result<Paper, String> {
     let doc = Html::parse_document(html);
     let mut questions = vec![];
     let mut bindings = vec![];

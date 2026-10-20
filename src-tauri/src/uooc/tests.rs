@@ -1210,3 +1210,293 @@ async fn build_local_bank_fetches_exam_view_for_completed_quiz_and_records_stand
 
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn test_uooc_exam_lifecycle_list_paper_draft_commit_heartbeat() {
+    let root = root();
+    let service = service_test(root.clone());
+
+    let saved_called = Arc::new(AtomicUsize::new(0));
+    let saved_called_clone = saved_called.clone();
+    let committed_called = Arc::new(AtomicUsize::new(0));
+    let committed_called_clone = committed_called.clone();
+    let heartbeat_called = Arc::new(AtomicUsize::new(0));
+    let heartbeat_called_clone = heartbeat_called.clone();
+
+    let server = Server::new(move |request| {
+        if request.path.starts_with("/home/task/examList") {
+            return ok(json!({
+                "data": [
+                    {
+                        "id": 888,
+                        "title": "期末考试测试",
+                        "start_time": "2026-10-01 09:00:00",
+                        "end_time": "2026-10-30 18:00:00",
+                        "limit_time": 90,
+                        "status": 1,
+                        "chance": 1,
+                        "submit_count": 0,
+                        "task_id": 999
+                    }
+                ],
+                "page": { "pages": 1 }
+            }));
+        }
+        if request.path.starts_with("/exam/getTaskPaper") {
+            return json!({
+                "code": 1,
+                "data": {
+                    "questions": [
+                        {
+                            "id": "q_exam_1",
+                            "question": "测试考题：1+1等于几？",
+                            "type": "10",
+                            "options_app": [
+                                { "key": "A", "value": "1" },
+                                { "key": "B", "value": "2" }
+                            ],
+                            "answer": "B"
+                        }
+                    ]
+                }
+            });
+        }
+        if request.path.starts_with("/exam/taskInfo") {
+            return ok(json!({
+                "title": "期末考试测试",
+                "limit_time": 90,
+                "status": 1
+            }));
+        }
+        if request.path.starts_with("/exam/save") {
+            saved_called_clone.fetch_add(1, Ordering::SeqCst);
+            return ok(json!({ "msg": "草稿已保存" }));
+        }
+        if request.path.starts_with("/exam/commit") {
+            committed_called_clone.fetch_add(1, Ordering::SeqCst);
+            return ok(json!({ "msg": "考试提交成功" }));
+        }
+        if request.path.starts_with("/home/cheatrecord/getAlert") {
+            heartbeat_called_clone.fetch_add(1, Ordering::SeqCst);
+            return ok(json!([]));
+        }
+        ok(json!({}))
+    });
+
+    *service.client.write().unwrap() =
+        Arc::new(Client::with_base(session::load(None).unwrap(), &server.base).unwrap());
+    service.change(|s| {
+        s.session = SessionStatus::Ready;
+        s.user = Some(User {
+            id: "7".into(),
+            name: "test".into(),
+        });
+        s.courses = vec![course("42")];
+    });
+
+    // 1. 测试考试列表
+    let exams = service.list_exams(Some("42")).await.unwrap();
+    assert_eq!(exams.len(), 1);
+    assert_eq!(exams[0].title, "期末考试测试");
+    assert_eq!(exams[0].limit_time, 90);
+    assert_eq!(exams[0].task_id, "999");
+
+    // 2. 测试试卷获取
+    let paper = service.get_exam_paper("42", "999").await.unwrap();
+    assert_eq!(paper.questions.len(), 1);
+    assert_eq!(paper.questions[0].text, "测试考题：1+1等于几？");
+    assert_eq!(paper.limit_time, 90);
+
+    // 3. 测试草稿暂存
+    let mut answers = super::quiz::model::Answers::new();
+    answers.insert("q_exam_1".into(), vec!["B".into()]);
+    service.save_exam_draft("42", "999", answers.clone()).await.unwrap();
+    assert_eq!(saved_called.load(Ordering::SeqCst), 1);
+
+    // 4. 测试防作弊心跳保持
+    let heartbeat_ok = service.heartbeat_exam("42", "999").await.unwrap();
+    assert!(heartbeat_ok);
+    assert_eq!(heartbeat_called.load(Ordering::SeqCst), 1);
+
+    // 5. 测试正式交卷
+    let submit_msg = service.submit_exam("42", "999", answers).await.unwrap();
+    assert_eq!(submit_msg, "考试提交成功");
+    assert_eq!(committed_called.load(Ordering::SeqCst), 1);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[tokio::test]
+async fn test_uooc_homework_and_eval_lifecycle() {
+    let root = root();
+    let service = service_test(root.clone());
+    let eval_submitted = Arc::new(AtomicUsize::new(0));
+    let eval_submitted_clone = eval_submitted.clone();
+
+    let server = Server::new(move |request| {
+        if request.path.starts_with("/home/task/existEval") {
+            return ok(json!({ "data": true }));
+        }
+        if request.path.starts_with("/home/task/homeworkList") {
+            return ok(json!({
+                "data": [
+                    {
+                        "id": 101,
+                        "title": "课后作业第1次",
+                        "start_time": "2026-10-01 00:00:00",
+                        "end_time": "2026-10-25 23:59:59",
+                        "status": 1,
+                        "chance": 2,
+                        "submit_count": 0,
+                        "task_id": 202
+                    }
+                ],
+                "page": { "pages": 1 }
+            }));
+        }
+        if request.path.starts_with("/home/task/evalList") {
+            return ok(json!({
+                "data": [
+                    {
+                        "tid": 202,
+                        "title": "课后作业第1次互评",
+                        "sub_list": [
+                            {
+                                "eval_id": 501,
+                                "student_task_id": 202,
+                                "content": "这是同学A提交的作业内容",
+                                "status": 0
+                            }
+                        ]
+                    }
+                ]
+            }));
+        }
+        if request.path.starts_with("/home/task/submitEvalScore") {
+            eval_submitted_clone.fetch_add(1, Ordering::SeqCst);
+            return ok(json!({ "msg": "互评打分成功" }));
+        }
+        if request.path.starts_with("/exam/getTaskPaper") {
+            return json!({
+                "code": 1,
+                "data": {
+                    "questions": [
+                        {
+                            "id": "q_hw_1",
+                            "question": "作业简答题：请简述什么是HTTP协议？",
+                            "type": "40"
+                        }
+                    ]
+                }
+            });
+        }
+        if request.path.starts_with("/exam/taskInfo") {
+            return ok(json!({
+                "title": "课后作业第1次",
+                "limit_time": 0,
+                "status": 1
+            }));
+        }
+        ok(json!({}))
+    });
+
+    *service.client.write().unwrap() =
+        Arc::new(Client::with_base(session::load(None).unwrap(), &server.base).unwrap());
+    service.change(|s| {
+        s.session = SessionStatus::Ready;
+        s.user = Some(User {
+            id: "7".into(),
+            name: "test".into(),
+        });
+        s.courses = vec![course("42")];
+    });
+
+    // 1. 验证作业列表
+    let homeworks = service.list_homeworks(Some("42")).await.unwrap();
+    assert_eq!(homeworks.len(), 1);
+    assert_eq!(homeworks[0].title, "课后作业第1次");
+    assert!(homeworks[0].has_eval);
+
+    // 2. 验证试卷主观题类型解析
+    let paper = service.get_exam_paper("42", "202").await.unwrap();
+    assert_eq!(paper.questions.len(), 1);
+    assert_eq!(paper.questions[0].kind, super::quiz::model::Kind::Subjective);
+
+    // 3. 验证互评任务拉取
+    let evals = service.list_evals(Some("42")).await.unwrap();
+    assert_eq!(evals.len(), 1);
+    assert_eq!(evals[0].title, "课后作业第1次互评");
+    assert_eq!(evals[0].submissions.len(), 1);
+    assert_eq!(evals[0].submissions[0].content, "这是同学A提交的作业内容");
+
+    // 4. 验证互评提交
+    let res = service
+        .submit_eval("42", "202", "501", 95.0, "作业完成得非常规范详细")
+        .await
+        .unwrap();
+    assert_eq!(res, "互评打分成功");
+    assert_eq!(eval_submitted.load(Ordering::SeqCst), 1);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[tokio::test]
+async fn test_uooc_completed_quiz_loads_via_view_api() {
+    let root = root();
+    let service = service_test(root.clone());
+    let view_called = Arc::new(AtomicUsize::new(0));
+    let view_called_clone = view_called.clone();
+
+    let server = Server::new(move |request| {
+        if request.path.starts_with("/exam/taskInfo") {
+            return ok(json!({
+                "title": "已完成章节测验",
+                "status": 2
+            }));
+        }
+        if request.path.starts_with("/exam/view") {
+            view_called_clone.fetch_add(1, Ordering::SeqCst);
+            return json!({
+                "code": 1,
+                "data": {
+                    "title": "已完成章节测验",
+                    "questions": [
+                        {
+                            "id": "q_completed_1",
+                            "question": "OSI七层模型的第一层是？",
+                            "type": "10",
+                            "options": [
+                                { "id": "A", "value": "物理层" },
+                                { "id": "B", "value": "数据链路层" }
+                            ],
+                            "answer": "A",
+                            "user_answer": "A"
+                        }
+                    ],
+                    "score": 100
+                }
+            });
+        }
+        ok(json!({}))
+    });
+
+    *service.client.write().unwrap() =
+        Arc::new(Client::with_base(session::load(None).unwrap(), &server.base).unwrap());
+    service.change(|s| {
+        s.session = SessionStatus::Ready;
+        s.user = Some(User {
+            id: "7".into(),
+            name: "test".into(),
+        });
+        s.courses = vec![course("42")];
+    });
+
+    let paper = service.get_exam_paper("42", "task_view_999").await.unwrap();
+    assert_eq!(paper.title, "已完成章节测验");
+    assert!(paper.is_submitted);
+    assert_eq!(paper.questions.len(), 1);
+    assert_eq!(paper.questions[0].text, "OSI七层模型的第一层是？");
+    assert_eq!(view_called.load(Ordering::SeqCst), 1);
+
+    let _ = std::fs::remove_dir_all(root);
+}

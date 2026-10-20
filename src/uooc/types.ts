@@ -165,7 +165,7 @@ export type QuizStage =
 export type QuizQuestion = {
   id: string;
   text: string;
-  kind: "single" | "multiple" | "text";
+  kind: "single" | "multiple" | "text" | "subjective";
   options: { id: string; text: string }[];
   blanks: number;
   images: string[];
@@ -205,6 +205,101 @@ export type QuizState = {
   passed: string[];
   aiSessions?: AiSessionEntry[];
   studentAnswers?: QuizAnswers;
+};
+
+export type ExamTask = {
+  id: string;
+  title: string;
+  cid: string;
+  courseName: string;
+  startTime: string;
+  endTime: string;
+  limitTime: number;
+  status: number;
+  statusText?: string;
+  statusCode?: number;
+  canDo?: boolean;
+  canView?: boolean;
+  canEval?: boolean;
+  chance: number;
+  submitCount: number;
+  score?: number | null;
+  paperId?: string | null;
+  taskId: string;
+  chapterText?: string | null;
+  sectionText?: string | null;
+};
+
+export type ExamPaper = {
+  taskId: string;
+  title: string;
+  cid: string;
+  limitTime: number;
+  questions: QuizQuestion[];
+  answers: QuizAnswers;
+  reviews: {
+    questionId: string;
+    answers: string[];
+    probabilities: Record<string, number>;
+    message: string;
+  }[];
+  isSubmitted: boolean;
+};
+
+export type HomeworkTask = {
+  id: string;
+  title: string;
+  cid: string;
+  courseName: string;
+  startTime: string;
+  endTime: string;
+  status: number;
+  statusText?: string;
+  statusCode?: number;
+  canDo?: boolean;
+  canView?: boolean;
+  canEval?: boolean;
+  chance: number;
+  submitCount: number;
+  score?: number | null;
+  paperId?: string | null;
+  taskId: string;
+  hasEval: boolean;
+  evalStatus?: string | null;
+  chapterText?: string | null;
+  sectionText?: string | null;
+  resId?: string | null;
+  commitTime?: string | null;
+  doTime?: string | null;
+};
+
+export type PeerSubmission = {
+  evalId: string;
+  studentTaskId?: string | null;
+  answers: QuizAnswers;
+  content: string;
+  score?: number | null;
+  comments?: string | null;
+  isEvaluated: boolean;
+};
+
+export type PeerEvalTask = {
+  cid: string;
+  tid: string;
+  title: string;
+  courseName: string;
+  startTime: string;
+  endTime: string;
+  totalCount: number;
+  completedCount: number;
+  submissions: PeerSubmission[];
+};
+
+export type ReferenceExample = {
+  questionId: string;
+  stem: string;
+  answers: string[];
+  similarity: number;
 };
 export type AiProvider = { baseUrl: string; model: string; hasKey: boolean };
 export type AiConnectionProvider = { baseUrl: string; hasKey: boolean };

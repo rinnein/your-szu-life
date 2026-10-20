@@ -31,6 +31,7 @@ pub(crate) enum Kind {
     Single,
     Multiple,
     Text,
+    Subjective,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -50,7 +51,7 @@ pub(crate) struct Question {
     pub images: Vec<String>,
 }
 pub(crate) type Answers = BTreeMap<String, Vec<String>>;
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Review {
     pub question_id: String,
@@ -128,7 +129,7 @@ pub(crate) fn validate_answers(
             Kind::Text if values.len() != q.blanks => {
                 return Err("填写数量与题目空格数量不一致".into())
             }
-            Kind::Text => {}
+            Kind::Text | Kind::Subjective => {}
             _ => {
                 let unique: std::collections::HashSet<_> = values.iter().collect();
                 if unique.len() != values.len()

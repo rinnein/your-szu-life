@@ -1463,8 +1463,8 @@ pub(crate) fn match_answers(
         let qa_opts = qa.options.as_deref();
         if let Some(correct) = correct_ans {
             let mapped_values = map_option_values(&correct.values, &local_q.options, qa_opts);
-            if !mapped_values.is_empty() || local_q.kind == Kind::Text {
-                let ans = if local_q.kind == Kind::Text {
+            if !mapped_values.is_empty() || local_q.kind == Kind::Text || local_q.kind == Kind::Subjective {
+                let ans = if local_q.kind == Kind::Text || local_q.kind == Kind::Subjective {
                     correct.values.clone()
                 } else {
                     mapped_values
@@ -1919,7 +1919,7 @@ pub(crate) fn build_qa_upload_question(
 
     let mut q_type = match q.kind {
         Kind::Multiple => "multiple",
-        Kind::Text => "text",
+        Kind::Text | Kind::Subjective => "text",
         Kind::Single => "single",
     };
 
@@ -2175,7 +2175,7 @@ pub(crate) fn record_passed_quiz_with_details(
                 }
             }
             Kind::Multiple => "multiple",
-            Kind::Text => "text",
+            Kind::Text | Kind::Subjective => "text",
         };
 
         let mut bank_answers = Vec::new();
@@ -2575,12 +2575,29 @@ pub(crate) fn parse_task_paper_json(val: &serde_json::Value) -> Option<(Vec<Ques
             .unwrap_or_default()
             .to_string();
 
+        let type_num = item["type"].as_i64().or_else(|| item["type"].as_str().and_then(|s| s.parse().ok()));
         let type_str = item["type"].as_str().unwrap_or("");
-        let kind = match type_str {
-            "11" | "multiple" => Kind::Multiple,
-            "20" | "judge" => Kind::Single,
-            "30" | "text" => Kind::Text,
-            _ => Kind::Single,
+        let kind = match (type_str, type_num) {
+            ("11", _) | (_, Some(11)) | ("multiple", _) => Kind::Multiple,
+            ("20", _) | (_, Some(20)) | ("judge", _) => Kind::Single,
+            ("30", _) | (_, Some(30)) | ("text", _) => Kind::Text,
+            ("40" | "50" | "essay" | "short_answer" | "subjective", _) | (_, Some(40..=100)) => {
+                Kind::Subjective
+            }
+            _ => {
+                let has_options = item["options_app"]
+                    .as_array()
+                    .or_else(|| item["options"].as_array())
+                    .is_some_and(|arr| !arr.is_empty());
+                let blanks = item["blanks"].as_u64().unwrap_or(0);
+                if !has_options && blanks == 0 {
+                    Kind::Subjective
+                } else if blanks > 0 {
+                    Kind::Text
+                } else {
+                    Kind::Single
+                }
+            }
         };
 
         let mut options = Vec::new();
@@ -2860,12 +2877,21 @@ pub(crate) fn parse_exam_view_json_details(val: &serde_json::Value) -> Option<Ex
             ("11", _) | (_, Some(11)) | ("multiple", _) => Kind::Multiple,
             ("20", _) | (_, Some(20)) | ("judge", _) => Kind::Single,
             ("30", _) | (_, Some(30)) | ("text", _) => Kind::Text,
+            ("40" | "50" | "essay" | "short_answer" | "subjective", _) | (_, Some(40..=100)) => {
+                Kind::Subjective
+            }
             _ => {
                 if let Some(text) = item["type_text"].as_str() {
                     if text.contains("多选") {
                         Kind::Multiple
                     } else if text.contains("填空") {
                         Kind::Text
+                    } else if text.contains("问答")
+                        || text.contains("简答")
+                        || text.contains("论述")
+                        || text.contains("主观")
+                    {
+                        Kind::Subjective
                     } else {
                         Kind::Single
                     }

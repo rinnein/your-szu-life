@@ -848,6 +848,857 @@ impl Service {
         runtime.background_active = count > 0;
         platform::running(count, runtime.background_generation)
     }
+
+    pub(crate) async fn list_exams(&self, cid: Option<&str>) -> Result<Vec<ExamTask>, String> {
+        let cancel = CancellationToken::new();
+        let client = self.client.read().unwrap().clone();
+        let (courses, is_ready) = {
+            let r = self.runtime.lock().unwrap();
+            (r.snapshot.courses.clone(), r.snapshot.session == SessionStatus::Ready)
+        };
+        if !is_ready {
+            return Err("请先登录 UOOC".into());
+        }
+
+        let target_courses: Vec<(String, String)> = if let Some(target_cid) = cid {
+            courses
+                .into_iter()
+                .filter(|c| c.id == target_cid)
+                .map(|c| (c.id, c.title))
+                .collect()
+        } else {
+            courses
+                .into_iter()
+                .map(|c| (c.id, c.title))
+                .collect()
+        };
+
+        let mut all_tasks = Vec::new();
+        for (course_id, course_title) in target_courses {
+            if let Ok(rows) = client.exam_list(&course_id, &cancel).await {
+                for row in rows {
+                    let task_id = id(&row["task_id"])
+                        .or_else(|| id(&row["id"]))
+                        .unwrap_or_default();
+                    let exam_id = id(&row["id"]).unwrap_or_else(|| task_id.clone());
+                    let title = text(&row["title"]);
+                    let title = if title.is_empty() {
+                        text(&row["name"])
+                    } else {
+                        title
+                    };
+                    let start_time = text(&row["start_time"]);
+                    let end_time = text(&row["end_time"]);
+                    let limit_time = number(&row["limit_time"]) as u64;
+                    let limit_time = if limit_time == 0 {
+                        number(&row["exam_time"]) as u64
+                    } else {
+                        limit_time
+                    };
+                    let status_text = text(&row["status"]);
+                    let mut status_code = number(&row["status_code"]) as i32;
+                    if status_code == 0 && (status_text == "已批改" || status_text == "已完成") {
+                        status_code = 20;
+                    }
+                    let can_do = row["state"]["do"].as_bool().unwrap_or(false);
+                    let can_view = row["state"]["view"].as_bool().unwrap_or(false);
+                    let can_eval = row["state"]["eval"].as_bool().unwrap_or(false);
+                    let chance = number(&row["chance"]) as u32;
+                    let submit_count = number(&row["submit_count"]) as u32;
+                    let score = row.get("score").and_then(|v| {
+                        v.as_f64().or_else(|| {
+                            v.as_str().and_then(|s| s.trim().parse::<f64>().ok())
+                        })
+                    });
+                    let paper_id = id(&row["paper_id"]);
+                    let chapter_text = text(&row["chapter_text"]);
+                    let chapter_text = if chapter_text.is_empty() { None } else { Some(chapter_text) };
+                    let section_text = text(&row["section_text"]);
+                    let section_text = if section_text.is_empty() { None } else { Some(section_text) };
+
+                    all_tasks.push(ExamTask {
+                        id: exam_id,
+                        title,
+                        cid: course_id.clone(),
+                        course_name: course_title.clone(),
+                        start_time,
+                        end_time,
+                        limit_time,
+                        status: status_code,
+                        status_text,
+                        status_code,
+                        can_do,
+                        can_view,
+                        can_eval,
+                        chance,
+                        submit_count,
+                        score,
+                        paper_id,
+                        task_id,
+                        chapter_text,
+                        section_text,
+                    });
+                }
+            }
+        }
+        Ok(all_tasks)
+    }
+
+    pub(crate) async fn get_exam_paper(&self, cid: &str, task_id: &str) -> Result<ExamPaper, String> {
+        let cancel = CancellationToken::new();
+        let client = self.client.read().unwrap().clone();
+        {
+            let r = self.runtime.lock().unwrap();
+            if r.snapshot.session != SessionStatus::Ready {
+                return Err("请先登录 UOOC".into());
+            }
+        }
+
+        let info = client.exam_task_info(task_id, cid, &cancel).await.ok();
+        let title = info.as_ref()
+            .and_then(|v| v["title"].as_str().or_else(|| v["name"].as_str()))
+            .unwrap_or("课程考核")
+            .to_string();
+        let limit_time = info.as_ref()
+            .map(|v| number(&v["limit_time"]) as u64)
+            .filter(|&t| t > 0)
+            .or_else(|| info.as_ref().map(|v| number(&v["exam_time"]) as u64))
+            .unwrap_or(0);
+        let is_submitted = info.as_ref()
+            .map(|v| number(&v["status"]) as i64)
+            .map(|s| s >= 2)
+            .unwrap_or(false);
+
+        let mut questions = Vec::new();
+        let mut answers = quiz::model::Answers::new();
+
+        // 1. 若为已完成测验/已提交任务，优先通过 /exam/view 获取已完成题目、作答及评分
+        if is_submitted {
+            let view_url = format!("{}/exam/view?cid={cid}&tid={task_id}", client.origin());
+            if let Ok(view_bytes) = client.quiz_http(&view_url, None, &cancel).await {
+                if let Some(d) = quiz::qa::parse_exam_view_details(&view_bytes) {
+                    if !d.questions.is_empty() {
+                        questions = d.questions;
+                        answers = if !d.student_answers.is_empty() {
+                            d.student_answers
+                        } else {
+                            d.answers
+                        };
+                    }
+                }
+            }
+        }
+
+        // 2. 若未提交或 /exam/view 未能获取到题目，通过 /exam/getTaskPaper 获取题单
+        if questions.is_empty() {
+            let tp_url = format!("{}/exam/getTaskPaper?tid={task_id}", client.origin());
+            if let Ok(bytes) = client.quiz_http(&tp_url, None, &cancel).await {
+                if let Some((q_list, a_list)) = quiz::qa::parse_task_paper(&bytes) {
+                    questions = q_list;
+                    answers = a_list;
+                }
+            }
+        }
+
+        // 3. 若仍为空且尚未尝试过 /exam/view，则兜底尝试 /exam/view
+        if questions.is_empty() && !is_submitted {
+            let view_url = format!("{}/exam/view?cid={cid}&tid={task_id}", client.origin());
+            if let Ok(view_bytes) = client.quiz_http(&view_url, None, &cancel).await {
+                if let Some(d) = quiz::qa::parse_exam_view_details(&view_bytes) {
+                    if !d.questions.is_empty() {
+                        questions = d.questions;
+                        answers = if !d.student_answers.is_empty() {
+                            d.student_answers
+                        } else {
+                            d.answers
+                        };
+                    }
+                }
+            }
+        }
+
+        // 4. HTML 文档页面解析兜底
+        if questions.is_empty() {
+            if let Ok(html) = client.quiz_document(task_id, &cancel).await {
+                if let Ok(url) = format!("{}/exam/{task_id}", client.origin()).parse() {
+                    if let Ok(p) = quiz::protocol::parse(&html, &url, task_id) {
+                        questions = p.questions;
+                    }
+                }
+            }
+        }
+
+        if questions.is_empty() {
+            return Err("无法获取试卷题目，可能考试/测验尚未开始或需要官方页面处理".into());
+        }
+
+        let mut reviews = Vec::new();
+        let cache_path = self.path.parent().unwrap().join("qa-vector-cache.json");
+        let bank_path = self.path.parent().unwrap().join("qa-bank.json");
+        let (server_url, api_key) = {
+            let r = self.runtime.lock().unwrap();
+            (r.snapshot.settings.qa_server_url.clone(), r.qa_api_key.clone())
+        };
+
+        let local_bank = if bank_path.exists() {
+            quiz::qa::load_local_bank(&bank_path)
+        } else {
+            Default::default()
+        };
+
+        for q in &questions {
+            let mut matched_this_q = false;
+
+            // 1. 优先尝试单题 ID 精确匹配 (本地题库 bank 中 key 或者 question_id)
+            if let Some(bank_q) = local_bank.get(&q.id).or_else(|| {
+                local_bank.values().find(|item| item.question_id == q.id)
+            }) {
+                let clean_answers: Vec<String> = if !bank_q.correct_answers.is_empty() {
+                    bank_q.correct_answers.clone()
+                } else {
+                    bank_q
+                        .answers
+                        .iter()
+                        .filter(|a| a.is_correct)
+                        .flat_map(|a| a.values.iter().filter_map(|v| v.as_str().map(String::from)))
+                        .collect()
+                };
+                if !clean_answers.is_empty() {
+                    let mapped_answers: Vec<String> = clean_answers
+                        .iter()
+                        .map(|ans| {
+                            if let Some(opt) = q.options.iter().find(|o| quiz::qa::is_option_match(o, ans)) {
+                                opt.id.clone()
+                            } else {
+                                ans.clone()
+                            }
+                        })
+                        .collect();
+                    if !mapped_answers.is_empty() {
+                        answers.entry(q.id.clone()).or_insert_with(|| mapped_answers.clone());
+                        reviews.push(quiz::model::Review {
+                            question_id: q.id.clone(),
+                            answers: mapped_answers,
+                            probabilities: Default::default(),
+                            message: "题库单题ID精确命中 (来自随堂测验)".into(),
+                        });
+                        matched_this_q = true;
+                    }
+                }
+            }
+
+            // 2. 单题向量特征匹配 (针对题干 + 选项语义)
+            if !matched_this_q {
+                let opts: Vec<quiz::qa::QaUploadOption> = q
+                    .options
+                    .iter()
+                    .map(|o| quiz::qa::QaUploadOption {
+                        id: o.id.clone(),
+                        text: o.text.clone(),
+                    })
+                    .collect();
+                let query = quiz::qa::build_embedding_text(Some(&q.text), Some(&opts));
+                if let Ok(matched) = quiz::qa::search_questions_with_local_embedding(
+                    &cache_path,
+                    &bank_path,
+                    &server_url,
+                    api_key.as_deref(),
+                    &query,
+                    3,
+                )
+                .await
+                {
+                    if let Some(top) = matched.first() {
+                        let mapped_answers: Vec<String> = top
+                            .answers
+                            .iter()
+                            .map(|ans| {
+                                if let Some(opt) = q.options.iter().find(|o| quiz::qa::is_option_match(o, ans)) {
+                                    opt.id.clone()
+                                } else {
+                                    ans.clone()
+                                }
+                            })
+                            .collect();
+
+                        if top.similarity > 0.85 || top.question_id == q.id {
+                            if !mapped_answers.is_empty() {
+                                answers.entry(q.id.clone()).or_insert_with(|| mapped_answers.clone());
+                            }
+                            reviews.push(quiz::model::Review {
+                                question_id: q.id.clone(),
+                                answers: mapped_answers,
+                                probabilities: Default::default(),
+                                message: format!("题库单题向量命中 (相似度 {:.0}%)", top.similarity * 100.0),
+                            });
+                        } else if top.similarity > 0.70 {
+                            reviews.push(quiz::model::Review {
+                                question_id: q.id.clone(),
+                                answers: mapped_answers,
+                                probabilities: Default::default(),
+                                message: format!("测验相似考点参考 (相似度 {:.0}%)", top.similarity * 100.0),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(ExamPaper {
+            task_id: task_id.to_string(),
+            title,
+            cid: cid.to_string(),
+            limit_time,
+            questions,
+            answers,
+            reviews,
+            is_submitted,
+        })
+    }
+
+    pub(crate) async fn save_exam_draft(
+        &self,
+        _cid: &str,
+        task_id: &str,
+        answers: quiz::model::Answers,
+    ) -> Result<(), String> {
+        let cancel = CancellationToken::new();
+        let client = self.client.read().unwrap().clone();
+        let mut fields = Vec::new();
+        for (qid, vals) in answers {
+            for v in vals {
+                fields.push((format!("answers[{qid}]"), v));
+            }
+        }
+        client
+            .exam_save(task_id, &fields, &cancel)
+            .await
+            .map_err(|e| format!("草稿保存失败: {e:?}"))?;
+        Ok(())
+    }
+
+    pub(crate) async fn submit_exam(
+        &self,
+        _cid: &str,
+        task_id: &str,
+        answers: quiz::model::Answers,
+    ) -> Result<String, String> {
+        let cancel = CancellationToken::new();
+        let client = self.client.read().unwrap().clone();
+        let mut fields = Vec::new();
+        for (qid, vals) in answers {
+            for v in vals {
+                fields.push((format!("answers[{qid}]"), v));
+            }
+        }
+        let res = client
+            .exam_commit(task_id, &fields, &cancel)
+            .await
+            .map_err(|e| format!("提交试卷失败: {e:?}"))?;
+        let msg = text(&res["msg"]);
+        Ok(if msg.is_empty() { "试卷已成功提交".into() } else { msg })
+    }
+
+    pub(crate) async fn heartbeat_exam(
+        &self,
+        cid: &str,
+        task_id: &str,
+    ) -> Result<bool, String> {
+        let cancel = CancellationToken::new();
+        let client = self.client.read().unwrap().clone();
+        client
+            .exam_heartbeat(cid, task_id, &cancel)
+            .await
+            .map_err(|e| format!("防作弊心跳异常: {e:?}"))
+    }
+
+    pub(crate) async fn list_quizzes(&self, cid: Option<&str>) -> Result<Vec<HomeworkTask>, String> {
+        let cancel = CancellationToken::new();
+        let client = self.client.read().unwrap().clone();
+        let (courses, is_ready) = {
+            let r = self.runtime.lock().unwrap();
+            (r.snapshot.courses.clone(), r.snapshot.session == SessionStatus::Ready)
+        };
+        if !is_ready {
+            return Err("请先登录 UOOC".into());
+        }
+
+        let target_courses: Vec<(String, String)> = if let Some(target_cid) = cid {
+            courses
+                .into_iter()
+                .filter(|c| c.id == target_cid)
+                .map(|c| (c.id, c.title))
+                .collect()
+        } else {
+            courses
+                .into_iter()
+                .map(|c| (c.id, c.title))
+                .collect()
+        };
+
+        let mut all_tasks = Vec::new();
+        for (course_id, course_title) in target_courses {
+            if let Ok(rows) = client.quiz_list(&course_id, &cancel).await {
+                for row in rows {
+                    let task_id = id(&row["task_id"])
+                        .or_else(|| id(&row["id"]))
+                        .or_else(|| id(&row["res_id"]))
+                        .unwrap_or_default();
+                    let q_id = id(&row["id"]).unwrap_or_else(|| task_id.clone());
+                    let title = text(&row["title"]);
+                    let title = if title.is_empty() {
+                        text(&row["name"])
+                    } else {
+                        title
+                    };
+                    let start_time = text(&row["start_time"]);
+                    let end_time = text(&row["end_time"]);
+                    let status_text = text(&row["status"]);
+                    let mut status_code = number(&row["status_code"]) as i32;
+                    if status_code == 0 && (status_text == "已批改" || status_text == "已完成") {
+                        status_code = 20;
+                    }
+                    let can_do = row["state"]["do"].as_bool().unwrap_or(false);
+                    let can_view = row["state"]["view"].as_bool().unwrap_or(false);
+                    let can_eval = row["state"]["eval"].as_bool().unwrap_or(false);
+                    let chance = number(&row["chance"]) as u32;
+                    let submit_count = number(&row["submit_count"]) as u32;
+                    let score = row.get("score").and_then(|v| {
+                        v.as_f64().or_else(|| {
+                            v.as_str().and_then(|s| s.trim().parse::<f64>().ok())
+                        })
+                    });
+                    let paper_id = id(&row["paper_id"]);
+                    let chapter_text = text(&row["chapter_text"]);
+                    let chapter_text = if chapter_text.is_empty() { None } else { Some(chapter_text) };
+                    let section_text = text(&row["section_text"]);
+                    let section_text = if section_text.is_empty() { None } else { Some(section_text) };
+                    let res_id = id(&row["res_id"]).or_else(|| id(&row["resource_id"]));
+                    let commit_time = text(&row["commit_time"]);
+                    let commit_time = if commit_time.is_empty() { None } else { Some(commit_time) };
+                    let do_time = text(&row["do_time"]);
+                    let do_time = if do_time.is_empty() { None } else { Some(do_time) };
+
+                    all_tasks.push(HomeworkTask {
+                        id: q_id,
+                        title,
+                        cid: course_id.clone(),
+                        course_name: course_title.clone(),
+                        start_time,
+                        end_time,
+                        status: status_code,
+                        status_text,
+                        status_code,
+                        can_do,
+                        can_view,
+                        can_eval,
+                        chance,
+                        submit_count,
+                        score,
+                        paper_id,
+                        task_id,
+                        has_eval: false,
+                        eval_status: None,
+                        chapter_text,
+                        section_text,
+                        res_id,
+                        commit_time,
+                        do_time,
+                    });
+                }
+            }
+        }
+        Ok(all_tasks)
+    }
+
+    pub(crate) async fn list_homeworks(&self, cid: Option<&str>) -> Result<Vec<HomeworkTask>, String> {
+        let cancel = CancellationToken::new();
+        let client = self.client.read().unwrap().clone();
+        let (courses, is_ready) = {
+            let r = self.runtime.lock().unwrap();
+            (r.snapshot.courses.clone(), r.snapshot.session == SessionStatus::Ready)
+        };
+        if !is_ready {
+            return Err("请先登录 UOOC".into());
+        }
+
+        let target_courses: Vec<(String, String)> = if let Some(target_cid) = cid {
+            courses
+                .into_iter()
+                .filter(|c| c.id == target_cid)
+                .map(|c| (c.id, c.title))
+                .collect()
+        } else {
+            courses
+                .into_iter()
+                .map(|c| (c.id, c.title))
+                .collect()
+        };
+
+        let mut all_tasks = Vec::new();
+        for (course_id, course_title) in target_courses {
+            let has_eval = client.exist_eval(&course_id, &cancel).await.unwrap_or(false);
+            if let Ok(rows) = client.homework_list(&course_id, &cancel).await {
+                for row in rows {
+                    let task_id = id(&row["task_id"])
+                        .or_else(|| id(&row["id"]))
+                        .unwrap_or_default();
+                    let hw_id = id(&row["id"]).unwrap_or_else(|| task_id.clone());
+                    let title = text(&row["title"]);
+                    let title = if title.is_empty() {
+                        text(&row["name"])
+                    } else {
+                        title
+                    };
+                    let start_time = text(&row["start_time"]);
+                    let end_time = text(&row["end_time"]);
+                    let status_text = text(&row["status"]);
+                    let mut status_code = number(&row["status_code"]) as i32;
+                    if status_code == 0 && (status_text == "已批改" || status_text == "已完成") {
+                        status_code = 20;
+                    }
+                    let can_do = row["state"]["do"].as_bool().unwrap_or(false);
+                    let can_view = row["state"]["view"].as_bool().unwrap_or(false);
+                    let can_eval = row["state"]["eval"].as_bool().unwrap_or(false);
+                    let chance = number(&row["chance"]) as u32;
+                    let submit_count = number(&row["submit_count"]) as u32;
+                    let score = row.get("score").and_then(|v| {
+                        v.as_f64().or_else(|| {
+                            v.as_str().and_then(|s| s.trim().parse::<f64>().ok())
+                        })
+                    });
+                    let paper_id = id(&row["paper_id"]);
+                    let eval_status = text(&row["eval_status"]);
+                    let eval_status = if eval_status.is_empty() { None } else { Some(eval_status) };
+                    let chapter_text = text(&row["chapter_text"]);
+                    let chapter_text = if chapter_text.is_empty() { None } else { Some(chapter_text) };
+                    let section_text = text(&row["section_text"]);
+                    let section_text = if section_text.is_empty() { None } else { Some(section_text) };
+                    let res_id = id(&row["res_id"]).or_else(|| id(&row["resource_id"]));
+                    let commit_time = text(&row["commit_time"]);
+                    let commit_time = if commit_time.is_empty() { None } else { Some(commit_time) };
+                    let do_time = text(&row["do_time"]);
+                    let do_time = if do_time.is_empty() { None } else { Some(do_time) };
+
+                    all_tasks.push(HomeworkTask {
+                        id: hw_id,
+                        title,
+                        cid: course_id.clone(),
+                        course_name: course_title.clone(),
+                        start_time,
+                        end_time,
+                        status: status_code,
+                        status_text,
+                        status_code,
+                        can_do,
+                        can_view,
+                        can_eval,
+                        chance,
+                        submit_count,
+                        score,
+                        paper_id,
+                        task_id,
+                        has_eval: has_eval || can_eval,
+                        eval_status,
+                        chapter_text,
+                        section_text,
+                        res_id,
+                        commit_time,
+                        do_time,
+                    });
+                }
+            }
+        }
+        Ok(all_tasks)
+    }
+
+    pub(crate) async fn match_paper_qa(
+        &self,
+        questions: Vec<quiz::model::Question>,
+    ) -> Result<(quiz::model::Answers, Vec<quiz::model::Review>), String> {
+        let mut answers = quiz::model::Answers::new();
+        let mut reviews = Vec::new();
+        let cache_path = self.path.parent().unwrap().join("qa-vector-cache.json");
+        let bank_path = self.path.parent().unwrap().join("qa-bank.json");
+        let (server_url, api_key) = {
+            let r = self.runtime.lock().unwrap();
+            (r.snapshot.settings.qa_server_url.clone(), r.qa_api_key.clone())
+        };
+
+        let local_bank = if bank_path.exists() {
+            quiz::qa::load_local_bank(&bank_path)
+        } else {
+            Default::default()
+        };
+
+        for q in &questions {
+            let mut matched_this_q = false;
+
+            // 1. 优先尝试单题 ID 精确匹配
+            if let Some(bank_q) = local_bank.get(&q.id).or_else(|| {
+                local_bank.values().find(|item| item.question_id == q.id)
+            }) {
+                let clean_answers: Vec<String> = if !bank_q.correct_answers.is_empty() {
+                    bank_q.correct_answers.clone()
+                } else {
+                    bank_q
+                        .answers
+                        .iter()
+                        .filter(|a| a.is_correct)
+                        .flat_map(|a| a.values.iter().filter_map(|v| v.as_str().map(String::from)))
+                        .collect()
+                };
+                if !clean_answers.is_empty() {
+                    let mapped_answers: Vec<String> = clean_answers
+                        .iter()
+                        .map(|ans| {
+                            if let Some(opt) = q.options.iter().find(|o| quiz::qa::is_option_match(o, ans)) {
+                                opt.id.clone()
+                            } else {
+                                ans.clone()
+                            }
+                        })
+                        .collect();
+                    if !mapped_answers.is_empty() {
+                        answers.insert(q.id.clone(), mapped_answers.clone());
+                        reviews.push(quiz::model::Review {
+                            question_id: q.id.clone(),
+                            answers: mapped_answers,
+                            probabilities: Default::default(),
+                            message: "题库单题ID精确命中 (来自随堂测验)".into(),
+                        });
+                        matched_this_q = true;
+                    }
+                }
+            }
+
+            // 2. 单题向量特征匹配
+            if !matched_this_q {
+                let opts: Vec<quiz::qa::QaUploadOption> = q
+                    .options
+                    .iter()
+                    .map(|o| quiz::qa::QaUploadOption {
+                        id: o.id.clone(),
+                        text: o.text.clone(),
+                    })
+                    .collect();
+                let query = quiz::qa::build_embedding_text(Some(&q.text), Some(&opts));
+                if let Ok(matched) = quiz::qa::search_questions_with_local_embedding(
+                    &cache_path,
+                    &bank_path,
+                    &server_url,
+                    api_key.as_deref(),
+                    &query,
+                    3,
+                )
+                .await
+                {
+                    if let Some(top) = matched.first() {
+                        let mapped_answers: Vec<String> = top
+                            .answers
+                            .iter()
+                            .map(|ans| {
+                                if let Some(opt) = q.options.iter().find(|o| quiz::qa::is_option_match(o, ans)) {
+                                    opt.id.clone()
+                                } else {
+                                    ans.clone()
+                                }
+                            })
+                            .collect();
+
+                        if top.similarity > 0.85 || top.question_id == q.id {
+                            if !mapped_answers.is_empty() {
+                                answers.insert(q.id.clone(), mapped_answers.clone());
+                            }
+                            reviews.push(quiz::model::Review {
+                                question_id: q.id.clone(),
+                                answers: mapped_answers,
+                                probabilities: Default::default(),
+                                message: format!("题库单题向量命中 (相似度 {:.0}%)", top.similarity * 100.0),
+                            });
+                        } else if top.similarity > 0.70 {
+                            reviews.push(quiz::model::Review {
+                                question_id: q.id.clone(),
+                                answers: mapped_answers,
+                                probabilities: Default::default(),
+                                message: format!("测验相似考点参考 (相似度 {:.0}%)", top.similarity * 100.0),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok((answers, reviews))
+    }
+
+    pub(crate) async fn solve_paper_ai(
+        &self,
+        questions: Vec<quiz::model::Question>,
+    ) -> Result<(quiz::model::Answers, Vec<quiz::model::Review>), String> {
+        let cancel = CancellationToken::new();
+        let wrong_map = std::collections::BTreeMap::new();
+        let (answers, reviews, _, err) = ai::generate(self, &questions, &wrong_map, &cancel, None).await;
+        if let Some(e) = err {
+            if answers.is_empty() && reviews.is_empty() {
+                return Err(format!("AI 答题失败: {e}"));
+            }
+        }
+        Ok((answers, reviews))
+    }
+
+    pub(crate) async fn list_evals(&self, cid: Option<&str>) -> Result<Vec<PeerEvalTask>, String> {
+        let cancel = CancellationToken::new();
+        let client = self.client.read().unwrap().clone();
+        let (courses, is_ready) = {
+            let r = self.runtime.lock().unwrap();
+            (r.snapshot.courses.clone(), r.snapshot.session == SessionStatus::Ready)
+        };
+        if !is_ready {
+            return Err("请先登录 UOOC".into());
+        }
+
+        let target_courses: Vec<(String, String)> = if let Some(target_cid) = cid {
+            courses
+                .into_iter()
+                .filter(|c| c.id == target_cid)
+                .map(|c| (c.id, c.title))
+                .collect()
+        } else {
+            courses
+                .into_iter()
+                .map(|c| (c.id, c.title))
+                .collect()
+        };
+
+        let mut results = Vec::new();
+        for (course_id, course_title) in target_courses {
+            if let Ok(eval_rows) = client.eval_list(&course_id, &cancel).await {
+                for item in eval_rows {
+                    let tid = id(&item["tid"]).or_else(|| id(&item["task_id"])).unwrap_or_default();
+                    let title = text(&item["title"]);
+                    let title = if title.is_empty() { text(&item["name"]) } else { title };
+                    let start_time = text(&item["start_time"]);
+                    let end_time = text(&item["end_time"]);
+
+                    let mut submissions = Vec::new();
+                    if let Some(list) = item["sub_list"].as_array().or_else(|| item["eval_list"].as_array()) {
+                        for sub in list {
+                            let eval_id = id(&sub["eval_id"]).or_else(|| id(&sub["id"])).unwrap_or_default();
+                            let student_task_id = id(&sub["student_task_id"]).or_else(|| id(&sub["tid"]));
+                            let content = text(&sub["content"]);
+                            let score = sub.get("score").and_then(|v| v.as_f64());
+                            let comments = text(&sub["comments"]);
+                            let comments = if comments.is_empty() { None } else { Some(comments) };
+                            let is_evaluated = number(&sub["status"]) > 0.0 || score.is_some();
+                            submissions.push(PeerSubmission {
+                                eval_id,
+                                student_task_id,
+                                answers: Default::default(),
+                                content,
+                                score,
+                                comments,
+                                is_evaluated,
+                            });
+                        }
+                    }
+
+                    let completed_count = submissions.iter().filter(|s| s.is_evaluated).count() as u32;
+                    let total_count = submissions.len() as u32;
+
+                    results.push(PeerEvalTask {
+                        cid: course_id.clone(),
+                        tid,
+                        title,
+                        course_name: course_title.clone(),
+                        start_time,
+                        end_time,
+                        total_count,
+                        completed_count,
+                        submissions,
+                    });
+                }
+            }
+        }
+        Ok(results)
+    }
+
+    pub(crate) async fn submit_eval(
+        &self,
+        cid: &str,
+        tid: &str,
+        eval_id: &str,
+        score: f64,
+        comments: &str,
+    ) -> Result<String, String> {
+        let cancel = CancellationToken::new();
+        let client = self.client.read().unwrap().clone();
+        let res = client
+            .submit_eval_score(cid, tid, eval_id, score, comments, &cancel)
+            .await
+            .map_err(|e| format!("提交互评失败: {e:?}"))?;
+        let msg = text(&res["msg"]);
+        Ok(if msg.is_empty() { "互评提交成功".into() } else { msg })
+    }
+
+    pub(crate) async fn generate_subjective(
+        &self,
+        stem: &str,
+        context: Option<&str>,
+        reference_examples: Vec<ai::ReferenceExample>,
+    ) -> Result<String, String> {
+        let cancel = CancellationToken::new();
+        ai::generate_subjective_answer(self, stem, context, &reference_examples, &cancel).await
+    }
+
+    pub(crate) async fn task_portal(
+        self: &Arc<Self>,
+        parent: tauri::WebviewWindow,
+        task_id: String,
+    ) -> Result<(), String> {
+        login::local_parent(&parent)?;
+        let (account, epoch) = {
+            let r = self.runtime.lock().unwrap();
+            let a = r.snapshot.user.as_ref().ok_or("请先登录")?.id.clone();
+            (a, r.epoch)
+        };
+        if task_id.trim().is_empty() {
+            return Err("任务编号无效".into());
+        }
+        let label = format!("uooc-task-{}", uuid::Uuid::new_v4());
+        let builder = tauri::WebviewWindowBuilder::new(
+            parent.app_handle(),
+            &label,
+            tauri::WebviewUrl::External("about:blank".parse().unwrap()),
+        )
+        .title("UOOC 官方试卷/任务页面");
+        #[cfg(not(target_os = "android"))]
+        let builder = builder.user_agent(user_agent::DESKTOP);
+        let window = builder.build().map_err(|_| "无法打开官方页面窗口")?;
+        let copy = window.clone();
+        let jar = self.client().jar.clone();
+        let lease = self.native_session.clone().lock_owned().await;
+        let installed = tauri::async_runtime::spawn_blocking(move || {
+            let _lease = lease;
+            session::install(&copy, &jar, false)
+        })
+        .await
+        .unwrap_or_else(|_| Err("无法恢复会话".into()));
+        if installed.is_err()
+            || self.snapshot().user.as_ref().is_none_or(|u| u.id != account)
+            || self.runtime.lock().unwrap().epoch != epoch
+        {
+            let _ = window.destroy();
+            return Err("会话恢复失败或账户已变化".into());
+        }
+        window
+            .navigate(
+                format!("https://www.uooc.net.cn/exam/{task_id}")
+                    .parse()
+                    .unwrap(),
+            )
+            .map_err(|_| "无法加载官方试卷".into())
+    }
 }
 
 pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {

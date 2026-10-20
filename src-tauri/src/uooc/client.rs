@@ -228,6 +228,230 @@ impl Client {
         }
         Err(Error::Invalid)
     }
+    pub(super) async fn exam_list(
+        &self,
+        cid: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<Value>, Error> {
+        let mut all = vec![];
+        for page in 1..=100 {
+            let data = self
+                .request(
+                    "/home/task/examList",
+                    &[
+                        ("cid".into(), cid.into()),
+                        ("page".into(), page.to_string()),
+                        ("pagesize".into(), "20".into()),
+                    ],
+                    false,
+                    cancel,
+                )
+                .await?;
+            let rows = data["data"].as_array().ok_or(Error::Invalid)?;
+            for row in rows {
+                all.push(row.clone());
+            }
+            let pages = text(&data["page"]["pages"])
+                .parse::<u64>()
+                .unwrap_or(1);
+            if page >= pages {
+                return Ok(all);
+            }
+        }
+        Ok(all)
+    }
+    pub(super) async fn homework_list(
+        &self,
+        cid: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<Value>, Error> {
+        let mut all = vec![];
+        for page in 1..=100 {
+            let data = self
+                .request(
+                    "/home/task/homeworkList",
+                    &[
+                        ("cid".into(), cid.into()),
+                        ("page".into(), page.to_string()),
+                        ("pagesize".into(), "20".into()),
+                    ],
+                    false,
+                    cancel,
+                )
+                .await?;
+            let rows = data["data"].as_array().ok_or(Error::Invalid)?;
+            for row in rows {
+                all.push(row.clone());
+            }
+            let pages = text(&data["page"]["pages"])
+                .parse::<u64>()
+                .unwrap_or(1);
+            if page >= pages {
+                return Ok(all);
+            }
+        }
+        Ok(all)
+    }
+    pub(super) async fn exist_eval(
+        &self,
+        cid: &str,
+        cancel: &CancellationToken,
+    ) -> Result<bool, Error> {
+        let val = self
+            .request(
+                "/home/task/existEval",
+                &[("cid".into(), cid.into())],
+                false,
+                cancel,
+            )
+            .await?;
+        if let Some(b) = val["data"].as_bool() {
+            return Ok(b);
+        }
+        if let Some(n) = val["data"].as_i64() {
+            return Ok(n > 0);
+        }
+        if let Some(arr) = val["data"].as_array() {
+            return Ok(!arr.is_empty());
+        }
+        Ok(!val["data"].is_null())
+    }
+    pub(super) async fn eval_list(
+        &self,
+        cid: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<Value>, Error> {
+        let val = self
+            .request(
+                "/home/task/evalList",
+                &[("cid".into(), cid.into())],
+                false,
+                cancel,
+            )
+            .await?;
+        if let Some(arr) = val["data"].as_array() {
+            return Ok(arr.clone());
+        }
+        if let Some(arr) = val.as_array() {
+            return Ok(arr.clone());
+        }
+        Ok(vec![])
+    }
+    #[allow(dead_code)]
+    pub(super) async fn eval_info(
+        &self,
+        cid: &str,
+        tid: &str,
+        eval_id: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Value, Error> {
+        self.request(
+            "/home/task/evalInfo",
+            &[
+                ("cid".into(), cid.into()),
+                ("tid".into(), tid.into()),
+                ("eval_id".into(), eval_id.into()),
+            ],
+            false,
+            cancel,
+        )
+        .await
+    }
+    pub(super) async fn submit_eval_score(
+        &self,
+        cid: &str,
+        tid: &str,
+        eval_id: &str,
+        score: f64,
+        comments: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Value, Error> {
+        self.request(
+            "/home/task/submitEvalScore",
+            &[
+                ("cid".into(), cid.into()),
+                ("tid".into(), tid.into()),
+                ("eval_id".into(), eval_id.into()),
+                ("score".into(), format!("{score}")),
+                ("comments".into(), comments.into()),
+            ],
+            true,
+            cancel,
+        )
+        .await
+    }
+    pub(super) async fn exam_task_info(
+        &self,
+        tid: &str,
+        cid: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Value, Error> {
+        self.request(
+            "/exam/taskInfo",
+            &[("tid".into(), tid.into()), ("cid".into(), cid.into())],
+            false,
+            cancel,
+        )
+        .await
+    }
+    pub(super) async fn exam_save(
+        &self,
+        tid: &str,
+        fields: &[(String, String)],
+        cancel: &CancellationToken,
+    ) -> Result<Value, Error> {
+        let mut params = vec![("tid".into(), tid.into())];
+        params.extend_from_slice(fields);
+        self.request("/exam/save", &params, true, cancel).await
+    }
+    pub(super) async fn exam_commit(
+        &self,
+        tid: &str,
+        fields: &[(String, String)],
+        cancel: &CancellationToken,
+    ) -> Result<Value, Error> {
+        let mut params = vec![("tid".into(), tid.into())];
+        params.extend_from_slice(fields);
+        self.request("/exam/commit", &params, true, cancel).await
+    }
+    pub(super) async fn exam_heartbeat(
+        &self,
+        cid: &str,
+        tid: &str,
+        cancel: &CancellationToken,
+    ) -> Result<bool, Error> {
+        let res = self
+            .request(
+                "/home/cheatrecord/getAlert",
+                &[
+                    ("course_id".into(), cid.into()),
+                    ("task_type".into(), "1".into()),
+                    ("relation_id".into(), tid.into()),
+                ],
+                false,
+                cancel,
+            )
+            .await;
+        if let Ok(val) = res {
+            if let Some(list) = val["data"].as_array() {
+                for item in list {
+                    if let Some(record_id) = id(&item["id"]) {
+                        let _ = self
+                            .request(
+                                "/home/cheatrecord/alertRecode",
+                                &[("id".into(), record_id)],
+                                true,
+                                cancel,
+                            )
+                            .await;
+                    }
+                }
+            }
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
     pub(super) async fn quiz_document(
         &self,
         task: &str,

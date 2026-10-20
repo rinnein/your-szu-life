@@ -298,6 +298,151 @@ impl Default for Snapshot {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ExamTask {
+    pub id: String,
+    pub title: String,
+    pub cid: String,
+    #[serde(default)]
+    pub course_name: String,
+    #[serde(default)]
+    pub start_time: String,
+    #[serde(default)]
+    pub end_time: String,
+    #[serde(default)]
+    pub limit_time: u64,
+    #[serde(default)]
+    pub status: i32,
+    #[serde(default)]
+    pub status_text: String,
+    #[serde(default)]
+    pub status_code: i32,
+    #[serde(default)]
+    pub can_do: bool,
+    #[serde(default)]
+    pub can_view: bool,
+    #[serde(default)]
+    pub can_eval: bool,
+    #[serde(default)]
+    pub chance: u32,
+    #[serde(default)]
+    pub submit_count: u32,
+    #[serde(default)]
+    pub score: Option<f64>,
+    #[serde(default)]
+    pub paper_id: Option<String>,
+    pub task_id: String,
+    #[serde(default)]
+    pub chapter_text: Option<String>,
+    #[serde(default)]
+    pub section_text: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ExamPaper {
+    pub task_id: String,
+    pub title: String,
+    pub cid: String,
+    #[serde(default)]
+    pub limit_time: u64,
+    pub questions: Vec<super::quiz::model::Question>,
+    #[serde(default)]
+    pub answers: super::quiz::model::Answers,
+    #[serde(default)]
+    pub reviews: Vec<super::quiz::model::Review>,
+    #[serde(default)]
+    pub is_submitted: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct HomeworkTask {
+    pub id: String,
+    pub title: String,
+    pub cid: String,
+    #[serde(default)]
+    pub course_name: String,
+    #[serde(default)]
+    pub start_time: String,
+    #[serde(default)]
+    pub end_time: String,
+    #[serde(default)]
+    pub status: i32,
+    #[serde(default)]
+    pub status_text: String,
+    #[serde(default)]
+    pub status_code: i32,
+    #[serde(default)]
+    pub can_do: bool,
+    #[serde(default)]
+    pub can_view: bool,
+    #[serde(default)]
+    pub can_eval: bool,
+    #[serde(default)]
+    pub chance: u32,
+    #[serde(default)]
+    pub submit_count: u32,
+    #[serde(default)]
+    pub score: Option<f64>,
+    #[serde(default)]
+    pub paper_id: Option<String>,
+    pub task_id: String,
+    #[serde(default)]
+    pub has_eval: bool,
+    #[serde(default)]
+    pub eval_status: Option<String>,
+    #[serde(default)]
+    pub chapter_text: Option<String>,
+    #[serde(default)]
+    pub section_text: Option<String>,
+    #[serde(default)]
+    pub res_id: Option<String>,
+    #[serde(default)]
+    pub commit_time: Option<String>,
+    #[serde(default)]
+    pub do_time: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PeerSubmission {
+    pub eval_id: String,
+    #[serde(default)]
+    pub student_task_id: Option<String>,
+    #[serde(default)]
+    pub answers: super::quiz::model::Answers,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default)]
+    pub score: Option<f64>,
+    #[serde(default)]
+    pub comments: Option<String>,
+    #[serde(default)]
+    pub is_evaluated: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PeerEvalTask {
+    pub cid: String,
+    pub tid: String,
+    pub title: String,
+    #[serde(default)]
+    pub course_name: String,
+    #[serde(default)]
+    pub start_time: String,
+    #[serde(default)]
+    pub end_time: String,
+    #[serde(default)]
+    pub total_count: u32,
+    #[serde(default)]
+    pub completed_count: u32,
+    #[serde(default)]
+    pub submissions: Vec<PeerSubmission>,
+}
+
 impl Snapshot {
     pub(super) fn update_courses(&mut self, user: User, courses: Vec<Course>) {
         for task in self

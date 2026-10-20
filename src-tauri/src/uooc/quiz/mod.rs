@@ -1,6 +1,6 @@
 pub(crate) mod model;
 pub(crate) mod qa;
-mod protocol;
+pub(crate) mod protocol;
 #[cfg(test)]
 mod tests;
 use self::model::*;

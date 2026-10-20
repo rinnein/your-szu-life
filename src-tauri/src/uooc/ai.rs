@@ -5,6 +5,15 @@ use serde_json::{json, Value};
 use std::{collections::BTreeMap, time::Duration};
 use tokio_util::sync::CancellationToken;
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ReferenceExample {
+    pub question_id: String,
+    pub stem: String,
+    pub answers: Vec<String>,
+    pub similarity: f64,
+}
+
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct Provider {
@@ -1035,10 +1044,11 @@ async fn answer_batch(
 说明：\n\
 1. 选择题必须返回选项的精确 id（如 [\"A\"] 或多选题 [\"A\", \"B\"]），绝对不要返回字母索引外的多余文字；\n\
 2. 重要：若某题目包含 excluded_options 字段，代表该选项已被题库或先前作答验证为错误选项，判题时绝对不可选择被排除的选项！\n\
-3. 若某题目包含 rag_verified_references 字段，代表本地题库中存在高度相似的历史题目与已验证正确答案，解题时请重点参考历史答案进行推导判断；\n\
-4. 文本填空题按 blanks 数量在数组中依次返回对应空的填空答案；\n\
-5. 无法确定的题目返回空数组 []；\n\
-6. 必须返回包含全部题目 ID 的 answers 对象；\n\
+3. 若某题目包含 reference_examples 或 rag_verified_references 字段，代表前置题库匹配到了高度相似的历史考题与参考答案，请将其作为 Few-Shot 参考样例重点分析并辅助推导；\n\
+4. 主观题/问答题/简答题请直接在 answers 数组中返回详实、论述清晰、专业的高分作答文本草稿；\n\
+5. 文本填空题按 blanks 数量在数组中依次返回对应空的填空答案；\n\
+6. 无法确定的题目返回空数组 []；\n\
+7. 必须返回包含全部题目 ID 的 answers 对象；\n\
 {search_instruction}"
     );
 
@@ -1332,7 +1342,7 @@ async fn answer_batch(
                     if !valid_ans.contains(&opt.id) {
                         valid_ans.push(opt.id.clone());
                     }
-                } else if q.kind == Kind::Text && !ans_trim.is_empty() {
+                } else if (q.kind == Kind::Text || q.kind == Kind::Subjective) && !ans_trim.is_empty() {
                     valid_ans.push(ans_trim.to_string());
                 } else if !valid_ans.contains(&ans_trim.to_string()) {
                     valid_ans.push(ans_trim.to_string());
@@ -1518,7 +1528,7 @@ pub(super) async fn generate(
                 for q in *chunk {
                     let mut selected = batch_answers.get(&q.id).cloned().unwrap_or_default();
                     let reason_opt = batch_reasons.get(&q.id).cloned();
-                    if config.jev_enabled && q.kind != Kind::Text {
+                    if config.jev_enabled && q.kind != Kind::Text && q.kind != Kind::Subjective {
                         if !q.images.is_empty() {
                             all_reviews.push(Review {
                                 question_id: q.id.clone(),
@@ -1638,4 +1648,77 @@ pub(super) async fn generate(
     }
 
     (all_answers, all_reviews, all_sessions, None)
+}
+
+pub(crate) async fn generate_subjective_answer(
+    service: &Service,
+    stem: &str,
+    context: Option<&str>,
+    reference_examples: &[ReferenceExample],
+    cancel: &CancellationToken,
+) -> Result<String, String> {
+    let config = service.ai.lock().unwrap().clone();
+    let p = &config.main;
+    if p.model.is_empty() {
+        return Err("请先在设置中选择主模型".into());
+    }
+    let client = sdk(p)?;
+    let mut ref_text = String::new();
+    if !reference_examples.is_empty() {
+        ref_text.push_str("\n【参考真题与考点】:\n");
+        for (i, r) in reference_examples.iter().enumerate() {
+            ref_text.push_str(&format!(
+                "{}. 题目：{}\n参考答案/要点：{}\n(相似度: {:.0}%)\n",
+                i + 1,
+                r.stem,
+                r.answers.join("，"),
+                r.similarity * 100.0
+            ));
+        }
+    }
+    let prompt = format!(
+        "请为以下大学课程主观题/问答题/论述题撰写完整、清晰、专业的高分作答草稿。\n\n\
+        【题目内容】\n{}\n\
+        {}\
+        {}\n\n\
+        【作答要求】\n\
+        1. 紧扣题意，结构清晰，分点论述（如必要可包含小标题或要点序号）；\n\
+        2. 语言规范、学术严谨、表达流畅；\n\
+        3. 直接输出作答内容正文，不要包含多余的客套话或'好的'等无关前缀。",
+        stem,
+        context.map(|c| format!("【补充材料/要求】\n{c}\n")).unwrap_or_default(),
+        ref_text
+    );
+    let request = CreateChatCompletionRequest {
+        model: p.model.clone(),
+        messages: vec![
+            async_openai::types::chat::ChatCompletionRequestMessage::System(
+                async_openai::types::chat::ChatCompletionRequestSystemMessageArgs::default()
+                    .content("你是专业严谨的大学课程主观题解题专家，请给出专业、详尽、高质量的作答。")
+                    .build()
+                    .map_err(|e| e.to_string())?,
+            ),
+            async_openai::types::chat::ChatCompletionRequestMessage::User(
+                async_openai::types::chat::ChatCompletionRequestUserMessageArgs::default()
+                    .content(prompt)
+                    .build()
+                    .map_err(|e| e.to_string())?,
+            ),
+        ],
+        ..Default::default()
+    };
+    let chat = client.chat();
+    let resp = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return Err("已取消".into()),
+        r = chat.create(request) => r.map_err(|e| format!("AI 模型请求失败: {e}"))?,
+    };
+    let ans = resp
+        .choices
+        .first()
+        .and_then(|c| c.message.content.clone())
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    Ok(ans)
 }

@@ -37,6 +37,9 @@ import { useLogicalNavigation } from "../logical-navigation";
 import { ModelDownloadModal } from "../ModelDownloadModal";
 import { useEmbeddingModelStatus } from "../EmbeddingModelSettings";
 import { AiSettings, QuizModePicker } from "./AiSettings";
+import { ExamListPanel } from "./ExamListPanel";
+import { HomeworkListPanel } from "./HomeworkListPanel";
+import { QuizListPanel } from "./QuizListPanel";
 import { QuizPanel } from "./QuizPanel";
 import { UoocQaSettings } from "./UoocQaSettings";
 import type { AiConfig, QuizMode } from "./types";
@@ -70,7 +73,10 @@ const seconds = (value: number) =>
 
 export default function UoocPage() {
   const navigation = useLogicalNavigation();
-  const { tab, course } = useSearch({ from: "/uooc" });
+  const { tab, subtab, course } = useSearch({ from: "/uooc" });
+  const [assessSubtab, setAssessSubtab] = useState<"quiz" | "homework" | "exam">(
+    subtab || "exam",
+  );
   const [snapshot, setSnapshot] = useState<UoocSnapshot>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -86,6 +92,12 @@ export default function UoocPage() {
   const embeddingStatus = useEmbeddingModelStatus();
   const [embeddingModalOpen, setEmbeddingModalOpen] = useState(false);
   const [embeddingDismissed, setEmbeddingDismissed] = useState(false);
+
+  useEffect(() => {
+    if (subtab) {
+      setAssessSubtab(subtab);
+    }
+  }, [subtab]);
 
   useEffect(() => {
     if (
@@ -502,6 +514,10 @@ export default function UoocPage() {
               </Tabs.Tab>
               <Tabs.Tab id="tasks">
                 任务{tasks.length ? ` (${tasks.length})` : ""}
+                <Tabs.Indicator />
+              </Tabs.Tab>
+              <Tabs.Tab id="exams">
+                测验/作业/考试
                 <Tabs.Indicator />
               </Tabs.Tab>
               <Tabs.Tab id="qa">
@@ -942,39 +958,6 @@ export default function UoocPage() {
                 <Card.Content>选择课程并开始后，任务会显示在这里。</Card.Content>
               </Card>
             )}
-            <Modal
-              isOpen={!!activeModalQuiz}
-              onOpenChange={(open) => {
-                if (!open) {
-                  setSelectedQuiz(null);
-                  setModalQuizCid(null);
-                }
-              }}
-            >
-              <Modal.Backdrop>
-                <Modal.Container size="cover" className="max-w-4xl">
-                  <Modal.Dialog
-                    aria-label={activeModalQuiz?.title || "课程测验"}
-                    className="flex flex-col max-h-[85vh]"
-                  >
-                    <Modal.CloseTrigger />
-                    {activeModalQuiz && (
-                      <QuizPanel
-                        quiz={activeModalQuiz}
-                        active={tasks.some((t) => t.course.id === activeModalQuiz.cid && active(t))}
-                        weight={snapshot?.progress?.[activeModalQuiz.cid]?.data?.test.weight}
-                        dryRun={snapshot?.settings.dryRun ?? false}
-                        onSnapshot={apply}
-                        onClose={() => {
-                          setSelectedQuiz(null);
-                          setModalQuizCid(null);
-                        }}
-                      />
-                    )}
-                  </Modal.Dialog>
-                </Modal.Container>
-              </Modal.Backdrop>
-            </Modal>
             <AlertDialog
               isOpen={!!taskToDelete}
               onOpenChange={(open) => {
@@ -1060,6 +1043,54 @@ export default function UoocPage() {
                 </AlertDialog.Container>
               </AlertDialog.Backdrop>
             </AlertDialog>
+          </Tabs.Panel>
+          <Tabs.Panel id="exams" className="grid gap-4 pt-4">
+            <Tabs
+              selectedKey={assessSubtab}
+              onSelectionChange={(key) => {
+                const next = key as "quiz" | "homework" | "exam";
+                setAssessSubtab(next);
+                void navigation.replace(`/uooc?tab=exams&subtab=${next}`);
+              }}
+            >
+              <Tabs.ListContainer>
+                <Tabs.List aria-label="考核子分类">
+                  <Tabs.Tab id="quiz">
+                    测验
+                    <Tabs.Indicator />
+                  </Tabs.Tab>
+                  <Tabs.Tab id="homework">
+                    作业
+                    <Tabs.Indicator />
+                  </Tabs.Tab>
+                  <Tabs.Tab id="exam">
+                    考试
+                    <Tabs.Indicator />
+                  </Tabs.Tab>
+                </Tabs.List>
+              </Tabs.ListContainer>
+
+              <Tabs.Panel id="quiz" className="pt-3">
+                <QuizListPanel
+                  courses={snapshot?.courses ?? []}
+                  quizzes={snapshot?.quizzes}
+                  onOpenQuiz={(q) => setSelectedQuiz(q)}
+                  onSnapshot={apply}
+                  ready={ready}
+                />
+              </Tabs.Panel>
+
+              <Tabs.Panel id="homework" className="pt-3">
+                <HomeworkListPanel
+                  courses={snapshot?.courses ?? []}
+                  ready={ready}
+                />
+              </Tabs.Panel>
+
+              <Tabs.Panel id="exam" className="pt-3">
+                <ExamListPanel courses={snapshot?.courses ?? []} ready={ready} />
+              </Tabs.Panel>
+            </Tabs>
           </Tabs.Panel>
           <Tabs.Panel id="settings" className="grid gap-4 pt-4">
             <Card>
@@ -1185,6 +1216,40 @@ export default function UoocPage() {
             />
           </Tabs.Panel>
         </Tabs>
+
+        <Modal
+          isOpen={!!activeModalQuiz}
+          onOpenChange={(open) => {
+            if (!open) {
+              setSelectedQuiz(null);
+              setModalQuizCid(null);
+            }
+          }}
+        >
+          <Modal.Backdrop>
+            <Modal.Container size="cover" className="max-w-4xl">
+              <Modal.Dialog
+                aria-label={activeModalQuiz?.title || "课程测验"}
+                className="flex flex-col max-h-[85vh]"
+              >
+                <Modal.CloseTrigger />
+                {activeModalQuiz && (
+                  <QuizPanel
+                    quiz={activeModalQuiz}
+                    active={tasks.some((t) => t.course.id === activeModalQuiz.cid && active(t))}
+                    weight={snapshot?.progress?.[activeModalQuiz.cid]?.data?.test.weight}
+                    dryRun={snapshot?.settings.dryRun ?? false}
+                    onSnapshot={apply}
+                    onClose={() => {
+                      setSelectedQuiz(null);
+                      setModalQuizCid(null);
+                    }}
+                  />
+                )}
+              </Modal.Dialog>
+            </Modal.Container>
+          </Modal.Backdrop>
+        </Modal>
       </div>
     </PageShell>
   );

@@ -276,6 +276,57 @@ pub(crate) async fn search_uooc_qa_questions(
 }
 
 #[tauri::command]
+pub(crate) async fn list_uooc_exams(
+    app: tauri::AppHandle,
+    cid: Option<String>,
+) -> Result<Vec<super::model::ExamTask>, String> {
+    let service = service(&app)?;
+    service.list_exams(cid.as_deref()).await
+}
+
+#[tauri::command]
+pub(crate) async fn get_uooc_exam_paper(
+    app: tauri::AppHandle,
+    cid: String,
+    task_id: String,
+) -> Result<super::model::ExamPaper, String> {
+    let service = service(&app)?;
+    service.get_exam_paper(&cid, &task_id).await
+}
+
+#[tauri::command]
+pub(crate) async fn save_uooc_exam_draft(
+    app: tauri::AppHandle,
+    cid: String,
+    task_id: String,
+    answers: super::quiz::model::Answers,
+) -> Result<(), String> {
+    let service = service(&app)?;
+    service.save_exam_draft(&cid, &task_id, answers).await
+}
+
+#[tauri::command]
+pub(crate) async fn submit_uooc_exam(
+    app: tauri::AppHandle,
+    cid: String,
+    task_id: String,
+    answers: super::quiz::model::Answers,
+) -> Result<String, String> {
+    let service = service(&app)?;
+    service.submit_exam(&cid, &task_id, answers).await
+}
+
+#[tauri::command]
+pub(crate) async fn heartbeat_uooc_exam(
+    app: tauri::AppHandle,
+    cid: String,
+    task_id: String,
+) -> Result<bool, String> {
+    let service = service(&app)?;
+    service.heartbeat_exam(&cid, &task_id).await
+}
+
+#[tauri::command]
 pub(crate) async fn sync_uooc_qa_bank(
     app: tauri::AppHandle,
     server_url: Option<String>,
@@ -394,6 +445,87 @@ pub(crate) fn get_uooc_local_bank_questions(
     }
     list.sort_by(|a, b| b.updated_at_ms.cmp(&a.updated_at_ms));
     Ok(list)
+}
+
+#[tauri::command]
+pub(crate) async fn list_uooc_quizzes(
+    app: tauri::AppHandle,
+    cid: Option<String>,
+) -> Result<Vec<super::model::HomeworkTask>, String> {
+    let service = service(&app)?;
+    service.list_quizzes(cid.as_deref()).await
+}
+
+#[tauri::command]
+pub(crate) async fn list_uooc_homeworks(
+    app: tauri::AppHandle,
+    cid: Option<String>,
+) -> Result<Vec<super::model::HomeworkTask>, String> {
+    let service = service(&app)?;
+    service.list_homeworks(cid.as_deref()).await
+}
+
+#[tauri::command]
+pub(crate) async fn get_uooc_eval_list(
+    app: tauri::AppHandle,
+    cid: Option<String>,
+) -> Result<Vec<super::model::PeerEvalTask>, String> {
+    let service = service(&app)?;
+    service.list_evals(cid.as_deref()).await
+}
+
+#[tauri::command]
+pub(crate) async fn submit_uooc_eval(
+    app: tauri::AppHandle,
+    cid: String,
+    tid: String,
+    eval_id: String,
+    score: f64,
+    comments: String,
+) -> Result<String, String> {
+    let service = service(&app)?;
+    service.submit_eval(&cid, &tid, &eval_id, score, &comments).await
+}
+
+#[tauri::command]
+pub(crate) async fn generate_uooc_subjective(
+    app: tauri::AppHandle,
+    stem: String,
+    context: Option<String>,
+    reference_examples: Option<Vec<super::ai::ReferenceExample>>,
+) -> Result<String, String> {
+    let service = service(&app)?;
+    service
+        .generate_subjective(&stem, context.as_deref(), reference_examples.unwrap_or_default())
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn open_uooc_task_portal(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    task_id: String,
+) -> Result<(), String> {
+    let service = service(&app)?;
+    service.task_portal(window, task_id).await
+}
+
+#[tauri::command]
+pub(crate) async fn match_uooc_paper_qa(
+    app: tauri::AppHandle,
+    questions: Vec<super::quiz::model::Question>,
+) -> Result<(super::quiz::model::Answers, Vec<super::quiz::model::Review>), String> {
+    let service = service(&app)?;
+    service.match_paper_qa(questions).await
+}
+
+#[tauri::command]
+pub(crate) async fn solve_uooc_paper_ai(
+    app: tauri::AppHandle,
+    questions: Vec<super::quiz::model::Question>,
+) -> Result<(super::quiz::model::Answers, Vec<super::quiz::model::Review>), String> {
+    let service = service(&app)?;
+    service.solve_paper_ai(questions).await
 }
 
 #[tauri::command]
