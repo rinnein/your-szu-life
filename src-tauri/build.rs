@@ -149,6 +149,7 @@ fn main() {
             "request_campus_network_permissions",
             "get_debug_mode",
             "get_debug_logs",
+            "get_debug_logs_jsonl",
             "set_debug_mode",
             "clear_debug_logs",
             "get_staff_network_settings",

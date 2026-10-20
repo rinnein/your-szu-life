@@ -108,6 +108,7 @@ permissions = [
   "allow-request-campus-network-permissions",
   "allow-get-debug-mode",
   "allow-get-debug-logs",
+  "allow-get-debug-logs-jsonl",
   "allow-set-debug-mode",
   "allow-clear-debug-logs",
   "allow-get-staff-network-settings",

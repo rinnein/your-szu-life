@@ -175,6 +175,7 @@ pub(crate) fn run() {
             campus_network::commands::get_debug_mode,
             campus_network::commands::set_debug_mode,
             campus_network::commands::get_debug_logs,
+            campus_network::commands::get_debug_logs_jsonl,
             campus_network::commands::clear_debug_logs,
             campus_network::commands::get_staff_network_settings,
             campus_network::commands::save_staff_network_settings,

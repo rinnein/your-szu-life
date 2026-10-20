@@ -107,6 +107,67 @@ pub(super) fn load_logs(
     Ok(result)
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DebugLogJsonlChunk {
+    pub lines: Vec<String>,
+    pub total: usize,
+    pub has_more: bool,
+}
+
+pub(super) fn load_logs_jsonl(
+    app: &tauri::AppHandle,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> Result<DebugLogJsonlChunk, String> {
+    let path = debug_log_path(app)?;
+    let content = match fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e.to_string()),
+    };
+    Ok(slice_jsonl_lines(&content, offset, limit))
+}
+
+pub(crate) fn slice_jsonl_lines(
+    content: &str,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> DebugLogJsonlChunk {
+    let all_lines: Vec<&str> = content
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    let start_in_file = all_lines.len().saturating_sub(MAX_DEBUG_LOGS);
+    let recent_lines = &all_lines[start_in_file..];
+    let total = recent_lines.len();
+
+    let offset_val = offset.unwrap_or(0);
+    let limit_val = limit.unwrap_or(100).max(1);
+
+    if offset_val >= total {
+        return DebugLogJsonlChunk {
+            lines: Vec::new(),
+            total,
+            has_more: false,
+        };
+    }
+
+    let end = (offset_val + limit_val).min(total);
+    let mut lines = Vec::with_capacity(end - offset_val);
+    for idx in offset_val..end {
+        let rev_idx = total - 1 - idx;
+        lines.push(recent_lines[rev_idx].to_string());
+    }
+
+    let has_more = end < total;
+    DebugLogJsonlChunk {
+        lines,
+        total,
+        has_more,
+    }
+}
+
 pub(super) fn clear_logs(app: &tauri::AppHandle, store: &CampusNetworkStore) -> Result<(), String> {
     let path = debug_log_path(app)?;
     match fs::remove_file(path) {
@@ -187,10 +248,10 @@ fn sanitize_text(value: Option<String>) -> Option<String> {
     let value = value?;
     let value: String = value
         .chars()
-        .filter(|character| !character.is_control())
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\r' || *c == '\t')
         .collect();
     let value = value.trim();
-    (!value.is_empty()).then(|| value.chars().take(240).collect())
+    (!value.is_empty()).then(|| value.to_string())
 }
 
 fn sanitize_entry(mut entry: DebugLogEntry) -> DebugLogEntry {
@@ -353,15 +414,19 @@ mod tests {
 
     #[test]
     fn sanitizes_private_network_identifiers_and_control_text() {
+        let long_message = format!("bad\0message\nmultiline-{}", "x".repeat(1000));
         let entry = sanitize_entry(DebugLogEntry {
             ssid: Some("SZU_WLAN".into()),
             ip: Some("172.30.12.34".into()),
-            message: Some("bad\nmessage".into()),
+            message: Some(long_message),
             ..Default::default()
         });
         assert_eq!(entry.ssid.as_deref(), Some("S***N"));
         assert_eq!(entry.ip.as_deref(), Some("172.30.12.*"));
-        assert_eq!(entry.message.as_deref(), Some("badmessage"));
+        assert_eq!(
+            entry.message.as_deref(),
+            Some(format!("badmessage\nmultiline-{}", "x".repeat(1000)).as_str())
+        );
     }
 
     #[test]
@@ -378,5 +443,29 @@ mod tests {
         assert_eq!(http_error_kind(HttpError::Tls), "tls");
         assert_eq!(http_error_kind(HttpError::Timeout), "timeout");
         assert_eq!(http_error_kind(HttpError::Connection), "connection");
+    }
+
+    #[test]
+    fn slice_jsonl_lines_in_chunks_newest_first() {
+        let content = "line1\nline2\nline3\nline4\nline5\n";
+        let chunk1 = slice_jsonl_lines(content, Some(0), Some(2));
+        assert_eq!(chunk1.total, 5);
+        assert!(chunk1.has_more);
+        assert_eq!(chunk1.lines, vec!["line5", "line4"]);
+
+        let chunk2 = slice_jsonl_lines(content, Some(2), Some(2));
+        assert_eq!(chunk2.total, 5);
+        assert!(chunk2.has_more);
+        assert_eq!(chunk2.lines, vec!["line3", "line2"]);
+
+        let chunk3 = slice_jsonl_lines(content, Some(4), Some(2));
+        assert_eq!(chunk3.total, 5);
+        assert!(!chunk3.has_more);
+        assert_eq!(chunk3.lines, vec!["line1"]);
+
+        let chunk_oob = slice_jsonl_lines(content, Some(5), Some(2));
+        assert_eq!(chunk_oob.total, 5);
+        assert!(!chunk_oob.has_more);
+        assert!(chunk_oob.lines.is_empty());
     }
 }

@@ -29,6 +29,15 @@ pub(crate) fn get_debug_logs(
 }
 
 #[tauri::command]
+pub(crate) fn get_debug_logs_jsonl(
+    app: tauri::AppHandle,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> Result<super::diagnostics::DebugLogJsonlChunk, String> {
+    super::diagnostics::load_logs_jsonl(&app, offset, limit)
+}
+
+#[tauri::command]
 pub(crate) fn clear_debug_logs(
     app: tauri::AppHandle,
     store: State<'_, CampusNetworkStore>,
