@@ -1367,7 +1367,7 @@ export function UoocQaSettings({
       >
         <Modal.Backdrop>
           <Modal.Container size="cover" className="max-w-4xl">
-            <Modal.Dialog aria-label="题库题目浏览">
+            <Modal.Dialog aria-label="题库题目浏览" className="w-full max-w-4xl min-w-0 overflow-hidden">
               <Modal.CloseTrigger aria-label="关闭" />
               <Modal.Header>
                 <div className="grid gap-1">
@@ -1402,7 +1402,8 @@ export function UoocQaSettings({
                       <span className="flex items-center gap-1 font-medium text-muted">
                         <LuFilter aria-hidden="true" /> 同步状态:
                       </span>
-                      <ButtonGroup size="sm" variant="tertiary">
+                      <div className="overflow-x-auto max-w-full">
+                      <ButtonGroup size="sm" variant="tertiary" className="min-w-max">
                         <Button
                           variant={bankStatusFilter === "all" ? "primary" : "tertiary"}
                           onPress={() => {
@@ -1431,13 +1432,15 @@ export function UoocQaSettings({
                           待同步 ({activeCoursePending})
                         </Button>
                       </ButtonGroup>
+                      </div>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="flex items-center gap-1 font-medium text-muted">
                         <LuLayers aria-hidden="true" /> 题型:
                       </span>
-                      <ButtonGroup size="sm" variant="tertiary">
+                      <div className="overflow-x-auto max-w-full">
+                      <ButtonGroup size="sm" variant="tertiary" className="min-w-max">
                         <Button
                           variant={bankTypeFilter === "all" ? "primary" : "tertiary"}
                           onPress={() => {
@@ -1484,6 +1487,7 @@ export function UoocQaSettings({
                           填空
                         </Button>
                       </ButtonGroup>
+                      </div>
                     </div>
                   </div>
 

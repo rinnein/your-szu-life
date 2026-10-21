@@ -124,7 +124,7 @@ export default function AcademicPage() {
           }
         />
         {s?.academic && (
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-3 w-full min-w-0">
             <StatCard
               label="已完成学分"
               value={creditStats.completed == null ? "—" : creditStats.completed}
@@ -159,7 +159,7 @@ export default function AcademicPage() {
                 </span>
               </div>
             </div>
-            <p className="text-xs text-muted sm:col-span-3">
+            <p className="text-xs text-muted sm:col-span-3 break-words">
               缓存更新于 {new Date(s.academic.updatedAt).toLocaleString()}
               {s.academic.calculatedAt ? ` · 学校计算时间 ${s.academic.calculatedAt}` : ""}
             </p>

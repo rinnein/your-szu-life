@@ -115,8 +115,8 @@ export default function McpSettings() {
       {/* 状态与配置信息卡片 */}
       <Card aria-labelledby="mcp-status-title">
         <Card.Header>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Card.Title id="mcp-status-title" className="flex items-center gap-2.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <Card.Title id="mcp-status-title" className="flex flex-wrap items-center gap-2">
               <LuServer aria-hidden="true" className="size-5 text-primary" />
               <span>本地 MCP 服务状态</span>
               {loading || toggling ? (
@@ -194,7 +194,7 @@ export default function McpSettings() {
                   <span>{copiedUrl ? "已复制" : "复制 URL"}</span>
                 </Button>
               </div>
-              <code className="block select-all rounded bg-background px-3 py-2 font-mono text-sm text-foreground border border-border">
+              <code className="block select-all break-all rounded bg-background px-3 py-2 font-mono text-xs sm:text-sm text-foreground border border-border">
                 {endpoint}
               </code>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
@@ -261,7 +261,7 @@ export default function McpSettings() {
         </Card.Header>
 
         <Card.Content className="grid gap-3">
-          <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-lg border border-border bg-background p-3.5 font-mono text-xs text-foreground leading-relaxed">
+          <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-background p-3.5 font-mono text-xs text-foreground leading-relaxed">
             {agentPrompt}
           </pre>
         </Card.Content>
@@ -295,8 +295,8 @@ export default function McpSettings() {
           </Card.Description>
         </Card.Header>
 
-        <Card.Content>
-          <pre className="overflow-x-auto rounded-lg border border-border bg-background p-3.5 font-mono text-xs text-foreground">
+        <Card.Content className="w-full min-w-0 max-w-full overflow-hidden">
+          <pre className="overflow-x-auto max-w-full rounded-lg border border-border bg-background p-3.5 font-mono text-xs text-foreground">
             {jsonConfig}
           </pre>
         </Card.Content>

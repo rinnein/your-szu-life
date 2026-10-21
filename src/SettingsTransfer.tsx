@@ -184,7 +184,7 @@ export default function SettingsTransfer() {
                 <TextArea
                   id="settings-export-result"
                   aria-label="导出的加密设置字符串"
-                  className="min-h-28 font-mono text-xs leading-relaxed"
+                  className="min-h-28 font-mono text-xs leading-relaxed break-all max-w-full w-full"
                   value={exported}
                   readOnly
                   rows={5}

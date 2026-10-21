@@ -195,7 +195,7 @@ function Graph({
           </ControlButton>
         </Controls>
       </ReactFlow>
-      <div className="absolute right-3 top-3 flex gap-2">
+      <div className="absolute right-2 top-2 sm:right-3 sm:top-3 flex gap-1.5 sm:gap-2">
         <Button
           size="sm"
           variant="secondary"

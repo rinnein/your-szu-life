@@ -147,7 +147,12 @@ export default function DebugLogPage() {
   const [message, setMessage] = useState<string>();
   const [search, setSearch] = useState("");
   const [selectedLevel, setSelectedLevel] = useState<string>("ALL");
-  const [viewMode, setViewMode] = useState<"table" | "accordion">("table");
+  const [viewMode, setViewMode] = useState<"table" | "accordion">(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 640) {
+      return "accordion";
+    }
+    return "table";
+  });
   const [expandedKeys, setExpandedKeys] = useState<Set<string | number>>(() => new Set());
   const [expandedRowKeys, setExpandedRowKeys] = useState<Set<string>>(() => new Set());
 
@@ -513,7 +518,8 @@ export default function DebugLogPage() {
           )}
         </div>
 
-        <Pagination size="sm" className="w-auto">
+        <div className="max-w-full overflow-x-auto py-1">
+          <Pagination size="sm" className="w-auto">
           <Pagination.Content>
             <Pagination.Item>
               <Pagination.Previous
@@ -556,6 +562,7 @@ export default function DebugLogPage() {
             </Pagination.Item>
           </Pagination.Content>
         </Pagination>
+        </div>
       </div>
     );
   };
@@ -679,8 +686,8 @@ export default function DebugLogPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between flex-wrap gap-2 text-xs text-muted pt-1">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between flex-wrap gap-2 text-xs text-muted pt-1">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span>
                       {search || selectedLevel !== "ALL"
                         ? `找到 ${totalFiltered} 条匹配日志（已加载 ${logs.length} 条）`
@@ -711,7 +718,7 @@ export default function DebugLogPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2 justify-between sm:justify-end w-full sm:w-auto">
                     <div className="flex items-center gap-1 bg-default-100 rounded-lg p-0.5">
                       <Button
                         size="sm"
@@ -786,9 +793,11 @@ export default function DebugLogPage() {
                 </div>
               ) : viewMode === "table" ? (
                 /* Paginated Table View */
-                <Table aria-label="诊断日志数据表格">
-                  <Table.ScrollContainer className="overflow-auto">
-                    <Table.Content aria-label="诊断日志数据表格" className="min-w-[760px]">
+                <div className="w-full min-w-0 max-w-full overflow-hidden">
+                  <p className="text-[11px] text-muted mb-1.5 sm:hidden">左右滑动表格可查看完整字段与操作</p>
+                  <Table aria-label="诊断日志数据表格">
+                    <Table.ScrollContainer className="w-full min-w-0 max-w-full overflow-x-auto">
+                      <Table.Content aria-label="诊断日志数据表格" className="min-w-[760px]">
                       <Table.Header>
                         <Table.Column isRowHeader className="w-24">
                           时间
@@ -902,6 +911,7 @@ export default function DebugLogPage() {
                     </Table.Content>
                   </Table.ScrollContainer>
                 </Table>
+                </div>
               ) : (
                 /* Paginated Accordion View */
                 <Accordion

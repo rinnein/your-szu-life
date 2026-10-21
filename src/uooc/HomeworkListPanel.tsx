@@ -120,11 +120,11 @@ export function HomeworkListPanel({ courses, ready }: HomeworkListPanelProps) {
   return (
     <div className="grid gap-6 pt-4">
       {/* 顶部控制栏 */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
           <Select
             aria-label="选择课程筛选"
-            className="w-64"
+            className="w-full sm:w-64"
             value={selectedCid}
             onChange={(val) => {
               if (typeof val === "string") setSelectedCid(val);

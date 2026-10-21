@@ -752,7 +752,7 @@ export function QuizPanel({
                           value={o.id}
                           className={`flex items-start gap-2.5 rounded-lg border p-2.5 transition-colors cursor-pointer ${borderStyle}`}
                         >
-                          <Radio.Content className="flex items-start gap-2 w-full">
+                          <Radio.Content className="flex flex-wrap sm:flex-nowrap items-start gap-2 w-full min-w-0">
                             <Radio.Control className="mt-0.5">
                               <Radio.Indicator />
                             </Radio.Control>
@@ -824,7 +824,7 @@ export function QuizPanel({
                           <Checkbox.Control className="mt-0.5">
                             <Checkbox.Indicator />
                           </Checkbox.Control>
-                          <Checkbox.Content className="flex items-start gap-2 w-full">
+                          <Checkbox.Content className="flex flex-wrap sm:flex-nowrap items-start gap-2 w-full min-w-0">
                             <span
                               aria-hidden="true"
                               className="font-bold text-foreground shrink-0 text-xs"

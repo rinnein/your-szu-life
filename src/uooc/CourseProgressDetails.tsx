@@ -44,9 +44,11 @@ export function CourseProgressDetails({
               <span>当前成绩：{formatNumber(data?.score)}</span>
               <span>加权成绩：{formatNumber(data?.weightedScore)}</span>
             </div>
-            <Table>
-              <Table.ScrollContainer>
-                <Table.Content aria-label={`${title}的考核权重与任务`}>
+            <div className="w-full min-w-0 max-w-full overflow-hidden">
+              <p className="text-[11px] text-muted mb-1.5 sm:hidden">左右滑动可查看完整考核权重与完成明细</p>
+              <Table>
+                <Table.ScrollContainer className="w-full min-w-0 max-w-full overflow-x-auto">
+                  <Table.Content aria-label={`${title}的考核权重与任务`} className="min-w-[400px]">
                   <Table.Header>
                     <Table.Column id="category" isRowHeader>
                       任务类别
@@ -98,6 +100,7 @@ export function CourseProgressDetails({
                 </Table.Content>
               </Table.ScrollContainer>
             </Table>
+            </div>
             <div className="grid gap-1 text-xs text-muted">
               <p>
                 权重来自当前课程。总进度按完成率加权，成绩单独展示；完成率缺失时按完成数与总数计算，无法确定则显示未知。

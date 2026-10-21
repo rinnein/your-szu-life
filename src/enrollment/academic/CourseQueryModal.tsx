@@ -48,15 +48,15 @@ export default function CourseQueryModal({
   return (
     <Modal.Backdrop isOpen onOpenChange={(open) => !open && onClose()}>
       <Modal.Container size="cover">
-        <Modal.Dialog className="mx-auto w-full max-w-[1280px]">
+        <Modal.Dialog className="mx-auto w-full max-w-[1280px] min-w-0 overflow-hidden">
           <Modal.CloseTrigger aria-label="关闭课程检索" />
           <Modal.Header>
             <Modal.Heading>{title}</Modal.Heading>
-            <p className="break-words pr-7 text-sm text-muted">
+            <p className="break-all break-words pr-7 text-xs sm:text-sm text-muted">
               {nodePath(tree, nodeId).join(" / ")}
             </p>
           </Modal.Header>
-          <Modal.Body className="grid min-h-0 content-start gap-4">
+          <Modal.Body className="grid min-h-0 content-start gap-4 w-full min-w-0 max-w-full overflow-hidden">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <TextField value={filters.query} onChange={(query) => update({ query })}>
                 <Label>课程名称或代码</Label>
@@ -103,9 +103,10 @@ export default function CourseQueryModal({
               共 {filtered.length} 门课程 · 汇总当前节点及全部后代，同一课程代码已合并
             </p>
             <p className="text-xs text-muted sm:hidden">左右滑动表格查看更多列</p>
-            <Table>
-              <Table.ScrollContainer>
-                <Table.Content aria-label={`${title}课程检索`} className="min-w-[960px]">
+            <div className="w-full min-w-0 max-w-full overflow-hidden">
+              <Table>
+                <Table.ScrollContainer className="w-full min-w-0 max-w-full overflow-x-auto">
+                  <Table.Content aria-label={`${title}课程检索`} className="min-w-[880px]">
                   <Table.Header>
                     <Table.Column isRowHeader>课程名称 / 代码</Table.Column>
                     <Table.Column>完成状态</Table.Column>
@@ -171,8 +172,9 @@ export default function CourseQueryModal({
                 </Table.Content>
               </Table.ScrollContainer>
             </Table>
+            </div>
           </Modal.Body>
-          <Modal.Footer className="items-center justify-between">
+          <Modal.Footer className="flex flex-wrap items-center justify-between gap-3">
             <Button variant="tertiary" onPress={() => update({ ...defaultFilters })}>
               重置筛选
             </Button>

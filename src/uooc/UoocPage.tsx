@@ -85,6 +85,8 @@ export default function UoocPage() {
   const [expandedAccordionKeys, setExpandedAccordionKeys] = useState<Record<string, Set<string>>>(
     {},
   );
+  const [mobileMainTabKeys, setMobileMainTabKeys] = useState<Set<string | number>>(() => new Set());
+  const [mobileAssessTabKeys, setMobileAssessTabKeys] = useState<Set<string | number>>(() => new Set());
   const [selectedQuiz, setSelectedQuiz] = useState<QuizState | null>(null);
   const [modalQuizCid, setModalQuizCid] = useState<string | null>(null);
   const [taskToDelete, setTaskToDelete] = useState<UoocTask | null>(null);
@@ -506,30 +508,92 @@ export default function UoocPage() {
           selectedKey={tab}
           onSelectionChange={(key) => void navigation.replace(`/uooc?tab=${key}`)}
         >
-          <Tabs.ListContainer>
-            <Tabs.List aria-label="UOOC 功能">
-              <Tabs.Tab id="courses">
-                开课中
-                <Tabs.Indicator />
-              </Tabs.Tab>
-              <Tabs.Tab id="tasks">
-                任务{tasks.length ? ` (${tasks.length})` : ""}
-                <Tabs.Indicator />
-              </Tabs.Tab>
-              <Tabs.Tab id="exams">
-                测验/作业/考试
-                <Tabs.Indicator />
-              </Tabs.Tab>
-              <Tabs.Tab id="qa">
-                题库
-                <Tabs.Indicator />
-              </Tabs.Tab>
-              <Tabs.Tab id="settings">
-                运行设置
-                <Tabs.Indicator />
-              </Tabs.Tab>
-            </Tabs.List>
-          </Tabs.ListContainer>
+          {/* 桌面端横向 Tab 导航 */}
+          <div className="hidden sm:block">
+            <Tabs.ListContainer>
+              <Tabs.List aria-label="UOOC 功能">
+                <Tabs.Tab id="courses">
+                  开课中
+                  <Tabs.Indicator />
+                </Tabs.Tab>
+                <Tabs.Tab id="tasks">
+                  任务{tasks.length ? ` (${tasks.length})` : ""}
+                  <Tabs.Indicator />
+                </Tabs.Tab>
+                <Tabs.Tab id="exams">
+                  测验/作业/考试
+                  <Tabs.Indicator />
+                </Tabs.Tab>
+                <Tabs.Tab id="qa">
+                  题库
+                  <Tabs.Indicator />
+                </Tabs.Tab>
+                <Tabs.Tab id="settings">
+                  运行设置
+                  <Tabs.Indicator />
+                </Tabs.Tab>
+              </Tabs.List>
+            </Tabs.ListContainer>
+          </div>
+
+          {/* 移动端横向空间不足时：Accordion 竖向下拉可折叠菜单进行选择 */}
+          <div className="sm:hidden mb-2">
+            <Accordion
+              expandedKeys={mobileMainTabKeys}
+              onExpandedChange={setMobileMainTabKeys}
+              className="w-full"
+            >
+              <Accordion.Item id="uooc-tab-menu" className="rounded-xl border border-separator/60 bg-surface">
+                <Accordion.Heading>
+                  <Accordion.Trigger className="w-full py-2.5 px-3.5 text-left text-sm font-medium flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="truncate">当前功能：{
+                        tab === "courses"
+                          ? "开课中"
+                          : tab === "tasks"
+                            ? `任务${tasks.length ? ` (${tasks.length})` : ""}`
+                            : tab === "exams"
+                              ? "测验/作业/考试"
+                              : tab === "qa"
+                                ? "题库"
+                                : "运行设置"
+                      }</span>
+                    </div>
+                    <Accordion.Indicator />
+                  </Accordion.Trigger>
+                </Accordion.Heading>
+                <Accordion.Panel>
+                  <Accordion.Body className="grid gap-1 p-2 pt-1 border-t border-separator/40">
+                    {[
+                      { id: "courses", label: "开课中" },
+                      { id: "tasks", label: `任务${tasks.length ? ` (${tasks.length})` : ""}` },
+                      { id: "exams", label: "测验/作业/考试" },
+                      { id: "qa", label: "题库" },
+                      { id: "settings", label: "运行设置" },
+                    ].map((t) => {
+                      const isSelected = tab === t.id;
+                      return (
+                        <Button
+                          key={t.id}
+                          variant={isSelected ? "primary" : "ghost"}
+                          className={`w-full justify-start h-9 px-3 text-xs ${
+                            isSelected ? "font-semibold" : "text-muted hover:text-foreground"
+                          }`}
+                          onPress={() => {
+                            void navigation.replace(`/uooc?tab=${t.id}`);
+                            setMobileMainTabKeys(new Set());
+                          }}
+                        >
+                          <span>{t.label}</span>
+                          {isSelected && <span className="ml-auto text-xs font-medium">当前</span>}
+                        </Button>
+                      );
+                    })}
+                  </Accordion.Body>
+                </Accordion.Panel>
+              </Accordion.Item>
+            </Accordion>
+          </div>
           <Tabs.Panel id="courses" className="grid gap-6 pt-4">
             {!snapshot && !error && <SkeletonCard />}
             <p className="text-sm text-muted">
@@ -1053,22 +1117,77 @@ export default function UoocPage() {
                 void navigation.replace(`/uooc?tab=exams&subtab=${next}`);
               }}
             >
-              <Tabs.ListContainer>
-                <Tabs.List aria-label="考核子分类">
-                  <Tabs.Tab id="quiz">
-                    测验
-                    <Tabs.Indicator />
-                  </Tabs.Tab>
-                  <Tabs.Tab id="homework">
-                    作业
-                    <Tabs.Indicator />
-                  </Tabs.Tab>
-                  <Tabs.Tab id="exam">
-                    考试
-                    <Tabs.Indicator />
-                  </Tabs.Tab>
-                </Tabs.List>
-              </Tabs.ListContainer>
+              {/* 桌面端横向子分类 */}
+              <div className="hidden sm:block">
+                <Tabs.ListContainer>
+                  <Tabs.List aria-label="考核子分类">
+                    <Tabs.Tab id="quiz">
+                      测验
+                      <Tabs.Indicator />
+                    </Tabs.Tab>
+                    <Tabs.Tab id="homework">
+                      作业
+                      <Tabs.Indicator />
+                    </Tabs.Tab>
+                    <Tabs.Tab id="exam">
+                      考试
+                      <Tabs.Indicator />
+                    </Tabs.Tab>
+                  </Tabs.List>
+                </Tabs.ListContainer>
+              </div>
+
+              {/* 移动端横向空间不足时：Accordion 竖向下拉可折叠菜单进行选择 */}
+              <div className="sm:hidden mb-2">
+                <Accordion
+                  expandedKeys={mobileAssessTabKeys}
+                  onExpandedChange={setMobileAssessTabKeys}
+                  className="w-full"
+                >
+                  <Accordion.Item id="assess-subtab-menu" className="rounded-xl border border-separator/60 bg-surface">
+                    <Accordion.Heading>
+                      <Accordion.Trigger className="w-full py-2 px-3 text-left text-xs font-medium flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-muted">考核分类：</span>
+                          <span className="font-semibold text-foreground">
+                            {assessSubtab === "quiz" ? "测验" : assessSubtab === "homework" ? "作业" : "考试"}
+                          </span>
+                        </div>
+                        <Accordion.Indicator />
+                      </Accordion.Trigger>
+                    </Accordion.Heading>
+                    <Accordion.Panel>
+                      <Accordion.Body className="grid gap-1 p-2 pt-1 border-t border-separator/40">
+                        {[
+                          { id: "quiz" as const, label: "测验" },
+                          { id: "homework" as const, label: "作业" },
+                          { id: "exam" as const, label: "考试" },
+                        ].map((sub) => {
+                          const isSelected = assessSubtab === sub.id;
+                          return (
+                            <Button
+                              key={sub.id}
+                              variant={isSelected ? "primary" : "ghost"}
+                              className={`w-full justify-start h-8 px-2.5 text-xs ${
+                                isSelected ? "font-semibold" : "text-muted hover:text-foreground"
+                              }`}
+                              onPress={() => {
+                                const next = sub.id as "quiz" | "homework" | "exam";
+                                setAssessSubtab(next);
+                                void navigation.replace(`/uooc?tab=exams&subtab=${next}`);
+                                setMobileAssessTabKeys(new Set());
+                              }}
+                            >
+                              <span>{sub.label}</span>
+                              {isSelected && <span className="ml-auto text-xs font-medium">当前</span>}
+                            </Button>
+                          );
+                        })}
+                      </Accordion.Body>
+                    </Accordion.Panel>
+                  </Accordion.Item>
+                </Accordion>
+              </div>
 
               <Tabs.Panel id="quiz" className="pt-3">
                 <QuizListPanel
