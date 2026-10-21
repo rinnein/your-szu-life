@@ -320,7 +320,7 @@ export default function App() {
               <span className="eyebrow">YOUR SZU LIFE</span>
             </div>
             <h1 data-webview-navigation className="text-3xl md:text-4xl font-bold tracking-tight">
-              深大生活工作台
+              工作台
             </h1>
           </div>
           <Dropdown>

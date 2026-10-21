@@ -1,6 +1,8 @@
 [default]
 description = "Allows the local application UI to use application commands, including public content."
 permissions = [
+  "allow-get-mcp-server-status",
+  "allow-set-mcp-server-enabled",
   "allow-enrollment-command",
   "allow-open-academic-portal",
   "allow-open-enrollment-official",

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import SettingsPage from "../SettingsPage";
 
-export type SettingsTab = "profile" | "models" | "ai" | "transfer" | "shortcuts";
+export type SettingsTab = "profile" | "models" | "ai" | "mcp" | "transfer" | "shortcuts";
 
 export type SettingsSearch = {
   tab?: SettingsTab;
@@ -15,6 +15,7 @@ export const Route = createFileRoute("/settings")({
       s.tab === "profile" ||
       s.tab === "models" ||
       s.tab === "ai" ||
+      s.tab === "mcp" ||
       s.tab === "transfer" ||
       s.tab === "shortcuts"
         ? s.tab

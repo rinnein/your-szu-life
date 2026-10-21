@@ -7,6 +7,7 @@ mod campus_payments;
 mod desktop;
 mod embedding_model;
 mod enrollment;
+pub mod mcp;
 mod notification;
 mod ocr;
 mod oj;

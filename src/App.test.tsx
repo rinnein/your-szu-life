@@ -117,7 +117,7 @@ describe("HeroUI frontend smoke tests", () => {
     });
 
     renderRouterApp();
-    expect(await screen.findByRole("heading", { name: "深大生活工作台" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "工作台" })).toBeInTheDocument();
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("refresh_auth_session"));
 
     const initialCalls = vi

@@ -1,5 +1,6 @@
 pub(crate) mod commands;
 pub(crate) mod electricity;
+pub(crate) mod mcp;
 pub(crate) mod model;
 mod scripts;
 mod service;

@@ -64,9 +64,14 @@ pub(crate) fn run() {
             campus_network::monitor::start_dorm_monitor(app.handle().clone());
             #[cfg(desktop)]
             crate::desktop::setup(app)?;
+            if let Err(error) = crate::mcp::initialize(app.handle()) {
+                eprintln!("MCP 本地服务启动失败: {error}");
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            crate::mcp::get_mcp_server_status,
+            crate::mcp::set_mcp_server_enabled,
             crate::enrollment::commands::enrollment_command,
             crate::enrollment::commands::open_academic_portal,
             crate::enrollment::commands::open_enrollment_official,

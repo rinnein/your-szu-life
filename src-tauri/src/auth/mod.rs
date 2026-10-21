@@ -3,12 +3,13 @@ pub(crate) mod android_cookies;
 pub(crate) mod commands;
 #[cfg(target_os = "linux")]
 mod linux_cookies;
+pub(crate) mod mcp;
 pub(crate) mod model;
 mod probe;
 mod recovery;
 mod refresh;
 mod scripts;
-mod service;
+pub(crate) mod service;
 pub(crate) mod session;
 mod state;
 pub(crate) mod webview;

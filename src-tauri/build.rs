@@ -42,6 +42,8 @@ fn main() {
     println!("cargo:rerun-if-changed=capabilities/authserver-credential-capture.json");
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
+            "get_mcp_server_status",
+            "set_mcp_server_enabled",
             "enrollment_command",
             "open_academic_portal",
             "open_enrollment_official",

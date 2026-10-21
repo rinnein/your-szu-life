@@ -330,7 +330,7 @@ pub(super) fn control_auth_recovery(
     flow.control(operation, Instant::now())
 }
 
-pub(super) fn get_auth_state(
+pub(crate) fn get_auth_state(
     app: tauri::AppHandle,
     store: &AuthStore,
 ) -> Result<AuthState, String> {
@@ -412,7 +412,7 @@ pub(super) fn get_auth_state(
     Ok(next)
 }
 
-pub(super) fn refresh_auth_session(app: tauri::AppHandle) -> Result<(), String> {
+pub(crate) fn refresh_auth_session(app: tauri::AppHandle) -> Result<(), String> {
     let store = app.try_state::<AuthStore>().ok_or("认证状态不可用")?;
     let _operation = store
         .session_operations
@@ -492,7 +492,7 @@ fn start_session_refresh(
     });
 }
 
-pub(super) fn get_account_profile(store: &AuthStore) -> Result<Option<AccountProfileView>, String> {
+pub(crate) fn get_account_profile(store: &AuthStore) -> Result<Option<AccountProfileView>, String> {
     let profile = store
         .profile
         .lock()
@@ -505,7 +505,7 @@ pub(super) fn get_account_profile(store: &AuthStore) -> Result<Option<AccountPro
     Ok(profile.as_ref().map(profile_view))
 }
 
-pub(super) fn get_user_data(store: &AuthStore) -> Result<Option<UserDataView>, String> {
+pub(crate) fn get_user_data(store: &AuthStore) -> Result<Option<UserDataView>, String> {
     let profile = store
         .profile
         .lock()

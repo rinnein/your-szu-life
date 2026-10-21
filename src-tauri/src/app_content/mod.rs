@@ -3,6 +3,7 @@ pub(crate) mod commands;
 mod config;
 mod http;
 mod images;
+pub(crate) mod mcp;
 mod model;
 mod runtime;
 mod service;
@@ -10,7 +11,18 @@ mod service;
 use std::{sync::Arc, time::Duration};
 use tauri::{Emitter, Manager};
 
+#[derive(Clone)]
 pub(crate) struct AppContentStore(Arc<service::ContentService>);
+
+impl AppContentStore {
+    pub(crate) fn snapshot(&self) -> model::AppContentSnapshot {
+        self.0.snapshot()
+    }
+
+    pub(crate) fn get_contributors(&self) -> model::ContributorsSnapshot {
+        self.0.get_contributors()
+    }
+}
 
 pub(crate) fn initialize(app: &tauri::AppHandle) -> std::io::Result<()> {
     let config = config::ContentConfig::compiled(app.package_info().version.to_string());

@@ -73,6 +73,13 @@ describe("SettingsPage multi-tab and unified local model card", () => {
           jev: { baseUrl: "https://api.typesafe.ai/v1", hasKey: false },
         };
       }
+      if (command === "get_mcp_server_status") {
+        return {
+          running: true,
+          port: 53901,
+          endpoint: "http://127.0.0.1:53901/mcp",
+        };
+      }
       return undefined;
     });
   });
@@ -82,13 +89,14 @@ describe("SettingsPage multi-tab and unified local model card", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders 5 tabs and defaults to 个人信息 without privacy storage card", async () => {
+  it("renders 6 tabs and defaults to 个人信息 without privacy storage card", async () => {
     renderRouterApp("/settings");
 
-    // Check all 5 tabs exist
+    // Check all 6 tabs exist
     expect(await screen.findByRole("tab", { name: /个人信息/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /本地模型/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /AI配置/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /MCP/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /设置迁移/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /快捷键/ })).toBeInTheDocument();
 
@@ -130,6 +138,22 @@ describe("SettingsPage multi-tab and unified local model card", () => {
 
     expect(await screen.findByText("AI 连接")).toBeInTheDocument();
     expect(screen.getByLabelText("主模型 API 地址")).toBeInTheDocument();
+  });
+
+  it("switches to MCP tab and displays MCP endpoint and prompt", async () => {
+    const { testRouter } = renderRouterApp("/settings");
+
+    await screen.findByRole("tab", { name: /MCP/ });
+    fireEvent.click(screen.getByRole("tab", { name: /MCP/ }));
+
+    await waitFor(() => {
+      expect(testRouter.state.location.search).toMatchObject({ tab: "mcp" });
+    });
+
+    expect(await screen.findByText("本地 MCP 服务状态")).toBeInTheDocument();
+    expect(screen.getByText("http://127.0.0.1:53901/mcp")).toBeInTheDocument();
+    expect(screen.getByText("指导 AI Agent 安装该 MCP 服务")).toBeInTheDocument();
+    expect(screen.getByText("复制安装提示词")).toBeInTheDocument();
   });
 
   it("switches to 设置迁移 tab and displays SettingsTransfer", async () => {

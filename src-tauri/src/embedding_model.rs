@@ -106,6 +106,7 @@ struct ModelStore {
 static STORE: OnceLock<Arc<ModelStore>> = OnceLock::new();
 
 pub(crate) mod commands;
+pub(crate) mod mcp;
 
 pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     let manifest = Manifest::load()?;

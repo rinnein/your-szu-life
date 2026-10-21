@@ -37,6 +37,37 @@ release. Add a tool name to select part of the graph. For example, run
 
 ---
 
+## 功能模块 MCP 服务规范与检查清单
+
+本项目为所有核心业务能力提供本地公开的 Model Context Protocol (MCP) 服务，支持外部大模型客户端（如 Cursor、Claude Desktop 等）及内部 `rig-core` 智能体调用。
+
+在开发、重构或新增任何业务功能模块时，必须遵守以下规范：
+
+### 1. 强制同步检查规则
+- **新增业务功能时**：除了提供前端 UI、路由与 Tauri commands 之外，**必须同步检查并提供对应的 MCP 工具（Tool）或资源（Resource）实现**。若该功能不需要对 AI 开放，必须在代码提交说明中显式给出技术理由。
+- **修改现有功能接口时**：若变更了数据结构或业务逻辑，必须同步更新该功能模块下 `mcp.rs` 中的工具实现、参数 Schema 与文档描述。
+
+### 2. 实现与技术选型约定
+- **协议框架**：统一使用 `rmcp` 宏体系（`#[rmcp::tool]` 与 `#[rmcp::tool_router]`），参数统一封装于 `rmcp::handler::server::wrapper::Parameters<T>`。
+- **端口与安全限制**：MCP 本地公开服务必须使用**高位端口**（默认 `53901`，动态端口范围），且**仅监听本地回环地址 `127.0.0.1` / `localhost`**，绝对禁止对外网或局域网广播。
+- **协议 URI Scheme 规范**：所有通过协议暴露的端点统一注册为 `your-szu-life://`，并严格区分两大 route 空间：
+  - `your-szu-life://page/...`：用于控制客户端打开/激活特定前端页面（如 `page/workbench`, `page/auth`, `page/electricity` 等）。
+  - `your-szu-life://data/...`：用于传递与订阅结构化数据/MCP Resources 资源（如 `data/auth/profile`, `data/electricity/status` 等）。
+- **类型契约**：所有工具入参和出参必须 `derive(Serialize, Deserialize, schemars::JsonSchema)`，并提供清晰详尽的中文描述字段，杜绝任何未定义结构或无提示的 JSON Value。
+- **子路由导出**：每个功能模块目录内建立 `mcp.rs`，导出命名的 `pub(crate) fn xxx_tools(...) -> ToolRouter`，并在 `src-tauri/src/mcp/server.rs` 中合并接入全局路由器。
+- **内部智能体互通**：所有 MCP 工具必须兼容 `rig-rmcp`，确保应用内置的 `rig-core` 智能体能够通过 `tools_from_server` 直接动态挂载并使用。
+
+### 3. 开发验收检查清单 (Checklist)
+每次提交功能前，逐项检查：
+- [ ] 对应模块下已创建或更新 `mcp.rs` 并完成工具注册。
+- [ ] 工具名称符合命名规范（`<module>_<action>`，如 `uooc_search_qa_bank`）。
+- [ ] 工具入参均已实现 `schemars::JsonSchema`，且字段具有明确的注释描述。
+- [ ] 若涉及页面跳转或数据快照，已分别在 `your-szu-life://page/...` 与 `your-szu-life://data/...` 下补充对应 URI 契约。
+- [ ] 运行 `cargo test --manifest-path src-tauri/Cargo.toml` 验证 MCP 单元测试与 Schema 生成。
+- [ ] 本地 MCP 服务（HTTP/SSE 与 stdio）能够正常返回该工具的调用结果。
+
+---
+
 ## 逻辑页面与返回行为
 
 本项目的“返回”语义以**应用级逻辑导航栈**为准，不以 WebView 的 `window.history` 为准。实现或修改页面导航时遵循以下约定：

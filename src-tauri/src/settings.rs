@@ -59,6 +59,7 @@ pub(crate) struct SettingsStore {
 }
 
 pub(crate) mod commands;
+pub(crate) mod mcp;
 
 impl SettingsStore {
     pub(crate) fn new(credentials: SharedCredentialStore) -> Self {

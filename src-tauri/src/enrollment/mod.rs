@@ -4,10 +4,12 @@ mod captcha;
 mod captcha_flow;
 mod client;
 pub(crate) mod commands;
+pub(crate) use commands::Action;
 mod contract;
 #[cfg(target_os = "linux")]
 mod linux_cookies;
 mod maintenance;
+pub(crate) mod mcp;
 mod model;
 mod official;
 mod platform;
@@ -1010,7 +1012,7 @@ impl Service {
         }
         Ok(())
     }
-    fn execute(&self, action: commands::Action) -> Result<Value> {
+    pub(crate) fn execute(&self, action: commands::Action) -> Result<Value> {
         use commands::Action;
         match &action {
             Action::CaptchaCancel {

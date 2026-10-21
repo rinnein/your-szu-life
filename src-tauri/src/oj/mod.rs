@@ -1,6 +1,7 @@
 mod client;
 pub(crate) mod commands;
 mod companion;
+pub(crate) mod mcp;
 pub(crate) mod model;
 mod monitor;
 mod persistence;
@@ -60,7 +61,7 @@ struct Runtime {
     companion_status: CompanionStatus,
     companion_requests: BTreeMap<String, i64>,
 }
-struct Service {
+pub(crate) struct Service {
     app: Option<tauri::AppHandle>,
     credentials: SharedCredentialStore,
     path: PathBuf,
@@ -135,7 +136,7 @@ impl Service {
             let _ = app.emit("oj-state-changed", self.snapshot());
         }
     }
-    fn snapshot(&self) -> Snapshot {
+    pub(crate) fn snapshot(&self) -> Snapshot {
         let r = self.runtime.lock().unwrap();
         let mut sites: Vec<_> = r
             .data
@@ -699,7 +700,7 @@ pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     monitor::start(service);
     Ok(())
 }
-fn service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
+pub(crate) fn service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
     app.state::<OjStore>()
         .service
         .get()

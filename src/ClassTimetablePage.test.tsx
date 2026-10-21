@@ -92,7 +92,7 @@ describe("class timetable", () => {
     expect(router.state.location.pathname).toBe("/class-timetable");
     expect(screen.queryByText("上课时间表功能即将支持")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "返回工作台" }));
-    expect(await screen.findByRole("heading", { name: "深大生活工作台" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "工作台" })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/");
     expect(router.history.canGoBack()).toBe(false);
   });

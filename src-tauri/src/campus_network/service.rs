@@ -11,7 +11,7 @@ use super::{
 use crate::auth::model::is_campus_card_number;
 use tauri::{Emitter, Manager};
 
-pub(super) fn get_network_overview(
+pub(crate) fn get_network_overview(
     store: &CampusNetworkStore,
 ) -> Result<NetworkOverviewView, String> {
     Ok(store
@@ -21,7 +21,7 @@ pub(super) fn get_network_overview(
         .clone())
 }
 
-pub(super) fn refresh_campus_network(app: tauri::AppHandle) -> Result<NetworkOverviewView, String> {
+pub(crate) fn refresh_campus_network(app: tauri::AppHandle) -> Result<NetworkOverviewView, String> {
     super::monitor::refresh_now(app)
 }
 
@@ -96,17 +96,17 @@ pub(super) fn save_dorm_network_settings(
     })
 }
 
-pub(super) fn get_dorm_login_status(
+pub(crate) fn get_dorm_login_status(
     store: &CampusNetworkStore,
 ) -> Result<DormLoginStatusView, String> {
     Ok(store.dorm_status.lock().map_err(|_| "状态锁失败")?.clone())
 }
 
-pub(super) fn trigger_dorm_login(app: tauri::AppHandle) -> Result<(), String> {
+pub(crate) fn trigger_dorm_login(app: tauri::AppHandle) -> Result<(), String> {
     start_dorm_login(app, true)
 }
 
-pub(super) fn get_dorm_login_logs(
+pub(crate) fn get_dorm_login_logs(
     app: tauri::AppHandle,
     store: &CampusNetworkStore,
 ) -> Result<Vec<DormLoginLogView>, String> {
@@ -132,7 +132,7 @@ pub(super) fn consume_dorm_login_failure_notice(
     })
 }
 
-pub(super) fn logout_campus_network(
+pub(crate) fn logout_campus_network(
     app: tauri::AppHandle,
 ) -> Result<NetworkLogoutResultView, String> {
     use super::{

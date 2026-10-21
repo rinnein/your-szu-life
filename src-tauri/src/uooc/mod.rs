@@ -5,12 +5,13 @@ pub(crate) mod commands;
 mod discussion;
 mod duration;
 mod login;
+pub(crate) mod mcp;
 mod media;
 pub(crate) mod model;
 mod persistence;
 mod platform;
 mod progress;
-mod quiz;
+pub(crate) mod quiz;
 mod runner;
 mod session;
 mod user_agent;
@@ -1723,7 +1724,7 @@ pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     });
     Ok(())
 }
-fn service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
+pub(crate) fn service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
     app.state::<UoocStore>()
         .service
         .get()
