@@ -1,5 +1,16 @@
-/** Copy locally, falling back to selection for older / restricted WebViews. */
+import { writeText as tauriWriteText } from "@tauri-apps/plugin-clipboard-manager";
+
+/** Copy locally using Tauri clipboard-manager plugin, falling back to Web API / selection for older / restricted WebViews. */
 export async function copyText(value: string): Promise<boolean> {
+  try {
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      await tauriWriteText(value);
+      return true;
+    }
+  } catch {
+    // Plugin call failed or unavailable; fall through to browser APIs
+  }
+
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(value);

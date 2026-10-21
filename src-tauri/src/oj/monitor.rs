@@ -227,40 +227,14 @@ impl Service {
     }
     pub(super) fn notify(&self, n: &Notice) {
         let Some(app) = self.app.as_ref() else { return };
-        #[cfg(target_os = "linux")]
-        {
-            let app = app.clone();
-            let n = n.clone();
-            std::thread::spawn(move || {
-                if let Ok(handle) = notify_rust::Notification::new()
-                    .summary(&n.title)
-                    .body(&n.message)
-                    .action("default", "打开测验")
-                    .show()
-                {
-                    handle.wait_for_action(|action| {
-                        if action == "default" {
-                            if let Some(w) = app.get_webview_window("main") {
-                                let _ = w.show();
-                                let _ = w.set_focus();
-                            }
-                            let _ = app.emit("oj-open", &n);
-                        }
-                    });
-                }
-            });
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            use tauri_plugin_notification::NotificationExt;
-            let _ = app
-                .notification()
-                .builder()
-                .title(&n.title)
-                .body(&n.message)
-                .extra("ojNotice", n)
-                .show();
-        }
+        use tauri_plugin_notification::NotificationExt;
+        let _ = app
+            .notification()
+            .builder()
+            .title(&n.title)
+            .body(&n.message)
+            .extra("ojNotice", n)
+            .show();
     }
     pub(super) fn cancel_notifications(&self, id: &str) {
         let mut r = self.runtime.lock().unwrap();

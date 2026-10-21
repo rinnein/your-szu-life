@@ -1,5 +1,6 @@
 import { LogicalNavigationProvider } from "../logical-navigation";
 import { AndroidBackNavigation } from "../AndroidBackNavigation";
+import { DeepLinkNavigation } from "../DeepLinkNavigation";
 import { createRootRoute, HeadContent, Outlet } from "@tanstack/react-router";
 import { Toast } from "@heroui/react";
 import { AuthProvider } from "../auth";
@@ -44,6 +45,7 @@ export const Route = createRootRoute({
         <ElectricityMonitorProvider>
           <AuthProvider>
             <AndroidBackNavigation />
+            <DeepLinkNavigation />
             <QuizNotifications />
             <OjNotifications />
             <OjProgressBridge />

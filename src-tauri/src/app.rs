@@ -23,21 +23,51 @@ pub(crate) fn run() {
         )))
         .plugin(tauri_plugin_opener::init())
         .plugin(crate::notification::init())
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_os::init())
+        .plugin(
+            tauri_plugin_stronghold::Builder::new(|password| {
+                use sha2::{Digest, Sha256};
+                let mut hasher = Sha256::new();
+                hasher.update(b"in.rinne.your-szu-life:stronghold:v1");
+                hasher.update(password.as_bytes());
+                hasher.finalize().to_vec()
+            })
+            .build(),
+        )
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                        file_name: None,
+                    }),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
+                ])
+                .level(log::LevelFilter::Info)
+                .build(),
+        )
+        .plugin(tauri_plugin_clipboard_manager::init())
         .setup(move |app| {
+            #[cfg(desktop)]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                app.deep_link().handle_cli_arguments(std::env::args());
+            }
             crate::storage::initialize(app.handle())?;
             if let Err(error) = crate::ocr::initialize(app.handle()) {
-                eprintln!("OCR 模型服务初始化失败: {error}");
+                log::error!("OCR 模型服务初始化失败: {error}");
             }
             if let Err(error) = crate::embedding_model::initialize(app.handle()) {
-                eprintln!("Embedding 模型服务初始化失败: {error}");
+                log::error!("Embedding 模型服务初始化失败: {error}");
             }
             auth::webview::setup_login_injection(app.handle())?;
             crate::enrollment::initialize(app.handle(), academic_credentials.clone())?;
             if let Err(error) = oj::initialize(app.handle()) {
-                eprintln!("OJ 初始化失败: {error}");
+                log::error!("OJ 初始化失败: {error}");
             }
             if let Err(error) = uooc::initialize(app.handle()) {
-                eprintln!("UOOC 服务初始化失败: {error}");
+                log::error!("UOOC 服务初始化失败: {error}");
             }
             #[cfg(mobile)]
             {
@@ -50,7 +80,7 @@ pub(crate) fn run() {
                         .build()])?;
             }
             if let Err(error) = app_content::initialize(app.handle()) {
-                eprintln!("应用内容后台服务未启动，将在下次打开时重试: {error}");
+                log::warn!("应用内容后台服务未启动，将在下次打开时重试: {error}");
             }
             if let Some(store) = app.try_state::<campus_network::CampusNetworkStore>() {
                 campus_network::diagnostics::initialize(app.handle(), &store);
@@ -65,7 +95,7 @@ pub(crate) fn run() {
             #[cfg(desktop)]
             crate::desktop::setup(app)?;
             if let Err(error) = crate::mcp::initialize(app.handle()) {
-                eprintln!("MCP 本地服务启动失败: {error}");
+                log::error!("MCP 本地服务启动失败: {error}");
             }
             Ok(())
         })

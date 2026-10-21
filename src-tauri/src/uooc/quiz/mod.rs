@@ -97,41 +97,14 @@ fn update(service: &Service, ctx: &Context, edit: impl FnOnce(&mut QuizState)) {
         service.publish(&mut r);
     }
     if let (Some(app), Some(body)) = (&service.app, notify) {
-        #[cfg(target_os = "linux")]
-        {
-            use tauri::Emitter;
-            let app = app.clone();
-            let cid = ctx.cid.clone();
-            std::thread::spawn(move || {
-                if let Ok(handle) = notify_rust::Notification::new()
-                    .summary("UOOC 测验需要处理")
-                    .body(&body)
-                    .action("default", "打开测验")
-                    .show()
-                {
-                    handle.wait_for_action(|action| {
-                        if action == "default" {
-                            if let Some(w) = app.get_webview_window("main") {
-                                let _ = w.show();
-                                let _ = w.set_focus();
-                            }
-                            let _ = app.emit("uooc-quiz-open", &cid);
-                        }
-                    });
-                }
-            });
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            use tauri_plugin_notification::NotificationExt;
-            let _ = app
-                .notification()
-                .builder()
-                .title("UOOC 测验需要处理")
-                .body(body)
-                .extra("uoocCourse", &ctx.cid)
-                .show();
-        }
+        use tauri_plugin_notification::NotificationExt;
+        let _ = app
+            .notification()
+            .builder()
+            .title("UOOC 测验需要处理")
+            .body(body)
+            .extra("uoocCourse", &ctx.cid)
+            .show();
     }
 }
 pub(super) fn saved(

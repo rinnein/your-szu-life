@@ -22,11 +22,30 @@ fn command_names_match_handlers_manifest_and_local_permissions() {
             .or_else(|| line.strip_prefix("pub(crate) async fn "))
     })
     .filter_map(|line| line.split_once('(').map(|(name, _)| name.to_owned()))
+    .chain(
+        include_str!("mcp/mod.rs")
+            .lines()
+            .collect::<Vec<_>>()
+            .windows(2)
+            .filter_map(|w| {
+                if w[0].trim() == "#[tauri::command]" {
+                    w[1].split_once("pub fn ")
+                        .and_then(|(_, rest)| rest.split_once('('))
+                        .map(|(name, _)| name.to_owned())
+                } else {
+                    None
+                }
+            }),
+    )
     .collect();
     assert!(commands.len() >= 33);
     let handlers: BTreeSet<_> = include_str!("app.rs")
         .lines()
-        .filter_map(|line| line.split_once("::commands::"))
+        .filter(|line| !line.contains("initialize"))
+        .filter_map(|line| {
+            line.split_once("::commands::")
+                .or_else(|| line.split_once("crate::mcp::"))
+        })
         .map(|(_, name)| name.trim_end_matches(',').trim().to_owned())
         .collect();
     assert_eq!(commands, handlers);
