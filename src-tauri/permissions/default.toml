@@ -91,6 +91,7 @@ permissions = [
   "allow-refresh-app-content",
   "allow-get-contributors",
   "allow-load-announcement-image",
+  "allow-start-in-app-update",
   "allow-get-credential-storage-status",
   "allow-get-settings-snapshot",
   "allow-export-settings",

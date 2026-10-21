@@ -2,6 +2,10 @@ use super::{
     config::{parse_repository, ContentConfig},
     model::{is_newer, parse_document, web_url, Announcements, Document, UpdateInfo},
     runtime::{AutomaticSchedule, SingleFlight},
+    service::{
+        extract_release_version, extract_version_from_asset_name, find_platform_asset_index,
+        is_platform_asset,
+    },
 };
 use serde_json::json;
 use std::{
@@ -98,6 +102,85 @@ fn update_schema_and_semver_comparison_follow_precedence() {
     assert!(!is_newer("1.0.0", "1.0.0+other-build"));
     assert!(!is_newer("1.0.0", "0.9.0"));
     assert!(!is_newer("not-semver", "1.0.0"));
+}
+
+#[test]
+fn extract_version_from_asset_name_handles_all_package_formats() {
+    assert_eq!(
+        extract_version_from_asset_name("your-szu-life_android_arm64_0.9.0-release.apk.gz").as_deref(),
+        Some("0.9.0")
+    );
+    assert_eq!(
+        extract_version_from_asset_name("your-szu-life_android_arm64_0.9.0-release.apk").as_deref(),
+        Some("0.9.0")
+    );
+    assert_eq!(
+        extract_version_from_asset_name("your-szu-life_linux_x64_0.9.0-release.deb").as_deref(),
+        Some("0.9.0")
+    );
+    assert_eq!(
+        extract_version_from_asset_name("your-szu-life_linux_x64_0.9.0-release.AppImage").as_deref(),
+        Some("0.9.0")
+    );
+    assert_eq!(
+        extract_version_from_asset_name("your-szu-life_windows_x64_0.9.0-release.exe").as_deref(),
+        Some("0.9.0")
+    );
+    assert_eq!(
+        extract_version_from_asset_name("your-szu-life_windows_x64_0.9.0-release.msi").as_deref(),
+        Some("0.9.0")
+    );
+    assert_eq!(
+        extract_version_from_asset_name("your-szu-life_android_arm64_1.2.3-beta.1-release.apk.gz").as_deref(),
+        Some("1.2.3-beta.1")
+    );
+    assert_eq!(extract_version_from_asset_name("unrelated-file.txt"), None);
+}
+
+#[test]
+fn extract_release_version_resolves_canary_tag_from_asset_and_name() {
+    assert_eq!(
+        extract_release_version(
+            "canary",
+            Some("canary"),
+            "your-szu-life_android_arm64_0.9.0-release.apk.gz"
+        )
+        .as_deref(),
+        Some("0.9.0")
+    );
+
+    assert_eq!(
+        extract_release_version("canary", Some("canary v0.9.1"), "custom_build.apk.gz").as_deref(),
+        Some("0.9.1")
+    );
+
+    assert_eq!(
+        extract_release_version("v1.0.0", Some("Release 1.0.0"), "app.exe").as_deref(),
+        Some("1.0.0")
+    );
+}
+
+#[test]
+fn platform_asset_matcher_handles_expected_extensions() {
+    #[cfg(target_os = "linux")]
+    {
+        assert!(is_platform_asset("your-szu-life_linux_x64_0.9.0-release.deb"));
+        assert!(is_platform_asset("your-szu-life_linux_x64_0.9.0-release.AppImage"));
+        assert!(!is_platform_asset("your-szu-life_windows_x64_0.9.0-release.exe"));
+        let names = ["foo.txt", "your-szu-life_linux_x64_0.9.0-release.deb"];
+        assert_eq!(find_platform_asset_index(&names), Some(1));
+    }
+    #[cfg(target_os = "android")]
+    {
+        assert!(is_platform_asset("your-szu-life_android_arm64_0.9.0-release.apk.gz"));
+        assert!(is_platform_asset("your-szu-life_android_arm64_0.9.0-release.apk"));
+        let names = [
+            "your-szu-life_android_arm64_0.9.0-release.apk",
+            "your-szu-life_android_arm64_0.9.0-release.apk.gz",
+        ];
+        // Prefers compressed .apk.gz
+        assert_eq!(find_platform_asset_index(&names), Some(1));
+    }
 }
 
 #[test]

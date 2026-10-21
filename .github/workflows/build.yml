@@ -246,7 +246,9 @@ jobs:
           mkdir -p release-packages
           mapfile -d '' apks < <(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print0)
           test "${#apks[@]}" -eq 1
-          cp "${apks[0]}" "release-packages/your-szu-life_android_arm64_${version}-release.apk"
+          apk="${apks[0]}"
+          cp "$apk" "release-packages/your-szu-life_android_arm64_${version}-release.apk"
+          gzip -9 -c "$apk" > "release-packages/your-szu-life_android_arm64_${version}-release.apk.gz"
 
       - name: Upload Android packages
         uses: actions/upload-artifact@v7
@@ -303,12 +305,16 @@ jobs:
             if (new Set(assets.map(asset => asset.name)).size !== assets.length) {
               throw new Error('Duplicate release asset names');
             }
+            const versionMatch = assets
+              .map(asset => asset.name.match(/_(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)-release\./))
+              .find(Boolean);
+            const releaseVersion = versionMatch ? versionMatch[1] : '';
             const metadata = {
               ...repo,
               tag_name: tag,
               target_commitish: context.sha,
-              name: 'canary',
-              body: `自动构建预发布。\n\n提交：${context.sha}\n构建：${context.serverUrl}/${repo.owner}/${repo.repo}/actions/runs/${context.runId}`,
+              name: releaseVersion ? `canary v${releaseVersion}` : 'canary',
+              body: `自动构建预发布。\n\n${releaseVersion ? `版本：${releaseVersion}\n` : ''}提交：${context.sha}\n构建：${context.serverUrl}/${repo.owner}/${repo.repo}/actions/runs/${context.runId}`,
               draft: false,
               prerelease: true,
               make_latest: 'false',

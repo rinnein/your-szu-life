@@ -39,3 +39,10 @@ pub(crate) async fn load_announcement_image(
         .await
         .map_err(|_| ContentError::new(ErrorKind::Unavailable, "头图加载任务未能完成"))?
 }
+
+#[tauri::command]
+pub(crate) fn start_in_app_update(
+    store: State<'_, AppContentStore>,
+) -> Result<(), String> {
+    super::android_update::start_update(&store)
+}

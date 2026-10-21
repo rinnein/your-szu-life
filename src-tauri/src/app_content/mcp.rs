@@ -36,4 +36,22 @@ impl UnifiedSzuMcpService {
             .map_err(|_| "任务执行失败".to_string())?;
         serde_json::to_string_pretty(&contributors).map_err(|e| format!("序列化失败: {e}"))
     }
+
+    #[tool(
+        name = "app_check_update",
+        description = "检查软件版本更新状态及最新版本信息"
+    )]
+    pub async fn app_check_update(&self) -> Result<String, String> {
+        let store = self
+            .app
+            .try_state::<AppContentStore>()
+            .ok_or("公共内容存储不可用")?;
+        let snapshot = store.snapshot();
+        serde_json::to_string_pretty(&serde_json::json!({
+            "currentVersion": snapshot.version,
+            "updateAvailable": snapshot.update_available,
+            "update": snapshot.update,
+        }))
+        .map_err(|e| format!("序列化失败: {e}"))
+    }
 }

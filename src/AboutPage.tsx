@@ -1,12 +1,29 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Alert, Avatar, Button, Spinner } from "@heroui/react";
+import { listen } from "@tauri-apps/api/event";
+import { Alert, Avatar, Button, Label, ProgressBar, Spinner, toast } from "@heroui/react";
 import { LuArrowUpRight, LuDownload, LuRefreshCw, LuUsers } from "react-icons/lu";
 import { BrandMark, Card, ModuleHeader, PageShell } from "./components";
 import { useAppContent } from "./app-content/context";
 import { contentTime, openPublicUrl } from "./app-content/external";
+import { isAndroidPlatform } from "./os-info";
 import type { AppContentSnapshot, ContributorsSnapshot } from "./app-content/types";
 import packageInfo from "../package.json";
+
+function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
+}
+
+type UpdateProgress = {
+  status: "downloading" | "installing" | "ready" | "error";
+  progress: number;
+  downloadedBytes: number;
+  totalBytes: number;
+  error: string | null;
+};
 
 export function updateStatus(
   snapshot: AppContentSnapshot | undefined,
@@ -169,6 +186,65 @@ function Contributors() {
 export default function AboutPage() {
   const { snapshot, error, refreshing, refresh } = useAppContent();
   const [openError, setOpenError] = useState<string>();
+  const [isAndroid, setIsAndroid] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null);
+
+  useEffect(() => {
+    void isAndroidPlatform().then(setIsAndroid);
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void listen<UpdateProgress>("in-app-update-progress", (event) => {
+      setUpdateProgress(event.payload);
+      if (event.payload.status === "error") {
+        setUpdating(false);
+        toast.danger("应用内更新失败", {
+          description: event.payload.error ?? "下载或解压过程中发生错误",
+        });
+      } else if (
+        event.payload.status === "installing" ||
+        event.payload.status === "ready"
+      ) {
+        setUpdating(false);
+        toast.success("下载完成", {
+          description: "正在打开系统安装程序…",
+        });
+      }
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, []);
+
+  const handleStartInAppUpdate = async () => {
+    setUpdating(true);
+    setUpdateProgress({
+      status: "downloading",
+      progress: 0,
+      downloadedBytes: 0,
+      totalBytes: 0,
+      error: null,
+    });
+    try {
+      await invoke("start_in_app_update");
+    } catch (e) {
+      setUpdating(false);
+      const msg = typeof e === "string" ? e : "启动更新失败";
+      setUpdateProgress({
+        status: "error",
+        progress: 0,
+        downloadedBytes: 0,
+        totalBytes: 0,
+        error: msg,
+      });
+      toast.danger("应用内更新失败", { description: msg });
+    }
+  };
+
   const update = snapshot?.update;
   const announcements = snapshot?.announcements;
   const configured = snapshot?.configuration.status === "ready";
@@ -294,18 +370,98 @@ export default function AboutPage() {
               </section>
             )}
             {snapshot?.updateAvailable && update?.data && (
-              <Button
-                variant="secondary"
-                onPress={() => {
-                  setOpenError(undefined);
-                  void openPublicUrl(update.data!.latest_ver_url).catch(() =>
-                    setOpenError("无法打开系统浏览器，请稍后重试。"),
-                  );
-                }}
-              >
-                <LuDownload aria-hidden="true" /> 前往下载 {update.data.latest_ver}
-                <LuArrowUpRight aria-hidden="true" />
-              </Button>
+              <div className="grid gap-3">
+                {isAndroid ? (
+                  <>
+                    {updateProgress?.status === "downloading" && (
+                      <div className="grid gap-2">
+                        <ProgressBar
+                          value={updateProgress.progress}
+                          aria-label="更新包下载与解压进度"
+                        >
+                          <Label>
+                            正在下载并解压新版本… {updateProgress.progress}%
+                            {updateProgress.downloadedBytes > 0 && (
+                              <span className="content-muted">
+                                {" "}
+                                ({formatBytes(updateProgress.downloadedBytes)}
+                                {updateProgress.totalBytes > 0
+                                  ? ` / ${formatBytes(updateProgress.totalBytes)}`
+                                  : ""}
+                                )
+                              </span>
+                            )}
+                          </Label>
+                          <ProgressBar.Output />
+                          <ProgressBar.Track>
+                            <ProgressBar.Fill />
+                          </ProgressBar.Track>
+                        </ProgressBar>
+                      </div>
+                    )}
+                    {(updateProgress?.status === "installing" ||
+                      updateProgress?.status === "ready") && (
+                      <p className="content-muted" role="status">
+                        <Spinner size="sm" /> 正在启动安装程序，请按系统提示完成更新…
+                      </p>
+                    )}
+                    {updateProgress?.status === "error" && (
+                      <Alert status="danger" role="alert">
+                        <Alert.Indicator />
+                        <Alert.Content>
+                          <Alert.Title>应用内更新失败</Alert.Title>
+                          <Alert.Description>
+                            {updateProgress.error ?? "下载或解压过程中发生错误。"}
+                          </Alert.Description>
+                        </Alert.Content>
+                      </Alert>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="primary"
+                        isDisabled={updating || updateProgress?.status === "downloading"}
+                        onPress={() => void handleStartInAppUpdate()}
+                      >
+                        {updating || updateProgress?.status === "downloading" ? (
+                          <Spinner size="sm" color="current" />
+                        ) : (
+                          <LuDownload aria-hidden="true" />
+                        )}
+                        {updating || updateProgress?.status === "downloading"
+                          ? "正在下载并解压…"
+                          : updateProgress?.status === "error"
+                            ? `重试应用内更新 ${update.data.latest_ver}`
+                            : `应用内更新 ${update.data.latest_ver}`}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onPress={() => {
+                          setOpenError(undefined);
+                          void openPublicUrl(update.data!.latest_ver_url).catch(() =>
+                            setOpenError("无法打开系统浏览器，请稍后重试。"),
+                          );
+                        }}
+                      >
+                        前往浏览器下载
+                        <LuArrowUpRight aria-hidden="true" />
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    onPress={() => {
+                      setOpenError(undefined);
+                      void openPublicUrl(update.data!.latest_ver_url).catch(() =>
+                        setOpenError("无法打开系统浏览器，请稍后重试。"),
+                      );
+                    }}
+                  >
+                    <LuDownload aria-hidden="true" /> 前往下载 {update.data.latest_ver}
+                    <LuArrowUpRight aria-hidden="true" />
+                  </Button>
+                )}
+              </div>
             )}
             {openError && (
               <p className="content-error" role="alert">
@@ -313,7 +469,9 @@ export default function AboutPage() {
               </p>
             )}
             <p className="content-muted about-download-note">
-              仅检查版本，不会自动下载或安装；点击下载后在系统浏览器打开。
+              {isAndroid
+                ? "Android 端支持应用内流式解压更新与加速节点，也可以点击前往系统浏览器下载。"
+                : "仅检查版本，不会自动下载或安装；点击下载后在系统浏览器打开。"}
             </p>
           </div>
         </Card>

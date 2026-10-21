@@ -7,6 +7,7 @@ pub(crate) mod mcp;
 mod model;
 mod runtime;
 mod service;
+pub(crate) mod android_update;
 
 use std::{sync::Arc, time::Duration};
 use tauri::{Emitter, Manager};
@@ -22,9 +23,15 @@ impl AppContentStore {
     pub(crate) fn get_contributors(&self) -> model::ContributorsSnapshot {
         self.0.get_contributors()
     }
+
+    #[allow(dead_code)]
+    pub(crate) fn accelerators(&self) -> &[reqwest::Url] {
+        &self.0.config.github_accelerators
+    }
 }
 
 pub(crate) fn initialize(app: &tauri::AppHandle) -> std::io::Result<()> {
+    android_update::set_app_handle(app.clone());
     let config = config::ContentConfig::compiled(app.package_info().version.to_string());
     let http = Arc::new(http::PublicClient::new(&config.version));
     let handle = app.clone();

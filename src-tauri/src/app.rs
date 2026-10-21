@@ -195,6 +195,7 @@ pub(crate) fn run() {
             app_content::commands::refresh_app_content,
             app_content::commands::get_contributors,
             app_content::commands::load_announcement_image,
+            app_content::commands::start_in_app_update,
             auth::commands::capture_auth_credentials,
             auth::commands::control_auth_recovery,
             auth::commands::get_auth_state,

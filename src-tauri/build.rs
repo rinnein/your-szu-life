@@ -132,6 +132,7 @@ fn main() {
             "refresh_app_content",
             "get_contributors",
             "load_announcement_image",
+            "start_in_app_update",
             "get_credential_storage_status",
             "get_settings_snapshot",
             "export_settings",

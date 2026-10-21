@@ -208,6 +208,7 @@ impl ContentService {
         #[derive(Deserialize)]
         struct Release {
             tag_name: String,
+            name: Option<String>,
             body: Option<String>,
             assets: Vec<Asset>,
         }
@@ -233,6 +234,19 @@ impl ContentService {
             serde_json::from_slice(&response.body)
                 .map_err(|_| ContentError::invalid("GitHub Release 响应无效"))
         };
+        let get_releases = |endpoint: &str| -> Result<Vec<Release>, ContentError> {
+            let url = Url::parse(&format!(
+                "https://api.github.com/repos/{}/{endpoint}",
+                repository.full_name
+            ))
+            .map_err(|_| ContentError::invalid("GitHub 仓库地址无效"))?;
+            let response = self
+                .http
+                .get(&url, RequestKind::Github, JSON_LIMIT)?
+                .successful(RequestKind::Github)?;
+            serde_json::from_slice(&response.body)
+                .map_err(|_| ContentError::invalid("GitHub Release 响应无效"))
+        };
         let announcement = get_release("releases/tags/announcement").and_then(|release| {
             let body = release.body.unwrap_or_default();
             let data: Announcements = serde_json::from_str(&body).map_err(|_| {
@@ -241,31 +255,62 @@ impl ContentService {
             data.validate()?;
             Ok((data, Source::Github))
         });
-        let update = get_release("releases/latest").and_then(|release| {
-            let asset = release
-                .assets
+        let update = (|| -> Result<(UpdateInfo, Source), ContentError> {
+            let releases = get_releases("releases?per_page=10")
+                .or_else(|_| get_release("releases/latest").map(|r| vec![r]))
+                .or_else(|_| get_release("releases/tags/canary").map(|r| vec![r]))?;
+
+            struct Candidate<'a> {
+                release: &'a Release,
+                asset: &'a Asset,
+                version: String,
+            }
+
+            let mut candidates: Vec<Candidate> = Vec::new();
+            for release in &releases {
+                let asset_names: Vec<&str> = release.assets.iter().map(|a| a.name.as_str()).collect();
+                if let Some(asset_idx) = find_platform_asset_index(&asset_names) {
+                    let asset = &release.assets[asset_idx];
+                    if let Some(ver) = extract_release_version(
+                        &release.tag_name,
+                        release.name.as_deref(),
+                        &asset.name,
+                    ) {
+                        candidates.push(Candidate {
+                            release,
+                            asset,
+                            version: ver,
+                        });
+                    }
+                }
+            }
+
+            if candidates.is_empty() {
+                return Err(ContentError::new(
+                    ErrorKind::Unavailable,
+                    "最新 GitHub Release 未包含当前平台的安装包",
+                ));
+            }
+
+            let newer_candidate = candidates
                 .iter()
-                .find(|asset| is_platform_asset(&asset.name))
-                .ok_or_else(|| {
-                    ContentError::new(
-                        ErrorKind::Unavailable,
-                        "最新 GitHub Release 未包含当前平台的安装包",
-                    )
-                })?;
-            let direct = web_url(&asset.browser_download_url)?;
+                .find(|c| is_newer(&self.config.version, &c.version));
+            let selected = newer_candidate.unwrap_or(&candidates[0]);
+
+            let direct = web_url(&selected.asset.browser_download_url)?;
             let accelerated = self
                 .config
                 .github_accelerators
                 .iter()
                 .find_map(|prefix| web_url(&format!("{prefix}{direct}")).ok());
             let update = UpdateInfo {
-                latest_ver: release.tag_name,
+                latest_ver: selected.version.clone(),
                 latest_ver_url: accelerated.unwrap_or(direct).to_string(),
-                changelog: release.body.unwrap_or_default(),
+                changelog: selected.release.body.clone().unwrap_or_default(),
             };
             update.validate()?;
             Ok((update, Source::Github))
-        });
+        })();
         (announcement, update)
     }
 
@@ -530,11 +575,11 @@ impl ContentService {
     }
 }
 
-fn is_platform_asset(name: &str) -> bool {
+pub(super) fn is_platform_asset(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     #[cfg(target_os = "android")]
     {
-        name.ends_with(".apk")
+        name.ends_with(".apk.gz") || name.ends_with(".apk")
     }
     #[cfg(target_os = "windows")]
     {
@@ -558,6 +603,62 @@ fn is_platform_asset(name: &str) -> bool {
         let _ = name;
         false
     }
+}
+
+pub(super) fn find_platform_asset_index(names: &[&str]) -> Option<usize> {
+    #[cfg(target_os = "android")]
+    {
+        names
+            .iter()
+            .position(|n| n.to_ascii_lowercase().ends_with(".apk.gz"))
+            .or_else(|| {
+                names
+                    .iter()
+                    .position(|n| n.to_ascii_lowercase().ends_with(".apk"))
+            })
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        names.iter().position(|n| is_platform_asset(n))
+    }
+}
+
+pub(super) fn extract_version_from_asset_name(name: &str) -> Option<String> {
+    if let Some(idx) = name.find("-release.") {
+        let prefix = &name[..idx];
+        if let Some(last_underscore) = prefix.rfind('_') {
+            let candidate = &prefix[last_underscore + 1..];
+            if let Ok(ver) = version(candidate) {
+                return Some(ver.to_string());
+            }
+        }
+    }
+    None
+}
+
+pub(super) fn extract_release_version(
+    tag_name: &str,
+    release_name: Option<&str>,
+    asset_name: &str,
+) -> Option<String> {
+    // 1. Try tag_name if it is valid SemVer (e.g. v0.9.0)
+    if let Ok(ver) = version(tag_name) {
+        return Some(ver.to_string());
+    }
+    // 2. Try extracting from asset filename (e.g. your-szu-life_android_arm64_0.9.0-release.apk.gz)
+    if let Some(ver) = extract_version_from_asset_name(asset_name) {
+        return Some(ver);
+    }
+    // 3. Try extracting from release_name (e.g. canary v0.9.0)
+    if let Some(name) = release_name {
+        for word in name.split_whitespace() {
+            let candidate = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '.');
+            if let Ok(ver) = version(candidate) {
+                return Some(ver.to_string());
+            }
+        }
+    }
+    None
 }
 
 fn load_feed<T: Document>(cache: &Cache, scope: &str, name: &str, now: u64) -> FeedSnapshot<T> {
