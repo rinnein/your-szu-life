@@ -33,6 +33,7 @@ impl UnifiedSzuMcpService {
 
         if let Some(window) = self.app.get_webview_window("main") {
             let _ = window.show();
+            #[cfg(desktop)]
             let _ = window.unminimize();
             let _ = window.set_focus();
             let route_event = serde_json::json!({
