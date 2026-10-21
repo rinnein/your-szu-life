@@ -562,14 +562,17 @@ pub(crate) async fn build_uooc_local_bank(app: tauri::AppHandle) -> Result<usize
 pub(crate) fn clear_uooc_local_bank(app: tauri::AppHandle) -> Result<usize, String> {
     let service = service(&app)?;
     let bank_path = service.path.parent().unwrap().join("qa-bank.json");
+    let db_path = service.path.parent().unwrap().join("quiz_qa_bank.db");
+    let mut count = 0;
     if bank_path.exists() {
-        let count = super::quiz::qa::load_local_bank(&bank_path).len();
+        count = super::quiz::qa::load_local_bank(&bank_path).len();
         let _ = std::fs::remove_file(&bank_path);
-        service.log_debug("bank", format!("已清空本地题库（共 {count} 道题目）"));
-        Ok(count)
-    } else {
-        Ok(0)
     }
+    if db_path.exists() {
+        let _ = std::fs::remove_file(&db_path);
+    }
+    service.log_debug("bank", format!("已清空本地题库（共 {count} 道题目）"));
+    Ok(count)
 }
 
 #[tauri::command]

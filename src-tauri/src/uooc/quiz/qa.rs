@@ -1744,6 +1744,7 @@ pub(crate) fn build_passed_payload(
 }
 
 /// Build batch upload payload when quiz submission failed.
+#[allow(dead_code)]
 pub(crate) fn build_failed_payload(
     cid: &str,
     course_name: Option<&str>,
@@ -2044,16 +2045,33 @@ pub(crate) fn build_upload_question_from_local_bank(q: &LocalBankQuestion) -> Qa
         (opts, payload_opts)
     };
 
-    let norm_correct = if let Some(ans_obj) = q.answers.iter().find(|a| a.is_correct) {
+    let (norm_correct, norm_wrong) = if let Some(ans_obj) = q.answers.iter().find(|a| a.is_correct) {
         let raw_strs: Vec<String> = ans_obj.values.iter().map(|v| match v {
             serde_json::Value::String(s) => s.clone(),
             serde_json::Value::Bool(b) => if *b { "A".to_string() } else { "B".to_string() },
             serde_json::Value::Number(n) => n.to_string(),
             other => other.to_string(),
         }).collect();
-        normalize_answers_for_upload(q_type, &clean_opts, &raw_strs)
+        // 存在标准答案时，排除答案不再上传
+        (normalize_answers_for_upload(q_type, &clean_opts, &raw_strs), None)
+    } else if !q.correct_answers.is_empty() {
+        (normalize_answers_for_upload(q_type, &clean_opts, &q.correct_answers), None)
     } else {
-        normalize_answers_for_upload(q_type, &clean_opts, &q.correct_answers)
+        // 未获得标准答案时，提取错误排除项进行上传
+        let wrong_strs: Vec<String> = q.answers.iter().filter(|a| !a.is_correct).flat_map(|a| {
+            a.values.iter().map(|v| match v {
+                serde_json::Value::String(s) => s.clone(),
+                serde_json::Value::Bool(b) => if *b { "A".to_string() } else { "B".to_string() },
+                serde_json::Value::Number(n) => n.to_string(),
+                other => other.to_string(),
+            })
+        }).collect();
+        let norm_w = if !wrong_strs.is_empty() {
+            normalize_answers_for_upload(q_type, &clean_opts, &wrong_strs)
+        } else {
+            None
+        };
+        (None, norm_w)
     };
 
     let blanks = if q_type == "text" {
@@ -2079,25 +2097,32 @@ pub(crate) fn build_upload_question_from_local_bank(q: &LocalBankQuestion) -> Qa
         options: options_for_payload,
         blanks,
         correct_answers: norm_correct,
-        wrong_answers: None,
+        wrong_answers: norm_wrong,
         embedding,
     }
 }
 
-/// Helper to construct a `QaBatchUploadPayload` from questions and answers.
-pub(crate) fn build_batch_upload_payload(
+/// Helper to construct a `QaBatchUploadPayload` from questions, correct answers, and optional wrong answers.
+pub(crate) fn build_batch_upload_payload_with_details(
     tid: &str,
     cid: Option<&str>,
     task_name: Option<&str>,
     course_name: Option<&str>,
     questions: &[Question],
     answers: &Answers,
+    wrong_answers: &Answers,
 ) -> QaBatchUploadPayload {
     let upload_questions: Vec<QaUploadQuestion> = questions
         .iter()
         .map(|q| {
             let q_answers = answers.get(&q.id).map(|v| v.as_slice());
-            build_qa_upload_question(q, q_answers, None, true)
+            // 规范要求 1：若已确定标准答案，则不再携带/上传排除答案
+            let q_wrongs = if q_answers.is_some_and(|a| !a.is_empty()) {
+                None
+            } else {
+                wrong_answers.get(&q.id).map(|v| v.as_slice())
+            };
+            build_qa_upload_question(q, q_answers, q_wrongs, true)
         })
         .collect();
 
@@ -2108,6 +2133,27 @@ pub(crate) fn build_batch_upload_payload(
         course_name: course_name.map(str::to_string),
         questions: upload_questions,
     }
+}
+
+/// Helper to construct a `QaBatchUploadPayload` from questions and answers.
+#[allow(dead_code)]
+pub(crate) fn build_batch_upload_payload(
+    tid: &str,
+    cid: Option<&str>,
+    task_name: Option<&str>,
+    course_name: Option<&str>,
+    questions: &[Question],
+    answers: &Answers,
+) -> QaBatchUploadPayload {
+    build_batch_upload_payload_with_details(
+        tid,
+        cid,
+        task_name,
+        course_name,
+        questions,
+        answers,
+        &Answers::new(),
+    )
 }
 
 /// 录入已通过并确认答案（及已知错误选项）的测验试题到本地题库表，标记 uploaded 状态
@@ -2150,8 +2196,10 @@ pub(crate) fn record_passed_quiz_with_details(
             });
         }
 
+        let has_confirmed_correct = !ans.is_empty();
+
         let already_uploaded = existing
-            .map(|old| old.uploaded && old.correct_answers == ans && !ans.is_empty())
+            .map(|old| old.uploaded && old.correct_answers == ans && has_confirmed_correct)
             .unwrap_or(false);
 
         let c_name = course_name
@@ -2179,7 +2227,8 @@ pub(crate) fn record_passed_quiz_with_details(
         };
 
         let mut bank_answers = Vec::new();
-        if !ans.is_empty() {
+        if has_confirmed_correct {
+            // 规范要求 1：当通过官方 API 确定标准答案后，排除答案不用再存，直接淘汰清理！
             let values: Vec<serde_json::Value> = if q_type_str == "judge" {
                 ans.iter().map(|s| {
                     let st = s.trim().to_lowercase();
@@ -2205,15 +2254,38 @@ pub(crate) fn record_passed_quiz_with_details(
                 source: "local".into(),
                 confidence: 1.0,
             });
-        }
+        } else {
+            // 尚未确定标准答案时，记录已知错误选项为 is_correct = false，并合并已有排除项
+            let mut all_wrongs: Vec<String> = Vec::new();
+            if let Some(w_list) = wrongs {
+                for w in w_list {
+                    if !all_wrongs.contains(w) {
+                        all_wrongs.push(w.clone());
+                    }
+                }
+            }
+            if let Some(old) = existing {
+                for a in &old.answers {
+                    if !a.is_correct {
+                        for v in &a.values {
+                            let s = match v {
+                                serde_json::Value::String(str_val) => str_val.clone(),
+                                serde_json::Value::Bool(b) => if *b { "A".into() } else { "B".into() },
+                                other => other.to_string(),
+                            };
+                            if !all_wrongs.contains(&s) {
+                                all_wrongs.push(s);
+                            }
+                        }
+                    }
+                }
+            }
 
-        // 记录已知错误选项为 is_correct = false
-        if let Some(w_list) = wrongs {
-            for w in w_list {
-                let val = if let Some(opt) = q.options.iter().find(|o| is_option_match(o, w)) {
+            for w in all_wrongs {
+                let val = if let Some(opt) = q.options.iter().find(|o| is_option_match(o, &w)) {
                     serde_json::Value::String(opt.id.clone())
                 } else {
-                    serde_json::Value::String(w.clone())
+                    serde_json::Value::String(w)
                 };
                 bank_answers.push(LocalBankAnswer {
                     id: None,
@@ -2267,6 +2339,7 @@ pub(crate) fn record_passed_quiz_with_details(
 }
 
 /// 录入已通过并确认答案的测验试题到本地题库表，标记 uploaded 状态
+#[allow(dead_code)]
 pub(crate) fn record_passed_quiz(
     bank_path: &Path,
     cid: &str,
@@ -3061,8 +3134,15 @@ pub(crate) fn parse_exam_view_json_details(val: &serde_json::Value) -> Option<Ex
                         probabilities: Default::default(),
                         message: "题库已排除错误选项，自动推导出唯一正确答案".into(),
                     });
+                    // 已确定标准答案后，淘汰排除项
+                    wrong.clear();
                 }
             }
+        }
+
+        // 确定标准答案后淘汰排除答案
+        if !correct.is_empty() {
+            wrong.clear();
         }
 
         if !wrong.is_empty() {
@@ -4783,5 +4863,84 @@ mod tests {
         assert!(!matches.is_empty());
         assert_eq!(matches[0].1.question_id, "q_sqlite_1");
         assert_eq!(matches[0].1.answers, vec!["B".to_string()]);
+    }
+
+    #[test]
+    fn standard_answers_eliminate_exclusions_and_upload_payload_omits_wrong_answers() {
+        use tempfile::tempdir;
+        let dir = tempdir().unwrap();
+        let bank_path = dir.path().join("qa-bank.json");
+
+        let q1 = Question {
+            id: "101".into(),
+            text: "单选题测试".into(),
+            kind: Kind::Single,
+            options: vec![
+                OptionItem { id: "A".into(), text: "选项A".into() },
+                OptionItem { id: "B".into(), text: "选项B".into() },
+                OptionItem { id: "C".into(), text: "选项C".into() },
+                OptionItem { id: "D".into(), text: "选项D".into() },
+            ],
+            blanks: 0,
+            images: vec![],
+        };
+
+        // 阶段 1：最初未通过，仅有错误选项 C 和 D 被排除
+        let answers_empty = Answers::new();
+        let mut wrong_initial = Answers::new();
+        wrong_initial.insert("101".into(), vec!["C".into(), "D".into()]);
+
+        record_passed_quiz_with_details(
+            &bank_path,
+            "cid_1",
+            "tid_1",
+            &[q1.clone()],
+            &answers_empty,
+            &wrong_initial,
+            Some("测试课程"),
+        ).unwrap();
+
+        let bank1 = load_local_bank(&bank_path);
+        let q1_key = bank_key("tid_1", "101");
+        let item1 = bank1.get(&q1_key).unwrap();
+        assert!(item1.correct_answers.is_empty());
+        // 应该有 2 个 is_correct = false 的记录
+        assert_eq!(item1.answers.len(), 2);
+        assert!(item1.answers.iter().all(|a| !a.is_correct));
+
+        // 生成上传 payload 时，未确定正确答案时应上传 wrong_answers
+        let upload_q1 = build_upload_question_from_local_bank(item1);
+        assert_eq!(upload_q1.correct_answers, None);
+        assert_eq!(upload_q1.wrong_answers, Some(vec!["C".into(), "D".into()]));
+
+        // 阶段 2：通过官方 API 获得了标准答案 "B"
+        let mut answers_correct = Answers::new();
+        answers_correct.insert("101".into(), vec!["选项B".into()]);
+        // 即使传入了历史排除项，也必须被自动清除，不再保存
+        let mut wrong_later = Answers::new();
+        wrong_later.insert("101".into(), vec!["C".into()]);
+
+        record_passed_quiz_with_details(
+            &bank_path,
+            "cid_1",
+            "tid_1",
+            &[q1.clone()],
+            &answers_correct,
+            &wrong_later,
+            Some("测试课程"),
+        ).unwrap();
+
+        let bank2 = load_local_bank(&bank_path);
+        let item2 = bank2.get(&q1_key).unwrap();
+        assert_eq!(item2.correct_answers, vec!["选项B".to_string()]);
+        // 规范要求 1：标准答案确定后，排除答案不用再存！answers 中只应包含 is_correct = true
+        assert_eq!(item2.answers.len(), 1);
+        assert!(item2.answers[0].is_correct);
+        assert_eq!(item2.answers[0].values, vec![serde_json::Value::String("B".into())]);
+
+        // 生成上传 payload 时，已确定正确答案时 wrong_answers 必须为 None
+        let upload_q2 = build_upload_question_from_local_bank(item2);
+        assert_eq!(upload_q2.correct_answers, Some(vec!["B".into()]));
+        assert_eq!(upload_q2.wrong_answers, None);
     }
 }

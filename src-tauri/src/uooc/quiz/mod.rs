@@ -705,23 +705,46 @@ async fn submit(
             q.submission_uncertain = false;
             q.message = "测验未通过或提交被拒绝，已停止本课程；请查看官网结果".into();
         });
-        let qa_url = service.snapshot().settings.qa_server_url.clone();
-        let qa_key = service.qa_api_key().await;
-        let course_name = service
-            .snapshot()
-            .courses
-            .iter()
-            .find(|c| c.id == ctx.cid)
-            .map(|c| c.title.clone());
-        let payload = qa::build_failed_payload(
-            &ctx.cid,
-            course_name.as_deref(),
-            &q.task_id,
-            &q.title,
-            &q.questions,
-            &q.answers,
-        );
-        let _ = qa::upload_batch(&qa_url, qa_key.as_deref(), &payload, Some(service)).await;
+
+        // 规范要求 2：通过 AI 判题得出的答案不直接进入题库！
+        // 测验未通过时，不能盲目将整卷 AI 答案上报为错误选项；必须通过官方 API (/exam/view) 验证具体单题正误后再入库
+        let clean_tid = qa::sanitize_task_id(&q.task_id);
+        let view_url = format!("{}/exam/view?cid={}&tid={clean_tid}", client.origin(), ctx.cid);
+        if let Ok(view_bytes) = client.quiz_http(&view_url, None, cancel).await {
+            if let Some(details) = qa::parse_exam_view_details(&view_bytes) {
+                if !details.questions.is_empty() && (!details.answers.is_empty() || !details.wrong_answers.is_empty()) {
+                    let bank_path = service.path.parent().unwrap().join("qa-bank.json");
+                    let course_name = service
+                        .snapshot()
+                        .courses
+                        .iter()
+                        .find(|c| c.id == ctx.cid)
+                        .map(|c| c.title.clone());
+                    let _ = qa::record_passed_quiz_with_details(
+                        &bank_path,
+                        &ctx.cid,
+                        clean_tid,
+                        &details.questions,
+                        &details.answers,
+                        &details.wrong_answers,
+                        course_name.as_deref(),
+                    );
+                    let qa_url = service.snapshot().settings.qa_server_url.clone();
+                    let qa_key = service.qa_api_key().await;
+                    let payload = qa::build_batch_upload_payload_with_details(
+                        clean_tid,
+                        Some(&ctx.cid),
+                        Some(&q.title),
+                        course_name.as_deref(),
+                        &details.questions,
+                        &details.answers,
+                        &details.wrong_answers,
+                    );
+                    let _ = qa::upload_batch(&qa_url, qa_key.as_deref(), &payload, Some(service)).await;
+                }
+            }
+        }
+
         return Ok(TaskStatus::Failed);
     }
     update(service, ctx, |q| {
@@ -1583,7 +1606,12 @@ pub(crate) async fn build_single_task_group(
         }
     }
 
-    // 4. 记录到共享本地题库 (qa-bank.json)
+    // 4. 规范要求 1：当通过官方 API 确定标准答案后，淘汰排除项，并清除 wrong_answers
+    for qid in details.answers.keys() {
+        details.wrong_answers.remove(qid);
+    }
+
+    // 记录到共享本地题库 (qa-bank.json)
     if !details.questions.is_empty() {
         let _ = qa::record_passed_quiz_with_details(
             &bank_path,
@@ -1631,13 +1659,14 @@ pub(crate) async fn build_single_task_group(
             "bank",
             format!("服务端缺少测验题组 [cid: {cid}, tid: {clean_tid}, task: {task_title}]，正在创建新题组并上传试题至服务端..."),
         );
-        let upload_payload = qa::build_batch_upload_payload(
+        let upload_payload = qa::build_batch_upload_payload_with_details(
             clean_tid,
             Some(cid),
             Some(&task_title),
             Some(&course_title),
             &details.questions,
             &details.answers,
+            &details.wrong_answers,
         );
         if let Ok(res) = qa::upload_batch(&qa_url, qa_key.as_deref(), &upload_payload, Some(service)).await {
             if res.ok && !details.questions.is_empty() {
@@ -1709,24 +1738,10 @@ pub(crate) async fn build_local_bank(service: &Arc<Service>) -> Result<usize, St
         service.publish(&mut runtime);
     }
 
-    // 1. Record completed quizzes from current snapshot
-    {
-        let runtime = service.runtime.lock().unwrap();
-        for (_, q) in &runtime.snapshot.quizzes {
-            if !q.questions.is_empty() && !q.answers.is_empty() {
-                let _ = qa::record_passed_quiz(
-                    &bank_path,
-                    &q.cid,
-                    &q.task_id,
-                    &q.questions,
-                    &q.answers,
-                    None,
-                );
-            }
-        }
-    }
+    // 规范要求 2：AI 判题或内存中的未交卷草稿绝对不直接进入题库！
+    // 题库构建严格只扫描官方 API 确定已完成/已判分试卷，通过 /exam/getTaskPaper 和 /exam/view 提取标准答案。
 
-    // 2. Scan enrolled courses & compare with server
+    // 1. Scan enrolled courses & compare with server
     let (client, courses, qa_url, qa_key) = {
         let r = service.runtime.lock().unwrap();
         (
