@@ -269,7 +269,8 @@ impl ContentService {
 
             let mut candidates: Vec<Candidate> = Vec::new();
             for release in &releases {
-                let asset_names: Vec<&str> = release.assets.iter().map(|a| a.name.as_str()).collect();
+                let asset_names: Vec<&str> =
+                    release.assets.iter().map(|a| a.name.as_str()).collect();
                 if let Some(asset_idx) = find_platform_asset_index(&asset_names) {
                     let asset = &release.assets[asset_idx];
                     if let Some(ver) = extract_release_version(
@@ -286,11 +287,9 @@ impl ContentService {
                 } else {
                     #[cfg(target_os = "linux")]
                     {
-                        if let Some(ver) = extract_release_version(
-                            &release.tag_name,
-                            release.name.as_deref(),
-                            "",
-                        ) {
+                        if let Some(ver) =
+                            extract_release_version(&release.tag_name, release.name.as_deref(), "")
+                        {
                             candidates.push(Candidate {
                                 release,
                                 asset: None,
@@ -608,6 +607,7 @@ impl ContentService {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn collect_candidate_urls(
     direct_url: &str,
     accelerators: &[reqwest::Url],
@@ -673,7 +673,9 @@ pub(super) fn find_platform_asset_index(names: &[&str]) -> Option<usize> {
     }
     #[cfg(target_os = "windows")]
     {
-        names.iter().position(|n| n.to_ascii_lowercase().ends_with(".exe"))
+        names
+            .iter()
+            .position(|n| n.to_ascii_lowercase().ends_with(".exe"))
     }
     #[cfg(not(any(target_os = "android", target_os = "windows")))]
     {
