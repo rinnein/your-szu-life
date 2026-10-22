@@ -83,9 +83,11 @@ rmcp = { version = "2", default-features = false, features = [
 schemars = { version = "1.0", features = ["derive"] }
 axum = "0.8"
 futures-util = "0.3"
+netdev = "0.46"
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 keyring = { version = "3", features = ["linux-native", "apple-native", "windows-native"] }
+ssid = "0.1"
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"

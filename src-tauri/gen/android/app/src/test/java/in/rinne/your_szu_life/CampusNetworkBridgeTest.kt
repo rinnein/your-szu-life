@@ -8,6 +8,8 @@ class CampusNetworkBridgeTest {
   @Test
   fun normalizesUnknownSsidToNull() {
     assertEquals("SZU_WLAN", normalizeWifiSsid("  SZU_WLAN  "))
+    assertEquals("SZU_WLAN", normalizeWifiSsid("\"SZU_WLAN\""))
+    assertEquals("SZU_WLAN", normalizeWifiSsid("  \"SZU_WLAN\"  "))
     assertNull(normalizeWifiSsid(null))
     assertNull(normalizeWifiSsid(""))
     assertNull(normalizeWifiSsid("<unknown ssid>"))

@@ -5,8 +5,6 @@ use super::{
     staff::{probe_staff_portal, unsigned, valid_ip, StaffPortalProbe},
 };
 use serde_json::Value;
-#[cfg(not(target_os = "android"))]
-use std::process::Command;
 use std::{thread, time::Duration};
 
 pub(super) const DORM_PORTAL_HOST: &str = "172.30.255.42";
@@ -26,106 +24,6 @@ pub(crate) struct NetworkSnapshot {
     pub(crate) wifi_has_private_172_ipv4: bool,
 }
 
-#[cfg(any(target_os = "linux", target_os = "macos"))]
-pub(super) fn command_text(command: &str, args: &[&str]) -> Option<String> {
-    let mut process = Command::new(command);
-    process.args(args);
-    process
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .map(|output| String::from_utf8_lossy(&output.stdout).to_string())
-}
-
-#[cfg(target_os = "windows")]
-fn windows_wifi_ssid() -> Option<String> {
-    use windows_sys::Win32::Foundation::HANDLE;
-    use windows_sys::Win32::NetworkManagement::WiFi::{
-        wlan_interface_state_connected, wlan_intf_opcode_current_connection, WlanCloseHandle,
-        WlanEnumInterfaces, WlanFreeMemory, WlanOpenHandle, WlanQueryInterface,
-        WLAN_CONNECTION_ATTRIBUTES, WLAN_INTERFACE_INFO_LIST,
-    };
-
-    unsafe {
-        let mut negotiated_version = 0;
-        let mut client_handle = 0 as HANDLE;
-        if WlanOpenHandle(2, std::ptr::null(), &mut negotiated_version, &mut client_handle) != 0 {
-            return None;
-        }
-
-        let mut if_list: *mut WLAN_INTERFACE_INFO_LIST = std::ptr::null_mut();
-        if WlanEnumInterfaces(client_handle, std::ptr::null(), &mut if_list) != 0
-            || if_list.is_null()
-        {
-            WlanCloseHandle(client_handle, std::ptr::null());
-            return None;
-        }
-
-        let count = (*if_list).dwNumberOfItems as usize;
-        let interfaces = std::slice::from_raw_parts((*if_list).InterfaceInfo.as_ptr(), count);
-        let mut found_ssid = None;
-
-        for info in interfaces {
-            if info.isState == wlan_interface_state_connected {
-                let mut data_size = 0;
-                let mut data: *mut core::ffi::c_void = std::ptr::null_mut();
-                let mut opcode_type = 0;
-                if WlanQueryInterface(
-                    client_handle,
-                    &info.InterfaceGuid,
-                    wlan_intf_opcode_current_connection,
-                    std::ptr::null(),
-                    &mut data_size,
-                    &mut data,
-                    &mut opcode_type,
-                ) == 0
-                    && !data.is_null()
-                {
-                    let conn_attrs = &*(data as *const WLAN_CONNECTION_ATTRIBUTES);
-                    let ssid_len =
-                        conn_attrs.wlanAssociationAttributes.dot11Ssid.uSSIDLength as usize;
-                    if ssid_len > 0 && ssid_len <= 32 {
-                        let ssid_bytes =
-                            &conn_attrs.wlanAssociationAttributes.dot11Ssid.ucSSID[..ssid_len];
-                        let ssid_str = String::from_utf8_lossy(ssid_bytes).trim().to_string();
-                        if !ssid_str.is_empty() {
-                            found_ssid = Some(ssid_str);
-                        }
-                    }
-                    WlanFreeMemory(data);
-                }
-            }
-            if found_ssid.is_some() {
-                break;
-            }
-        }
-
-        WlanFreeMemory(if_list as *const _);
-        WlanCloseHandle(client_handle, std::ptr::null());
-        found_ssid
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn windows_local_ip() -> Option<String> {
-    for target in &["172.30.255.42:80", "1.1.1.1:80", "223.5.5.5:80"] {
-        if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
-            if socket.connect(target).is_ok() {
-                if let Ok(addr) = socket.local_addr() {
-                    let ip = addr.ip();
-                    if let std::net::IpAddr::V4(ipv4) = ip {
-                        if !ipv4.is_unspecified() && !ipv4.is_loopback() {
-                            return Some(ipv4.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-#[cfg(target_os = "windows")]
 fn is_private_172(value: &str) -> bool {
     value
         .trim()
@@ -136,74 +34,178 @@ fn is_private_172(value: &str) -> bool {
         })
 }
 
+pub(crate) fn is_staff_ssid(ssid: &str) -> bool {
+    ssid.trim().trim_matches('"') == "SZU_WLAN"
+}
+
+pub(crate) fn is_dorm_ssid(ssid: &str) -> bool {
+    ssid.trim().trim_matches('"') == "SZU_CTC&CMCC"
+}
+
+#[cfg(not(target_os = "android"))]
 pub(super) fn network_snapshot() -> NetworkSnapshot {
-    #[cfg(target_os = "linux")]
-    {
-        let ssid =
-            command_text("nmcli", &["-t", "-f", "active,ssid", "dev", "wifi"]).and_then(|text| {
-                text.lines().find_map(|line| {
-                    let (active, ssid) = line.split_once(':')?;
-                    (active == "yes" && !ssid.is_empty()).then(|| ssid.to_owned())
-                })
-            });
-        let ip = command_text("hostname", &["-I"]).and_then(|text| {
-            text.split_whitespace()
-                .find(|value| valid_ipv4(value))
-                .map(str::to_owned)
-        });
-        return NetworkSnapshot {
-            connected: ip.is_some() || ssid.is_some(),
-            ssid,
-            ip,
-            ..Default::default()
-        };
+    use netdev::prelude::*;
+
+    let raw_ssid = ssid::get_ssid()
+        .map(|s| s.trim().trim_matches('"').to_string())
+        .filter(|s| !s.is_empty());
+
+    let interfaces = get_interfaces();
+    let default_iface = get_default_interface().ok();
+
+    let mut primary_ip = None;
+    let mut transport = None;
+    let mut wifi_connected = false;
+    let mut wifi_ip = None;
+    let mut is_ethernet = false;
+
+    if let Some(def) = &default_iface {
+        if let Some(net) = def.ipv4.iter().find(|n| {
+            !n.addr().is_loopback() && !n.addr().is_unspecified() && !n.addr().is_link_local()
+        }) {
+            primary_ip = Some(net.addr().to_string());
+        }
+        match def.if_type {
+            InterfaceType::Wireless80211 => {
+                transport = Some("wifi".to_string());
+                wifi_connected = true;
+                wifi_ip = primary_ip.clone();
+            }
+            InterfaceType::Ethernet | InterfaceType::GigabitEthernet => {
+                transport = Some("ethernet".to_string());
+                is_ethernet = true;
+            }
+            InterfaceType::Wwan | InterfaceType::Wwanpp => {
+                transport = Some("cellular".to_string());
+            }
+            InterfaceType::Tunnel | InterfaceType::Ppp => {
+                transport = Some("vpn".to_string());
+            }
+            _ => {
+                let lower_name = def.name.to_ascii_lowercase();
+                if lower_name.starts_with("wl") || lower_name.contains("wifi") {
+                    transport = Some("wifi".to_string());
+                    wifi_connected = true;
+                    wifi_ip = primary_ip.clone();
+                } else if lower_name.starts_with("eth") || lower_name.starts_with("en") {
+                    transport = Some("ethernet".to_string());
+                    is_ethernet = true;
+                } else {
+                    transport = Some("other".to_string());
+                }
+            }
+        }
     }
-    #[cfg(target_os = "macos")]
-    {
-        let ssid = command_text("networksetup", &["-getairportnetwork", "en0"])
-            .and_then(|text| {
-                text.split_once(": ")
-                    .map(|(_, value)| value.trim().to_owned())
+
+    for iface in &interfaces {
+        if iface.if_type == InterfaceType::Loopback {
+            continue;
+        }
+        let is_up = iface.oper_state == OperState::Up || !iface.ipv4.is_empty();
+        if !is_up {
+            continue;
+        }
+
+        let first_v4 = iface
+            .ipv4
+            .iter()
+            .find(|n| {
+                !n.addr().is_loopback()
+                    && !n.addr().is_unspecified()
+                    && !n.addr().is_link_local()
             })
-            .filter(|value| !value.is_empty() && !value.contains("not associated"));
-        let ip = command_text("ipconfig", &["getifaddr", "en0"])
-            .and_then(|text| text.trim().parse::<std::net::Ipv4Addr>().ok())
-            .map(|value| value.to_string());
-        return NetworkSnapshot {
-            connected: ip.is_some() || ssid.is_some(),
-            ssid,
-            ip,
-            ..Default::default()
-        };
+            .map(|n| n.addr().to_string());
+
+        let lower_name = iface.name.to_ascii_lowercase();
+        let is_wifi_iface = iface.if_type == InterfaceType::Wireless80211
+            || lower_name.starts_with("wl")
+            || lower_name.contains("wifi");
+
+        let is_eth_iface = matches!(
+            iface.if_type,
+            InterfaceType::Ethernet | InterfaceType::GigabitEthernet
+        ) || lower_name.starts_with("eth")
+            || lower_name.starts_with("en");
+
+        if is_wifi_iface {
+            if first_v4.is_some() || raw_ssid.is_some() {
+                wifi_connected = true;
+                if wifi_ip.is_none() {
+                    wifi_ip = first_v4.clone();
+                }
+            }
+        }
+
+        if is_eth_iface && first_v4.is_some() {
+            is_ethernet = true;
+        }
+
+        if primary_ip.is_none() && first_v4.is_some() {
+            primary_ip = first_v4;
+            if is_wifi_iface {
+                transport = Some("wifi".to_string());
+            } else if is_eth_iface {
+                transport = Some("ethernet".to_string());
+            }
+        }
     }
-    #[cfg(target_os = "windows")]
-    {
-        let ssid = windows_wifi_ssid();
-        let ip = windows_local_ip();
-        let has_private_172 = ip.as_deref().map_or(false, is_private_172);
-        let wifi_connected = ssid.is_some();
-        return NetworkSnapshot {
-            connected: ip.is_some() || ssid.is_some(),
-            ssid: ssid.clone(),
-            ip: ip.clone(),
-            transport: if wifi_connected {
-                Some("wifi".into())
-            } else if ip.is_some() {
-                Some("ethernet".into())
-            } else {
-                None
-            },
-            has_private_172_ipv4: has_private_172,
-            wifi_connected,
-            wifi_ip: if wifi_connected { ip } else { None },
-            wifi_has_private_172_ipv4: wifi_connected && has_private_172,
-            ..Default::default()
-        };
+
+    if raw_ssid.is_some() {
+        wifi_connected = true;
+        if transport.is_none() {
+            transport = Some("wifi".to_string());
+        }
     }
-    #[cfg(target_os = "android")]
-    {
-        super::android::network_snapshot()
+
+    // UDP routing lookup fallback if interface IP not resolved
+    if primary_ip.is_none() {
+        for target in &["172.30.255.42:80", "1.1.1.1:80", "223.5.5.5:80"] {
+            if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+                if socket.connect(target).is_ok() {
+                    if let Ok(addr) = socket.local_addr() {
+                        let ip = addr.ip();
+                        if let std::net::IpAddr::V4(ipv4) = ip {
+                            if !ipv4.is_unspecified() && !ipv4.is_loopback() {
+                                primary_ip = Some(ipv4.to_string());
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
+
+    let has_private_172 = primary_ip.as_deref().map_or(false, is_private_172);
+    let wifi_has_private_172 = wifi_ip.as_deref().map_or(false, is_private_172);
+
+    // If wired network, set SSID to "有线连接"
+    let ssid = if raw_ssid.is_some() {
+        raw_ssid
+    } else if transport.as_deref() == Some("ethernet") || (is_ethernet && !wifi_connected) {
+        Some("有线连接".to_string())
+    } else {
+        None
+    };
+
+    let connected = primary_ip.is_some() || ssid.is_some() || wifi_connected;
+
+    NetworkSnapshot {
+        connected,
+        ssid,
+        ip: primary_ip,
+        transport,
+        has_private_172_ipv4: has_private_172,
+        wifi_connected,
+        wifi_ip,
+        wifi_has_private_172_ipv4: wifi_has_private_172,
+        ..Default::default()
+    }
+}
+
+#[cfg(target_os = "android")]
+pub(super) fn network_snapshot() -> NetworkSnapshot {
+    super::android::network_snapshot()
 }
 
 impl NetworkSnapshot {
@@ -450,10 +452,10 @@ pub(super) fn classify_network_overview(
     }
     let region = if staff.state == PortalOnlineState::Online
         || evidence.staff.is_some()
-        || snapshot.ssid.as_deref() == Some("SZU_WLAN")
+        || snapshot.ssid.as_deref().map_or(false, is_staff_ssid)
     {
         NetworkRegion::Staff
-    } else if dorm.recognized {
+    } else if dorm.recognized || snapshot.ssid.as_deref().map_or(false, is_dorm_ssid) {
         NetworkRegion::Dormitory
     } else {
         NetworkRegion::None
@@ -499,9 +501,34 @@ pub(super) fn probe_network_overview(
     snapshot: NetworkSnapshot,
     now: u64,
 ) -> NetworkObservation {
-    // Always consult Srun even when Dr.COM is reachable or reports an online user.
-    let staff = probe_staff_portal(http, now);
-    let dorm = probe_dorm_portal(http, now);
+    let (staff, dorm) = match snapshot.ssid.as_deref() {
+        Some(ssid) if is_staff_ssid(ssid) => {
+            // Fast pre-judgment for Staff area Wi-Fi: probe staff portal first
+            let staff = probe_staff_portal(http, now);
+            let dorm = if staff.state == PortalOnlineState::Online {
+                DormPortalProbe::default()
+            } else {
+                probe_dorm_portal(http, now)
+            };
+            (staff, dorm)
+        }
+        Some(ssid) if is_dorm_ssid(ssid) => {
+            // Fast pre-judgment for Dormitory Wi-Fi: probe dorm portal first
+            let dorm = probe_dorm_portal(http, now);
+            let staff = if dorm.recognized {
+                StaffPortalProbe::default()
+            } else {
+                probe_staff_portal(http, now)
+            };
+            (staff, dorm)
+        }
+        _ => {
+            // Non-designated SSID, external Wi-Fi, or wired: probe both portals via HTTP
+            let staff = probe_staff_portal(http, now);
+            let dorm = probe_dorm_portal(http, now);
+            (staff, dorm)
+        }
+    };
     NetworkObservation {
         snapshot,
         staff,

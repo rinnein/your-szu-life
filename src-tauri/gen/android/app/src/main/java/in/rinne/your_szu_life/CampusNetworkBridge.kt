@@ -14,7 +14,7 @@ import java.lang.ref.WeakReference
 import java.net.Inet4Address
 
 internal fun normalizeWifiSsid(value: String?): String? {
-  val normalized = value?.trim() ?: return null
+  val normalized = value?.trim()?.removeSurrounding("\"") ?: return null
   if (normalized.isEmpty()
       || normalized.equals("<unknown ssid>", ignoreCase = true)
       || normalized.equals("unknown ssid", ignoreCase = true)) {
@@ -212,14 +212,19 @@ object CampusNetworkBridge {
         return
       }
       val missing = mutableListOf<String>()
+      if (currentActivity.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) !=
+          PackageManager.PERMISSION_GRANTED) {
+        missing += Manifest.permission.ACCESS_FINE_LOCATION
+      }
+      if (currentActivity.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) !=
+          PackageManager.PERMISSION_GRANTED) {
+        missing += Manifest.permission.ACCESS_COARSE_LOCATION
+      }
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         if (currentActivity.checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES) !=
             PackageManager.PERMISSION_GRANTED) {
           missing += Manifest.permission.NEARBY_WIFI_DEVICES
         }
-      } else if (currentActivity.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) !=
-          PackageManager.PERMISSION_GRANTED) {
-        missing += Manifest.permission.ACCESS_FINE_LOCATION
       }
       if (missing.isEmpty()) return
       currentActivity.runOnUiThread {
@@ -240,19 +245,39 @@ object CampusNetworkBridge {
 
   private fun readSsid(context: Context): String? {
     if (!canReadSsid(context)) return null
-    val wifi = context.getSystemService(Context.WIFI_SERVICE) as? WifiManager ?: return null
+    val connectivity =
+        context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && connectivity != null) {
+      val defaultNetwork = connectivity.activeNetwork
+      val caps = defaultNetwork?.let { connectivity.getNetworkCapabilities(it) }
+      val wifiInfo = caps?.transportInfo as? android.net.wifi.WifiInfo
+      val defaultSsid = normalizeWifiSsid(wifiInfo?.ssid)
+      if (defaultSsid != null) return defaultSsid
+
+      @Suppress("DEPRECATION")
+      val networks = connectivity.allNetworks
+      for (network in networks) {
+        val netCaps = connectivity.getNetworkCapabilities(network)
+        if (netCaps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true) {
+          val info = netCaps.transportInfo as? android.net.wifi.WifiInfo
+          val netSsid = normalizeWifiSsid(info?.ssid)
+          if (netSsid != null) return netSsid
+        }
+      }
+    }
+
+    val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager ?: return null
     // Supports API 24+ and the associated Wi-Fi even when it is not the default network.
     @Suppress("DEPRECATION")
     return runCatching { normalizeWifiSsid(wifi.connectionInfo?.ssid) }.getOrNull()
   }
 
   private fun wifiPermissionState(context: Context): String {
-    val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-      Manifest.permission.NEARBY_WIFI_DEVICES
-    } else {
-      Manifest.permission.ACCESS_FINE_LOCATION
-    }
-    return if (context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) {
+    val fineGranted =
+        context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    val coarseGranted =
+        context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    return if (fineGranted || coarseGranted) {
       "granted"
     } else {
       "denied"
@@ -260,12 +285,11 @@ object CampusNetworkBridge {
   }
 
   private fun canReadSsid(context: Context): Boolean {
-    val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-      Manifest.permission.NEARBY_WIFI_DEVICES
-    } else {
-      Manifest.permission.ACCESS_FINE_LOCATION
-    }
-    if (context.checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED) {
+    val fineGranted =
+        context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    val coarseGranted =
+        context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    if (!fineGranted && !coarseGranted) {
       return false
     }
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return true

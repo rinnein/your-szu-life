@@ -765,7 +765,12 @@ pub(super) fn trusted_network(
     snapshot: &NetworkSnapshot,
     probe: &StaffPortalProbe,
 ) -> bool {
-    if probe.state == PortalOnlineState::Online || snapshot.ssid.as_deref() == Some("SZU_WLAN") {
+    if probe.state == PortalOnlineState::Online
+        || snapshot
+            .ssid
+            .as_deref()
+            .map_or(false, super::network::is_staff_ssid)
+    {
         return true;
     }
     if store

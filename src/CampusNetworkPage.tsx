@@ -573,7 +573,13 @@ export default function CampusNetworkPage() {
           </Card.Header>
           <Card.Content className="network-status-grid">
             <span>SSID</span>
-            <strong>{overview.ssid || status.ssid || "未读取"}</strong>
+            <strong>
+              {overview.transport === "ethernet" ||
+              overview.ssid === "有线连接" ||
+              status.ssid === "有线连接"
+                ? "有线连接"
+                : overview.ssid || status.ssid || "未读取"}
+            </strong>
             <span>网络连接</span>
             <strong>{overview.connected === false ? "无网络" : "已连接网络"}</strong>
             <span>宿舍区门户</span>

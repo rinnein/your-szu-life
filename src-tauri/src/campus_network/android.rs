@@ -31,13 +31,21 @@ struct AndroidNetworkSnapshotPayload {
 #[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
 pub(super) fn parse_network_snapshot_json(payload: &str) -> Option<NetworkSnapshot> {
     let parsed = serde_json::from_str::<AndroidNetworkSnapshotPayload>(payload).ok()?;
-    let ssid = parsed.ssid.and_then(|value| {
-        let value = value.trim();
+    let transport = parsed.transport.and_then(normalize_text);
+    let raw_ssid = parsed.ssid.and_then(|value| {
+        let value = value.trim().trim_matches('"');
         (!value.is_empty()
             && !value.eq_ignore_ascii_case("<unknown ssid>")
             && !value.eq_ignore_ascii_case("unknown ssid"))
         .then(|| value.to_owned())
     });
+    let ssid = if raw_ssid.is_some() {
+        raw_ssid
+    } else if transport.as_deref() == Some("ethernet") {
+        Some("有线连接".to_string())
+    } else {
+        None
+    };
     let ip = parsed.ip.and_then(|value| {
         let value = value.trim();
         value
@@ -58,7 +66,7 @@ pub(super) fn parse_network_snapshot_json(payload: &str) -> Option<NetworkSnapsh
         connected,
         ssid,
         ip,
-        transport: parsed.transport.and_then(normalize_text),
+        transport,
         capabilities_available: parsed.capabilities_available,
         wifi_permission: parsed.wifi_permission.and_then(normalize_text),
         location_enabled: parsed.location_enabled,
