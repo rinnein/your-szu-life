@@ -1,22 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import {
-  Alert,
-  Button,
-  Card,
-  Chip,
-  Label,
-  ListBox,
-  Select,
-  Spinner,
-  toast,
-} from "@heroui/react";
-import {
-  LuBookOpen,
-  LuCalendar,
-  LuCircleCheck,
-  LuRotateCw,
-} from "react-icons/lu";
+import { Alert, Button, Card, Chip, Label, ListBox, Select, Spinner, toast } from "@heroui/react";
+import { LuBookOpen, LuCalendar, LuCircleCheck, LuRotateCw } from "react-icons/lu";
 import { ExamPaperModal } from "./ExamPaperModal";
 import type { HomeworkTask, QuizState, UoocCourse, UoocSnapshot } from "./types";
 
@@ -171,13 +156,22 @@ export function QuizListPanel({
             </Select.Trigger>
             <Select.Popover>
               <ListBox>
-                <ListBox.Item id="all" textValue="全部开课中的课程">
-                  全部开课中的课程
+                <ListBox.Item id="all" textValue="全部课程">
+                  全部课程
                   <ListBox.ItemIndicator />
                 </ListBox.Item>
                 {courses.map((c) => (
-                  <ListBox.Item key={c.id} id={c.id} textValue={c.title}>
-                    {c.title}
+                  <ListBox.Item
+                    key={c.id}
+                    id={c.id}
+                    textValue={c.status === "33" ? `${c.title} (复习中)` : c.title}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span>{c.title}</span>
+                      {c.status === "33" && (
+                        <span className="text-xs text-warning ml-2 font-normal">复习中</span>
+                      )}
+                    </div>
                     <ListBox.ItemIndicator />
                   </ListBox.Item>
                 ))}
@@ -264,7 +258,10 @@ export function QuizListPanel({
                   <div className="flex flex-wrap items-center gap-4">
                     <span className="flex items-center gap-1">
                       <LuCircleCheck className="h-3.5 w-3.5" />
-                      作答次数: {task.chance > 0 ? `已答 ${task.submitCount} / 共 ${task.chance} 次` : "不限次数"}
+                      作答次数:{" "}
+                      {task.chance > 0
+                        ? `已答 ${task.submitCount} / 共 ${task.chance} 次`
+                        : "不限次数"}
                     </span>
                   </div>
                 </Card.Content>

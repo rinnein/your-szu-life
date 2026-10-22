@@ -31,6 +31,8 @@ pub(crate) struct Course {
     pub weeks: String,
     #[serde(default)]
     pub end_date: String,
+    #[serde(default)]
+    pub status: String,
 }
 pub(super) fn courses_page(value: &Value) -> Result<(Vec<Course>, u64), String> {
     let rows = value["data"].as_array().ok_or("课程列表格式无效")?;
@@ -42,7 +44,10 @@ pub(super) fn courses_page(value: &Value) -> Result<(Vec<Course>, u64), String> 
     }
     let courses = rows
         .iter()
-        .filter(|row| text(&row["status"]) == "31")
+        .filter(|row| {
+            let s = text(&row["status"]);
+            s == "31" || s == "33"
+        })
         .filter_map(|row| {
             Some(Course {
                 id: id(&row["id"])?,
@@ -51,6 +56,7 @@ pub(super) fn courses_page(value: &Value) -> Result<(Vec<Course>, u64), String> 
                 organization: text(&row["org_name"]),
                 weeks: text(&row["weeks"]),
                 end_date: text(&row["end_time"]),
+                status: text(&row["status"]),
             })
         })
         .collect();

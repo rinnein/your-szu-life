@@ -802,3 +802,32 @@ it("isCourseTaskCompleted recognizes completed status, 100% video progress, or a
     }),
   ).toBe(true);
 });
+
+it("handles course in review mode (status 33): displays review chip, disables task selection, and excludes from select-all", async () => {
+  snapshot.courses.push({
+    id: "3333333333",
+    title: "操作系统复习课",
+    organization: "深圳大学",
+    semester: "秋季",
+    weeks: "16/16",
+    status: "33",
+  });
+  mount("/uooc?tab=courses");
+
+  expect(await screen.findByText("操作系统复习课")).toBeInTheDocument();
+  expect(screen.getByText("复习模式")).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "该课程处于复习模式（未结课），无法看视频或做测验/作业；考试任务请在「测验/作业/考试」标签中查看。",
+    ),
+  ).toBeInTheDocument();
+
+  const checkbox = screen.getByRole("checkbox", { name: "操作系统复习课" });
+  expect(checkbox).toBeDisabled();
+  expect(checkbox).not.toBeChecked();
+
+  // "全选" 不应勾选复习模式课程
+  fireEvent.click(screen.getByRole("button", { name: "全选" }));
+  expect(checkbox).not.toBeChecked();
+  expect(screen.getByRole("button", { name: "开始所选 (2)" })).toBeInTheDocument();
+});

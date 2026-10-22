@@ -7,6 +7,7 @@ export type UoocCourse = {
   organization: string;
   weeks: string;
   endDate?: string;
+  status?: string;
 };
 export type UoocSettings = {
   concurrency: number;

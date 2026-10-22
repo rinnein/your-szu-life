@@ -1,23 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import {
-  Alert,
-  Button,
-  Card,
-  Chip,
-  Label,
-  ListBox,
-  Select,
-  Spinner,
-  toast,
-} from "@heroui/react";
-import {
-  LuBookOpen,
-  LuCalendar,
-  LuCircleCheck,
-  LuRotateCw,
-  LuUsers,
-} from "react-icons/lu";
+import { Alert, Button, Card, Chip, Label, ListBox, Select, Spinner, toast } from "@heroui/react";
+import { LuBookOpen, LuCalendar, LuCircleCheck, LuRotateCw, LuUsers } from "react-icons/lu";
 import { ExamPaperModal } from "./ExamPaperModal";
 import { PeerEvalModal } from "./PeerEvalModal";
 import type { HomeworkTask, UoocCourse } from "./types";
@@ -137,13 +121,22 @@ export function HomeworkListPanel({ courses, ready }: HomeworkListPanelProps) {
             </Select.Trigger>
             <Select.Popover>
               <ListBox>
-                <ListBox.Item id="all" textValue="全部开课中的课程">
-                  全部开课中的课程
+                <ListBox.Item id="all" textValue="全部课程">
+                  全部课程
                   <ListBox.ItemIndicator />
                 </ListBox.Item>
                 {courses.map((c) => (
-                  <ListBox.Item key={c.id} id={c.id} textValue={c.title}>
-                    {c.title}
+                  <ListBox.Item
+                    key={c.id}
+                    id={c.id}
+                    textValue={c.status === "33" ? `${c.title} (复习中)` : c.title}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span>{c.title}</span>
+                      {c.status === "33" && (
+                        <span className="text-xs text-warning ml-2 font-normal">复习中</span>
+                      )}
+                    </div>
                     <ListBox.ItemIndicator />
                   </ListBox.Item>
                 ))}
@@ -184,7 +177,8 @@ export function HomeworkListPanel({ courses, ready }: HomeworkListPanelProps) {
         <Alert.Content>
           <Alert.Title>作业与互评说明</Alert.Title>
           <Alert.Description>
-            课程作业支持单题题库反查与向量特征匹配。主观问答题支持一键【AI 解答】生成结构化草稿；涉及附件上传时可通过官网窗口处理；若教师启用了互评，请在互评期内通过【互评助手】评阅。
+            课程作业支持单题题库反查与向量特征匹配。主观问答题支持一键【AI
+            解答】生成结构化草稿；涉及附件上传时可通过官网窗口处理；若教师启用了互评，请在互评期内通过【互评助手】评阅。
           </Alert.Description>
         </Alert.Content>
       </Alert>
@@ -208,9 +202,7 @@ export function HomeworkListPanel({ courses, ready }: HomeworkListPanelProps) {
               <Card key={hw.id} className="flex flex-col justify-between border border-border/60">
                 <Card.Header className="flex flex-wrap items-start justify-between gap-2 pb-2">
                   <div className="space-y-1">
-                    <Card.Title className="text-base font-bold leading-snug">
-                      {hw.title}
-                    </Card.Title>
+                    <Card.Title className="text-base font-bold leading-snug">{hw.title}</Card.Title>
                     <p className="flex items-center gap-1 text-xs text-muted">
                       <LuBookOpen className="h-3 w-3" />
                       {hw.courseName}
@@ -225,13 +217,16 @@ export function HomeworkListPanel({ courses, ready }: HomeworkListPanelProps) {
                 <Card.Content className="space-y-2 py-2 text-xs text-muted">
                   <div className="flex items-center gap-2">
                     <LuCalendar className="h-3.5 w-3.5" />
-                    <span>起止时间: {hw.startTime || "未定"} ~ {hw.endTime || "未定"}</span>
+                    <span>
+                      起止时间: {hw.startTime || "未定"} ~ {hw.endTime || "未定"}
+                    </span>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-4">
                     <span className="flex items-center gap-1">
                       <LuCircleCheck className="h-3.5 w-3.5" />
-                      提交次数: {hw.chance > 0 ? `已交 ${hw.submitCount} / 共 ${hw.chance} 次` : "不限次数"}
+                      提交次数:{" "}
+                      {hw.chance > 0 ? `已交 ${hw.submitCount} / 共 ${hw.chance} 次` : "不限次数"}
                     </span>
 
                     {hw.hasEval && (

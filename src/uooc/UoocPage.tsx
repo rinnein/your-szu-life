@@ -304,6 +304,8 @@ export default function UoocPage() {
           .padStart(2, "0")}`
       : "现在可以发起";
   const discussionEligible = (cid: string) => {
+    const course = snapshot?.courses.find((c) => c.id === cid);
+    if (course?.status === "33") return false;
     const progress = snapshot?.progress?.[cid]?.data?.discussion;
     const ratio =
       progress?.score != null && progress.weight != null && progress.weight > 0
@@ -314,6 +316,7 @@ export default function UoocPage() {
   const discussionCandidates = useMemo(
     () =>
       snapshot?.courses.filter((course) => {
+        if (course.status === "33") return false;
         const progress = snapshot.progress?.[course.id]?.data?.discussion;
         const ratio =
           progress?.score != null && progress.weight != null && progress.weight > 0
@@ -342,7 +345,9 @@ export default function UoocPage() {
       .map((task) => task.course.id),
   );
   const selectable =
-    snapshot?.courses.filter((course) => !added.has(course.id)).map((course) => course.id) ?? [];
+    snapshot?.courses
+      .filter((course) => !added.has(course.id) && course.status !== "33")
+      .map((course) => course.id) ?? [];
   const ids = selected.filter((id) => selectable.includes(id));
   const pendingCheckins =
     snapshot?.courses
@@ -413,6 +418,8 @@ export default function UoocPage() {
     );
   };
   const discussionControls = (cid: string) => {
+    const course = snapshot?.courses.find((c) => c.id === cid);
+    if (course?.status === "33") return null;
     const progress = snapshot?.progress?.[cid]?.data?.discussion;
     const ratio =
       progress?.score != null && progress.weight != null && progress.weight > 0
@@ -645,27 +652,40 @@ export default function UoocPage() {
             {snapshot?.courses.map((course) => {
               const testWeight = snapshot.progress?.[course.id]?.data?.test?.weight;
               const hasTestWeight = typeof testWeight === "number" && testWeight > 0;
+              const isReview = course.status === "33";
               return (
                 <Card key={course.id}>
                   <Card.Content className="grid gap-2">
-                    <Checkbox
-                      isSelected={added.has(course.id) || ids.includes(course.id)}
-                      isDisabled={!ready || busy || added.has(course.id)}
-                      onChange={(checked) =>
-                        setSelected((old) =>
-                          checked
-                            ? [...new Set([...old, course.id])]
-                            : old.filter((id) => id !== course.id),
-                        )
-                      }
-                    >
-                      <Checkbox.Content>
-                        <Checkbox.Control>
-                          <Checkbox.Indicator />
-                        </Checkbox.Control>
-                        {course.title}
-                      </Checkbox.Content>
-                    </Checkbox>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Checkbox
+                        isSelected={!isReview && (added.has(course.id) || ids.includes(course.id))}
+                        isDisabled={!ready || busy || added.has(course.id) || isReview}
+                        onChange={(checked) =>
+                          setSelected((old) =>
+                            checked
+                              ? [...new Set([...old, course.id])]
+                              : old.filter((id) => id !== course.id),
+                          )
+                        }
+                      >
+                        <Checkbox.Content>
+                          <Checkbox.Control>
+                            <Checkbox.Indicator />
+                          </Checkbox.Control>
+                          {course.title}
+                        </Checkbox.Content>
+                      </Checkbox>
+                      {isReview && (
+                        <Chip size="sm" color="warning" variant="soft">
+                          复习模式
+                        </Chip>
+                      )}
+                    </div>
+                    {isReview && (
+                      <p className="text-xs text-warning">
+                        该课程处于复习模式（未结课），无法看视频或做测验/作业；考试任务请在「测验/作业/考试」标签中查看。
+                      </p>
+                    )}
                     <QuizModePicker
                       value={
                         Object.values(snapshot?.quizzes ?? {}).find(
@@ -673,12 +693,19 @@ export default function UoocPage() {
                         )?.mode ?? defaultMode
                       }
                       disabled={
+                        isReview ||
                         !hasTestWeight ||
                         !ready ||
                         busy ||
                         tasks.some((t) => t.course.id === course.id && active(t))
                       }
-                      description={!hasTestWeight ? "测验无权重占比，无需配置答题模式" : undefined}
+                      description={
+                        isReview
+                          ? "复习模式下测验已截止"
+                          : !hasTestWeight
+                            ? "测验无权重占比，无需配置答题模式"
+                            : undefined
+                      }
                       onChange={(mode) =>
                         void action("save_uooc_quiz_mode", { cid: course.id, mode })
                       }

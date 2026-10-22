@@ -20,6 +20,7 @@ pub(super) fn course(cid: &str) -> Course {
         organization: "大学".into(),
         weeks: "5/7".into(),
         end_date: String::new(),
+        status: "31".into(),
     }
 }
 pub(super) fn service_test(root: PathBuf) -> Arc<Service> {
@@ -31,6 +32,7 @@ fn list_uses_status_and_cycle_id_not_weeks_or_parent() {
     let rows = json!({"data": [
         {"id":1588976494_u64,"parent":1140106027,"status":"31","parent_name":"人工智能","name":"2026秋季","weeks":"5/7","end_time":"2026/10/14"},
         {"id":669673711,"parent":1327274410,"status":31,"parent_name":"艺术的星空","weeks":"99/17"},
+        {"id":2000000001_u64,"parent":1234567890,"status":"33","parent_name":"复习模式课程","name":"2026秋季","weeks":"16/16","end_time":"2026/12/31"},
         {"id":1677434615,"status":"35","weeks":"10/10"},
         {"id":422912032,"status":"34","weeks":"15/15"},
         {"id":1065104563,"status":"31","parent_name":"创新领航讲座","weeks":"未知"},
@@ -40,14 +42,21 @@ fn list_uses_status_and_cycle_id_not_weeks_or_parent() {
     assert_eq!(pages, 2);
     assert_eq!(
         courses.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
-        ["1588976494", "669673711", "1065104563"]
+        ["1588976494", "669673711", "2000000001", "1065104563"]
     );
     assert_eq!(courses[0].title, "人工智能");
     assert_eq!(courses[0].semester, "2026秋季");
     assert_eq!(courses[0].end_date, "2026/10/14");
+    assert_eq!(courses[0].status, "31");
+    assert_eq!(courses[2].title, "复习模式课程");
+    assert_eq!(courses[2].status, "33");
     assert_eq!(
         serde_json::to_value(&courses[0]).unwrap()["endDate"],
         "2026/10/14"
+    );
+    assert_eq!(
+        serde_json::to_value(&courses[2]).unwrap()["status"],
+        "33"
     );
 }
 
@@ -1526,4 +1535,61 @@ fn test_default_qa_server_url_and_normalization() {
         model::normalize_qa_url("http://127.0.0.1:8080///").unwrap(),
         "http://127.0.0.1:8080"
     );
+}
+
+#[tokio::test]
+async fn test_review_mode_course_lifecycle_and_exam_visibility() {
+    let root = root();
+    let service = service_test(root.clone());
+
+    let server = Server::new(move |request| {
+        if request.path.starts_with("/home/task/examList") {
+            return ok(json!({
+                "data": [
+                    {
+                        "id": 9999,
+                        "title": "复习课程期末大考",
+                        "start_time": "2026-10-01 09:00:00",
+                        "end_time": "2026-10-30 18:00:00",
+                        "limit_time": 120,
+                        "status": 1,
+                        "chance": 1,
+                        "submit_count": 0,
+                        "task_id": 9999
+                    }
+                ],
+                "page": { "pages": 1 }
+            }));
+        }
+        ok(json!({}))
+    });
+
+    *service.client.write().unwrap() =
+        Arc::new(Client::with_base(session::load(None).unwrap(), &server.base).unwrap());
+
+    let mut review_course = course("333");
+    review_course.status = "33".into();
+    review_course.title = "复习模式课程".into();
+
+    service.change(|s| {
+        s.session = SessionStatus::Ready;
+        s.user = Some(User {
+            id: "7".into(),
+            name: "test".into(),
+        });
+        s.courses = vec![review_course.clone()];
+    });
+
+    // 1. 处于复习模式的课程不能启动视频任务
+    let start_result = service.start(vec!["333".into()]);
+    assert!(start_result.is_err());
+    assert!(start_result.unwrap_err().contains("处于复习模式"));
+
+    // 2. 处于复习模式的课程能够正常获取考试任务
+    let exams = service.list_exams(None).await.unwrap();
+    assert_eq!(exams.len(), 1);
+    assert_eq!(exams[0].title, "复习课程期末大考");
+    assert_eq!(exams[0].cid, "333");
+
+    let _ = std::fs::remove_dir_all(root);
 }

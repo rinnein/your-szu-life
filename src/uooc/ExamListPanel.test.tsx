@@ -140,7 +140,9 @@ it("renders exam tasks correctly in list panel", async () => {
     expect(screen.getByText("第一阶段测试考试")).toBeInTheDocument();
   });
 
-  expect(screen.getByText("共收录 2 场考试任务 · 考试交卷不可逆，请在答题面板谨慎确认")).toBeInTheDocument();
+  expect(
+    screen.getByText("共收录 2 场考试任务 · 考试交卷不可逆，请在答题面板谨慎确认"),
+  ).toBeInTheDocument();
   expect(screen.getByText(/90 分钟/)).toBeInTheDocument();
   expect(screen.getByText("已批改: 95分")).toBeInTheDocument();
 });
@@ -161,7 +163,9 @@ it("prompts confirmation before starting exam to prevent accidental countdown tr
   // 2. 必须先弹出开始前二次确认弹窗
   await waitFor(() => {
     expect(screen.getByText("确认现在开始考试？")).toBeInTheDocument();
-    expect(screen.getByText(/该考试设置有限时 90 分钟。一旦确认开始，试卷倒计时将立即触发且不可暂停！/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/该考试设置有限时 90 分钟。一旦确认开始，试卷倒计时将立即触发且不可暂停！/),
+    ).toBeInTheDocument();
   });
 
   // 尚未确认前，不应调用获取试卷
@@ -236,10 +240,13 @@ it("handles draft saving and submit confirmation dialog", async () => {
   });
 
   await waitFor(() => {
-    expect(invoke).toHaveBeenCalledWith("save_uooc_exam_draft", expect.objectContaining({
-      cid: "101",
-      taskId: "t1001",
-    }));
+    expect(invoke).toHaveBeenCalledWith(
+      "save_uooc_exam_draft",
+      expect.objectContaining({
+        cid: "101",
+        taskId: "t1001",
+      }),
+    );
   });
 
   // 测试交卷弹窗
@@ -260,9 +267,59 @@ it("handles draft saving and submit confirmation dialog", async () => {
   });
 
   await waitFor(() => {
-    expect(invoke).toHaveBeenCalledWith("submit_uooc_exam", expect.objectContaining({
-      cid: "101",
-      taskId: "t1001",
-    }));
+    expect(invoke).toHaveBeenCalledWith(
+      "submit_uooc_exam",
+      expect.objectContaining({
+        cid: "101",
+        taskId: "t1001",
+      }),
+    );
   });
+});
+
+it("supports courses in review mode (status 33) and fetches their exams", async () => {
+  const coursesWithReview: UoocCourse[] = [
+    ...mockCourses,
+    {
+      id: "103",
+      title: "编译原理",
+      semester: "2026秋",
+      organization: "深圳大学",
+      weeks: "1-16周",
+      status: "33",
+    },
+  ];
+
+  vi.mocked(invoke).mockImplementation(async (cmd, args) => {
+    if (cmd === "list_uooc_exams") {
+      const { cid } = (args ?? {}) as { cid?: string | null };
+      if (cid === "103") {
+        return [
+          {
+            id: "e3",
+            title: "编译原理期末大考",
+            cid: "103",
+            courseName: "编译原理",
+            startTime: "2026-10-01 09:00:00",
+            endTime: "2026-10-30 18:00:00",
+            limitTime: 120,
+            status: 1,
+            chance: 1,
+            submitCount: 0,
+            taskId: "t1003",
+          },
+        ];
+      }
+      return mockExams;
+    }
+    return null;
+  });
+
+  render(<ExamListPanel courses={coursesWithReview} ready={true} />);
+
+  await waitFor(() => {
+    expect(screen.getByText("期末模拟考试")).toBeInTheDocument();
+  });
+
+  expect(invoke).toHaveBeenCalledWith("list_uooc_exams", { cid: null });
 });

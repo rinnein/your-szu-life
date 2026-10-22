@@ -138,13 +138,22 @@ export function ExamListPanel({ courses, ready }: ExamListPanelProps) {
             </Select.Trigger>
             <Select.Popover>
               <ListBox>
-                <ListBox.Item id="all" textValue="全部开课中的课程">
-                  全部开课中的课程
+                <ListBox.Item id="all" textValue="全部课程">
+                  全部课程
                   <ListBox.ItemIndicator />
                 </ListBox.Item>
                 {courses.map((c) => (
-                  <ListBox.Item key={c.id} id={c.id} textValue={c.title}>
-                    {c.title}
+                  <ListBox.Item
+                    key={c.id}
+                    id={c.id}
+                    textValue={c.status === "33" ? `${c.title} (复习中)` : c.title}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span>{c.title}</span>
+                      {c.status === "33" && (
+                        <span className="text-xs text-warning ml-2 font-normal">复习中</span>
+                      )}
+                    </div>
                     <ListBox.ItemIndicator />
                   </ListBox.Item>
                 ))}
@@ -214,7 +223,9 @@ export function ExamListPanel({ courses, ready }: ExamListPanelProps) {
                 <Card.Content className="space-y-2 py-2 text-xs text-muted">
                   <div className="flex items-center gap-2">
                     <LuCalendar className="h-3.5 w-3.5" />
-                    <span>起止时间: {exam.startTime || "未定"} ~ {exam.endTime || "未定"}</span>
+                    <span>
+                      起止时间: {exam.startTime || "未定"} ~ {exam.endTime || "未定"}
+                    </span>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-4">
@@ -225,7 +236,10 @@ export function ExamListPanel({ courses, ready }: ExamListPanelProps) {
 
                     <span className="flex items-center gap-1">
                       <LuCircleCheck className="h-3.5 w-3.5" />
-                      作答机会: {exam.chance > 0 ? `已考 ${exam.submitCount} / 共 ${exam.chance} 次` : "不限次数"}
+                      作答机会:{" "}
+                      {exam.chance > 0
+                        ? `已考 ${exam.submitCount} / 共 ${exam.chance} 次`
+                        : "不限次数"}
                     </span>
                   </div>
                 </Card.Content>

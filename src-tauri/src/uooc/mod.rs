@@ -518,6 +518,9 @@ impl Service {
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             for course in courses {
+                if course.status == "33" {
+                    return Err(format!("课程「{}」处于复习模式，无法启动视频任务", course.title));
+                }
                 if let Some(task) = runtime
                     .snapshot
                     .tasks
@@ -687,6 +690,14 @@ impl Service {
                         task.desired_running = false;
                         task.status = TaskStatus::Stopped;
                         task.message = "账户已变化或课程不再处于开课中".into();
+                        cancel_ids.push(task.course.id.clone());
+                        continue;
+                    }
+                    if task.course.status == "33" {
+                        task.generation += 1;
+                        task.desired_running = false;
+                        task.status = TaskStatus::Stopped;
+                        task.message = "课程已进入复习模式，无法看视频与做测验/作业".into();
                         cancel_ids.push(task.course.id.clone());
                         continue;
                     }
