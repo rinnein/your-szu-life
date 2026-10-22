@@ -65,10 +65,10 @@ export function ModelProgressBar({
       : 0;
 
   return (
-    <div className="grid w-full gap-2 rounded-xl border border-separator/40 bg-surface-secondary/40 p-3">
-      <div className="flex items-center justify-between text-xs text-muted">
-        <span>{label}</span>
-        <span className="font-mono font-medium text-foreground">{percent}%</span>
+    <div className="grid w-full min-w-0 max-w-full gap-2 rounded-xl border border-separator/40 bg-surface-secondary/40 p-3">
+      <div className="flex items-center justify-between text-xs text-muted min-w-0 gap-2">
+        <span className="truncate">{label}</span>
+        <span className="font-mono font-medium text-foreground shrink-0">{percent}%</span>
       </div>
       <ProgressBar
         aria-label={label}
@@ -81,11 +81,13 @@ export function ModelProgressBar({
           <ProgressBar.Fill />
         </ProgressBar.Track>
       </ProgressBar>
-      <div className="flex items-center justify-between font-mono text-xs text-muted">
+      <div className="flex flex-wrap items-center justify-between font-mono text-xs text-muted gap-2 min-w-0">
         <span>
           {formatModelBytes(downloadedBytes)} / {formatModelBytes(totalBytes)}
         </span>
-        <span className="font-medium text-foreground">{formatDownloadSpeed(speedBytesPerSec)}</span>
+        <span className="font-medium text-foreground shrink-0">
+          {formatDownloadSpeed(speedBytesPerSec)}
+        </span>
       </div>
     </div>
   );

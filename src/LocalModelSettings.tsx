@@ -54,7 +54,8 @@ export const LOCAL_MODELS: Record<ModelKind, ModelMetadata> = {
     category: "OCR",
     name: "ddddocr",
     features: "选课系统与在线评测（OJ）验证码离线识别",
-    description: "用于选课系统与在线评测（OJ）验证码离线自动识别。模型仅保存在本机应用数据目录，保护账号隐私安全。",
+    description:
+      "用于选课系统与在线评测（OJ）验证码离线自动识别。模型仅保存在本机应用数据目录，保护账号隐私安全。",
     manifest: ocrModelManifest,
     downloadCommand: "download_ocr_model",
     updateCommand: "update_ocr_model",
@@ -212,18 +213,25 @@ export function LocalModelCard({
   };
 
   return (
-    <Card id={meta.anchorId} aria-labelledby={`${meta.anchorId}-title`} className={className}>
-      <Card.Header>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <Card.Title id={`${meta.anchorId}-title`} className="flex items-center gap-2.5">
-            <LuCpu aria-hidden="true" className="size-5 text-primary" />
+    <Card
+      id={meta.anchorId}
+      aria-labelledby={`${meta.anchorId}-title`}
+      className={`w-full min-w-0 max-w-full ${className ?? ""}`}
+    >
+      <Card.Header className="w-full min-w-0">
+        <div className="flex flex-wrap items-center justify-between gap-2 min-w-0">
+          <Card.Title
+            id={`${meta.anchorId}-title`}
+            className="flex flex-wrap items-center gap-2.5 min-w-0"
+          >
+            <LuCpu aria-hidden="true" className="size-5 text-primary shrink-0" />
             <span>{meta.name}</span>
             <Chip size="sm" variant="soft" color="accent">
               {meta.category}
             </Chip>
           </Card.Title>
         </div>
-        <Card.Description className="mt-2 space-y-1.5 text-xs text-muted">
+        <Card.Description className="mt-2 space-y-1.5 text-xs text-muted break-words">
           <div>
             <span className="font-medium text-foreground">适用功能：</span>
             <span>{meta.features}</span>
@@ -231,25 +239,25 @@ export function LocalModelCard({
           <div className="leading-relaxed">{meta.description}</div>
         </Card.Description>
       </Card.Header>
-      <Card.Content className="grid gap-4">
+      <Card.Content className="grid gap-4 w-full min-w-0 max-w-full overflow-hidden">
         {!status && (
           <div className="flex items-center gap-2 text-sm text-muted" role="status">
             <Spinner size="sm" /> 正在检查模型状态
           </div>
         )}
         {status?.status === "ready" && (
-          <Alert status="success">
-            <Alert.Content>
-              <Alert.Title className="flex items-center gap-2">
-                <LuCircleCheck aria-hidden="true" /> 模型已就绪
+          <Alert status="success" className="w-full min-w-0 max-w-full">
+            <Alert.Content className="min-w-0 w-full overflow-hidden">
+              <Alert.Title className="flex items-center gap-2 min-w-0">
+                <LuCircleCheck aria-hidden="true" className="shrink-0" /> 模型已就绪
               </Alert.Title>
-              <Alert.Description className="grid gap-1">
+              <Alert.Description className="grid gap-1 min-w-0 w-full break-all">
                 <div>
                   {formatModelSize(status.bytes)} ·{" "}
                   {status.source === "bundled" ? "安装包内置" : "本机缓存"}
                 </div>
                 {status.sha256 && (
-                  <div className="text-xs text-muted font-mono">
+                  <div className="text-xs text-muted font-mono break-all">
                     SHA-256: {status.sha256.slice(0, 16)}...
                   </div>
                 )}
@@ -258,11 +266,12 @@ export function LocalModelCard({
           </Alert>
         )}
         {status?.status === "missing" && (
-          <Alert status="warning">
-            <Alert.Content>
+          <Alert status="warning" className="w-full min-w-0 max-w-full">
+            <Alert.Content className="min-w-0 w-full overflow-hidden">
               <Alert.Title>尚未安装 {meta.category} 模型</Alert.Title>
-              <Alert.Description>
-                首次下载约 {formatModelSize(status.bytes || meta.manifest.bytes)}，完成后可离线使用。
+              <Alert.Description className="break-words">
+                首次下载约 {formatModelSize(status.bytes || meta.manifest.bytes)}
+                ，完成后可离线使用。
               </Alert.Description>
             </Alert.Content>
           </Alert>
@@ -276,26 +285,28 @@ export function LocalModelCard({
           />
         )}
         {status?.status === "error" && (
-          <Alert status="danger">
-            <Alert.Content>
-              <Alert.Title className="flex items-center gap-2">
-                <LuTriangleAlert aria-hidden="true" /> 模型不可用
+          <Alert status="danger" className="w-full min-w-0 max-w-full">
+            <Alert.Content className="min-w-0 w-full overflow-hidden">
+              <Alert.Title className="flex items-center gap-2 min-w-0">
+                <LuTriangleAlert aria-hidden="true" className="shrink-0" /> 模型不可用
               </Alert.Title>
-              <Alert.Description>
+              <Alert.Description className="break-all max-w-full text-xs leading-relaxed font-mono whitespace-pre-wrap">
                 {status.error ?? message ?? "下载或校验失败，请重试"}
               </Alert.Description>
             </Alert.Content>
           </Alert>
         )}
         {message && status?.status !== "error" && (
-          <Alert status="danger">
-            <Alert.Content>
-              <Alert.Description>{message}</Alert.Description>
+          <Alert status="danger" className="w-full min-w-0 max-w-full">
+            <Alert.Content className="min-w-0 w-full overflow-hidden">
+              <Alert.Description className="break-all max-w-full text-xs leading-relaxed font-mono whitespace-pre-wrap">
+                {message}
+              </Alert.Description>
             </Alert.Content>
           </Alert>
         )}
       </Card.Content>
-      <Card.Footer className="flex flex-wrap items-center gap-2">
+      <Card.Footer className="flex flex-wrap items-center gap-2 min-w-0 w-full">
         {!ready && (
           <Button
             isPending={busy}
@@ -331,17 +342,14 @@ export function LocalModelCard({
   );
 }
 
-export function LocalModelsSettings({
-  autoReturnKind,
-}: {
-  autoReturnKind?: "ocr" | "embedding";
-}) {
+export function LocalModelsSettings({ autoReturnKind }: { autoReturnKind?: "ocr" | "embedding" }) {
   return (
-    <div className="grid gap-6">
-      <div className="flex flex-col gap-1">
+    <div className="grid gap-6 w-full min-w-0 max-w-full">
+      <div className="flex flex-col gap-1 min-w-0">
         <h3 className="text-base font-medium text-foreground">本地离线模型</h3>
-        <p className="text-sm text-muted">
-          管理应用内置与离线运行的 AI / 机器学习模型。模型仅保存在本地设备，离线高速运行并保护隐私安全。
+        <p className="text-sm text-muted break-words">
+          管理应用内置与离线运行的 AI /
+          机器学习模型。模型仅保存在本地设备，离线高速运行并保护隐私安全。
         </p>
       </div>
       <LocalModelCard

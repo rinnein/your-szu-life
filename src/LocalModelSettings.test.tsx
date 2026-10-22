@@ -185,3 +185,25 @@ it("triggers force re-download when clicking 重新下载 / 修复", async () =>
     expect(invoke).toHaveBeenCalledWith("update_embedding_model");
   });
 });
+
+it("renders error alert with 模型不可用 and handles long unbroken error string", async () => {
+  const longError =
+    "https://huggingface.co/models/download/error/long_unbroken_url_segment_without_spaces_1234567890_abcdefghijklmnopqrstuvwxyz_sha256_mismatch_error: checksum error";
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "get_ocr_model_status") {
+      return {
+        status: "error",
+        revision: ocrManifest.revision ?? "",
+        sha256: ocrManifest.sha256,
+        bytes: ocrManifest.bytes,
+        error: longError,
+      } satisfies LocalModelStatus;
+    }
+    return undefined;
+  });
+
+  render(<LocalModelCard kind="ocr" />);
+
+  expect(await screen.findByText("模型不可用")).toBeInTheDocument();
+  expect(screen.getByText(longError)).toBeInTheDocument();
+});
