@@ -8,8 +8,6 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-#[cfg(target_os = "android")]
-use tauri_plugin_keyring_store::KeyringStore;
 
 const SERVICE_NAME: &str = "in.rinne.your-szu-life";
 pub(crate) const CREDENTIALS_UNAVAILABLE: &str = "系统密钥环暂时不可用";
@@ -105,23 +103,11 @@ impl CredentialStorageStatus {
             available: true,
         }
     }
-    #[cfg(target_os = "linux")]
-    fn file(available: bool) -> Self {
-        Self {
-            backend: "localEncryptedFile",
-            available,
-        }
-    }
 }
 
 pub(crate) mod commands;
-#[cfg(target_os = "linux")]
-mod linux;
-#[cfg(target_os = "linux")]
-static LINUX_STORE: std::sync::OnceLock<linux::LinuxStore> = std::sync::OnceLock::new();
 
 #[cfg(not(target_os = "android"))]
-#[allow(dead_code)]
 pub(crate) mod keyring_store {
     use super::SERVICE_NAME;
     use keyring::Entry;
@@ -242,63 +228,14 @@ pub(crate) mod keyring_store {
     }
 }
 
-pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
-    #[cfg(target_os = "linux")]
-    {
-        use tauri::Manager;
-        let directory = app
-            .path()
-            .app_data_dir()
-            .map_err(|_| "无法确定凭据存储目录")?
-            .join("credentials");
-        let _ = LINUX_STORE.set(linux::LinuxStore::new(
-            directory,
-            linux::KeyringBackend { legacy: false },
-            linux::KeyringBackend { legacy: true },
-        ));
-    }
-    #[cfg(not(target_os = "linux"))]
-    let _ = app;
+pub(crate) fn initialize(_app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
-}
-
-#[cfg(target_os = "linux")]
-fn linux_store() -> Result<&'static linux::LinuxStore, String> {
-    LINUX_STORE.get().ok_or_else(|| "凭据存储尚未初始化".into())
 }
 
 pub(crate) struct PlatformCredentialStore;
 
 impl PlatformCredentialStore {
-    #[cfg(target_os = "linux")]
-    fn load<T: for<'a> Deserialize<'a>>(key: SecretKey) -> Result<Option<T>, String> {
-        linux_store()?
-            .read_validated(key.name(), |raw| {
-                serde_json::from_str::<T>(raw)
-                    .map(|_| ())
-                    .map_err(|_| linux::StoreError::Corrupt)
-            })
-            .map_err(linux::StoreError::message)?
-            .map(|raw| {
-                serde_json::from_str(&raw).map_err(|_| "保存的凭据格式无效，未修改原数据".into())
-            })
-            .transpose()
-    }
-    #[cfg(target_os = "linux")]
-    fn save<T: Serialize>(key: SecretKey, value: &T) -> Result<(), String> {
-        let raw = serde_json::to_string(value).map_err(|_| "凭据格式无效")?;
-        linux_store()?
-            .write(key.name(), Some(&raw))
-            .map_err(linux::StoreError::message)
-    }
-    #[cfg(target_os = "linux")]
-    fn delete(key: SecretKey) -> Result<(), String> {
-        linux_store()?
-            .write(key.name(), None)
-            .map_err(linux::StoreError::message)
-    }
-
-    #[cfg(not(any(target_os = "android", target_os = "linux")))]
+    #[cfg(not(target_os = "android"))]
     fn load<T: for<'a> Deserialize<'a>>(key: SecretKey) -> Result<Option<T>, String> {
         match keyring_store::read(key.name())? {
             Some(value) => serde_json::from_str(&value)
@@ -308,21 +245,16 @@ impl PlatformCredentialStore {
         }
     }
 
-    #[cfg(not(any(target_os = "android", target_os = "linux")))]
+    #[cfg(not(target_os = "android"))]
     fn save<T: Serialize>(key: SecretKey, value: &T) -> Result<(), String> {
         let raw = serde_json::to_string(value).map_err(|e| e.to_string())?;
         keyring_store::write(key.name(), &raw)
     }
 
-    #[cfg(not(any(target_os = "android", target_os = "linux")))]
+    #[cfg(not(target_os = "android"))]
     fn delete(key: SecretKey) -> Result<(), String> {
         keyring_store::delete(key.name())
     }
-}
-
-#[cfg(target_os = "android")]
-fn keyring_store() -> KeyringStore {
-    KeyringStore::new(SERVICE_NAME)
 }
 
 impl CredentialStore for PlatformCredentialStore {
@@ -348,16 +280,7 @@ impl CredentialStore for PlatformCredentialStore {
     }
 
     fn storage_status(&self) -> CredentialStorageStatus {
-        #[cfg(target_os = "linux")]
-        {
-            linux_store()
-                .map(|store| store.status())
-                .unwrap_or_else(|_| CredentialStorageStatus::file(false))
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            CredentialStorageStatus::system()
-        }
+        CredentialStorageStatus::system()
     }
 
     fn load_oj_accounts(&self) -> Result<Option<String>, String> {
@@ -618,30 +541,33 @@ impl CredentialStore for PlatformCredentialStore {
 }
 
 #[cfg(target_os = "android")]
+fn android_entry(key: &str) -> Result<keyring_core::Entry, String> {
+    let store = android_native_keyring_store::Store::new().map_err(|e| e.to_string())?;
+    store.build(SERVICE_NAME, key, None).map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "android")]
 fn load_android_secret<T: for<'a> Deserialize<'a>>(key: SecretKey) -> Result<Option<T>, String> {
-    keyring_store()
-        .get_password(key.name())
-        .map_err(|e| e.to_string())
-        .and_then(|value| {
-            value
-                .map(|raw| serde_json::from_str(&raw).map_err(|e| e.to_string()))
-                .transpose()
-        })
+    let entry = android_entry(key.name())?;
+    match entry.get_password() {
+        Ok(value) => serde_json::from_str(&value).map(Some).map_err(|e| e.to_string()),
+        Err(keyring_core::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 #[cfg(target_os = "android")]
 fn save_android_secret<T: Serialize>(key: SecretKey, value: &T) -> Result<(), String> {
     let raw = serde_json::to_string(value).map_err(|e| e.to_string())?;
-    keyring_store()
-        .set_password(key.name(), &raw)
-        .map_err(|e| e.to_string())
+    let entry = android_entry(key.name())?;
+    entry.set_password(&raw).map_err(|e| e.to_string())
 }
 
 #[cfg(target_os = "android")]
 fn delete_android_secret(key: SecretKey) -> Result<(), String> {
-    keyring_store()
-        .delete(key.name())
-        .map_err(|e| e.to_string())
+    let entry = android_entry(key.name())?;
+    let _ = entry.delete_credential();
+    Ok(())
 }
 
 #[cfg(test)]

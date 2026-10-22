@@ -575,7 +575,6 @@ impl ContentService {
     }
 }
 
-#[allow(dead_code)]
 pub(super) fn is_platform_asset(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     #[cfg(target_os = "android")]

@@ -337,26 +337,6 @@ impl Client {
         }
         Ok(vec![])
     }
-    #[allow(dead_code)]
-    pub(super) async fn eval_info(
-        &self,
-        cid: &str,
-        tid: &str,
-        eval_id: &str,
-        cancel: &CancellationToken,
-    ) -> Result<Value, Error> {
-        self.request(
-            "/home/task/evalInfo",
-            &[
-                ("cid".into(), cid.into()),
-                ("tid".into(), tid.into()),
-                ("eval_id".into(), eval_id.into()),
-            ],
-            false,
-            cancel,
-        )
-        .await
-    }
     pub(super) async fn submit_eval_score(
         &self,
         cid: &str,

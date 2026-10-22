@@ -1,6 +1,3 @@
-#[path = "build_support/ocr_model.rs"]
-mod ocr_model;
-
 use std::{collections::HashMap, env, path::PathBuf};
 
 const CONTENT_ENV_VARS: [&str; 2] = ["SZU_LIFE_BASE_URL", "SZU_LIFE_FALLBACK_BASE_URL"];
@@ -23,9 +20,6 @@ fn configured_value(name: &str, dotenv: &HashMap<String, String>) -> Option<Stri
 }
 
 fn main() {
-    if env::var("SZU_LIFE_BUNDLE_OCR_MODEL").as_deref() == Ok("1") {
-        ocr_model::stage_bundled().expect("failed to stage bundled OCR model");
-    }
     let dotenv_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.env");
     let dotenv = load_dotenv(&dotenv_path);
     println!("cargo:rerun-if-changed={}", dotenv_path.display());

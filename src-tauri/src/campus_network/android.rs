@@ -1,7 +1,9 @@
+#[cfg(any(target_os = "android", test))]
 use super::network::NetworkSnapshot;
+#[cfg(any(target_os = "android", test))]
 use serde::Deserialize;
 
-#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+#[cfg(any(target_os = "android", test))]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AndroidNetworkSnapshotPayload {
@@ -28,7 +30,7 @@ struct AndroidNetworkSnapshotPayload {
     wifi_has_private_172_ipv4: bool,
 }
 
-#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+#[cfg(any(target_os = "android", test))]
 pub(super) fn parse_network_snapshot_json(payload: &str) -> Option<NetworkSnapshot> {
     let parsed = serde_json::from_str::<AndroidNetworkSnapshotPayload>(payload).ok()?;
     let transport = parsed.transport.and_then(normalize_text);
@@ -77,6 +79,7 @@ pub(super) fn parse_network_snapshot_json(payload: &str) -> Option<NetworkSnapsh
     })
 }
 
+#[cfg(any(target_os = "android", test))]
 fn normalize_text(value: String) -> Option<String> {
     let value = value.trim();
     (!value.is_empty()).then(|| value.to_owned())

@@ -748,82 +748,6 @@ pub(crate) fn extract_clean_article_text(html_text: &str) -> String {
     String::new()
 }
 
-#[allow(dead_code)]
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct SearchArgs {
-    pub query: String,
-}
-
-#[allow(dead_code)]
-#[derive(Clone, Default)]
-pub struct BingSearchTool;
-
-impl rig_core::tool::PortableTool for BingSearchTool {
-    const NAME: &'static str = "bing_search";
-    type Args = SearchArgs;
-    type Output = String;
-    type Error = std::convert::Infallible;
-
-    fn description(&self) -> String {
-        "实时网络搜索工具，基于 Bing 检索学术考点、概念定义与题目正误事实。".to_string()
-    }
-
-    fn parameters(&self) -> serde_json::Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "搜索关键词或短语"
-                }
-            },
-            "required": ["query"]
-        })
-    }
-
-    async fn call(&self, arguments: Self::Args) -> Result<Self::Output, Self::Error> {
-        Ok(execute_bing_search(&arguments.query).await)
-    }
-}
-
-#[allow(dead_code)]
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct FetchArgs {
-    pub url: String,
-}
-
-#[allow(dead_code)]
-#[derive(Clone, Default)]
-pub struct WebFetchTool;
-
-impl rig_core::tool::PortableTool for WebFetchTool {
-    const NAME: &'static str = "web_fetch";
-    type Args = FetchArgs;
-    type Output = String;
-    type Error = std::convert::Infallible;
-
-    fn description(&self) -> String {
-        "深度抓取指定网页的正文文本内容，自动剔除导航栏、脚本与样式，用于精读权威题解、百科条目或学术文献。".to_string()
-    }
-
-    fn parameters(&self) -> serde_json::Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "url": {
-                    "type": "string",
-                    "description": "待读取的目标网页完整 URL (HTTP/HTTPS)"
-                }
-            },
-            "required": ["url"]
-        })
-    }
-
-    async fn call(&self, arguments: Self::Args) -> Result<Self::Output, Self::Error> {
-        Ok(execute_web_fetch(&arguments.url).await)
-    }
-}
-
 /// 执行网页检索（优先采用 DuckDuckGo Lite 提取标题与摘要内容，支持 Fallback）
 pub(crate) async fn execute_web_search(query: &str) -> String {
     let clean_query = query.trim();
@@ -1362,7 +1286,7 @@ async fn answer_batch(
 
     Ok((final_answers, final_reasons, prompt_str, full_raw))
 }
-#[allow(dead_code)]
+
 pub(super) fn interpret_jev(
     q: &Question,
     response: &Value,
@@ -1410,7 +1334,7 @@ pub(super) fn interpret_jev(
     review.message = "Jev 已复核；概率不代表答案正确率".into();
     Ok(review)
 }
-#[allow(dead_code)]
+
 async fn judge(
     config: &Config,
     q: &Question,

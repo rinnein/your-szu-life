@@ -574,9 +574,7 @@ export default function CampusNetworkPage() {
           <Card.Content className="network-status-grid">
             <span>SSID</span>
             <strong>
-              {overview.transport === "ethernet" ||
-              overview.ssid === "有线连接" ||
-              status.ssid === "有线连接"
+              {overview.ssid === "有线连接" || status.ssid === "有线连接"
                 ? "有线连接"
                 : overview.ssid || status.ssid || "未读取"}
             </strong>

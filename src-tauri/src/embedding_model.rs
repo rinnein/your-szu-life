@@ -16,10 +16,7 @@ const HUGGINGFACE_ACCELERATORS: &str = include_str!("../../huggingface-accelerat
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 struct Manifest {
-    repository: String,
-    file: String,
     revision: String,
     sha256: String,
     bytes: u64,

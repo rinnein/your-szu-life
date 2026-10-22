@@ -1,3 +1,4 @@
+#[cfg(target_os = "android")]
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
@@ -10,7 +11,7 @@ pub(crate) fn set_app_handle(handle: tauri::AppHandle) {
     let _ = APP_HANDLE.set(handle);
 }
 
-#[allow(dead_code)]
+#[cfg(target_os = "android")]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateProgressPayload {

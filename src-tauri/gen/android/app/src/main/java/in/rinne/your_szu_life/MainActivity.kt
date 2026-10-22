@@ -1,9 +1,11 @@
 package `in`.rinne.your_szu_life
 
 import android.os.Bundle
+import io.crates.keyring.Keyring
 
 class MainActivity : ApplicationBackActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
+    Keyring.initializeNdkContext(applicationContext)
     super.onCreate(savedInstanceState)
     CampusNetworkBridge.bindActivity(this)
   }

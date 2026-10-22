@@ -24,7 +24,7 @@ impl AppContentStore {
         self.0.get_contributors()
     }
 
-    #[allow(dead_code)]
+    #[cfg(target_os = "android")]
     pub(crate) fn accelerators(&self) -> &[reqwest::Url] {
         &self.0.config.github_accelerators
     }

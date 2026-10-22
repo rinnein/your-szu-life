@@ -36,8 +36,3 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-#[allow(dead_code)]
-#[path = "../build_support/ocr_model.rs"]
-mod ocr_model_build_tests;

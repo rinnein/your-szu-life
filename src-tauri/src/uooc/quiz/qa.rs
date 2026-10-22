@@ -115,13 +115,6 @@ pub(crate) struct QaAnswer {
     pub confidence: Option<f64>,
 }
 
-impl QaAnswer {
-    #[allow(dead_code)]
-    pub fn string_values(&self) -> Vec<String> {
-        self.values.clone()
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct QaQuestion {
     #[serde(default)]
@@ -201,18 +194,8 @@ pub(crate) struct QaBatchUploadPayload {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-#[allow(dead_code)]
-pub(crate) struct QaUploadActionResult {
-    pub question_id: String,
-    pub action: String,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[allow(dead_code)]
 pub(crate) struct QaBatchUploadResponse {
     pub ok: bool,
-    #[serde(default)]
-    pub results: Vec<QaUploadActionResult>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -296,20 +279,15 @@ pub(crate) struct BankMatchPayload {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 pub(crate) struct MissingOnServerItem {
-    pub cid: Option<String>,
     pub tid: Option<String>,
     #[serde(alias = "question_id")]
     pub question_id: String,
-    pub description: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
 pub(crate) struct BankMatchResponse {
-    pub ok: bool,
     #[serde(default, alias = "missing_on_server")]
     pub missing_on_server: Vec<MissingOnServerItem>,
 }
@@ -917,68 +895,9 @@ pub(crate) fn build_embedding_text(
     parts.join("\n")
 }
 
-// ─────────────────────────────────────────────────────────────
-// Rig Embedding 模型适配 (Local BGE 512 维向量适配器)
-// ─────────────────────────────────────────────────────────────
-
-use rig_core::driver::{Exchange, Local, Model, Opened, Opening, Step, Transport, DynModel};
-use rig_core::wire::Capabilities;
-use rig_core::embeddings::{Embedding, EmbeddingResponse};
-use rig_core::error::ProviderError;
+use rig_core::embeddings::Embedding;
 pub use rig_core::vector_store::in_memory_store::InMemoryVectorStore;
 use rusqlite::{params, Connection};
-
-#[allow(dead_code)]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct LocalBgeEmbeddings;
-
-#[allow(dead_code)]
-pub type LocalBgeEmbeddingModel = Model<Local<rig_core::operation::Embedding>, LocalBgeEmbeddings>;
-
-#[allow(dead_code)]
-impl LocalBgeEmbeddings {
-    pub fn model() -> LocalBgeEmbeddingModel {
-        Model::new(
-            Local::new("local-bge").with_capabilities(Capabilities::embedding(256, EMBEDDING_DIMENSIONS)),
-            Self,
-        )
-    }
-
-    pub fn dyn_model() -> DynModel<rig_core::operation::Embedding> {
-        Self::model().erase()
-    }
-
-    pub fn embed(texts: Vec<String>) -> EmbeddingResponse {
-        let embeddings = texts
-            .into_iter()
-            .map(|text| {
-                let v_f32 = compute_local_embedding(&text);
-                let vec = v_f32.into_iter().map(|x| x as f64).collect();
-                Embedding {
-                    document: text,
-                    vec,
-                }
-            })
-            .collect();
-        EmbeddingResponse {
-            provider: "local-bge".to_owned(),
-            ..EmbeddingResponse::new(embeddings)
-        }
-    }
-}
-
-impl Transport<Local<rig_core::operation::Embedding>> for LocalBgeEmbeddings {
-    fn send(
-        &self,
-        texts: Vec<String>,
-        _exchange: Exchange,
-    ) -> Opening<Step<rig_core::operation::Embedding>> {
-        let response = Self::embed(texts);
-        Opening::ready(Opened::new(futures_util::stream::iter([
-            Ok::<_, ProviderError>(Step::End(response)),
-        ])))
-    }
-}
 
 // ─────────────────────────────────────────────────────────────
 // Rig In-Memory + SQLite 题库 RAG 文档与持久化
@@ -1716,60 +1635,6 @@ pub(crate) fn extract_answers_content(
     result
 }
 
-/// Build batch upload payload when quiz is confirmed passed.
-#[allow(dead_code)]
-pub(crate) fn build_passed_payload(
-    cid: &str,
-    course_name: Option<&str>,
-    task_id: &str,
-    task_title: &str,
-    questions: &[Question],
-    answers: &Answers,
-) -> QaBatchUploadPayload {
-    let upload_questions = questions
-        .iter()
-        .map(|q| {
-            let correct = answers.get(&q.id).map(|v| v.as_slice());
-            build_qa_upload_question(q, correct, None, false)
-        })
-        .collect();
-
-    QaBatchUploadPayload {
-        tid: task_id.to_string(),
-        cid: Some(cid.to_string()),
-        task_name: Some(task_title.to_string()),
-        course_name: course_name.map(str::to_string),
-        questions: upload_questions,
-    }
-}
-
-/// Build batch upload payload when quiz submission failed.
-#[allow(dead_code)]
-pub(crate) fn build_failed_payload(
-    cid: &str,
-    course_name: Option<&str>,
-    task_id: &str,
-    task_title: &str,
-    questions: &[Question],
-    answers: &Answers,
-) -> QaBatchUploadPayload {
-    let upload_questions = questions
-        .iter()
-        .map(|q| {
-            let wrong = answers.get(&q.id).map(|v| v.as_slice());
-            build_qa_upload_question(q, None, wrong, false)
-        })
-        .collect();
-
-    QaBatchUploadPayload {
-        tid: task_id.to_string(),
-        cid: Some(cid.to_string()),
-        task_name: Some(task_title.to_string()),
-        course_name: course_name.map(str::to_string),
-        questions: upload_questions,
-    }
-}
-
 // ─────────────────────────────────────────────────────────────
 // 本地题目 ID 库管理与自动匹配上传 (Bank Matching & Sync)
 // ─────────────────────────────────────────────────────────────
@@ -2135,27 +2000,6 @@ pub(crate) fn build_batch_upload_payload_with_details(
     }
 }
 
-/// Helper to construct a `QaBatchUploadPayload` from questions and answers.
-#[allow(dead_code)]
-pub(crate) fn build_batch_upload_payload(
-    tid: &str,
-    cid: Option<&str>,
-    task_name: Option<&str>,
-    course_name: Option<&str>,
-    questions: &[Question],
-    answers: &Answers,
-) -> QaBatchUploadPayload {
-    build_batch_upload_payload_with_details(
-        tid,
-        cid,
-        task_name,
-        course_name,
-        questions,
-        answers,
-        &Answers::new(),
-    )
-}
-
 /// 录入已通过并确认答案（及已知错误选项）的测验试题到本地题库表，标记 uploaded 状态
 pub(crate) fn record_passed_quiz_with_details(
     bank_path: &Path,
@@ -2339,7 +2183,7 @@ pub(crate) fn record_passed_quiz_with_details(
 }
 
 /// 录入已通过并确认答案的测验试题到本地题库表，标记 uploaded 状态
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn record_passed_quiz(
     bank_path: &Path,
     cid: &str,
@@ -2899,7 +2743,7 @@ pub(crate) fn parse_exam_view_details(raw: &[u8]) -> Option<ExamViewDetails> {
 }
 
 /// 解析 /exam/view 返回的已提交测验数据（支持 JSON 和 HTML 两种形态）
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn parse_exam_view(raw: &[u8]) -> Option<(Vec<Question>, Answers)> {
     parse_exam_view_details(raw).map(|d| (d.questions, d.answers))
 }
