@@ -26,16 +26,6 @@ pub(crate) fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_os::init())
         .plugin(
-            tauri_plugin_stronghold::Builder::new(|password| {
-                use sha2::{Digest, Sha256};
-                let mut hasher = Sha256::new();
-                hasher.update(b"in.rinne.your-szu-life:stronghold:v1");
-                hasher.update(password.as_bytes());
-                hasher.finalize().to_vec()
-            })
-            .build(),
-        )
-        .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),

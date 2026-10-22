@@ -120,6 +120,128 @@ mod linux;
 #[cfg(target_os = "linux")]
 static LINUX_STORE: std::sync::OnceLock<linux::LinuxStore> = std::sync::OnceLock::new();
 
+#[cfg(not(target_os = "android"))]
+#[allow(dead_code)]
+pub(crate) mod keyring_store {
+    use super::SERVICE_NAME;
+    use keyring::Entry;
+
+    // Windows Credential Manager limit is 512 bytes for CREDENTIALW blob.
+    // In UTF-16, 240 chars = 480 bytes, safely below 512.
+    pub const CHUNK_SIZE: usize = 240;
+    pub const CHUNK_PREFIX: &str = "__CHUNKED__:";
+
+    fn entry(key: &str) -> Result<Entry, String> {
+        Entry::new(SERVICE_NAME, key).map_err(|e| e.to_string())
+    }
+
+    pub fn read(key: &str) -> Result<Option<String>, String> {
+        let main_entry = entry(key)?;
+        let first = match main_entry.get_password() {
+            Ok(val) => val,
+            Err(keyring::Error::NoEntry) => return Ok(None),
+            Err(e) => return Err(e.to_string()),
+        };
+
+        if let Some(rest) = first.strip_prefix(CHUNK_PREFIX) {
+            let count: usize = rest
+                .parse()
+                .map_err(|_| "分块凭据格式无效".to_string())?;
+            let mut result = String::new();
+            for i in 0..count {
+                let chunk_key = format!("{key}#{i}");
+                let chunk = entry(&chunk_key)?
+                    .get_password()
+                    .map_err(|e| format!("读取凭据分块 {i} 失败: {e}"))?;
+                result.push_str(&chunk);
+            }
+            Ok(Some(result))
+        } else {
+            Ok(Some(first))
+        }
+    }
+
+    pub fn write(key: &str, value: &str) -> Result<(), String> {
+        let main_entry = entry(key)?;
+
+        if value.len() <= CHUNK_SIZE && !value.starts_with(CHUNK_PREFIX) {
+            // Clean up any old chunks if previously chunked
+            if let Ok(old) = main_entry.get_password() {
+                if let Some(rest) = old.strip_prefix(CHUNK_PREFIX) {
+                    if let Ok(count) = rest.parse::<usize>() {
+                        for i in 0..count {
+                            let _ = entry(&format!("{key}#{i}")).and_then(|e| {
+                                e.delete_credential().map_err(|err| err.to_string())
+                            });
+                        }
+                    }
+                }
+            }
+            main_entry
+                .set_password(value)
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+
+        // Split into chunks on valid UTF-8 character boundaries
+        let mut chunks = Vec::new();
+        let mut start = 0;
+        while start < value.len() {
+            let mut end = (start + CHUNK_SIZE).min(value.len());
+            while end > start && !value.is_char_boundary(end) {
+                end -= 1;
+            }
+            chunks.push(&value[start..end]);
+            start = end;
+        }
+
+        let count = chunks.len();
+
+        for (i, chunk) in chunks.into_iter().enumerate() {
+            let chunk_key = format!("{key}#{i}");
+            entry(&chunk_key)?
+                .set_password(chunk)
+                .map_err(|e| format!("写入凭据分块 {i} 失败: {e}"))?;
+        }
+
+        // Clean up any old higher-index chunks from previously larger entries
+        if let Ok(old) = main_entry.get_password() {
+            if let Some(rest) = old.strip_prefix(CHUNK_PREFIX) {
+                if let Ok(old_count) = rest.parse::<usize>() {
+                    for i in count..old_count {
+                        let _ = entry(&format!("{key}#{i}")).and_then(|e| {
+                            e.delete_credential().map_err(|err| err.to_string())
+                        });
+                    }
+                }
+            }
+        }
+
+        main_entry
+            .set_password(&format!("{CHUNK_PREFIX}{count}"))
+            .map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+
+    pub fn delete(key: &str) -> Result<(), String> {
+        let main_entry = entry(key)?;
+        if let Ok(val) = main_entry.get_password() {
+            if let Some(rest) = val.strip_prefix(CHUNK_PREFIX) {
+                if let Ok(count) = rest.parse::<usize>() {
+                    for i in 0..count {
+                        let _ = entry(&format!("{key}#{i}")).and_then(|e| {
+                            e.delete_credential().map_err(|err| err.to_string())
+                        });
+                    }
+                }
+            }
+        }
+        let _ = main_entry.delete_credential();
+        Ok(())
+    }
+}
+
 pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
@@ -177,32 +299,24 @@ impl PlatformCredentialStore {
     }
 
     #[cfg(not(any(target_os = "android", target_os = "linux")))]
-    fn entry(key: SecretKey) -> Result<keyring::Entry, String> {
-        keyring::Entry::new(SERVICE_NAME, key.name()).map_err(|e| e.to_string())
-    }
-
-    #[cfg(not(any(target_os = "android", target_os = "linux")))]
     fn load<T: for<'a> Deserialize<'a>>(key: SecretKey) -> Result<Option<T>, String> {
-        match Self::entry(key)?.get_password() {
-            Ok(value) => serde_json::from_str(&value)
+        match keyring_store::read(key.name())? {
+            Some(value) => serde_json::from_str(&value)
                 .map(Some)
                 .map_err(|e| e.to_string()),
-            Err(_) => Ok(None),
+            None => Ok(None),
         }
     }
 
     #[cfg(not(any(target_os = "android", target_os = "linux")))]
     fn save<T: Serialize>(key: SecretKey, value: &T) -> Result<(), String> {
         let raw = serde_json::to_string(value).map_err(|e| e.to_string())?;
-        Self::entry(key)?
-            .set_password(&raw)
-            .map_err(|e| e.to_string())
+        keyring_store::write(key.name(), &raw)
     }
 
     #[cfg(not(any(target_os = "android", target_os = "linux")))]
     fn delete(key: SecretKey) -> Result<(), String> {
-        let _ = Self::entry(key)?.delete_credential();
-        Ok(())
+        keyring_store::delete(key.name())
     }
 }
 
@@ -532,3 +646,34 @@ fn delete_android_secret(key: SecretKey) -> Result<(), String> {
 
 #[cfg(test)]
 pub(crate) mod testing;
+
+#[cfg(test)]
+mod keyring_chunk_tests {
+    use super::keyring_store::*;
+
+    #[test]
+    fn test_chunk_split_and_boundaries() {
+        // Test UTF-8 multi-byte characters (Chinese characters are 3 bytes each)
+        let s = "深圳大学统一身份认证会话测试Cookie数据包含各种符号!@#$%^&*()_+{}[]:;".repeat(20);
+        let mut chunks = Vec::new();
+        let mut start = 0;
+        while start < s.len() {
+            let mut end = (start + CHUNK_SIZE).min(s.len());
+            while end > start && !s.is_char_boundary(end) {
+                end -= 1;
+            }
+            chunks.push(&s[start..end]);
+            start = end;
+        }
+
+        // Each chunk must be valid UTF-8 and <= CHUNK_SIZE
+        for chunk in &chunks {
+            assert!(chunk.len() <= CHUNK_SIZE);
+            assert!(std::str::from_utf8(chunk.as_bytes()).is_ok());
+        }
+
+        // Reassembled must match exactly
+        let reassembled: String = chunks.concat();
+        assert_eq!(reassembled, s);
+    }
+}

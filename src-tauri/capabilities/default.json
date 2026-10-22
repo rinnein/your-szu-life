@@ -11,7 +11,6 @@
     "notification:default",
     "deep-link:default",
     "os:default",
-    "stronghold:default",
     "log:default",
     "clipboard-manager:default",
     "core:webview:allow-create-webview-window",
