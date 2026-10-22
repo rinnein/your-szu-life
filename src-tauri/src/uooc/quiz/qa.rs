@@ -4050,8 +4050,8 @@ mod tests {
                 return json!({
                     "device_code": "dev-code-12345",
                     "user_code": "ABCD-1234",
-                    "verification_uri": "http://localhost:4321/device",
-                    "verification_uri_complete": "http://localhost:4321/device?user_code=ABCD-1234",
+                    "verification_uri": format!("{}/device", crate::uooc::model::DEFAULT_QA_SERVER_URL),
+                    "verification_uri_complete": format!("{}/device?user_code=ABCD-1234", crate::uooc::model::DEFAULT_QA_SERVER_URL),
                     "expires_in": 1800,
                     "interval": 5
                 });
@@ -4083,7 +4083,10 @@ mod tests {
         let code_res = request_device_code(&server.base).await.unwrap();
         assert_eq!(code_res.device_code, "dev-code-12345");
         assert_eq!(code_res.user_code, "ABCD-1234");
-        assert_eq!(code_res.verification_uri_complete, "http://localhost:4321/device?user_code=ABCD-1234");
+        assert_eq!(
+            code_res.verification_uri_complete,
+            format!("{}/device?user_code=ABCD-1234", crate::uooc::model::DEFAULT_QA_SERVER_URL)
+        );
 
         // 2. Poll token endpoint: first call returns pending
         let poll1 = poll_device_token(&server.base, &code_res.device_code).await.unwrap();

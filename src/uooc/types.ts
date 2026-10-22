@@ -1,3 +1,5 @@
+export { DEFAULT_QA_SERVER_URL } from "./constants";
+
 export type UoocCourse = {
   id: string;
   title: string;

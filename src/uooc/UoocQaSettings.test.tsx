@@ -4,17 +4,25 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "@heroui/react";
-import { UoocQaSettings, type EmbeddingVectorStatus, type QaAccountStatus } from "./UoocQaSettings";
+import {
+  UoocQaSettings,
+  DEFAULT_QA_SERVER_URL,
+  type EmbeddingVectorStatus,
+  type QaAccountStatus,
+} from "./UoocQaSettings";
 import { getQaAuthClient } from "./qaAuthClient";
 import { openPublicUrl } from "../app-content/external";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock("../app-content/external", () => ({ openPublicUrl: vi.fn() }));
-vi.mock("./qaAuthClient", () => ({
-  normalizeQaBaseUrl: (url?: string) => url || "http://localhost:4321",
-  getQaAuthClient: vi.fn(),
-}));
+vi.mock("./qaAuthClient", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./qaAuthClient")>();
+  return {
+    ...actual,
+    getQaAuthClient: vi.fn(),
+  };
+});
 
 const initialStatus: EmbeddingVectorStatus = {
   status: "empty",
@@ -91,7 +99,7 @@ it("renders initial status and downloads uooc qa vectors", async () => {
 
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("download_uooc_qa_vectors", {
-      serverUrl: "http://localhost:4321",
+      serverUrl: DEFAULT_QA_SERVER_URL,
     }),
   );
   expect(await screen.findByText("题库向量库已就绪")).toBeInTheDocument();
@@ -106,7 +114,7 @@ it("syncs confirmed questions with backend", async () => {
 
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("sync_uooc_qa_bank", {
-      serverUrl: "http://localhost:4321",
+      serverUrl: DEFAULT_QA_SERVER_URL,
     }),
   );
   await waitFor(() =>
@@ -143,7 +151,7 @@ it("searches questions using local embedding calculation", async () => {
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("search_uooc_qa_questions", {
       query: "积分中值定理",
-      serverUrl: "http://localhost:4321",
+      serverUrl: DEFAULT_QA_SERVER_URL,
     }),
   );
 
@@ -159,8 +167,8 @@ it("initiates device authorization and polls until completion", async () => {
     data: {
       device_code: "dev_code_123",
       user_code: "EFGH-5678",
-      verification_uri: "http://localhost:4321/device",
-      verification_uri_complete: "http://localhost:4321/device?user_code=EFGH-5678",
+      verification_uri: `${DEFAULT_QA_SERVER_URL}/device`,
+      verification_uri_complete: `${DEFAULT_QA_SERVER_URL}/device?user_code=EFGH-5678`,
       interval: 0.05,
     },
     error: null,
@@ -221,7 +229,7 @@ it("performs manual full questions upload", async () => {
 
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("upload_all_uooc_qa_bank", {
-      serverUrl: "http://localhost:4321",
+      serverUrl: DEFAULT_QA_SERVER_URL,
     }),
   );
   await waitFor(() =>
@@ -409,13 +417,13 @@ it("allows clearing local question bank when debugEnabled is true", async () => 
 });
 
 it("injects apikey parameter when opening auth login website with existing account status key", async () => {
-  render(<UoocQaSettings qaServerUrl="http://localhost:4321" />);
+  render(<UoocQaSettings qaServerUrl={DEFAULT_QA_SERVER_URL} />);
   const authBtn = await screen.findByRole("button", { name: "认证账号" });
   fireEvent.click(authBtn);
 
   await waitFor(() => {
     expect(openPublicUrl).toHaveBeenCalledWith(
-      "http://localhost:4321/login?apiKey=uooc_anon_12345",
+      `${DEFAULT_QA_SERVER_URL}/login?apiKey=uooc_anon_12345`,
     );
   });
 });

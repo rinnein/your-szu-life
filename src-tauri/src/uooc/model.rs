@@ -73,6 +73,8 @@ pub(crate) struct Settings {
     #[serde(default = "default_qa_server_url")]
     pub qa_server_url: String,
 }
+pub const DEFAULT_QA_SERVER_URL: &str = "https://uooc.rinne.in";
+
 fn default_discussion_enabled() -> bool {
     true
 }
@@ -83,12 +85,12 @@ fn default_discussion_interval_min() -> u64 {
     30
 }
 fn default_qa_server_url() -> String {
-    "http://localhost:4321".into()
+    DEFAULT_QA_SERVER_URL.into()
 }
 pub(crate) fn normalize_qa_url(raw: &str) -> Result<String, String> {
     let raw = raw.trim().trim_end_matches('/');
     if raw.is_empty() {
-        return Ok("http://localhost:4321".into());
+        return Ok(DEFAULT_QA_SERVER_URL.into());
     }
     let url = reqwest::Url::parse(raw).map_err(|_| "题库服务地址无效")?;
     if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {

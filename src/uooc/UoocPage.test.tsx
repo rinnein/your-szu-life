@@ -17,6 +17,7 @@ import {
   type CourseProgress,
   type QuizState,
   type UoocVideo,
+  DEFAULT_QA_SERVER_URL,
 } from "./types";
 
 vi.setConfig({ testTimeout: 15000 });
@@ -307,7 +308,7 @@ it("displays and saves qa server url field on qa tab", async () => {
   mount("/uooc?tab=qa");
   const qaInput = await screen.findByLabelText(/题库共享后端地址/);
   expect(qaInput).toBeInTheDocument();
-  expect(qaInput).toHaveValue("http://localhost:4321");
+  expect(qaInput).toHaveValue(DEFAULT_QA_SERVER_URL);
 
   fireEvent.change(qaInput, { target: { value: "http://custom-qa.example:5000" } });
   fireEvent.click(screen.getByRole("button", { name: "保存题库地址" }));

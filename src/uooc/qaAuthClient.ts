@@ -2,10 +2,13 @@ import { createAuthClient } from "better-auth/client";
 import { deviceAuthorizationClient } from "better-auth/client/plugins";
 import { apiKeyClient } from "@better-auth/api-key/client";
 import { invoke } from "@tauri-apps/api/core";
+import { DEFAULT_QA_SERVER_URL } from "./constants";
+
+export { DEFAULT_QA_SERVER_URL };
 
 export function normalizeQaBaseUrl(serverUrl?: string): string {
-  const raw = (serverUrl ?? "http://localhost:4321").trim();
-  return raw.replace(/\/+(?:api(?:\/auth)?)?\/?$/, "") || "http://localhost:4321";
+  const raw = (serverUrl ?? DEFAULT_QA_SERVER_URL).trim();
+  return raw.replace(/\/+(?:api(?:\/auth)?)?\/?$/, "") || DEFAULT_QA_SERVER_URL;
 }
 
 type QaHttpResponse = {

@@ -42,6 +42,7 @@ import { HomeworkListPanel } from "./HomeworkListPanel";
 import { QuizListPanel } from "./QuizListPanel";
 import { QuizPanel } from "./QuizPanel";
 import { UoocQaSettings } from "./UoocQaSettings";
+import { DEFAULT_QA_SERVER_URL } from "./constants";
 import type { AiConfig, QuizMode } from "./types";
 import { CourseProgressView } from "./CourseProgressView";
 import {
@@ -74,9 +75,7 @@ const seconds = (value: number) =>
 export default function UoocPage() {
   const navigation = useLogicalNavigation();
   const { tab, subtab, course } = useSearch({ from: "/uooc" });
-  const [assessSubtab, setAssessSubtab] = useState<"quiz" | "homework" | "exam">(
-    subtab || "exam",
-  );
+  const [assessSubtab, setAssessSubtab] = useState<"quiz" | "homework" | "exam">(subtab || "exam");
   const [snapshot, setSnapshot] = useState<UoocSnapshot>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -86,7 +85,9 @@ export default function UoocPage() {
     {},
   );
   const [mobileMainTabKeys, setMobileMainTabKeys] = useState<Set<string | number>>(() => new Set());
-  const [mobileAssessTabKeys, setMobileAssessTabKeys] = useState<Set<string | number>>(() => new Set());
+  const [mobileAssessTabKeys, setMobileAssessTabKeys] = useState<Set<string | number>>(
+    () => new Set(),
+  );
   const [selectedQuiz, setSelectedQuiz] = useState<QuizState | null>(null);
   const [modalQuizCid, setModalQuizCid] = useState<string | null>(null);
   const [taskToDelete, setTaskToDelete] = useState<UoocTask | null>(null);
@@ -543,12 +544,16 @@ export default function UoocPage() {
               onExpandedChange={setMobileMainTabKeys}
               className="w-full"
             >
-              <Accordion.Item id="uooc-tab-menu" className="rounded-xl border border-separator/60 bg-surface">
+              <Accordion.Item
+                id="uooc-tab-menu"
+                className="rounded-xl border border-separator/60 bg-surface"
+              >
                 <Accordion.Heading>
                   <Accordion.Trigger className="w-full py-2.5 px-3.5 text-left text-sm font-medium flex items-center justify-between">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="truncate">当前功能：{
-                        tab === "courses"
+                      <span className="truncate">
+                        当前功能：
+                        {tab === "courses"
                           ? "开课中"
                           : tab === "tasks"
                             ? `任务${tasks.length ? ` (${tasks.length})` : ""}`
@@ -556,8 +561,8 @@ export default function UoocPage() {
                               ? "测验/作业/考试"
                               : tab === "qa"
                                 ? "题库"
-                                : "运行设置"
-                      }</span>
+                                : "运行设置"}
+                      </span>
                     </div>
                     <Accordion.Indicator />
                   </Accordion.Trigger>
@@ -1144,13 +1149,20 @@ export default function UoocPage() {
                   onExpandedChange={setMobileAssessTabKeys}
                   className="w-full"
                 >
-                  <Accordion.Item id="assess-subtab-menu" className="rounded-xl border border-separator/60 bg-surface">
+                  <Accordion.Item
+                    id="assess-subtab-menu"
+                    className="rounded-xl border border-separator/60 bg-surface"
+                  >
                     <Accordion.Heading>
                       <Accordion.Trigger className="w-full py-2 px-3 text-left text-xs font-medium flex items-center justify-between">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <span className="text-muted">考核分类：</span>
                           <span className="font-semibold text-foreground">
-                            {assessSubtab === "quiz" ? "测验" : assessSubtab === "homework" ? "作业" : "考试"}
+                            {assessSubtab === "quiz"
+                              ? "测验"
+                              : assessSubtab === "homework"
+                                ? "作业"
+                                : "考试"}
                           </span>
                         </div>
                         <Accordion.Indicator />
@@ -1179,7 +1191,9 @@ export default function UoocPage() {
                               }}
                             >
                               <span>{sub.label}</span>
-                              {isSelected && <span className="ml-auto text-xs font-medium">当前</span>}
+                              {isSelected && (
+                                <span className="ml-auto text-xs font-medium">当前</span>
+                              )}
                             </Button>
                           );
                         })}
@@ -1200,10 +1214,7 @@ export default function UoocPage() {
               </Tabs.Panel>
 
               <Tabs.Panel id="homework" className="pt-3">
-                <HomeworkListPanel
-                  courses={snapshot?.courses ?? []}
-                  ready={ready}
-                />
+                <HomeworkListPanel courses={snapshot?.courses ?? []} ready={ready} />
               </Tabs.Panel>
 
               <Tabs.Panel id="exam" className="pt-3">
@@ -1322,7 +1333,7 @@ export default function UoocPage() {
             <UoocQaSettings
               courses={snapshot?.courses ?? []}
               quizzes={snapshot?.quizzes}
-              qaServerUrl={settings.qaServerUrl ?? "http://localhost:4321"}
+              qaServerUrl={settings.qaServerUrl ?? DEFAULT_QA_SERVER_URL}
               onQaServerUrlChange={(value) =>
                 setSettings((old) => ({ ...old, qaServerUrl: value }))
               }

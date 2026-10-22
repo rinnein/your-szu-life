@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState } from "react";
+import { DEFAULT_QA_SERVER_URL } from "./constants";
 import {
   Alert,
   AlertDialog,
@@ -404,10 +405,12 @@ export function BankQuestionCardItem({
   );
 }
 
+export { DEFAULT_QA_SERVER_URL };
+
 export function UoocQaSettings({
   courses,
   quizzes,
-  qaServerUrl = "http://localhost:4321",
+  qaServerUrl = DEFAULT_QA_SERVER_URL,
   onQaServerUrlChange,
   debugEnabled = false,
   disabled = false,
@@ -786,7 +789,7 @@ export function UoocQaSettings({
   };
 
   const handleOpenLogin = async () => {
-    const base = (qaServerUrl || "http://localhost:4321").replace(/\/+$/, "");
+    const base = (qaServerUrl || DEFAULT_QA_SERVER_URL).replace(/\/+$/, "");
     let key = accountStatus?.apiKey || customApiKey.trim() || undefined;
 
     if (!key) {
@@ -1015,11 +1018,11 @@ export function UoocQaSettings({
               <div className="flex-1">
                 <TextField
                   id="uooc-qa-server-url"
-                  value={qaServerUrl ?? "http://localhost:4321"}
+                  value={qaServerUrl ?? DEFAULT_QA_SERVER_URL}
                   isDisabled={disabled}
                   onChange={onQaServerUrlChange}
                 >
-                  <Input placeholder="http://localhost:4321" />
+                  <Input placeholder={DEFAULT_QA_SERVER_URL} />
                   <Description>
                     修改题库共享平台的后端服务地址 (RFC 8628 设备认证与上传接口)
                   </Description>
@@ -1367,7 +1370,10 @@ export function UoocQaSettings({
       >
         <Modal.Backdrop>
           <Modal.Container size="cover" className="max-w-4xl">
-            <Modal.Dialog aria-label="题库题目浏览" className="w-full max-w-4xl min-w-0 overflow-hidden">
+            <Modal.Dialog
+              aria-label="题库题目浏览"
+              className="w-full max-w-4xl min-w-0 overflow-hidden"
+            >
               <Modal.CloseTrigger aria-label="关闭" />
               <Modal.Header>
                 <div className="grid gap-1">
@@ -1403,35 +1409,35 @@ export function UoocQaSettings({
                         <LuFilter aria-hidden="true" /> 同步状态:
                       </span>
                       <div className="overflow-x-auto max-w-full">
-                      <ButtonGroup size="sm" variant="tertiary" className="min-w-max">
-                        <Button
-                          variant={bankStatusFilter === "all" ? "primary" : "tertiary"}
-                          onPress={() => {
-                            setBankStatusFilter("all");
-                            setBankPage(1);
-                          }}
-                        >
-                          全部 ({activeCourseQuestions.length})
-                        </Button>
-                        <Button
-                          variant={bankStatusFilter === "synced" ? "primary" : "tertiary"}
-                          onPress={() => {
-                            setBankStatusFilter("synced");
-                            setBankPage(1);
-                          }}
-                        >
-                          已同步 ({activeCourseUploaded})
-                        </Button>
-                        <Button
-                          variant={bankStatusFilter === "pending" ? "primary" : "tertiary"}
-                          onPress={() => {
-                            setBankStatusFilter("pending");
-                            setBankPage(1);
-                          }}
-                        >
-                          待同步 ({activeCoursePending})
-                        </Button>
-                      </ButtonGroup>
+                        <ButtonGroup size="sm" variant="tertiary" className="min-w-max">
+                          <Button
+                            variant={bankStatusFilter === "all" ? "primary" : "tertiary"}
+                            onPress={() => {
+                              setBankStatusFilter("all");
+                              setBankPage(1);
+                            }}
+                          >
+                            全部 ({activeCourseQuestions.length})
+                          </Button>
+                          <Button
+                            variant={bankStatusFilter === "synced" ? "primary" : "tertiary"}
+                            onPress={() => {
+                              setBankStatusFilter("synced");
+                              setBankPage(1);
+                            }}
+                          >
+                            已同步 ({activeCourseUploaded})
+                          </Button>
+                          <Button
+                            variant={bankStatusFilter === "pending" ? "primary" : "tertiary"}
+                            onPress={() => {
+                              setBankStatusFilter("pending");
+                              setBankPage(1);
+                            }}
+                          >
+                            待同步 ({activeCoursePending})
+                          </Button>
+                        </ButtonGroup>
                       </div>
                     </div>
 
@@ -1440,53 +1446,53 @@ export function UoocQaSettings({
                         <LuLayers aria-hidden="true" /> 题型:
                       </span>
                       <div className="overflow-x-auto max-w-full">
-                      <ButtonGroup size="sm" variant="tertiary" className="min-w-max">
-                        <Button
-                          variant={bankTypeFilter === "all" ? "primary" : "tertiary"}
-                          onPress={() => {
-                            setBankTypeFilter("all");
-                            setBankPage(1);
-                          }}
-                        >
-                          全部
-                        </Button>
-                        <Button
-                          variant={bankTypeFilter === "single" ? "primary" : "tertiary"}
-                          onPress={() => {
-                            setBankTypeFilter("single");
-                            setBankPage(1);
-                          }}
-                        >
-                          单选
-                        </Button>
-                        <Button
-                          variant={bankTypeFilter === "multiple" ? "primary" : "tertiary"}
-                          onPress={() => {
-                            setBankTypeFilter("multiple");
-                            setBankPage(1);
-                          }}
-                        >
-                          多选
-                        </Button>
-                        <Button
-                          variant={bankTypeFilter === "judge" ? "primary" : "tertiary"}
-                          onPress={() => {
-                            setBankTypeFilter("judge");
-                            setBankPage(1);
-                          }}
-                        >
-                          判断
-                        </Button>
-                        <Button
-                          variant={bankTypeFilter === "text" ? "primary" : "tertiary"}
-                          onPress={() => {
-                            setBankTypeFilter("text");
-                            setBankPage(1);
-                          }}
-                        >
-                          填空
-                        </Button>
-                      </ButtonGroup>
+                        <ButtonGroup size="sm" variant="tertiary" className="min-w-max">
+                          <Button
+                            variant={bankTypeFilter === "all" ? "primary" : "tertiary"}
+                            onPress={() => {
+                              setBankTypeFilter("all");
+                              setBankPage(1);
+                            }}
+                          >
+                            全部
+                          </Button>
+                          <Button
+                            variant={bankTypeFilter === "single" ? "primary" : "tertiary"}
+                            onPress={() => {
+                              setBankTypeFilter("single");
+                              setBankPage(1);
+                            }}
+                          >
+                            单选
+                          </Button>
+                          <Button
+                            variant={bankTypeFilter === "multiple" ? "primary" : "tertiary"}
+                            onPress={() => {
+                              setBankTypeFilter("multiple");
+                              setBankPage(1);
+                            }}
+                          >
+                            多选
+                          </Button>
+                          <Button
+                            variant={bankTypeFilter === "judge" ? "primary" : "tertiary"}
+                            onPress={() => {
+                              setBankTypeFilter("judge");
+                              setBankPage(1);
+                            }}
+                          >
+                            判断
+                          </Button>
+                          <Button
+                            variant={bankTypeFilter === "text" ? "primary" : "tertiary"}
+                            onPress={() => {
+                              setBankTypeFilter("text");
+                              setBankPage(1);
+                            }}
+                          >
+                            填空
+                          </Button>
+                        </ButtonGroup>
                       </div>
                     </div>
                   </div>

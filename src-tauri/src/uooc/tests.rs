@@ -1500,3 +1500,30 @@ async fn test_uooc_completed_quiz_loads_via_view_api() {
 
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[test]
+fn test_default_qa_server_url_and_normalization() {
+    assert_eq!(crate::uooc::model::DEFAULT_QA_SERVER_URL, "https://uooc.rinne.in");
+    let settings = Settings::default();
+    assert_eq!(settings.qa_server_url, crate::uooc::model::DEFAULT_QA_SERVER_URL);
+
+    // Empty URL falls back to default constant
+    assert_eq!(
+        model::normalize_qa_url("").unwrap(),
+        crate::uooc::model::DEFAULT_QA_SERVER_URL
+    );
+    assert_eq!(
+        model::normalize_qa_url("   ").unwrap(),
+        crate::uooc::model::DEFAULT_QA_SERVER_URL
+    );
+
+    // Trims trailing slashes
+    assert_eq!(
+        model::normalize_qa_url("https://uooc.rinne.in/").unwrap(),
+        "https://uooc.rinne.in"
+    );
+    assert_eq!(
+        model::normalize_qa_url("http://127.0.0.1:8080///").unwrap(),
+        "http://127.0.0.1:8080"
+    );
+}
