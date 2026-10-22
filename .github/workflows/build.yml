@@ -177,7 +177,7 @@ jobs:
         run: vp install --frozen-lockfile
 
       - name: Configure fixed Android signing
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/main'
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -200,7 +200,7 @@ jobs:
           EOF
 
       - name: Configure temporary Android signing
-        if: github.ref != 'refs/heads/master'
+        if: github.ref != 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
