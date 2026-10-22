@@ -179,9 +179,12 @@ pub(super) fn network_snapshot() -> NetworkSnapshot {
     let has_private_172 = primary_ip.as_deref().map_or(false, is_private_172);
     let wifi_has_private_172 = wifi_ip.as_deref().map_or(false, is_private_172);
 
+    // If cellular network, set SSID to "移动数据"
     // If wired network, set SSID to "有线连接"
     let ssid = if raw_ssid.is_some() {
         raw_ssid
+    } else if transport.as_deref() == Some("cellular") && !wifi_connected {
+        Some("移动数据".to_string())
     } else if transport.as_deref() == Some("ethernet") || (is_ethernet && !wifi_connected) {
         Some("有线连接".to_string())
     } else {
@@ -209,6 +212,11 @@ pub(super) fn network_snapshot() -> NetworkSnapshot {
 }
 
 impl NetworkSnapshot {
+    pub(crate) fn is_cellular(&self) -> bool {
+        (self.transport.as_deref() == Some("cellular") || self.ssid.as_deref() == Some("移动数据"))
+            && !self.wifi_connected
+    }
+
     pub(super) fn effective_connected(&self) -> bool {
         self.connected || self.wifi_connected || self.ip.is_some() || self.wifi_ip.is_some()
     }
@@ -434,6 +442,18 @@ pub(super) fn classify_network_overview(
         dorm,
         staff,
     } = observation;
+    if snapshot.is_cellular() {
+        return NetworkOverviewView {
+            connected: true,
+            portal_session: None,
+            staff_session: None,
+            region: NetworkRegion::None,
+            state: NetworkConnectionState::Connected,
+            ssid: snapshot.ssid.clone(),
+            portal_reachable: false,
+            staff_host_reachable: false,
+        };
+    }
     let fingerprint = snapshot.fingerprint();
     let source_ip = staff
         .config
@@ -501,6 +521,13 @@ pub(super) fn probe_network_overview(
     snapshot: NetworkSnapshot,
     now: u64,
 ) -> NetworkObservation {
+    if snapshot.is_cellular() {
+        return NetworkObservation {
+            snapshot,
+            staff: StaffPortalProbe::default(),
+            dorm: DormPortalProbe::default(),
+        };
+    }
     let (staff, dorm) = match snapshot.ssid.as_deref() {
         Some(ssid) if is_staff_ssid(ssid) => {
             // Fast pre-judgment for Staff area Wi-Fi: probe staff portal first

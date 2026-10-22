@@ -416,6 +416,28 @@ pub(super) fn monitor_dorm_network(
                 continue;
             }
         };
+        if snapshot.is_cellular() {
+            if let Some(store) = app.try_state::<CampusNetworkStore>() {
+                store.apply_snapshot_connection(&snapshot, &AppNetworkEvents(&app));
+                store.change_dorm_status(
+                    |status| {
+                        status.ssid = snapshot.ssid.clone();
+                        status.connected = snapshot.effective_connected();
+                        status.portal_reachable = false;
+                        status.next_probe_at_ms = None;
+                        if status.state != DormLoginState::Disabled
+                            && status.state != DormLoginState::Paused
+                        {
+                            status.state = DormLoginState::Monitoring;
+                        }
+                    },
+                    &AppNetworkEvents(&app),
+                );
+            }
+            last_fast_fingerprint = None;
+            next_regular_probe = Instant::now() + regular_probe_interval;
+            continue;
+        }
         let fast_fingerprint = if cfg!(target_os = "android") {
             campus_fast_fingerprint(&snapshot)
         } else {

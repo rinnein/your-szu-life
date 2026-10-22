@@ -195,7 +195,23 @@ impl CampusNetworkStore {
         let mut changed = current.connected != connected || current.ssid != snapshot.ssid;
         current.connected = connected;
         current.ssid = snapshot.ssid.clone();
-        if connected && current.state == NetworkConnectionState::NoNetwork {
+        if snapshot.is_cellular() {
+            if current.region != NetworkRegion::None
+                || current.state != NetworkConnectionState::Connected
+                || current.portal_reachable
+                || current.staff_host_reachable
+                || current.portal_session.is_some()
+                || current.staff_session.is_some()
+            {
+                current.region = NetworkRegion::None;
+                current.state = NetworkConnectionState::Connected;
+                current.portal_reachable = false;
+                current.staff_host_reachable = false;
+                current.portal_session = None;
+                current.staff_session = None;
+                changed = true;
+            }
+        } else if connected && current.state == NetworkConnectionState::NoNetwork {
             current.state = NetworkConnectionState::Unknown;
             changed = true;
         }

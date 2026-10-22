@@ -72,6 +72,9 @@ fn perform_dorm_login(
         return Err("自动登录未开启".into());
     }
     let snapshot = network_snapshot();
+    if snapshot.is_cellular() {
+        return Err("当前处于移动数据网络，无法登录校园网".into());
+    }
     guard
         .commit(|| {
             set_dorm_status(&app, |status| {

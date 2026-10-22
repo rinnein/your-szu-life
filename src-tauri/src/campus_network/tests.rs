@@ -92,6 +92,21 @@ fn parses_android_network_snapshot_and_keeps_connectivity_without_ssid() {
     assert!(without_ssid.connected);
     assert!(without_ssid.ssid.is_none());
     assert_eq!(without_ssid.ip.as_deref(), Some("172.24.111.161"));
+
+    let cellular = super::android::parse_network_snapshot_json(
+        r#"{"connected":true,"ip":"10.123.45.67","transport":"cellular","wifiConnected":false}"#,
+    )
+    .expect("valid cellular snapshot");
+    assert_eq!(cellular.ssid.as_deref(), Some("移动数据"));
+    assert!(cellular.is_cellular());
+    assert!(cellular.effective_connected());
+
+    let cellular_with_unknown_ssid = super::android::parse_network_snapshot_json(
+        r#"{"connected":true,"ssid":"<unknown ssid>","ip":"10.123.45.67","transport":"cellular","wifiConnected":false}"#,
+    )
+    .expect("valid cellular snapshot with unknown ssid");
+    assert_eq!(cellular_with_unknown_ssid.ssid.as_deref(), Some("移动数据"));
+    assert!(cellular_with_unknown_ssid.is_cellular());
 }
 
 #[test]
@@ -288,6 +303,24 @@ fn config_and_host_reachability_alone_never_override_dorm_or_create_staff_region
     assert!(wifi_without_portal.connected);
     assert_eq!(wifi_without_portal.state, NetworkConnectionState::Unknown);
 
+    let cellular_overview = classify_network_overview(
+        &NetworkObservation {
+            snapshot: NetworkSnapshot {
+                connected: true,
+                ssid: Some("移动数据".into()),
+                transport: Some("cellular".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        &mut RegionEvidence::default(),
+    );
+    assert_eq!(cellular_overview.region, NetworkRegion::None);
+    assert_eq!(cellular_overview.state, NetworkConnectionState::Connected);
+    assert_eq!(cellular_overview.ssid.as_deref(), Some("移动数据"));
+    assert!(!cellular_overview.portal_reachable);
+    assert!(!cellular_overview.staff_host_reachable);
+
     let offline = classify_network_overview(
         &NetworkObservation::default(),
         &mut RegionEvidence::default(),
@@ -449,6 +482,45 @@ fn snapshot_connection_is_published_before_portal_probe_finishes() {
     assert!(overview.connected);
     assert_eq!(overview.state, NetworkConnectionState::Unknown);
     assert_eq!(overview.region, NetworkRegion::None);
+
+    store.apply_snapshot_connection(
+        &NetworkSnapshot {
+            connected: true,
+            transport: Some("cellular".into()),
+            ssid: Some("移动数据".into()),
+            wifi_connected: false,
+            ..Default::default()
+        },
+        &events,
+    );
+    let overview = events.0.lock().unwrap().clone().expect("cellular connection event");
+    assert!(overview.connected);
+    assert_eq!(overview.state, NetworkConnectionState::Connected);
+    assert_eq!(overview.region, NetworkRegion::None);
+    assert_eq!(overview.ssid.as_deref(), Some("移动数据"));
+    assert!(!overview.portal_reachable);
+    assert!(!overview.staff_host_reachable);
+}
+
+#[test]
+fn probe_network_overview_skips_http_when_cellular() {
+    struct PanicHttp;
+    impl super::http::PortalHttp for PanicHttp {
+        fn get(&self, _url: &reqwest::Url) -> Result<super::http::HttpResponse, super::http::HttpError> {
+            panic!("cellular snapshot must never trigger HTTP request");
+        }
+    }
+    let snapshot = NetworkSnapshot {
+        connected: true,
+        transport: Some("cellular".into()),
+        ssid: Some("移动数据".into()),
+        wifi_connected: false,
+        ..Default::default()
+    };
+    let observation = super::network::probe_network_overview(&PanicHttp, snapshot, 1000);
+    assert!(observation.snapshot.is_cellular());
+    assert!(!observation.dorm.reachable);
+    assert!(!observation.staff.reachable);
 }
 
 #[test]

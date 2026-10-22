@@ -375,6 +375,9 @@ fn run_login(
         None
     };
     let snapshot = environment.snapshot();
+    if snapshot.is_cellular() {
+        return Err(Failure::manual("当前处于移动数据网络，无法登录校园网"));
+    }
     if automatic_target.is_some_and(|target| target.fingerprint != snapshot.fingerprint()) {
         return Err(Failure::cancelled());
     }

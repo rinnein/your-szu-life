@@ -41,28 +41,32 @@ pub(super) fn parse_network_snapshot_json(payload: &str) -> Option<NetworkSnapsh
             && !value.eq_ignore_ascii_case("unknown ssid"))
         .then(|| value.to_owned())
     });
-    let ssid = if raw_ssid.is_some() {
+    let ip = parsed.ip.and_then(|value| {
+        value
+            .trim()
+            .parse::<std::net::Ipv4Addr>()
+            .ok()
+            .map(|address| address.to_string())
+    });
+    let wifi_ip = parsed.wifi_ip.and_then(|value| {
+        value
+            .trim()
+            .parse::<std::net::Ipv4Addr>()
+            .ok()
+            .map(|address| address.to_string())
+    });
+    let wifi_connected = parsed.wifi_connected || wifi_ip.is_some();
+    let ssid = if wifi_connected {
+        raw_ssid
+    } else if transport.as_deref() == Some("cellular") {
+        Some("移动数据".to_string())
+    } else if raw_ssid.is_some() {
         raw_ssid
     } else if transport.as_deref() == Some("ethernet") {
         Some("有线连接".to_string())
     } else {
         None
     };
-    let ip = parsed.ip.and_then(|value| {
-        let value = value.trim();
-        value
-            .parse::<std::net::Ipv4Addr>()
-            .ok()
-            .map(|address| address.to_string())
-    });
-    let wifi_ip = parsed.wifi_ip.and_then(|value| {
-        let value = value.trim();
-        value
-            .parse::<std::net::Ipv4Addr>()
-            .ok()
-            .map(|address| address.to_string())
-    });
-    let wifi_connected = parsed.wifi_connected || wifi_ip.is_some();
     let connected = parsed.connected || wifi_connected || ip.is_some();
     Some(NetworkSnapshot {
         connected,
