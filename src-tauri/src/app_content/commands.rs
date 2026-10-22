@@ -44,5 +44,17 @@ pub(crate) async fn load_announcement_image(
 pub(crate) fn start_in_app_update(
     store: State<'_, AppContentStore>,
 ) -> Result<(), String> {
-    super::android_update::start_update(&store)
+    #[cfg(target_os = "android")]
+    {
+        super::android_update::start_update(&store)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        super::windows_update::start_update(&store)
+    }
+    #[cfg(not(any(target_os = "android", target_os = "windows")))]
+    {
+        let _ = store;
+        Err("当前平台不支持应用内直接下载更新".to_string())
+    }
 }

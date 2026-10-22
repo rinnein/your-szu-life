@@ -10,6 +10,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { AppContentSnapshot } from "./types";
+import { clearPostponedUpdateReminder } from "./update-postpone";
 
 type ContentContext = {
   snapshot?: AppContentSnapshot;
@@ -69,6 +70,7 @@ export function AppContentProvider({ children }: { children: ReactNode }) {
   }, [accept]);
 
   const refresh = useCallback(() => {
+    clearPostponedUpdateReminder();
     if (pending.current) return pending.current;
     setManualBusy(true);
     setError(undefined);

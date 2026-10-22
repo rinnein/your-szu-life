@@ -95,6 +95,7 @@ fn update_schema_and_semver_comparison_follow_precedence() {
         latest_ver: "v0.2.0-beta.1+build.9".into(),
         latest_ver_url: "http://intranet.test/releases".into(),
         changelog: "修复问题".into(),
+        release_url: Some("https://github.com/rinnein/your-szu-life/releases/tag/v0.2.0".into()),
     };
     assert!(update.validate().is_ok());
     assert!(is_newer("0.1.0", "v0.2.0"));
@@ -238,4 +239,25 @@ fn single_flight_merges_overlapping_callers() {
     assert_eq!(first.join().unwrap(), 42);
     assert_eq!(second.join().unwrap(), 42);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_collect_candidate_urls() {
+    use super::service::collect_candidate_urls;
+    let direct = "https://github.com/rinnein/your-szu-life/releases/download/v1.0.0/setup.exe";
+    let accelerators = vec![
+        reqwest::Url::parse("https://gh-proxy.com/").unwrap(),
+        reqwest::Url::parse("https://ghfast.top/").unwrap(),
+    ];
+    let urls = collect_candidate_urls(direct, &accelerators);
+    assert_eq!(urls.len(), 3);
+    assert_eq!(
+        urls[0],
+        "https://gh-proxy.com/https://github.com/rinnein/your-szu-life/releases/download/v1.0.0/setup.exe"
+    );
+    assert_eq!(
+        urls[1],
+        "https://ghfast.top/https://github.com/rinnein/your-szu-life/releases/download/v1.0.0/setup.exe"
+    );
+    assert_eq!(urls[2], direct);
 }

@@ -1,4 +1,3 @@
-#[cfg(target_os = "android")]
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 

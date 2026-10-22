@@ -13,6 +13,7 @@ export type UpdateInfo = {
   latest_ver: string;
   latest_ver_url: string;
   changelog: string;
+  release_url?: string;
 };
 
 export type FeedSnapshot<T> = {

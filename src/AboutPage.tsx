@@ -6,7 +6,8 @@ import { LuArrowUpRight, LuDownload, LuRefreshCw, LuUsers } from "react-icons/lu
 import { BrandMark, Card, ModuleHeader, PageShell } from "./components";
 import { useAppContent } from "./app-content/context";
 import { contentTime, openPublicUrl } from "./app-content/external";
-import { isAndroidPlatform } from "./os-info";
+import { clearPostponedUpdateReminder } from "./app-content/update-postpone";
+import { getPlatform } from "./os-info";
 import type { AppContentSnapshot, ContributorsSnapshot } from "./app-content/types";
 import packageInfo from "../package.json";
 
@@ -186,12 +187,12 @@ function Contributors() {
 export default function AboutPage() {
   const { snapshot, error, refreshing, refresh } = useAppContent();
   const [openError, setOpenError] = useState<string>();
-  const [isAndroid, setIsAndroid] = useState(false);
+  const [platform, setPlatform] = useState<string>("unknown");
   const [updating, setUpdating] = useState(false);
   const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null);
 
   useEffect(() => {
-    void isAndroidPlatform().then(setIsAndroid);
+    void getPlatform().then(setPlatform);
   }, []);
 
   useEffect(() => {
@@ -203,10 +204,7 @@ export default function AboutPage() {
         toast.danger("应用内更新失败", {
           description: event.payload.error ?? "下载或解压过程中发生错误",
         });
-      } else if (
-        event.payload.status === "installing" ||
-        event.payload.status === "ready"
-      ) {
+      } else if (event.payload.status === "installing" || event.payload.status === "ready") {
         setUpdating(false);
         toast.success("下载完成", {
           description: "正在打开系统安装程序…",
@@ -286,7 +284,10 @@ export default function AboutPage() {
               <Button
                 variant="primary"
                 isDisabled={refreshing || (!!snapshot && !hasUpdateSource)}
-                onPress={() => void refresh()}
+                onPress={() => {
+                  clearPostponedUpdateReminder();
+                  void refresh();
+                }}
               >
                 {refreshing ? (
                   <Spinner size="sm" color="current" />
@@ -371,7 +372,7 @@ export default function AboutPage() {
             )}
             {snapshot?.updateAvailable && update?.data && (
               <div className="grid gap-3">
-                {isAndroid ? (
+                {platform === "android" || platform === "windows" ? (
                   <>
                     {updateProgress?.status === "downloading" && (
                       <div className="grid gap-2">
@@ -380,7 +381,10 @@ export default function AboutPage() {
                           aria-label="更新包下载与解压进度"
                         >
                           <Label>
-                            正在下载并解压新版本… {updateProgress.progress}%
+                            {platform === "windows"
+                              ? "正在下载新版本安装程序…"
+                              : "正在下载并解压新版本…"}{" "}
+                            {updateProgress.progress}%
                             {updateProgress.downloadedBytes > 0 && (
                               <span className="content-muted">
                                 {" "}
@@ -428,10 +432,14 @@ export default function AboutPage() {
                           <LuDownload aria-hidden="true" />
                         )}
                         {updating || updateProgress?.status === "downloading"
-                          ? "正在下载并解压…"
+                          ? "正在下载…"
                           : updateProgress?.status === "error"
-                            ? `重试应用内更新 ${update.data.latest_ver}`
-                            : `应用内更新 ${update.data.latest_ver}`}
+                            ? platform === "windows"
+                              ? `重试下载安装 ${update.data.latest_ver}`
+                              : `重试应用内更新 ${update.data.latest_ver}`
+                            : platform === "windows"
+                              ? `下载并安装 ${update.data.latest_ver}`
+                              : `应用内更新 ${update.data.latest_ver}`}
                       </Button>
                       <Button
                         variant="secondary"
@@ -447,6 +455,20 @@ export default function AboutPage() {
                       </Button>
                     </div>
                   </>
+                ) : platform === "linux" ? (
+                  <Button
+                    variant="secondary"
+                    onPress={() => {
+                      setOpenError(undefined);
+                      const targetUrl = update.data!.release_url || update.data!.latest_ver_url;
+                      void openPublicUrl(targetUrl).catch(() =>
+                        setOpenError("无法打开系统浏览器，请稍后重试。"),
+                      );
+                    }}
+                  >
+                    <LuDownload aria-hidden="true" /> 前往发布页面 {update.data.latest_ver}
+                    <LuArrowUpRight aria-hidden="true" />
+                  </Button>
                 ) : (
                   <Button
                     variant="secondary"
@@ -469,9 +491,13 @@ export default function AboutPage() {
               </p>
             )}
             <p className="content-muted about-download-note">
-              {isAndroid
+              {platform === "android"
                 ? "Android 端支持应用内流式解压更新与加速节点，也可以点击前往系统浏览器下载。"
-                : "仅检查版本，不会自动下载或安装；点击下载后在系统浏览器打开。"}
+                : platform === "windows"
+                  ? "Windows 端支持应用内下载 exe 安装程序与加速节点，下载完成后自动执行安装。"
+                  : platform === "linux"
+                    ? "Linux 端建议通过包管理器自动更新，也可点击前往发布页面手动获取安装包。"
+                    : "仅检查版本，不会自动下载或安装；点击下载后在系统浏览器打开。"}
             </p>
           </div>
         </Card>

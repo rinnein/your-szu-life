@@ -143,6 +143,8 @@ pub(crate) struct UpdateInfo {
     pub latest_ver: String,
     pub latest_ver_url: String,
     pub changelog: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release_url: Option<String>,
 }
 
 pub(super) fn version(value: &str) -> Result<Version, ContentError> {
@@ -154,6 +156,9 @@ impl Document for UpdateInfo {
     fn validate(&self) -> Result<(), ContentError> {
         version(&self.latest_ver)?;
         web_url(&self.latest_ver_url)?;
+        if let Some(release_url) = &self.release_url {
+            web_url(release_url)?;
+        }
         if self.changelog.len() > 256 * 1024 {
             return Err(ContentError::invalid("更新日志超过 256 KiB 限制"));
         }

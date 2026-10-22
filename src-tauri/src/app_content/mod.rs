@@ -7,7 +7,10 @@ pub(crate) mod mcp;
 mod model;
 mod runtime;
 mod service;
+#[cfg(target_os = "android")]
 pub(crate) mod android_update;
+#[cfg(target_os = "windows")]
+pub(crate) mod windows_update;
 
 use std::{sync::Arc, time::Duration};
 use tauri::{Emitter, Manager};
@@ -24,14 +27,17 @@ impl AppContentStore {
         self.0.get_contributors()
     }
 
-    #[cfg(target_os = "android")]
+    #[cfg(any(target_os = "android", target_os = "windows"))]
     pub(crate) fn accelerators(&self) -> &[reqwest::Url] {
         &self.0.config.github_accelerators
     }
 }
 
 pub(crate) fn initialize(app: &tauri::AppHandle) -> std::io::Result<()> {
+    #[cfg(target_os = "android")]
     android_update::set_app_handle(app.clone());
+    #[cfg(target_os = "windows")]
+    windows_update::set_app_handle(app.clone());
     let config = config::ContentConfig::compiled(app.package_info().version.to_string());
     let http = Arc::new(http::PublicClient::new(&config.version));
     let handle = app.clone();
@@ -45,7 +51,7 @@ pub(crate) fn initialize(app: &tauri::AppHandle) -> std::io::Result<()> {
         },
     ));
     app.manage(AppContentStore(service.clone()));
-    if service.config.sources.is_some() {
+    if service.config.sources.is_some() || service.config.uses_github_releases() {
         // Exactly one native worker per process. It is independent of every WebView lifecycle.
         std::thread::Builder::new()
             .name("app-content".into())

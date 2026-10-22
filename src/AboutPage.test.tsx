@@ -41,7 +41,10 @@ function makeSnapshot(
     revision: 1,
     version: "0.9.0",
     configuration: { status: "ready", message: null },
-    repository: { fullName: "rinnein/your-szu-life", url: "https://github.com/rinnein/your-szu-life" },
+    repository: {
+      fullName: "rinnein/your-szu-life",
+      url: "https://github.com/rinnein/your-szu-life",
+    },
     repositoryMessage: null,
     refreshing: false,
     nextAutomaticCheckAt: null,
@@ -57,7 +60,8 @@ function makeSnapshot(
       data: latestVer
         ? {
             latest_ver: latestVer,
-            latest_ver_url: "https://github.com/rinnein/your-szu-life/releases/download/canary/your-szu-life_android_arm64_0.9.1-release.apk.gz",
+            latest_ver_url:
+              "https://github.com/rinnein/your-szu-life/releases/download/canary/your-szu-life_android_arm64_0.9.1-release.apk.gz",
             changelog: "更新说明",
           }
         : null,
@@ -74,7 +78,7 @@ function makeSnapshot(
 describe("AboutPage update logic", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.spyOn(osInfo, "isAndroidPlatform").mockResolvedValue(false);
+    vi.spyOn(osInfo, "getPlatform").mockResolvedValue("unknown");
   });
 
   afterEach(() => {
@@ -96,7 +100,8 @@ describe("AboutPage update logic", () => {
     expect(updateStatus(cachedUpToDate, false)).toBe("上次检查未发现新版本（缓存）");
   });
 
-  it("renders desktop download button on desktop", async () => {
+  it("renders generic download button on generic desktop", async () => {
+    vi.spyOn(osInfo, "getPlatform").mockResolvedValue("macos");
     const snapshot = makeSnapshot(true, "0.9.1");
     vi.mocked(useAppContent).mockReturnValue({
       snapshot,
@@ -111,7 +116,7 @@ describe("AboutPage update logic", () => {
   });
 
   it("renders in-app update button on Android", async () => {
-    vi.spyOn(osInfo, "isAndroidPlatform").mockResolvedValue(true);
+    vi.spyOn(osInfo, "getPlatform").mockResolvedValue("android");
     const snapshot = makeSnapshot(true, "0.9.1");
     vi.mocked(useAppContent).mockReturnValue({
       snapshot,
@@ -124,5 +129,36 @@ describe("AboutPage update logic", () => {
 
     expect(await screen.findByText(/应用内更新 0.9.1/i)).toBeInTheDocument();
     expect(screen.getByText(/前往浏览器下载/i)).toBeInTheDocument();
+  });
+
+  it("renders download and install button on Windows", async () => {
+    vi.spyOn(osInfo, "getPlatform").mockResolvedValue("windows");
+    const snapshot = makeSnapshot(true, "0.9.1");
+    vi.mocked(useAppContent).mockReturnValue({
+      snapshot,
+      error: undefined,
+      refreshing: false,
+      refresh: vi.fn(),
+    });
+
+    render(<AboutPage />);
+
+    expect(await screen.findByText(/下载并安装 0.9.1/i)).toBeInTheDocument();
+    expect(screen.getByText(/前往浏览器下载/i)).toBeInTheDocument();
+  });
+
+  it("renders release page jump button on Linux", async () => {
+    vi.spyOn(osInfo, "getPlatform").mockResolvedValue("linux");
+    const snapshot = makeSnapshot(true, "0.9.1");
+    vi.mocked(useAppContent).mockReturnValue({
+      snapshot,
+      error: undefined,
+      refreshing: false,
+      refresh: vi.fn(),
+    });
+
+    render(<AboutPage />);
+
+    expect(await screen.findByText(/前往发布页面 0.9.1/i)).toBeInTheDocument();
   });
 });

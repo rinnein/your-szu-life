@@ -210,6 +210,7 @@ impl ContentService {
             tag_name: String,
             name: Option<String>,
             body: Option<String>,
+            html_url: Option<String>,
             assets: Vec<Asset>,
         }
         #[derive(Deserialize)]
@@ -262,7 +263,7 @@ impl ContentService {
 
             struct Candidate<'a> {
                 release: &'a Release,
-                asset: &'a Asset,
+                asset: Option<&'a Asset>,
                 version: String,
             }
 
@@ -278,9 +279,24 @@ impl ContentService {
                     ) {
                         candidates.push(Candidate {
                             release,
-                            asset,
+                            asset: Some(asset),
                             version: ver,
                         });
+                    }
+                } else {
+                    #[cfg(target_os = "linux")]
+                    {
+                        if let Some(ver) = extract_release_version(
+                            &release.tag_name,
+                            release.name.as_deref(),
+                            "",
+                        ) {
+                            candidates.push(Candidate {
+                                release,
+                                asset: None,
+                                version: ver,
+                            });
+                        }
                     }
                 }
             }
@@ -297,16 +313,33 @@ impl ContentService {
                 .find(|c| is_newer(&self.config.version, &c.version));
             let selected = newer_candidate.unwrap_or(&candidates[0]);
 
-            let direct = web_url(&selected.asset.browser_download_url)?;
-            let accelerated = self
-                .config
-                .github_accelerators
-                .iter()
-                .find_map(|prefix| web_url(&format!("{prefix}{direct}")).ok());
+            let release_url = selected.release.html_url.clone().or_else(|| {
+                self.config.repository.as_ref().map(|r| {
+                    format!(
+                        "https://github.com/{}/releases/tag/{}",
+                        r.full_name, selected.release.tag_name
+                    )
+                })
+            });
+
+            let (direct, accelerated) = if let Some(asset) = selected.asset {
+                let direct = web_url(&asset.browser_download_url)?;
+                let accelerated = self
+                    .config
+                    .github_accelerators
+                    .iter()
+                    .find_map(|prefix| web_url(&format!("{prefix}{direct}")).ok());
+                (direct, accelerated)
+            } else {
+                let direct = web_url(release_url.as_deref().unwrap_or("https://github.com"))?;
+                (direct, None)
+            };
+
             let update = UpdateInfo {
                 latest_ver: selected.version.clone(),
                 latest_ver_url: accelerated.unwrap_or(direct).to_string(),
                 changelog: selected.release.body.clone().unwrap_or_default(),
+                release_url,
             };
             update.validate()?;
             Ok((update, Source::Github))
@@ -575,6 +608,27 @@ impl ContentService {
     }
 }
 
+pub(crate) fn collect_candidate_urls(
+    direct_url: &str,
+    accelerators: &[reqwest::Url],
+) -> Vec<String> {
+    let clean_direct = if let Some(idx) = direct_url.find("https://github.com/") {
+        &direct_url[idx..]
+    } else if let Some(idx) = direct_url.find("http://github.com/") {
+        &direct_url[idx..]
+    } else {
+        direct_url
+    };
+
+    let mut candidate_urls = Vec::new();
+    for accelerator in accelerators {
+        let prefix = accelerator.as_str();
+        candidate_urls.push(format!("{prefix}{clean_direct}"));
+    }
+    candidate_urls.push(clean_direct.to_string());
+    candidate_urls
+}
+
 pub(super) fn is_platform_asset(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     #[cfg(target_os = "android")]
@@ -583,7 +637,7 @@ pub(super) fn is_platform_asset(name: &str) -> bool {
     }
     #[cfg(target_os = "windows")]
     {
-        name.ends_with(".msi") || name.ends_with(".exe")
+        name.ends_with(".exe")
     }
     #[cfg(target_os = "macos")]
     {
@@ -617,7 +671,11 @@ pub(super) fn find_platform_asset_index(names: &[&str]) -> Option<usize> {
                     .position(|n| n.to_ascii_lowercase().ends_with(".apk"))
             })
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(target_os = "windows")]
+    {
+        names.iter().position(|n| n.to_ascii_lowercase().ends_with(".exe"))
+    }
+    #[cfg(not(any(target_os = "android", target_os = "windows")))]
     {
         names.iter().position(|n| is_platform_asset(n))
     }

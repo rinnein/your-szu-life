@@ -64,3 +64,13 @@ export async function isAndroidPlatform(): Promise<boolean> {
   const p = await getPlatform();
   return p === "android";
 }
+
+export async function isWindowsPlatform(): Promise<boolean> {
+  const p = await getPlatform();
+  return p === "windows";
+}
+
+export async function isLinuxPlatform(): Promise<boolean> {
+  const p = await getPlatform();
+  return p === "linux";
+}
