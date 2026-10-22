@@ -32,7 +32,9 @@ fn main() {
 
     println!("cargo:rerun-if-changed=../package.json");
     println!("cargo:rerun-if-changed=../github-accelerator.json");
+    println!("cargo:rerun-if-changed=../huggingface-accelerator.json");
     println!("cargo:rerun-if-changed=resources/ocr/ddddocr/model.json");
+    println!("cargo:rerun-if-changed=resources/embedding/bge-small-zh-v1.5/model.json");
     println!("cargo:rerun-if-changed=capabilities/authserver-credential-capture.json");
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
