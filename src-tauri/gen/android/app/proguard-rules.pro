@@ -33,12 +33,6 @@
     public <init>(...);
     public *;
 }
--keep class io.crates.keyring.Keyring {
-    public *;
-}
--keep class io.crates.keyring.Keyring$Companion {
-    public *;
-}
 
 # wry invokes these WebView bridge methods from Rust through JNI by name.
 # R8 cannot infer those calls from the Kotlin call graph.
