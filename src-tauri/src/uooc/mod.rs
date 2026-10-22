@@ -1176,14 +1176,15 @@ impl Service {
     ) -> Result<(), String> {
         let cancel = CancellationToken::new();
         let client = self.client.read().unwrap().clone();
+        let clean_tid = quiz::qa::sanitize_task_id(task_id);
         let mut fields = Vec::new();
-        for (qid, vals) in answers {
+        for (qid, vals) in &answers {
             for v in vals {
-                fields.push((format!("answers[{qid}]"), v));
+                fields.push((format!("answers[{qid}]"), v.clone()));
             }
         }
         client
-            .exam_save(task_id, &fields, &cancel)
+            .exam_save(clean_tid, &fields, &cancel)
             .await
             .map_err(|e| format!("草稿保存失败: {e:?}"))?;
         Ok(())
@@ -1197,14 +1198,15 @@ impl Service {
     ) -> Result<String, String> {
         let cancel = CancellationToken::new();
         let client = self.client.read().unwrap().clone();
+        let clean_tid = quiz::qa::sanitize_task_id(task_id);
         let mut fields = Vec::new();
-        for (qid, vals) in answers {
+        for (qid, vals) in &answers {
             for v in vals {
-                fields.push((format!("answers[{qid}]"), v));
+                fields.push((format!("answers[{qid}]"), v.clone()));
             }
         }
         let res = client
-            .exam_commit(task_id, &fields, &cancel)
+            .exam_commit(clean_tid, &fields, &cancel)
             .await
             .map_err(|e| format!("提交试卷失败: {e:?}"))?;
         let msg = text(&res["msg"]);

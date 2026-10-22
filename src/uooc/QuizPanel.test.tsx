@@ -85,7 +85,7 @@ it("submits the edited answers with the newly saved approval revision", async ()
   );
   render(<QuizPanel quiz={q} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
   fireEvent.click(screen.getByRole("radio", { name: "4" }));
-  fireEvent.click(screen.getByRole("button", { name: "确认答案并提交" }));
+  fireEvent.click(screen.getByRole("button", { name: "提交答案" }));
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("control_uooc_quiz", {
       cid: "42",
@@ -104,7 +104,7 @@ it.each([0, null, undefined])("disables answering when quiz weight is %s", (weig
     <QuizPanel quiz={quiz()} active={false} dryRun={false} weight={weight} onSnapshot={vi.fn()} />,
   );
   expect(screen.getByRole("button", { name: "AI 答题" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "确认答案并提交" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "提交答案" })).toBeDisabled();
   expect(screen.getByRole("radio", { name: "4" })).toBeDisabled();
 });
 it("supervision waits for an explicit choice and dry-run cannot submit", () => {
@@ -121,7 +121,7 @@ it("supervision waits for an explicit choice and dry-run cannot submit", () => {
   expect(invoke).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "自主答题" }));
   expect(screen.getByRole("radio", { name: "4" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "确认答案并提交" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "提交答案" })).toBeDisabled();
 });
 
 it("calls control_uooc_quiz with matchQa action when clicking 匹配题库", async () => {
@@ -472,21 +472,34 @@ it("restores cached answers from localStorage on mount", () => {
   expect(radioA).toBeChecked();
 });
 
-it("manually clicking 保存答案草稿 saves answers to server", async () => {
+it("manually clicking 上传草稿 saves answers locally and uploads draft to uooc server", async () => {
   const q = quiz();
-  vi.mocked(invoke).mockResolvedValue(response({ ...q, revision: 8, answers: { q1: ["a"] } }));
+  vi.mocked(invoke).mockImplementation(async (name) => {
+    if (name === "save_uooc_quiz_answers") {
+      return response({ ...q, revision: 8, answers: { q1: ["a"] } });
+    }
+    if (name === "save_uooc_exam_draft") {
+      return undefined;
+    }
+    return response(q);
+  });
 
   render(<QuizPanel quiz={q} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
   fireEvent.click(screen.getByRole("radio", { name: "4" }));
-  fireEvent.click(screen.getByRole("button", { name: "保存答案草稿" }));
+  fireEvent.click(screen.getByRole("button", { name: "上传草稿" }));
 
-  await waitFor(() =>
+  await waitFor(() => {
     expect(invoke).toHaveBeenCalledWith("save_uooc_quiz_answers", {
       cid: "42",
       revision: 7,
       answers: { q1: ["a"] },
-    }),
-  );
+    });
+    expect(invoke).toHaveBeenCalledWith("save_uooc_exam_draft", {
+      cid: "42",
+      taskId: "99",
+      answers: { q1: ["a"] },
+    });
+  });
 });
 
 it("automatically saves answers to server when modal closes (unmount) if answers were modified", async () => {
@@ -524,9 +537,8 @@ it("does not save to server on unmount if answers were not modified", () => {
   expect(invoke).not.toHaveBeenCalledWith("save_uooc_quiz_answers", expect.anything());
 });
 
-it("calls onClose when clicking 关闭 button", () => {
+it("does not render a bottom 关闭 button in footer", () => {
   const q = quiz();
-  const onClose = vi.fn();
   render(
     <QuizPanel
       quiz={q}
@@ -534,14 +546,40 @@ it("calls onClose when clicking 关闭 button", () => {
       dryRun={false}
       weight={20}
       onSnapshot={vi.fn()}
-      onClose={onClose}
+      onClose={vi.fn()}
     />,
   );
 
-  const closeBtn = screen.getByRole("button", { name: "关闭" });
-  fireEvent.click(closeBtn);
+  expect(screen.queryByRole("button", { name: "关闭" })).not.toBeInTheDocument();
+});
 
-  expect(onClose).toHaveBeenCalled();
+it("opens portal on 在官网打开试卷 and automatically switches to 同步官网试卷数据 as preference", async () => {
+  const q = quiz();
+  vi.mocked(invoke).mockResolvedValue(response(q));
+  render(<QuizPanel quiz={q} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />);
+
+  const portalBtn = screen.getByRole("button", { name: "在官网打开试卷" });
+  expect(portalBtn).toBeInTheDocument();
+  fireEvent.click(portalBtn);
+
+  await waitFor(() => {
+    expect(invoke).toHaveBeenCalledWith("open_uooc_quiz_portal", { cid: "42" });
+  });
+
+  // Automatically switched to 同步官网试卷数据 as primary action
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: "同步官网试卷数据" })).toBeInTheDocument();
+  });
+
+  // Clicking 同步官网试卷数据 runs control("check")
+  fireEvent.click(screen.getByRole("button", { name: "同步官网试卷数据" }));
+  await waitFor(() => {
+    expect(invoke).toHaveBeenCalledWith("control_uooc_quiz", {
+      cid: "42",
+      revision: 7,
+      action: "check",
+    });
+  });
 });
 
 it("displays AI reasoning and explanation under question when review contains 理由/解析", () => {

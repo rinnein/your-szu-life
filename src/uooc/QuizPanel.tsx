@@ -3,9 +3,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
   Button,
+  ButtonGroup,
   Checkbox,
   CheckboxGroup,
   Chip,
+  Description,
+  Dropdown,
   Label,
   Modal,
   ProgressBar,
@@ -16,7 +19,7 @@ import {
   TextField,
   toast,
 } from "@heroui/react";
-import { LuBot, LuCircleCheck, LuDatabase, LuSparkles } from "react-icons/lu";
+import { LuBot, LuChevronDown, LuCircleCheck, LuDatabase, LuSparkles } from "react-icons/lu";
 import { DimmedHtmlText } from "./DimmedHtmlText";
 import type { AiSessionEntry, QuizAnswers, QuizQuestion, QuizState, UoocSnapshot } from "./types";
 
@@ -184,7 +187,7 @@ export function QuizPanel({
   weight,
   onSnapshot,
   active,
-  onClose,
+  onClose: _onClose,
 }: {
   quiz: QuizState;
   dryRun: boolean;
@@ -216,6 +219,11 @@ export function QuizPanel({
   } | null>(null);
 
   const [liveSessions, setLiveSessions] = useState<AiSessionEntry[]>(quiz.aiSessions ?? []);
+  const [portalAction, setPortalAction] = useState<"open" | "sync">("open");
+
+  useEffect(() => {
+    setPortalAction("open");
+  }, [quiz.cid, quiz.taskId]);
 
   const isDirtyRef = useRef(false);
   const submittedRef = useRef(false);
@@ -505,6 +513,39 @@ export function QuizPanel({
       setActionModal((prev) =>
         prev ? { ...prev, step: 3, completed: true, summary: summaryMsg } : null,
       );
+    });
+  };
+
+  const handleOpenPortal = async () => {
+    await run(async () => {
+      await invoke("open_uooc_quiz_portal", { cid: quiz.cid });
+      setPortalAction("sync");
+    });
+  };
+
+  const handleSyncPortal = async () => {
+    await run(async () => {
+      await control("check");
+      toast.success("已同步官网试卷数据");
+    });
+  };
+
+  const handleUploadDraft = async () => {
+    await run(async () => {
+      const sanitized = sanitizeAnswersForDraft(quiz.questions, answers);
+      await save();
+      if (!dryRun && quiz.taskId) {
+        await invoke("save_uooc_exam_draft", {
+          cid: quiz.cid,
+          taskId: quiz.taskId,
+          answers: sanitized,
+        });
+        toast.success("草稿已成功上传并保存至官网");
+      } else if (dryRun) {
+        toast.info("预览模式：草稿已在本地保存，未上传至官网");
+      } else {
+        toast.success("草稿已保存");
+      }
     });
   };
 
@@ -956,65 +997,83 @@ export function QuizPanel({
               自主答题
             </Button>
           )}
-          <Button
-            variant="secondary"
-            isDisabled={disabled || quiz.questions.length === 0}
-            onPress={() => void handleActionWithModal("matchQa", "题库匹配流程")}
-          >
-            匹配题库
-          </Button>
-          <Button
-            variant="secondary"
-            isDisabled={disabled || quiz.questions.length === 0}
-            onPress={() => void handleActionWithModal("generate", "AI 智能答题流程")}
-          >
-            AI 答题
-          </Button>
-          <Button
-            variant="secondary"
-            isDisabled={disabled || quiz.questions.length === 0}
-            onPress={() =>
-              void run(async () => {
-                await save();
-                toast.success("草稿已保存");
-              })
-            }
-          >
-            保存答案草稿
-          </Button>
-          <Button
-            isDisabled={disabled || dryRun || quiz.questions.length === 0}
-            onPress={() => void handleActionWithModal("submit", "测验提交与确认流程")}
-          >
-            确认答案并提交
-          </Button>
-          <Button
-            variant="tertiary"
-            isDisabled={disabled}
-            onPress={() =>
-              void run(async () => {
-                await invoke("open_uooc_quiz_portal", { cid: quiz.cid });
-              })
-            }
-          >
-            打开官方试卷
-          </Button>
-          <Button
-            variant="tertiary"
-            isDisabled={busy || running}
-            onPress={() =>
-              void run(async () => {
-                await control("check");
-              })
-            }
-          >
-            我已在官网处理，检查并继续
-          </Button>
-          {onClose && (
-            <Button variant="tertiary" onPress={onClose}>
-              关闭
+
+          <ButtonGroup variant="secondary">
+            <Button
+              isDisabled={disabled || quiz.questions.length === 0}
+              onPress={() => void handleActionWithModal("matchQa", "题库匹配流程")}
+            >
+              匹配题库
             </Button>
-          )}
+            <Button
+              isDisabled={disabled || quiz.questions.length === 0}
+              onPress={() => void handleActionWithModal("generate", "AI 智能答题流程")}
+            >
+              <ButtonGroup.Separator />
+              AI 答题
+            </Button>
+          </ButtonGroup>
+
+          <ButtonGroup>
+            <Button
+              variant="secondary"
+              isDisabled={disabled || quiz.questions.length === 0}
+              onPress={() => void handleUploadDraft()}
+            >
+              上传草稿
+            </Button>
+            <Button
+              variant="primary"
+              isDisabled={disabled || dryRun || quiz.questions.length === 0}
+              onPress={() => void handleActionWithModal("submit", "测验提交与确认流程")}
+            >
+              <ButtonGroup.Separator />
+              提交答案
+            </Button>
+          </ButtonGroup>
+
+          <ButtonGroup variant="tertiary">
+            <Button
+              variant="tertiary"
+              isDisabled={portalAction === "open" ? disabled : busy || running}
+              onPress={() =>
+                void (portalAction === "open" ? handleOpenPortal() : handleSyncPortal())
+              }
+            >
+              {portalAction === "open" ? "在官网打开试卷" : "同步官网试卷数据"}
+            </Button>
+            <Dropdown>
+              <Button
+                variant="tertiary"
+                isIconOnly
+                aria-label="更多官网试卷操作"
+                isDisabled={busy || running}
+              >
+                <ButtonGroup.Separator />
+                <LuChevronDown className="size-4" aria-hidden="true" />
+              </Button>
+              <Dropdown.Popover className="min-w-[180px]" placement="bottom end">
+                <Dropdown.Menu
+                  onAction={(key) => {
+                    if (key === "open") {
+                      void handleOpenPortal();
+                    } else if (key === "sync") {
+                      void handleSyncPortal();
+                    }
+                  }}
+                >
+                  <Dropdown.Item id="open" textValue="在官网打开试卷">
+                    <Label>在官网打开试卷</Label>
+                    <Description>打开 UOOC 官网页面进行答题</Description>
+                  </Dropdown.Item>
+                  <Dropdown.Item id="sync" textValue="同步官网试卷数据">
+                    <Label>同步官网试卷数据</Label>
+                    <Description>拉取并同步官网作答状态</Description>
+                  </Dropdown.Item>
+                </Dropdown.Menu>
+              </Dropdown.Popover>
+            </Dropdown>
+          </ButtonGroup>
         </Modal.Footer>
       )}
 
