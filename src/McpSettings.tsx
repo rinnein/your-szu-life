@@ -111,13 +111,13 @@ export default function McpSettings() {
   };
 
   return (
-    <div className="grid gap-6">
+    <div className="grid gap-6 w-full min-w-0 max-w-full">
       {/* 状态与配置信息卡片 */}
-      <Card aria-labelledby="mcp-status-title">
+      <Card aria-labelledby="mcp-status-title" className="w-full min-w-0 max-w-full">
         <Card.Header>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <Card.Title id="mcp-status-title" className="flex flex-wrap items-center gap-2">
-              <LuServer aria-hidden="true" className="size-5 text-primary" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0">
+            <Card.Title id="mcp-status-title" className="flex flex-wrap items-center gap-2 min-w-0">
+              <LuServer aria-hidden="true" className="size-5 text-primary shrink-0" />
               <span>本地 MCP 服务状态</span>
               {loading || toggling ? (
                 <Spinner size="sm" />
@@ -136,7 +136,7 @@ export default function McpSettings() {
               variant="outline"
               isDisabled={loading || toggling}
               onPress={() => void fetchStatus()}
-              className="flex items-center gap-1.5"
+              className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto"
             >
               <LuRefreshCw
                 aria-hidden="true"
@@ -145,29 +145,31 @@ export default function McpSettings() {
               刷新状态
             </Button>
           </div>
-          <Card.Description className="mt-1.5 text-xs text-muted">
+          <Card.Description className="mt-1.5 text-xs text-muted leading-relaxed">
             your-szu-life 提供本地公开的 Model Context Protocol
             服务，支持外部大模型客户端与本地智能体直接联动。
           </Card.Description>
         </Card.Header>
 
-        <Card.Content className="grid gap-4">
+        <Card.Content className="grid gap-4 w-full min-w-0 max-w-full">
           {/* 开关直接管理端口 */}
-          <div className="rounded-lg border border-border/50 bg-surface/50 p-3.5">
+          <div className="rounded-lg border border-border/50 bg-surface/50 p-3.5 w-full min-w-0 max-w-full">
             <Switch
               isSelected={status?.running ?? false}
               isDisabled={loading || toggling}
               onChange={(val) => void handleToggle(val)}
               aria-label="管理本地 MCP 服务端口开启状态"
+              className="w-full max-w-full"
             >
-              <Switch.Content className="flex items-center gap-3">
-                <Switch.Control>
+              <Switch.Content className="flex items-start sm:items-center gap-3 w-full min-w-0">
+                <Switch.Control className="shrink-0 mt-0.5 sm:mt-0">
                   <Switch.Thumb />
                 </Switch.Control>
-                <div className="flex flex-col gap-0.5">
+                <div className="flex flex-col gap-0.5 min-w-0 flex-1">
                   <div className="font-medium text-sm text-foreground">开启 MCP 服务端口</div>
-                  <div className="text-xs text-muted font-normal">
-                    开启后将在高位独立端口监听 Localhost 请求；关闭后立即停止服务并彻底释放关闭端口。
+                  <div className="text-xs text-muted font-normal leading-relaxed">
+                    开启后将在高位独立端口监听 Localhost
+                    请求；关闭后立即停止服务并彻底释放关闭端口。
                   </div>
                 </div>
               </Switch.Content>
@@ -175,8 +177,8 @@ export default function McpSettings() {
           </div>
 
           {status?.running ? (
-            <div className="grid gap-3 rounded-lg border border-border/50 bg-surface/50 p-3.5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="grid gap-3 rounded-lg border border-border/50 bg-surface/50 p-3.5 w-full min-w-0 max-w-full overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between gap-2 min-w-0">
                 <span className="text-xs font-medium text-muted">
                   服务端点 URL (Streamable HTTP / SSE)
                 </span>
@@ -184,7 +186,7 @@ export default function McpSettings() {
                   size="sm"
                   variant="ghost"
                   onPress={() => void handleCopy(endpoint, "url")}
-                  className="h-7 gap-1 px-2 text-xs"
+                  className="h-7 gap-1 px-2 text-xs shrink-0"
                 >
                   {copiedUrl ? (
                     <LuCheck aria-hidden="true" className="size-3.5 text-success" />
@@ -194,23 +196,23 @@ export default function McpSettings() {
                   <span>{copiedUrl ? "已复制" : "复制 URL"}</span>
                 </Button>
               </div>
-              <code className="block select-all break-all rounded bg-background px-3 py-2 font-mono text-xs sm:text-sm text-foreground border border-border">
+              <code className="block select-all break-all rounded bg-background px-3 py-2 font-mono text-xs sm:text-sm text-foreground border border-border max-w-full overflow-x-auto">
                 {endpoint}
               </code>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
                 <span className="flex items-center gap-1">
-                  <LuShieldCheck aria-hidden="true" className="size-3.5 text-success" />
+                  <LuShieldCheck aria-hidden="true" className="size-3.5 text-success shrink-0" />
                   仅监听回环地址 127.0.0.1
                 </span>
                 <span className="flex items-center gap-1">
-                  <LuNetwork aria-hidden="true" className="size-3.5" />
+                  <LuNetwork aria-hidden="true" className="size-3.5 shrink-0" />
                   独立高位端口: {status?.port ?? 53901}
                 </span>
               </div>
             </div>
           ) : (
-            <Alert status="warning">
-              <Alert.Content>
+            <Alert status="warning" className="w-full min-w-0 max-w-full">
+              <Alert.Content className="min-w-0 w-full">
                 <Alert.Title className="text-sm font-medium">服务端口已关闭</Alert.Title>
                 <Alert.Description className="text-xs leading-relaxed text-muted">
                   本地 MCP 端口已彻底释放关闭，外部客户端将无法连接。点击上方开关可随时开启。
@@ -219,12 +221,12 @@ export default function McpSettings() {
             </Alert>
           )}
 
-          <Alert status="accent">
-            <Alert.Content>
+          <Alert status="accent" className="w-full min-w-0 max-w-full">
+            <Alert.Content className="min-w-0 w-full">
               <Alert.Title className="text-sm font-medium">安全与会话说明</Alert.Title>
               <Alert.Description className="text-xs leading-relaxed text-muted">
-                本地公开 MCP
-                服务直接共享 your-szu-life 内存中的活动会话与凭据（统一认证登录态、网络连接、选课上下文）。由于服务仅监听本机
+                本地公开 MCP 服务直接共享 your-szu-life
+                内存中的活动会话与凭据（统一认证登录态、网络连接、选课上下文）。由于服务仅监听本机
                 Localhost（桌面端及安卓端回环地址），外部网络无法访问，无需在外部重复输入账号密码。
               </Alert.Description>
             </Alert.Content>
@@ -233,18 +235,18 @@ export default function McpSettings() {
       </Card>
 
       {/* 指导 Agent 安装的 Prompt 卡片 */}
-      <Card aria-labelledby="mcp-prompt-title">
+      <Card aria-labelledby="mcp-prompt-title" className="w-full min-w-0 max-w-full">
         <Card.Header>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Card.Title id="mcp-prompt-title" className="flex items-center gap-2">
-              <LuBot aria-hidden="true" className="size-5 text-primary" />
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0">
+            <Card.Title id="mcp-prompt-title" className="flex flex-wrap items-center gap-2 min-w-0">
+              <LuBot aria-hidden="true" className="size-5 text-primary shrink-0" />
               <span>指导 AI Agent 安装该 MCP 服务</span>
             </Card.Title>
             <Button
               size="sm"
               variant="primary"
               onPress={() => void handleCopy(agentPrompt, "prompt")}
-              className="gap-1.5"
+              className="gap-1.5 shrink-0 self-start sm:self-auto"
             >
               {copiedPrompt ? (
                 <LuCheck aria-hidden="true" className="size-4 text-success" />
@@ -254,32 +256,32 @@ export default function McpSettings() {
               <span>{copiedPrompt ? "已复制提示词" : "复制安装提示词"}</span>
             </Button>
           </div>
-          <Card.Description className="mt-1.5 text-xs text-muted">
-            复制下方提示词直接发送给 Claude Code、Cursor、Windsurf 或其他 AI
-            编程助手，即可一键完成 MCP 服务的自动识别与配置。
+          <Card.Description className="mt-1.5 text-xs text-muted leading-relaxed">
+            复制下方提示词直接发送给 Claude Code、Cursor、Windsurf 或其他 AI 编程助手，即可一键完成
+            MCP 服务的自动识别与配置。
           </Card.Description>
         </Card.Header>
 
-        <Card.Content className="grid gap-3">
-          <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-background p-3.5 font-mono text-xs text-foreground leading-relaxed">
+        <Card.Content className="w-full min-w-0 max-w-full overflow-hidden">
+          <pre className="max-h-64 overflow-x-auto overflow-y-auto whitespace-pre-wrap break-all rounded-lg border border-border bg-background p-3.5 font-mono text-xs text-foreground leading-relaxed max-w-full">
             {agentPrompt}
           </pre>
         </Card.Content>
       </Card>
 
       {/* 客户端 JSON 配置卡片 */}
-      <Card aria-labelledby="mcp-json-title">
+      <Card aria-labelledby="mcp-json-title" className="w-full min-w-0 max-w-full">
         <Card.Header>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Card.Title id="mcp-json-title" className="flex items-center gap-2">
-              <LuFileCode aria-hidden="true" className="size-5 text-secondary" />
-              <span>配置文件片段 (Claude Desktop / Cursor)</span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0">
+            <Card.Title id="mcp-json-title" className="flex flex-wrap items-center gap-2 min-w-0">
+              <LuFileCode aria-hidden="true" className="size-5 text-secondary shrink-0" />
+              <span className="break-all">配置文件片段 (Claude Desktop / Cursor)</span>
             </Card.Title>
             <Button
               size="sm"
               variant="outline"
               onPress={() => void handleCopy(jsonConfig, "json")}
-              className="gap-1.5"
+              className="gap-1.5 shrink-0 self-start sm:self-auto"
             >
               {copiedJson ? (
                 <LuCheck aria-hidden="true" className="size-3.5 text-success" />
@@ -289,9 +291,9 @@ export default function McpSettings() {
               <span>{copiedJson ? "已复制配置" : "复制 JSON"}</span>
             </Button>
           </div>
-          <Card.Description className="mt-1.5 text-xs text-muted">
-            手动配置到 Claude Desktop 的 <code>claude_desktop_config.json</code> 或
-            Cursor 的 MCP 设置中。
+          <Card.Description className="mt-1.5 text-xs text-muted leading-relaxed">
+            手动配置到 Claude Desktop 的 <code>claude_desktop_config.json</code> 或 Cursor 的 MCP
+            设置中。
           </Card.Description>
         </Card.Header>
 

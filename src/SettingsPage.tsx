@@ -60,7 +60,11 @@ export default function SettingsPage() {
       <div className="grid gap-6 w-full min-w-0">
         <ModuleHeader title="设置" description="管理账户资料与应用配置" />
 
-        <Tabs selectedKey={activeTab} onSelectionChange={(key) => handleTabChange(String(key))}>
+        <Tabs
+          selectedKey={activeTab}
+          onSelectionChange={(key) => handleTabChange(String(key))}
+          className="w-full min-w-0"
+        >
           {/* 桌面端横向 Tab 导航 */}
           <div className="hidden sm:block">
             <Tabs.ListContainer>
@@ -86,7 +90,10 @@ export default function SettingsPage() {
               onExpandedChange={setMobileMenuKeys}
               className="w-full"
             >
-              <Accordion.Item id="tab-selector" className="rounded-xl border border-separator/60 bg-surface">
+              <Accordion.Item
+                id="tab-selector"
+                className="rounded-xl border border-separator/60 bg-surface"
+              >
                 <Accordion.Heading>
                   <Accordion.Trigger className="w-full py-2.5 px-3.5 text-left text-sm font-medium flex items-center justify-between">
                     <div className="flex items-center gap-2 min-w-0">
@@ -125,7 +132,7 @@ export default function SettingsPage() {
             </Accordion>
           </div>
 
-          <Tabs.Panel id="profile" className="grid gap-6 pt-4">
+          <Tabs.Panel id="profile" className="grid gap-6 pt-4 w-full min-w-0 max-w-full">
             <ProfileForm
               initial={profile}
               name={profile?.name}
@@ -136,23 +143,23 @@ export default function SettingsPage() {
             />
           </Tabs.Panel>
 
-          <Tabs.Panel id="models" className="grid gap-6 pt-4">
+          <Tabs.Panel id="models" className="grid gap-6 pt-4 w-full min-w-0 max-w-full">
             <LocalModelsSettings autoReturnKind={focus} />
           </Tabs.Panel>
 
-          <Tabs.Panel id="ai" className="grid gap-6 pt-4">
+          <Tabs.Panel id="ai" className="grid gap-6 pt-4 w-full min-w-0 max-w-full">
             <AiConnectionSettings />
           </Tabs.Panel>
 
-          <Tabs.Panel id="mcp" className="grid gap-6 pt-4">
+          <Tabs.Panel id="mcp" className="grid gap-6 pt-4 w-full min-w-0 max-w-full">
             <McpSettings />
           </Tabs.Panel>
 
-          <Tabs.Panel id="transfer" className="grid gap-6 pt-4">
+          <Tabs.Panel id="transfer" className="grid gap-6 pt-4 w-full min-w-0 max-w-full">
             <SettingsTransfer />
           </Tabs.Panel>
 
-          <Tabs.Panel id="shortcuts" className="grid gap-6 pt-4">
+          <Tabs.Panel id="shortcuts" className="grid gap-6 pt-4 w-full min-w-0 max-w-full">
             <ShortcutsTable />
           </Tabs.Panel>
         </Tabs>
