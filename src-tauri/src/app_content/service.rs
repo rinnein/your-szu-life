@@ -607,7 +607,7 @@ impl ContentService {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(target_os = "windows", test))]
 pub(crate) fn collect_candidate_urls(
     direct_url: &str,
     accelerators: &[reqwest::Url],
