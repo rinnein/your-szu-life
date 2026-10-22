@@ -8,6 +8,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+#[cfg(target_os = "android")]
+use keyring_core::api::CredentialStoreApi;
 
 const SERVICE_NAME: &str = "in.rinne.your-szu-life";
 pub(crate) const CREDENTIALS_UNAVAILABLE: &str = "系统密钥环暂时不可用";
