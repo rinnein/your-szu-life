@@ -297,22 +297,24 @@ fn lihu_pages(
 ) -> Result<(String, Vec<String>), String> {
     lihu_pages_at(input, recharge, LIHUO_BASE)
 }
+fn lihu_room_parts(input: &ElectricityQueryInput) -> Result<(String, String), String> {
+    let room_name = input.room_name.trim();
+    validate_room_name(room_name)?;
+    let floor = format!(
+        "{}{:0>2}",
+        input.building_id,
+        &room_name[..room_name.len() - 2]
+    );
+    Ok((room_name.to_owned(), floor))
+}
 fn lihu_pages_at(
     input: &ElectricityQueryInput,
     recharge: bool,
     base: &str,
 ) -> Result<(String, Vec<String>), String> {
+    let (room_name, floor) = lihu_room_parts(input)?;
     let http = client()?;
     let home = body(http.get(base).send().map_err(|_| "无法连接丽湖电费接口")?)?;
-    let digits: String = input
-        .room_name
-        .chars()
-        .filter(char::is_ascii_digit)
-        .collect();
-    if digits.len() < 3 {
-        return Err("宿舍号必须包含楼层和房间号".into());
-    }
-    let floor = format!("{}{:0>2}", input.building_id, &digits[..digits.len() - 2]);
     let building = post(
         &http,
         base,
@@ -336,7 +338,7 @@ fn lihu_pages_at(
     )?;
     let room = select_options(&rooms, "drfangjian")
         .into_iter()
-        .find(|r| r.name.ends_with(&digits))
+        .find(|r| r.name.ends_with(&room_name))
         .ok_or("未找到丽湖宿舍")?;
     let landing = post(
         &http,
@@ -571,6 +573,25 @@ mod tests {
         assert!(safe_url(LIHUO_BASE, "https://example.com").is_err());
     }
     #[test]
+    fn derives_one_and_two_digit_floors_from_room_names() {
+        let mut query = input();
+        assert_eq!(
+            lihu_room_parts(&query).unwrap(),
+            ("501".into(), "0105".into())
+        );
+
+        query.room_name = "1201".into();
+        assert_eq!(
+            lihu_room_parts(&query).unwrap(),
+            ("1201".into(), "0112".into())
+        );
+
+        for invalid in ["51", "50001", "5A01"] {
+            query.room_name = invalid.into();
+            assert!(lihu_room_parts(&query).is_err(), "accepted {invalid}");
+        }
+    }
+    #[test]
     fn lihu_submits_date_range_and_keeps_it_on_pagination() {
         use std::io::Write;
         use std::net::TcpListener;
@@ -628,6 +649,7 @@ mod tests {
         assert_eq!(pages.len(), 2);
         let requests = thread.join().unwrap();
         assert!(requests[1].contains("__EVENTTARGET=drlouming"));
+        assert!(requests[2].contains("drceng=0105"));
         assert!(requests[3].contains("__EVENTVALIDATION=valid"));
         assert!(requests[3].contains("radio=usedR"));
         assert!(requests[4].contains("txtstart=2026-09-29"));

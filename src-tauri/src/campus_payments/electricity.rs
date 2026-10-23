@@ -70,6 +70,7 @@ fn query_windows(input: &ElectricityQueryInput) -> Result<Vec<ElectricityQueryIn
             .unwrap_or(end)
             .min(end);
         let mut chunk = input.clone();
+        chunk.room_name = input.room_name.trim().to_owned();
         chunk.begin_date = start.to_string();
         chunk.end_date = finish.to_string();
         windows.push(chunk);
@@ -340,10 +341,16 @@ fn query_date(value: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(value.trim(), "%Y-%m-%d").ok()
 }
 
-fn validate(input: &ElectricityQueryInput) -> Result<(), String> {
-    if input.room_name.trim().is_empty() || input.room_name.len() > 32 {
-        return Err("请输入有效的宿舍号".into());
+fn validate_room_name(room_name: &str) -> Result<(), String> {
+    let room_name = room_name.trim();
+    if !(3..=4).contains(&room_name.len()) || !room_name.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err("宿舍号需为一至两位楼层加两位房间号，例如 601 或 1201".into());
     }
+    Ok(())
+}
+
+fn validate(input: &ElectricityQueryInput) -> Result<(), String> {
+    validate_room_name(&input.room_name)?;
     let (Some(begin_date), Some(end_date)) =
         (query_date(&input.begin_date), query_date(&input.end_date))
     else {
@@ -632,7 +639,8 @@ fn location_for(input: &ElectricityQueryInput) -> ElectricityLocationSettings {
 }
 
 fn cache_matches(cache: &ElectricityCurrentCache, location: &ElectricityLocationSettings) -> bool {
-    cache.location == *location
+    sharing::normalize_settings(cache.location.clone())
+        == sharing::normalize_settings(location.clone())
 }
 
 fn load_monitor_record(store: &ElectricityStore) -> ElectricityMonitorRecord {
@@ -649,8 +657,15 @@ fn save_monitor_record(store: &ElectricityStore, record: &ElectricityMonitorReco
     }
 }
 
+fn monitoring_settings(store: &ElectricityStore) -> Option<ElectricityLocationSettings> {
+    load_settings(store)
+        .ok()
+        .flatten()
+        .filter(|s| sharing::validate_shape(s).is_ok())
+}
+
 pub(crate) fn status(store: &ElectricityStore) -> ElectricityStatusView {
-    let location = load_settings(store).ok().flatten();
+    let location = monitoring_settings(store);
     let record = load_monitor_record(store);
     let Some(cache) = record.cache.filter(|cache| {
         location
@@ -696,9 +711,16 @@ fn notify_if_needed(app: &AppHandle, store: &ElectricityStore) {
     if !is_background {
         return;
     }
+    let Some(location) = monitoring_settings(store) else {
+        return;
+    };
     let today = local_date();
     let mut record = load_monitor_record(store);
-    let Some(cache) = record.cache.as_ref() else {
+    let Some(cache) = record
+        .cache
+        .as_ref()
+        .filter(|cache| cache_matches(cache, &location))
+    else {
         return;
     };
     if cache.expires_at_ms <= now_ms()
@@ -796,7 +818,7 @@ fn record_view(
     {
         let mut record = load_monitor_record(store);
         if !record.cache.as_ref().is_some_and(|cache| {
-            cache.location == location
+            cache_matches(cache, &location)
                 && (cache.fetched_at_ms > started_at_ms
                     || reading_datetime(&cache.observed_date) > reading_datetime(observed))
         }) {
@@ -836,7 +858,7 @@ fn mark_attempt(store: &ElectricityStore, background: bool, date: &str) -> bool 
 }
 
 fn automatic_query(app: &AppHandle, store: &ElectricityStore, background: bool) {
-    let Some(settings) = load_settings(store).ok().flatten() else {
+    let Some(settings) = monitoring_settings(store) else {
         return;
     };
     let date = local_date();
@@ -909,15 +931,20 @@ pub(crate) fn load_settings(
         .as_ref()
         .ok_or("电费设置存储不可用")?
         .load_electricity_settings()
+        .map(|settings| settings.map(sharing::normalize_settings))
 }
 pub(crate) fn save_settings(
     store: &ElectricityStore,
     settings: ElectricityLocationSettings,
 ) -> Result<(), String> {
+    let settings = sharing::normalize_settings(settings);
     sharing::validate_shape(&settings)?;
     let mut runtime = store.runtime.lock().map_err(|_| "电费状态不可用")?;
     let credentials = store.credentials.as_ref().ok_or("电费设置存储不可用")?;
-    let changed = credentials.load_electricity_settings()?.as_ref() != Some(&settings);
+    let previous = credentials
+        .load_electricity_settings()?
+        .map(sharing::normalize_settings);
+    let changed = previous.as_ref() != Some(&settings);
     credentials.save_electricity_settings(&settings)?;
     if changed {
         runtime.generation += 1;
@@ -977,6 +1004,41 @@ mod tests {
         );
     }
     #[test]
+    fn validates_room_names_before_fetching_for_every_area() {
+        for area_id in SIMS_AREAS
+            .iter()
+            .map(|area| area.id)
+            .chain(["xili-lihuo-phase2"])
+        {
+            let mut input = ElectricityQueryInput {
+                campus_id: "xili".into(),
+                area_id: area_id.into(),
+                building_id: "01".into(),
+                building_name: "测试楼栋".into(),
+                room_name: "601".into(),
+                begin_date: "2026-01-01".into(),
+                end_date: "2026-01-02".into(),
+            };
+            for room in ["601", "1201", " 601 "] {
+                input.room_name = room.into();
+                let rows =
+                    query_in_windows(&input, |chunk| Ok(vec![chunk.room_name.clone()])).unwrap();
+                assert_eq!(rows, vec![room.trim().to_owned()], "{area_id}");
+            }
+            for room in ["", "51", "50001", "5A01", "１２０１"] {
+                input.room_name = room.into();
+                let mut requested = false;
+                let result = query_in_windows::<()>(&input, |_| {
+                    requested = true;
+                    Ok(vec![])
+                });
+                assert!(result.is_err(), "{area_id} accepted {room}");
+                assert!(!requested, "{area_id} requested invalid room {room}");
+            }
+        }
+    }
+
+    #[test]
     fn validates_dates_and_room() {
         let input = ElectricityQueryInput {
             campus_id: "x".into(),
@@ -1032,6 +1094,115 @@ mod tests {
         assert!(!mark_attempt(&store, true, "2026-09-18"));
         assert!(mark_attempt(&store, true, "2026-09-19"));
     }
+    fn room_settings(room: &str) -> ElectricityLocationSettings {
+        ElectricityLocationSettings {
+            campus_id: "yuehai".into(),
+            area_id: "yuehai-main".into(),
+            building_id: "1".into(),
+            building_name: "山茶斋".into(),
+            room_name: room.into(),
+        }
+    }
+
+    #[test]
+    fn padded_settings_update_status_and_do_not_reset_monitoring_when_saved() {
+        for area in [
+            "yuehai-main",
+            "yuehai-xinzhai",
+            "canghai-main",
+            "xili-main",
+            "xili-lihuo-phase2",
+        ] {
+            let credentials: SharedCredentialStore = Arc::new(MemoryCredentialStore::default());
+            let mut saved = room_settings(" 601 ");
+            saved.area_id = area.into();
+            credentials.save_electricity_settings(&saved).unwrap();
+            let store = ElectricityStore::new(credentials.clone());
+            assert_eq!(load_settings(&store).unwrap().unwrap().room_name, "601");
+            let generation = store.runtime.lock().unwrap().generation;
+            let input = ElectricityQueryInput {
+                campus_id: saved.campus_id.clone(),
+                area_id: saved.area_id.clone(),
+                building_id: saved.building_id.clone(),
+                building_name: saved.building_name.clone(),
+                room_name: saved.room_name.clone(),
+                begin_date: String::new(),
+                end_date: String::new(),
+            };
+            let view = ElectricityQueryView {
+                campus_id: saved.campus_id.clone(),
+                area_id: saved.area_id.clone(),
+                building_name: saved.building_name.clone(),
+                room_name: "601".into(),
+                begin_date: String::new(),
+                end_date: String::new(),
+                readings: vec![],
+                current_remaining: Some(4.0),
+                summary: analytics::summarize(
+                    &[],
+                    Some(4.0),
+                    Some(analytics::today().to_string()),
+                    analytics::today(),
+                ),
+                recharges: vec![],
+                recharge_error: None,
+                cache: None,
+            };
+            record_view(&store, &input, generation, now_ms(), &view).unwrap();
+            assert_eq!(status(&store).remaining, Some(4.0));
+            assert!(status(&store).low);
+            save_settings(&store, saved).unwrap();
+            assert_eq!(
+                credentials
+                    .load_electricity_settings()
+                    .unwrap()
+                    .unwrap()
+                    .room_name,
+                "601"
+            );
+            assert_eq!(store.runtime.lock().unwrap().generation, generation);
+            assert_eq!(status(&store).remaining, Some(4.0));
+            let mut newer = load_monitor_record(&store);
+            let cache = newer.cache.as_mut().unwrap();
+            cache.location.room_name = " 601 ".into();
+            let newer_time = cache.fetched_at_ms;
+            save_monitor_record(&store, &newer);
+            assert_eq!(status(&store).remaining, Some(4.0));
+            let mut late_view = view.clone();
+            late_view.current_remaining = Some(99.0);
+            record_view(&store, &input, generation, newer_time - 1, &late_view).unwrap();
+            assert_eq!(status(&store).remaining, Some(4.0));
+        }
+    }
+
+    #[test]
+    fn legacy_invalid_rooms_remain_editable_but_do_not_expose_monitor_status() {
+        for room in ["51", "50001", "5A01", "１２０１", "   "] {
+            let credentials: SharedCredentialStore = Arc::new(MemoryCredentialStore::default());
+            let saved = room_settings(room);
+            credentials.save_electricity_settings(&saved).unwrap();
+            let store = ElectricityStore::new(credentials);
+            let mut record = ElectricityMonitorRecord::default();
+            record.cache = Some(ElectricityCurrentCache {
+                location: saved,
+                remaining: 1.0,
+                observed_date: analytics::today().to_string(),
+                fetched_at_ms: now_ms(),
+                expires_at_ms: now_ms() + 60_000,
+                warning_active: true,
+                estimated_days_left: Some(0.2),
+                warning_reason: Some("low".into()),
+            });
+            save_monitor_record(&store, &record);
+            assert_eq!(
+                load_settings(&store).unwrap().unwrap().room_name,
+                room.trim()
+            );
+            assert_eq!(status(&store).remaining, None);
+            assert!(!status(&store).low);
+        }
+    }
+
     #[test]
     fn old_monitor_cache_loads_and_room_changes_reject_inflight_results() {
         let old: ElectricityCurrentCache = serde_json::from_value(serde_json::json!({

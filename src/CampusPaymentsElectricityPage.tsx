@@ -4,6 +4,7 @@ import {
   Alert,
   Button,
   Card,
+  FieldError,
   Form,
   Input,
   Label,
@@ -19,6 +20,7 @@ import { ElectricityDetails } from "./ElectricityDetails";
 import { Card as UiCard, SkeletonCard } from "./components";
 import {
   getElectricityConstants,
+  getElectricityRoomFloor,
   type ElectricitySettings as Settings,
   type ElectricityResult as Result,
   type ElectricityRecharge,
@@ -109,13 +111,20 @@ export default function CampusPaymentsElectricityPage() {
     const load = async () => {
       try {
         initialSettingsRequest.current ??= invoke<Settings | null>("get_electricity_settings");
-        const saved = await initialSettingsRequest.current;
+        const stored = await initialSettingsRequest.current;
+        const saved = stored && { ...stored, roomName: stored.roomName.trim() };
         if (!active) return;
         if (!saved) {
           setLoading(false);
           return;
         }
         setSettings(saved);
+        if (getElectricityRoomFloor(saved.roomName) === null) {
+          setEditing(true);
+          setError("已保存的宿舍号不符合当前格式，请重新填写后查询。");
+          setLoading(false);
+          return;
+        }
         setSavedSettings(saved);
         setLoading(false);
         setBusy(true);
@@ -187,8 +196,13 @@ export default function CampusPaymentsElectricityPage() {
   const campus = campuses.find((x) => x.id === settings.campusId);
   const area = campus?.areas.find((x) => x.id === settings.areaId);
   const buildings = area?.buildings ?? [];
+  const roomFloor = getElectricityRoomFloor(settings.roomName);
   const canQuery = Boolean(
-    settings.campusId && settings.areaId && settings.buildingId && settings.roomName.trim(),
+    settings.campusId &&
+    settings.areaId &&
+    settings.buildingId &&
+    settings.roomName.trim() &&
+    roomFloor !== null,
   );
   const chooseCampus = (campusId: string) => {
     requestId.current += 1;
@@ -225,7 +239,10 @@ export default function CampusPaymentsElectricityPage() {
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canQuery) {
-      const msg = "请先选择校区、宿舍区域、楼栋并填写宿舍号。";
+      const msg =
+        settings.roomName.trim() && roomFloor === null
+          ? "宿舍号需为一至两位楼层加两位房间号，例如 601 或 1201。"
+          : "请先选择校区、宿舍区域、楼栋并填写宿舍号。";
       setError(msg);
       toast.warning(msg);
       return;
@@ -234,14 +251,12 @@ export default function CampusPaymentsElectricityPage() {
     setBusy(true);
     setError(undefined);
     try {
-      await invoke("save_electricity_settings", { settings });
+      const normalized = { ...settings, roomName: settings.roomName.trim() };
+      await invoke("save_electricity_settings", { settings: normalized });
       if (id !== requestId.current) return;
-      setSavedSettings(settings);
-      const next = await invoke<Result>("query_electricity", {
-        input: {
-          ...settings,
-        },
-      });
+      setSettings(normalized);
+      setSavedSettings(normalized);
+      const next = await invoke<Result>("query_electricity", { input: normalized });
       if (id === requestId.current) {
         setResult(next);
         setEditing(false);
@@ -380,19 +395,38 @@ export default function CampusPaymentsElectricityPage() {
                   disabled={formDisabled || !area}
                   onChange={chooseBuilding}
                 />
-                <TextField name="roomName" isRequired>
+                <TextField
+                  name="roomName"
+                  isRequired
+                  isInvalid={Boolean(settings.roomName.trim()) && roomFloor === null}
+                >
                   <Label>宿舍号</Label>
                   <Input
                     disabled={formDisabled}
                     value={settings.roomName}
+                    inputMode="numeric"
                     onChange={(e) => {
                       requestId.current += 1;
                       setResult(undefined);
+                      setError(undefined);
                       setSettings((s) => ({ ...s, roomName: e.target.value }));
                     }}
-                    placeholder="如 601"
+                    placeholder="如 601 或 1201"
                   />
+                  {settings.roomName.trim() && roomFloor === null && (
+                    <FieldError>房间号应为一至两位楼层加两位房间号。</FieldError>
+                  )}
                 </TextField>
+                {area && (
+                  <TextField name="floorRange">
+                    <Label>楼层范围</Label>
+                    <Input
+                      value={roomFloor === null ? "" : `${roomFloor} 层`}
+                      readOnly
+                      placeholder="输入宿舍号后自动识别"
+                    />
+                  </TextField>
+                )}
               </div>
             )}
             {savedSettings && !editing && (
