@@ -26,6 +26,7 @@
     public *;
 }
 -keep class in.rinne.your_szu_life.AppUpdateBridge { public *; }
+-keep class in.rinne.your_szu_life.PackageReplacedReceiver { public *; }
 -keep class in.rinne.your_szu_life.AuthCookieBridge { public *; }
 -keep class in.rinne.your_szu_life.UoocTaskBridge { public *; }
 -keep class in.rinne.your_szu_life.UoocTaskService { public *; }

@@ -5,6 +5,7 @@ import android.os.Bundle
 class MainActivity : ApplicationBackActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    AppUpdateBridge.cleanTemporaryApks(this)
     CampusNetworkBridge.bindActivity(this)
   }
 

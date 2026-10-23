@@ -107,11 +107,8 @@ pub(crate) fn start_update(
         let mut aria_success = false;
 
         if let Ok(cache_dir) = cache_dir_opt {
+            clean_temporary_apks(&cache_dir);
             let filename = "update.apk".to_string();
-            let target_file = cache_dir.join(&filename);
-            if target_file.exists() {
-                let _ = std::fs::remove_file(&target_file);
-            }
 
             emit_progress(UpdateProgressPayload {
                 status: "downloading".to_string(),
@@ -172,6 +169,21 @@ pub(crate) fn start_update(
     });
 
     Ok(())
+}
+
+#[cfg(target_os = "android")]
+fn clean_temporary_apks(cache_dir: &std::path::Path) {
+    if let Ok(entries) = std::fs::read_dir(cache_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                let lower = name.to_ascii_lowercase();
+                if lower.ends_with(".apk") || lower.ends_with(".apk.gz") || lower.starts_with("update.") {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+        }
+    }
 }
 
 #[cfg(target_os = "android")]

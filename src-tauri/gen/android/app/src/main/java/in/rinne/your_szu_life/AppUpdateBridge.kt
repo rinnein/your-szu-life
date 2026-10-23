@@ -153,4 +153,20 @@ object AppUpdateBridge {
       false
     }
   }
+
+  @JvmStatic
+  fun cleanTemporaryApks(context: Context) {
+    try {
+      val cacheDir = context.cacheDir ?: return
+      val files = cacheDir.listFiles() ?: return
+      for (file in files) {
+        val name = file.name.lowercase()
+        if (name.endsWith(".apk") || name.endsWith(".apk.gz") || name.startsWith("update.")) {
+          try {
+            file.delete()
+          } catch (_: Exception) {}
+        }
+      }
+    } catch (_: Exception) {}
+  }
 }
