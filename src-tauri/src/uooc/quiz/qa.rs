@@ -16,6 +16,10 @@ pub(crate) fn strip_html_tags(raw: &str) -> String {
     let stripped = HTML_TAG_RE.replace_all(raw, " ");
     let unescaped = stripped
         .replace("&nbsp;", " ")
+        .replace("&ensp;", " ")
+        .replace("&emsp;", " ")
+        .replace("&thinsp;", " ")
+        .replace("&#160;", " ")
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&amp;", "&")
@@ -728,51 +732,7 @@ pub(crate) fn sanitize_task_id(tid: &str) -> &str {
 /// Normalize stem according to uooc-qa-share specification:
 /// strip HTML tags, strip HTML entities, collapse whitespace, trim, lowercase.
 pub(crate) fn normalize_stem(raw: &str) -> String {
-    let mut without_html = String::with_capacity(raw.len());
-    let mut in_tag = false;
-    for ch in raw.chars() {
-        if ch == '<' {
-            in_tag = true;
-        } else if ch == '>' {
-            in_tag = false;
-        } else if !in_tag {
-            without_html.push(ch);
-        }
-    }
-
-    let mut without_entities = String::with_capacity(without_html.len());
-    let mut chars = without_html.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '&' {
-            let mut entity = String::new();
-            let mut found_semicolon = false;
-            while let Some(&next_ch) = chars.peek() {
-                if next_ch == ';' {
-                    chars.next();
-                    found_semicolon = true;
-                    break;
-                } else if next_ch.is_alphabetic() && entity.len() < 10 {
-                    entity.push(chars.next().unwrap());
-                } else {
-                    break;
-                }
-            }
-            if found_semicolon && !entity.is_empty() {
-                without_entities.push(' ');
-            } else {
-                without_entities.push('&');
-                without_entities.push_str(&entity);
-            }
-        } else {
-            without_entities.push(ch);
-        }
-    }
-
-    without_entities
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase()
+    strip_html_tags(raw).to_lowercase()
 }
 
 /// Compute SHA-256 hash of normalized stem.
@@ -3786,6 +3746,14 @@ mod tests {
         assert_eq!(strip_html_tags("<span style='color:red;'>高亮</span>"), "高亮");
         assert_eq!(strip_html_tags("<!-- 注释 -->题干"), "题干");
         assert_eq!(
+            strip_html_tags("<p><span style=\"color: red;\"><strong>微积分基本定理</strong></span></p>"),
+            "微积分基本定理"
+        );
+        assert_eq!(
+            strip_html_tags("<div><span><span style='background: yellow;'>嵌套<em>高亮</em>文本</span></span></div>"),
+            "嵌套 高亮 文本"
+        );
+        assert_eq!(
             strip_html_tags("若 x < y 且 z > 0，则下列结论正确的是？"),
             "若 x < y 且 z > 0，则下列结论正确的是？"
         );
@@ -3858,6 +3826,14 @@ mod tests {
         let hash = hash_stem(raw);
         assert_eq!(hash.len(), 64);
         assert_eq!(hash, hash_stem("关于微积分基本定理，下列说法正确的是？"));
+
+        // 验证嵌套标签与带样式的标签规范化
+        let nested = "<p><span style=\"color: red;\"><strong>微积分基本定理</strong></span></p>";
+        assert_eq!(normalize_stem(nested), "微积分基本定理");
+
+        // 验证数学不等号不会被当成标签切除
+        let math_stem = "若 x < y 且 z > 0，则下列结论正确的是？";
+        assert_eq!(normalize_stem(math_stem), "若 x < y 且 z > 0，则下列结论正确的是？");
     }
 
     #[test]

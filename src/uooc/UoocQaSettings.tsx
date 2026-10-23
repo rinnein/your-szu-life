@@ -16,6 +16,7 @@ import {
   Pagination,
   Select,
   Spinner,
+  Switch,
   TextField,
   toast,
 } from "@heroui/react";
@@ -41,7 +42,8 @@ import { openPublicUrl } from "../app-content/external";
 import { getQaAuthClient, normalizeQaBaseUrl } from "./qaAuthClient";
 import type { LocalBankQuestion, QuizState, UoocCourse } from "./types";
 import { BankRebuildModal } from "./BankRebuildModal";
-import { DimmedHtmlText } from "./DimmedHtmlText";
+import { DimmedHtmlText, useHtmlTagVisibility } from "./DimmedHtmlText";
+import { stripHtml } from "./QuizPanel";
 
 export type EmbeddingVectorStatus = {
   status: "ready" | "empty" | "downloading" | string;
@@ -98,24 +100,37 @@ function isOptionSelected(
   if (!Array.isArray(values)) return false;
   const optIdLower = optId.toLowerCase();
   const optTextTrim = optText.trim();
+  const cleanOpt = stripHtml(optText);
   return values.some((val) => {
     if (typeof val === "boolean" || qType === "judge") {
       if (
         (val === true || val === "true") &&
-        (optIdLower === "a" || optTextTrim.includes("正确") || optTextTrim.includes("对"))
+        (optIdLower === "a" ||
+          optTextTrim.includes("正确") ||
+          optTextTrim.includes("对") ||
+          cleanOpt.includes("正确") ||
+          cleanOpt.includes("对"))
       )
         return true;
       if (
         (val === false || val === "false") &&
-        (optIdLower === "b" || optTextTrim.includes("错误") || optTextTrim.includes("错"))
+        (optIdLower === "b" ||
+          optTextTrim.includes("错误") ||
+          optTextTrim.includes("错") ||
+          cleanOpt.includes("错误") ||
+          cleanOpt.includes("错"))
       )
         return true;
     }
     const valStr = String(val).trim();
     if (valStr.toLowerCase() === optIdLower) return true;
+    const cleanVal = stripHtml(valStr);
     if (
       valStr === optTextTrim ||
-      optTextTrim.replace(/\s+/g, "").includes(valStr.replace(/\s+/g, ""))
+      (cleanOpt.length > 0 && cleanOpt === cleanVal) ||
+      optTextTrim.replace(/\s+/g, "").includes(valStr.replace(/\s+/g, "")) ||
+      (cleanOpt.length > 0 &&
+        cleanOpt.replace(/\s+/g, "").includes(cleanVal.replace(/\s+/g, "")))
     )
       return true;
     return false;
@@ -139,14 +154,26 @@ function formatAnswerValues(
           return "B. 错误";
       }
       const valStr = String(v).trim();
-      const matchedOpt = options?.find(
-        (o) =>
-          o.id === valStr ||
-          o.id.toLowerCase() === valStr.toLowerCase() ||
-          o.text.trim() === valStr ||
+      const cleanVal = stripHtml(valStr);
+      const matchedOpt = options?.find((o) => {
+        if (o.id === valStr || o.id.toLowerCase() === valStr.toLowerCase()) return true;
+        if (o.text.trim() === valStr) return true;
+        const cleanOpt = stripHtml(o.text);
+        if (cleanOpt.length > 0 && cleanOpt === cleanVal) return true;
+        if (
           o.text.replace(/\s+/g, "").includes(valStr.replace(/\s+/g, "")) ||
-          valStr.replace(/\s+/g, "").includes(o.text.replace(/\s+/g, "")),
-      );
+          valStr.replace(/\s+/g, "").includes(o.text.replace(/\s+/g, ""))
+        )
+          return true;
+        if (
+          cleanOpt.length > 0 &&
+          cleanVal.length > 0 &&
+          (cleanOpt.replace(/\s+/g, "").includes(cleanVal.replace(/\s+/g, "")) ||
+            cleanVal.replace(/\s+/g, "").includes(cleanOpt.replace(/\s+/g, "")))
+        )
+          return true;
+        return false;
+      });
       if (matchedOpt) {
         return matchedOpt.text
           ? `${matchedOpt.id.toUpperCase()}. ${matchedOpt.text}`
@@ -185,12 +212,25 @@ export function formatCorrectAnswers(
     }
 
     // 2. 如果 ans 存放的是文本内容，从 options 中反查其当前真实选项字母
-    const byText = q.options.find(
-      (o) =>
-        o.text.trim() === trimmed ||
+    const cleanAns = stripHtml(trimmed);
+    const byText = q.options.find((o) => {
+      if (o.text.trim() === trimmed) return true;
+      const cleanOpt = stripHtml(o.text);
+      if (cleanOpt.length > 0 && cleanOpt === cleanAns) return true;
+      if (
         o.text.replace(/\s+/g, "").includes(trimmed.replace(/\s+/g, "")) ||
-        trimmed.replace(/\s+/g, "").includes(o.text.replace(/\s+/g, "")),
-    );
+        trimmed.replace(/\s+/g, "").includes(o.text.replace(/\s+/g, ""))
+      )
+        return true;
+      if (
+        cleanOpt.length > 0 &&
+        cleanAns.length > 0 &&
+        (cleanOpt.replace(/\s+/g, "").includes(cleanAns.replace(/\s+/g, "")) ||
+          cleanAns.replace(/\s+/g, "").includes(cleanOpt.replace(/\s+/g, "")))
+      )
+        return true;
+      return false;
+    });
     if (byText) {
       return {
         key: byText.id,
@@ -452,6 +492,7 @@ export function UoocQaSettings({
   const [clearingBank, setClearingBank] = useState(false);
   const [confirmClearBank, setConfirmClearBank] = useState(false);
   const [courseTitles, setCourseTitles] = useState<Record<string, string>>({});
+  const [showHtmlTags, setShowHtmlTags] = useHtmlTagVisibility();
 
   // 弹窗浏览状态 ("all" 表示全部课程，具体数字表示指定 cid)
   const [modalCourse, setModalCourse] = useState<string | null>(null);
@@ -1375,7 +1416,7 @@ export function UoocQaSettings({
               className="w-full max-w-4xl min-w-0 overflow-hidden"
             >
               <Modal.CloseTrigger aria-label="关闭" />
-              <Modal.Header>
+              <Modal.Header className="flex flex-wrap items-center justify-between gap-3 pr-10">
                 <div className="grid gap-1">
                   <Modal.Heading>
                     {modalCourse === "all"
@@ -1388,6 +1429,19 @@ export function UoocQaSettings({
                       : `课程号 (cid): ${modalCourse} · 共 ${activeCourseQuestions.length} 道题目 · 已同步 ${activeCourseUploaded} · 待同步 ${activeCoursePending}`}
                   </p>
                 </div>
+                <Switch
+                  size="sm"
+                  isSelected={showHtmlTags}
+                  onChange={setShowHtmlTags}
+                  aria-label="显示 HTML 标签"
+                >
+                  <Switch.Content className="text-xs">
+                    <Switch.Control>
+                      <Switch.Thumb />
+                    </Switch.Control>
+                    HTML 标签
+                  </Switch.Content>
+                </Switch>
               </Modal.Header>
               <Modal.Body className="max-h-[75vh] overflow-y-auto grid gap-4 p-4 sm:p-6">
                 {/* 搜索与筛选工具栏 */}
@@ -1683,7 +1737,7 @@ export function UoocQaSettings({
           <Modal.Container size="cover" className="max-w-4xl">
             <Modal.Dialog aria-label="题目搜索结果">
               <Modal.CloseTrigger aria-label="关闭" />
-              <Modal.Header>
+              <Modal.Header className="flex flex-wrap items-center justify-between gap-3 pr-10">
                 <div className="grid gap-1">
                   <Modal.Heading>题目搜索结果</Modal.Heading>
                   <p className="text-xs text-muted">
@@ -1691,6 +1745,19 @@ export function UoocQaSettings({
                     条相关题目（按语义相似度降序排列）
                   </p>
                 </div>
+                <Switch
+                  size="sm"
+                  isSelected={showHtmlTags}
+                  onChange={setShowHtmlTags}
+                  aria-label="显示 HTML 标签"
+                >
+                  <Switch.Content className="text-xs">
+                    <Switch.Control>
+                      <Switch.Thumb />
+                    </Switch.Control>
+                    HTML 标签
+                  </Switch.Content>
+                </Switch>
               </Modal.Header>
               <Modal.Body className="max-h-[75vh] overflow-y-auto grid gap-4 p-4 sm:p-6">
                 {convertedSearchResults.length === 0 ? (

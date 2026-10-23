@@ -15,12 +15,13 @@ import {
   Radio,
   RadioGroup,
   Spinner,
+  Switch,
   TextArea,
   TextField,
   toast,
 } from "@heroui/react";
 import { LuBot, LuChevronDown, LuCircleCheck, LuDatabase, LuSparkles } from "react-icons/lu";
-import { DimmedHtmlText } from "./DimmedHtmlText";
+import { DimmedHtmlText, useHtmlTagVisibility } from "./DimmedHtmlText";
 import type { AiSessionEntry, QuizAnswers, QuizQuestion, QuizState, UoocSnapshot } from "./types";
 
 export function getQuizCacheKey(
@@ -61,17 +62,21 @@ export function clearQuizCache(key: string): void {
   }
 }
 
+export const HTML_TAG_REGEX =
+  /<(?:\/?[a-zA-Z][a-zA-Z0-9:-]*(?:\s+[^>]*?)?\/?|!--[\s\S]*?--)>/gi;
+
 export function stripHtml(raw?: string | null): string {
   if (!raw) return "";
   return raw
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
+    .replace(HTML_TAG_REGEX, " ")
+    .replace(/&(?:nbsp|ensp|emsp|thinsp);/gi, " ")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&(?:#39|apos);/gi, "'")
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(Number(dec)))
+    .replace(/&#x([0-9a-fA-F]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
     .split(/\s+/)
     .join(" ")
     .trim();
@@ -210,6 +215,7 @@ export function QuizPanel({
   });
   const [busy, setBusy] = useState(false);
   const [manual, setManual] = useState(false);
+  const [showHtmlTags, setShowHtmlTags] = useHtmlTagVisibility();
   const [actionModal, setActionModal] = useState<{
     type: "matchQa" | "generate" | "submit";
     title: string;
@@ -684,26 +690,41 @@ export function QuizPanel({
             {quiz.stage === "passed" && <Chip color="success">测验已完成</Chip>}
             {running && <Spinner size="sm" aria-label="测验处理中" />}
           </div>
-          {(quiz.stage === "passed" || quiz.message.includes("当前测验已由服务端确认完成")) && (
-            <Button
-              variant="secondary"
+          <div className="flex flex-wrap items-center gap-3">
+            <Switch
               size="sm"
-              isDisabled={busy || running}
-              onPress={() =>
-                void run(async () => {
-                  const next = await invoke<UoocSnapshot>("fetch_uooc_completed_quiz", {
-                    cid: quiz.cid,
-                    taskId: quiz.taskId || undefined,
-                    resourceId: quiz.resourceId || undefined,
-                  });
-                  onSnapshot(next);
-                  toast.success("已成功拉取当前测验已完成的题目与答案");
-                })
-              }
+              isSelected={showHtmlTags}
+              onChange={setShowHtmlTags}
+              aria-label="显示 HTML 标签"
             >
-              查看测验
-            </Button>
-          )}
+              <Switch.Content className="text-xs">
+                <Switch.Control>
+                  <Switch.Thumb />
+                </Switch.Control>
+                HTML 标签
+              </Switch.Content>
+            </Switch>
+            {(quiz.stage === "passed" || quiz.message.includes("当前测验已由服务端确认完成")) && (
+              <Button
+                variant="secondary"
+                size="sm"
+                isDisabled={busy || running}
+                onPress={() =>
+                  void run(async () => {
+                    const next = await invoke<UoocSnapshot>("fetch_uooc_completed_quiz", {
+                      cid: quiz.cid,
+                      taskId: quiz.taskId || undefined,
+                      resourceId: quiz.resourceId || undefined,
+                    });
+                    onSnapshot(next);
+                    toast.success("已成功拉取当前测验已完成的题目与答案");
+                  })
+                }
+              >
+                查看测验
+              </Button>
+            )}
+          </div>
         </div>
         <p role="status" className="text-xs text-muted mt-1.5">
           {quiz.message || "视频完成或遇到闯关测验时开始处理"}

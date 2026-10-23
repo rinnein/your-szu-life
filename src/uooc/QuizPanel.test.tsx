@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
-import { QuizPanel, getQuizCacheKey, loadQuizCache, saveQuizCache } from "./QuizPanel";
+import { QuizPanel, getQuizCacheKey, loadQuizCache, saveQuizCache, stripHtml } from "./QuizPanel";
 import type { QuizState, UoocSnapshot } from "./types";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
@@ -728,3 +728,82 @@ it("automatically switches selected option to AI-judged answer upon AI judgment 
     expect(screen.getByText("AI判定")).toBeInTheDocument();
   });
 });
+
+it("stripHtml accurately cleans nested tags, inline style attributes, and preserves math symbols", () => {
+  // 1. Nested tags with style attributes
+  expect(
+    stripHtml("<p style='margin:0;'><span style='color:red;'><strong>选项 A 内容</strong></span><br/></p>"),
+  ).toBe("选项 A 内容");
+
+  // 2. Math inequality symbols are strictly preserved without being stripped
+  expect(stripHtml("若 x < y 且 z > 0，则下列结论正确的是？")).toBe(
+    "若 x < y 且 z > 0，则下列结论正确的是？",
+  );
+
+  // 3. Various HTML entities
+  expect(stripHtml("第一空&nbsp;&amp;&nbsp;第二空 &lt; 第三空")).toBe("第一空 & 第二空 < 第三空");
+});
+
+it("supports toggling HTML tag visibility via the switch in modal header and matches options with nested tags", () => {
+  const quizWithNestedTags: QuizState = {
+    ...quiz(),
+    answers: {},
+    questions: [
+      {
+        id: "q_nested",
+        text: "<p>根据定义，<span style='color:blue'><strong>连续函数</strong></span>具有什么性质？</p>",
+        kind: "single",
+        options: [
+          {
+            id: "A",
+            text: "<p style='font-size:12px;'><span style='color:green;'><strong>一定可积</strong></span></p>",
+          },
+          { id: "B", text: "<span>不可积</span>" },
+        ],
+        blanks: 0,
+        images: [],
+      },
+    ],
+    reviews: [
+      {
+        questionId: "q_nested",
+        answers: ["一定可积"],
+        probabilities: {},
+        message: "题库命中标准答案",
+      },
+    ],
+  };
+
+  const { container } = render(
+    <QuizPanel
+      quiz={quizWithNestedTags}
+      active={false}
+      dryRun={false}
+      weight={20}
+      onSnapshot={vi.fn()}
+    />,
+  );
+
+  // 1. Nested tagged Option A correctly matches standard answer "一定可积"
+  expect(screen.getByText("标准答案")).toBeInTheDocument();
+  expect(screen.getByText("已选")).toBeInTheDocument();
+
+  // 2. Switch for HTML tags exists in header and is checked by default
+  const htmlTagSwitch = screen.getByRole("switch", { name: "显示 HTML 标签" });
+  expect(htmlTagSwitch).toBeInTheDocument();
+  expect(htmlTagSwitch).toBeChecked();
+
+  // Dimmed tags are visible
+  expect(container.querySelectorAll("[data-dimmed-tag='true']").length).toBeGreaterThan(0);
+
+  // 3. Toggle switch to off: dimmed tags become hidden
+  fireEvent.click(htmlTagSwitch);
+  expect(htmlTagSwitch).not.toBeChecked();
+  expect(container.querySelectorAll("[data-dimmed-tag='true']")).toHaveLength(0);
+
+  // 4. Toggle switch back to on
+  fireEvent.click(htmlTagSwitch);
+  expect(htmlTagSwitch).toBeChecked();
+  expect(container.querySelectorAll("[data-dimmed-tag='true']").length).toBeGreaterThan(0);
+});
+

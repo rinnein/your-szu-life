@@ -323,3 +323,67 @@ it("supports courses in review mode (status 33) and fetches their exams", async 
 
   expect(invoke).toHaveBeenCalledWith("list_uooc_exams", { cid: null });
 });
+
+it("renders HTML tag visibility switch in ExamPaperModal and toggles dimmed tags", async () => {
+  const paperWithHtml: ExamPaper = {
+    ...mockPaper,
+    questions: [
+      {
+        id: "q_html",
+        text: "<p>下列关于协议说法正确的是？<span style='color:red'>（单选题）</span></p>",
+        kind: "single",
+        options: [
+          { id: "A", text: "<p style='font-size:12px;'><span>TCP 是面向连接的</span></p>" },
+          { id: "B", text: "<span>UDP 是面向连接的</span>" },
+        ],
+        blanks: 0,
+        images: [],
+      },
+    ],
+  };
+
+  vi.mocked(invoke).mockImplementation(async (cmd) => {
+    if (cmd === "list_uooc_exams") {
+      return [mockExams[1]]; // submitted exam
+    }
+    if (cmd === "get_uooc_exam_paper") {
+      return paperWithHtml;
+    }
+    return null;
+  });
+
+  render(<ExamListPanel courses={mockCourses} ready={true} />);
+
+  await waitFor(() => {
+    expect(screen.getByText("第一阶段测试考试")).toBeInTheDocument();
+  });
+
+  // 点击查看答卷
+  const viewBtn = screen.getByRole("button", { name: "查看答卷" });
+  await act(async () => {
+    fireEvent.click(viewBtn);
+  });
+
+  await waitFor(() => {
+    expect(screen.getByText("下列关于协议说法正确的是？")).toBeInTheDocument();
+  });
+
+  // Header 中的 Switch
+  const htmlTagSwitch = screen.getByRole("switch", { name: "显示 HTML 标签" });
+  expect(htmlTagSwitch).toBeInTheDocument();
+  expect(htmlTagSwitch).toBeChecked();
+
+  // 默认显示淡化标签
+  expect(document.querySelectorAll("[data-dimmed-tag='true']").length).toBeGreaterThan(0);
+
+  // 切换关闭
+  fireEvent.click(htmlTagSwitch);
+  expect(htmlTagSwitch).not.toBeChecked();
+  expect(document.querySelectorAll("[data-dimmed-tag='true']")).toHaveLength(0);
+
+  // 切换开启
+  fireEvent.click(htmlTagSwitch);
+  expect(htmlTagSwitch).toBeChecked();
+  expect(document.querySelectorAll("[data-dimmed-tag='true']").length).toBeGreaterThan(0);
+});
+

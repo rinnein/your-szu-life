@@ -13,6 +13,7 @@ import {
   Radio,
   RadioGroup,
   Spinner,
+  Switch,
   TextArea,
   TextField,
   toast,
@@ -26,7 +27,7 @@ import {
   LuSend,
   LuSparkles,
 } from "react-icons/lu";
-import { DimmedHtmlText } from "./DimmedHtmlText";
+import { DimmedHtmlText, useHtmlTagVisibility } from "./DimmedHtmlText";
 import { findMatchingOptionId, isOptionMatch, stripHtml } from "./QuizPanel";
 import type { ExamPaper, ExamTask, HomeworkTask, QuizAnswers, QuizQuestion } from "./types";
 
@@ -47,6 +48,7 @@ export function ExamPaperModal({ exam, isOpen, onClose, onSubmitted }: ExamPaper
   const [matchingQa, setMatchingQa] = useState(false);
   const [solvingAi, setSolvingAi] = useState(false);
   const [manual, setManual] = useState(false);
+  const [showHtmlTags, setShowHtmlTags] = useHtmlTagVisibility();
   const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
   const [confirmSubmitOpen, setConfirmSubmitOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -431,6 +433,20 @@ export function ExamPaperModal({ exam, isOpen, onClose, onSubmitted }: ExamPaper
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">
+                  <Switch
+                    size="sm"
+                    isSelected={showHtmlTags}
+                    onChange={setShowHtmlTags}
+                    aria-label="显示 HTML 标签"
+                  >
+                    <Switch.Content className="text-xs">
+                      <Switch.Control>
+                        <Switch.Thumb />
+                      </Switch.Control>
+                      HTML 标签
+                    </Switch.Content>
+                  </Switch>
+
                   <Button
                     size="sm"
                     variant="tertiary"
