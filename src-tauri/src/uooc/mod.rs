@@ -54,6 +54,7 @@ struct Runtime {
     discussion: DiscussionStoreState,
     qa_api_key: Option<String>,
     initial_qa_bootstrapped_accounts: HashSet<String>,
+    last_saved_bytes: Option<Vec<u8>>,
 }
 pub(super) struct Service {
     app: Option<tauri::AppHandle>,
@@ -118,7 +119,7 @@ impl Service {
             app,
             credentials,
             path,
-            durations: DurationCache::new(root.join("video-durations.json")),
+            durations: DurationCache::new(root.join("quiz_qa_bank.db")),
             progress_requests: progress::ProgressRequests::default(),
             native_session: Arc::new(tokio::sync::Mutex::new(())),
             ai: Mutex::new(ai),
@@ -153,6 +154,7 @@ impl Service {
                 discussion: saved.discussion,
                 qa_api_key: saved.qa_api_key,
                 initial_qa_bootstrapped_accounts: saved.initial_qa_bootstrapped_accounts,
+                last_saved_bytes: None,
             }),
         }))
     }
@@ -180,7 +182,7 @@ impl Service {
                 .logs
                 .drain(..runtime.snapshot.logs.len() - 200);
         }
-        let saved =
+        let saved_res =
             quiz::saved(&runtime.snapshot.quizzes, self.path.parent().unwrap()).map(|quizzes| {
                 SavedState {
                     settings: runtime.snapshot.settings.clone(),
@@ -191,8 +193,21 @@ impl Service {
                     initial_qa_bootstrapped_accounts: runtime.initial_qa_bootstrapped_accounts.clone(),
                 }
             });
-        if let Err(error) = saved.and_then(|saved| persistence::write(&self.path, &saved)) {
-            runtime.snapshot.message = error;
+        match saved_res {
+            Ok(saved) => {
+                if let Ok(bytes) = serde_json::to_vec(&saved) {
+                    if runtime.last_saved_bytes.as_ref() != Some(&bytes) {
+                        if let Err(error) = persistence::write_bytes(&self.path, &bytes) {
+                            runtime.snapshot.message = error;
+                        } else {
+                            runtime.last_saved_bytes = Some(bytes);
+                        }
+                    }
+                }
+            }
+            Err(error) => {
+                runtime.snapshot.message = error;
+            }
         }
         if let Some(app) = &self.app {
             let stale: Vec<_> = runtime
@@ -479,18 +494,19 @@ impl Service {
             format!("完成登录，开始全量同步已添加的 {} 门课程服务端题库向量缓存…", cids.len()),
         );
 
-        let cache_path = self.path.parent().unwrap().join("qa-vector-cache.json");
         let api_key = self.qa_api_key_for_server(Some(&qa_server_url)).await;
 
-        match quiz::qa::download_qa_vectors(&cache_path, &qa_server_url, api_key.as_deref(), &cids).await {
-            Ok(status) => {
-                self.log_debug(
-                    "qa",
-                    format!("服务端题库向量缓存拉取成功，已缓存 {} 条题目向量", status.cached_count),
-                );
-            }
-            Err(err) => {
-                self.log_debug("qa", format!("拉取服务端题库向量缓存失败: {err}"));
+        if let Ok(qa_db) = self.get_qa_db().await {
+            match quiz::qa::download_qa_vectors(qa_db, &qa_server_url, api_key.as_deref(), &cids).await {
+                Ok(status) => {
+                    self.log_debug(
+                        "qa",
+                        format!("服务端题库向量缓存拉取成功，已缓存 {} 条题目向量", status.cached_count),
+                    );
+                }
+                Err(err) => {
+                    self.log_debug("qa", format!("拉取服务端题库向量缓存失败: {err}"));
+                }
             }
         }
 
@@ -1070,17 +1086,14 @@ impl Service {
         }
 
         let mut reviews = Vec::new();
-        let cache_path = self.path.parent().unwrap().join("qa-vector-cache.json");
-        let bank_path = self.path.parent().unwrap().join("qa-bank.json");
         let (server_url, api_key) = {
             let r = self.runtime.lock().unwrap();
             (r.snapshot.settings.qa_server_url.clone(), r.qa_api_key.clone())
         };
 
-        let local_bank = if let Ok(qa_db) = self.get_qa_db().await {
+        let qa_db_opt = self.get_qa_db().await.ok();
+        let local_bank = if let Some(qa_db) = qa_db_opt {
             qa_db.load_all_bank_questions().await.unwrap_or_default()
-        } else if bank_path.exists() {
-            quiz::qa::load_local_bank(&bank_path)
         } else {
             Default::default()
         };
@@ -1137,15 +1150,20 @@ impl Service {
                     })
                     .collect();
                 let query = quiz::qa::build_embedding_text(Some(&q.text), Some(&opts));
-                if let Ok(matched) = quiz::qa::search_questions_with_local_embedding(
-                    &cache_path,
-                    &bank_path,
-                    &server_url,
-                    api_key.as_deref(),
-                    &query,
-                    3,
-                )
-                .await
+                let matched_res = if let Some(qa_db) = qa_db_opt {
+                    quiz::qa::search_questions_with_local_embedding(
+                        qa_db,
+                        &server_url,
+                        api_key.as_deref(),
+                        &query,
+                        3,
+                    )
+                    .await
+                    .ok()
+                } else {
+                    None
+                };
+                if let Some(matched) = matched_res
                 {
                     if let Some(top) = matched.first() {
                         let mapped_answers: Vec<String> = top
@@ -1484,17 +1502,14 @@ impl Service {
     ) -> Result<(quiz::model::Answers, Vec<quiz::model::Review>), String> {
         let mut answers = quiz::model::Answers::new();
         let mut reviews = Vec::new();
-        let cache_path = self.path.parent().unwrap().join("qa-vector-cache.json");
-        let bank_path = self.path.parent().unwrap().join("qa-bank.json");
         let (server_url, api_key) = {
             let r = self.runtime.lock().unwrap();
             (r.snapshot.settings.qa_server_url.clone(), r.qa_api_key.clone())
         };
 
-        let local_bank = if let Ok(qa_db) = self.get_qa_db().await {
+        let qa_db_opt = self.get_qa_db().await.ok();
+        let local_bank = if let Some(qa_db) = qa_db_opt {
             qa_db.load_all_bank_questions().await.unwrap_or_default()
-        } else if bank_path.exists() {
-            quiz::qa::load_local_bank(&bank_path)
         } else {
             Default::default()
         };
@@ -1551,15 +1566,20 @@ impl Service {
                     })
                     .collect();
                 let query = quiz::qa::build_embedding_text(Some(&q.text), Some(&opts));
-                if let Ok(matched) = quiz::qa::search_questions_with_local_embedding(
-                    &cache_path,
-                    &bank_path,
-                    &server_url,
-                    api_key.as_deref(),
-                    &query,
-                    3,
-                )
-                .await
+                let matched_res = if let Some(qa_db) = qa_db_opt {
+                    quiz::qa::search_questions_with_local_embedding(
+                        qa_db,
+                        &server_url,
+                        api_key.as_deref(),
+                        &query,
+                        3,
+                    )
+                    .await
+                    .ok()
+                } else {
+                    None
+                };
+                if let Some(matched) = matched_res
                 {
                     if let Some(top) = matched.first() {
                         let mapped_answers: Vec<String> = top

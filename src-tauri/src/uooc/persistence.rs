@@ -24,6 +24,11 @@ pub(super) fn read<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, String
 }
 
 pub(super) fn write(path: &Path, data: &impl Serialize) -> Result<(), String> {
+    let bytes = serde_json::to_vec(data).map_err(|_| "UOOC 数据序列化失败")?;
+    write_bytes(path, &bytes)
+}
+
+pub(super) fn write_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let parent = path.parent().ok_or("UOOC 数据目录无效")?;
     let temporary = parent.join(format!(".{}.tmp", uuid::Uuid::new_v4()));
     let result = (|| -> Result<(), Box<dyn std::error::Error>> {
@@ -32,7 +37,7 @@ pub(super) fn write(path: &Path, data: &impl Serialize) -> Result<(), String> {
             .create_new(true)
             .write(true)
             .open(&temporary)?;
-        serde_json::to_writer(&mut file, data)?;
+        file.write_all(bytes)?;
         file.flush()?;
         file.sync_all()?;
         drop(file);

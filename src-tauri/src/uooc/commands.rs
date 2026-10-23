@@ -223,12 +223,12 @@ pub(crate) async fn start_uooc_discussion(
 }
 
 #[tauri::command]
-pub(crate) fn get_uooc_embedding_status(
+pub(crate) async fn get_uooc_embedding_status(
     app: tauri::AppHandle,
 ) -> Result<super::quiz::qa::EmbeddingModelStatus, String> {
     let service = service(&app)?;
-    let cache_path = service.path.parent().unwrap().join("qa-vector-cache.json");
-    Ok(super::quiz::qa::get_vector_status(&cache_path))
+    let qa_db = service.get_qa_db().await?;
+    Ok(super::quiz::qa::get_vector_status(qa_db).await)
 }
 
 #[tauri::command]
@@ -237,7 +237,7 @@ pub(crate) async fn download_uooc_qa_vectors(
     server_url: Option<String>,
 ) -> Result<super::quiz::qa::EmbeddingModelStatus, String> {
     let service = service(&app)?;
-    let cache_path = service.path.parent().unwrap().join("qa-vector-cache.json");
+    let qa_db = service.get_qa_db().await?;
     let url = server_url
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
@@ -248,7 +248,7 @@ pub(crate) async fn download_uooc_qa_vectors(
         .into_iter()
         .map(|c| c.id)
         .collect();
-    super::quiz::qa::download_qa_vectors(&cache_path, &url, api_key.as_deref(), &cids).await
+    super::quiz::qa::download_qa_vectors(qa_db, &url, api_key.as_deref(), &cids).await
 }
 
 #[tauri::command]
@@ -258,15 +258,13 @@ pub(crate) async fn search_uooc_qa_questions(
     server_url: Option<String>,
 ) -> Result<Vec<super::quiz::qa::QaSearchResultItem>, String> {
     let service = service(&app)?;
-    let cache_path = service.path.parent().unwrap().join("qa-vector-cache.json");
-    let bank_path = service.path.parent().unwrap().join("qa-bank.json");
+    let qa_db = service.get_qa_db().await?;
     let url = server_url
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
     let api_key = service.qa_api_key_for_server(Some(&url)).await;
     super::quiz::qa::search_questions_with_local_embedding(
-        &cache_path,
-        &bank_path,
+        qa_db,
         &url,
         api_key.as_deref(),
         &query,
@@ -333,12 +331,12 @@ pub(crate) async fn sync_uooc_qa_bank(
     server_url: Option<String>,
 ) -> Result<usize, String> {
     let service = service(&app)?;
-    let bank_path = service.path.parent().unwrap().join("qa-bank.json");
+    let qa_db = service.get_qa_db().await?;
     let url = server_url
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
     let api_key = service.qa_api_key_for_server(Some(&url)).await;
-    super::quiz::qa::sync_missing_to_server(&bank_path, &url, api_key.as_deref(), None, None, Some(&service)).await
+    super::quiz::qa::sync_missing_to_server(qa_db, &url, api_key.as_deref(), None, None, Some(&service)).await
 }
 
 #[tauri::command]
@@ -403,12 +401,12 @@ pub(crate) async fn upload_all_uooc_qa_bank(
     server_url: Option<String>,
 ) -> Result<usize, String> {
     let service = service(&app)?;
-    let bank_path = service.path.parent().unwrap().join("qa-bank.json");
+    let qa_db = service.get_qa_db().await?;
     let url = server_url
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
     let api_key = service.qa_api_key_for_server(Some(&url)).await;
-    super::quiz::qa::upload_all_local_bank(&bank_path, &url, api_key.as_deref(), Some(&service)).await
+    super::quiz::qa::upload_all_local_bank(qa_db, &url, api_key.as_deref(), Some(&service)).await
 }
 
 #[tauri::command]
@@ -563,17 +561,15 @@ pub(crate) async fn build_uooc_local_bank(app: tauri::AppHandle) -> Result<usize
 }
 
 #[tauri::command]
-pub(crate) fn clear_uooc_local_bank(app: tauri::AppHandle) -> Result<usize, String> {
+pub(crate) async fn clear_uooc_local_bank(app: tauri::AppHandle) -> Result<usize, String> {
     let service = service(&app)?;
-    let bank_path = service.path.parent().unwrap().join("qa-bank.json");
-    let db_path = service.path.parent().unwrap().join("quiz_qa_bank.db");
-    let mut count = 0;
-    if bank_path.exists() {
-        count = super::quiz::qa::load_local_bank(&bank_path).len();
-        let _ = std::fs::remove_file(&bank_path);
-    }
-    if db_path.exists() {
-        let _ = std::fs::remove_file(&db_path);
+    let count = if let Ok(qa_db) = service.get_qa_db().await {
+        qa_db.clear_all_questions().await.unwrap_or(0)
+    } else {
+        0
+    };
+    if let Some(parent) = service.path.parent() {
+        crate::migrations::uooc::cleanup_legacy_uooc_files(parent);
     }
     service.log_debug("bank", format!("已清空本地题库（共 {count} 道题目）"));
     Ok(count)

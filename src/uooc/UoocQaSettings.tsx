@@ -1791,7 +1791,8 @@ export function UoocQaSettings({
                 <AlertDialog.Heading>确认清空题库缓存？</AlertDialog.Heading>
               </AlertDialog.Header>
               <AlertDialog.Body>
-                确定要清空已收录的试题缓存文件（qa-bank.json）吗？清空后如需恢复，可随时点击【重新构建题库】或通过测验流程自动重新发现与收录。
+                确定要清空已收录的本地 SQLite
+                题库缓存吗？清空后如需恢复，可随时点击【重新构建题库】或通过测验流程自动重新发现与收录。
               </AlertDialog.Body>
               <AlertDialog.Footer>
                 <AlertDialog.CloseTrigger className="dialog-cancel" />

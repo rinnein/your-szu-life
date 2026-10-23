@@ -1,11 +1,12 @@
 //! Bounded, persistent per-dorm history. Network work never holds the snapshot lock.
 use super::*;
 use chrono::{FixedOffset, TimeZone, Timelike, Utc};
-use std::{fs, io::Write, path::PathBuf};
+#[cfg(test)]
+use std::fs;
+use std::path::PathBuf;
 
 const RETAIN_DAYS: i64 = 62;
 const MAX_ROOMS: usize = 8;
-const MAX_FILE: u64 = 2 * 1024 * 1024;
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -15,34 +16,29 @@ pub(crate) struct CacheInfo {
     pub refresh_error: Option<String>,
 }
 #[derive(Clone, Deserialize, Serialize, PartialEq)]
-struct Check {
-    fetched_at: i64,
-    expires_at: i64,
+pub(crate) struct Check {
+    pub(super) fetched_at: i64,
+    pub(super) expires_at: i64,
 }
 #[derive(Clone, Default, Deserialize, Serialize, PartialEq)]
-struct Room {
-    location: ElectricityLocationSettings,
-    readings: Vec<ElectricityReading>,
-    recharges: Vec<Recharge>,
-    usage_checks: BTreeMap<String, Check>,
-    recharge_checks: BTreeMap<String, Check>,
-    balance: Option<f64>,
-    balance_date: Option<String>,
-    usage_updated_at: Option<i64>,
-    recharge_updated_at: Option<i64>,
+pub(crate) struct Room {
+    pub(crate) location: ElectricityLocationSettings,
+    pub(crate) readings: Vec<ElectricityReading>,
+    pub(crate) recharges: Vec<Recharge>,
+    pub(crate) usage_checks: BTreeMap<String, Check>,
+    pub(crate) recharge_checks: BTreeMap<String, Check>,
+    pub(crate) balance: Option<f64>,
+    pub(crate) balance_date: Option<String>,
+    pub(crate) usage_updated_at: Option<i64>,
+    pub(crate) recharge_updated_at: Option<i64>,
     #[serde(default)]
-    retry_after: i64,
+    pub(crate) retry_after: i64,
     #[serde(default)]
-    error: Option<String>,
+    pub(crate) error: Option<String>,
     #[serde(default)]
-    recharge_error: Option<String>,
+    pub(crate) recharge_error: Option<String>,
     #[serde(default)]
-    recharge_retry_after: i64,
-}
-#[derive(Default, Deserialize, Serialize)]
-struct DiskCache {
-    version: u8,
-    rooms: Vec<Room>,
+    pub(crate) recharge_retry_after: i64,
 }
 #[derive(Default)]
 pub(super) struct History {
@@ -81,6 +77,7 @@ pub(super) fn attempt_key(now: i64) -> String {
         today_at(now).to_string()
     }
 }
+
 impl History {
     pub(super) fn unavailable() -> Self {
         Self {
@@ -89,18 +86,17 @@ impl History {
         }
     }
     pub(super) fn open(path: PathBuf) -> Self {
-        let rooms = fs::File::open(&path)
-            .ok()
-            .and_then(|file| {
-                let mut data = vec![];
-                file.take(MAX_FILE + 1).read_to_end(&mut data).ok()?;
-                if data.len() as u64 > MAX_FILE {
-                    return None;
-                }
-                let disk: DiskCache = serde_json::from_slice(&data).ok()?;
-                (disk.version == 1 && disk.rooms.len() <= MAX_ROOMS).then_some(disk.rooms)
-            })
-            .unwrap_or_default();
+        let db_res = crate::migrations::db::run_sync(async {
+            let db = super::db::ElectricityDatabase::open(&path).await?;
+            let _ = crate::migrations::electricity::migrate_electricity_history_if_needed(&path, &db).await;
+            db.load_all_rooms().await
+        });
+
+        let rooms = match db_res {
+            Ok(loaded) => loaded,
+            Err(_) => Vec::new(),
+        };
+
         Self {
             path: Some(path),
             rooms,
@@ -126,45 +122,20 @@ impl History {
         room.usage_checks.retain(|date, _| date >= &cutoff);
         room.recharge_checks.retain(|date, _| date >= &cutoff);
         self.rooms.retain(|r| r.location != room.location);
-        self.rooms.push(room);
+        self.rooms.push(room.clone());
         if self.rooms.len() > MAX_ROOMS {
             self.rooms.remove(0);
         }
         let Some(path) = self.path.as_ref() else {
             return;
         };
-        let Some(parent) = path.parent() else {
-            return;
-        };
-        let temp = parent.join(format!(".electricity-{}.tmp", uuid::Uuid::new_v4()));
-        let result = (|| -> Result<(), Box<dyn std::error::Error>> {
-            fs::create_dir_all(parent)?;
-            let mut options = fs::OpenOptions::new();
-            options.write(true).create_new(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-                options.mode(0o600);
-            }
-            let mut file = options.open(&temp)?;
-            let bytes = serde_json::to_vec(&DiskCache {
-                version: 1,
-                rooms: self.rooms.clone(),
-            })?;
-            if bytes.len() as u64 > MAX_FILE {
-                return Err("electricity cache exceeds file limit".into());
-            }
-            file.write_all(&bytes)?;
-            file.flush()?;
-            file.sync_all()?;
-            drop(file);
-            fs::rename(&temp, path)?;
-            Ok(())
-        })();
+        let result = crate::migrations::db::run_sync(async {
+            let db = super::db::ElectricityDatabase::open(path).await?;
+            db.save_room(&room).await
+        });
         self.persistence_error = result
             .err()
             .map(|_| "本地电量缓存保存失败，当前结果仍可查看。".into());
-        let _ = fs::remove_file(&temp);
     }
 }
 fn required_windows(

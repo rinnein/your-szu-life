@@ -109,8 +109,7 @@ impl UnifiedSzuMcpService {
         Parameters(params): Parameters<SearchQaParams>,
     ) -> Result<String, String> {
         let service = service(&self.app)?;
-        let cache_path = service.path.parent().unwrap().join("qa-vector-cache.json");
-        let bank_path = service.path.parent().unwrap().join("qa-bank.json");
+        let qa_db = service.get_qa_db().await?;
         let url = params
             .server_url
             .filter(|s| !s.trim().is_empty())
@@ -118,8 +117,7 @@ impl UnifiedSzuMcpService {
         let api_key = service.qa_api_key_for_server(Some(&url)).await;
 
         let results = crate::uooc::quiz::qa::search_questions_with_local_embedding(
-            &cache_path,
-            &bank_path,
+            qa_db,
             &url,
             api_key.as_deref(),
             &params.query,

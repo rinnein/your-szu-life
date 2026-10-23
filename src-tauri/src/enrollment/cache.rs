@@ -1,14 +1,35 @@
-use rusqlite::{params, Connection, OptionalExtension};
 use serde::{de::DeserializeOwned, Serialize};
 use std::path::Path;
 
-pub struct Cache(Connection);
+#[derive(Debug, toasty::Model)]
+pub struct EnrollmentSnapshot {
+    #[key]
+    pub id: String, // format!("{account}:{kind}:{scope}")
+    #[index]
+    pub account: String,
+    pub kind: String,
+    pub scope: String,
+    pub payload: String,
+    pub updated: i64,
+}
+
+pub struct Cache {
+    db: toasty::Db,
+}
+
 impl Cache {
     pub fn open(path: &Path) -> Result<Self, String> {
-        let db = Connection::open(path).map_err(|_| "无法打开选课缓存")?;
-        db.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS snapshots (account TEXT NOT NULL, kind TEXT NOT NULL, scope TEXT NOT NULL, payload TEXT NOT NULL, updated INTEGER NOT NULL, PRIMARY KEY(account,kind,scope)); PRAGMA user_version=1;").map_err(|_| "无法初始化选课缓存")?;
-        Ok(Self(db))
+        crate::migrations::db::run_sync(async {
+            let db = crate::migrations::db::open_sqlite_db(
+                path,
+                toasty::models!(EnrollmentSnapshot),
+                Some(&crate::migrations::enrollment::ENROLLMENT_MIGRATIONS),
+            )
+            .await?;
+            Ok(Self { db })
+        })
     }
+
     pub fn workspace(
         &self,
         account: &str,
@@ -16,35 +37,30 @@ impl Cache {
         value: &impl Serialize,
     ) -> Result<(), String> {
         let raw = serde_json::to_string(value).map_err(|_| "选课缓存序列化失败")?;
-        let transaction = self
-            .0
-            .unchecked_transaction()
-            .map_err(|_| "无法开始缓存事务")?;
         for key in ["latest", scope] {
-            transaction.execute("INSERT INTO snapshots VALUES (?1,'workspace',?2,?3,?4) ON CONFLICT(account,kind,scope) DO UPDATE SET payload=excluded.payload,updated=excluded.updated",params![account,key,raw,chrono::Utc::now().timestamp_millis()]).map_err(|_|"无法保存选课事务")?;
+            self.put_raw(account, "workspace", key, &raw)?;
         }
-        transaction
-            .commit()
-            .map_err(|_| "无法提交选课缓存事务".into())
+        Ok(())
     }
+
     pub fn get<T: DeserializeOwned>(
         &self,
         account: &str,
         kind: &str,
         scope: &str,
     ) -> Result<Option<T>, String> {
-        let raw: Option<String> = self
-            .0
-            .query_row(
-                "SELECT payload FROM snapshots WHERE account=?1 AND kind=?2 AND scope=?3",
-                params![account, kind, scope],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(|_| "无法读取选课缓存")?;
-        raw.map(|s| serde_json::from_str(&s).map_err(|_| "选课缓存损坏，未覆盖原数据".into()))
+        let key = format!("{account}:{kind}:{scope}");
+        let mut db = self.db.clone();
+        let raw: Option<String> = crate::migrations::db::run_sync(async {
+            match EnrollmentSnapshot::get_by_id(&mut db, &key).await {
+                Ok(row) => Some(row.payload),
+                Err(_) => None,
+            }
+        });
+        raw.map(|s| serde_json::from_str(&s).map_err(|_| "选课缓存损坏，未覆盖原数据".to_string()))
             .transpose()
     }
+
     pub fn catalog(
         &self,
         account: &str,
@@ -52,18 +68,31 @@ impl Cache {
         query: &super::model::Query,
     ) -> Result<serde_json::Value, String> {
         use super::model::{Context, Course, Query};
-        let mut statement=self.0.prepare("SELECT scope,payload FROM snapshots WHERE account=?1 AND kind='catalog' ORDER BY updated DESC").map_err(|_|"无法读取缓存目录")?;
-        let rows = statement
-            .query_map([account], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })
-            .map_err(|_| "无法读取缓存目录")?;
+        let mut db = self.db.clone();
+        let rows = crate::migrations::db::run_sync(async {
+            match EnrollmentSnapshot::filter_by_account(account)
+                .exec(&mut db)
+                .await
+            {
+                Ok(list) => {
+                    let mut filtered: Vec<EnrollmentSnapshot> = list
+                        .into_iter()
+                        .filter(|r| r.kind == "catalog")
+                        .collect();
+                    filtered.sort_by(|a, b| b.updated.cmp(&a.updated));
+                    Ok(filtered)
+                }
+                Err(e) => Err(format!("无法读取缓存目录: {e}")),
+            }
+        })?;
+
         let mut courses = Vec::<Course>::new();
         let mut seen = std::collections::HashSet::new();
         let mut updated: Option<i64> = None;
         let mut pages = 0;
         for row in rows {
-            let (scope, raw) = row.map_err(|_| "缓存目录读取失败")?;
+            let scope = row.scope;
+            let raw = row.payload;
             let Ok((stored, stored_query)) = serde_json::from_str::<(Context, Query)>(&scope)
             else {
                 continue;
@@ -95,6 +124,43 @@ impl Cache {
             serde_json::json!({"courses":page,"total":total,"complete":start+10>=total,"updatedAt":updated,"cachedPages":pages,"query":query,"coverage":"partial","context":context}),
         )
     }
+
+    fn put_raw(
+        &self,
+        account: &str,
+        kind: &str,
+        scope: &str,
+        raw: &str,
+    ) -> Result<(), String> {
+        let key = format!("{account}:{kind}:{scope}");
+        let now = chrono::Utc::now().timestamp_millis();
+        let mut db = self.db.clone();
+        crate::migrations::db::run_sync(async {
+            if let Ok(mut existing) = EnrollmentSnapshot::get_by_id(&mut db, &key).await {
+                toasty::update!(existing {
+                    payload: raw.to_string(),
+                    updated: now,
+                })
+                .exec(&mut db)
+                .await
+                .map_err(|e| format!("无法保存选课缓存: {e}"))?;
+            } else {
+                toasty::create!(EnrollmentSnapshot {
+                    id: key,
+                    account: account.to_string(),
+                    kind: kind.to_string(),
+                    scope: scope.to_string(),
+                    payload: raw.to_string(),
+                    updated: now,
+                })
+                .exec(&mut db)
+                .await
+                .map_err(|e| format!("无法保存选课缓存: {e}"))?;
+            }
+            Ok(())
+        })
+    }
+
     pub fn put(
         &self,
         account: &str,
@@ -103,7 +169,6 @@ impl Cache {
         value: &impl Serialize,
     ) -> Result<(), String> {
         let raw = serde_json::to_string(value).map_err(|_| "选课缓存序列化失败")?;
-        self.0.execute("INSERT INTO snapshots VALUES (?1,?2,?3,?4,?5) ON CONFLICT(account,kind,scope) DO UPDATE SET payload=excluded.payload,updated=excluded.updated", params![account,kind,scope,raw,chrono::Utc::now().timestamp_millis()]).map_err(|_| "无法保存选课缓存")?;
-        Ok(())
+        self.put_raw(account, kind, scope, &raw)
     }
 }

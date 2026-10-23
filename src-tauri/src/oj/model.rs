@@ -279,14 +279,14 @@ pub(crate) struct Notice {
 }
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct Known {
+pub(crate) struct Known {
     pub contests: BTreeMap<String, Contest>,
     pub events: BTreeMap<String, i64>,
     pub initialized: bool,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct Data {
+pub(crate) struct Data {
     pub version: u8,
     pub sites: Vec<Site>,
     pub drafts: BTreeMap<String, Draft>,

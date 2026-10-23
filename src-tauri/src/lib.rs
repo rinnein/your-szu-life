@@ -12,6 +12,7 @@ mod embedding_model;
 mod enrollment;
 pub(crate) mod local_model;
 pub mod mcp;
+pub(crate) mod migrations;
 mod notification;
 mod ocr;
 mod oj;

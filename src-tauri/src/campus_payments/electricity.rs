@@ -19,7 +19,8 @@ use tauri_plugin_notification::NotificationExt;
 
 pub(crate) const ELECTRICITY_STATUS_EVENT: &str = "electricity-status-changed";
 mod analytics;
-mod history;
+pub(crate) mod db;
+pub(crate) mod history;
 mod providers;
 mod sharing;
 pub(crate) use analytics::{constants, ElectricityConstants, YUAN_PER_KWH};
@@ -867,7 +868,7 @@ fn date_offset(days: i64) -> String {
 pub(crate) fn initialize(app: AppHandle, store: ElectricityStore) {
     if let Ok(mut cache) = store.history.lock() {
         *cache = match app.path().app_data_dir() {
-            Ok(directory) => history::History::open(directory.join("electricity-history-v1.json")),
+            Ok(directory) => history::History::open(directory.join("electricity.sqlite")),
             Err(_) => history::History::unavailable(),
         };
     }

@@ -102,7 +102,7 @@ fn course_schedule_metadata_refresh_is_compatible_with_saved_tasks() {
 #[tokio::test]
 async fn duration_cache_single_flight_persists_and_does_not_cache_failures() {
     let root = root();
-    let path = root.join("durations.json");
+    let path = root.join("quiz_qa_bank.db");
     let cache = Arc::new(DurationCache::new(path.clone()));
     let calls = Arc::new(AtomicUsize::new(0));
     let mut jobs = vec![];
@@ -165,8 +165,8 @@ async fn duration_cache_single_flight_persists_and_does_not_cache_failures() {
             .unwrap(),
         99.0
     );
-    let raw = std::fs::read_to_string(&path).unwrap();
-    assert!(!raw.contains("https") && !raw.contains("cookie"));
+    let raw = std::fs::read(&path).unwrap();
+    assert!(!raw.windows(5).any(|w| w == b"https") && !raw.windows(6).any(|w| w == b"cookie"));
     std::fs::write(&path, b"corrupt cache").unwrap();
     let cache = DurationCache::new(path);
     assert_eq!(
@@ -582,7 +582,7 @@ async fn failed_cache_write_is_retried_without_reparsing_media() {
     std::fs::create_dir_all(&root).unwrap();
     let parent = root.join("blocked");
     std::fs::write(&parent, b"not a directory").unwrap();
-    let path = parent.join("durations.json");
+    let path = parent.join("quiz_qa_bank.db");
     let cache = DurationCache::new(path.clone());
     assert!(cache
         .get_or_probe("1", "2", &CancellationToken::new(), || async { Ok(100.0) })
@@ -1009,8 +1009,7 @@ async fn build_local_bank_discovers_all_course_quizzes_via_task_list_logic() {
     let count = service.build_local_bank().await.unwrap();
     assert_eq!(count, 2);
 
-    let bank_path = root.join("qa-bank.json");
-    let bank = super::quiz::qa::load_local_bank(&bank_path);
+    let bank = service.get_qa_db().await.unwrap().load_all_bank_questions().await.unwrap();
     assert_eq!(bank.len(), 2);
     assert!(bank.values().any(|q| q.tid == "901"));
     assert!(bank.values().any(|q| q.tid == "902"));
@@ -1209,8 +1208,7 @@ async fn build_local_bank_fetches_exam_view_for_completed_quiz_and_records_stand
     // Verify /exam/view was called because the quiz is finished
     assert!(exam_view_called.load(Ordering::SeqCst) >= 1);
 
-    let bank_path = root.join("qa-bank.json");
-    let bank = super::quiz::qa::load_local_bank(&bank_path);
+    let bank = service.get_qa_db().await.unwrap().load_all_bank_questions().await.unwrap();
     assert_eq!(bank.len(), 1);
     let question = bank.get("999:q_999").expect("question should exist");
     // Standard answer MUST NOT be empty!

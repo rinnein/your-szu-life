@@ -1,7 +1,16 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use super::model::{Answers, Question};
 use super::qa::{hash_stem, LocalBankAnswer, LocalBankQuestion, QaUploadOption, SubmittedPaperRecord};
+
+/// 视频时长模型 (Toasty Model)
+#[derive(Debug, toasty::Model)]
+pub struct VideoDuration {
+    #[key]
+    pub id: String, // format!("{cid}:{resource}")
+    pub duration: f64,
+    pub updated_at_ms: i64,
+}
 
 /// 试卷最后一次提交快照模型 (Toasty Model)
 #[derive(Debug, toasty::Model)]
@@ -50,20 +59,12 @@ pub struct QaDatabase {
 
 impl QaDatabase {
     pub async fn open(db_path: &Path) -> Result<Self, String> {
-        if let Some(parent) = db_path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        let url = format!("sqlite://{}", db_path.display());
-        let db = toasty::Db::builder()
-            .models(toasty::models!(SubmittedPaper, BankQuestion))
-            .connect(&url)
-            .await
-            .map_err(|e| format!("打开 Toasty 题库数据库失败: {e}"))?;
-
-        db.push_schema()
-            .await
-            .map_err(|e| format!("初始化 Toasty 题库表结构失败: {e}"))?;
-
+        let db = crate::migrations::db::open_sqlite_db(
+            db_path,
+            toasty::models!(SubmittedPaper, BankQuestion, VideoDuration),
+            Some(&crate::migrations::uooc::UOOC_MIGRATIONS),
+        )
+        .await?;
         Ok(Self { db })
     }
 
@@ -184,12 +185,20 @@ impl QaDatabase {
             Some(serde_json::to_string(&q.correct_answers).unwrap_or_default())
         };
 
+        let clean_opts: Option<Vec<QaUploadOption>> = q.options.as_ref().map(|opts| {
+            opts.iter().map(|o| QaUploadOption { id: o.id.clone(), text: o.text.clone() }).collect()
+        });
+        let embed_text = super::qa::build_embedding_text(Some(&stem), clean_opts.as_deref());
+        let vec_f32 = super::qa::compute_local_embedding(&embed_text);
+        let computed_blob = super::qa::vector_to_blob(&vec_f32);
+
         let mut db = self.db.clone();
         if let Ok(mut existing) = BankQuestion::get_by_question_id(&mut db, &q.question_id).await {
             let next_cid = cid.map(str::to_string).or_else(|| existing.cid.clone());
             let next_tid = tid.map(str::to_string).or_else(|| existing.tid.clone());
             let next_cname = q.course_name.clone().or_else(|| existing.course_name.clone());
             let next_tname = q.task_name.clone().or_else(|| existing.task_name.clone());
+            let embedding_blob = existing.embedding_blob.clone().or(Some(computed_blob));
 
             toasty::update!(existing {
                 cid: next_cid,
@@ -204,6 +213,7 @@ impl QaDatabase {
                 correct_answers_json,
                 blanks: q.blanks as i64,
                 uploaded: q.uploaded,
+                embedding_blob,
                 updated_at_ms: q.updated_at_ms,
             })
             .exec(&mut db)
@@ -224,7 +234,7 @@ impl QaDatabase {
                 correct_answers_json,
                 blanks: q.blanks as i64,
                 uploaded: q.uploaded,
-                embedding_blob: None,
+                embedding_blob: Some(computed_blob),
                 updated_at_ms: q.updated_at_ms,
             })
             .exec(&mut db)
@@ -281,5 +291,235 @@ impl QaDatabase {
         }
 
         Ok(map)
+    }
+
+    /// 读取全部视频时长缓存
+    pub async fn load_all_video_durations(&self) -> Result<HashMap<String, f64>, String> {
+        let mut db = self.db.clone();
+        let rows = VideoDuration::all()
+            .exec(&mut db)
+            .await
+            .map_err(|e| format!("读取视频时长缓存失败: {e}"))?;
+        let mut map = HashMap::new();
+        for r in rows {
+            if r.duration.is_finite() && r.duration > 1.0 {
+                map.insert(r.id, r.duration);
+            }
+        }
+        Ok(map)
+    }
+
+    /// 保存单条视频时长
+    pub async fn save_video_duration(&self, cid: &str, resource: &str, duration: f64) -> Result<(), String> {
+        let key = format!("{cid}:{resource}");
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        let mut db = self.db.clone();
+        if let Ok(mut existing) = VideoDuration::get_by_id(&mut db, &key).await {
+            toasty::update!(existing {
+                duration,
+                updated_at_ms: now,
+            })
+            .exec(&mut db)
+            .await
+            .map_err(|e| format!("更新视频时长失败: {e}"))?;
+        } else {
+            toasty::create!(VideoDuration {
+                id: key,
+                duration,
+                updated_at_ms: now,
+            })
+            .exec(&mut db)
+            .await
+            .map_err(|e| format!("保存视频时长失败: {e}"))?;
+        }
+        Ok(())
+    }
+
+    /// 标记题目为已上传
+    pub async fn mark_questions_uploaded(&self, question_ids: &[String]) -> Result<usize, String> {
+        let mut count = 0;
+        let mut db = self.db.clone();
+        for qid in question_ids {
+            if let Ok(mut existing) = BankQuestion::get_by_question_id(&mut db, qid).await {
+                if !existing.uploaded {
+                    let _ = toasty::update!(existing { uploaded: true }).exec(&mut db).await;
+                    count += 1;
+                }
+            }
+        }
+        Ok(count)
+    }
+
+    /// 统计拥有特征向量的题目数量
+    pub async fn count_embedding_questions(&self) -> Result<usize, String> {
+        let mut db = self.db.clone();
+        let rows = BankQuestion::all()
+            .exec(&mut db)
+            .await
+            .map_err(|e| format!("查询题目失败: {e}"))?;
+        Ok(rows.into_iter().filter(|r| r.embedding_blob.is_some()).count())
+    }
+
+    /// 读取所有带向量特征的题目
+    pub async fn load_all_embedded_questions(&self) -> Result<Vec<(LocalBankQuestion, Vec<f32>)>, String> {
+        let mut db = self.db.clone();
+        let rows = BankQuestion::all()
+            .exec(&mut db)
+            .await
+            .map_err(|e| format!("查询全部题目向量失败: {e}"))?;
+        let mut res = Vec::new();
+        for r in rows {
+            let Some(ref blob) = r.embedding_blob else { continue };
+            let vec_f32 = super::qa::blob_to_vector(blob);
+            let options: Option<Vec<QaUploadOption>> = r.options_json.as_deref().and_then(|s| serde_json::from_str(s).ok());
+            let answers: Vec<LocalBankAnswer> = serde_json::from_str(&r.answers_json).unwrap_or_default();
+            let correct_answers: Vec<String> = r.correct_answers_json.as_deref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or_default();
+
+            let q_item = LocalBankQuestion {
+                cid: r.cid.clone().unwrap_or_default(),
+                course_name: r.course_name.clone(),
+                tid: r.tid.clone().unwrap_or_default(),
+                task_name: r.task_name.clone(),
+                question_id: r.question_id.clone(),
+                question_type: r.question_type.clone(),
+                stem: if r.stem.is_empty() { None } else { Some(r.stem.clone()) },
+                options,
+                blanks: r.blanks.max(0) as usize,
+                answers,
+                correct_answers,
+                uploaded: r.uploaded,
+                updated_at_ms: r.updated_at_ms,
+            };
+            res.push((q_item, vec_f32));
+        }
+        Ok(res)
+    }
+
+    /// 构建内存向量检索库 (用于 AI RAG)
+    pub async fn build_in_memory_rag_store(
+        &self,
+        cid: Option<&str>,
+        tid: Option<&str>,
+    ) -> Result<super::qa::InMemoryVectorStore<super::qa::QuestionRagDocument>, String> {
+        let embedded = self.load_all_embedded_questions().await?;
+        let mut store = super::qa::InMemoryVectorStore::default();
+        let formatted = embedded
+            .into_iter()
+            .filter(|(q, _)| {
+                if let Some(c) = cid {
+                    if q.cid != c { return false; }
+                }
+                if let Some(t) = tid {
+                    if q.tid != t { return false; }
+                }
+                true
+            })
+            .map(|(q, v_f32)| {
+                let options = q.options
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|o| format!("{}. {}", o.id, o.text))
+                    .collect();
+                let doc = super::qa::QuestionRagDocument {
+                    question_id: q.question_id.clone(),
+                    tid: if q.tid.is_empty() { None } else { Some(q.tid) },
+                    cid: if q.cid.is_empty() { None } else { Some(q.cid) },
+                    stem: q.stem.unwrap_or_default(),
+                    question_type: q.question_type,
+                    options,
+                    answers: q.correct_answers,
+                };
+                let embed_text = doc.to_embed_text();
+                let vec_f64: Vec<f64> = v_f32.into_iter().map(|x| x as f64).collect();
+                let qid = doc.question_id.clone();
+                (qid, doc, vec![rig_core::embeddings::Embedding { document: embed_text, vec: vec_f64 }])
+            });
+        store.add_documents_with_ids(formatted);
+        Ok(store)
+    }
+
+    /// 录入服务端拉取的题目与向量特征
+    pub async fn upsert_server_question(
+        &self,
+        cid: Option<&str>,
+        tid: &str,
+        question_id: &str,
+        question_type: &str,
+        stem: &str,
+        options: Option<&[QaUploadOption]>,
+        answers: &[String],
+        embedding: &[f32],
+    ) -> Result<(), String> {
+        let stem_h = hash_stem(stem);
+        let options_json = options.map(|opts| serde_json::to_string(opts).unwrap_or_default());
+        let correct_answers_json = if answers.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(answers).unwrap_or_default())
+        };
+        let embedding_blob = super::qa::vector_to_blob(embedding);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+
+        let mut db = self.db.clone();
+        if let Ok(mut existing) = BankQuestion::get_by_question_id(&mut db, question_id).await {
+            let next_cid = cid.map(str::to_string).or_else(|| existing.cid.clone());
+            let next_tid = Some(tid.to_string()).or_else(|| existing.tid.clone());
+            toasty::update!(existing {
+                cid: next_cid,
+                tid: next_tid,
+                question_type: question_type.to_string(),
+                stem: stem.to_string(),
+                stem_hash: stem_h,
+                options_json,
+                correct_answers_json: correct_answers_json.or_else(|| existing.correct_answers_json.clone()),
+                embedding_blob: Some(embedding_blob),
+                updated_at_ms: now,
+            })
+            .exec(&mut db)
+            .await
+            .map_err(|e| format!("更新服务端拉取题目失败: {e}"))?;
+        } else {
+            toasty::create!(BankQuestion {
+                question_id: question_id.to_string(),
+                cid: cid.map(str::to_string),
+                tid: Some(tid.to_string()),
+                course_name: None,
+                task_name: None,
+                question_type: question_type.to_string(),
+                stem: stem.to_string(),
+                stem_hash: stem_h,
+                options_json,
+                answers_json: "[]".to_string(),
+                correct_answers_json,
+                blanks: 0,
+                uploaded: true,
+                embedding_blob: Some(embedding_blob),
+                updated_at_ms: now,
+            })
+            .exec(&mut db)
+            .await
+            .map_err(|e| format!("新增服务端拉取题目失败: {e}"))?;
+        }
+        Ok(())
+    }
+
+    /// 清空题库所有题目
+    pub async fn clear_all_questions(&self) -> Result<usize, String> {
+        let mut db = self.db.clone();
+        let rows = BankQuestion::all()
+            .exec(&mut db)
+            .await
+            .map_err(|e| format!("查询全部题目失败: {e}"))?;
+        let count = rows.len();
+        for r in rows {
+            let _ = r.delete().exec(&mut db).await;
+        }
+        Ok(count)
     }
 }

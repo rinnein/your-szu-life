@@ -448,7 +448,6 @@ async fn generate(
     // 1. AI 判题前，先自动尝试匹配本地题库与远程题库！
     let qa_url = service.snapshot().settings.qa_server_url.clone();
     let qa_key = service.qa_api_key().await;
-    let bank_path = service.path.parent().unwrap().join("qa-bank.json");
 
     let mut confirmed_correct_ids = HashSet::new();
     let mut wrong_options_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -466,7 +465,11 @@ async fn generate(
     }
 
     // 2. 先检查本地题库确认答案与排除选项
-    let local_bank = qa::load_local_bank(&bank_path);
+    let local_bank = if let Ok(qa_db) = service.get_qa_db().await {
+        qa_db.load_all_bank_questions().await.unwrap_or_default()
+    } else {
+        Default::default()
+    };
     for question in &q.questions {
         let key = qa::bank_key(&q.task_id, &question.id);
         if let Some(entry) = local_bank.get(&key) {
@@ -710,22 +713,24 @@ async fn submit(
             };
             if let Some(details) = qa::parse_exam_view_details_with_submitted(&view_bytes, submitted.as_ref()) {
                 if !details.questions.is_empty() && (!details.answers.is_empty() || !details.wrong_answers.is_empty()) {
-                    let bank_path = service.path.parent().unwrap().join("qa-bank.json");
                     let course_name = service
                         .snapshot()
                         .courses
                         .iter()
                         .find(|c| c.id == ctx.cid)
                         .map(|c| c.title.clone());
-                    let _ = qa::record_passed_quiz_with_details(
-                        &bank_path,
-                        &ctx.cid,
-                        clean_tid,
-                        &details.questions,
-                        &details.answers,
-                        &details.wrong_answers,
-                        course_name.as_deref(),
-                    );
+                    if let Ok(qa_db) = service.get_qa_db().await {
+                        let _ = qa::record_passed_quiz_with_details(
+                            qa_db,
+                            &ctx.cid,
+                            clean_tid,
+                            &details.questions,
+                            &details.answers,
+                            &details.wrong_answers,
+                            course_name.as_deref(),
+                        )
+                        .await;
+                    }
                     let qa_url = service.snapshot().settings.qa_server_url.clone();
                     let qa_key = service.qa_api_key().await;
                     let payload = qa::build_batch_upload_payload_with_details(
@@ -785,18 +790,19 @@ async fn match_qa_action(service: &Arc<Service>, ctx: &Context, cancel: &Cancell
     let q = state(service, ctx);
     let qa_url = service.snapshot().settings.qa_server_url.clone();
     let qa_key = service.qa_api_key().await;
-    let bank_path = service.path.parent().unwrap().join("qa-bank.json");
 
     // 自动比对后端是否存在缺失题目，并将后端缺失的题目上传
-    let _ = qa::sync_missing_to_server(
-        &bank_path,
-        &qa_url,
-        qa_key.as_deref(),
-        Some(&ctx.cid),
-        Some(&q.task_id),
-        Some(service),
-    )
-    .await;
+    if let Ok(qa_db) = service.get_qa_db().await {
+        let _ = qa::sync_missing_to_server(
+            qa_db,
+            &qa_url,
+            qa_key.as_deref(),
+            Some(&ctx.cid),
+            Some(&q.task_id),
+            Some(service),
+        )
+        .await;
+    }
 
     let res = tokio::select! {
         biased;
@@ -808,7 +814,11 @@ async fn match_qa_action(service: &Arc<Service>, ctx: &Context, cancel: &Cancell
     }
 
     // 先检查本地题库是否有确认答案
-    let local_bank = qa::load_local_bank(&bank_path);
+    let local_bank = if let Ok(qa_db) = service.get_qa_db().await {
+        qa_db.load_all_bank_questions().await.unwrap_or_default()
+    } else {
+        Default::default()
+    };
     let mut local_hits = 0;
     for question in &q.questions {
         let key = qa::bank_key(&q.task_id, &question.id);
@@ -1589,8 +1599,6 @@ pub(crate) async fn build_single_task_group(
         });
     }
 
-    let bank_path = service.path.parent().unwrap().join("qa-bank.json");
-
     // 3. 从服务端尝试拉取已有众包答案，并检测题组在服务端的存在状态
     let mut server_lacks_task_group = false;
     match qa::query_task_answers(&qa_url, qa_key.as_deref(), clean_tid, Some(cid)).await {
@@ -1734,16 +1742,6 @@ pub(crate) async fn build_single_task_group(
                 let _ = qa_db.upsert_bank_question(&b_q, Some(cid), Some(clean_tid)).await;
             }
         }
-
-        let _ = qa::record_passed_quiz_with_details(
-            &bank_path,
-            cid,
-            clean_tid,
-            &details.questions,
-            &details.answers,
-            &details.wrong_answers,
-            Some(&course_title),
-        );
     }
 
     // 5. 当检测到服务端缺少该题组（无论是提示 Task group not found in this course，还是课程接口中未包含），创建该题组到服务器
@@ -1792,31 +1790,31 @@ pub(crate) async fn build_single_task_group(
         );
         if let Ok(res) = qa::upload_batch(&qa_url, qa_key.as_deref(), &upload_payload, Some(service)).await {
             if res.ok && !details.questions.is_empty() {
-                let mut bank = qa::load_local_bank(&bank_path);
-                for q in &details.questions {
-                    let key = qa::bank_key(clean_tid, &q.id);
-                    if let Some(item) = bank.get_mut(&key) {
-                        item.uploaded = true;
-                    }
+                if let Ok(qa_db) = service.get_qa_db().await {
+                    let qids: Vec<String> = details.questions.iter().map(|q| q.id.clone()).collect();
+                    let _ = qa_db.mark_questions_uploaded(&qids).await;
                 }
-                let _ = qa::save_local_bank(&bank_path, &bank);
             }
         }
     } else {
         // 服务端已有该题单，同步缺失的题目
-        let _ = qa::sync_missing_to_server(
-            &bank_path,
-            &qa_url,
-            qa_key.as_deref(),
-            Some(cid),
-            Some(clean_tid),
-            Some(service),
-        ).await;
+        if let Ok(qa_db) = service.get_qa_db().await {
+            let _ = qa::sync_missing_to_server(
+                qa_db,
+                &qa_url,
+                qa_key.as_deref(),
+                Some(cid),
+                Some(clean_tid),
+                Some(service),
+            )
+            .await;
+        }
     }
 
     // 完成题目收录后，部分同步该课程的向量缓存
-    let cache_path = service.path.parent().unwrap().join("qa-vector-cache.json");
-    let _ = qa::download_qa_vectors(&cache_path, &qa_url, qa_key.as_deref(), &[cid.to_string()]).await;
+    if let Ok(qa_db) = service.get_qa_db().await {
+        let _ = qa::download_qa_vectors(qa_db, &qa_url, qa_key.as_deref(), &[cid.to_string()]).await;
+    }
 
     service.emit_bank_progress(&super::model::BankRebuildProgress {
         stage: "task_complete".into(),
@@ -1836,11 +1834,12 @@ pub(crate) async fn build_single_task_group(
 
 pub(crate) async fn build_local_bank(service: &Arc<Service>) -> Result<usize, String> {
     let Ok(_guard) = service.bank_building.try_lock() else {
-        let bank_path = service.path.parent().unwrap().join("qa-bank.json");
-        return Ok(qa::load_local_bank(&bank_path).len());
+        if let Ok(qa_db) = service.get_qa_db().await {
+            return Ok(qa_db.count_questions().await.unwrap_or(0));
+        }
+        return Ok(0);
     };
 
-    let bank_path = service.path.parent().unwrap().join("qa-bank.json");
     service.log_debug("bank", "开始构建本地题库...");
     service.emit_bank_progress(&super::model::BankRebuildProgress {
         stage: "start".into(),
@@ -2036,7 +2035,7 @@ pub(crate) async fn build_local_bank(service: &Arc<Service>) -> Result<usize, St
             }
         }
 
-        // 4. 从本地已持久化的 Toasty 题库与 qa-bank.json 补充该课程已知但可能暂未列出的 tid
+        // 4. 从本地已持久化的 Toasty 题库补充该课程已知但可能暂未列出的 tid
         if let Ok(qa_db) = service.get_qa_db().await {
             if let Ok(local_bank) = qa_db.load_all_bank_questions().await {
                 for q in local_bank.values() {
@@ -2049,20 +2048,6 @@ pub(crate) async fn build_local_bank(service: &Arc<Service>) -> Result<usize, St
                         if seen_tids.insert(clean.to_string()) {
                             course_quizzes.push((clean.to_string(), q.course_name.clone().unwrap_or_default(), is_fin));
                         }
-                    }
-                }
-            }
-        }
-        {
-            let local_bank = qa::load_local_bank(&bank_path);
-            for q in local_bank.values() {
-                if q.cid == course.id {
-                    let is_fin = !q.correct_answers.is_empty();
-                    if is_fin {
-                        finished_tids.insert(q.tid.clone());
-                    }
-                    if seen_tids.insert(q.tid.clone()) {
-                        course_quizzes.push((q.tid.clone(), q.course_name.clone().unwrap_or_default(), is_fin));
                     }
                 }
             }
@@ -2083,20 +2068,23 @@ pub(crate) async fn build_local_bank(service: &Arc<Service>) -> Result<usize, St
         }
 
         // 7. 课程级别最终全量同步
-        let _ = qa::sync_missing_to_server(
-            &bank_path,
-            &qa_url,
-            qa_key.as_deref(),
-            Some(&course.id),
-            None,
-            Some(service),
-        ).await;
+        if let Ok(qa_db) = service.get_qa_db().await {
+            let _ = qa::sync_missing_to_server(
+                qa_db,
+                &qa_url,
+                qa_key.as_deref(),
+                Some(&course.id),
+                None,
+                Some(service),
+            )
+            .await;
+        }
     }
 
     let total = if let Ok(qa_db) = service.get_qa_db().await {
         qa_db.count_questions().await.unwrap_or(0)
     } else {
-        qa::load_local_bank(&bank_path).len()
+        0
     };
     service.log_debug("bank", format!("本地题库构建完成，当前收录 {total} 道题目"));
     service.emit_bank_progress(&super::model::BankRebuildProgress {

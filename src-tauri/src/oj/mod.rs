@@ -1,6 +1,7 @@
 mod client;
 pub(crate) mod commands;
 mod companion;
+pub(crate) mod db;
 pub(crate) mod mcp;
 pub(crate) mod model;
 mod monitor;
@@ -691,7 +692,7 @@ pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
         app.path()
             .app_data_dir()
             .map_err(|_| "OJ 数据目录不可用")?
-            .join("oj/state.json"),
+            .join("oj/state.sqlite"),
     )?;
     store
         .service

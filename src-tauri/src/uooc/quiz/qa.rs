@@ -3,7 +3,6 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use std::path::Path;
 use std::sync::LazyLock;
 use std::time::Duration;
 
@@ -306,20 +305,6 @@ pub(crate) struct MissingOnServerItem {
 pub(crate) struct BankMatchResponse {
     #[serde(default, alias = "missing_on_server")]
     pub missing_on_server: Vec<MissingOnServerItem>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct CachedVectorQuestion {
-    pub id: Option<i64>,
-    pub tid: String,
-    pub cid: Option<String>,
-    pub question_id: String,
-    pub question_type: String,
-    pub stem: String,
-    pub embedding: Vec<f32>,
-    pub options: Option<Vec<QaUploadOption>>,
-    pub answers: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -867,9 +852,7 @@ pub(crate) fn build_embedding_text(
     parts.join("\n")
 }
 
-use rig_core::embeddings::Embedding;
 pub use rig_core::vector_store::in_memory_store::InMemoryVectorStore;
-use rusqlite::{params, Connection};
 
 // ─────────────────────────────────────────────────────────────
 // Rig In-Memory + SQLite 题库 RAG 文档与持久化
@@ -895,165 +878,6 @@ impl QuestionRagDocument {
         } else {
             format!("{}\n选项：\n{}", self.stem, opts)
         }
-    }
-}
-
-pub struct QuizQaBankDb(pub Connection);
-
-impl QuizQaBankDb {
-    pub fn open(db_path: &Path) -> Result<Self, String> {
-        let conn = Connection::open(db_path).map_err(|e| format!("无法打开题库 SQLite 数据库: {e}"))?;
-        conn.execute_batch(
-            "PRAGMA journal_mode=WAL;
-             PRAGMA synchronous=NORMAL;
-             CREATE TABLE IF NOT EXISTS quiz_qa_bank (
-                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                 question_id TEXT NOT NULL UNIQUE,
-                 cid TEXT,
-                 tid TEXT,
-                 question_type TEXT NOT NULL,
-                 stem TEXT NOT NULL,
-                 stem_hash TEXT NOT NULL,
-                 options_json TEXT,
-                 answers_json TEXT NOT NULL,
-                 embedding_blob BLOB,
-                 updated_at_ms INTEGER NOT NULL
-             );
-             CREATE INDEX IF NOT EXISTS idx_qa_bank_hash ON quiz_qa_bank(stem_hash);
-             CREATE INDEX IF NOT EXISTS idx_qa_bank_cid ON quiz_qa_bank(cid);
-             CREATE INDEX IF NOT EXISTS idx_qa_bank_tid ON quiz_qa_bank(tid);"
-        ).map_err(|e| format!("无法初始化题库表结构: {e}"))?;
-        Ok(Self(conn))
-    }
-
-    pub fn upsert_question(
-        &self,
-        q: &LocalBankQuestion,
-        cid: Option<&str>,
-        tid: Option<&str>,
-    ) -> Result<(), String> {
-        let stem = q.stem.clone().unwrap_or_default();
-        let stem_h = hash_stem(&stem);
-        let options_json = serde_json::to_string(&q.options).unwrap_or_default();
-        let answers_json = serde_json::to_string(&q.correct_answers).unwrap_or_default();
-
-        let clean_opts: Option<Vec<QaUploadOption>> = q.options.as_ref().map(|opts| {
-            opts.iter().map(|o| QaUploadOption { id: o.id.clone(), text: o.text.clone() }).collect()
-        });
-        let embed_text = build_embedding_text(Some(&stem), clean_opts.as_deref());
-        let vec_f32 = compute_local_embedding(&embed_text);
-        let embedding_blob = vector_to_blob(&vec_f32);
-
-        self.0.execute(
-            "INSERT INTO quiz_qa_bank (question_id, cid, tid, question_type, stem, stem_hash, options_json, answers_json, embedding_blob, updated_at_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
-             ON CONFLICT(question_id) DO UPDATE SET
-                 cid=coalesce(excluded.cid, quiz_qa_bank.cid),
-                 tid=coalesce(excluded.tid, quiz_qa_bank.tid),
-                 stem=excluded.stem,
-                 stem_hash=excluded.stem_hash,
-                 options_json=excluded.options_json,
-                 answers_json=excluded.answers_json,
-                 embedding_blob=excluded.embedding_blob,
-                 updated_at_ms=excluded.updated_at_ms",
-            params![
-                q.question_id,
-                cid,
-                tid,
-                q.question_type,
-                stem,
-                stem_h,
-                options_json,
-                answers_json,
-                embedding_blob,
-                q.updated_at_ms,
-            ],
-        ).map_err(|e| format!("题库保存失败: {e}"))?;
-        Ok(())
-    }
-
-    pub fn load_rag_documents(
-        &self,
-        cid: Option<&str>,
-        tid: Option<&str>,
-    ) -> Result<Vec<(QuestionRagDocument, Vec<f32>)>, String> {
-        let mut sql = "SELECT question_id, cid, tid, question_type, stem, options_json, answers_json, embedding_blob FROM quiz_qa_bank WHERE 1=1".to_string();
-        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-
-        if let Some(c) = cid {
-            sql.push_str(" AND (cid=? OR cid IS NULL)");
-            params_vec.push(Box::new(c.to_string()));
-        }
-        if let Some(t) = tid {
-            sql.push_str(" AND (tid=? OR tid IS NULL)");
-            params_vec.push(Box::new(t.to_string()));
-        }
-        sql.push_str(" ORDER BY updated_at_ms DESC LIMIT 3000");
-
-        let mut stmt = self.0.prepare(&sql).map_err(|e| e.to_string())?;
-        let params_slice: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| &**b).collect();
-        let rows = stmt.query_map(params_slice.as_slice(), |row| {
-            let question_id: String = row.get(0)?;
-            let cid_val: Option<String> = row.get(1)?;
-            let tid_val: Option<String> = row.get(2)?;
-            let question_type: String = row.get(3)?;
-            let stem: String = row.get(4)?;
-            let options_json: Option<String> = row.get(5)?;
-            let answers_json: String = row.get(6)?;
-            let blob: Option<Vec<u8>> = row.get(7)?;
-
-            let options: Vec<String> = options_json
-                .and_then(|s| serde_json::from_str::<Vec<QaUploadOption>>(&s).ok())
-                .map(|opts| opts.into_iter().map(|o| format!("{}. {}", o.id, o.text)).collect())
-                .unwrap_or_default();
-            let answers: Vec<String> = serde_json::from_str(&answers_json).unwrap_or_default();
-
-            let vec = if let Some(b) = blob {
-                blob_to_vector(&b)
-            } else {
-                compute_local_embedding(&stem)
-            };
-
-            Ok((
-                QuestionRagDocument {
-                    question_id,
-                    tid: tid_val,
-                    cid: cid_val,
-                    stem,
-                    question_type,
-                    options,
-                    answers,
-                },
-                vec,
-            ))
-        }).map_err(|e| e.to_string())?;
-
-        let mut out = Vec::new();
-        for r in rows {
-            if let Ok(item) = r {
-                out.push(item);
-            }
-        }
-        Ok(out)
-    }
-
-    pub fn build_in_memory_store(
-        &self,
-        cid: Option<&str>,
-        tid: Option<&str>,
-    ) -> Result<InMemoryVectorStore<QuestionRagDocument>, String> {
-        let docs = self.load_rag_documents(cid, tid)?;
-        let mut store = InMemoryVectorStore::default();
-        let formatted = docs
-            .into_iter()
-            .map(|(doc, v_f32)| {
-                let embed_text = doc.to_embed_text();
-                let vec_f64: Vec<f64> = v_f32.into_iter().map(|x| x as f64).collect();
-                let qid = doc.question_id.clone();
-                (qid, doc, vec![Embedding { document: embed_text, vec: vec_f64 }])
-            });
-        store.add_documents_with_ids(formatted);
-        Ok(store)
     }
 }
 
@@ -1615,20 +1439,6 @@ pub(crate) fn bank_key(tid: &str, question_id: &str) -> String {
     format!("{tid}:{question_id}")
 }
 
-pub(crate) fn load_local_bank(bank_path: &Path) -> BTreeMap<String, LocalBankQuestion> {
-    crate::uooc::persistence::read::<BTreeMap<String, LocalBankQuestion>>(bank_path)
-        .ok()
-        .flatten()
-        .unwrap_or_default()
-}
-
-pub(crate) fn save_local_bank(
-    bank_path: &Path,
-    bank: &BTreeMap<String, LocalBankQuestion>,
-) -> Result<(), String> {
-    crate::uooc::persistence::write(bank_path, bank)
-}
-
 fn normalize_answers_for_upload(
     q_type: &str,
     clean_opts: &[QaUploadOption],
@@ -1973,8 +1783,8 @@ pub(crate) fn build_batch_upload_payload_with_details(
 }
 
 /// 录入已通过并确认答案（及已知错误选项）的测验试题到本地题库表，标记 uploaded 状态
-pub(crate) fn record_passed_quiz_with_details(
-    bank_path: &Path,
+pub(crate) async fn record_passed_quiz_with_details(
+    qa_db: &super::db::QaDatabase,
     cid: &str,
     task_id: &str,
     questions: &[Question],
@@ -1983,7 +1793,7 @@ pub(crate) fn record_passed_quiz_with_details(
     course_name: Option<&str>,
 ) -> Result<usize, String> {
     let clean_tid = sanitize_task_id(task_id);
-    let mut bank = load_local_bank(bank_path);
+    let bank = qa_db.load_all_bank_questions().await.unwrap_or_default();
     let mut count = 0;
     let now = chrono::Utc::now().timestamp_millis();
     let content_answers = extract_answers_content(answers, questions);
@@ -2140,24 +1950,17 @@ pub(crate) fn record_passed_quiz_with_details(
             uploaded: already_uploaded,
             updated_at_ms: now,
         };
-        bank.insert(key, record.clone());
+        let _ = qa_db.upsert_bank_question(&record, Some(cid), Some(clean_tid)).await;
         count += 1;
-
-        // 同步落库 SQLite 题库
-        let db_path = bank_path.with_file_name("quiz_qa_bank.db");
-        if let Ok(db) = QuizQaBankDb::open(&db_path) {
-            let _ = db.upsert_question(&record, Some(cid), Some(clean_tid));
-        }
     }
 
-    save_local_bank(bank_path, &bank)?;
     Ok(count)
 }
 
 /// 录入已通过并确认答案的测验试题到本地题库表，标记 uploaded 状态
 #[cfg(test)]
-pub(crate) fn record_passed_quiz(
-    bank_path: &Path,
+pub(crate) async fn record_passed_quiz(
+    qa_db: &super::db::QaDatabase,
     cid: &str,
     task_id: &str,
     questions: &[Question],
@@ -2165,7 +1968,7 @@ pub(crate) fn record_passed_quiz(
     course_name: Option<&str>,
 ) -> Result<usize, String> {
     record_passed_quiz_with_details(
-        bank_path,
+        qa_db,
         cid,
         task_id,
         questions,
@@ -2173,19 +1976,20 @@ pub(crate) fn record_passed_quiz(
         &Answers::new(),
         course_name,
     )
+    .await
 }
 
 /// 针对本地维护的确认答案题目列表，调用 POST /api/automation/match 进行服务端缺失确认，
 /// 并自动将服务端缺失（或本地未上传）的题库打包上传至 /api/upload/batch
 pub(crate) async fn sync_missing_to_server(
-    bank_path: &Path,
+    qa_db: &super::db::QaDatabase,
     server_url: &str,
     api_key: Option<&str>,
     cid: Option<&str>,
     tid: Option<&str>,
     service: Option<&crate::uooc::Service>,
 ) -> Result<usize, String> {
-    let mut bank = load_local_bank(bank_path);
+    let mut bank = qa_db.load_all_bank_questions().await.unwrap_or_default();
     if bank.is_empty() {
         return Ok(0);
     }
@@ -2362,29 +2166,31 @@ pub(crate) async fn sync_missing_to_server(
 
         if let Ok(res) = upload_batch(server_url, api_key, &upload_payload, service).await {
             if res.ok {
+                let mut qids = Vec::new();
                 for q in qs {
                     let k = bank_key(&q.tid, &q.question_id);
                     if let Some(item) = bank.get_mut(&k) {
                         item.uploaded = true;
                         uploaded_count += 1;
+                        qids.push(q.question_id.clone());
                     }
                 }
+                let _ = qa_db.mark_questions_uploaded(&qids).await;
             }
         }
     }
 
-    let _ = save_local_bank(bank_path, &bank);
     Ok(uploaded_count)
 }
 
 /// 手动全量上传本地题库的所有题目至服务端，按 (cid, tid) 分组打包提交
 pub(crate) async fn upload_all_local_bank(
-    bank_path: &Path,
+    qa_db: &super::db::QaDatabase,
     server_url: &str,
     api_key: Option<&str>,
     service: Option<&crate::uooc::Service>,
 ) -> Result<usize, String> {
-    let mut bank = load_local_bank(bank_path);
+    let mut bank = qa_db.load_all_bank_questions().await.unwrap_or_default();
     if bank.is_empty() {
         return Ok(0);
     }
@@ -2418,17 +2224,19 @@ pub(crate) async fn upload_all_local_bank(
             .map_err(|e| format!("全量上传任务 {tid} 失败: {e}"))?;
 
         if res.ok {
+            let mut qids = Vec::new();
             for q in questions {
                 let k = bank_key(&q.tid, &q.question_id);
                 if let Some(item) = bank.get_mut(&k) {
                     item.uploaded = true;
                     total_uploaded += 1;
+                    qids.push(q.question_id.clone());
                 }
             }
+            let _ = qa_db.mark_questions_uploaded(&qids).await;
         }
     }
 
-    let _ = save_local_bank(bank_path, &bank);
     Ok(total_uploaded)
 }
 
@@ -3482,26 +3290,11 @@ pub(crate) fn align_view_details_to_questions(
 }
 
 // ─────────────────────────────────────────────────────────────
-// 本地题库向量缓存与向量检索 (Vector Cache & Search)
+// 本地题库向量缓存与向量检索 (Vector Cache & Search via Toasty SQLite)
 // ─────────────────────────────────────────────────────────────
 
-pub(crate) fn load_vector_cache(cache_path: &Path) -> Vec<CachedVectorQuestion> {
-    crate::uooc::persistence::read::<Vec<CachedVectorQuestion>>(cache_path)
-        .ok()
-        .flatten()
-        .unwrap_or_default()
-}
-
-pub(crate) fn save_vector_cache(
-    cache_path: &Path,
-    vectors: &[CachedVectorQuestion],
-) -> Result<(), String> {
-    crate::uooc::persistence::write(cache_path, &vectors)
-}
-
-pub(crate) fn get_vector_status(cache_path: &Path) -> EmbeddingModelStatus {
-    let list = load_vector_cache(cache_path);
-    let count = list.len();
+pub(crate) async fn get_vector_status(qa_db: &super::db::QaDatabase) -> EmbeddingModelStatus {
+    let count = qa_db.count_embedding_questions().await.unwrap_or(0);
     EmbeddingModelStatus {
         status: if count > 0 { "ready".into() } else { "empty".into() },
         cached_count: count,
@@ -3515,19 +3308,13 @@ pub(crate) fn get_vector_status(cache_path: &Path) -> EmbeddingModelStatus {
     }
 }
 
-/// 从服务端批量拉取题目并缓存 512 维向量
+/// 从服务端批量拉取题目并落库 SQLite 512 维特征向量
 pub(crate) async fn download_qa_vectors(
-    cache_path: &Path,
+    qa_db: &super::db::QaDatabase,
     server_url: &str,
     api_key: Option<&str>,
     cids: &[String],
 ) -> Result<EmbeddingModelStatus, String> {
-    let mut cached = load_vector_cache(cache_path);
-    let mut seen_ids = std::collections::HashSet::new();
-    for item in &cached {
-        seen_ids.insert(format!("{}:{}", item.tid, item.question_id));
-    }
-
     let base = server_url.trim_end_matches('/');
     let client = http_client()?;
 
@@ -3571,62 +3358,52 @@ pub(crate) async fn download_qa_vectors(
         }
     }
 
-    // 3. 逐个题组拉取题目并生成/记录向量
+    // 3. 逐个题组拉取题目并落库 SQLite
     for (cid, tid) in tids_to_fetch {
         if let Ok(qs) = query_task_answers(server_url, api_key, &tid, if cid.is_empty() { None } else { Some(&cid) }).await {
             for q in qs {
                 let Some(ref qid) = q.question_id else { continue };
-                let key = format!("{tid}:{qid}");
-                if seen_ids.insert(key) {
-                    let stem_text = q.stem.clone().unwrap_or_default();
-                    let clean_opts: Option<Vec<QaUploadOption>> = q.options.as_ref().map(|opts| {
-                        opts.iter()
-                            .map(|o| QaUploadOption { id: o.id.clone(), text: o.text.clone() })
-                            .collect()
-                    });
-                    let embedding = match q.stem_embedding {
-                        Some(ref v) if v.len() == EMBEDDING_DIMENSIONS => v.clone(),
-                        _ => {
-                            let text = build_embedding_text(Some(&stem_text), clean_opts.as_deref());
-                            compute_local_embedding(&text)
-                        }
-                    };
+                let stem_text = q.stem.clone().unwrap_or_default();
+                let clean_opts: Option<Vec<QaUploadOption>> = q.options.as_ref().map(|opts| {
+                    opts.iter()
+                        .map(|o| QaUploadOption { id: o.id.clone(), text: o.text.clone() })
+                        .collect()
+                });
+                let embedding = match q.stem_embedding {
+                    Some(ref v) if v.len() == EMBEDDING_DIMENSIONS => v.clone(),
+                    _ => {
+                        let text = build_embedding_text(Some(&stem_text), clean_opts.as_deref());
+                        compute_local_embedding(&text)
+                    }
+                };
 
-                    let answers = q
-                        .answers
-                        .iter()
-                        .filter(|a| a.is_correct)
-                        .flat_map(|a| a.values.clone())
-                        .collect();
+                let answers: Vec<String> = q
+                    .answers
+                    .iter()
+                    .filter(|a| a.is_correct)
+                    .flat_map(|a| a.values.clone())
+                    .collect();
 
-                    cached.push(CachedVectorQuestion {
-                        id: q.id,
-                        tid: tid.clone(),
-                        cid: if cid.is_empty() { None } else { Some(cid.clone()) },
-                        question_id: qid.clone(),
-                        question_type: q.question_type.unwrap_or_else(|| "single".into()),
-                        stem: stem_text,
-                        embedding,
-                        options: q.options.map(|opts| {
-                            opts.into_iter()
-                                .map(|o| QaUploadOption { id: o.id, text: o.text })
-                                .collect()
-                        }),
-                        answers,
-                    });
-                }
+                let _ = qa_db.upsert_server_question(
+                    if cid.is_empty() { None } else { Some(&cid) },
+                    &tid,
+                    qid,
+                    q.question_type.as_deref().unwrap_or("single"),
+                    &stem_text,
+                    clean_opts.as_deref(),
+                    &answers,
+                    &embedding,
+                ).await;
             }
         }
     }
 
-    save_vector_cache(cache_path, &cached)?;
-    Ok(get_vector_status(cache_path))
+    Ok(get_vector_status(qa_db).await)
 }
 
-/// 本地完成 512 维向量计算后搜索题目（优先结合本地向量缓存与本地题库余弦相似度，若网络可用结合服务端远程搜索）
+/// 本地完成 512 维向量计算后搜索题目（结合 SQLite 本地题库向量特征与远程服务端搜索）
 pub(crate) async fn search_questions_with_local_embedding(
-    cache_path: &Path,
-    bank_path: &Path,
+    qa_db: &super::db::QaDatabase,
     server_url: &str,
     api_key: Option<&str>,
     query: &str,
@@ -3643,51 +3420,24 @@ pub(crate) async fn search_questions_with_local_embedding(
     let mut results: Vec<QaSearchResultItem> = Vec::new();
     let mut seen_qids = std::collections::HashSet::new();
 
-    // 2. 本地已下载缓存的向量库检索 (余弦相似度与关键词检索)
-    let cached = load_vector_cache(cache_path);
-    for item in &cached {
-        let sim = cosine_similarity(&local_vector, &item.embedding);
-        if sim > 0.3 || normalize_stem(&item.stem).contains(&normalize_stem(trimmed)) {
+    // 2. 从本地 SQLite 数据库中检索向量库
+    let embedded = qa_db.load_all_embedded_questions().await.unwrap_or_default();
+    for (item, emb) in embedded {
+        let sim = cosine_similarity(&local_vector, &emb);
+        let stem_text = item.stem.clone().unwrap_or_default();
+        if sim > 0.3 || normalize_stem(&stem_text).contains(&normalize_stem(trimmed)) {
             seen_qids.insert(item.question_id.clone());
             results.push(QaSearchResultItem {
                 question_id: item.question_id.clone(),
                 tid: Some(item.tid.clone()),
-                cid: item.cid.clone(),
-                stem: item.stem.clone(),
+                cid: if item.cid.is_empty() { None } else { Some(item.cid.clone()) },
+                stem: stem_text,
                 question_type: item.question_type.clone(),
                 similarity: sim,
-                answers: item.answers.clone(),
-                source: "题库向量检索".into(),
-                options: item.options.clone(),
-            });
-        }
-    }
-
-    // 3. 检索本地已收录题库 (qa-bank.json)，即使离线也能完整检索
-    if bank_path.exists() {
-        let bank = load_local_bank(bank_path);
-        for q in bank.values() {
-            if seen_qids.contains(&q.question_id) {
-                continue;
-            }
-            let clean_stem = q.stem.as_deref().map(strip_html_tags).unwrap_or_default();
-            let clean_opts: Option<Vec<QaUploadOption>> = q.options.as_ref().map(|opts| {
-                opts.iter()
-                    .map(|o| QaUploadOption {
-                        id: o.id.clone(),
-                        text: strip_html_tags(&o.text),
-                    })
-                    .collect()
-            });
-            let text = build_embedding_text(Some(&clean_stem), clean_opts.as_deref());
-            let q_vec = compute_local_embedding(&text);
-            let sim = cosine_similarity(&local_vector, &q_vec);
-            if sim > 0.3 || normalize_stem(&clean_stem).contains(&normalize_stem(trimmed)) {
-                seen_qids.insert(q.question_id.clone());
-                let answers = if !q.correct_answers.is_empty() {
-                    q.correct_answers.clone()
+                answers: if !item.correct_answers.is_empty() {
+                    item.correct_answers
                 } else {
-                    q.answers
+                    item.answers
                         .iter()
                         .filter(|a| a.is_correct)
                         .flat_map(|a| {
@@ -3699,19 +3449,60 @@ pub(crate) async fn search_questions_with_local_embedding(
                             })
                         })
                         .collect()
-                };
-                results.push(QaSearchResultItem {
-                    question_id: q.question_id.clone(),
-                    tid: Some(q.tid.clone()),
-                    cid: Some(q.cid.clone()),
-                    stem: clean_stem,
-                    question_type: q.question_type.clone(),
-                    similarity: sim,
-                    answers,
-                    source: "题库语义检索".into(),
-                    options: clean_opts,
-                });
-            }
+                },
+                source: "题库向量检索".into(),
+                options: item.options.clone(),
+            });
+        }
+    }
+
+    // 3. 检索本地 SQLite 题库中其他未生成向量的题目进行关键词补充
+    let bank = qa_db.load_all_bank_questions().await.unwrap_or_default();
+    for q in bank.into_values() {
+        if seen_qids.contains(&q.question_id) {
+            continue;
+        }
+        let clean_stem = q.stem.as_deref().map(strip_html_tags).unwrap_or_default();
+        let clean_opts: Option<Vec<QaUploadOption>> = q.options.as_ref().map(|opts| {
+            opts.iter()
+                .map(|o| QaUploadOption {
+                    id: o.id.clone(),
+                    text: strip_html_tags(&o.text),
+                })
+                .collect()
+        });
+        let text = build_embedding_text(Some(&clean_stem), clean_opts.as_deref());
+        let q_vec = compute_local_embedding(&text);
+        let sim = cosine_similarity(&local_vector, &q_vec);
+        if sim > 0.3 || normalize_stem(&clean_stem).contains(&normalize_stem(trimmed)) {
+            seen_qids.insert(q.question_id.clone());
+            let answers = if !q.correct_answers.is_empty() {
+                q.correct_answers.clone()
+            } else {
+                q.answers
+                    .iter()
+                    .filter(|a| a.is_correct)
+                    .flat_map(|a| {
+                        a.values.iter().map(|v| match v {
+                            serde_json::Value::String(s) => s.clone(),
+                            serde_json::Value::Bool(true) => "A".to_string(),
+                            serde_json::Value::Bool(false) => "B".to_string(),
+                            other => other.to_string(),
+                        })
+                    })
+                    .collect()
+            };
+            results.push(QaSearchResultItem {
+                question_id: q.question_id,
+                tid: Some(q.tid),
+                cid: if q.cid.is_empty() { None } else { Some(q.cid) },
+                stem: clean_stem,
+                question_type: q.question_type,
+                similarity: sim,
+                answers,
+                source: "题库语义检索".into(),
+                options: clean_opts,
+            });
         }
     }
 
@@ -4005,7 +3796,8 @@ mod tests {
         use tempfile::tempdir;
 
         let dir = tempdir().unwrap();
-        let bank_path = dir.path().join("qa-bank.json");
+        let db_path = dir.path().join("quiz_qa_bank.db");
+        let qa_db = super::super::db::QaDatabase::open(&db_path).await.unwrap();
 
         let mut answers = Answers::new();
         answers.insert("q1".into(), vec!["A".into()]);
@@ -4022,9 +3814,9 @@ mod tests {
         }];
 
         // 1. Record passed quiz into local bank
-        let recorded = record_passed_quiz(&bank_path, "200", "100", &questions, &answers, None).unwrap();
+        let recorded = record_passed_quiz(&qa_db, "200", "100", &questions, &answers, None).await.unwrap();
         assert_eq!(recorded, 1);
-        let bank = load_local_bank(&bank_path);
+        let bank = qa_db.load_all_bank_questions().await.unwrap();
         assert_eq!(bank.len(), 1);
         assert_eq!(bank.get("100:q1").unwrap().uploaded, false);
 
@@ -4057,7 +3849,7 @@ mod tests {
             json!({ "error": "not found" })
         });
 
-        let uploaded_count = sync_missing_to_server(&bank_path, &server.base, Some("test_key"), Some("200"), Some("100"), None)
+        let uploaded_count = sync_missing_to_server(&qa_db, &server.base, Some("test_key"), Some("200"), Some("100"), None)
             .await
             .unwrap();
         assert_eq!(uploaded_count, 1);
@@ -4065,7 +3857,7 @@ mod tests {
         assert_eq!(upload_calls.load(Ordering::SeqCst), 1);
 
         // Check local bank marked as uploaded
-        let updated_bank = load_local_bank(&bank_path);
+        let updated_bank = qa_db.load_all_bank_questions().await.unwrap();
         assert_eq!(updated_bank.get("100:q1").unwrap().uploaded, true);
     }
 
@@ -4141,7 +3933,8 @@ mod tests {
         use tempfile::tempdir;
 
         let dir = tempdir().unwrap();
-        let bank_path = dir.path().join("qa-bank.json");
+        let db_path = dir.path().join("quiz_qa_bank.db");
+        let qa_db = super::super::db::QaDatabase::open(&db_path).await.unwrap();
 
         let mut answers1 = Answers::new();
         answers1.insert("q1".into(), vec!["A".into()]);
@@ -4156,7 +3949,7 @@ mod tests {
             blanks: 0,
             images: vec![],
         }];
-        record_passed_quiz(&bank_path, "10", "101", &questions1, &answers1, None).unwrap();
+        record_passed_quiz(&qa_db, "10", "101", &questions1, &answers1, None).await.unwrap();
 
         let mut answers2 = Answers::new();
         answers2.insert("q2".into(), vec!["B".into(), "C".into()]);
@@ -4172,7 +3965,7 @@ mod tests {
             blanks: 0,
             images: vec![],
         }];
-        record_passed_quiz(&bank_path, "10", "102", &questions2, &answers2, None).unwrap();
+        record_passed_quiz(&qa_db, "10", "102", &questions2, &answers2, None).await.unwrap();
 
         let upload_calls = Arc::new(AtomicUsize::new(0));
         let upload_calls_clone = upload_calls.clone();
@@ -4185,11 +3978,11 @@ mod tests {
             json!({ "error": "not found" })
         });
 
-        let uploaded_count = upload_all_local_bank(&bank_path, &server.base, Some("mock-key"), None).await.unwrap();
+        let uploaded_count = upload_all_local_bank(&qa_db, &server.base, Some("mock-key"), None).await.unwrap();
         assert_eq!(uploaded_count, 2);
         assert_eq!(upload_calls.load(Ordering::SeqCst), 2); // 2 different tids (101 and 102)
 
-        let bank = load_local_bank(&bank_path);
+        let bank = qa_db.load_all_bank_questions().await.unwrap();
         assert!(bank.get("101:q1").unwrap().uploaded);
         assert!(bank.get("102:q2").unwrap().uploaded);
     }
@@ -4376,8 +4169,8 @@ mod tests {
     async fn search_questions_works_offline_with_local_bank_and_cache() {
         use tempfile::tempdir;
         let dir = tempdir().unwrap();
-        let cache_path = dir.path().join("qa-vector-cache.json");
-        let bank_path = dir.path().join("qa-bank.json");
+        let db_path = dir.path().join("quiz_qa_bank.db");
+        let qa_db = super::super::db::QaDatabase::open(&db_path).await.unwrap();
 
         // 写入本地题库
         let mut answers = Answers::new();
@@ -4393,12 +4186,11 @@ mod tests {
             blanks: 0,
             images: vec![],
         }];
-        record_passed_quiz(&bank_path, "101", "201", &questions, &answers, None).unwrap();
+        record_passed_quiz(&qa_db, "101", "201", &questions, &answers, None).await.unwrap();
 
         // 当给出一个完全不存在且连不上的服务器地址时（离线状况）
         let results = search_questions_with_local_embedding(
-            &cache_path,
-            &bank_path,
+            &qa_db,
             "http://127.0.0.1:54321", // 不可达的离线地址
             None,
             "高等数学定积分",
@@ -4412,8 +4204,8 @@ mod tests {
         assert!(results.iter().any(|r| r.question_id == "local_q1"));
     }
 
-    #[test]
-    fn completed_exam_view_with_user_response_parsing_and_grading() {
+    #[tokio::test]
+    async fn completed_exam_view_with_user_response_parsing_and_grading() {
         use tempfile::tempdir;
 
         // 1. Verify sanitize_task_id handles URL anchors
@@ -4657,18 +4449,19 @@ mod tests {
 
         // 8. 录入题库验证：错题不录入为 correct_answers，而是标记为 is_correct = false
         let dir = tempdir().unwrap();
-        let bank_path = dir.path().join("qa-bank.json");
+        let db_path = dir.path().join("quiz_qa_bank.db");
+        let qa_db = super::super::db::QaDatabase::open(&db_path).await.unwrap();
         record_passed_quiz_with_details(
-            &bank_path,
+            &qa_db,
             "1809008735",
             "1243266098%23%23anchor1086731163",
             &details.questions,
             &details.answers,
             &details.wrong_answers,
             Some("2026年秋季学期"),
-        ).unwrap();
+        ).await.unwrap();
 
-        let bank = load_local_bank(&bank_path);
+        let bank = qa_db.load_all_bank_questions().await.unwrap();
         // 确认 key 用的是干净的 1243266098
         let q4_key = bank_key("1243266098", "1086731163");
         let q4_record = bank.get(&q4_key).expect("Q4 应存在于题库");
@@ -4681,13 +4474,13 @@ mod tests {
         assert!(q1_record.answers.iter().any(|a| a.is_correct));
     }
 
-    #[test]
-    fn quiz_qa_bank_sqlite_and_rig_in_memory_rag_flow() {
+    #[tokio::test]
+    async fn quiz_qa_bank_sqlite_and_rig_in_memory_rag_flow() {
         use tempfile::tempdir;
         let dir = tempdir().unwrap();
         let db_path = dir.path().join("quiz_qa_bank.db");
 
-        let db = QuizQaBankDb::open(&db_path).expect("初始化题库 SQLite 成功");
+        let db = super::super::db::QaDatabase::open(&db_path).await.expect("初始化题库 SQLite 成功");
 
         let q1 = LocalBankQuestion {
             cid: "cid_szu".into(),
@@ -4727,17 +4520,11 @@ mod tests {
             updated_at_ms: chrono::Utc::now().timestamp_millis(),
         };
 
-        db.upsert_question(&q1, Some("cid_szu"), Some("tid_szu")).unwrap();
-        db.upsert_question(&q2, Some("cid_math"), Some("tid_math")).unwrap();
-
-        // 验证从 SQLite 加载 RAG 候选
-        let docs = db.load_rag_documents(Some("cid_szu"), None).unwrap();
-        assert_eq!(docs.len(), 1);
-        assert_eq!(docs[0].0.question_id, "q_sqlite_1");
-        assert_eq!(docs[0].1.len(), EMBEDDING_DIMENSIONS);
+        db.upsert_bank_question(&q1, Some("cid_szu"), Some("tid_szu")).await.unwrap();
+        db.upsert_bank_question(&q2, Some("cid_math"), Some("tid_math")).await.unwrap();
 
         // 验证构建 Rig In-Memory 向量库并检索
-        let store = db.build_in_memory_store(None, None).unwrap();
+        let store = db.build_in_memory_rag_store(None, None).await.unwrap();
         assert_eq!(store.len(), 2);
 
         let matches = query_rag_candidates(&store, "深大哪一年建校", 3, 0.15);
@@ -4746,11 +4533,12 @@ mod tests {
         assert_eq!(matches[0].1.answers, vec!["B".to_string()]);
     }
 
-    #[test]
-    fn standard_answers_eliminate_exclusions_and_upload_payload_omits_wrong_answers() {
+    #[tokio::test]
+    async fn standard_answers_eliminate_exclusions_and_upload_payload_omits_wrong_answers() {
         use tempfile::tempdir;
         let dir = tempdir().unwrap();
-        let bank_path = dir.path().join("qa-bank.json");
+        let db_path = dir.path().join("quiz_qa_bank.db");
+        let qa_db = super::super::db::QaDatabase::open(&db_path).await.unwrap();
 
         let q1 = Question {
             id: "101".into(),
@@ -4772,16 +4560,16 @@ mod tests {
         wrong_initial.insert("101".into(), vec!["C".into(), "D".into()]);
 
         record_passed_quiz_with_details(
-            &bank_path,
+            &qa_db,
             "cid_1",
             "tid_1",
             &[q1.clone()],
             &answers_empty,
             &wrong_initial,
             Some("测试课程"),
-        ).unwrap();
+        ).await.unwrap();
 
-        let bank1 = load_local_bank(&bank_path);
+        let bank1 = qa_db.load_all_bank_questions().await.unwrap();
         let q1_key = bank_key("tid_1", "101");
         let item1 = bank1.get(&q1_key).unwrap();
         assert!(item1.correct_answers.is_empty());
@@ -4802,16 +4590,16 @@ mod tests {
         wrong_later.insert("101".into(), vec!["C".into()]);
 
         record_passed_quiz_with_details(
-            &bank_path,
+            &qa_db,
             "cid_1",
             "tid_1",
             &[q1.clone()],
             &answers_correct,
             &wrong_later,
             Some("测试课程"),
-        ).unwrap();
+        ).await.unwrap();
 
-        let bank2 = load_local_bank(&bank_path);
+        let bank2 = qa_db.load_all_bank_questions().await.unwrap();
         let item2 = bank2.get(&q1_key).unwrap();
         assert_eq!(item2.correct_answers, vec!["选项B".to_string()]);
         // 规范要求 1：标准答案确定后，排除答案不用再存！answers 中只应包含 is_correct = true

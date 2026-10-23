@@ -1377,12 +1377,11 @@ pub(super) async fn generate(
     let mut all_sessions = vec![];
 
     // 加载题库 SQLite 内存向量索引 (RAG 增强)
-    let db_path = service.path.parent().map(|p| p.join("quiz_qa_bank.db"));
-    let in_memory_rag = db_path.as_deref().and_then(|p| {
-        super::quiz::qa::QuizQaBankDb::open(p)
-            .ok()
-            .and_then(|db| db.build_in_memory_store(None, None).ok())
-    });
+    let in_memory_rag = if let Ok(qa_db) = service.get_qa_db().await {
+        qa_db.build_in_memory_rag_store(None, None).await.ok()
+    } else {
+        None
+    };
 
     let chunks: Vec<&[Question]> = questions.chunks(batch_size).collect();
     for (batch_idx, chunk) in chunks.iter().enumerate() {
