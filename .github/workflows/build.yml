@@ -26,7 +26,7 @@ jobs:
             arch: x64
           - name: windows-x64
             os: windows-latest
-            bundles: nsis msi
+            bundles: msi
             platform: windows
             arch: x64
 
@@ -87,7 +87,6 @@ jobs:
             )
           else
             files=(
-              src-tauri/target/release/bundle/nsis/*.exe
               src-tauri/target/release/bundle/msi/*.msi
             )
           fi

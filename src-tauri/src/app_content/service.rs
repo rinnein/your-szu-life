@@ -637,7 +637,7 @@ pub(super) fn is_platform_asset(name: &str) -> bool {
     }
     #[cfg(target_os = "windows")]
     {
-        name.ends_with(".exe")
+        name.ends_with(".msi")
     }
     #[cfg(target_os = "macos")]
     {
@@ -675,7 +675,7 @@ pub(super) fn find_platform_asset_index(names: &[&str]) -> Option<usize> {
     {
         names
             .iter()
-            .position(|n| n.to_ascii_lowercase().ends_with(".exe"))
+            .position(|n| n.to_ascii_lowercase().ends_with(".msi"))
     }
     #[cfg(not(any(target_os = "android", target_os = "windows")))]
     {

@@ -41,15 +41,16 @@ pub(crate) fn start_update(store: &AppContentStore) -> Result<(), String> {
     }
 
     let snapshot = store.snapshot();
-    let update = snapshot
-        .update
-        .data
-        .ok_or_else(|| {
-            IS_UPDATING.store(false, Ordering::SeqCst);
-            "当前未检测到可用更新".to_string()
-        })?;
+    let update = snapshot.update.data.ok_or_else(|| {
+        IS_UPDATING.store(false, Ordering::SeqCst);
+        "当前未检测到可用更新".to_string()
+    })?;
 
     let direct_url = update.latest_ver_url.clone();
+    if !direct_url.to_ascii_lowercase().contains(".msi") {
+        IS_UPDATING.store(false, Ordering::SeqCst);
+        return Err("未检测到可用的 MSI 安装包更新".to_string());
+    }
     let version = update.latest_ver.clone();
     let accelerators = store.accelerators().to_vec();
 
@@ -95,7 +96,8 @@ pub(crate) fn download_and_install(
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '-')
         .collect();
-    let dest_path = std::env::temp_dir().join(format!("your-szu-life-installer-{safe_version}.exe"));
+    let dest_path =
+        std::env::temp_dir().join(format!("your-szu-life-installer-{safe_version}.msi"));
 
     let mut last_error = String::from("无可用下载源");
 
@@ -181,7 +183,11 @@ pub(crate) fn download_and_install(
             error: None,
         });
 
-        match std::process::Command::new(&dest_path).spawn() {
+        match std::process::Command::new("msiexec")
+            .arg("/i")
+            .arg(&dest_path)
+            .spawn()
+        {
             Ok(_) => {
                 emit_progress(UpdateProgressPayload {
                     status: "ready".to_string(),

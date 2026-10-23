@@ -49,7 +49,7 @@ function makeSnapshot(updateAvailable: boolean, latestVer?: string): AppContentS
       data: latestVer
         ? {
             latest_ver: latestVer,
-            latest_ver_url: "https://example.com/download.exe",
+            latest_ver_url: "https://example.com/download.msi",
             release_url: "https://github.com/rinnein/your-szu-life/releases/tag/v0.2.0",
             changelog: "修复已知问题",
           }

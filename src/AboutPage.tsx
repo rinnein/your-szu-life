@@ -494,7 +494,7 @@ export default function AboutPage() {
               {platform === "android"
                 ? "Android 端支持应用内流式解压更新与加速节点，也可以点击前往系统浏览器下载。"
                 : platform === "windows"
-                  ? "Windows 端支持应用内下载 exe 安装程序与加速节点，下载完成后自动执行安装。"
+                  ? "Windows 端支持应用内下载 msi 安装程序与加速节点，下载完成后自动执行安装。"
                   : platform === "linux"
                     ? "Linux 端建议通过包管理器自动更新，也可点击前往发布页面手动获取安装包。"
                     : "仅检查版本，不会自动下载或安装；点击下载后在系统浏览器打开。"}

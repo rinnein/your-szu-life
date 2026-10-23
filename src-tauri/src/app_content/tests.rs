@@ -108,7 +108,8 @@ fn update_schema_and_semver_comparison_follow_precedence() {
 #[test]
 fn extract_version_from_asset_name_handles_all_package_formats() {
     assert_eq!(
-        extract_version_from_asset_name("your-szu-life_android_arm64_0.9.0-release.apk.gz").as_deref(),
+        extract_version_from_asset_name("your-szu-life_android_arm64_0.9.0-release.apk.gz")
+            .as_deref(),
         Some("0.9.0")
     );
     assert_eq!(
@@ -120,7 +121,8 @@ fn extract_version_from_asset_name_handles_all_package_formats() {
         Some("0.9.0")
     );
     assert_eq!(
-        extract_version_from_asset_name("your-szu-life_linux_x64_0.9.0-release.AppImage").as_deref(),
+        extract_version_from_asset_name("your-szu-life_linux_x64_0.9.0-release.AppImage")
+            .as_deref(),
         Some("0.9.0")
     );
     assert_eq!(
@@ -132,7 +134,8 @@ fn extract_version_from_asset_name_handles_all_package_formats() {
         Some("0.9.0")
     );
     assert_eq!(
-        extract_version_from_asset_name("your-szu-life_android_arm64_1.2.3-beta.1-release.apk.gz").as_deref(),
+        extract_version_from_asset_name("your-szu-life_android_arm64_1.2.3-beta.1-release.apk.gz")
+            .as_deref(),
         Some("1.2.3-beta.1")
     );
     assert_eq!(extract_version_from_asset_name("unrelated-file.txt"), None);
@@ -165,16 +168,43 @@ fn extract_release_version_resolves_canary_tag_from_asset_and_name() {
 fn platform_asset_matcher_handles_expected_extensions() {
     #[cfg(target_os = "linux")]
     {
-        assert!(is_platform_asset("your-szu-life_linux_x64_0.9.0-release.deb"));
-        assert!(is_platform_asset("your-szu-life_linux_x64_0.9.0-release.AppImage"));
-        assert!(!is_platform_asset("your-szu-life_windows_x64_0.9.0-release.exe"));
+        assert!(is_platform_asset(
+            "your-szu-life_linux_x64_0.9.0-release.deb"
+        ));
+        assert!(is_platform_asset(
+            "your-szu-life_linux_x64_0.9.0-release.AppImage"
+        ));
+        assert!(!is_platform_asset(
+            "your-szu-life_windows_x64_0.9.0-release.exe"
+        ));
+        assert!(!is_platform_asset(
+            "your-szu-life_windows_x64_0.9.0-release.msi"
+        ));
         let names = ["foo.txt", "your-szu-life_linux_x64_0.9.0-release.deb"];
+        assert_eq!(find_platform_asset_index(&names), Some(1));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        assert!(is_platform_asset(
+            "your-szu-life_windows_x64_0.9.0-release.msi"
+        ));
+        assert!(!is_platform_asset(
+            "your-szu-life_windows_x64_0.9.0-release.exe"
+        ));
+        let names = [
+            "your-szu-life_windows_x64_0.9.0-release.exe",
+            "your-szu-life_windows_x64_0.9.0-release.msi",
+        ];
         assert_eq!(find_platform_asset_index(&names), Some(1));
     }
     #[cfg(target_os = "android")]
     {
-        assert!(is_platform_asset("your-szu-life_android_arm64_0.9.0-release.apk.gz"));
-        assert!(is_platform_asset("your-szu-life_android_arm64_0.9.0-release.apk"));
+        assert!(is_platform_asset(
+            "your-szu-life_android_arm64_0.9.0-release.apk.gz"
+        ));
+        assert!(is_platform_asset(
+            "your-szu-life_android_arm64_0.9.0-release.apk"
+        ));
         let names = [
             "your-szu-life_android_arm64_0.9.0-release.apk",
             "your-szu-life_android_arm64_0.9.0-release.apk.gz",
@@ -244,7 +274,7 @@ fn single_flight_merges_overlapping_callers() {
 #[test]
 fn test_collect_candidate_urls() {
     use super::service::collect_candidate_urls;
-    let direct = "https://github.com/rinnein/your-szu-life/releases/download/v1.0.0/setup.exe";
+    let direct = "https://github.com/rinnein/your-szu-life/releases/download/v1.0.0/setup.msi";
     let accelerators = vec![
         reqwest::Url::parse("https://gh-proxy.com/").unwrap(),
         reqwest::Url::parse("https://ghfast.top/").unwrap(),
@@ -253,11 +283,11 @@ fn test_collect_candidate_urls() {
     assert_eq!(urls.len(), 3);
     assert_eq!(
         urls[0],
-        "https://gh-proxy.com/https://github.com/rinnein/your-szu-life/releases/download/v1.0.0/setup.exe"
+        "https://gh-proxy.com/https://github.com/rinnein/your-szu-life/releases/download/v1.0.0/setup.msi"
     );
     assert_eq!(
         urls[1],
-        "https://ghfast.top/https://github.com/rinnein/your-szu-life/releases/download/v1.0.0/setup.exe"
+        "https://ghfast.top/https://github.com/rinnein/your-szu-life/releases/download/v1.0.0/setup.msi"
     );
     assert_eq!(urls[2], direct);
 }
