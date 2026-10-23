@@ -86,18 +86,63 @@ pub(crate) fn download_and_install(
         error: None,
     });
 
+    let safe_version: String = version
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '-')
+        .collect();
+    let filename = format!("your-szu-life-installer-{safe_version}.msi");
+    let dest_dir = std::env::temp_dir();
+    let dest_path = dest_dir.join(&filename);
+
+    // 1. Try downloading with aria2c
+    let aria_options = crate::aria2::DownloadJobOptions {
+        uris: candidate_urls.clone(),
+        dest_dir: dest_dir.clone(),
+        filename: filename.clone(),
+        expected_sha256: None,
+        expected_size: None,
+    };
+
+    let aria_res = tauri::async_runtime::block_on(crate::aria2::download_with_aria2(
+        APP_HANDLE.get(),
+        aria_options,
+        |prog| {
+            let progress = if prog.total_bytes > 0 {
+                ((prog.downloaded_bytes as f64 / prog.total_bytes as f64) * 100.0).clamp(0.0, 100.0)
+                    as u32
+            } else {
+                0
+            };
+            emit_progress(UpdateProgressPayload {
+                status: "downloading".to_string(),
+                progress,
+                downloaded_bytes: prog.downloaded_bytes,
+                total_bytes: prog.total_bytes,
+                error: None,
+            });
+        },
+    ));
+
+    if let Ok(installer_path) = aria_res {
+        emit_progress(UpdateProgressPayload {
+            status: "installing".to_string(),
+            progress: 100,
+            downloaded_bytes: std::fs::metadata(&installer_path).map(|m| m.len()).unwrap_or(0),
+            total_bytes: std::fs::metadata(&installer_path).map(|m| m.len()).unwrap_or(0),
+            error: None,
+        });
+
+        return spawn_msi_installer(&installer_path);
+    }
+
+    log::warn!("aria2c 更新下载失败，正在尝试使用备用下载器...");
+
+    // 2. Fallback to reqwest blocking client
     let client = reqwest::blocking::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(600))
         .build()
         .map_err(|e| format!("构建下载客户端失败: {e}"))?;
-
-    let safe_version: String = version
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '-')
-        .collect();
-    let dest_path =
-        std::env::temp_dir().join(format!("your-szu-life-installer-{safe_version}.msi"));
 
     let mut last_error = String::from("无可用下载源");
 
@@ -183,26 +228,28 @@ pub(crate) fn download_and_install(
             error: None,
         });
 
-        match std::process::Command::new("msiexec")
-            .arg("/i")
-            .arg(&dest_path)
-            .spawn()
-        {
-            Ok(_) => {
-                emit_progress(UpdateProgressPayload {
-                    status: "ready".to_string(),
-                    progress: 100,
-                    downloaded_bytes,
-                    total_bytes,
-                    error: None,
-                });
-                return Ok(());
-            }
-            Err(e) => {
-                return Err(format!("启动安装程序失败: {e}"));
-            }
-        }
+        return spawn_msi_installer(&dest_path);
     }
 
     Err(format!("所有下载节点均失败，最后错误: {last_error}"))
+}
+
+fn spawn_msi_installer(dest_path: &std::path::Path) -> Result<(), String> {
+    match std::process::Command::new("msiexec")
+        .arg("/i")
+        .arg(dest_path)
+        .spawn()
+    {
+        Ok(_) => {
+            emit_progress(UpdateProgressPayload {
+                status: "ready".to_string(),
+                progress: 100,
+                downloaded_bytes: std::fs::metadata(dest_path).map(|m| m.len()).unwrap_or(0),
+                total_bytes: std::fs::metadata(dest_path).map(|m| m.len()).unwrap_or(0),
+                error: None,
+            });
+            Ok(())
+        }
+        Err(e) => Err(format!("启动安装程序失败: {e}")),
+    }
 }

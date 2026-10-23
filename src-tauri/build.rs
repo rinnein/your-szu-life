@@ -1,4 +1,12 @@
-use std::{collections::HashMap, env, path::PathBuf};
+use std::{
+    collections::HashMap,
+    env,
+    fs::{self, File},
+    io::Cursor,
+    path::{Path, PathBuf},
+};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 const CONTENT_ENV_VARS: [&str; 2] = ["SZU_LIFE_BASE_URL", "SZU_LIFE_FALLBACK_BASE_URL"];
 
@@ -19,8 +27,114 @@ fn configured_value(name: &str, dotenv: &HashMap<String, String>) -> Option<Stri
     }
 }
 
+const WIN_32_URL: &str = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-32bit-build1.zip";
+const WIN_64_URL: &str = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip";
+const ANDROID_AARCH64_URL: &str = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-aarch64-linux-android-build1.zip";
+
+fn prepare_aria2c_binary(manifest_dir: &Path) {
+    let target = env::var("TARGET").unwrap_or_else(|_| "x86_64-unknown-linux-gnu".into());
+    let binaries_dir = manifest_dir.join("binaries");
+    fs::create_dir_all(&binaries_dir).expect("failed to create binaries dir");
+
+    let is_windows = target.contains("windows");
+    let ext = if is_windows { ".exe" } else { "" };
+    let dest_name = format!("aria2c-{target}{ext}");
+    let dest_path = binaries_dir.join(&dest_name);
+
+    if dest_path.is_file() {
+        return;
+    }
+
+    if target.contains("linux") && !target.contains("android") {
+        let system_paths = ["/usr/bin/aria2c", "/usr/local/bin/aria2c"];
+        let mut found = None;
+        for p in system_paths {
+            if Path::new(p).is_file() {
+                found = Some(PathBuf::from(p));
+                break;
+            }
+        }
+        if found.is_none() {
+            if let Ok(output) = std::process::Command::new("which").arg("aria2c").output() {
+                if output.status.success() {
+                    let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !path_str.is_empty() && Path::new(&path_str).is_file() {
+                        found = Some(PathBuf::from(path_str));
+                    }
+                }
+            }
+        }
+
+        if let Some(src) = found {
+            fs::copy(&src, &dest_path)
+                .unwrap_or_else(|e| panic!("failed to copy {}: {e}", src.display()));
+            #[cfg(unix)]
+            {
+                let mut perms = fs::metadata(&dest_path).unwrap().permissions();
+                perms.set_mode(0o755);
+                fs::set_permissions(&dest_path, perms).unwrap();
+            }
+            return;
+        } else {
+            panic!("Cannot find aria2c on system. Please install aria2 via your package manager (e.g. sudo apt install aria2).");
+        }
+    }
+
+    let download_url = if target.contains("windows") {
+        if target.contains("i686") {
+            WIN_32_URL
+        } else {
+            WIN_64_URL
+        }
+    } else if target.contains("aarch64") && target.contains("android") {
+        ANDROID_AARCH64_URL
+    } else {
+        println!("cargo:warning=No official aria2c binary for target {target}, creating placeholder");
+        let _ = File::create(&dest_path);
+        return;
+    };
+
+    println!("cargo:warning=Downloading aria2c for {target} from {download_url}...");
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(120))
+        .build()
+        .expect("failed to create reqwest client");
+
+    match client.get(download_url).send().and_then(|r| r.error_for_status()) {
+        Ok(resp) => {
+            let bytes = resp.bytes().expect("failed to read response bytes");
+            let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).expect("failed to read zip archive");
+            let target_file_name = if is_windows { "aria2c.exe" } else { "aria2c" };
+            let mut extracted = false;
+            for i in 0..archive.len() {
+                let mut file = archive.by_index(i).expect("zip entry error");
+                if file.name().ends_with(target_file_name) {
+                    let mut out = File::create(&dest_path).expect("failed to create dest file");
+                    std::io::copy(&mut file, &mut out).expect("failed to write binary");
+                    extracted = true;
+                    break;
+                }
+            }
+            if !extracted {
+                panic!("binary {target_file_name} not found in zip from {download_url}");
+            }
+            #[cfg(unix)]
+            if !is_windows {
+                let mut perms = fs::metadata(&dest_path).unwrap().permissions();
+                perms.set_mode(0o755);
+                fs::set_permissions(&dest_path, perms).unwrap();
+            }
+        }
+        Err(e) => {
+            println!("cargo:warning=Failed to download aria2c for {target}: {e}");
+            let _ = File::create(&dest_path);
+        }
+    }
+}
+
 fn main() {
-    let dotenv_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.env");
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let dotenv_path = manifest_dir.join("../.env");
     let dotenv = load_dotenv(&dotenv_path);
     println!("cargo:rerun-if-changed={}", dotenv_path.display());
     for name in CONTENT_ENV_VARS {
@@ -36,6 +150,8 @@ fn main() {
     println!("cargo:rerun-if-changed=resources/ocr/ddddocr/model.json");
     println!("cargo:rerun-if-changed=resources/embedding/bge-small-zh-v1.5/model.json");
     println!("cargo:rerun-if-changed=capabilities/authserver-credential-capture.json");
+
+    prepare_aria2c_binary(&manifest_dir);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
             "get_mcp_server_status",

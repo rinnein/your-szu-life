@@ -7709,6 +7709,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",
@@ -9399,10 +9400,12 @@ dependencies = [
  "time",
  "toasty",
  "tokio",
+ "tokio-tungstenite",
  "tokio-util",
  "uuid",
  "webkit2gtk",
  "windows-sys 0.61.2",
+ "zip",
 ]
 
 [[package]]

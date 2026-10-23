@@ -46,6 +46,10 @@ docs/
 # heroui-agents-md
 .heroui-docs/
 
+# Tauri sidecar binaries
+/src-tauri/binaries/aria2c*
+!/src-tauri/binaries/.gitkeep
+
 .codebuddy
 .qoder
 .zcode

@@ -292,6 +292,60 @@ impl LocalModelStore {
             .cache
             .join(format!("{}.download", self.manifest.sha256));
 
+        // 1. 尝试使用 aria2c 多源并发下载
+        let mut uris = vec![self.manifest.url.clone()];
+        for (_source_name, mirror_url) in mirror_candidates(&self.manifest.url) {
+            uris.push(mirror_url.to_string());
+        }
+
+        let aria_options = crate::aria2::DownloadJobOptions {
+            uris,
+            dest_dir: self.cache.clone(),
+            filename: format!("{}.download", self.manifest.sha256),
+            expected_sha256: Some(self.manifest.sha256.clone()),
+            expected_size: Some(self.manifest.bytes),
+        };
+
+        let progress_event = self.progress_event;
+        let app_handle_opt = app.cloned();
+
+        let aria_res = tauri::async_runtime::block_on(crate::aria2::download_with_aria2(
+            app,
+            aria_options,
+            move |prog| {
+                let payload = ModelDownloadProgress {
+                    downloaded_bytes: prog.downloaded_bytes,
+                    total_bytes: prog.total_bytes,
+                    speed_bytes_per_sec: prog.speed_bytes_per_sec,
+                };
+                if let Some(ref handle) = app_handle_opt {
+                    let _ = handle.emit(progress_event, payload);
+                }
+            },
+        ));
+
+        match aria_res {
+            Ok(downloaded_path) => {
+                if self.target().exists() {
+                    let _ = fs::remove_file(self.target());
+                }
+                if let Err(e) = fs::rename(&downloaded_path, self.target()) {
+                    let err = format!("安装 {} 模型失败：{e}", self.model_name);
+                    self.set_status("error", None, Some(err.clone()));
+                    return Err(err);
+                }
+                self.set_status("ready", Some("aria2".to_string()), None);
+                return Ok(());
+            }
+            Err(e) => {
+                log::warn!(
+                    "aria2c 下载 {} 模型失败，正在尝试使用备用下载器: {e}",
+                    self.model_name
+                );
+                let _ = fs::remove_file(&temporary);
+            }
+        }
+
         let primary_url = match Url::parse(&self.manifest.url) {
             Ok(u) => u,
             Err(e) => {
@@ -303,7 +357,7 @@ impl LocalModelStore {
 
         let mut errors = Vec::new();
 
-        // 1. 尝试直接下载 (5s 超时)
+        // 2. 备用逻辑：尝试 reqwest 直接下载 (5s 超时)
         let direct_client = match Self::build_client(Duration::from_secs(5)) {
             Ok(c) => c,
             Err(e) => {

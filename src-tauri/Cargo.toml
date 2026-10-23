@@ -12,6 +12,8 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 dotenvy = "0.15"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls"] }
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "devtools"] }
@@ -45,8 +47,9 @@ argon2 = "0.5"
 rand = "0.9"
 chacha20poly1305 = "0.10.1"
 uuid = { version = "1", features = ["v4"] }
-tokio = { version = "1", features = ["sync", "time", "rt", "macros"] }
+tokio = { version = "1", features = ["sync", "time", "rt", "macros", "process"] }
 tokio-util = { version = "0.7", features = ["rt"] }
+tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect"] }
 cookie_store = "0.22"
 reqwest_cookie_store = "0.10"
 mp4 = "0.14"
