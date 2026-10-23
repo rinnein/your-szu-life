@@ -156,10 +156,7 @@ describe("CommandPalette UI & interaction", () => {
   });
 
   it("executes ojzj by resolving the last visited class or fallback", async () => {
-    localStorage.setItem(
-      "oj_last_visited",
-      JSON.stringify({ siteId: "szu", groupId: "10" }),
-    );
+    localStorage.setItem("oj_last_visited", JSON.stringify({ siteId: "szu", groupId: "10" }));
 
     render(<CommandPalette />);
     openCommandPalette();

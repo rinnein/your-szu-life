@@ -6,9 +6,9 @@ catalog:
 minimumReleaseAgeExclude:
   - "@tauri-apps/plugin-notification@2.7.0"
 overrides:
-  vite@*: 'catalog:'
+  vite@*: "catalog:"
 peerDependencyRules:
   allowAny:
     - vite
   allowedVersions:
-    vite: '*'
+    vite: "*"

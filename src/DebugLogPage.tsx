@@ -520,48 +520,48 @@ export default function DebugLogPage() {
 
         <div className="max-w-full overflow-x-auto py-1">
           <Pagination size="sm" className="w-auto">
-          <Pagination.Content>
-            <Pagination.Item>
-              <Pagination.Previous
-                isDisabled={safePage === 1}
-                onPress={() => void handlePageChange(Math.max(1, safePage - 1))}
-              >
-                <Pagination.PreviousIcon />
-                <span>上一页</span>
-              </Pagination.Previous>
-            </Pagination.Item>
+            <Pagination.Content>
+              <Pagination.Item>
+                <Pagination.Previous
+                  isDisabled={safePage === 1}
+                  onPress={() => void handlePageChange(Math.max(1, safePage - 1))}
+                >
+                  <Pagination.PreviousIcon />
+                  <span>上一页</span>
+                </Pagination.Previous>
+              </Pagination.Item>
 
-            {pageButtons.map((p, idx) =>
-              p === "ellipsis" ? (
-                <Pagination.Item key={`ellipsis-${idx}`}>
-                  <Pagination.Ellipsis />
-                </Pagination.Item>
-              ) : (
-                <Pagination.Item key={p}>
-                  <Pagination.Link
-                    isActive={p === safePage}
-                    onPress={() => void handlePageChange(p)}
-                  >
-                    {p}
-                  </Pagination.Link>
-                </Pagination.Item>
-              ),
-            )}
+              {pageButtons.map((p, idx) =>
+                p === "ellipsis" ? (
+                  <Pagination.Item key={`ellipsis-${idx}`}>
+                    <Pagination.Ellipsis />
+                  </Pagination.Item>
+                ) : (
+                  <Pagination.Item key={p}>
+                    <Pagination.Link
+                      isActive={p === safePage}
+                      onPress={() => void handlePageChange(p)}
+                    >
+                      {p}
+                    </Pagination.Link>
+                  </Pagination.Item>
+                ),
+              )}
 
-            <Pagination.Item>
-              <Pagination.Next
-                isDisabled={
-                  (safePage === estimatedTotalPages && !hasMore) ||
-                  (loadingChunk && paginatedLogs.length === 0)
-                }
-                onPress={() => void handlePageChange(safePage + 1)}
-              >
-                <span>下一页</span>
-                <Pagination.NextIcon />
-              </Pagination.Next>
-            </Pagination.Item>
-          </Pagination.Content>
-        </Pagination>
+              <Pagination.Item>
+                <Pagination.Next
+                  isDisabled={
+                    (safePage === estimatedTotalPages && !hasMore) ||
+                    (loadingChunk && paginatedLogs.length === 0)
+                  }
+                  onPress={() => void handlePageChange(safePage + 1)}
+                >
+                  <span>下一页</span>
+                  <Pagination.NextIcon />
+                </Pagination.Next>
+              </Pagination.Item>
+            </Pagination.Content>
+          </Pagination>
         </div>
       </div>
     );
@@ -794,123 +794,131 @@ export default function DebugLogPage() {
               ) : viewMode === "table" ? (
                 /* Paginated Table View */
                 <div className="w-full min-w-0 max-w-full overflow-hidden">
-                  <p className="text-[11px] text-muted mb-1.5 sm:hidden">左右滑动表格可查看完整字段与操作</p>
+                  <p className="text-[11px] text-muted mb-1.5 sm:hidden">
+                    左右滑动表格可查看完整字段与操作
+                  </p>
                   <Table aria-label="诊断日志数据表格">
                     <Table.ScrollContainer className="w-full min-w-0 max-w-full overflow-x-auto">
                       <Table.Content aria-label="诊断日志数据表格" className="min-w-[760px]">
-                      <Table.Header>
-                        <Table.Column isRowHeader className="w-24">
-                          时间
-                        </Table.Column>
-                        <Table.Column className="w-20">级别</Table.Column>
-                        <Table.Column className="w-36">来源 / 阶段</Table.Column>
-                        <Table.Column className="w-48">网络与环境</Table.Column>
-                        <Table.Column>详细信息与消息</Table.Column>
-                        <Table.Column className="w-24 text-right">操作</Table.Column>
-                      </Table.Header>
-                      <Table.Body>
-                        {paginatedLogs.map((log, index) => {
-                          const rowKey = `table-${log.timestampMs}-${index}`;
-                          const isExpanded = expandedRowKeys.has(rowKey);
-                          const net = [
-                            log.connected == null ? null : log.connected ? "已连接" : "未连接",
-                            log.transport,
-                            log.ssid ? `SSID=${log.ssid}` : null,
-                            log.ip ? `IP=${log.ip}` : null,
-                            log.capabilitiesAvailable == null
-                              ? null
-                              : `能力=${log.capabilitiesAvailable ? "可用" : "不可用"}`,
-                            log.wifiPermission ? `权限=${log.wifiPermission}` : null,
-                            log.locationEnabled == null
-                              ? null
-                              : `位置=${log.locationEnabled ? "开" : "关"}`,
-                          ]
-                            .filter(Boolean)
-                            .join(" ");
+                        <Table.Header>
+                          <Table.Column isRowHeader className="w-24">
+                            时间
+                          </Table.Column>
+                          <Table.Column className="w-20">级别</Table.Column>
+                          <Table.Column className="w-36">来源 / 阶段</Table.Column>
+                          <Table.Column className="w-48">网络与环境</Table.Column>
+                          <Table.Column>详细信息与消息</Table.Column>
+                          <Table.Column className="w-24 text-right">操作</Table.Column>
+                        </Table.Header>
+                        <Table.Body>
+                          {paginatedLogs.map((log, index) => {
+                            const rowKey = `table-${log.timestampMs}-${index}`;
+                            const isExpanded = expandedRowKeys.has(rowKey);
+                            const net = [
+                              log.connected == null ? null : log.connected ? "已连接" : "未连接",
+                              log.transport,
+                              log.ssid ? `SSID=${log.ssid}` : null,
+                              log.ip ? `IP=${log.ip}` : null,
+                              log.capabilitiesAvailable == null
+                                ? null
+                                : `能力=${log.capabilitiesAvailable ? "可用" : "不可用"}`,
+                              log.wifiPermission ? `权限=${log.wifiPermission}` : null,
+                              log.locationEnabled == null
+                                ? null
+                                : `位置=${log.locationEnabled ? "开" : "关"}`,
+                            ]
+                              .filter(Boolean)
+                              .join(" ");
 
-                          const details = [
-                            log.portal ? `门户=${log.portal}` : null,
-                            log.httpStatus != null ? `HTTP=${log.httpStatus}` : null,
-                            log.elapsedMs != null ? `${log.elapsedMs}ms` : null,
-                            log.errorKind ? `错误=${log.errorKind}` : null,
-                            log.message,
-                          ]
-                            .filter(Boolean)
-                            .join(" ");
+                            const details = [
+                              log.portal ? `门户=${log.portal}` : null,
+                              log.httpStatus != null ? `HTTP=${log.httpStatus}` : null,
+                              log.elapsedMs != null ? `${log.elapsedMs}ms` : null,
+                              log.errorKind ? `错误=${log.errorKind}` : null,
+                              log.message,
+                            ]
+                              .filter(Boolean)
+                              .join(" ");
 
-                          return (
-                            <Table.Row key={rowKey} id={rowKey}>
-                              <Table.Cell className="text-xs font-mono text-muted whitespace-nowrap">
-                                {new Date(log.timestampMs).toLocaleTimeString()}
-                              </Table.Cell>
-                              <Table.Cell>
-                                <Chip size="sm" color={getLevelColor(log.level)} variant="primary">
-                                  {log.level.toUpperCase()}
-                                </Chip>
-                              </Table.Cell>
-                              <Table.Cell className="text-xs font-mono font-medium whitespace-nowrap">
-                                <span className="font-mono">
-                                  {log.source}/{log.stage}
-                                  {net ? ` · ${net}` : ""}
-                                </span>
-                              </Table.Cell>
-                              <Table.Cell className="text-xs font-mono break-all whitespace-normal">
-                                {net || "—"}
-                              </Table.Cell>
-                              <Table.Cell className="text-xs font-mono break-all whitespace-pre-wrap select-text">
-                                <div>{details || "—"}</div>
-                                {isExpanded && (
-                                  <div className="mt-2 pt-2 border-t border-default-200 space-y-2">
-                                    {log.message && (
-                                      <div className="rounded bg-default-100 p-2 font-mono text-xs text-foreground">
-                                        <span className="font-bold text-muted mr-1">详细消息:</span>
-                                        {log.message}
-                                      </div>
-                                    )}
-                                    <div className="grid grid-cols-2 gap-1 text-[11px] text-muted font-mono">
-                                      {getLogDetails(log).map((d) => (
-                                        <div key={d.label}>
-                                          <span className="font-semibold">{d.label}:</span>{" "}
-                                          <span>{String(d.value)}</span>
+                            return (
+                              <Table.Row key={rowKey} id={rowKey}>
+                                <Table.Cell className="text-xs font-mono text-muted whitespace-nowrap">
+                                  {new Date(log.timestampMs).toLocaleTimeString()}
+                                </Table.Cell>
+                                <Table.Cell>
+                                  <Chip
+                                    size="sm"
+                                    color={getLevelColor(log.level)}
+                                    variant="primary"
+                                  >
+                                    {log.level.toUpperCase()}
+                                  </Chip>
+                                </Table.Cell>
+                                <Table.Cell className="text-xs font-mono font-medium whitespace-nowrap">
+                                  <span className="font-mono">
+                                    {log.source}/{log.stage}
+                                    {net ? ` · ${net}` : ""}
+                                  </span>
+                                </Table.Cell>
+                                <Table.Cell className="text-xs font-mono break-all whitespace-normal">
+                                  {net || "—"}
+                                </Table.Cell>
+                                <Table.Cell className="text-xs font-mono break-all whitespace-pre-wrap select-text">
+                                  <div>{details || "—"}</div>
+                                  {isExpanded && (
+                                    <div className="mt-2 pt-2 border-t border-default-200 space-y-2">
+                                      {log.message && (
+                                        <div className="rounded bg-default-100 p-2 font-mono text-xs text-foreground">
+                                          <span className="font-bold text-muted mr-1">
+                                            详细消息:
+                                          </span>
+                                          {log.message}
                                         </div>
-                                      ))}
+                                      )}
+                                      <div className="grid grid-cols-2 gap-1 text-[11px] text-muted font-mono">
+                                        {getLogDetails(log).map((d) => (
+                                          <div key={d.label}>
+                                            <span className="font-semibold">{d.label}:</span>{" "}
+                                            <span>{String(d.value)}</span>
+                                          </div>
+                                        ))}
+                                      </div>
                                     </div>
+                                  )}
+                                </Table.Cell>
+                                <Table.Cell className="text-right">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      isIconOnly
+                                      aria-label={isExpanded ? "收起详情" : "展开详情"}
+                                      onPress={() => toggleRowExpanded(rowKey)}
+                                    >
+                                      {isExpanded ? (
+                                        <LuChevronUp aria-hidden="true" />
+                                      ) : (
+                                        <LuChevronDown aria-hidden="true" />
+                                      )}
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      isIconOnly
+                                      aria-label="复制此条日志"
+                                      onPress={() => void handleCopySingle(log)}
+                                    >
+                                      <LuCopy aria-hidden="true" />
+                                    </Button>
                                   </div>
-                                )}
-                              </Table.Cell>
-                              <Table.Cell className="text-right">
-                                <div className="flex items-center justify-end gap-1">
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    isIconOnly
-                                    aria-label={isExpanded ? "收起详情" : "展开详情"}
-                                    onPress={() => toggleRowExpanded(rowKey)}
-                                  >
-                                    {isExpanded ? (
-                                      <LuChevronUp aria-hidden="true" />
-                                    ) : (
-                                      <LuChevronDown aria-hidden="true" />
-                                    )}
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    isIconOnly
-                                    aria-label="复制此条日志"
-                                    onPress={() => void handleCopySingle(log)}
-                                  >
-                                    <LuCopy aria-hidden="true" />
-                                  </Button>
-                                </div>
-                              </Table.Cell>
-                            </Table.Row>
-                          );
-                        })}
-                      </Table.Body>
-                    </Table.Content>
-                  </Table.ScrollContainer>
-                </Table>
+                                </Table.Cell>
+                              </Table.Row>
+                            );
+                          })}
+                        </Table.Body>
+                      </Table.Content>
+                    </Table.ScrollContainer>
+                  </Table>
                 </div>
               ) : (
                 /* Paginated Accordion View */

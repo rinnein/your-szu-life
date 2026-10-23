@@ -96,7 +96,11 @@ export function ModuleHeader({
           )}
         </div>
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-start sm:justify-end">{actions}</div>}
+      {actions && (
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-start sm:justify-end">
+          {actions}
+        </div>
+      )}
     </header>
   );
 }

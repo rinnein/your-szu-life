@@ -107,71 +107,71 @@ export default function CourseQueryModal({
               <Table>
                 <Table.ScrollContainer className="w-full min-w-0 max-w-full overflow-x-auto">
                   <Table.Content aria-label={`${title}课程检索`} className="min-w-[880px]">
-                  <Table.Header>
-                    <Table.Column isRowHeader>课程名称 / 代码</Table.Column>
-                    <Table.Column>完成状态</Table.Column>
-                    <Table.Column>课程类型</Table.Column>
-                    <Table.Column>学分</Table.Column>
-                    <Table.Column>所属课组</Table.Column>
-                    <Table.Column>操作</Table.Column>
-                  </Table.Header>
-                  <Table.Body renderEmptyState={() => "没有符合条件的课程"}>
-                    {visible.map((c) => (
-                      <Table.Row key={c.id}>
-                        <Table.Cell className="max-w-[260px] whitespace-normal">
-                          <p className="font-medium">{c.names.join(" / ")}</p>
-                          <p className="text-xs text-muted">{c.code || "课程代码缺失"}</p>
-                          {c.conflict && (
-                            <Chip size="sm" variant="soft" color="warning">
-                              记录存在差异
-                            </Chip>
-                          )}
-                          {details === c.id && (
-                            <div className="mt-2 text-xs text-muted">
-                              {c.records.map((r, i) => (
-                                <p key={i}>
-                                  成绩：{string(r.CJ ?? r.ZSCJ) || "未知"}；替代关系：
-                                  {string(r.TDKC) || "无记录"}；备注：{string(r.BZ) || "无"}
-                                </p>
-                              ))}
+                    <Table.Header>
+                      <Table.Column isRowHeader>课程名称 / 代码</Table.Column>
+                      <Table.Column>完成状态</Table.Column>
+                      <Table.Column>课程类型</Table.Column>
+                      <Table.Column>学分</Table.Column>
+                      <Table.Column>所属课组</Table.Column>
+                      <Table.Column>操作</Table.Column>
+                    </Table.Header>
+                    <Table.Body renderEmptyState={() => "没有符合条件的课程"}>
+                      {visible.map((c) => (
+                        <Table.Row key={c.id}>
+                          <Table.Cell className="max-w-[260px] whitespace-normal">
+                            <p className="font-medium">{c.names.join(" / ")}</p>
+                            <p className="text-xs text-muted">{c.code || "课程代码缺失"}</p>
+                            {c.conflict && (
+                              <Chip size="sm" variant="soft" color="warning">
+                                记录存在差异
+                              </Chip>
+                            )}
+                            {details === c.id && (
+                              <div className="mt-2 text-xs text-muted">
+                                {c.records.map((r, i) => (
+                                  <p key={i}>
+                                    成绩：{string(r.CJ ?? r.ZSCJ) || "未知"}；替代关系：
+                                    {string(r.TDKC) || "无记录"}；备注：{string(r.BZ) || "无"}
+                                  </p>
+                                ))}
+                              </div>
+                            )}
+                          </Table.Cell>
+                          <Table.Cell>{c.statuses.join(" / ")}</Table.Cell>
+                          <Table.Cell className="max-w-40 whitespace-normal">
+                            {c.types.join(" / ")}
+                          </Table.Cell>
+                          <Table.Cell>{c.credits.join(" / ")}</Table.Cell>
+                          <Table.Cell className="max-w-52 whitespace-normal">
+                            {c.groups.map((g) => g.label).join("、")}
+                          </Table.Cell>
+                          <Table.Cell>
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="tertiary"
+                                onPress={() => setDetails(details === c.id ? undefined : c.id)}
+                              >
+                                详情
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                isDisabled={!c.code}
+                                onPress={() =>
+                                  void nav.push(`/enrollment?keyword=${encodeURIComponent(c.code)}`)
+                                }
+                              >
+                                查找开课
+                              </Button>
                             </div>
-                          )}
-                        </Table.Cell>
-                        <Table.Cell>{c.statuses.join(" / ")}</Table.Cell>
-                        <Table.Cell className="max-w-40 whitespace-normal">
-                          {c.types.join(" / ")}
-                        </Table.Cell>
-                        <Table.Cell>{c.credits.join(" / ")}</Table.Cell>
-                        <Table.Cell className="max-w-52 whitespace-normal">
-                          {c.groups.map((g) => g.label).join("、")}
-                        </Table.Cell>
-                        <Table.Cell>
-                          <div className="flex gap-1">
-                            <Button
-                              size="sm"
-                              variant="tertiary"
-                              onPress={() => setDetails(details === c.id ? undefined : c.id)}
-                            >
-                              详情
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              isDisabled={!c.code}
-                              onPress={() =>
-                                void nav.push(`/enrollment?keyword=${encodeURIComponent(c.code)}`)
-                              }
-                            >
-                              查找开课
-                            </Button>
-                          </div>
-                        </Table.Cell>
-                      </Table.Row>
-                    ))}
-                  </Table.Body>
-                </Table.Content>
-              </Table.ScrollContainer>
-            </Table>
+                          </Table.Cell>
+                        </Table.Row>
+                      ))}
+                    </Table.Body>
+                  </Table.Content>
+                </Table.ScrollContainer>
+              </Table>
             </div>
           </Modal.Body>
           <Modal.Footer className="flex flex-wrap items-center justify-between gap-3">

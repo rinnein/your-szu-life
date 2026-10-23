@@ -78,7 +78,9 @@ export function ShortcutsTable() {
         </Card.Description>
       </Card.Header>
       <Card.Content className="pt-2 w-full min-w-0 max-w-full overflow-hidden">
-        <p className="text-[11px] text-muted mb-2 sm:hidden">左右滑动表格可查看完整说明与跳转目标</p>
+        <p className="text-[11px] text-muted mb-2 sm:hidden">
+          左右滑动表格可查看完整说明与跳转目标
+        </p>
         <Table aria-label="快捷键与缩写对照表">
           <Table.ScrollContainer className="w-full min-w-0 max-w-full overflow-x-auto">
             <Table.Content aria-label="快捷键对照" className="min-w-[480px]">

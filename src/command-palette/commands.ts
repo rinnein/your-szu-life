@@ -170,7 +170,10 @@ export const COMMAND_LIST: CommandItem[] = [
   },
 ];
 
-export function filterCommands(query: string, commands: CommandItem[] = COMMAND_LIST): CommandItem[] {
+export function filterCommands(
+  query: string,
+  commands: CommandItem[] = COMMAND_LIST,
+): CommandItem[] {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return commands;
 

@@ -56,9 +56,7 @@ describe("McpSettings component", () => {
     fireEvent.click(copyBtn);
 
     await waitFor(() => {
-      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-        "http://127.0.0.1:53901/mcp",
-      );
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith("http://127.0.0.1:53901/mcp");
       expect(successSpy).toHaveBeenCalledWith("MCP 服务端点 URL 已复制到剪贴板");
     });
   });

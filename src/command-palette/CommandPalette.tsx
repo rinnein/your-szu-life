@@ -200,7 +200,9 @@ export function CommandPalette() {
                       {/* 选中标记 Indicator bar */}
                       <span
                         className={`w-1.5 h-8 rounded-full shrink-0 transition-all ${
-                          isSelected ? "bg-primary scale-100 opacity-100" : "bg-transparent scale-50 opacity-0"
+                          isSelected
+                            ? "bg-primary scale-100 opacity-100"
+                            : "bg-transparent scale-50 opacity-0"
                         }`}
                         aria-hidden="true"
                       />
