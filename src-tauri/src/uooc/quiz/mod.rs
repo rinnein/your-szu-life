@@ -1987,7 +1987,11 @@ pub(crate) async fn build_local_bank(service: &Arc<Service>) -> Result<usize, St
         // 3.1 从 exam_list 补充已批改/已完成考试
         if let Ok(rows) = client.exam_list(&course.id, &cancel).await {
             for row in rows {
-                let status_code = number(&row["status_code"]) as i32;
+                let status_code = if row.get("status_code").is_some() {
+                    number(&row["status_code"]) as i32
+                } else {
+                    number(&row["status"]) as i32
+                };
                 let status_text = text(&row["status"]);
                 let is_fin = status_code >= 20 || status_text == "已批改" || status_text == "已完成";
                 let task_id = id(&row["task_id"]).or_else(|| id(&row["id"]));
@@ -1997,7 +2001,13 @@ pub(crate) async fn build_local_bank(service: &Arc<Service>) -> Result<usize, St
                         finished_tids.insert(clean.to_string());
                     }
                     if seen_tids.insert(clean.to_string()) {
-                        course_quizzes.push((clean.to_string(), text(&row["title"]), is_fin));
+                        let title = text(&row["title"]);
+                        let title = if title.is_empty() {
+                            text(&row["name"])
+                        } else {
+                            title
+                        };
+                        course_quizzes.push((clean.to_string(), title, is_fin));
                     }
                 }
             }
@@ -2006,7 +2016,11 @@ pub(crate) async fn build_local_bank(service: &Arc<Service>) -> Result<usize, St
         // 3.2 从 homework_list 补充已批改/已完成作业
         if let Ok(rows) = client.homework_list(&course.id, &cancel).await {
             for row in rows {
-                let status_code = number(&row["status_code"]) as i32;
+                let status_code = if row.get("status_code").is_some() {
+                    number(&row["status_code"]) as i32
+                } else {
+                    number(&row["status"]) as i32
+                };
                 let status_text = text(&row["status"]);
                 let is_fin = status_code >= 20 || status_text == "已批改" || status_text == "已完成";
                 let task_id = id(&row["task_id"]).or_else(|| id(&row["id"]));
@@ -2016,7 +2030,13 @@ pub(crate) async fn build_local_bank(service: &Arc<Service>) -> Result<usize, St
                         finished_tids.insert(clean.to_string());
                     }
                     if seen_tids.insert(clean.to_string()) {
-                        course_quizzes.push((clean.to_string(), text(&row["title"]), is_fin));
+                        let title = text(&row["title"]);
+                        let title = if title.is_empty() {
+                            text(&row["name"])
+                        } else {
+                            title
+                        };
+                        course_quizzes.push((clean.to_string(), title, is_fin));
                     }
                 }
             }

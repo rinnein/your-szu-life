@@ -211,7 +211,25 @@ impl Client {
                     cancel,
                 )
                 .await?;
-            let rows = data["data"].as_array().ok_or(Error::Invalid)?;
+            if let Some(arr) = data.as_array() {
+                for row in arr {
+                    if let Some(rid) = id(&row["res_id"]) {
+                        if seen.insert(rid) {
+                            all.push(row.clone());
+                        }
+                    }
+                }
+                return Ok(all);
+            }
+            let rows = if let Some(arr) = data["data"].as_array() {
+                arr
+            } else if let Some(arr) = data["list"].as_array() {
+                arr
+            } else if let Some(arr) = data["rows"].as_array() {
+                arr
+            } else {
+                return Err(Error::Invalid);
+            };
             for row in rows {
                 if let Some(rid) = id(&row["res_id"]) {
                     if seen.insert(rid) {
@@ -247,7 +265,19 @@ impl Client {
                     cancel,
                 )
                 .await?;
-            let rows = data["data"].as_array().ok_or(Error::Invalid)?;
+            if let Some(arr) = data.as_array() {
+                all.extend(arr.iter().cloned());
+                return Ok(all);
+            }
+            let rows = if let Some(arr) = data["data"].as_array() {
+                arr
+            } else if let Some(arr) = data["list"].as_array() {
+                arr
+            } else if let Some(arr) = data["rows"].as_array() {
+                arr
+            } else {
+                return Err(Error::Invalid);
+            };
             for row in rows {
                 all.push(row.clone());
             }
@@ -279,7 +309,19 @@ impl Client {
                     cancel,
                 )
                 .await?;
-            let rows = data["data"].as_array().ok_or(Error::Invalid)?;
+            if let Some(arr) = data.as_array() {
+                all.extend(arr.iter().cloned());
+                return Ok(all);
+            }
+            let rows = if let Some(arr) = data["data"].as_array() {
+                arr
+            } else if let Some(arr) = data["list"].as_array() {
+                arr
+            } else if let Some(arr) = data["rows"].as_array() {
+                arr
+            } else {
+                return Err(Error::Invalid);
+            };
             for row in rows {
                 all.push(row.clone());
             }

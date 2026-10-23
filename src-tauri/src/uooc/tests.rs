@@ -730,6 +730,7 @@ async fn gated_discovery_finishes_earlier_videos_without_reading_later_sections(
         Arc::new(Client::with_base(session::load(None).unwrap(), &server.base).unwrap());
     service.change(|s| {
         s.session = SessionStatus::Ready;
+        s.settings.qa_server_url = server.base.clone();
         s.user = Some(User {
             id: "7".into(),
             name: "test".into(),
@@ -780,6 +781,7 @@ async fn tail_requires_server_confirmation_and_pause_stops_future_reports() {
         Arc::new(Client::with_base(session::load(None).unwrap(), &server.base).unwrap());
     service.change(|s| {
         s.session = SessionStatus::Ready;
+        s.settings.qa_server_url = server.base.clone();
         s.user = Some(User {
             id: "7".into(),
             name: "test".into(),
@@ -999,6 +1001,7 @@ async fn build_local_bank_discovers_all_course_quizzes_via_task_list_logic() {
         Arc::new(Client::with_base(session::load(None).unwrap(), &server.base).unwrap());
     service.change(|s| {
         s.session = SessionStatus::Ready;
+        s.settings.qa_server_url = server.base.clone();
         s.user = Some(User {
             id: "7".into(),
             name: "test".into(),
@@ -1195,6 +1198,7 @@ async fn build_local_bank_fetches_exam_view_for_completed_quiz_and_records_stand
         Arc::new(Client::with_base(session::load(None).unwrap(), &server.base).unwrap());
     service.change(|s| {
         s.session = SessionStatus::Ready;
+        s.settings.qa_server_url = server.base.clone();
         s.user = Some(User {
             id: "7".into(),
             name: "test".into(),
@@ -1588,6 +1592,100 @@ async fn test_review_mode_course_lifecycle_and_exam_visibility() {
     assert_eq!(exams.len(), 1);
     assert_eq!(exams[0].title, "复习课程期末大考");
     assert_eq!(exams[0].cid, "333");
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[tokio::test]
+async fn test_uooc_exam_list_real_unpaginated_payload_shape() {
+    let root = root();
+    let service = service_test(root.clone());
+
+    let server = Server::new(move |request| {
+        if request.path.starts_with("/home/task/examList") {
+            return json!({
+                "code": 1,
+                "msg": "",
+                "data": [
+                    {
+                        "id": 1231294128_u64,
+                        "type": "30",
+                        "chapter_id": "0",
+                        "section_id": "0",
+                        "name": "人工智能行业与创新创业对接范式",
+                        "end_time": "2026-10-24 22:00:00",
+                        "time_limit": "60",
+                        "start_time": "2026-10-19 15:00:00",
+                        "allow_view_paper": "0",
+                        "allow_view_score": "1",
+                        "is_task": "1",
+                        "answer_hint": "0",
+                        "answer_review": "0",
+                        "eval_status": "0",
+                        "class_ids": [],
+                        "order": 0,
+                        "chapter_name": "综合测验",
+                        "upid": 0,
+                        "status_code": 0,
+                        "commit_time": "",
+                        "do_time": "",
+                        "status": "未提交",
+                        "expire": 0,
+                        "tick": 3600,
+                        "state": {
+                            "view": false,
+                            "do": true,
+                            "eval": false
+                        }
+                    }
+                ]
+            });
+        }
+        ok(json!({}))
+    });
+
+    *service.client.write().unwrap() =
+        Arc::new(Client::with_base(session::load(None).unwrap(), &server.base).unwrap());
+
+    let mut ai_course = course("1588976494");
+    ai_course.title = "人工智能".into();
+
+    service.change(|s| {
+        s.session = SessionStatus::Ready;
+        s.user = Some(User {
+            id: "7".into(),
+            name: "test".into(),
+        });
+        s.courses = vec![ai_course];
+    });
+
+    // 1. 指定 cid 获取考试列表
+    let exams = service.list_exams(Some("1588976494")).await.unwrap();
+    assert_eq!(exams.len(), 1);
+    let exam = &exams[0];
+    assert_eq!(exam.id, "1231294128");
+    assert_eq!(exam.task_id, "1231294128");
+    assert_eq!(exam.title, "人工智能行业与创新创业对接范式");
+    assert_eq!(exam.cid, "1588976494");
+    assert_eq!(exam.course_name, "人工智能");
+    assert_eq!(exam.start_time, "2026-10-19 15:00:00");
+    assert_eq!(exam.end_time, "2026-10-24 22:00:00");
+    assert_eq!(exam.limit_time, 60);
+    assert_eq!(exam.status, 0);
+    assert_eq!(exam.status_text, "未提交");
+    assert!(exam.can_do);
+    assert!(!exam.can_view);
+    assert_eq!(exam.chapter_text, Some("综合测验".to_string()));
+
+    // 2. 未指定 cid 获取所有在修课程考试列表
+    let all_exams = service.list_exams(None).await.unwrap();
+    assert_eq!(all_exams.len(), 1);
+    assert_eq!(all_exams[0].id, "1231294128");
+
+    // 3. 当指定未在 snapshot 中的 cid 时也能兜底查询
+    let direct_exams = service.list_exams(Some("999999")).await.unwrap();
+    assert_eq!(direct_exams.len(), 1);
+    assert_eq!(direct_exams[0].cid, "999999");
 
     let _ = std::fs::remove_dir_all(root);
 }

@@ -899,11 +899,16 @@ impl Service {
         }
 
         let target_courses: Vec<(String, String)> = if let Some(target_cid) = cid {
-            courses
+            let matched: Vec<(String, String)> = courses
                 .into_iter()
                 .filter(|c| c.id == target_cid)
                 .map(|c| (c.id, c.title))
-                .collect()
+                .collect();
+            if matched.is_empty() {
+                vec![(target_cid.to_string(), String::new())]
+            } else {
+                matched
+            }
         } else {
             courses
                 .into_iter()
@@ -927,19 +932,28 @@ impl Service {
                     };
                     let start_time = text(&row["start_time"]);
                     let end_time = text(&row["end_time"]);
-                    let limit_time = number(&row["limit_time"]) as u64;
-                    let limit_time = if limit_time == 0 {
-                        number(&row["exam_time"]) as u64
-                    } else {
-                        limit_time
-                    };
+                    let mut limit_time = number(&row["limit_time"]) as u64;
+                    if limit_time == 0 {
+                        limit_time = number(&row["time_limit"]) as u64;
+                    }
+                    if limit_time == 0 {
+                        limit_time = number(&row["exam_time"]) as u64;
+                    }
                     let status_text = text(&row["status"]);
-                    let mut status_code = number(&row["status_code"]) as i32;
+                    let mut status_code = if row.get("status_code").is_some() {
+                        number(&row["status_code"]) as i32
+                    } else {
+                        number(&row["status"]) as i32
+                    };
                     if status_code == 0 && (status_text == "已批改" || status_text == "已完成") {
                         status_code = 20;
                     }
-                    let can_do = row["state"]["do"].as_bool().unwrap_or(false);
-                    let can_view = row["state"]["view"].as_bool().unwrap_or(false);
+                    let can_do = row["state"]["do"].as_bool().unwrap_or_else(|| {
+                        status_code == 0 || status_code == 1
+                    });
+                    let can_view = row["state"]["view"].as_bool().unwrap_or_else(|| {
+                        text(&row["allow_view_paper"]) == "1"
+                    });
                     let can_eval = row["state"]["eval"].as_bool().unwrap_or(false);
                     let chance = number(&row["chance"]) as u32;
                     let submit_count = number(&row["submit_count"]) as u32;
@@ -948,10 +962,20 @@ impl Service {
                             v.as_str().and_then(|s| s.trim().parse::<f64>().ok())
                         })
                     });
-                    let paper_id = id(&row["paper_id"]);
+                    let paper_id = id(&row["paper_id"]).or_else(|| id(&row["upid"]));
                     let chapter_text = text(&row["chapter_text"]);
+                    let chapter_text = if chapter_text.is_empty() {
+                        text(&row["chapter_name"])
+                    } else {
+                        chapter_text
+                    };
                     let chapter_text = if chapter_text.is_empty() { None } else { Some(chapter_text) };
                     let section_text = text(&row["section_text"]);
+                    let section_text = if section_text.is_empty() {
+                        text(&row["section_name"])
+                    } else {
+                        section_text
+                    };
                     let section_text = if section_text.is_empty() { None } else { Some(section_text) };
 
                     all_tasks.push(ExamTask {
@@ -999,6 +1023,8 @@ impl Service {
             .to_string();
         let limit_time = info.as_ref()
             .map(|v| number(&v["limit_time"]) as u64)
+            .filter(|&t| t > 0)
+            .or_else(|| info.as_ref().map(|v| number(&v["time_limit"]) as u64))
             .filter(|&t| t > 0)
             .or_else(|| info.as_ref().map(|v| number(&v["exam_time"]) as u64))
             .unwrap_or(0);
@@ -1308,11 +1334,16 @@ impl Service {
         }
 
         let target_courses: Vec<(String, String)> = if let Some(target_cid) = cid {
-            courses
+            let matched: Vec<(String, String)> = courses
                 .into_iter()
                 .filter(|c| c.id == target_cid)
                 .map(|c| (c.id, c.title))
-                .collect()
+                .collect();
+            if matched.is_empty() {
+                vec![(target_cid.to_string(), String::new())]
+            } else {
+                matched
+            }
         } else {
             courses
                 .into_iter()
@@ -1354,8 +1385,18 @@ impl Service {
                     });
                     let paper_id = id(&row["paper_id"]);
                     let chapter_text = text(&row["chapter_text"]);
+                    let chapter_text = if chapter_text.is_empty() {
+                        text(&row["chapter_name"])
+                    } else {
+                        chapter_text
+                    };
                     let chapter_text = if chapter_text.is_empty() { None } else { Some(chapter_text) };
                     let section_text = text(&row["section_text"]);
+                    let section_text = if section_text.is_empty() {
+                        text(&row["section_name"])
+                    } else {
+                        section_text
+                    };
                     let section_text = if section_text.is_empty() { None } else { Some(section_text) };
                     let res_id = id(&row["res_id"]).or_else(|| id(&row["resource_id"]));
                     let commit_time = text(&row["commit_time"]);
@@ -1407,11 +1448,16 @@ impl Service {
         }
 
         let target_courses: Vec<(String, String)> = if let Some(target_cid) = cid {
-            courses
+            let matched: Vec<(String, String)> = courses
                 .into_iter()
                 .filter(|c| c.id == target_cid)
                 .map(|c| (c.id, c.title))
-                .collect()
+                .collect();
+            if matched.is_empty() {
+                vec![(target_cid.to_string(), String::new())]
+            } else {
+                matched
+            }
         } else {
             courses
                 .into_iter()
@@ -1455,8 +1501,18 @@ impl Service {
                     let eval_status = text(&row["eval_status"]);
                     let eval_status = if eval_status.is_empty() { None } else { Some(eval_status) };
                     let chapter_text = text(&row["chapter_text"]);
+                    let chapter_text = if chapter_text.is_empty() {
+                        text(&row["chapter_name"])
+                    } else {
+                        chapter_text
+                    };
                     let chapter_text = if chapter_text.is_empty() { None } else { Some(chapter_text) };
                     let section_text = text(&row["section_text"]);
+                    let section_text = if section_text.is_empty() {
+                        text(&row["section_name"])
+                    } else {
+                        section_text
+                    };
                     let section_text = if section_text.is_empty() { None } else { Some(section_text) };
                     let res_id = id(&row["res_id"]).or_else(|| id(&row["resource_id"]));
                     let commit_time = text(&row["commit_time"]);

@@ -93,9 +93,11 @@ impl UnifiedSzuMcpService {
         let cid = params.course_id.as_deref();
         let quizzes = service.list_quizzes(cid).await?;
         let homeworks = service.list_homeworks(cid).await?;
+        let exams = service.list_exams(cid).await?;
         serde_json::to_string_pretty(&serde_json::json!({
             "quizzes": quizzes,
             "homeworks": homeworks,
+            "exams": exams,
         }))
         .map_err(|e| format!("序列化失败: {e}"))
     }
