@@ -1,4 +1,4 @@
-use crate::local_model::{self, LocalModelStatus, LocalModelStore, Manifest};
+use crate::local_model::{LocalModelStatus, LocalModelStore, Manifest};
 use std::{
     fs,
     sync::{Arc, OnceLock},
@@ -8,8 +8,6 @@ use tauri::{Emitter, Manager};
 const MANIFEST: &str = include_str!("../resources/embedding/bge-small-zh-v1.5/model.json");
 
 pub(crate) type EmbeddingModelStatus = LocalModelStatus;
-#[allow(dead_code)]
-pub(crate) type ModelDownloadProgress = local_model::ModelDownloadProgress;
 
 static STORE: OnceLock<Arc<LocalModelStore>> = OnceLock::new();
 
@@ -99,6 +97,7 @@ pub(crate) async fn download_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::local_model;
 
     #[test]
     fn test_manifest_loads_and_validates() {

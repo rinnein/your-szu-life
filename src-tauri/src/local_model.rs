@@ -20,8 +20,6 @@ pub(crate) const USER_AGENT: &str =
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Manifest {
-    #[allow(dead_code)]
-    pub repository: String,
     pub revision: String,
     pub sha256: String,
     pub bytes: u64,
@@ -75,8 +73,7 @@ impl Manifest {
     }
 }
 
-#[allow(dead_code)]
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ModelDownloadProgress {
     pub downloaded_bytes: u64,

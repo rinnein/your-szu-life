@@ -1,4 +1,4 @@
-use crate::local_model::{self, LocalModelStatus, LocalModelStore, Manifest};
+use crate::local_model::{LocalModelStatus, LocalModelStore, Manifest};
 use ddddocr_core::{traits::Loader, ModelMetadata, Normalization, Ocr, Resize};
 use ddddocr_tract2::{loader::ModelLoader, OcrRuntime};
 use std::{
@@ -11,8 +11,6 @@ const MANIFEST: &str = include_str!("../resources/ocr/ddddocr/model.json");
 const MAX_IMAGE_BYTES: usize = 1024 * 1024;
 
 pub(crate) type OcrModelStatus = LocalModelStatus;
-#[allow(dead_code)]
-pub(crate) type ModelDownloadProgress = local_model::ModelDownloadProgress;
 
 pub(crate) struct OcrService {
     pub(crate) model: Arc<LocalModelStore>,
