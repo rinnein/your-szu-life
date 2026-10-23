@@ -188,7 +188,7 @@ fn install_apk_via_bridge(
     let name = env.new_string("in.rinne.your_szu_life.AppUpdateBridge")?;
     let bridge_class = env
         .call_method(
-            loader,
+            &loader,
             "loadClass",
             "(Ljava/lang/String;)Ljava/lang/Class;",
             &[JValue::Object(&name)],
@@ -239,7 +239,7 @@ fn fallback_start_update(
         let name = env.new_string("in.rinne.your_szu_life.AppUpdateBridge")?;
         let class = env
             .call_method(
-                loader,
+                &loader,
                 "loadClass",
                 "(Ljava/lang/String;)Ljava/lang/Class;",
                 &[JValue::Object(&name)],
