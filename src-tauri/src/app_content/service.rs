@@ -629,6 +629,7 @@ pub(crate) fn collect_candidate_urls(
     candidate_urls
 }
 
+/// 判断发布资产文件名是否匹配当前平台的可安装包。
 pub(super) fn is_platform_asset(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     #[cfg(target_os = "android")]
@@ -659,28 +660,28 @@ pub(super) fn is_platform_asset(name: &str) -> bool {
     }
 }
 
+/// 找出当前平台安装包的资产下标。
+///
+/// 用「偏好扩展名」的顺序表达平台差异，而不是给每个平台重复写一遍匹配逻辑，
+/// 这样 [`is_platform_asset`] 在所有平台上都是真正参与运行时判断的代码。
 pub(super) fn find_platform_asset_index(names: &[&str]) -> Option<usize> {
-    #[cfg(target_os = "android")]
-    {
-        names
+    let preferred: &[&str] = if cfg!(target_os = "android") {
+        // Android 优先选择压缩后的 .apk.gz，再回退到 .apk。
+        &[".apk.gz", ".apk"]
+    } else {
+        &[]
+    };
+
+    for extension in preferred {
+        if let Some(index) = names
             .iter()
-            .position(|n| n.to_ascii_lowercase().ends_with(".apk.gz"))
-            .or_else(|| {
-                names
-                    .iter()
-                    .position(|n| n.to_ascii_lowercase().ends_with(".apk"))
-            })
+            .position(|name| name.to_ascii_lowercase().ends_with(extension))
+        {
+            return Some(index);
+        }
     }
-    #[cfg(target_os = "windows")]
-    {
-        names
-            .iter()
-            .position(|n| n.to_ascii_lowercase().ends_with(".msi"))
-    }
-    #[cfg(not(any(target_os = "android", target_os = "windows")))]
-    {
-        names.iter().position(|n| is_platform_asset(n))
-    }
+
+    names.iter().position(|name| is_platform_asset(name))
 }
 
 pub(super) fn extract_version_from_asset_name(name: &str) -> Option<String> {

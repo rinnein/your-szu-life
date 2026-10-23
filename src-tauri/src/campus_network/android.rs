@@ -76,6 +76,8 @@ pub(super) fn parse_network_snapshot_json(payload: &str) -> Option<NetworkSnapsh
         capabilities_available: parsed.capabilities_available,
         wifi_permission: parsed.wifi_permission.and_then(normalize_text),
         location_enabled: parsed.location_enabled,
+        // 私有 172 段判定以桥接下发的字段为准（Kotlin 侧 isPrivate172Ipv4），
+        // Rust 端不重复推断，避免与 ip/wifiIp 字段产生两套互相矛盾的口径。
         has_private_172_ipv4: parsed.has_private_172_ipv4,
         wifi_connected,
         wifi_ip,

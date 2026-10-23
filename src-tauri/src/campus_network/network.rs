@@ -24,6 +24,11 @@ pub(crate) struct NetworkSnapshot {
     pub(crate) wifi_has_private_172_ipv4: bool,
 }
 
+/// 判断 IPv4 是否落在校园网使用的 `172.16.0.0/12` 私有段。
+///
+/// 只在非 Android 的桌面快照实现里使用；Android 上该值由 Kotlin 桥接
+/// （`CampusNetworkBridge.isPrivate172Ipv4`）计算后随快照下发，故不参与编译。
+#[cfg(any(not(target_os = "android"), test))]
 fn is_private_172(value: &str) -> bool {
     value
         .trim()
