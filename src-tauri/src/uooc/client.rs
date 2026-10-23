@@ -134,7 +134,7 @@ pub(super) enum Error {
     Network,
     Invalid,
     UnexpectedRedirect,
-    Server(i64),
+    Server(i64, String, Vec<String>),
     Quiz(String),
 }
 impl Error {
@@ -147,7 +147,31 @@ impl Error {
             Self::Network => "UOOC 请求失败，请检查网络后重试".into(),
             Self::Invalid => "UOOC 返回数据格式无效".into(),
             Self::UnexpectedRedirect => "UOOC 返回了非登录重定向，请检查访问方式或网络".into(),
-            Self::Server(code) => format!("UOOC 拒绝请求（业务码 {code}）"),
+            Self::Server(601, msg, details) => {
+                let detail_str = details.join("；");
+                if detail_str.contains("评价") || msg.contains("评价") {
+                    let text = if !detail_str.is_empty() { &detail_str } else { msg };
+                    format!("请先完成课程评价：{text}（UOOC 业务码 601）。可在官网打开课程完成评价后再提交。")
+                } else if !detail_str.is_empty() {
+                    format!("服务器验证错误：{detail_str}（{msg}，业务码 601）")
+                } else if !msg.is_empty() {
+                    format!("{msg}（UOOC 服务器验证错误 601）")
+                } else {
+                    "请先完成课程评价或检查必填项（UOOC 业务码 601）".into()
+                }
+            }
+            Self::Server(code, msg, details) => {
+                let detail_str = details.join("；");
+                if !detail_str.is_empty() && !msg.is_empty() {
+                    format!("{msg}：{detail_str}（业务码 {code}）")
+                } else if !detail_str.is_empty() {
+                    format!("{detail_str}（业务码 {code}）")
+                } else if !msg.is_empty() {
+                    format!("{msg}（UOOC 业务码 {code}）")
+                } else {
+                    format!("UOOC 拒绝请求（业务码 {code}）")
+                }
+            }
             Self::Quiz(message) => message.clone(),
         }
     }
@@ -416,23 +440,80 @@ impl Client {
         )
         .await
     }
+    pub(super) async fn course_comment(
+        &self,
+        cid: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Value, Error> {
+        self.request(
+            "/home/course/comment",
+            &[("cid".into(), cid.into())],
+            false,
+            cancel,
+        )
+        .await
+    }
+    pub(super) async fn add_course_comment(
+        &self,
+        cid: &str,
+        score: u32,
+        content: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Value, Error> {
+        self.request(
+            "/home/course/addcomment",
+            &[
+                ("cid".into(), cid.into()),
+                ("score".into(), score.to_string()),
+                ("content".into(), content.into()),
+            ],
+            true,
+            cancel,
+        )
+        .await
+    }
+    pub(super) async fn set_know_review(
+        &self,
+        cid: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Value, Error> {
+        self.request(
+            "/home/course/setKnowReview",
+            &[("cid".into(), cid.into())],
+            true,
+            cancel,
+        )
+        .await
+    }
     pub(super) async fn exam_save(
         &self,
+        cid: Option<&str>,
         tid: &str,
         fields: &[(String, String)],
         cancel: &CancellationToken,
     ) -> Result<Value, Error> {
         let mut params = vec![("tid".into(), tid.into())];
+        if let Some(c) = cid {
+            if !c.is_empty() {
+                params.push(("cid".into(), c.into()));
+            }
+        }
         params.extend_from_slice(fields);
         self.request("/exam/save", &params, true, cancel).await
     }
     pub(super) async fn exam_commit(
         &self,
+        cid: Option<&str>,
         tid: &str,
         fields: &[(String, String)],
         cancel: &CancellationToken,
     ) -> Result<Value, Error> {
         let mut params = vec![("tid".into(), tid.into())];
+        if let Some(c) = cid {
+            if !c.is_empty() {
+                params.push(("cid".into(), c.into()));
+            }
+        }
         params.extend_from_slice(fields);
         self.request("/exam/commit", &params, true, cancel).await
     }
@@ -649,7 +730,18 @@ impl Client {
                         1 => Ok(value["data"].clone()),
                         401 => Err(Error::Unauthorized),
                         600 => Err(Error::Gate),
-                        other => Err(Error::Server(other)),
+                        other => {
+                            let msg = text(&value["msg"]);
+                            let details: Vec<String> = if let Some(arr) = value["data"].as_array() {
+                                arr.iter().map(text).filter(|s| !s.is_empty()).collect()
+                            } else if let Some(obj) = value["data"].as_object() {
+                                obj.values().map(text).filter(|s| !s.is_empty()).collect()
+                            } else {
+                                let d = text(&value["data"]);
+                                if !d.is_empty() { vec![d] } else { vec![] }
+                            };
+                            Err(Error::Server(other, msg, details))
+                        }
                     }
                 } => result,
             };

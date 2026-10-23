@@ -1016,6 +1016,9 @@ impl Service {
             }
         }
 
+        // 自动知晓课程公告与评价提醒
+        let _ = client.set_know_review(cid, &cancel).await;
+
         let info = client.exam_task_info(task_id, cid, &cancel).await.ok();
         let title = info.as_ref()
             .and_then(|v| v["title"].as_str().or_else(|| v["name"].as_str()))
@@ -1111,122 +1114,7 @@ impl Service {
             return Err("无法获取试卷题目，可能考试/测验尚未开始或需要官方页面处理".into());
         }
 
-        let mut reviews = Vec::new();
-        let (server_url, api_key) = {
-            let r = self.runtime.lock().unwrap();
-            (r.snapshot.settings.qa_server_url.clone(), r.qa_api_key.clone())
-        };
-
-        let qa_db_opt = self.get_qa_db().await.ok();
-        let local_bank = if let Some(qa_db) = qa_db_opt {
-            qa_db.load_all_bank_questions().await.unwrap_or_default()
-        } else {
-            Default::default()
-        };
-
-        for q in &questions {
-            let mut matched_this_q = false;
-
-            // 1. 优先尝试单题 ID 精确匹配 (本地题库 bank 中 key 或者 question_id)
-            if let Some(bank_q) = local_bank.get(&q.id).or_else(|| {
-                local_bank.values().find(|item| item.question_id == q.id)
-            }) {
-                let clean_answers: Vec<String> = if !bank_q.correct_answers.is_empty() {
-                    bank_q.correct_answers.clone()
-                } else {
-                    bank_q
-                        .answers
-                        .iter()
-                        .filter(|a| a.is_correct)
-                        .flat_map(|a| a.values.iter().filter_map(|v| v.as_str().map(String::from)))
-                        .collect()
-                };
-                if !clean_answers.is_empty() {
-                    let mapped_answers: Vec<String> = clean_answers
-                        .iter()
-                        .map(|ans| {
-                            if let Some(opt) = q.options.iter().find(|o| quiz::qa::is_option_match(o, ans)) {
-                                opt.id.clone()
-                            } else {
-                                ans.clone()
-                            }
-                        })
-                        .collect();
-                    if !mapped_answers.is_empty() {
-                        answers.entry(q.id.clone()).or_insert_with(|| mapped_answers.clone());
-                        reviews.push(quiz::model::Review {
-                            question_id: q.id.clone(),
-                            answers: mapped_answers,
-                            probabilities: Default::default(),
-                            message: "题库单题ID精确命中 (来自随堂测验)".into(),
-                        });
-                        matched_this_q = true;
-                    }
-                }
-            }
-
-            // 2. 单题向量特征匹配 (针对题干 + 选项语义)
-            if !matched_this_q {
-                let opts: Vec<quiz::qa::QaUploadOption> = q
-                    .options
-                    .iter()
-                    .map(|o| quiz::qa::QaUploadOption {
-                        id: o.id.clone(),
-                        text: o.text.clone(),
-                    })
-                    .collect();
-                let query = quiz::qa::build_embedding_text(Some(&q.text), Some(&opts));
-                let matched_res = if let Some(qa_db) = qa_db_opt {
-                    quiz::qa::search_questions_with_local_embedding(
-                        qa_db,
-                        &server_url,
-                        api_key.as_deref(),
-                        &query,
-                        3,
-                    )
-                    .await
-                    .ok()
-                } else {
-                    None
-                };
-                if let Some(matched) = matched_res
-                {
-                    if let Some(top) = matched.first() {
-                        let mapped_answers: Vec<String> = top
-                            .answers
-                            .iter()
-                            .map(|ans| {
-                                if let Some(opt) = q.options.iter().find(|o| quiz::qa::is_option_match(o, ans)) {
-                                    opt.id.clone()
-                                } else {
-                                    ans.clone()
-                                }
-                            })
-                            .collect();
-
-                        if top.similarity > 0.85 || top.question_id == q.id {
-                            if !mapped_answers.is_empty() {
-                                answers.entry(q.id.clone()).or_insert_with(|| mapped_answers.clone());
-                            }
-                            reviews.push(quiz::model::Review {
-                                question_id: q.id.clone(),
-                                answers: mapped_answers,
-                                probabilities: Default::default(),
-                                message: format!("题库单题向量命中 (相似度 {:.0}%)", top.similarity * 100.0),
-                            });
-                        } else if top.similarity > 0.70 {
-                            reviews.push(quiz::model::Review {
-                                question_id: q.id.clone(),
-                                answers: mapped_answers,
-                                probabilities: Default::default(),
-                                message: format!("测验相似考点参考 (相似度 {:.0}%)", top.similarity * 100.0),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
+        // 打开试卷时不执行阻断式匹配题库与向量嵌入搜索，保持毫秒级打开；用户进入试卷后可手动点击“匹配题库”
         Ok(ExamPaper {
             task_id: task_id.to_string(),
             title,
@@ -1234,14 +1122,49 @@ impl Service {
             limit_time,
             questions,
             answers,
-            reviews,
+            reviews: Vec::new(),
             is_submitted,
         })
     }
 
+    pub(crate) async fn auto_ensure_course_evaluated(&self, cid: &str) -> Result<bool, String> {
+        let cancel = CancellationToken::new();
+        let client = self.client.read().unwrap().clone();
+
+        // 1. 先触发强制知晓确认
+        let _ = client.set_know_review(cid, &cancel).await;
+
+        // 2. 检查课程评价状态
+        let comment_check = client.course_comment(cid, &cancel).await;
+        let needs_comment = match comment_check {
+            Ok(v) => {
+                let has = v.get("has_comment")
+                    .or_else(|| v.get("status"))
+                    .or_else(|| v.get("is_comment"));
+                match has {
+                    Some(val) => number(val) == 0.0 && val.as_bool() != Some(true),
+                    None => true,
+                }
+            }
+            Err(_) => true,
+        };
+
+        if needs_comment {
+            // 提交默认五星优质好评
+            let _ = client.add_course_comment(
+                cid,
+                5,
+                "课程内容丰富，逻辑清晰，获益匪浅，值得推荐！",
+                &cancel,
+            ).await;
+        }
+
+        Ok(true)
+    }
+
     pub(crate) async fn save_exam_draft(
         &self,
-        _cid: &str,
+        cid: &str,
         task_id: &str,
         answers: quiz::model::Answers,
     ) -> Result<(), String> {
@@ -1254,11 +1177,23 @@ impl Service {
                 fields.push((format!("answers[{qid}]"), v.clone()));
             }
         }
-        client
-            .exam_save(clean_tid, &fields, &cancel)
-            .await
-            .map_err(|e| format!("草稿保存失败: {e:?}"))?;
-        Ok(())
+        let res = client
+            .exam_save(Some(cid), clean_tid, &fields, &cancel)
+            .await;
+
+        if let Err(client::Error::Server(601, ref msg, ref details)) = res {
+            let is_eval_issue = msg.contains("评价") || details.iter().any(|d| d.contains("评价"));
+            if is_eval_issue || details.is_empty() {
+                let _ = self.auto_ensure_course_evaluated(cid).await;
+                client
+                    .exam_save(Some(cid), clean_tid, &fields, &cancel)
+                    .await
+                    .map_err(|e| format!("草稿保存失败: {}", e.message()))?;
+                return Ok(());
+            }
+        }
+
+        res.map(|_| ()).map_err(|e| format!("草稿保存失败: {}", e.message()))
     }
 
     pub(crate) async fn submit_exam(
@@ -1277,10 +1212,21 @@ impl Service {
                 fields.push((format!("answers[{qid}]"), v.clone()));
             }
         }
-        let res = client
-            .exam_commit(clean_tid, &fields, &cancel)
-            .await
-            .map_err(|e| format!("提交试卷失败: {e:?}"))?;
+        let mut res = client
+            .exam_commit(Some(cid), clean_tid, &fields, &cancel)
+            .await;
+
+        if let Err(client::Error::Server(601, ref msg, ref details)) = res {
+            let is_eval_issue = msg.contains("评价") || details.iter().any(|d| d.contains("评价"));
+            if is_eval_issue || details.is_empty() {
+                let _ = self.auto_ensure_course_evaluated(cid).await;
+                res = client
+                    .exam_commit(Some(cid), clean_tid, &fields, &cancel)
+                    .await;
+            }
+        }
+
+        let val = res.map_err(|e| format!("提交试卷失败: {}", e.message()))?;
 
         if let Some(qs) = questions {
             if !qs.is_empty() {
@@ -1305,7 +1251,7 @@ impl Service {
         // 提交后触发单个题单解析与题库自动构建
         let _ = quiz::build_single_task_group(self, cid, clean_tid, Some(true)).await;
 
-        let msg = text(&res["msg"]);
+        let msg = text(&val["msg"]);
         Ok(if msg.is_empty() { "试卷已成功提交".into() } else { msg })
     }
 
@@ -1682,7 +1628,10 @@ impl Service {
     ) -> Result<(quiz::model::Answers, Vec<quiz::model::Review>), String> {
         let cancel = CancellationToken::new();
         let wrong_map = std::collections::BTreeMap::new();
-        let (answers, reviews, _, err) = ai::generate(self, &questions, &wrong_map, &cancel, None).await;
+        let callback = |entry: &quiz::model::AiSessionEntry| {
+            self.emit_ai_session(entry);
+        };
+        let (answers, reviews, _, err) = ai::generate(self, &questions, &wrong_map, &cancel, Some(&callback)).await;
         if let Some(e) = err {
             if answers.is_empty() && reviews.is_empty() {
                 return Err(format!("AI 答题失败: {e}"));

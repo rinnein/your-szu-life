@@ -1075,12 +1075,7 @@ impl Service {
                 .ok_or("尚未找到测验")?;
             (a, q.task_id.clone(), r.epoch)
         };
-        if !allowed(self, &cid, &CancellationToken::new())
-            .await
-            .map_err(|e| e.message())?
-        {
-            return Err("测验权重为零或未知，答题已禁用".into());
-        }
+
         if task.parse::<u64>().ok().is_none_or(|t| t == 0) {
             return Err("测验任务编号无效".into());
         }
@@ -1243,11 +1238,12 @@ impl Service {
             None
         };
 
-        // 针对该单个题组执行构建题库流程（获取题目+答案、存入本地共享题库并同步至服务端）
-        let (_, mut details) = build_single_task_group(self, cid, clean_tid, Some(is_finished)).await?;
+        // 优先直接获取已完成试卷内容，避免打开试卷时阻塞进行耗时的向量特征构建与网络同步
+        let mut details = fetch_task_group_content(&client, cid, clean_tid, is_finished, submitted.as_ref(), &cancel).await?;
 
         if details.questions.is_empty() {
-            details = fetch_task_group_content(&client, cid, clean_tid, is_finished, submitted.as_ref(), &cancel).await?;
+            let (_, fallback_details) = build_single_task_group(self, cid, clean_tid, Some(is_finished)).await?;
+            details = fallback_details;
         }
 
         if details.questions.is_empty() {

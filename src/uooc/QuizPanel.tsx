@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
+  Alert,
+  AlertDialog,
   Button,
   ButtonGroup,
   Checkbox,
@@ -20,7 +22,14 @@ import {
   TextField,
   toast,
 } from "@heroui/react";
-import { LuBot, LuChevronDown, LuCircleCheck, LuDatabase, LuSparkles } from "react-icons/lu";
+import {
+  LuBot,
+  LuChevronDown,
+  LuCircleCheck,
+  LuClock,
+  LuDatabase,
+  LuSparkles,
+} from "react-icons/lu";
 import { DimmedHtmlText, useHtmlTagVisibility } from "./DimmedHtmlText";
 import type { AiSessionEntry, QuizAnswers, QuizQuestion, QuizState, UoocSnapshot } from "./types";
 
@@ -151,9 +160,13 @@ export function sanitizeAnswersForDraft(
     const vals = answers[q.id];
     if (!vals || vals.length === 0) continue;
     if (q.kind === "text") {
-      if (vals.length === q.blanks && vals.every((v) => v.trim().length > 0)) {
+      if (q.blanks <= 1) {
+        if (vals[0]?.trim()) result[q.id] = [vals[0].trim()];
+      } else if (vals.length === q.blanks && vals.every((v) => v.trim().length > 0)) {
         result[q.id] = vals;
       }
+    } else if (q.kind === "subjective") {
+      if (vals[0]?.trim()) result[q.id] = [vals[0].trim()];
     } else {
       const valid = vals
         .map((v) => findMatchingOptionId(q.options, v))
@@ -185,21 +198,57 @@ export function hasAnswersDifferences(a: QuizAnswers, b: QuizAnswers): boolean {
   return false;
 }
 
+export type QuizReview = {
+  questionId: string;
+  answers: string[];
+  probabilities: Record<string, number>;
+  message: string;
+};
+
+export interface QuizPanelProps {
+  quiz: QuizState;
+  dryRun?: boolean;
+  weight?: number | null;
+  onSnapshot?: (v: UoocSnapshot) => void;
+  active?: boolean;
+  onClose?: () => void;
+
+  // Custom action overrides (for Exam / Homework / Custom Paper mode)
+  isExam?: boolean;
+  limitTime?: number; // In minutes, for countdown timer
+  onMatchQa?: (
+    questions: QuizQuestion[],
+  ) => Promise<{ answers: QuizAnswers; reviews: QuizReview[] }>;
+  onSolveAi?: (
+    questions: QuizQuestion[],
+  ) => Promise<{ answers: QuizAnswers; reviews: QuizReview[] }>;
+  onSubmit?: (answers: QuizAnswers) => Promise<void>;
+  onSaveDraft?: (answers: QuizAnswers) => Promise<void>;
+  onOpenPortal?: () => Promise<void>;
+  onSyncPortal?: () => Promise<void>;
+  onGenerateSubjective?: (question: QuizQuestion) => Promise<string>;
+  extraHeaderActions?: React.ReactNode;
+  warningAlert?: React.ReactNode;
+}
+
 export function QuizPanel({
   quiz,
-  dryRun,
+  dryRun = false,
   weight,
   onSnapshot,
-  active,
+  active = false,
   onClose: _onClose,
-}: {
-  quiz: QuizState;
-  dryRun: boolean;
-  weight?: number | null;
-  onSnapshot: (v: UoocSnapshot) => void;
-  active: boolean;
-  onClose?: () => void;
-}) {
+  isExam = false,
+  limitTime,
+  onMatchQa,
+  onSolveAi,
+  onSubmit,
+  onSaveDraft,
+  onOpenPortal,
+  onSyncPortal,
+  onGenerateSubjective,
+  warningAlert,
+}: QuizPanelProps) {
   const cacheKey = getQuizCacheKey(quiz.accountId, quiz.cid, quiz.taskId, quiz.resourceId);
   const [answers, setAnswers] = useState<QuizAnswers>(() => {
     if (quiz.stage !== "passed") {
@@ -214,6 +263,12 @@ export function QuizPanel({
   });
   const [busy, setBusy] = useState(false);
   const [manual, setManual] = useState(false);
+  const [reviews, setReviews] = useState<QuizReview[]>(quiz.reviews ?? []);
+  const [confirmSubmitOpen, setConfirmSubmitOpen] = useState(false);
+
+  useEffect(() => {
+    setReviews(quiz.reviews ?? []);
+  }, [quiz.reviews]);
   const [showHtmlTags, setShowHtmlTags] = useHtmlTagVisibility();
   const [actionModal, setActionModal] = useState<{
     type: "matchQa" | "generate" | "submit";
@@ -225,6 +280,47 @@ export function QuizPanel({
 
   const [liveSessions, setLiveSessions] = useState<AiSessionEntry[]>(quiz.aiSessions ?? []);
   const [portalAction, setPortalAction] = useState<"open" | "sync">("open");
+
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(() => {
+    if (typeof limitTime === "number" && limitTime > 0) {
+      return limitTime * 60;
+    }
+    return 0;
+  });
+
+  useEffect(() => {
+    if (typeof limitTime === "number" && limitTime > 0) {
+      setSecondsRemaining(limitTime * 60);
+    }
+  }, [limitTime]);
+
+  useEffect(() => {
+    if (quiz.stage === "passed" || !(typeof limitTime === "number" && limitTime > 0)) {
+      return;
+    }
+    const timer = setInterval(() => {
+      setSecondsRemaining((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+    if (isExam && quiz.taskId) {
+      void invoke("heartbeat_uooc_exam", { taskId: quiz.taskId }).catch(() => {});
+      heartbeatTimer = setInterval(() => {
+        void invoke("heartbeat_uooc_exam", { taskId: quiz.taskId }).catch(() => {});
+      }, 30000);
+    }
+
+    return () => {
+      clearInterval(timer);
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+    };
+  }, [quiz.stage, limitTime, isExam, quiz.taskId]);
 
   useEffect(() => {
     setPortalAction("open");
@@ -258,24 +354,37 @@ export function QuizPanel({
   }, [quiz.aiSessions]);
 
   useEffect(() => {
-    let active = true;
-    const unlistenPromise = listen<AiSessionEntry>("uooc-ai-session-progress", (event) => {
-      if (!active) return;
-      const entry = event.payload;
-      setLiveSessions((prev) => {
-        const next = [...prev];
-        const idx = next.findIndex((s) => s.batchIndex === entry.batchIndex);
-        if (idx >= 0) {
-          next[idx] = entry;
-        } else {
-          next.push(entry);
-        }
-        return next;
-      });
-    });
+    let mounted = true;
+    let unlistenFn: (() => void) | undefined;
+    try {
+      listen<AiSessionEntry>("uooc-ai-session-progress", (event) => {
+        if (!mounted) return;
+        const entry = event.payload;
+        setLiveSessions((prev) => {
+          const next = [...prev];
+          const idx = next.findIndex((s) => s.batchIndex === entry.batchIndex);
+          if (idx >= 0) {
+            next[idx] = entry;
+          } else {
+            next.push(entry);
+          }
+          return next;
+        });
+      })
+        .then((unlisten) => {
+          if (!mounted) {
+            unlisten();
+          } else {
+            unlistenFn = unlisten;
+          }
+        })
+        .catch(() => {});
+    } catch {
+      // Non-tauri or mock environment safe fallback
+    }
     return () => {
-      active = false;
-      void unlistenPromise.then((unlisten) => unlisten());
+      mounted = false;
+      unlistenFn?.();
     };
   }, []);
 
@@ -320,7 +429,6 @@ export function QuizPanel({
           r.answers.length > 0,
       );
 
-      // AI判题或题库匹配得到结果后，自动将选项切换到判定出来的标准答案/推荐答案
       const targetReview = stdReview ?? aiReview;
       if (targetReview && targetReview.answers.length > 0) {
         const mapped = targetReview.answers.map((ans) => findMatchingOptionId(q.options, ans));
@@ -357,11 +465,21 @@ export function QuizPanel({
       if (!currentQuiz) return;
       if (currentQuiz.stage === "passed") return;
       if (currentQuiz.questions.length === 0) return;
-      if (!(typeof weightRef.current === "number" && weightRef.current > 0)) return;
       if (!isDirtyRef.current) return;
 
       const currentAnswers = answersRef.current;
       const sanitized = sanitizeAnswersForDraft(currentQuiz.questions, currentAnswers);
+
+      if (onSaveDraft) {
+        void onSaveDraft(sanitized)
+          .then(() => {
+            toast.success("草稿已自动保存");
+          })
+          .catch(() => {});
+        return;
+      }
+
+      if (!(typeof weightRef.current === "number" && weightRef.current > 0)) return;
 
       void invoke<UoocSnapshot>("save_uooc_quiz_answers", {
         cid: currentQuiz.cid,
@@ -376,11 +494,13 @@ export function QuizPanel({
         })
         .catch(() => {});
     };
-  }, []);
+  }, [onSaveDraft]);
 
   const running =
     active && ["preparing", "generating", "submitting", "verifying"].includes(quiz.stage);
-  const disabled = busy || running || !(typeof weight === "number" && weight > 0);
+  const isCustomMode = Boolean(onMatchQa || onSolveAi || onSubmit || isExam);
+  const isWeightDisabled = !isCustomMode && !(typeof weight === "number" && weight > 0);
+  const disabled = busy || running || isWeightDisabled;
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -388,8 +508,8 @@ export function QuizPanel({
       await fn();
     } catch (e) {
       const msg =
-        typeof e === "string" ? e : (e as { message?: string })?.message || "测验操作失败，请重试";
-      toast.danger("测验操作失败", { description: msg });
+        typeof e === "string" ? e : (e as { message?: string })?.message || "操作失败，请重试";
+      toast.danger("操作失败", { description: msg });
       setActionModal(null);
     } finally {
       setBusy(false);
@@ -402,7 +522,7 @@ export function QuizPanel({
       revision: revisionRef.current,
       action,
     });
-    onSnapshot(nextSnapshot);
+    if (onSnapshot) onSnapshot(nextSnapshot);
     const nextQuiz = Object.values(nextSnapshot.quizzes ?? {}).find(
       (q) => q.accountId === quiz.accountId && q.cid === quiz.cid,
     );
@@ -451,6 +571,12 @@ export function QuizPanel({
 
   const save = async () => {
     const sanitized = sanitizeAnswersForDraft(quiz.questions, answers);
+    if (onSaveDraft) {
+      await onSaveDraft(sanitized);
+      isDirtyRef.current = false;
+      saveQuizCache(cacheKey, answers);
+      return { ...quiz, answers: sanitized };
+    }
     const state = await invoke<UoocSnapshot>("save_uooc_quiz_answers", {
       cid: quiz.cid,
       revision: revisionRef.current,
@@ -459,7 +585,7 @@ export function QuizPanel({
     isDirtyRef.current = false;
     saveQuizCache(cacheKey, answers);
     if (state) {
-      onSnapshot(state);
+      if (onSnapshot) onSnapshot(state);
       const updated = Object.values(state?.quizzes ?? {}).find(
         (q) => q.accountId === quiz.accountId && q.cid === quiz.cid,
       );
@@ -489,6 +615,116 @@ export function QuizPanel({
     }
     setActionModal({ type: action, title, step: 2, completed: false });
     await run(async () => {
+      if (action === "matchQa" && onMatchQa) {
+        const result = await onMatchQa(quiz.questions);
+        const nextAnswers = { ...answers, ...result.answers };
+        for (const q of quiz.questions) {
+          const matchedRev = result.reviews.find((r) => r.questionId === q.id);
+          if (matchedRev && matchedRev.answers.length > 0) {
+            nextAnswers[q.id] = matchedRev.answers.map((ans) =>
+              findMatchingOptionId(q.options, ans),
+            );
+          }
+        }
+        setAnswers(nextAnswers);
+        saveQuizCache(cacheKey, nextAnswers);
+        isDirtyRef.current = true;
+
+        const mergedReviews = [
+          ...reviews.filter((r) => !result.reviews.some((nr) => nr.questionId === r.questionId)),
+          ...result.reviews,
+        ];
+        setReviews(mergedReviews);
+        setActionModal((prev) =>
+          prev
+            ? {
+                ...prev,
+                step: 3,
+                completed: true,
+                summary: `题库匹配完成，已命中 ${Object.keys(result.answers).length} 题答案`,
+              }
+            : null,
+        );
+        return;
+      }
+
+      if (action === "generate" && onSolveAi) {
+        const confirmedQids = new Set(
+          reviews
+            .filter(
+              (r) =>
+                (r.message.includes("题库") || r.message.includes("标准答案")) &&
+                !r.message.includes("排除"),
+            )
+            .map((r) => r.questionId),
+        );
+        const questionsForAi = quiz.questions.filter((q) => !confirmedQids.has(q.id));
+        if (questionsForAi.length === 0) {
+          setActionModal((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  step: 3,
+                  completed: true,
+                  summary:
+                    "全部题目已在题库中命中确认答案，无需向 AI 发起请求（已节省 Token 消耗）",
+                }
+              : null,
+          );
+          return;
+        }
+
+        const result = await onSolveAi(questionsForAi);
+        const nextAnswers = { ...answers };
+        for (const [qid, ans] of Object.entries(result.answers)) {
+          if (!confirmedQids.has(qid)) {
+            const q = quiz.questions.find((item) => item.id === qid);
+            if (q) {
+              nextAnswers[qid] = ans.map((v) => findMatchingOptionId(q.options, v));
+            } else {
+              nextAnswers[qid] = ans;
+            }
+          }
+        }
+        setAnswers(nextAnswers);
+        saveQuizCache(cacheKey, nextAnswers);
+        isDirtyRef.current = true;
+
+        const mergedReviews = [
+          ...reviews.filter((r) => confirmedQids.has(r.questionId)),
+          ...result.reviews.filter((r) => !confirmedQids.has(r.questionId)),
+        ];
+        setReviews(mergedReviews);
+        setActionModal((prev) =>
+          prev
+            ? {
+                ...prev,
+                step: 3,
+                completed: true,
+                summary: `AI 智能答题完成，已为 ${Object.keys(result.answers).length} 题生成推荐作答`,
+              }
+            : null,
+        );
+        return;
+      }
+
+      if (action === "submit" && onSubmit) {
+        submittedRef.current = true;
+        try {
+          const sanitized = sanitizeAnswersForDraft(quiz.questions, answers);
+          await onSubmit(sanitized);
+          clearQuizCache(cacheKey);
+          setActionModal((prev) =>
+            prev ? { ...prev, step: 3, completed: true, summary: "试卷已成功提交" } : null,
+          );
+          return;
+        } catch (e) {
+          submittedRef.current = false;
+          throw e;
+        }
+      }
+
+      // Default course quiz handling:
       let nextSnapshot: UoocSnapshot | undefined;
       if (action === "submit") {
         submittedRef.current = true;
@@ -500,7 +736,7 @@ export function QuizPanel({
             revision: saved.revision,
             action: "submit",
           });
-          onSnapshot(nextSnapshot);
+          if (onSnapshot) onSnapshot(nextSnapshot);
           clearQuizCache(cacheKey);
         } catch (e) {
           submittedRef.current = false;
@@ -523,14 +759,22 @@ export function QuizPanel({
 
   const handleOpenPortal = async () => {
     await run(async () => {
-      await invoke("open_uooc_quiz_portal", { cid: quiz.cid });
+      if (onOpenPortal) {
+        await onOpenPortal();
+      } else {
+        await invoke("open_uooc_quiz_portal", { cid: quiz.cid });
+      }
       setPortalAction("sync");
     });
   };
 
   const handleSyncPortal = async () => {
     await run(async () => {
-      await control("check");
+      if (onSyncPortal) {
+        await onSyncPortal();
+      } else {
+        await control("check");
+      }
       toast.success("已同步官网试卷数据");
     });
   };
@@ -538,6 +782,13 @@ export function QuizPanel({
   const handleUploadDraft = async () => {
     await run(async () => {
       const sanitized = sanitizeAnswersForDraft(quiz.questions, answers);
+      if (onSaveDraft) {
+        await onSaveDraft(sanitized);
+        isDirtyRef.current = false;
+        saveQuizCache(cacheKey, answers);
+        toast.success("草稿已成功保存至官网");
+        return;
+      }
       await save();
       if (!dryRun && quiz.taskId) {
         await invoke("save_uooc_exam_draft", {
@@ -554,8 +805,27 @@ export function QuizPanel({
     });
   };
 
+  const handleSubjectiveAi = async (q: QuizQuestion) => {
+    await run(async () => {
+      let generated = "";
+      if (onGenerateSubjective) {
+        generated = await onGenerateSubjective(q);
+      } else {
+        generated = await invoke<string>("generate_uooc_subjective", {
+          stem: q.text,
+          question: q,
+          context: null,
+          referenceExamples: null,
+        });
+      }
+      set(q.id, [generated]);
+      toast.success("AI 已生成作答草稿");
+    });
+  };
+
   // 判定并格式化题目类型标签（参考本地题库浏览模块）
   const resolveQuestionTypeLabel = (q: QuizQuestion): string => {
+    if (q.kind === "subjective") return "简答/论述题";
     if (q.kind === "text") return "填空题";
     if (q.kind === "multiple") return "多选题";
     if (q.options.length === 2) {
@@ -585,12 +855,14 @@ export function QuizPanel({
     const passedAnswers = isPassed ? (quiz.answers[q.id] ?? []) : [];
     const passedMatch = passedAnswers.some((ans) => isOptionMatch(optObj, ans));
 
-    const bankReview = quiz.reviews.find(
+    const bankReview = reviews.find(
       (r) =>
         r.questionId === q.id &&
         (r.message.includes("题库") ||
           r.message.includes("已确认答案") ||
-          r.message.includes("标准答案")) &&
+          r.message.includes("标准答案") ||
+          r.message.includes("精确命中") ||
+          r.message.includes("向量命中")) &&
         !r.message.includes("排除"),
     );
     const bankMatch = bankReview
@@ -600,7 +872,7 @@ export function QuizPanel({
     const isStandard = passedMatch || bankMatch;
 
     // 2. 题库排除答案 (来自题库排除 review)
-    const excludeReview = quiz.reviews.find(
+    const excludeReview = reviews.find(
       (r) =>
         r.questionId === q.id && (r.message.includes("排除") || r.message.includes("请勿选择")),
     );
@@ -614,7 +886,7 @@ export function QuizPanel({
         : false);
 
     // 3. AI 判定答案 (来自 AI review 推荐选项，非题库标准答案)
-    const aiReview = quiz.reviews.find(
+    const aiReview = reviews.find(
       (r) =>
         r.questionId === q.id &&
         !r.message.includes("题库") &&
@@ -676,6 +948,10 @@ export function QuizPanel({
   };
 
   const isModalFinished = Boolean(actionModal?.completed && !busy);
+  const unansweredCount = quiz.questions.filter((q) => {
+    const val = answers[q.id];
+    return !val || val.every((v) => !v.trim());
+  }).length;
 
   return (
     <>
@@ -686,10 +962,22 @@ export function QuizPanel({
             <Modal.Heading className="text-base font-semibold">
               {quiz.title || "课程测验"}
             </Modal.Heading>
-            {quiz.stage === "passed" && <Chip color="success">测验已完成</Chip>}
-            {running && <Spinner size="sm" aria-label="测验处理中" />}
+            {quiz.stage === "passed" && <Chip color="success">已完成</Chip>}
+            {running && <Spinner size="sm" aria-label="处理中" />}
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            {typeof limitTime === "number" && limitTime > 0 && quiz.stage !== "passed" && (
+              <Chip
+                color={secondsRemaining < 300 ? "danger" : "warning"}
+                variant="soft"
+                size="sm"
+                className="font-mono text-xs font-semibold"
+              >
+                <LuClock className="mr-1 inline-block" />
+                剩余时间: {Math.floor(secondsRemaining / 60)}:
+                {(secondsRemaining % 60).toString().padStart(2, "0")}
+              </Chip>
+            )}
             <Switch
               size="sm"
               isSelected={showHtmlTags}
@@ -703,35 +991,72 @@ export function QuizPanel({
                 HTML 标签
               </Switch.Content>
             </Switch>
-            {(quiz.stage === "passed" || quiz.message.includes("当前测验已由服务端确认完成")) && (
-              <Button
-                variant="secondary"
-                size="sm"
-                isDisabled={busy || running}
-                onPress={() =>
-                  void run(async () => {
-                    const next = await invoke<UoocSnapshot>("fetch_uooc_completed_quiz", {
-                      cid: quiz.cid,
-                      taskId: quiz.taskId || undefined,
-                      resourceId: quiz.resourceId || undefined,
-                    });
-                    onSnapshot(next);
-                    toast.success("已成功拉取当前测验已完成的题目与答案");
-                  })
-                }
-              >
-                查看测验
-              </Button>
-            )}
+            {(quiz.stage === "passed" || quiz.message.includes("当前测验已由服务端确认完成")) &&
+              !isCustomMode && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  isDisabled={busy || running}
+                  onPress={() =>
+                    void run(async () => {
+                      const next = await invoke<UoocSnapshot>("fetch_uooc_completed_quiz", {
+                        cid: quiz.cid,
+                        taskId: quiz.taskId || undefined,
+                        resourceId: quiz.resourceId || undefined,
+                      });
+                      if (onSnapshot) onSnapshot(next);
+                      toast.success("已成功拉取当前测验已完成的题目与答案");
+                    })
+                  }
+                >
+                  查看测验
+                </Button>
+              )}
           </div>
         </div>
         <p role="status" className="text-xs text-muted mt-1.5">
-          {quiz.message || "视频完成或遇到闯关测验时开始处理"}
+          {quiz.message || "试卷加载完成"}
         </p>
       </Modal.Header>
 
       {/* 1. 题目与选项展示模块：仅 Body 随题目滚动；标注器显示在选项旁边，下方不再堆砌答案框 */}
       <Modal.Body className="flex-1 overflow-y-auto p-4 sm:p-6 min-h-0 space-y-4">
+        {warningAlert && <div className="mb-2">{warningAlert}</div>}
+        {quiz.questions.length === 0 && (
+          <div className="flex flex-col items-center justify-center p-8 space-y-3 text-center">
+            <p className="text-sm text-muted">{quiz.message || "当前测验已完成"}</p>
+            <div className="flex items-center gap-2">
+              {!isCustomMode && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  isDisabled={busy || running}
+                  onPress={() =>
+                    void run(async () => {
+                      const next = await invoke<UoocSnapshot>("fetch_uooc_completed_quiz", {
+                        cid: quiz.cid,
+                        taskId: quiz.taskId || undefined,
+                        resourceId: quiz.resourceId || undefined,
+                      });
+                      if (onSnapshot) onSnapshot(next);
+                      toast.success("已成功拉取当前测验已完成的题目与答案");
+                    })
+                  }
+                >
+                  查看测验详情
+                </Button>
+              )}
+              <Button
+                variant="tertiary"
+                size="sm"
+                isDisabled={busy || running}
+                onPress={() => void handleOpenPortal()}
+              >
+                在官网打开试卷
+              </Button>
+            </div>
+          </div>
+        )}
         {(quiz.stage !== "awaitingChoice" || manual) &&
           quiz.questions.map((q, i) => {
             const typeLabel = resolveQuestionTypeLabel(q);
@@ -739,14 +1064,16 @@ export function QuizPanel({
             // 针对填空题查找标准答案与AI判定
             const isPassed = quiz.stage === "passed";
             const passedAnswers = isPassed ? (quiz.answers[q.id] ?? []) : [];
-            const bankReview = quiz.reviews.find(
+            const bankReview = reviews.find(
               (r) =>
                 r.questionId === q.id &&
                 (r.message.includes("题库") ||
                   r.message.includes("已确认答案") ||
-                  r.message.includes("标准答案")),
+                  r.message.includes("标准答案") ||
+                  r.message.includes("精确命中") ||
+                  r.message.includes("向量命中")),
             );
-            const aiReview = quiz.reviews.find(
+            const aiReview = reviews.find(
               (r) =>
                 r.questionId === q.id &&
                 !r.message.includes("题库") &&
@@ -791,7 +1118,7 @@ export function QuizPanel({
                     aria-label={`第 ${i + 1} 题答案`}
                     value={getSelectedRadioValue(q)}
                     onChange={(v) => set(q.id, [v])}
-                    isDisabled={disabled}
+                    isDisabled={disabled || quiz.stage === "passed"}
                     className="grid gap-2"
                   >
                     {q.options.map((o) => {
@@ -860,7 +1187,7 @@ export function QuizPanel({
                     aria-label={`第 ${i + 1} 题答案`}
                     value={getSelectedCheckboxValues(q)}
                     onChange={(v) => set(q.id, v)}
-                    isDisabled={disabled}
+                    isDisabled={disabled || quiz.stage === "passed"}
                     className="grid gap-2"
                   >
                     {q.options.map((o) => {
@@ -924,7 +1251,7 @@ export function QuizPanel({
                       );
                     })}
                   </CheckboxGroup>
-                ) : (
+                ) : q.blanks > 1 ? (
                   Array.from({ length: q.blanks }, (_, blank) => {
                     const stdText = passedAnswers[blank] || bankReview?.answers[blank];
                     const aiText = aiReview?.answers[blank];
@@ -941,11 +1268,11 @@ export function QuizPanel({
                           values[blank] = v;
                           set(q.id, values);
                         }}
-                        isDisabled={disabled}
+                        isDisabled={disabled || quiz.stage === "passed"}
                       >
                         <Label className="flex items-center justify-between text-xs font-medium w-full">
                           <span>
-                            第 {i + 1} 题{q.blanks > 1 ? ` · 第 ${blank + 1} 空` : "答案"}
+                            第 {i + 1} 题 · 第 {blank + 1} 空
                           </span>
                           <div className="flex items-center gap-1.5 shrink-0">
                             {stdText && (
@@ -964,18 +1291,47 @@ export function QuizPanel({
                       </TextField>
                     );
                   })
+                ) : (
+                  <TextField
+                    value={answers[q.id]?.[0] ?? ""}
+                    onChange={(v) => set(q.id, [v])}
+                    isDisabled={disabled || quiz.stage === "passed"}
+                  >
+                    <Label className="flex items-center justify-between text-xs font-medium w-full">
+                      <span>第 {i + 1} 题作答</span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {quiz.stage !== "passed" && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            isDisabled={disabled}
+                            onPress={() => void handleSubjectiveAi(q)}
+                          >
+                            <LuSparkles className="mr-1 text-accent size-3.5" /> AI 解答
+                          </Button>
+                        )}
+                        {bankReview?.answers[0] && (
+                          <Chip size="sm" color="success">
+                            标准答案: {stripHtml(bankReview.answers[0])}
+                          </Chip>
+                        )}
+                        {!bankReview?.answers[0] && aiReview?.answers[0] && (
+                          <Chip size="sm" color="accent">
+                            AI判定: {stripHtml(aiReview.answers[0])}
+                          </Chip>
+                        )}
+                      </div>
+                    </Label>
+                    <TextArea rows={3} className="text-xs" />
+                  </TextField>
                 )}
 
-                {/* AI 推荐解析 / Jev 概率分布或错误排除说明（如果有） */}
-                {quiz.reviews
+                {/* 题库命中说明 / AI 推荐解析 / Jev 概率分布或错误排除说明（如果有） */}
+                {reviews
                   .filter(
                     (r) =>
                       r.questionId === q.id &&
-                      (r.message.includes("Jev") ||
-                        Object.keys(r.probabilities).length > 0 ||
-                        r.message.includes("排除") ||
-                        r.message.includes("理由") ||
-                        r.message.includes("解析")),
+                      (r.message.length > 0 || Object.keys(r.probabilities).length > 0),
                   )
                   .map((review, j) => (
                     <div
@@ -983,9 +1339,11 @@ export function QuizPanel({
                       className={`grid gap-1 rounded-lg border p-2.5 text-xs ${
                         review.message.includes("排除")
                           ? "border-danger/30 bg-danger/5 text-danger"
-                          : review.message.includes("理由") || review.message.includes("解析")
-                            ? "border-accent/35 bg-accent/10 text-foreground"
-                            : "border-accent/25 bg-accent/5 text-muted"
+                          : review.message.includes("题库") || review.message.includes("标准答案")
+                            ? "border-success/35 bg-success/10 text-foreground"
+                            : review.message.includes("理由") || review.message.includes("解析")
+                              ? "border-accent/35 bg-accent/10 text-foreground"
+                              : "border-accent/25 bg-accent/5 text-muted"
                       }`}
                     >
                       <p className="font-medium text-foreground whitespace-pre-wrap">
@@ -1011,89 +1369,108 @@ export function QuizPanel({
 
       {/* 3. 操作按钮作为 Modal Footer，固定在底部不随题目滚动 */}
       {quiz.taskId && (
-        <Modal.Footer className="shrink-0 border-t border-separator/40 p-3 sm:p-4 flex flex-wrap items-center justify-end gap-2 bg-surface/90 backdrop-blur">
-          {quiz.stage === "awaitingChoice" && (
-            <Button variant="secondary" isDisabled={disabled} onPress={() => setManual(true)}>
-              自主答题
-            </Button>
-          )}
+        <Modal.Footer className="shrink-0 border-t border-separator/40 p-3 sm:p-4 flex flex-wrap items-center justify-between gap-2 bg-surface/90 backdrop-blur">
+          <div className="flex items-center gap-2 text-xs text-muted">
+            {isExam && quiz.stage !== "passed" && (
+              <span>
+                未作答: {quiz.questions.filter((q) => (answers[q.id]?.length ?? 0) === 0).length} /{" "}
+                {quiz.questions.length} 题
+              </span>
+            )}
+          </div>
 
-          <ButtonGroup variant="secondary">
-            <Button
-              isDisabled={disabled || quiz.questions.length === 0}
-              onPress={() => void handleActionWithModal("matchQa", "题库匹配流程")}
-            >
-              匹配题库
-            </Button>
-            <Button
-              isDisabled={disabled || quiz.questions.length === 0}
-              onPress={() => void handleActionWithModal("generate", "AI 智能答题流程")}
-            >
-              <ButtonGroup.Separator />
-              AI 答题
-            </Button>
-          </ButtonGroup>
+          <div className="flex flex-wrap items-center gap-2">
+            {quiz.stage === "awaitingChoice" && (
+              <Button variant="secondary" isDisabled={disabled} onPress={() => setManual(true)}>
+                自主答题
+              </Button>
+            )}
 
-          <ButtonGroup>
-            <Button
-              variant="secondary"
-              isDisabled={disabled || quiz.questions.length === 0}
-              onPress={() => void handleUploadDraft()}
-            >
-              上传草稿
-            </Button>
-            <Button
-              variant="primary"
-              isDisabled={disabled || dryRun || quiz.questions.length === 0}
-              onPress={() => void handleActionWithModal("submit", "测验提交与确认流程")}
-            >
-              <ButtonGroup.Separator />
-              提交答案
-            </Button>
-          </ButtonGroup>
-
-          <ButtonGroup variant="tertiary">
-            <Button
-              variant="tertiary"
-              isDisabled={portalAction === "open" ? disabled : busy || running}
-              onPress={() =>
-                void (portalAction === "open" ? handleOpenPortal() : handleSyncPortal())
-              }
-            >
-              {portalAction === "open" ? "在官网打开试卷" : "同步官网试卷数据"}
-            </Button>
-            <Dropdown>
+            <ButtonGroup variant="secondary">
               <Button
-                variant="tertiary"
-                isIconOnly
-                aria-label="更多官网试卷操作"
-                isDisabled={busy || running}
+                isDisabled={disabled || quiz.questions.length === 0 || quiz.stage === "passed"}
+                onPress={() => void handleActionWithModal("matchQa", "题库匹配流程")}
+              >
+                匹配题库
+              </Button>
+              <Button
+                isDisabled={disabled || quiz.questions.length === 0 || quiz.stage === "passed"}
+                onPress={() => void handleActionWithModal("generate", "AI 智能答题流程")}
               >
                 <ButtonGroup.Separator />
-                <LuChevronDown className="size-4" aria-hidden="true" />
+                {isExam ? "AI 智能答题" : "AI 答题"}
               </Button>
-              <Dropdown.Popover className="min-w-[180px]" placement="bottom end">
-                <Dropdown.Menu
-                  onAction={(key) => {
-                    if (key === "open") {
-                      void handleOpenPortal();
-                    } else if (key === "sync") {
-                      void handleSyncPortal();
-                    }
-                  }}
+            </ButtonGroup>
+
+            <ButtonGroup>
+              <Button
+                variant="secondary"
+                isDisabled={disabled || quiz.questions.length === 0 || quiz.stage === "passed"}
+                onPress={() => void handleUploadDraft()}
+              >
+                {isExam ? "保存草稿" : "上传草稿"}
+              </Button>
+              <Button
+                variant="primary"
+                isDisabled={
+                  disabled || dryRun || quiz.questions.length === 0 || quiz.stage === "passed"
+                }
+                onPress={() => {
+                  if (isExam) {
+                    setConfirmSubmitOpen(true);
+                  } else {
+                    void handleActionWithModal("submit", "测验提交与确认流程");
+                  }
+                }}
+              >
+                <ButtonGroup.Separator />
+                {isExam ? "提交试卷" : "提交答案"}
+              </Button>
+            </ButtonGroup>
+
+            <ButtonGroup variant="tertiary">
+              <Button
+                variant="tertiary"
+                isDisabled={busy || running}
+                onPress={() =>
+                  void (portalAction === "open" ? handleOpenPortal() : handleSyncPortal())
+                }
+              >
+                {portalAction === "open" ? "在官网打开试卷" : "同步官网试卷数据"}
+              </Button>
+              <Dropdown>
+                <Button
+                  variant="tertiary"
+                  isIconOnly
+                  aria-label="更多官网试卷操作"
+                  isDisabled={busy || running}
                 >
-                  <Dropdown.Item id="open" textValue="在官网打开试卷">
-                    <Label>在官网打开试卷</Label>
-                    <Description>打开 UOOC 官网页面进行答题</Description>
-                  </Dropdown.Item>
-                  <Dropdown.Item id="sync" textValue="同步官网试卷数据">
-                    <Label>同步官网试卷数据</Label>
-                    <Description>拉取并同步官网作答状态</Description>
-                  </Dropdown.Item>
-                </Dropdown.Menu>
-              </Dropdown.Popover>
-            </Dropdown>
-          </ButtonGroup>
+                  <ButtonGroup.Separator />
+                  <LuChevronDown className="size-4" aria-hidden="true" />
+                </Button>
+                <Dropdown.Popover className="min-w-[180px]" placement="bottom end">
+                  <Dropdown.Menu
+                    onAction={(key) => {
+                      if (key === "open") {
+                        void handleOpenPortal();
+                      } else if (key === "sync") {
+                        void handleSyncPortal();
+                      }
+                    }}
+                  >
+                    <Dropdown.Item id="open" textValue="在官网打开试卷">
+                      <Label>在官网打开试卷</Label>
+                      <Description>打开 UOOC 官网页面进行答题</Description>
+                    </Dropdown.Item>
+                    <Dropdown.Item id="sync" textValue="同步官网试卷数据">
+                      <Label>同步官网试卷数据</Label>
+                      <Description>拉取并同步官网作答状态</Description>
+                    </Dropdown.Item>
+                  </Dropdown.Menu>
+                </Dropdown.Popover>
+              </Dropdown>
+            </ButtonGroup>
+          </div>
         </Modal.Footer>
       )}
 
@@ -1362,13 +1739,67 @@ export function QuizPanel({
                   isDisabled={!isModalFinished}
                   onPress={() => setActionModal(null)}
                 >
-                  {!isModalFinished ? "正在处理中..." : "查看试卷与作答结果"}
+                  {!isModalFinished
+                    ? "正在处理中..."
+                    : isExam
+                      ? "确认并返回作答"
+                      : "查看试卷与作答结果"}
                 </Button>
               </Modal.Footer>
             </Modal.Dialog>
           </Modal.Container>
         </Modal.Backdrop>
       </Modal>
+      {/* 确认交卷弹窗 (用于考试模式) */}
+      <AlertDialog isOpen={confirmSubmitOpen} onOpenChange={setConfirmSubmitOpen}>
+        <AlertDialog.Backdrop>
+          <AlertDialog.Container size="sm">
+            <AlertDialog.Dialog className="max-w-md">
+              <AlertDialog.Icon status="danger" />
+              <AlertDialog.Header>
+                <AlertDialog.Heading>确认提交试卷？</AlertDialog.Heading>
+              </AlertDialog.Header>
+              <AlertDialog.Body className="space-y-3">
+                <p className="text-sm font-medium">提交后将记录最终成绩并不可撤销。</p>
+                {unansweredCount > 0 ? (
+                  <Alert status="danger">
+                    <Alert.Indicator />
+                    <Alert.Content>
+                      <Alert.Title>仍有未作答题目！</Alert.Title>
+                      <Alert.Description>
+                        当前试卷共 {quiz.questions.length} 题，仍有 {unansweredCount} 题未填写答案。
+                      </Alert.Description>
+                    </Alert.Content>
+                  </Alert>
+                ) : (
+                  <Alert status="success">
+                    <Alert.Indicator />
+                    <Alert.Content>
+                      <Alert.Title>所有题目均已作答</Alert.Title>
+                      <Alert.Description>
+                        共 {quiz.questions.length} 题，确认提交吗？
+                      </Alert.Description>
+                    </Alert.Content>
+                  </Alert>
+                )}
+              </AlertDialog.Body>
+              <AlertDialog.Footer className="flex justify-end gap-2">
+                <AlertDialog.CloseTrigger className="dialog-cancel" aria-label="取消" />
+                <Button
+                  variant="danger"
+                  isDisabled={disabled}
+                  onPress={() => {
+                    setConfirmSubmitOpen(false);
+                    void handleActionWithModal("submit", "试卷提交流程");
+                  }}
+                >
+                  确认提交
+                </Button>
+              </AlertDialog.Footer>
+            </AlertDialog.Dialog>
+          </AlertDialog.Container>
+        </AlertDialog.Backdrop>
+      </AlertDialog>
     </>
   );
 }

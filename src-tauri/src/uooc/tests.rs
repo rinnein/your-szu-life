@@ -1689,3 +1689,101 @@ async fn test_uooc_exam_list_real_unpaginated_payload_shape() {
 
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[tokio::test]
+async fn test_uooc_exam_601_auto_course_evaluation_and_retry() {
+    let root = root();
+    let service = service_test(root.clone());
+
+    let eval_comment_called = Arc::new(AtomicUsize::new(0));
+    let eval_comment_called_clone = eval_comment_called.clone();
+    let know_review_called = Arc::new(AtomicUsize::new(0));
+    let know_review_called_clone = know_review_called.clone();
+
+    let save_attempts = Arc::new(AtomicUsize::new(0));
+    let save_attempts_clone = save_attempts.clone();
+    let commit_attempts = Arc::new(AtomicUsize::new(0));
+    let commit_attempts_clone = commit_attempts.clone();
+
+    let server = Server::new(move |request| {
+        if request.path.starts_with("/home/course/setKnowReview") {
+            know_review_called_clone.fetch_add(1, Ordering::SeqCst);
+            return ok(json!({ "msg": "已知晓" }));
+        }
+        if request.path.starts_with("/home/course/comment") {
+            return ok(json!({ "has_comment": false }));
+        }
+        if request.path.starts_with("/home/course/addcomment") {
+            eval_comment_called_clone.fetch_add(1, Ordering::SeqCst);
+            return ok(json!({ "msg": "评价成功" }));
+        }
+        if request.path.starts_with("/exam/save") {
+            let attempt = save_attempts_clone.fetch_add(1, Ordering::SeqCst);
+            if attempt == 0 {
+                // 首次调用返回 601 验证错误：提示需要先完成课程评价
+                return json!({
+                    "code": 601,
+                    "msg": "服务器验证错误",
+                    "data": ["请先完成该课程的教学评价"]
+                });
+            }
+            return ok(json!({ "msg": "草稿已保存" }));
+        }
+        if request.path.starts_with("/exam/commit") {
+            let attempt = commit_attempts_clone.fetch_add(1, Ordering::SeqCst);
+            if attempt == 0 {
+                return json!({
+                    "code": 601,
+                    "msg": "服务器验证错误",
+                    "data": ["必须先完成课程教学评价方可提交试卷"]
+                });
+            }
+            return ok(json!({ "msg": "考试提交成功" }));
+        }
+        ok(json!({}))
+    });
+
+    *service.client.write().unwrap() =
+        Arc::new(Client::with_base(session::load(None).unwrap(), &server.base).unwrap());
+
+    service.change(|s| {
+        s.session = SessionStatus::Ready;
+        s.user = Some(User {
+            id: "7".into(),
+            name: "test".into(),
+        });
+        s.courses = vec![course("42")];
+    });
+
+    let mut answers = super::quiz::model::Answers::new();
+    answers.insert("q1".into(), vec!["A".into()]);
+
+    // 1. 测试 save_exam_draft 遇到 601 时自动完成评价并重试成功
+    service.save_exam_draft("42", "task_exam_1", answers.clone()).await.unwrap();
+    assert_eq!(save_attempts.load(Ordering::SeqCst), 2); // 第一次 601，第二次成功
+    assert!(know_review_called.load(Ordering::SeqCst) >= 1);
+    assert!(eval_comment_called.load(Ordering::SeqCst) >= 1);
+
+    // 2. 测试 submit_exam 遇到 601 时自动完成评价并重试成功
+    let msg = service.submit_exam("42", "task_exam_1", answers, None).await.unwrap();
+    assert_eq!(msg, "考试提交成功");
+    assert_eq!(commit_attempts.load(Ordering::SeqCst), 2); // 第一次 601，第二次成功
+
+    // 3. 测试 Error::message 对 601 的格式化输出
+    let err_eval = super::client::Error::Server(
+        601,
+        "服务器验证错误".into(),
+        vec!["请先完成该课程的教学评价".into()],
+    );
+    assert!(err_eval.message().contains("请先完成课程评价"));
+    assert!(err_eval.message().contains("601"));
+
+    let err_field = super::client::Error::Server(
+        601,
+        "服务器验证错误".into(),
+        vec!["cid不能为空".into()],
+    );
+    assert!(err_field.message().contains("服务器验证错误：cid不能为空"));
+
+    let _ = std::fs::remove_dir_all(root);
+}

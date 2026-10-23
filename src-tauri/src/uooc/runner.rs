@@ -429,7 +429,7 @@ async fn process_video(
                     }
                     if done { return Ok(TaskStatus::Completed); }
                     update(TaskStatus::Running, position, Some(duration), String::new());
-                    if position >= duration - 1.0 { tail += 1; if tail >= 3 { return Err(Error::Server(-1)); } }
+                    if position >= duration - 1.0 { tail += 1; if tail >= 3 { return Err(Error::Server(-1, String::new(), Vec::new())); } }
                 }
                 Err(Error::Gate) => return Ok(TaskStatus::Blocked),
                 Err(Error::Network | Error::Invalid) => {
@@ -463,7 +463,7 @@ async fn process_video(
             TaskStatus::Failed,
             position,
             Some(duration),
-            if *error == Error::Server(-1) {
+            if matches!(error, Error::Server(-1, ..)) {
                 "已到达视频尾部，但服务器尚未确认完成".into()
             } else {
                 error.message()

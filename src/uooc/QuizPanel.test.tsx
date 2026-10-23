@@ -582,6 +582,28 @@ it("opens portal on 在官网打开试卷 and automatically switches to 同步�
   });
 });
 
+it("allows clicking 在官网打开试卷 even when quiz stage is passed and weight is 0", async () => {
+  const passedQuiz: QuizState = {
+    ...quiz(),
+    stage: "passed",
+    message: "当前测验已由服务端确认完成",
+  };
+  vi.mocked(invoke).mockResolvedValue(response(passedQuiz));
+  render(
+    <QuizPanel quiz={passedQuiz} active={false} dryRun={false} weight={0} onSnapshot={vi.fn()} />,
+  );
+
+  const portalBtns = screen.getAllByRole("button", { name: "在官网打开试卷" });
+  expect(portalBtns.length).toBeGreaterThan(0);
+  expect(portalBtns[0]).toBeEnabled();
+
+  fireEvent.click(portalBtns[0]);
+
+  await waitFor(() => {
+    expect(invoke).toHaveBeenCalledWith("open_uooc_quiz_portal", { cid: "42" });
+  });
+});
+
 it("displays AI reasoning and explanation under question when review contains 理由/解析", () => {
   const quizWithReasoning: QuizState = {
     ...quiz(),
