@@ -111,13 +111,20 @@ export default function CampusPaymentsElectricityPage() {
     const load = async () => {
       try {
         initialSettingsRequest.current ??= invoke<Settings | null>("get_electricity_settings");
-        const saved = await initialSettingsRequest.current;
+        const stored = await initialSettingsRequest.current;
+        const saved = stored && { ...stored, roomName: stored.roomName.trim() };
         if (!active) return;
         if (!saved) {
           setLoading(false);
           return;
         }
         setSettings(saved);
+        if (getElectricityRoomFloor(saved.roomName) === null) {
+          setEditing(true);
+          setError("已保存的宿舍号不符合当前格式，请重新填写后查询。");
+          setLoading(false);
+          return;
+        }
         setSavedSettings(saved);
         setLoading(false);
         setBusy(true);
@@ -244,14 +251,12 @@ export default function CampusPaymentsElectricityPage() {
     setBusy(true);
     setError(undefined);
     try {
-      await invoke("save_electricity_settings", { settings });
+      const normalized = { ...settings, roomName: settings.roomName.trim() };
+      await invoke("save_electricity_settings", { settings: normalized });
       if (id !== requestId.current) return;
-      setSavedSettings(settings);
-      const next = await invoke<Result>("query_electricity", {
-        input: {
-          ...settings,
-        },
-      });
+      setSettings(normalized);
+      setSavedSettings(normalized);
+      const next = await invoke<Result>("query_electricity", { input: normalized });
       if (id === requestId.current) {
         setResult(next);
         setEditing(false);

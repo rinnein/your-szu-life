@@ -289,3 +289,57 @@ it("lets the user explicitly refresh recent data after opening cached details", 
     expect(invoke).toHaveBeenCalledWith("query_electricity", { input: saved, forceRefresh: true }),
   );
 });
+
+it("normalizes padded saved rooms before querying", async () => {
+  mock((command) =>
+    command === "get_electricity_settings" ? { ...saved, roomName: " 601 " } : undefined,
+  );
+  render(<CampusPaymentsElectricityPage />);
+  expect(await screen.findByLabelText("当前电量")).toHaveTextContent("10.00");
+  expect(invoke).toHaveBeenCalledWith("get_cached_electricity", { input: saved });
+  expect(invoke).toHaveBeenCalledWith("query_electricity", { input: saved });
+});
+
+it.each(["51", "50001", "5A01", "１２０１", "   "])(
+  "opens invalid legacy room %s for editing without querying",
+  async (roomName) => {
+    mock((command) =>
+      command === "get_electricity_settings" ? { ...saved, roomName } : undefined,
+    );
+    render(<CampusPaymentsElectricityPage />);
+    expect(
+      await screen.findByText("已保存的宿舍号不符合当前格式，请重新填写后查询。"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "宿舍号" })).toHaveValue(roomName.trim());
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("get_electricity_options"));
+    expect(screen.getByRole("button", { name: "查询电费" })).toBeDisabled();
+    expect(
+      vi
+        .mocked(invoke)
+        .mock.calls.some(([cmd]) =>
+          ["get_cached_electricity", "query_electricity", "save_electricity_settings"].includes(
+            cmd,
+          ),
+        ),
+    ).toBe(false);
+  },
+);
+
+it("saves and queries a repaired legacy room in canonical form", async () => {
+  mock((command) =>
+    command === "get_electricity_settings" ? { ...saved, roomName: "51" } : undefined,
+  );
+  render(<CampusPaymentsElectricityPage />);
+  const room = await screen.findByRole("textbox", { name: "宿舍号" });
+  await waitFor(() => expect(room).toBeEnabled());
+  fireEvent.change(room, { target: { value: " 1201 " } });
+  fireEvent.click(screen.getByRole("button", { name: "查询电费" }));
+  const canonical = { ...saved, roomName: "1201" };
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("save_electricity_settings", { settings: canonical }),
+  );
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("query_electricity", { input: canonical }),
+  );
+  expect(await screen.findByText("山茶斋 1201")).toBeInTheDocument();
+});

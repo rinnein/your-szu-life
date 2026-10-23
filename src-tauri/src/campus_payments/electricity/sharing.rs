@@ -8,6 +8,13 @@ struct Share {
     version: u8,
     location: ElectricityLocationSettings,
 }
+pub(super) fn normalize_settings(
+    mut settings: ElectricityLocationSettings,
+) -> ElectricityLocationSettings {
+    settings.room_name = settings.room_name.trim().to_owned();
+    settings
+}
+
 pub(super) fn validate_shape(s: &ElectricityLocationSettings) -> Result<(), String> {
     for value in [
         &s.campus_id,
@@ -24,6 +31,7 @@ pub(super) fn validate_shape(s: &ElectricityLocationSettings) -> Result<(), Stri
     Ok(())
 }
 pub(crate) fn encode_settings(settings: ElectricityLocationSettings) -> Result<String, String> {
+    let settings = normalize_settings(settings);
     validate_shape(&settings)?;
     let data = serde_json::to_vec(&Share {
         version: 1,
@@ -62,8 +70,9 @@ pub(crate) fn decode_settings(text: &str) -> Result<ElectricityLocationSettings,
     if data.version != 1 {
         return Err("不支持此宿舍配置版本".into());
     }
-    validate_shape(&data.location)?;
-    Ok(data.location)
+    let location = normalize_settings(data.location);
+    validate_shape(&location)?;
+    Ok(location)
 }
 pub(super) fn validate_options(
     s: &ElectricityLocationSettings,
@@ -119,6 +128,39 @@ mod tests {
                 .unwrap();
                 let code = String::from_utf16(&Base16384::encode(&data)).unwrap();
                 assert!(decode_settings(&code).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn saved_and_legacy_share_codes_return_canonical_room_names() {
+        for area in [
+            "yuehai-main",
+            "yuehai-xinzhai",
+            "canghai-main",
+            "xili-main",
+            "xili-lihuo-phase2",
+        ] {
+            for room in [" 601 ", " 1201 ", "\t601\n"] {
+                let mut padded = settings();
+                padded.area_id = area.into();
+                padded.room_name = room.into();
+                let mut canonical = padded.clone();
+                canonical.room_name = room.trim().into();
+                let code = encode_settings(padded.clone()).unwrap();
+                assert_eq!(decode_settings(&code).unwrap(), canonical);
+                let raw: Share = serde_json::from_slice(
+                    &Base16384::decode(&code.encode_utf16().collect::<Vec<_>>()).unwrap(),
+                )
+                .unwrap();
+                assert_eq!(raw.location, canonical);
+                let legacy = serde_json::to_vec(&Share {
+                    version: 1,
+                    location: padded,
+                })
+                .unwrap();
+                let legacy_code = String::from_utf16(&Base16384::encode(&legacy)).unwrap();
+                assert_eq!(decode_settings(&legacy_code).unwrap(), canonical);
             }
         }
     }
