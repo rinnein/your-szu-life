@@ -66,12 +66,6 @@ jobs:
             libxdo-dev \
             wget
 
-      - name: Cache verified OCR model
-        uses: actions/cache@v6
-        with:
-          path: src-tauri/target/model-cache
-          key: ${{ runner.os }}-ddddocr-${{ hashFiles('src-tauri/resources/ocr/ddddocr/model.json') }}
-
       - name: Install frontend dependencies
         run: vp install --frozen-lockfile
 
@@ -124,14 +118,6 @@ jobs:
           cache: true
           run-install: false
 
-      - name: Cache Node dependencies
-        uses: actions/cache@v6
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-android-node-${{ hashFiles('package.json', 'pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-android-node-
-
       - name: Cache Rust build artifacts
         uses: actions/cache@v6
         with:
@@ -166,12 +152,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
-
-      - name: Cache verified OCR model
-        uses: actions/cache@v6
-        with:
-          path: src-tauri/target/model-cache
-          key: ${{ runner.os }}-ddddocr-${{ hashFiles('src-tauri/resources/ocr/ddddocr/model.json') }}
 
       - name: Install frontend dependencies
         run: vp install --frozen-lockfile
