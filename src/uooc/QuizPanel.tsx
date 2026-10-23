@@ -62,8 +62,7 @@ export function clearQuizCache(key: string): void {
   }
 }
 
-export const HTML_TAG_REGEX =
-  /<(?:\/?[a-zA-Z][a-zA-Z0-9:-]*(?:\s+[^>]*?)?\/?|!--[\s\S]*?--)>/gi;
+export const HTML_TAG_REGEX = /<(?:\/?[a-zA-Z][a-zA-Z0-9:-]*(?:\s+[^>]*?)?\/?|!--[\s\S]*?--)>/gi;
 
 export function stripHtml(raw?: string | null): string {
   if (!raw) return "";

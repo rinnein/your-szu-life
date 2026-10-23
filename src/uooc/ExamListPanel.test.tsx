@@ -386,4 +386,3 @@ it("renders HTML tag visibility switch in ExamPaperModal and toggles dimmed tags
   expect(htmlTagSwitch).toBeChecked();
   expect(document.querySelectorAll("[data-dimmed-tag='true']").length).toBeGreaterThan(0);
 });
-

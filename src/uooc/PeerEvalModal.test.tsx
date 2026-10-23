@@ -60,12 +60,7 @@ describe("PeerEvalModal", () => {
     });
 
     render(
-      <PeerEvalModal
-        isOpen={true}
-        onClose={vi.fn()}
-        courses={mockCourses}
-        defaultCid="101"
-      />,
+      <PeerEvalModal isOpen={true} onClose={vi.fn()} courses={mockCourses} defaultCid="101" />,
     );
 
     await waitFor(() => {
@@ -87,12 +82,7 @@ describe("PeerEvalModal", () => {
     });
 
     render(
-      <PeerEvalModal
-        isOpen={true}
-        onClose={vi.fn()}
-        courses={mockCourses}
-        defaultCid="101"
-      />,
+      <PeerEvalModal isOpen={true} onClose={vi.fn()} courses={mockCourses} defaultCid="101" />,
     );
 
     await waitFor(() => {
@@ -104,10 +94,13 @@ describe("PeerEvalModal", () => {
     });
 
     await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("submit_uooc_eval", expect.objectContaining({
-        cid: "101",
-        evalId: "sub_1",
-      }));
+      expect(invoke).toHaveBeenCalledWith(
+        "submit_uooc_eval",
+        expect.objectContaining({
+          cid: "101",
+          evalId: "sub_1",
+        }),
+      );
     });
   });
 });

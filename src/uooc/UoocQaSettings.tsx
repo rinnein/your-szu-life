@@ -129,8 +129,7 @@ function isOptionSelected(
       valStr === optTextTrim ||
       (cleanOpt.length > 0 && cleanOpt === cleanVal) ||
       optTextTrim.replace(/\s+/g, "").includes(valStr.replace(/\s+/g, "")) ||
-      (cleanOpt.length > 0 &&
-        cleanOpt.replace(/\s+/g, "").includes(cleanVal.replace(/\s+/g, "")))
+      (cleanOpt.length > 0 && cleanOpt.replace(/\s+/g, "").includes(cleanVal.replace(/\s+/g, "")))
     )
       return true;
     return false;

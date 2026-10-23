@@ -45,61 +45,63 @@ export function CourseProgressDetails({
               <span>加权成绩：{formatNumber(data?.weightedScore)}</span>
             </div>
             <div className="w-full min-w-0 max-w-full overflow-hidden">
-              <p className="text-[11px] text-muted mb-1.5 sm:hidden">左右滑动可查看完整考核权重与完成明细</p>
+              <p className="text-[11px] text-muted mb-1.5 sm:hidden">
+                左右滑动可查看完整考核权重与完成明细
+              </p>
               <Table>
                 <Table.ScrollContainer className="w-full min-w-0 max-w-full overflow-x-auto">
                   <Table.Content aria-label={`${title}的考核权重与任务`} className="min-w-[400px]">
-                  <Table.Header>
-                    <Table.Column id="category" isRowHeader>
-                      任务类别
-                    </Table.Column>
-                    <Table.Column id="weight">权重占比</Table.Column>
-                    <Table.Column id="progress">完成率</Table.Column>
-                    <Table.Column id="tasks">完成 / 总数</Table.Column>
-                    <Table.Column id="score">成绩贡献</Table.Column>
-                  </Table.Header>
-                  <Table.Body>
-                    {metrics.map(({ id, name, metric }) => {
-                      const weight =
-                        metric?.weight ?? (id === "signin" ? data?.signinWeight : undefined);
-                      return (
-                        <Table.Row
-                          key={id}
-                          id={id}
-                          className={weight === 0 ? "opacity-50" : undefined}
-                        >
-                          <Table.Cell className="whitespace-nowrap">{name}</Table.Cell>
-                          <Table.Cell className="whitespace-nowrap">
-                            {formatPercent(weight)}
-                            {weight === 0 && (
-                              <span className="block text-xs text-muted">不计入进度</span>
-                            )}
-                          </Table.Cell>
-                          <Table.Cell className="whitespace-nowrap">
-                            {formatPercent(metric?.percent)}
-                          </Table.Cell>
-                          <Table.Cell className="whitespace-nowrap">
-                            {id === "discussion" && "参与 "}
-                            {metric?.count ?? "—"} / {metric?.total ?? "—"}
-                            {metric?.total === 0 && (
-                              <span className="block text-xs text-muted">暂无任务</span>
-                            )}
-                          </Table.Cell>
-                          <Table.Cell className="whitespace-nowrap">
-                            {formatNumber(metric?.score)}
-                            {metric?.averageScore != null && (
-                              <span className="block text-xs text-muted">
-                                平均分 {formatNumber(metric.averageScore)}
-                              </span>
-                            )}
-                          </Table.Cell>
-                        </Table.Row>
-                      );
-                    })}
-                  </Table.Body>
-                </Table.Content>
-              </Table.ScrollContainer>
-            </Table>
+                    <Table.Header>
+                      <Table.Column id="category" isRowHeader>
+                        任务类别
+                      </Table.Column>
+                      <Table.Column id="weight">权重占比</Table.Column>
+                      <Table.Column id="progress">完成率</Table.Column>
+                      <Table.Column id="tasks">完成 / 总数</Table.Column>
+                      <Table.Column id="score">成绩贡献</Table.Column>
+                    </Table.Header>
+                    <Table.Body>
+                      {metrics.map(({ id, name, metric }) => {
+                        const weight =
+                          metric?.weight ?? (id === "signin" ? data?.signinWeight : undefined);
+                        return (
+                          <Table.Row
+                            key={id}
+                            id={id}
+                            className={weight === 0 ? "opacity-50" : undefined}
+                          >
+                            <Table.Cell className="whitespace-nowrap">{name}</Table.Cell>
+                            <Table.Cell className="whitespace-nowrap">
+                              {formatPercent(weight)}
+                              {weight === 0 && (
+                                <span className="block text-xs text-muted">不计入进度</span>
+                              )}
+                            </Table.Cell>
+                            <Table.Cell className="whitespace-nowrap">
+                              {formatPercent(metric?.percent)}
+                            </Table.Cell>
+                            <Table.Cell className="whitespace-nowrap">
+                              {id === "discussion" && "参与 "}
+                              {metric?.count ?? "—"} / {metric?.total ?? "—"}
+                              {metric?.total === 0 && (
+                                <span className="block text-xs text-muted">暂无任务</span>
+                              )}
+                            </Table.Cell>
+                            <Table.Cell className="whitespace-nowrap">
+                              {formatNumber(metric?.score)}
+                              {metric?.averageScore != null && (
+                                <span className="block text-xs text-muted">
+                                  平均分 {formatNumber(metric.averageScore)}
+                                </span>
+                              )}
+                            </Table.Cell>
+                          </Table.Row>
+                        );
+                      })}
+                    </Table.Body>
+                  </Table.Content>
+                </Table.ScrollContainer>
+              </Table>
             </div>
             <div className="grid gap-1 text-xs text-muted">
               <p>

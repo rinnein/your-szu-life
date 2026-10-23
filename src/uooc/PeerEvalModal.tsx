@@ -25,12 +25,7 @@ interface PeerEvalModalProps {
   defaultCid?: string;
 }
 
-export function PeerEvalModal({
-  isOpen,
-  onClose,
-  courses,
-  defaultCid,
-}: PeerEvalModalProps) {
+export function PeerEvalModal({ isOpen, onClose, courses, defaultCid }: PeerEvalModalProps) {
   const [selectedCid, setSelectedCid] = useState<string>(() => defaultCid || courses[0]?.id || "");
   const [loading, setLoading] = useState(false);
   const [tasks, setTasks] = useState<PeerEvalTask[]>([]);
@@ -62,7 +57,8 @@ export function PeerEvalModal({
       for (const t of res || []) {
         for (const s of t.submissions) {
           initScores[s.evalId] = s.score ?? 95;
-          initComments[s.evalId] = s.comments || "作业完成认真规范，思路清晰，重点突出，整体质量优秀。";
+          initComments[s.evalId] =
+            s.comments || "作业完成认真规范，思路清晰，重点突出，整体质量优秀。";
         }
       }
       setScores(initScores);
@@ -169,7 +165,10 @@ export function PeerEvalModal({
       <Modal isOpen={isOpen} onOpenChange={(open) => !open && onClose()}>
         <Modal.Backdrop>
           <Modal.Container size="cover" className="max-w-3xl">
-            <Modal.Dialog aria-label="课程作业互评助手" className="flex h-[85vh] max-h-[85vh] flex-col overflow-hidden">
+            <Modal.Dialog
+              aria-label="课程作业互评助手"
+              className="flex h-[85vh] max-h-[85vh] flex-col overflow-hidden"
+            >
               <Modal.CloseTrigger aria-label="关闭互评助手" />
               <Modal.Header className="flex flex-wrap items-center justify-between border-b pb-3 pr-10">
                 <div className="flex items-center gap-2">
@@ -241,9 +240,7 @@ export function PeerEvalModal({
                     {tasks.map((task) => (
                       <div key={task.tid} className="space-y-3">
                         <div className="flex items-center justify-between">
-                          <h3 className="text-sm font-semibold text-foreground">
-                            {task.title}
-                          </h3>
+                          <h3 className="text-sm font-semibold text-foreground">{task.title}</h3>
                           <Chip size="sm" variant="soft">
                             已评 {task.completedCount} / {task.totalCount}
                           </Chip>
@@ -369,14 +366,12 @@ export function PeerEvalModal({
                 <AlertDialog.Heading>确认批量完成互评？</AlertDialog.Heading>
               </AlertDialog.Header>
               <AlertDialog.Body>
-                将为当前课程所有待评的 {pendingCount} 篇同学作业填入推荐高分（95分）与积极肯定的正面评语并正式提交。互评成绩将立即计入您的平时成绩。
+                将为当前课程所有待评的 {pendingCount}{" "}
+                篇同学作业填入推荐高分（95分）与积极肯定的正面评语并正式提交。互评成绩将立即计入您的平时成绩。
               </AlertDialog.Body>
               <AlertDialog.Footer>
                 <AlertDialog.CloseTrigger />
-                <Button
-                  isDisabled={batchBusy}
-                  onPress={() => void handleBatchSubmit()}
-                >
+                <Button isDisabled={batchBusy} onPress={() => void handleBatchSubmit()}>
                   {batchBusy ? <Spinner size="sm" /> : <LuCheck />}
                   确认提交
                 </Button>

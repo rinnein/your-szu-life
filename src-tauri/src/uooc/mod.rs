@@ -70,6 +70,7 @@ pub(super) struct Service {
     ai_permits: Semaphore,
     discussion_lock: tokio::sync::Mutex<()>,
     pub(super) bank_building: Arc<tokio::sync::Mutex<()>>,
+    pub(crate) qa_db: tokio::sync::OnceCell<quiz::db::QaDatabase>,
 }
 impl Service {
     fn new(
@@ -124,6 +125,7 @@ impl Service {
             ai_permits: Semaphore::new(2),
             discussion_lock: tokio::sync::Mutex::new(()),
             bank_building: Arc::new(tokio::sync::Mutex::new(())),
+            qa_db: tokio::sync::OnceCell::new(),
             permits: RwLock::new(Arc::new(Semaphore::new(saved.settings.concurrency))),
             client: RwLock::new(Arc::new(Client::new(jar)?)),
             refresh_lock: tokio::sync::Mutex::new(()),
@@ -445,6 +447,14 @@ impl Service {
                 ..Default::default()
             },
         );
+    }
+    pub(crate) async fn get_qa_db(&self) -> Result<&quiz::db::QaDatabase, String> {
+        self.qa_db
+            .get_or_try_init(|| async {
+                let db_path = self.path.parent().unwrap().join("quiz_qa_bank.db");
+                quiz::db::QaDatabase::open(&db_path).await
+            })
+            .await
     }
     pub(crate) async fn build_local_bank(self: &Arc<Self>) -> Result<usize, String> {
         quiz::build_local_bank(self).await
@@ -984,11 +994,18 @@ impl Service {
         let mut questions = Vec::new();
         let mut answers = quiz::model::Answers::new();
 
+        let clean_tid = quiz::qa::sanitize_task_id(task_id);
+        let submitted = if let Ok(qa_db) = self.get_qa_db().await {
+            qa_db.get_submitted_paper(Some(cid), clean_tid).await.ok().flatten()
+        } else {
+            None
+        };
+
         // 1. 若为已完成测验/已提交任务，优先通过 /exam/view 获取已完成题目、作答及评分
         if is_submitted {
             let view_url = format!("{}/exam/view?cid={cid}&tid={task_id}", client.origin());
             if let Ok(view_bytes) = client.quiz_http(&view_url, None, &cancel).await {
-                if let Some(d) = quiz::qa::parse_exam_view_details(&view_bytes) {
+                if let Some(d) = quiz::qa::parse_exam_view_details_with_submitted(&view_bytes, submitted.as_ref()) {
                     if !d.questions.is_empty() {
                         questions = d.questions;
                         answers = if !d.student_answers.is_empty() {
@@ -1016,7 +1033,7 @@ impl Service {
         if questions.is_empty() && !is_submitted {
             let view_url = format!("{}/exam/view?cid={cid}&tid={task_id}", client.origin());
             if let Ok(view_bytes) = client.quiz_http(&view_url, None, &cancel).await {
-                if let Some(d) = quiz::qa::parse_exam_view_details(&view_bytes) {
+                if let Some(d) = quiz::qa::parse_exam_view_details_with_submitted(&view_bytes, submitted.as_ref()) {
                     if !d.questions.is_empty() {
                         questions = d.questions;
                         answers = if !d.student_answers.is_empty() {
@@ -1040,6 +1057,14 @@ impl Service {
             }
         }
 
+        // 5. 若仍为空但有本地持久化的提交快照，直接使用提交快照
+        if questions.is_empty() {
+            if let Some(sub) = &submitted {
+                questions = sub.questions.clone();
+                answers = sub.answers.clone();
+            }
+        }
+
         if questions.is_empty() {
             return Err("无法获取试卷题目，可能考试/测验尚未开始或需要官方页面处理".into());
         }
@@ -1052,7 +1077,9 @@ impl Service {
             (r.snapshot.settings.qa_server_url.clone(), r.qa_api_key.clone())
         };
 
-        let local_bank = if bank_path.exists() {
+        let local_bank = if let Ok(qa_db) = self.get_qa_db().await {
+            qa_db.load_all_bank_questions().await.unwrap_or_default()
+        } else if bank_path.exists() {
             quiz::qa::load_local_bank(&bank_path)
         } else {
             Default::default()
@@ -1192,9 +1219,10 @@ impl Service {
 
     pub(crate) async fn submit_exam(
         &self,
-        _cid: &str,
+        cid: &str,
         task_id: &str,
         answers: quiz::model::Answers,
+        questions: Option<Vec<quiz::model::Question>>,
     ) -> Result<String, String> {
         let cancel = CancellationToken::new();
         let client = self.client.read().unwrap().clone();
@@ -1209,6 +1237,30 @@ impl Service {
             .exam_commit(clean_tid, &fields, &cancel)
             .await
             .map_err(|e| format!("提交试卷失败: {e:?}"))?;
+
+        if let Some(qs) = questions {
+            if !qs.is_empty() {
+                if let Ok(qa_db) = self.get_qa_db().await {
+                    let now_ms = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() as i64)
+                        .unwrap_or(0);
+                    let record = quiz::qa::SubmittedPaperRecord {
+                        cid: cid.to_string(),
+                        tid: clean_tid.to_string(),
+                        task_title: None,
+                        questions: qs,
+                        answers: answers.clone(),
+                        submitted_at_ms: now_ms,
+                    };
+                    let _ = qa_db.save_submitted_paper(&record).await;
+                }
+            }
+        }
+
+        // 提交后触发单个题单解析与题库自动构建
+        let _ = quiz::build_single_task_group(self, cid, clean_tid, Some(true)).await;
+
         let msg = text(&res["msg"]);
         Ok(if msg.is_empty() { "试卷已成功提交".into() } else { msg })
     }
@@ -1439,7 +1491,9 @@ impl Service {
             (r.snapshot.settings.qa_server_url.clone(), r.qa_api_key.clone())
         };
 
-        let local_bank = if bank_path.exists() {
+        let local_bank = if let Ok(qa_db) = self.get_qa_db().await {
+            qa_db.load_all_bank_questions().await.unwrap_or_default()
+        } else if bank_path.exists() {
             quiz::qa::load_local_bank(&bank_path)
         } else {
             Default::default()

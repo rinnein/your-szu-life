@@ -80,7 +80,7 @@ export function ExamPaperModal({ exam, isOpen, onClose, onSubmitted }: ExamPaper
       .then((res) => {
         if (!isMounted) return;
         setPaper(res);
-        const initialAnswers = { ...(res.answers || {}) };
+        const initialAnswers = { ...res.answers };
 
         // 题库命中或已确认答案时自动填充预选
         if (!res.isSubmitted && res.reviews && res.reviews.length > 0) {
@@ -376,6 +376,7 @@ export function ExamPaperModal({ exam, isOpen, onClose, onSubmitted }: ExamPaper
         cid: exam.cid,
         taskId: exam.taskId,
         answers,
+        questions: paper?.questions || [],
       });
       toast.success(msg || "试卷已成功提交");
       setConfirmSubmitOpen(false);
@@ -399,13 +400,12 @@ export function ExamPaperModal({ exam, isOpen, onClose, onSubmitted }: ExamPaper
   const questions = paper?.questions || [];
   const answeredCount = questions.filter((q) => {
     const vals = answers[q.id];
-    return Array.isArray(vals) && vals.length > 0 && vals.some((v) => v.trim().length > 0);
+    return Array.isArray(vals) && vals.some((v) => v.trim().length > 0);
   }).length;
   const unansweredIndices = questions
     .map((q, idx) => {
       const vals = answers[q.id];
-      const hasAnswer =
-        Array.isArray(vals) && vals.length > 0 && vals.some((v) => v.trim().length > 0);
+      const hasAnswer = Array.isArray(vals) && vals.some((v) => v.trim().length > 0);
       return hasAnswer ? null : idx + 1;
     })
     .filter((v): v is number => v !== null);
@@ -540,7 +540,9 @@ export function ExamPaperModal({ exam, isOpen, onClose, onSubmitted }: ExamPaper
                         <Card key={q.id} className="border border-border/60">
                           <Card.Header className="flex flex-wrap items-center justify-between gap-2 pb-2">
                             <div className="flex items-center gap-2">
-                              <span className="font-mono font-bold text-accent">第 {index + 1} 题</span>
+                              <span className="font-mono font-bold text-accent">
+                                第 {index + 1} 题
+                              </span>
                               <Chip size="sm" variant="secondary">
                                 {q.kind === "single"
                                   ? "单选题"
@@ -571,7 +573,9 @@ export function ExamPaperModal({ exam, isOpen, onClose, onSubmitted }: ExamPaper
                               <DimmedHtmlText text={q.text} />
                             </div>
 
-                            {/附件|下载|上传|文件|\.pdf|\.docx?|\.zip|\.rar|bosSync/i.test(q.text) && (
+                            {/附件|下载|上传|文件|\.pdf|\.docx?|\.zip|\.rar|bosSync/i.test(
+                              q.text,
+                            ) && (
                               <div className="flex items-center justify-between gap-2 rounded-lg bg-surface-secondary/40 p-2 text-xs text-muted">
                                 <span>提示：此题可能涉及附件查看或文件上传</span>
                                 <Button
@@ -619,7 +623,12 @@ export function ExamPaperModal({ exam, isOpen, onClose, onSubmitted }: ExamPaper
                                 className="grid gap-2"
                               >
                                 {q.options.map((opt) => {
-                                  const badges = getOptionBadges(q, opt.id, opt.text, currentValues);
+                                  const badges = getOptionBadges(
+                                    q,
+                                    opt.id,
+                                    opt.text,
+                                    currentValues,
+                                  );
                                   const isRadioChecked = currentValues[0] === opt.id;
                                   const borderStyle = badges.isStandard
                                     ? "border-success/50 bg-success/10"
@@ -696,7 +705,12 @@ export function ExamPaperModal({ exam, isOpen, onClose, onSubmitted }: ExamPaper
                                 className="grid gap-2"
                               >
                                 {q.options.map((opt) => {
-                                  const badges = getOptionBadges(q, opt.id, opt.text, currentValues);
+                                  const badges = getOptionBadges(
+                                    q,
+                                    opt.id,
+                                    opt.text,
+                                    currentValues,
+                                  );
                                   const isBoxChecked = currentValues.includes(opt.id);
                                   const borderStyle = badges.isStandard
                                     ? "border-success/50 bg-success/10"
@@ -760,45 +774,48 @@ export function ExamPaperModal({ exam, isOpen, onClose, onSubmitted }: ExamPaper
                             {/* 填空题交互与匹配提示 */}
                             {q.kind === "text" && (
                               <div className="space-y-3">
-                                {Array.from({ length: Math.max(1, q.blanks || 1) }).map((_, bIdx) => {
-                                  const stdVal = stdBlankReview?.answers[bIdx];
-                                  const aiVal = aiBlankReview?.answers[bIdx];
+                                {Array.from({ length: Math.max(1, q.blanks || 1) }).map(
+                                  (_, bIdx) => {
+                                    const stdVal = stdBlankReview?.answers[bIdx];
+                                    const aiVal = aiBlankReview?.answers[bIdx];
 
-                                  return (
-                                    <TextField
-                                      key={bIdx}
-                                      value={currentValues[bIdx] || ""}
-                                      onChange={(val) => {
-                                        if (!canEdit) return;
-                                        setAnswers((prev) => {
-                                          const arr = [...(prev[q.id] || [])];
-                                          arr[bIdx] = val;
-                                          return { ...prev, [q.id]: arr };
-                                        });
-                                      }}
-                                      isDisabled={!canEdit}
-                                    >
-                                      <Label className="flex items-center justify-between text-xs font-medium w-full">
-                                        <span>
-                                          第 {index + 1} 题{q.blanks > 1 ? ` · 第 ${bIdx + 1} 空` : "填空作答"}
-                                        </span>
-                                        <div className="flex items-center gap-1.5 shrink-0">
-                                          {stdVal && (
-                                            <Chip size="sm" color="success">
-                                              标准答案: {stripHtml(stdVal)}
-                                            </Chip>
-                                          )}
-                                          {!stdVal && aiVal && (
-                                            <Chip size="sm" color="accent">
-                                              AI判定: {stripHtml(aiVal)}
-                                            </Chip>
-                                          )}
-                                        </div>
-                                      </Label>
-                                      <TextArea rows={2} className="text-xs" />
-                                    </TextField>
-                                  );
-                                })}
+                                    return (
+                                      <TextField
+                                        key={bIdx}
+                                        value={currentValues[bIdx] || ""}
+                                        onChange={(val) => {
+                                          if (!canEdit) return;
+                                          setAnswers((prev) => {
+                                            const arr = [...(prev[q.id] || [])];
+                                            arr[bIdx] = val;
+                                            return { ...prev, [q.id]: arr };
+                                          });
+                                        }}
+                                        isDisabled={!canEdit}
+                                      >
+                                        <Label className="flex items-center justify-between text-xs font-medium w-full">
+                                          <span>
+                                            第 {index + 1} 题
+                                            {q.blanks > 1 ? ` · 第 ${bIdx + 1} 空` : "填空作答"}
+                                          </span>
+                                          <div className="flex items-center gap-1.5 shrink-0">
+                                            {stdVal && (
+                                              <Chip size="sm" color="success">
+                                                标准答案: {stripHtml(stdVal)}
+                                              </Chip>
+                                            )}
+                                            {!stdVal && aiVal && (
+                                              <Chip size="sm" color="accent">
+                                                AI判定: {stripHtml(aiVal)}
+                                              </Chip>
+                                            )}
+                                          </div>
+                                        </Label>
+                                        <TextArea rows={2} className="text-xs" />
+                                      </TextField>
+                                    );
+                                  },
+                                )}
                               </div>
                             )}
 

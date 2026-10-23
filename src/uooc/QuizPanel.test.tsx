@@ -732,7 +732,9 @@ it("automatically switches selected option to AI-judged answer upon AI judgment 
 it("stripHtml accurately cleans nested tags, inline style attributes, and preserves math symbols", () => {
   // 1. Nested tags with style attributes
   expect(
-    stripHtml("<p style='margin:0;'><span style='color:red;'><strong>选项 A 内容</strong></span><br/></p>"),
+    stripHtml(
+      "<p style='margin:0;'><span style='color:red;'><strong>选项 A 内容</strong></span><br/></p>",
+    ),
   ).toBe("选项 A 内容");
 
   // 2. Math inequality symbols are strictly preserved without being stripped
@@ -806,4 +808,3 @@ it("supports toggling HTML tag visibility via the switch in modal header and mat
   expect(htmlTagSwitch).toBeChecked();
   expect(container.querySelectorAll("[data-dimmed-tag='true']").length).toBeGreaterThan(0);
 });
-

@@ -311,9 +311,10 @@ pub(crate) async fn submit_uooc_exam(
     cid: String,
     task_id: String,
     answers: super::quiz::model::Answers,
+    questions: Option<Vec<super::quiz::model::Question>>,
 ) -> Result<String, String> {
     let service = service(&app)?;
-    service.submit_exam(&cid, &task_id, answers).await
+    service.submit_exam(&cid, &task_id, answers, questions).await
 }
 
 #[tauri::command]
@@ -425,12 +426,15 @@ pub(crate) async fn fetch_uooc_completed_quiz(
 }
 
 #[tauri::command]
-pub(crate) fn get_uooc_local_bank_questions(
+pub(crate) async fn get_uooc_local_bank_questions(
     app: tauri::AppHandle,
 ) -> Result<Vec<super::quiz::qa::LocalBankQuestion>, String> {
     let service = service(&app)?;
-    let bank_path = service.path.parent().unwrap().join("qa-bank.json");
-    let bank = super::quiz::qa::load_local_bank(&bank_path);
+    let bank = if let Ok(qa_db) = service.get_qa_db().await {
+        qa_db.load_all_bank_questions().await.unwrap_or_default()
+    } else {
+        Default::default()
+    };
     let courses = {
         let r = service.runtime.lock().unwrap();
         r.snapshot.courses.clone()

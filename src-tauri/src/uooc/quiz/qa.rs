@@ -269,6 +269,18 @@ pub(crate) struct ExamViewDetails {
     pub task_title: Option<String>,
 }
 
+/// 试卷最后一次作答提交快照
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SubmittedPaperRecord {
+    pub cid: String,
+    pub tid: String,
+    pub task_title: Option<String>,
+    pub questions: Vec<Question>,
+    pub answers: Answers,
+    pub submitted_at_ms: i64,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct BankMatchPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2660,10 +2672,13 @@ fn parse_string_list(val: &serde_json::Value) -> Vec<String> {
     list
 }
 
-/// 解析 /exam/view 返回的已提交测验详细数据（支持 JSON 和 HTML 两种形态）
-pub(crate) fn parse_exam_view_details(raw: &[u8]) -> Option<ExamViewDetails> {
+/// 解析 /exam/view 返回的已提交测验详细数据（支持传入最后一次提交快照，兼容学生作答为空的情况）
+pub(crate) fn parse_exam_view_details_with_submitted(
+    raw: &[u8],
+    submitted: Option<&SubmittedPaperRecord>,
+) -> Option<ExamViewDetails> {
     if let Ok(val) = serde_json::from_slice::<serde_json::Value>(raw) {
-        if let Some(details) = parse_exam_view_json_details(&val) {
+        if let Some(details) = parse_exam_view_json_details_with_submitted(&val, submitted) {
             return Some(details);
         }
         if let Some((questions, answers)) = parse_task_paper_json(&val) {
@@ -2702,13 +2717,22 @@ pub(crate) fn parse_exam_view_details(raw: &[u8]) -> Option<ExamViewDetails> {
     None
 }
 
+/// 解析 /exam/view 返回的已提交测验详细数据（支持 JSON 和 HTML 两种形态）
+#[cfg(test)]
+pub(crate) fn parse_exam_view_details(raw: &[u8]) -> Option<ExamViewDetails> {
+    parse_exam_view_details_with_submitted(raw, None)
+}
+
 /// 解析 /exam/view 返回的已提交测验数据（支持 JSON 和 HTML 两种形态）
 #[cfg(test)]
 pub(crate) fn parse_exam_view(raw: &[u8]) -> Option<(Vec<Question>, Answers)> {
     parse_exam_view_details(raw).map(|d| (d.questions, d.answers))
 }
 
-pub(crate) fn parse_exam_view_json_details(val: &serde_json::Value) -> Option<ExamViewDetails> {
+pub(crate) fn parse_exam_view_json_details_with_submitted(
+    val: &serde_json::Value,
+    submitted: Option<&SubmittedPaperRecord>,
+) -> Option<ExamViewDetails> {
     let list = val["data"]["questions"]
         .as_array()
         .or_else(|| val["questions"].as_array())
@@ -2727,6 +2751,11 @@ pub(crate) fn parse_exam_view_json_details(val: &serde_json::Value) -> Option<Ex
     let mut total_max_score = 0.0;
     let mut has_any_grade_score = false;
     let mut has_any_max_score = false;
+
+    // 检查整卷得分
+    let task_total_score_val = parse_score_val(&val["data"]["task"]["score"])
+        .or_else(|| parse_score_val(&val["task"]["score"]));
+    let is_perfect_paper = task_total_score_val.map(|s| s >= 100.0 - 1e-4).unwrap_or(false);
 
     for (index, item) in list.iter().enumerate() {
         let qid = item["id"]
@@ -2856,7 +2885,7 @@ pub(crate) fn parse_exam_view_json_details(val: &serde_json::Value) -> Option<Ex
         let has_explicit_std = !std_answers.is_empty();
 
         // 2. 学生作答选项
-        let student_ans = parse_string_list(&item["student_answer"])
+        let mut student_ans = parse_string_list(&item["student_answer"])
             .into_iter()
             .chain(parse_string_list(&item["user_answer"]))
             .chain(parse_string_list(&item["userAnswer"]))
@@ -2865,6 +2894,31 @@ pub(crate) fn parse_exam_view_json_details(val: &serde_json::Value) -> Option<Ex
             .chain(parse_string_list(&item["myAnswer"]))
             .chain(parse_string_list(&item["submit_answer"]))
             .collect::<Vec<_>>();
+
+        // 核心支持：若接口返回 student_answer: []，尝试从持久化的最后一次提交快照中回填
+        if student_ans.is_empty() {
+            if let Some(sub) = submitted {
+                let matched_sub_q = sub.questions.iter().find(|sq| sq.id == qid).or_else(|| {
+                    let item_norm = normalize_stem(&stem);
+                    sub.questions.iter().find(|sq| {
+                        let sq_norm = normalize_stem(&sq.text);
+                        !sq_norm.is_empty() && (sq_norm == item_norm || sq_norm.contains(&item_norm) || item_norm.contains(&sq_norm))
+                    })
+                }).or_else(|| {
+                    if sub.questions.len() == list.len() {
+                        sub.questions.get(index)
+                    } else {
+                        None
+                    }
+                });
+
+                if let Some(sq) = matched_sub_q {
+                    if let Some(sub_vals) = sub.answers.get(&sq.id) {
+                        student_ans = map_answers_to_option_ids(sub_vals, &options);
+                    }
+                }
+            }
+        }
 
         // 3. 评分解析 (grade_score 为得分，score 为本题满分)
         let grade_score = parse_score_val(&item["grade_score"])
@@ -2905,13 +2959,17 @@ pub(crate) fn parse_exam_view_json_details(val: &serde_json::Value) -> Option<Ex
                 }
             }
             (None, _) => {
-                item["is_right"]
-                    .as_bool()
-                    .or_else(|| item["is_right"].as_i64().map(|n| n != 0))
-                    .or_else(|| item["is_right"].as_str().map(|s| s == "1" || s.eq_ignore_ascii_case("true")))
-                    .or_else(|| item["is_correct"].as_bool())
-                    .or_else(|| item["is_correct"].as_i64().map(|n| n != 0))
-                    .unwrap_or(false)
+                if is_perfect_paper {
+                    true
+                } else {
+                    item["is_right"]
+                        .as_bool()
+                        .or_else(|| item["is_right"].as_i64().map(|n| n != 0))
+                        .or_else(|| item["is_right"].as_str().map(|s| s == "1" || s.eq_ignore_ascii_case("true")))
+                        .or_else(|| item["is_correct"].as_bool())
+                        .or_else(|| item["is_correct"].as_i64().map(|n| n != 0))
+                        .unwrap_or(false)
+                }
             }
         };
 
@@ -4765,5 +4823,174 @@ mod tests {
         let upload_q2 = build_upload_question_from_local_bank(item2);
         assert_eq!(upload_q2.correct_answers, Some(vec!["B".into()]));
         assert_eq!(upload_q2.wrong_answers, None);
+    }
+
+    #[tokio::test]
+    async fn parse_exam_view_with_empty_answers_and_submitted_paper_deduction() {
+        use tempfile::tempdir;
+
+        // 模拟真实用户遇到的场景：
+        // 1. /exam/view 中 answer: [] 且 student_answer: []
+        // 2. 存在最后一次提交快照 SubmittedPaperRecord
+        // 3. Q1 满分 (grade_score == score)，推导出标准答案为当时提交的 A
+        // 4. Q2 零分 (grade_score == 0)，两选项单选题，当时提交 A，自动排除 A 并推导标准答案为 B
+
+        let q1 = Question {
+            id: "226322426".into(),
+            text: "<p><span style=\"font-size:29px;\">主张艺术起源于人的内在情感的表现。</span></p>".into(),
+            kind: Kind::Single,
+            options: vec![
+                OptionItem { id: "A".into(), text: "<p>表情说</p>".into() },
+                OptionItem { id: "B".into(), text: "<p>再现说</p>".into() },
+                OptionItem { id: "C".into(), text: "<p>游戏说</p>".into() },
+                OptionItem { id: "D".into(), text: "<p>劳动说</p>".into() },
+            ],
+            blanks: 0,
+            images: vec![],
+        };
+
+        let q2 = Question {
+            id: "1663712479".into(),
+            text: "<p>艺术的本质是主观与客观的辩证统一。</p>".into(),
+            kind: Kind::Single,
+            options: vec![
+                OptionItem { id: "A".into(), text: "正确".into() },
+                OptionItem { id: "B".into(), text: "错误".into() },
+            ],
+            blanks: 0,
+            images: vec![],
+        };
+
+        let mut sub_answers = Answers::new();
+        sub_answers.insert("226322426".into(), vec!["A".into()]);
+        sub_answers.insert("1663712479".into(), vec!["B".into()]);
+
+        let submitted = SubmittedPaperRecord {
+            cid: "16781".into(),
+            tid: "1163945558".into(),
+            task_title: Some("第二章测验".into()),
+            questions: vec![q1.clone(), q2.clone()],
+            answers: sub_answers,
+            submitted_at_ms: chrono::Utc::now().timestamp_millis(),
+        };
+
+        let exam_view_json = serde_json::json!({
+            "code": 1,
+            "msg": "",
+            "data": {
+                "questions": [
+                    {
+                        "id": 226322426,
+                        "course_id": "16781",
+                        "type": "10",
+                        "question": "<p><span style=\"font-size:29px;font-family:微软雅黑;color:#111111\"><span style=\"font-family: 微软雅黑; color: #111111; font-size: 16px;\"></span><span style=\"font-family: 微软雅黑; color: #111111; font-size: 16px;\">“” ，主张艺术起源于人的内在情感的表现。</span></span></p>",
+                        "level": "20",
+                        "options": {
+                            "A": "<p>表情说</p>",
+                            "B": "<p>再现说</p>",
+                            "C": "<p>游戏说</p>",
+                            "D": "<p>劳动说</p>"
+                        },
+                        "answer": [],
+                        "tips": "",
+                        "parent": 1163945558,
+                        "is_subjective": 0,
+                        "level_text": "中",
+                        "type_text": "单选题",
+                        "score": "20.00",
+                        "corrector_id": -1,
+                        "grade_score": "20.00",
+                        "memo": "",
+                        "student_answer": [],
+                        "options_app": [
+                            { "key": "A", "value": "<p>表情说</p>" },
+                            { "key": "B", "value": "<p>再现说</p>" },
+                            { "key": "C", "value": "<p>游戏说</p>" },
+                            { "key": "D", "value": "<p>劳动说</p>" }
+                        ]
+                    },
+                    {
+                        "id": 1663712479,
+                        "course_id": "16781",
+                        "type": "20",
+                        "question": "<p>艺术的本质是主观与客观的辩证统一。</p>",
+                        "options": {
+                            "A": "正确",
+                            "B": "错误"
+                        },
+                        "answer": [],
+                        "score": "20.00",
+                        "grade_score": "0.00",
+                        "student_answer": [],
+                        "options_app": [
+                            { "key": "A", "value": "正确" },
+                            { "key": "B", "value": "错误" }
+                        ]
+                    }
+                ],
+                "task": {
+                    "name": "第二章测验",
+                    "answer_hint": "0",
+                    "allow_view_score": 1,
+                    "allow_view_paper": 1,
+                    "answer_review": "0",
+                    "_type": "10",
+                    "type": "测验",
+                    "course_title": "2026秋季学期",
+                    "student": "xxx",
+                    "dotime": "2026-09-01 23:40:35",
+                    "score": "20.00"
+                }
+            }
+        });
+
+        let details = parse_exam_view_json_details_with_submitted(&exam_view_json, Some(&submitted))
+            .expect("解析成功");
+
+        // 验证 Q1 成功结合提交作答推导出标准答案为表情说（对应选项 A）
+        assert_eq!(details.answers.get("226322426"), Some(&vec!["表情说".into()]));
+        assert_eq!(details.student_answers.get("226322426"), Some(&vec!["A".into()]));
+
+        // 验证 Q2 得 0 分，排除当时选的 B (错误)，因为是判断题，自动推导 A (正确) 为标准答案！
+        assert_eq!(details.answers.get("1663712479"), Some(&vec!["正确".into()]));
+        assert_eq!(details.student_answers.get("1663712479"), Some(&vec!["B".into()]));
+
+        // 验证使用 Toasty ORM 存储与读取
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("toasty_quiz_qa_bank.db");
+        let qa_db = super::super::db::QaDatabase::open(&db_path).await.expect("打开 Toasty 数据库成功");
+
+        // 保存提交快照
+        qa_db.save_submitted_paper(&submitted).await.expect("保存提交试卷成功");
+        let queried_sub = qa_db.get_submitted_paper(Some("16781"), "1163945558").await.unwrap().expect("查到记录");
+        assert_eq!(queried_sub.questions.len(), 2);
+        assert_eq!(queried_sub.answers.get("226322426"), Some(&vec!["A".into()]));
+
+        // 录入题库题目到 Toasty
+        let b_q = LocalBankQuestion {
+            cid: "16781".into(),
+            course_name: Some("2026秋季学期".into()),
+            tid: "1163945558".into(),
+            task_name: Some("第二章测验".into()),
+            question_id: "226322426".into(),
+            question_type: "single".into(),
+            stem: Some("主张艺术起源于人的内在情感的表现。".into()),
+            options: Some(vec![
+                QaUploadOption { id: "A".into(), text: "表情说".into() },
+                QaUploadOption { id: "B".into(), text: "再现说".into() },
+            ]),
+            blanks: 0,
+            answers: vec![],
+            correct_answers: vec!["表情说".into()],
+            uploaded: false,
+            updated_at_ms: chrono::Utc::now().timestamp_millis(),
+        };
+        qa_db.upsert_bank_question(&b_q, Some("16781"), Some("1163945558")).await.expect("录入题目成功");
+
+        let total = qa_db.count_questions().await.expect("统计题数成功");
+        assert_eq!(total, 1);
+
+        let bank = qa_db.load_all_bank_questions().await.expect("加载题目成功");
+        assert!(bank.contains_key("1163945558:226322426"));
     }
 }

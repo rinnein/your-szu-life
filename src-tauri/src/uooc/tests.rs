@@ -1328,7 +1328,7 @@ async fn test_uooc_exam_lifecycle_list_paper_draft_commit_heartbeat() {
     assert_eq!(heartbeat_called.load(Ordering::SeqCst), 1);
 
     // 5. 测试正式交卷
-    let submit_msg = service.submit_exam("42", "999", answers).await.unwrap();
+    let submit_msg = service.submit_exam("42", "999", answers, Some(paper.questions)).await.unwrap();
     assert_eq!(submit_msg, "考试提交成功");
     assert_eq!(committed_called.load(Ordering::SeqCst), 1);
 

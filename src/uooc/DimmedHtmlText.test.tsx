@@ -2,10 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
-import {
-  DimmedHtmlText,
-  setStoredHtmlTagVisibility,
-} from "./DimmedHtmlText";
+import { DimmedHtmlText, setStoredHtmlTagVisibility } from "./DimmedHtmlText";
 
 describe("DimmedHtmlText", () => {
   beforeEach(() => {
@@ -57,9 +54,7 @@ describe("DimmedHtmlText", () => {
   });
 
   it("does not mistake mathematical comparison operators as HTML tags", () => {
-    const { container } = render(
-      <DimmedHtmlText text="若 x < y 且 z > 0，则下列结论正确的是？" />,
-    );
+    const { container } = render(<DimmedHtmlText text="若 x < y 且 z > 0，则下列结论正确的是？" />);
 
     expect(screen.getByText("若 x < y 且 z > 0，则下列结论正确的是？")).toBeInTheDocument();
     expect(container.querySelectorAll(".font-mono")).toHaveLength(0);
@@ -82,9 +77,7 @@ describe("DimmedHtmlText", () => {
   });
 
   it("toggles HTML tag visibility dynamically via setStoredHtmlTagVisibility", () => {
-    const { container } = render(
-      <DimmedHtmlText text="<p>题干内容<br/></p>" />,
-    );
+    const { container } = render(<DimmedHtmlText text="<p>题干内容<br/></p>" />);
 
     expect(container.querySelectorAll(".font-mono")).toHaveLength(3);
 
@@ -107,4 +100,3 @@ describe("DimmedHtmlText", () => {
     expect(container.firstChild).toBeNull();
   });
 });
-
