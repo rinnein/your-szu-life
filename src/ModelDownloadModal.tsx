@@ -3,13 +3,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { Alert, Button, Chip, Modal } from "@heroui/react";
 import { LuCircleCheck, LuCpu, LuDownload, LuSettings } from "react-icons/lu";
 import { useLogicalNavigation } from "./logical-navigation";
+import { formatModelSize } from "./LocalModelSettings";
 import { useOcrModelStatus, type OcrModelStatus } from "./OcrModelSettings";
 import { useEmbeddingModelStatus, type EmbeddingModelStatus } from "./EmbeddingModelSettings";
 import { ModelProgressBar, useModelDownloadProgress } from "./ModelDownloadProgress";
+import ocrModelManifest from "../src-tauri/resources/ocr/ddddocr/model.json";
+import embeddingModelManifest from "../src-tauri/resources/embedding/bge-small-zh-v1.5/model.json";
 
 export type ModelKind = "ocr" | "embedding";
 
-const MODEL_INFO: Record<
+export const MODEL_INFO: Record<
   ModelKind,
   {
     title: string;
@@ -21,22 +24,20 @@ const MODEL_INFO: Record<
   }
 > = {
   ocr: {
-    title: "需要安装本地 OCR 模型",
-    description:
-      "选课系统与在线评测（OJ）验证码离线自动识别需要本地模型。模型仅保存在本机，保护账号隐私安全。",
-    sizeHint: "约 2.2 MB",
-    approxBytes: 2294200,
-    downloadCommand: "download_ocr_model",
-    settingsFocus: "ocr",
+    title: ocrModelManifest.title,
+    description: ocrModelManifest.description,
+    sizeHint: `约 ${formatModelSize(ocrModelManifest.bytes)}`,
+    approxBytes: ocrModelManifest.bytes,
+    downloadCommand: ocrModelManifest.downloadCommand,
+    settingsFocus: ocrModelManifest.settingsFocus,
   },
   embedding: {
-    title: "需要安装本地 Embedding 模型",
-    description:
-      "UOOC 题库检索与语义相似度计算（BGE-small-zh-v1.5 量化版）需要本地向量模型，支持离线高速向量特征计算。",
-    sizeHint: "约 22.9 MB",
-    approxBytes: 24010842,
-    downloadCommand: "download_embedding_model",
-    settingsFocus: "embedding",
+    title: embeddingModelManifest.title,
+    description: embeddingModelManifest.description,
+    sizeHint: `约 ${formatModelSize(embeddingModelManifest.bytes)}`,
+    approxBytes: embeddingModelManifest.bytes,
+    downloadCommand: embeddingModelManifest.downloadCommand,
+    settingsFocus: embeddingModelManifest.settingsFocus,
   },
 };
 

@@ -1,4 +1,9 @@
 {
+  "name": "BGE-small-zh-v1.5 (量化版)",
+  "title": "需要安装本地 Embedding 模型",
+  "description": "UOOC 题库检索与语义相似度计算（BGE-small-zh-v1.5 量化版）需要本地向量模型，支持离线高速向量特征计算。",
+  "downloadCommand": "download_embedding_model",
+  "settingsFocus": "embedding",
   "repository": "https://huggingface.co/Xenova/bge-small-zh-v1.5",
   "revision": "75c43b069aac4d136ba6bc1122f995fedcfd2781",
   "file": "onnx/model_quantized.onnx",

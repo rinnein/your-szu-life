@@ -52,12 +52,13 @@ export const LOCAL_MODELS: Record<ModelKind, ModelMetadata> = {
   ocr: {
     kind: "ocr",
     category: "OCR",
-    name: "ddddocr",
+    name: ocrModelManifest.name ?? "ddddocr",
     features: "选课系统与在线评测（OJ）验证码离线识别",
     description:
+      ocrModelManifest.description ??
       "用于选课系统与在线评测（OJ）验证码离线自动识别。模型仅保存在本机应用数据目录，保护账号隐私安全。",
     manifest: ocrModelManifest,
-    downloadCommand: "download_ocr_model",
+    downloadCommand: ocrModelManifest.downloadCommand ?? "download_ocr_model",
     updateCommand: "update_ocr_model",
     statusCommand: "get_ocr_model_status",
     statusEvent: "ocr-model-status-changed",
@@ -67,11 +68,13 @@ export const LOCAL_MODELS: Record<ModelKind, ModelMetadata> = {
   embedding: {
     kind: "embedding",
     category: "Embedding",
-    name: "BGE-small-zh-v1.5 (量化版)",
+    name: embeddingModelManifest.name ?? "BGE-small-zh-v1.5 (量化版)",
     features: "UOOC 题库检索与语义相似度计算",
-    description: "用于 UOOC 题库检索与语义相似度计算，支持离线高速向量特征计算。",
+    description:
+      embeddingModelManifest.description ??
+      "用于 UOOC 题库检索与语义相似度计算，支持离线高速向量特征计算。",
     manifest: embeddingModelManifest,
-    downloadCommand: "download_embedding_model",
+    downloadCommand: embeddingModelManifest.downloadCommand ?? "download_embedding_model",
     updateCommand: "update_embedding_model",
     statusCommand: "get_embedding_model_status",
     statusEvent: "embedding-model-status-changed",

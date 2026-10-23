@@ -6,6 +6,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type EventCallback } from "@tauri-apps/api/event";
 import { ModelDownloadModal } from "./ModelDownloadModal";
 import type { ModelDownloadProgress } from "./ModelDownloadProgress";
+import ocrModelManifest from "../src-tauri/resources/ocr/ddddocr/model.json";
+import embeddingModelManifest from "../src-tauri/resources/embedding/bge-small-zh-v1.5/model.json";
 
 const { nav } = vi.hoisted(() => ({
   nav: { push: vi.fn(), replace: vi.fn(), back: vi.fn() },
@@ -45,17 +47,17 @@ beforeEach(() => {
     if (command === "get_ocr_model_status") {
       return {
         status: "missing",
-        revision: "c40f56f95412e10bcb9bd0bd24411e92f896d238",
-        sha256: "2e68400494be9060b86a8ba699fce97cc649c01777d048ea6198f7e71c9fa0f4",
-        bytes: 2294200,
+        revision: ocrModelManifest.revision,
+        sha256: ocrModelManifest.sha256,
+        bytes: ocrModelManifest.bytes,
       };
     }
     if (command === "get_embedding_model_status") {
       return {
         status: "missing",
-        revision: "75c43b069aac4d136ba6bc1122f995fedcfd2781",
-        sha256: "15b717c382bcb518ba457b93ea6850ede7f4f1cd8937454aa06972366cd19bcc",
-        bytes: 24010842,
+        revision: embeddingModelManifest.revision,
+        sha256: embeddingModelManifest.sha256,
+        bytes: embeddingModelManifest.bytes,
       };
     }
     if (command === "download_ocr_model" || command === "download_embedding_model") {

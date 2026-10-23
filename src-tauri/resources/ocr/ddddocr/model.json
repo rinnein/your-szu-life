@@ -1,4 +1,9 @@
 {
+  "name": "ddddocr",
+  "title": "需要安装本地 OCR 模型",
+  "description": "选课系统与在线评测（OJ）验证码离线自动识别需要本地模型。模型仅保存在本机，保护账号隐私安全。",
+  "downloadCommand": "download_ocr_model",
+  "settingsFocus": "ocr",
   "repository": "https://github.com/sml2h3/ddddocr",
   "revision": "c40f56f95412e10bcb9bd0bd24411e92f896d238",
   "file": "ddddocr/common.onnx",
