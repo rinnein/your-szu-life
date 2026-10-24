@@ -18,6 +18,12 @@ pub struct UpdateProgressPayload {
     pub progress: u32,
     pub downloaded_bytes: u64,
     pub total_bytes: u64,
+    pub speed_bytes_per_sec: Option<u64>,
+    pub port: Option<u16>,
+    pub num_pieces: Option<u32>,
+    pub piece_length: Option<u64>,
+    pub bitfield: Option<String>,
+    pub connections: Option<u32>,
     pub error: Option<String>,
 }
 
@@ -42,6 +48,12 @@ fn emit_error(msg: &str) {
         progress: 0,
         downloaded_bytes: 0,
         total_bytes: 0,
+        speed_bytes_per_sec: None,
+        port: None,
+        num_pieces: None,
+        piece_length: None,
+        bitfield: None,
+        connections: None,
         error: Some(msg.to_string()),
     });
 }
@@ -119,6 +131,12 @@ pub(crate) fn start_update(
             progress: 0,
             downloaded_bytes: 0,
             total_bytes: 0,
+            speed_bytes_per_sec: None,
+            port: None,
+            num_pieces: None,
+            piece_length: None,
+            bitfield: None,
+            connections: None,
             error: None,
         });
 
@@ -145,6 +163,12 @@ pub(crate) fn start_update(
                     progress,
                     downloaded_bytes: prog.downloaded_bytes,
                     total_bytes: prog.total_bytes,
+                    speed_bytes_per_sec: Some(prog.speed_bytes_per_sec),
+                    port: Some(prog.port),
+                    num_pieces: Some(prog.num_pieces),
+                    piece_length: Some(prog.piece_length),
+                    bitfield: prog.bitfield,
+                    connections: Some(prog.connections),
                     error: None,
                 });
             },
@@ -177,6 +201,12 @@ pub(crate) fn start_update(
             progress: 100,
             downloaded_bytes: file_len,
             total_bytes: file_len,
+            speed_bytes_per_sec: Some(0),
+            port: None,
+            num_pieces: None,
+            piece_length: None,
+            bitfield: None,
+            connections: None,
             error: None,
         });
 
@@ -317,6 +347,12 @@ pub extern "system" fn Java_in_rinne_your_1szu_1life_AppUpdateBridge_nativeUpdat
         progress: progress.max(0) as u32,
         downloaded_bytes: downloaded_bytes.max(0) as u64,
         total_bytes: total_bytes.max(0) as u64,
+        speed_bytes_per_sec: None,
+        port: None,
+        num_pieces: None,
+        piece_length: None,
+        bitfield: None,
+        connections: None,
         error: error_str,
     };
 

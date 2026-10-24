@@ -1,26 +1,26 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { ProgressBar } from "@heroui/react";
+
+export {
+  DownloadSession,
+  ModelProgressBar,
+  formatBytes,
+  formatDownloadSpeed,
+  formatModelBytes,
+  parseAria2Bitfield,
+} from "./DownloadSession";
+export type { DownloadSessionData, DownloadSessionProps } from "./DownloadSession";
 
 export type ModelDownloadProgress = {
   downloadedBytes: number;
   totalBytes: number;
   speedBytesPerSec: number;
+  port?: number;
+  numPieces?: number;
+  pieceLength?: number;
+  bitfield?: string | null;
+  connections?: number;
 };
-
-export function formatDownloadSpeed(bytesPerSec: number): string {
-  if (!bytesPerSec || bytesPerSec <= 0) return "0 B/s";
-  if (bytesPerSec < 1024) return `${bytesPerSec} B/s`;
-  if (bytesPerSec < 1024 * 1024) return `${(bytesPerSec / 1024).toFixed(1)} KB/s`;
-  return `${(bytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
-}
-
-export function formatModelBytes(bytes: number): string {
-  if (!bytes || bytes <= 0) return "0 B";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 export function useModelDownloadProgress(kind: "ocr" | "embedding") {
   const eventName =
@@ -46,49 +46,4 @@ export function useModelDownloadProgress(kind: "ocr" | "embedding") {
   }, [eventName]);
 
   return { progress, setProgress };
-}
-
-export function ModelProgressBar({
-  downloadedBytes,
-  totalBytes,
-  speedBytesPerSec,
-  label = "正在下载模型...",
-}: {
-  downloadedBytes: number;
-  totalBytes: number;
-  speedBytesPerSec: number;
-  label?: string;
-}) {
-  const percent =
-    totalBytes > 0
-      ? Math.min(100, Math.max(0, Math.round((downloadedBytes / totalBytes) * 100)))
-      : 0;
-
-  return (
-    <div className="grid w-full min-w-0 max-w-full gap-2 rounded-xl border border-separator/40 bg-surface-secondary/40 p-3">
-      <div className="flex items-center justify-between text-xs text-muted min-w-0 gap-2">
-        <span className="truncate">{label}</span>
-        <span className="font-mono font-medium text-foreground shrink-0">{percent}%</span>
-      </div>
-      <ProgressBar
-        aria-label={label}
-        value={percent}
-        minValue={0}
-        maxValue={100}
-        className="w-full"
-      >
-        <ProgressBar.Track>
-          <ProgressBar.Fill />
-        </ProgressBar.Track>
-      </ProgressBar>
-      <div className="flex flex-wrap items-center justify-between font-mono text-xs text-muted gap-2 min-w-0">
-        <span>
-          {formatModelBytes(downloadedBytes)} / {formatModelBytes(totalBytes)}
-        </span>
-        <span className="font-medium text-foreground shrink-0">
-          {formatDownloadSpeed(speedBytesPerSec)}
-        </span>
-      </div>
-    </div>
-  );
 }

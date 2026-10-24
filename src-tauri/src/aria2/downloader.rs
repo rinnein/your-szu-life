@@ -1,4 +1,5 @@
 use super::{client::Aria2WebSocketClient, process::Aria2Lease};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File},
@@ -16,11 +17,17 @@ pub struct DownloadJobOptions {
     pub expected_size: Option<u64>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProgressUpdate {
     pub downloaded_bytes: u64,
     pub total_bytes: u64,
     pub speed_bytes_per_sec: u64,
+    pub port: u16,
+    pub num_pieces: u32,
+    pub piece_length: u64,
+    pub bitfield: Option<String>,
+    pub connections: u32,
 }
 
 pub fn verify_file_hash_and_size(
@@ -78,17 +85,15 @@ where
     let lease = Aria2Lease::acquire(app).await?;
 
     let target_file = options.dest_dir.join(&options.filename);
-    let aria2_meta_path = options.dest_dir.join(format!("{}.aria2", options.filename));
-    if aria2_meta_path.is_file() {
-        let _ = fs::remove_file(&aria2_meta_path);
-    }
-
     let mut client = Aria2WebSocketClient::connect(&lease.ws_url, &lease.secret).await?;
     let gid = client
         .add_uri(&options.uris, &options.dest_dir, &options.filename)
         .await?;
 
     let mut last_progress_emit = std::time::Instant::now();
+    let mut last_num_pieces;
+    let mut last_piece_length;
+    let mut last_bitfield: Option<String> = None;
 
     loop {
         tokio::time::sleep(Duration::from_millis(150)).await;
@@ -108,6 +113,12 @@ where
             }
         };
 
+        last_num_pieces = status.num_pieces();
+        last_piece_length = status.piece_length();
+        if status.bitfield.is_some() {
+            last_bitfield = status.bitfield.clone();
+        }
+
         if last_progress_emit.elapsed() >= Duration::from_millis(100) {
             last_progress_emit = std::time::Instant::now();
             let total = if status.total_bytes() > 0 {
@@ -119,6 +130,11 @@ where
                 downloaded_bytes: status.completed_bytes(),
                 total_bytes: total,
                 speed_bytes_per_sec: status.speed_bytes_per_sec(),
+                port: lease.port,
+                num_pieces: last_num_pieces,
+                piece_length: last_piece_length,
+                bitfield: status.bitfield.clone(),
+                connections: status.connections(),
             });
         }
 
@@ -143,6 +159,11 @@ where
             downloaded_bytes: metadata.len(),
             total_bytes: metadata.len(),
             speed_bytes_per_sec: 0,
+            port: lease.port,
+            num_pieces: last_num_pieces,
+            piece_length: last_piece_length,
+            bitfield: last_bitfield,
+            connections: 0,
         });
     }
 
@@ -152,6 +173,8 @@ where
         options.expected_sha256.as_deref(),
     ) {
         let _ = fs::remove_file(&target_file);
+        let aria2_meta_path = options.dest_dir.join(format!("{}.aria2", options.filename));
+        let _ = fs::remove_file(&aria2_meta_path);
         return Err("文件完整性校验失败（大小或哈希不匹配）".to_string());
     }
 

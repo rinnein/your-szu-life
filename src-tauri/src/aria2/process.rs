@@ -57,6 +57,7 @@ impl Aria2Process {
             .arg("--quiet=true")
             .arg("--allow-overwrite=true")
             .arg("--auto-file-renaming=false")
+            .arg("--continue=true")
             .arg("--connect-timeout=15")
             .arg("--timeout=15")
             .arg("--max-tries=5")
@@ -148,6 +149,7 @@ fn aria2_manager_mutex() -> &'static Mutex<Option<Aria2State>> {
 }
 
 pub struct Aria2Lease {
+    pub port: u16,
     pub ws_url: String,
     pub secret: String,
     released: bool,
@@ -162,6 +164,7 @@ impl Aria2Lease {
             if state.process.check_alive().is_ok() {
                 state.ref_count += 1;
                 return Ok(Self {
+                    port: state.process.port,
                     ws_url: state.process.ws_url(),
                     secret: state.process.secret.clone(),
                     released: false,
@@ -177,6 +180,7 @@ impl Aria2Lease {
         let process = Aria2Process::spawn(&binary_path)?;
         log::debug!("aria2c 实例已启动，监听端口: {}", process.port);
 
+        let port = process.port;
         let ws_url = process.ws_url();
         let secret = process.secret.clone();
 
@@ -186,6 +190,7 @@ impl Aria2Lease {
         });
 
         Ok(Self {
+            port,
             ws_url,
             secret,
             released: false,

@@ -19,6 +19,12 @@ pub struct UpdateProgressPayload {
     pub progress: u32,
     pub downloaded_bytes: u64,
     pub total_bytes: u64,
+    pub speed_bytes_per_sec: Option<u64>,
+    pub port: Option<u16>,
+    pub num_pieces: Option<u32>,
+    pub piece_length: Option<u64>,
+    pub bitfield: Option<String>,
+    pub connections: Option<u32>,
     pub error: Option<String>,
 }
 
@@ -63,6 +69,12 @@ pub(crate) fn start_update(store: &AppContentStore) -> Result<(), String> {
                 progress: 0,
                 downloaded_bytes: 0,
                 total_bytes: 0,
+                speed_bytes_per_sec: None,
+                port: None,
+                num_pieces: None,
+                piece_length: None,
+                bitfield: None,
+                connections: None,
                 error: Some(err_msg),
             });
         }
@@ -83,6 +95,12 @@ pub(crate) fn download_and_install(
         progress: 0,
         downloaded_bytes: 0,
         total_bytes: 0,
+        speed_bytes_per_sec: None,
+        port: None,
+        num_pieces: None,
+        piece_length: None,
+        bitfield: None,
+        connections: None,
         error: None,
     });
 
@@ -118,6 +136,12 @@ pub(crate) fn download_and_install(
                 progress,
                 downloaded_bytes: prog.downloaded_bytes,
                 total_bytes: prog.total_bytes,
+                speed_bytes_per_sec: Some(prog.speed_bytes_per_sec),
+                port: Some(prog.port),
+                num_pieces: Some(prog.num_pieces),
+                piece_length: Some(prog.piece_length),
+                bitfield: prog.bitfield,
+                connections: Some(prog.connections),
                 error: None,
             });
         },
@@ -129,6 +153,12 @@ pub(crate) fn download_and_install(
             progress: 100,
             downloaded_bytes: std::fs::metadata(&installer_path).map(|m| m.len()).unwrap_or(0),
             total_bytes: std::fs::metadata(&installer_path).map(|m| m.len()).unwrap_or(0),
+            speed_bytes_per_sec: Some(0),
+            port: None,
+            num_pieces: None,
+            piece_length: None,
+            bitfield: None,
+            connections: None,
             error: None,
         });
 
@@ -200,6 +230,12 @@ pub(crate) fn download_and_install(
                             progress,
                             downloaded_bytes,
                             total_bytes,
+                            speed_bytes_per_sec: None,
+                            port: None,
+                            num_pieces: None,
+                            piece_length: None,
+                            bitfield: None,
+                            connections: None,
                             error: None,
                         });
                     }
@@ -225,6 +261,12 @@ pub(crate) fn download_and_install(
             progress: 100,
             downloaded_bytes,
             total_bytes,
+            speed_bytes_per_sec: Some(0),
+            port: None,
+            num_pieces: None,
+            piece_length: None,
+            bitfield: None,
+            connections: None,
             error: None,
         });
 

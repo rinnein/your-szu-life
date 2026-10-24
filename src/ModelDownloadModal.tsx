@@ -6,7 +6,7 @@ import { useLogicalNavigation } from "./logical-navigation";
 import { formatModelSize } from "./LocalModelSettings";
 import { useOcrModelStatus, type OcrModelStatus } from "./OcrModelSettings";
 import { useEmbeddingModelStatus, type EmbeddingModelStatus } from "./EmbeddingModelSettings";
-import { ModelProgressBar, useModelDownloadProgress } from "./ModelDownloadProgress";
+import { DownloadSession, useModelDownloadProgress } from "./ModelDownloadProgress";
 import ocrModelManifest from "../src-tauri/resources/ocr/ddddocr/model.json";
 import embeddingModelManifest from "../src-tauri/resources/embedding/bge-small-zh-v1.5/model.json";
 
@@ -122,11 +122,18 @@ export function ModelDownloadModal({
             </div>
 
             {isDownloading && (
-              <ModelProgressBar
-                downloadedBytes={downloadedBytes}
-                totalBytes={totalBytes}
-                speedBytesPerSec={speedBytesPerSec}
-                label="正在下载并校验模型..."
+              <DownloadSession
+                title={`正在下载并校验 ${info.title}...`}
+                session={{
+                  downloadedBytes,
+                  totalBytes,
+                  speedBytesPerSec,
+                  port: progress?.port,
+                  numPieces: progress?.numPieces,
+                  pieceLength: progress?.pieceLength,
+                  bitfield: progress?.bitfield,
+                  connections: progress?.connections,
+                }}
               />
             )}
 

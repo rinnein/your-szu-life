@@ -75,6 +75,11 @@ pub(crate) struct ModelDownloadProgress {
     pub downloaded_bytes: u64,
     pub total_bytes: u64,
     pub speed_bytes_per_sec: u64,
+    pub port: u16,
+    pub num_pieces: u32,
+    pub piece_length: u64,
+    pub bitfield: Option<String>,
+    pub connections: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
@@ -270,6 +275,11 @@ impl LocalModelStore {
             .cache
             .join(format!("{}.download", self.manifest.sha256));
 
+        if force {
+            let _ = fs::remove_file(&temporary);
+            let _ = fs::remove_file(self.cache.join(format!("{}.download.aria2", self.manifest.sha256)));
+        }
+
         // 1. 尝试使用 aria2c 多源并发下载
         let mut uris = vec![self.manifest.url.clone()];
         for (_source_name, mirror_url) in mirror_candidates(&self.manifest.url) {
@@ -295,6 +305,11 @@ impl LocalModelStore {
                     downloaded_bytes: prog.downloaded_bytes,
                     total_bytes: prog.total_bytes,
                     speed_bytes_per_sec: prog.speed_bytes_per_sec,
+                    port: prog.port,
+                    num_pieces: prog.num_pieces,
+                    piece_length: prog.piece_length,
+                    bitfield: prog.bitfield,
+                    connections: prog.connections,
                 };
                 if let Some(ref handle) = app_handle_opt {
                     let _ = handle.emit(progress_event, payload);
@@ -316,7 +331,6 @@ impl LocalModelStore {
                 Ok(())
             }
             Err(e) => {
-                let _ = fs::remove_file(&temporary);
                 let err = format!("aria2c 下载 {} 模型失败: {e}", self.model_name);
                 self.set_status("error", None, Some(err.clone()));
                 Err(err)

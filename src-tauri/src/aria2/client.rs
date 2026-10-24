@@ -43,6 +43,13 @@ pub struct Aria2Status {
     #[serde(default)]
     pub download_speed: String,
     pub error_message: Option<String>,
+    #[serde(default)]
+    pub piece_length: String,
+    #[serde(default)]
+    pub num_pieces: String,
+    pub bitfield: Option<String>,
+    #[serde(default)]
+    pub connections: String,
 }
 
 impl Aria2Status {
@@ -56,6 +63,18 @@ impl Aria2Status {
 
     pub fn speed_bytes_per_sec(&self) -> u64 {
         self.download_speed.parse().unwrap_or(0)
+    }
+
+    pub fn piece_length(&self) -> u64 {
+        self.piece_length.parse().unwrap_or(0)
+    }
+
+    pub fn num_pieces(&self) -> u32 {
+        self.num_pieces.parse().unwrap_or(0)
+    }
+
+    pub fn connections(&self) -> u32 {
+        self.connections.parse().unwrap_or(0)
     }
 }
 
@@ -151,6 +170,7 @@ impl Aria2WebSocketClient {
         let mut options = HashMap::new();
         options.insert("dir".to_string(), dir.to_string_lossy().to_string());
         options.insert("out".to_string(), filename.to_string());
+        options.insert("continue".to_string(), "true".to_string());
 
         let params = (self.token.clone(), uris, options);
         let result = self.call_raw("aria2.addUri", params).await?;
@@ -171,6 +191,10 @@ impl Aria2WebSocketClient {
             "downloadSpeed",
             "errorMessage",
             "errorCode",
+            "pieceLength",
+            "numPieces",
+            "bitfield",
+            "connections",
         ];
         let params = (self.token.clone(), gid, keys);
         let result = self.call_raw("aria2.tellStatus", params).await?;
