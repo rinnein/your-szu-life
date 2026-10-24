@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+{{#if categories}}Categories={{categories}}
+{{/if}}{{#if comment}}Comment={{comment}}
+{{/if}}Comment[zh_CN]=泥深 - 你的深圳大学校园助手
+Exec={{exec}}
+Icon={{icon}}
+Name=your-szu-life
+Name[zh_CN]=泥深
+Keywords=szu;campus;
+Keywords[zh_CN]=深大;泥深;校园;校园卡;电费;网费;
+StartupNotify=true
+StartupWMClass=your-szu-life
+Terminal=false
+X-GNOME-UsesNotifications=true
+X-GNOME-SingleWindow=true
