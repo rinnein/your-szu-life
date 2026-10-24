@@ -77,9 +77,6 @@ pub(crate) fn start_update(
     }
     candidate_urls.push(clean_direct.to_string());
 
-    let urls_json = serde_json::to_string(&candidate_urls)
-        .map_err(|e| format!("序列化下载地址失败: {e}"))?;
-
     std::thread::spawn(move || {
         let context = ndk_context::android_context();
         let Ok(vm) = (unsafe { JavaVM::from_raw(context.vm().cast()) }) else {
@@ -93,7 +90,7 @@ pub(crate) fn start_update(
         let context_obj =
             std::mem::ManuallyDrop::new(unsafe { jni::objects::JObject::from_raw(context.context().cast()) });
 
-        let cache_dir_opt = (|| -> Result<PathBuf, jni::errors::Error> {
+        let cache_dir = match (|| -> Result<PathBuf, jni::errors::Error> {
             let cache_file = env
                 .call_method(&*context_obj, "getCacheDir", "()Ljava/io/File;", &[])?
                 .l()?;
@@ -102,72 +99,130 @@ pub(crate) fn start_update(
                 .l()?;
             let path_str: String = env.get_string((&path_obj).into())?.into();
             Ok(PathBuf::from(path_str))
-        })();
+        })() {
+            Ok(dir) => dir,
+            Err(e) => {
+                emit_error(&format!("获取缓存目录失败: {e}"));
+                return;
+            }
+        };
 
-        let mut aria_success = false;
+        clean_temporary_apks(&cache_dir);
+        let download_filename = if is_gzip {
+            "update.apk.gz".to_string()
+        } else {
+            "update.apk".to_string()
+        };
 
-        if let Ok(cache_dir) = cache_dir_opt {
-            clean_temporary_apks(&cache_dir);
-            let filename = "update.apk".to_string();
+        emit_progress(UpdateProgressPayload {
+            status: "downloading".to_string(),
+            progress: 0,
+            downloaded_bytes: 0,
+            total_bytes: 0,
+            error: None,
+        });
 
-            emit_progress(UpdateProgressPayload {
-                status: "downloading".to_string(),
-                progress: 0,
-                downloaded_bytes: 0,
-                total_bytes: 0,
-                error: None,
-            });
+        let aria_options = crate::aria2::DownloadJobOptions {
+            uris: candidate_urls,
+            dest_dir: cache_dir.clone(),
+            filename: download_filename,
+            expected_sha256: None,
+            expected_size: None,
+        };
 
-            let aria_options = crate::aria2::DownloadJobOptions {
-                uris: candidate_urls.clone(),
-                dest_dir: cache_dir,
-                filename,
-                expected_sha256: None,
-                expected_size: None,
-            };
-
-            let aria_res = tauri::async_runtime::block_on(crate::aria2::download_with_aria2(
-                APP_HANDLE.get(),
-                aria_options,
-                |prog| {
-                    let progress = if prog.total_bytes > 0 {
-                        ((prog.downloaded_bytes as f64 / prog.total_bytes as f64) * 100.0)
-                            .clamp(0.0, 100.0) as u32
-                    } else {
-                        0
-                    };
-                    emit_progress(UpdateProgressPayload {
-                        status: "downloading".to_string(),
-                        progress,
-                        downloaded_bytes: prog.downloaded_bytes,
-                        total_bytes: prog.total_bytes,
-                        error: None,
-                    });
-                },
-            ));
-
-            if let Ok(apk_path) = aria_res {
-                let file_len = std::fs::metadata(&apk_path).map(|m| m.len()).unwrap_or(0);
+        let aria_res = tauri::async_runtime::block_on(crate::aria2::download_with_aria2(
+            APP_HANDLE.get(),
+            aria_options,
+            |prog| {
+                let progress = if prog.total_bytes > 0 {
+                    ((prog.downloaded_bytes as f64 / prog.total_bytes as f64) * 100.0)
+                        .clamp(0.0, 100.0) as u32
+                } else {
+                    0
+                };
                 emit_progress(UpdateProgressPayload {
-                    status: "installing".to_string(),
-                    progress: 100,
-                    downloaded_bytes: file_len,
-                    total_bytes: file_len,
+                    status: "downloading".to_string(),
+                    progress,
+                    downloaded_bytes: prog.downloaded_bytes,
+                    total_bytes: prog.total_bytes,
                     error: None,
                 });
+            },
+        ));
 
-                if install_apk_via_bridge(&mut env, &*context_obj, &apk_path).unwrap_or(false) {
-                    aria_success = true;
-                }
+        let downloaded_path = match aria_res {
+            Ok(path) => path,
+            Err(e) => {
+                emit_error(&format!("aria2c 下载更新失败: {e}"));
+                return;
             }
-        }
+        };
 
-        if !aria_success {
-            log::warn!("aria2c Android 更新下载未完成，正在回退至原生 AppUpdateBridge...");
-            fallback_start_update(&mut env, &*context_obj, &urls_json, is_gzip);
+        let final_apk_path = if is_gzip {
+            let target_apk = cache_dir.join("update.apk");
+            if let Err(e) = decompress_gzip(&downloaded_path, &target_apk) {
+                let _ = std::fs::remove_file(&downloaded_path);
+                emit_error(&format!("解压更新包失败: {e}"));
+                return;
+            }
+            let _ = std::fs::remove_file(&downloaded_path);
+            target_apk
+        } else {
+            downloaded_path
+        };
+
+        let file_len = std::fs::metadata(&final_apk_path).map(|m| m.len()).unwrap_or(0);
+        emit_progress(UpdateProgressPayload {
+            status: "installing".to_string(),
+            progress: 100,
+            downloaded_bytes: file_len,
+            total_bytes: file_len,
+            error: None,
+        });
+
+        match install_apk_via_bridge(&mut env, &*context_obj, &final_apk_path) {
+            Ok(true) => {}
+            Ok(false) => {
+                emit_error("启动安装程序失败，请检查系统设置与安装未知应用权限");
+            }
+            Err(e) => {
+                emit_error(&format!("调用系统安装器失败: {e}"));
+            }
         }
     });
 
+    Ok(())
+}
+
+#[cfg(target_os = "android")]
+fn decompress_gzip(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
+    use flate2::read::GzDecoder;
+    use std::io::{Read, Write};
+
+    if dst.is_file() {
+        let _ = std::fs::remove_file(dst);
+    }
+
+    let gz_file = std::fs::File::open(src)
+        .map_err(|e| format!("打开压缩包失败: {e}"))?;
+    let mut decoder = GzDecoder::new(gz_file);
+    let mut out_file = std::fs::File::create(dst)
+        .map_err(|e| format!("创建目标 APK 失败: {e}"))?;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let n = decoder
+            .read(&mut buffer)
+            .map_err(|e| format!("解压更新数据失败: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        out_file
+            .write_all(&buffer[..n])
+            .map_err(|e| format!("写入 APK 失败: {e}"))?;
+    }
+    out_file
+        .flush()
+        .map_err(|e| format!("刷新 APK 文件失败: {e}"))?;
     Ok(())
 }
 
@@ -233,51 +288,6 @@ fn install_apk_via_bridge(
         .z()?;
 
     Ok(result)
-}
-
-#[cfg(target_os = "android")]
-fn fallback_start_update(
-    env: &mut jni::JNIEnv,
-    context: &jni::objects::JObject,
-    urls_json: &str,
-    is_gzip: bool,
-) {
-    use jni::objects::{JClass, JValue};
-
-    let result = (|| -> Result<bool, jni::errors::Error> {
-        let loader = env
-            .call_method(context, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?
-            .l()?;
-        let name = env.new_string("in.rinne.your_szu_life.AppUpdateBridge")?;
-        let class = env
-            .call_method(
-                &loader,
-                "loadClass",
-                "(Ljava/lang/String;)Ljava/lang/Class;",
-                &[JValue::Object(&name)],
-            )?
-            .l()?;
-        let urls_string = env.new_string(urls_json)?;
-        env.call_static_method(
-            JClass::from(class),
-            "startUpdate",
-            "(Landroid/content/Context;Ljava/lang/String;Z)Z",
-            &[
-                JValue::Object(context),
-                JValue::Object(&urls_string),
-                JValue::Bool(is_gzip as u8),
-            ],
-        )?
-        .z()
-    })();
-
-    if env.exception_check().unwrap_or(false) {
-        let _ = env.exception_clear();
-    }
-
-    if let Err(e) = result {
-        emit_error(&format!("启动备用应用内更新失败: {e}"));
-    }
 }
 
 #[cfg(target_os = "android")]

@@ -16,6 +16,7 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
 
     <application
+        android:extractNativeLibs="true"
         android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -38,7 +39,8 @@
         </activity>
 
         <!-- Separate standard instances preserve the native parent Activity stack. -->
-        <service android:name=".EnrollmentTaskService" android:exported="false" android:foregroundServiceType="dataSync" />
+        <service android:name=".EnrollmentTaskService" android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <service
             android:name=".UoocTaskService"
             android:exported="false"
@@ -60,13 +62,13 @@
         </receiver>
 
         <provider
-          android:name="androidx.core.content.FileProvider"
-          android:authorities="${applicationId}.fileprovider"
-          android:exported="false"
-          android:grantUriPermissions="true">
-          <meta-data
-            android:name="android.support.FILE_PROVIDER_PATHS"
-            android:resource="@xml/file_paths" />
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
         </provider>
     </application>
 </manifest>

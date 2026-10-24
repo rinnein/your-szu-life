@@ -1,8 +1,4 @@
-use super::{
-    binary::find_aria2c_binary,
-    client::Aria2WebSocketClient,
-    process::Aria2Process,
-};
+use super::{client::Aria2WebSocketClient, process::Aria2Lease};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File},
@@ -25,48 +21,6 @@ pub struct ProgressUpdate {
     pub downloaded_bytes: u64,
     pub total_bytes: u64,
     pub speed_bytes_per_sec: u64,
-}
-
-fn xml_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
-}
-
-pub fn create_metalink_xml(
-    filename: &str,
-    uris: &[String],
-    expected_size: Option<u64>,
-    expected_sha256: Option<&str>,
-) -> String {
-    let mut xml = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
-    xml.push_str("<metalink xmlns=\"urn:ietf:params:xml:ns:metalink\">\n");
-    xml.push_str(&format!("  <file name=\"{}\">\n", xml_escape(filename)));
-
-    if let Some(size) = expected_size {
-        xml.push_str(&format!("    <size>{size}</size>\n"));
-    }
-
-    if let Some(hash) = expected_sha256 {
-        xml.push_str(&format!(
-            "    <hash type=\"sha-256\">{}</hash>\n",
-            xml_escape(hash)
-        ));
-    }
-
-    for (i, uri) in uris.iter().enumerate() {
-        let priority = if i == 0 { 1 } else { 2 };
-        xml.push_str(&format!(
-            "    <url priority=\"{priority}\">{}</url>\n",
-            xml_escape(uri)
-        ));
-    }
-
-    xml.push_str("  </file>\n");
-    xml.push_str("</metalink>");
-    xml
 }
 
 pub fn verify_file_hash_and_size(
@@ -121,36 +75,34 @@ where
     fs::create_dir_all(&options.dest_dir)
         .map_err(|e| format!("创建下载目标目录失败: {e}"))?;
 
-    let binary_path = find_aria2c_binary(app)?;
-    let mut process = Aria2Process::spawn(&binary_path)?;
-    let ws_url = process.ws_url();
-    let secret = process.secret.clone();
+    let lease = Aria2Lease::acquire(app).await?;
 
+    let target_file = options.dest_dir.join(&options.filename);
     let aria2_meta_path = options.dest_dir.join(format!("{}.aria2", options.filename));
     if aria2_meta_path.is_file() {
         let _ = fs::remove_file(&aria2_meta_path);
     }
 
-    let metalink_xml = create_metalink_xml(
-        &options.filename,
-        &options.uris,
-        options.expected_size,
-        options.expected_sha256.as_deref(),
-    );
-    use base64::Engine;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(metalink_xml.as_bytes());
+    let mut client = Aria2WebSocketClient::connect(&lease.ws_url, &lease.secret).await?;
+    let gid = client
+        .add_uri(&options.uris, &options.dest_dir, &options.filename)
+        .await?;
 
-    let mut client = Aria2WebSocketClient::connect(&ws_url, &secret).await?;
-    let gid = client.add_metalink(&b64, &options.dest_dir).await?;
-
-    let target_file = options.dest_dir.join(&options.filename);
     let mut last_progress_emit = std::time::Instant::now();
 
     loop {
         tokio::time::sleep(Duration::from_millis(150)).await;
+
+        if let Err(e) = lease.check_alive().await {
+            return Err(e);
+        }
+
         let status = match client.tell_status(&gid).await {
             Ok(s) => s,
             Err(e) => {
+                if let Err(proc_err) = lease.check_alive().await {
+                    return Err(proc_err);
+                }
                 let _ = client.remove(&gid).await;
                 return Err(format!("查询下载进度失败: {e}"));
             }
@@ -203,8 +155,7 @@ where
         return Err("文件完整性校验失败（大小或哈希不匹配）".to_string());
     }
 
-    let _ = client.shutdown().await;
-    process.kill();
+    lease.release().await;
 
     Ok(target_file)
 }

@@ -1,10 +1,9 @@
 use super::{
     binary::find_aria2c_binary,
     client::Aria2WebSocketClient,
-    downloader::{create_metalink_xml, verify_file_hash_and_size},
-    process::Aria2Process,
+    downloader::verify_file_hash_and_size,
+    process::Aria2Lease,
 };
-use base64::Engine;
 use std::io::Write;
 use tempfile::NamedTempFile;
 
@@ -18,15 +17,16 @@ fn test_find_aria2c_binary() {
 
 #[tokio::test]
 async fn test_aria2_process_and_websocket_rpc() {
-    let binary = find_aria2c_binary(None).expect("failed to locate aria2c");
-    let mut process = Aria2Process::spawn(&binary).expect("failed to spawn aria2c");
+    let lease = Aria2Lease::acquire(None)
+        .await
+        .expect("failed to acquire lease");
 
-    let mut client = Aria2WebSocketClient::connect(&process.ws_url(), &process.secret)
+    let mut client = Aria2WebSocketClient::connect(&lease.ws_url, &lease.secret)
         .await
         .expect("failed to connect via websocket");
 
     let version_val = client
-        .call_raw("aria2.getVersion", (format!("token:{}", process.secret),))
+        .call_raw("aria2.getVersion", (format!("token:{}", lease.secret),))
         .await
         .expect("failed to call aria2.getVersion");
 
@@ -36,43 +36,17 @@ async fn test_aria2_process_and_websocket_rpc() {
         version_val
     );
 
-    let metalink_xml = create_metalink_xml(
-        "sample.txt",
-        &["https://example.com/sample.txt".to_string()],
-        None,
-        None,
-    );
-    let b64 = base64::engine::general_purpose::STANDARD.encode(metalink_xml.as_bytes());
-    let gid = client
-        .add_metalink(&b64, std::path::Path::new("/tmp"))
+    let uri_gid = client
+        .add_uri(
+            &["https://example.com/sample2.txt".to_string()],
+            std::path::Path::new("/tmp"),
+            "sample2.txt",
+        )
         .await
-        .expect("add_metalink should return GID");
-    assert!(!gid.is_empty(), "add_metalink should return a non-empty GID");
+        .expect("add_uri should return GID");
+    assert!(!uri_gid.is_empty(), "add_uri should return a non-empty GID");
 
-    let _ = client.shutdown().await;
-    process.kill();
-}
-
-#[test]
-fn test_create_metalink_xml() {
-    let uris = vec![
-        "https://example.com/model.onnx".to_string(),
-        "https://mirror1.com/model.onnx".to_string(),
-        "https://mirror2.com/model.onnx?a=1&b=2".to_string(),
-    ];
-    let xml = create_metalink_xml(
-        "model.onnx",
-        &uris,
-        Some(100),
-        Some("abcdef1234567890"),
-    );
-
-    assert!(xml.contains("<file name=\"model.onnx\">"));
-    assert!(xml.contains("<size>100</size>"));
-    assert!(xml.contains("<hash type=\"sha-256\">abcdef1234567890</hash>"));
-    assert!(xml.contains("<url priority=\"1\">https://example.com/model.onnx</url>"));
-    assert!(xml.contains("<url priority=\"2\">https://mirror1.com/model.onnx</url>"));
-    assert!(xml.contains("<url priority=\"2\">https://mirror2.com/model.onnx?a=1&amp;b=2</url>"));
+    lease.release().await;
 }
 
 #[test]
@@ -86,4 +60,29 @@ fn test_verify_file_hash_and_size() {
     assert!(verify_file_hash_and_size(tmp.path(), Some(11), Some(hash)));
     assert!(!verify_file_hash_and_size(tmp.path(), Some(10), Some(hash)));
     assert!(!verify_file_hash_and_size(tmp.path(), Some(11), Some("wrong_hash")));
+}
+
+#[tokio::test]
+async fn test_aria2_lease_reuse_and_shutdown() {
+    let lease1 = Aria2Lease::acquire(None)
+        .await
+        .expect("lease1 should be acquired");
+    let ws_url1 = lease1.ws_url.clone();
+    let secret1 = lease1.secret.clone();
+
+    // Concurrent second task should reuse the exact same running instance and port
+    let lease2 = Aria2Lease::acquire(None)
+        .await
+        .expect("lease2 should be acquired");
+    assert_eq!(lease2.ws_url, ws_url1);
+    assert_eq!(lease2.secret, secret1);
+
+    // Release first task, second is still active
+    lease1.release().await;
+
+    // Process must still be alive for lease2
+    assert!(lease2.check_alive().await.is_ok());
+
+    // Release second task, ref_count reaches 0 -> process shuts down
+    lease2.release().await;
 }

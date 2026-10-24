@@ -4,7 +4,6 @@ use std::{
     fs::{self, File},
     io::Cursor,
     path::{Path, PathBuf},
-    process::Command,
 };
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -13,12 +12,10 @@ const CONTENT_ENV_VARS: [&str; 2] = ["SZU_LIFE_BASE_URL", "SZU_LIFE_FALLBACK_BAS
 
 /// Tauri CLI 只把 `bundle.externalBin` 打进桌面端安装包，Android 侧不会处理它。
 /// Android 的 `nativeLibraryDir` 只包含 APK 内 `lib/<abi>/` 的条目，所以这里把侧车
-/// 二进制以 `libaria2c.so` 的形态放进 `jniLibs` 由 Gradle 打包；运行时 `dlopen`
-/// 取回嵌入的可执行文件，落到应用私有目录后再执行（Android 10+ 只允许执行私有目录
-/// 下的文件，`lib/` 是只读映射，不能直接 `execve`）。
+/// 二进制以 `libaria2c.so` 的命名放进 `jniLibs` 由 Gradle 打包。
+/// 配合 `extractNativeLibs="true"` 与 `useLegacyPackaging = true`，安装时系统会将它
+/// 解压到 `nativeLibraryDir`，运行时即可直接作为可执行程序启动。
 const ARIA2C_ANDROID_LIB_NAME: &str = "libaria2c.so";
-/// 嵌入共享库时使用的固定文件名，决定导出符号名 `_binary_payload_bin_*`。
-const PAYLOAD_FILE_NAME: &str = "payload.bin";
 
 fn load_dotenv(path: &std::path::Path) -> HashMap<String, String> {
     if !path.is_file() {
@@ -203,7 +200,7 @@ fn stage_android_sidecar_lib(manifest_dir: &Path, target: &str, sidecar: &Path) 
 
     // 目标比源文件新才复用，避免改了侧车源之后仍然打包旧内容。
     if let (Ok(dest_meta), Ok(src_time)) = (dest.metadata(), source_meta.modified()) {
-        if dest_meta.len() > 0 && matches!(dest_meta.modified(), Ok(dest_time) if dest_time >= src_time) {
+        if dest_meta.len() == source_meta.len() && matches!(dest_meta.modified(), Ok(dest_time) if dest_time >= src_time) {
             return;
         }
     }
@@ -213,17 +210,13 @@ fn stage_android_sidecar_lib(manifest_dir: &Path, target: &str, sidecar: &Path) 
             .unwrap_or_else(|e| panic!("failed to create {}: {e}", parent.display()));
     }
 
-    let bytes = build_android_sidecar_lib(sidecar, target, ARIA2C_ANDROID_LIB_NAME).unwrap_or_else(|| {
+    fs::copy(sidecar, &dest).unwrap_or_else(|e| {
         panic!(
-            "无法生成 Android 侧车库 {ARIA2C_ANDROID_LIB_NAME}：\
-             未找到 Android NDK 的 ld.lld（请设置 ANDROID_NDK_HOME 或安装 NDK）。\
-             Tauri CLI 不会为 Android 打包 `bundle.externalBin`，该库是把 {} 嵌入 APK \
-             的唯一途径，因此这里不能跳过。",
-            sidecar.display()
+            "无法复制 Android 侧车二进制 {} 到 {}: {e}",
+            sidecar.display(),
+            dest.display()
         )
     });
-
-    fs::write(&dest, bytes).unwrap_or_else(|e| panic!("failed to write {}: {e}", dest.display()));
 
     #[cfg(unix)]
     {
@@ -238,258 +231,6 @@ fn stage_android_sidecar_lib(manifest_dir: &Path, target: &str, sidecar: &Path) 
         sidecar.display()
     );
     println!("cargo:rerun-if-changed={}", sidecar.display());
-}
-
-/// 生成 Android 可加载的侧车库 `libaria2c.so`。
-///
-/// Android 只允许执行应用私有目录下的文件，而 APK 里的 `lib/<abi>/*.so` 是只读映射，
-/// 因此侧车二进制不能直接 `execve`。做法是把它嵌进一个最小的共享库，运行时
-/// `dlopen` 后复制到私有目录再执行。
-///
-/// 为什么不用 `objcopy` 打补丁：`.dynamic` 之后紧跟 `.dynstr`/`.dynsym`，没有空隙容纳
-/// 新字符串；`llvm-objcopy --rename-section` 只能把字符串写进 `.shstrtab`，而该段位于
-/// 文件末尾、无法前移到 `.dynstr` 处，所以这条路走不通。`ld.lld`（NDK 自带）则支持
-/// `--soname` 与 `-b binary`，可以一步生成带正确 DT_SONAME 的共享库：
-///
-/// - `--soname=<name>` 生成合法的 DT_SONAME，满足 Android linker 的要求；
-/// - 以 `-b binary` 引入原始可执行文件，其内容原样嵌入新库并导出
-///   `_binary_payload_bin_start/end/size`，运行时据此还原出 aria2c。
-fn build_android_sidecar_lib(payload: &Path, target: &str, lib_name: &str) -> Option<Vec<u8>> {
-    let linker = find_android_tool("ld.lld")?;
-    let emulation = match target {
-        t if t.starts_with("aarch64") => "aarch64linux",
-        t if t.starts_with("armv7") => "armelf_linux_eabi",
-        t if t.starts_with("i686") => "elf_i386",
-        t if t.starts_with("x86_64") => "elf_x86_64",
-        _ => return None,
-    };
-
-    let work_dir = std::env::temp_dir().join(format!(
-        "szu-life-sidecar-{target}-{}",
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&work_dir);
-    fs::create_dir_all(&work_dir).ok()?;
-
-    // 固定文件名，确保导出的符号名恒为 `_binary_payload_bin_*`。
-    let payload_copy = work_dir.join(PAYLOAD_FILE_NAME);
-    fs::copy(payload, &payload_copy).ok()?;
-
-    let status = Command::new(&linker)
-        .current_dir(&work_dir)
-        .args([
-            "-m",
-            emulation,
-            "-shared",
-            "--no-dynamic-linker",
-            "--no-rosegment",
-            "-z",
-            "notext",
-            "-e",
-            "0",
-            &format!("--soname={lib_name}"),
-            "-o",
-            lib_name,
-            "-b",
-            "binary",
-            PAYLOAD_FILE_NAME,
-        ])
-        .status()
-        .ok()?;
-
-    let linked = work_dir.join(lib_name);
-    if !status.success() {
-        let _ = fs::remove_dir_all(&work_dir);
-        return None;
-    }
-
-    // 只保留运行时需要的符号：`.symtab` 里只有调试信息，剥离后可缩小约 40%。
-    // `.dynsym`（含 `_binary_payload_bin_*`）不受影响。
-    if let Some(strip) = find_android_tool("llvm-strip") {
-        let _ = Command::new(strip)
-            .args(["--strip-unneeded", "-o"])
-            .arg(work_dir.join("stripped.so"))
-            .arg(&linked)
-            .status();
-    }
-    let stripped = work_dir.join("stripped.so");
-    let bytes = fs::read(if stripped.is_file() { &stripped } else { &linked }).ok();
-
-    let _ = fs::remove_dir_all(&work_dir);
-
-    bytes.filter(|candidate| {
-        Elf64Lite::parse(candidate)
-            .and_then(|elf| elf.soname())
-            .as_deref()
-            == Some(lib_name)
-    })
-}
-
-/// 极简 ELF64（小端）解析，只取侧车库打包所需的几个字段。
-struct Elf64Lite<'a> {
-    data: &'a [u8],
-    phoff: usize,
-    phentsize: usize,
-    phnum: usize,
-}
-
-const PT_LOAD: u32 = 1;
-const PT_DYNAMIC: u32 = 2;
-const DT_STRTAB: u64 = 5;
-const DT_STRSZ: u64 = 10;
-const DT_SONAME: u64 = 14;
-
-impl<'a> Elf64Lite<'a> {
-    fn parse(data: &'a [u8]) -> Option<Self> {
-        // ELF 魔数 + 64 位 + 小端（Android 各 ABI 均为小端）。
-        if data.len() < 64 || &data[..4] != b"\x7fELF" || data[4] != 2 || data[5] != 1 {
-            return None;
-        }
-        Some(Self {
-            data,
-            phoff: usize::try_from(read_u64(data, 0x20)?).ok()?,
-            phentsize: read_u16(data, 0x36)? as usize,
-            phnum: read_u16(data, 0x38)? as usize,
-        })
-    }
-
-    /// 返回 `(p_type, p_offset, p_vaddr, p_filesz)`。
-    fn segment(&self, index: usize) -> Option<(u32, u64, u64, u64)> {
-        let base = self.phoff.checked_add(index.checked_mul(self.phentsize)?)?;
-        if base + 56 > self.data.len() {
-            return None;
-        }
-        Some((
-            read_u32(self.data, base)?,
-            read_u64(self.data, base + 8)?,
-            read_u64(self.data, base + 16)?,
-            read_u64(self.data, base + 32)?,
-        ))
-    }
-
-    fn segments(&self) -> impl Iterator<Item = (u32, u64, u64, u64)> + '_ {
-        (0..self.phnum).filter_map(move |index| self.segment(index))
-    }
-
-    /// `.dynamic` 段的 `(文件偏移, 长度, 虚拟地址)`。
-    fn dynamic_segment(&self) -> Option<(usize, usize, u64)> {
-        let (_, p_offset, p_vaddr, p_filesz) = self
-            .segments()
-            .find(|(p_type, ..)| *p_type == PT_DYNAMIC)?;
-        Some((
-            usize::try_from(p_offset).ok()?,
-            usize::try_from(p_filesz).ok()?,
-            p_vaddr,
-        ))
-    }
-
-    fn dynamic_value(&self, tag: u64) -> Option<u64> {
-        let (offset, filesz, _) = self.dynamic_segment()?;
-        let bytes = self.data.get(offset..offset.checked_add(filesz)?)?;
-        bytes
-            .chunks_exact(16)
-            .map(|entry| (read_u64(entry, 0).unwrap_or(u64::MAX), read_u64(entry, 8).unwrap_or(0)))
-            .find(|(entry_tag, _)| *entry_tag == tag)
-            .map(|(_, value)| value)
-    }
-
-    /// 虚拟地址 -> 文件偏移（基于第一个 PT_LOAD 的 `p_offset - p_vaddr` 位移）。
-    fn vaddr_to_file_offset(&self, vaddr: u64) -> Option<usize> {
-        let (_, p_offset, p_vaddr, _) = self
-            .segments()
-            .find(|(p_type, _, _, _)| *p_type == PT_LOAD)?;
-        usize::try_from(p_offset.checked_add(vaddr.checked_sub(p_vaddr)?)?).ok()
-    }
-
-    /// 读取 DT_SONAME 指向的字符串。
-    ///
-    /// `DT_SONAME` 是相对 `DT_STRTAB` 的偏移，而 `DT_STRTAB` 记录的是虚拟地址，
-    /// 需要按 PT_LOAD 的 `p_offset - p_vaddr` 换算成文件偏移。
-    fn soname(&self) -> Option<String> {
-        let soname_offset = usize::try_from(self.dynamic_value(DT_SONAME)?).ok()?;
-        let strtab_at = self.dynamic_value(DT_STRTAB)?;
-        let strtab_len = usize::try_from(self.dynamic_value(DT_STRSZ)?).ok()?;
-
-        // DT_SONAME 是相对 DT_STRTAB 起始位置的偏移，换算成文件偏移后截取到 NUL。
-        let table_file = self.vaddr_to_file_offset(strtab_at)?;
-        if soname_offset >= strtab_len {
-            return None;
-        }
-        let string_at = table_file.checked_add(soname_offset)?;
-        let limit = table_file.checked_add(strtab_len)?.min(self.data.len());
-        let tail = self.data.get(string_at..limit)?;
-        let nul = tail.iter().position(|byte| *byte == 0)?;
-        if nul == 0 {
-            return None;
-        }
-        std::str::from_utf8(tail.get(..nul)?).ok().map(str::to_owned)
-    }
-}
-
-fn read_u16(data: &[u8], offset: usize) -> Option<u16> {
-    Some(u16::from_le_bytes(data.get(offset..offset + 2)?.try_into().ok()?))
-}
-
-fn read_u32(data: &[u8], offset: usize) -> Option<u32> {
-    Some(u32::from_le_bytes(data.get(offset..offset + 4)?.try_into().ok()?))
-}
-
-fn read_u64(data: &[u8], offset: usize) -> Option<u64> {
-    Some(u64::from_le_bytes(data.get(offset..offset + 8)?.try_into().ok()?))
-}
-
-/// 在 NDK（或系统 PATH）中定位 llvm 工具。
-fn find_android_tool(name: &str) -> Option<PathBuf> {
-    let mut ndk_roots: Vec<PathBuf> = Vec::new();
-    if let Some(ndk_home) = env::var_os("ANDROID_NDK_HOME").and_then(|v| v.into_string().ok()) {
-        ndk_roots.push(PathBuf::from(ndk_home));
-    }
-    if let Some(ndk_home) = env::var_os("ANDROID_NDK_ROOT").and_then(|v| v.into_string().ok()) {
-        ndk_roots.push(PathBuf::from(ndk_home));
-    }
-    for sdk_root in [
-        env::var("ANDROID_HOME").ok(),
-        env::var("ANDROID_SDK_ROOT").ok(),
-    ]
-    .into_iter()
-    .flatten()
-    {
-        for version_dir in sorted_dirs(&Path::new(&sdk_root).join("ndk")) {
-            ndk_roots.push(version_dir);
-        }
-    }
-
-    let host_triples = ["linux-x86_64", "darwin-x86_64", "darwin-arm64", "windows-x86_64"];
-    for root in ndk_roots {
-        for host in host_triples {
-            let candidate = root.join("toolchains/llvm/prebuilt").join(host).join("bin").join(name);
-            if candidate.exists() {
-                return Some(candidate);
-            }
-        }
-    }
-
-    // 兜底：发行版自带的 LLVM 工具链
-    for directory in env::split_paths(&env::var_os("PATH")?) {
-        let candidate = directory.join(name);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-fn sorted_dirs(root: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = fs::read_dir(root) else {
-        return Vec::new();
-    };
-    let mut paths: Vec<PathBuf> = entries
-        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-        .filter(|path| path.is_dir())
-        .collect();
-    paths.sort();
-    paths.reverse();
-    paths
 }
 
 fn main() {
@@ -661,24 +402,6 @@ fn main() {
 mod tests {
     use super::*;
 
-    /// 侧车库必须导出的载荷符号（与 `src/aria2/binary.rs` 保持一致）。
-    const PAYLOAD_SYMBOLS: [&str; 3] = [
-        "_binary_payload_bin_start",
-        "_binary_payload_bin_end",
-        "_binary_payload_bin_size",
-    ];
-
-    fn elf_bytes_with_soname(lib_name: &str, payload: &[u8]) -> Option<Vec<u8>> {
-        let temp = std::env::temp_dir().join(format!("sidecar-test-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&temp);
-        fs::create_dir_all(&temp).ok()?;
-        let payload_path = temp.join("aria2c");
-        fs::write(&payload_path, payload).ok()?;
-        let result = build_android_sidecar_lib(&payload_path, "aarch64-linux-android", lib_name);
-        let _ = fs::remove_dir_all(&temp);
-        result
-    }
-
     #[test]
     fn android_abi_mapping_covers_all_shipped_abis() {
         assert_eq!(android_abi_for_target("aarch64-linux-android"), Some("arm64-v8a"));
@@ -700,45 +423,25 @@ mod tests {
     }
 
     #[test]
-    fn soname_is_read_back_from_generated_library() {
-        let Some(bytes) = elf_bytes_with_soname(ARIA2C_ANDROID_LIB_NAME, b"aria2c-payload")
-        else {
-            // 缺少 Android NDK 时无法交叉链接，这类环境下跳过（CI 会安装 NDK）。
-            return;
-        };
-        let elf = Elf64Lite::parse(&bytes).expect("generated library must be a valid ELF64");
-        assert_eq!(elf.soname().as_deref(), Some(ARIA2C_ANDROID_LIB_NAME));
-        // 原始可执行文件必须整体嵌入，运行时才能还原出可执行的 aria2c。
-        assert!(
-            bytes
-                .windows(b"aria2c-payload".len())
-                .any(|window| window == b"aria2c-payload"),
-            "payload bytes must be embedded in the sidecar library"
-        );
-    }
+    fn stage_android_sidecar_lib_copies_binary() {
+        let temp_dir = std::env::temp_dir().join(format!("test-stage-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&temp_dir);
+        fs::create_dir_all(&temp_dir).unwrap();
 
-    #[test]
-    fn generated_library_reserves_dynamic_slot_for_soname() {
-        let Some(bytes) = elf_bytes_with_soname(ARIA2C_ANDROID_LIB_NAME, b"payload") else {
-            return;
-        };
-        let elf = Elf64Lite::parse(&bytes).expect("valid ELF64");
-        assert!(
-            elf.dynamic_value(DT_SONAME).is_some(),
-            "sidecar library must carry a DT_SONAME entry for the Android linker"
-        );
-        assert!(
-            elf.dynamic_value(DT_STRTAB).is_some() && elf.dynamic_value(DT_STRSZ).is_some(),
-            "sidecar library must carry DT_STRTAB + DT_STRSZ for DT_SONAME lookup"
-        );
-        // 运行时通过 dlsym 取这三个符号定位嵌入的载荷。
-        for symbol in PAYLOAD_SYMBOLS {
-            assert!(
-                bytes
-                    .windows(symbol.len())
-                    .any(|window| window == symbol.as_bytes()),
-                "generated library must export {symbol}"
-            );
-        }
+        let sidecar = temp_dir.join("aria2c-test");
+        fs::write(&sidecar, b"mock-aria2c-content").unwrap();
+
+        let manifest_dir = temp_dir.join("src-tauri");
+        fs::create_dir_all(&manifest_dir).unwrap();
+
+        stage_android_sidecar_lib(&manifest_dir, "aarch64-linux-android", &sidecar);
+
+        let target_so = manifest_dir
+            .join("gen/android/app/src/main/jniLibs/arm64-v8a/libaria2c.so");
+        assert!(target_so.is_file(), "staged libaria2c.so must exist");
+        let content = fs::read(&target_so).unwrap();
+        assert_eq!(content, b"mock-aria2c-content");
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }
