@@ -28,4 +28,14 @@
 
 另外，软件内置了一个验证码识别模型(~50MB)，支持自动识别验证码，减少手动输入验证码的麻烦。
 
+## 安装
+
 全平台(Windows + Android + Linux)支持，[下载地址](https://github.com/rinnein/your-szu-life/releases/tag/canary)
+
+### ArchLinux
+
+```bash
+yay -S your-szu-life
+# or
+paru -S your-szu-life
+```
