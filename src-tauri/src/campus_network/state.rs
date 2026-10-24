@@ -31,6 +31,7 @@ pub(crate) struct CampusNetworkStore {
     pub(super) network_overview: Mutex<NetworkOverviewView>,
     pub(super) debug_enabled: AtomicBool,
     pub(super) debug_logs: Mutex<VecDeque<DebugLogEntry>>,
+    pub(super) debug_log_subscribers: crate::ipc_channel::SubscriberPool<DebugLogEntry>,
     region_evidence: Mutex<RegionEvidence>,
 }
 
@@ -53,6 +54,7 @@ impl CampusNetworkStore {
             network_overview: Mutex::new(NetworkOverviewView::default()),
             debug_enabled: AtomicBool::new(false),
             debug_logs: Mutex::new(VecDeque::new()),
+            debug_log_subscribers: crate::ipc_channel::SubscriberPool::new(),
             region_evidence: Mutex::new(RegionEvidence::default()),
         }
     }

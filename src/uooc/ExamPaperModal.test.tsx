@@ -6,7 +6,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { ExamPaperModal } from "./ExamPaperModal";
 import type { ExamPaper, ExamTask } from "./types";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+  Channel: class MockChannel {
+    onmessage = null;
+  },
+}));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
 
 afterEach(() => {
@@ -199,6 +204,7 @@ describe("ExamPaperModal", () => {
           expect.objectContaining({ id: "q2" }),
           expect.objectContaining({ id: "q3" }),
         ]),
+        onEvent: expect.any(Object),
       });
       // 检查 q1 不在发送给 AI 的问题列表中
       const calls = vi

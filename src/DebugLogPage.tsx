@@ -2,6 +2,7 @@ import { useLogicalNavigation } from "./logical-navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { useChannelSubscription } from "./tauri-channel";
 import {
   Accordion,
   Alert,
@@ -172,6 +173,12 @@ export default function DebugLogPage() {
   useEffect(() => {
     logsLengthRef.current = logs.length;
   }, [logs.length]);
+
+  useChannelSubscription<DebugLog>("subscribe_debug_logs", (entry) => {
+    setLogs((current) => [entry, ...current]);
+    logsLengthRef.current += 1;
+    setTotalInFile((current) => current + 1);
+  });
 
   const load = async () => {
     setBusy(true);

@@ -14,6 +14,9 @@ vi.mock("./app-content/context", () => ({
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockResolvedValue(null),
+  Channel: class MockChannel {
+    onmessage = null;
+  },
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({

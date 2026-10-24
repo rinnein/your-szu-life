@@ -139,4 +139,8 @@ permissions = [
   "allow-logout-campus-network",
   "allow-get-dorm-login-logs",
   "allow-consume-dorm-login-failure-notice",
+  "allow-subscribe-debug-logs",
+  "allow-subscribe-enrollment-state",
+  "allow-subscribe-oj-state",
+  "allow-subscribe-uooc-state",
 ]

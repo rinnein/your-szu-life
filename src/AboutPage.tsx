@@ -7,6 +7,7 @@ import { BrandMark, Card, ModuleHeader, PageShell } from "./components";
 import { useAppContent } from "./app-content/context";
 import { contentTime, openPublicUrl } from "./app-content/external";
 import { clearPostponedUpdateReminder } from "./app-content/update-postpone";
+import { createTaskChannel } from "./tauri-channel";
 import { getPlatform } from "./os-info";
 import type { AppContentSnapshot, ContributorsSnapshot } from "./app-content/types";
 import packageInfo from "../package.json";
@@ -228,7 +229,21 @@ export default function AboutPage() {
       error: null,
     });
     try {
-      await invoke("start_in_app_update");
+      const channel = createTaskChannel<UpdateProgress>((progress) => {
+        setUpdateProgress(progress);
+        if (progress.status === "error") {
+          setUpdating(false);
+          toast.danger("应用内更新失败", {
+            description: progress.error ?? "下载或解压过程中发生错误",
+          });
+        } else if (progress.status === "installing" || progress.status === "ready") {
+          setUpdating(false);
+          toast.success("下载完成", {
+            description: "正在打开系统安装程序…",
+          });
+        }
+      });
+      await invoke("start_in_app_update", { onProgress: channel });
     } catch (e) {
       setUpdating(false);
       const msg = typeof e === "string" ? e : "启动更新失败";

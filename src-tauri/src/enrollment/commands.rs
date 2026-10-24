@@ -142,3 +142,16 @@ pub(crate) async fn open_enrollment_official(window: tauri::WebviewWindow) -> Re
     let service = window.state::<Store>().0.clone();
     super::official::open(service, window).await
 }
+
+#[tauri::command]
+pub(crate) fn subscribe_enrollment_state(
+    window: tauri::WebviewWindow,
+    channel: tauri::ipc::Channel<super::EnrollmentDeltaEvent>,
+) -> Result<(), String> {
+    local(&window)?;
+    let service = window.state::<Store>().0.clone();
+    let snapshot = service.snapshot();
+    let _ = channel.send(super::EnrollmentDeltaEvent::Initial(Box::new(snapshot)));
+    service.state_subscribers.subscribe(channel);
+    Ok(())
+}

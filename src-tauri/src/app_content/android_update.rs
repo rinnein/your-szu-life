@@ -10,32 +10,25 @@ pub(crate) fn set_app_handle(handle: tauri::AppHandle) {
     let _ = APP_HANDLE.set(handle);
 }
 
+pub use super::model::UpdateProgressPayload;
+
 #[cfg(target_os = "android")]
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateProgressPayload {
-    pub status: String,
-    pub progress: u32,
-    pub downloaded_bytes: u64,
-    pub total_bytes: u64,
-    pub speed_bytes_per_sec: Option<u64>,
-    pub port: Option<u16>,
-    pub num_pieces: Option<u32>,
-    pub piece_length: Option<u64>,
-    pub bitfield: Option<String>,
-    pub connections: Option<u32>,
-    pub error: Option<String>,
-}
+static UPDATE_CHANNEL: std::sync::Mutex<Option<tauri::ipc::Channel<UpdateProgressPayload>>> =
+    std::sync::Mutex::new(None);
 
 #[cfg(not(target_os = "android"))]
 pub(crate) fn start_update(
     _store: &crate::app_content::AppContentStore,
+    _channel: tauri::ipc::Channel<UpdateProgressPayload>,
 ) -> Result<(), String> {
     Err("应用内更新仅支持 Android 端".to_string())
 }
 
 #[cfg(target_os = "android")]
 fn emit_progress(payload: UpdateProgressPayload) {
+    if let Some(ref ch) = *UPDATE_CHANNEL.lock().unwrap() {
+        let _ = ch.send(payload.clone());
+    }
     if let Some(app) = APP_HANDLE.get() {
         let _ = app.emit("in-app-update-progress", payload);
     }
@@ -61,7 +54,9 @@ fn emit_error(msg: &str) {
 #[cfg(target_os = "android")]
 pub(crate) fn start_update(
     store: &crate::app_content::AppContentStore,
+    channel: tauri::ipc::Channel<UpdateProgressPayload>,
 ) -> Result<(), String> {
+    *UPDATE_CHANNEL.lock().unwrap() = Some(channel);
     use jni::JavaVM;
     use std::path::PathBuf;
 
@@ -356,7 +351,5 @@ pub extern "system" fn Java_in_rinne_your_1szu_1life_AppUpdateBridge_nativeUpdat
         error: error_str,
     };
 
-    if let Some(app) = APP_HANDLE.get() {
-        let _ = app.emit("in-app-update-progress", payload);
-    }
+    emit_progress(payload);
 }

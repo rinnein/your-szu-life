@@ -221,6 +221,7 @@ export interface QuizPanelProps {
   ) => Promise<{ answers: QuizAnswers; reviews: QuizReview[] }>;
   onSolveAi?: (
     questions: QuizQuestion[],
+    onSessionEntry?: (entry: AiSessionEntry) => void,
   ) => Promise<{ answers: QuizAnswers; reviews: QuizReview[] }>;
   onSubmit?: (answers: QuizAnswers) => Promise<void>;
   onSaveDraft?: (answers: QuizAnswers) => Promise<void>;
@@ -674,7 +675,18 @@ export function QuizPanel({
           return;
         }
 
-        const result = await onSolveAi(questionsForAi);
+        const result = await onSolveAi(questionsForAi, (entry) => {
+          setLiveSessions((prev) => {
+            const next = [...prev];
+            const idx = next.findIndex((s) => s.batchIndex === entry.batchIndex);
+            if (idx >= 0) {
+              next[idx] = entry;
+            } else {
+              next.push(entry);
+            }
+            return next;
+          });
+        });
         const nextAnswers = { ...answers };
         for (const [qid, ans] of Object.entries(result.answers)) {
           if (!confirmedQids.has(qid)) {

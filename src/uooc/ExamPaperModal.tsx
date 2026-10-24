@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { createTaskChannel } from "../tauri-channel";
 import { Alert, Button, Modal, Spinner, toast } from "@heroui/react";
 import { QuizPanel, type QuizReview } from "./QuizPanel";
 import type {
@@ -149,9 +150,16 @@ export function ExamPaperModal({
                   });
                   return { answers: res[0], reviews: res[1] };
                 }}
-                onSolveAi={async (questions: QuizQuestion[]) => {
+                onSolveAi={async (
+                  questions: QuizQuestion[],
+                  onSessionEntry?: (entry: unknown) => void,
+                ) => {
+                  const channel = createTaskChannel((entry) => {
+                    onSessionEntry?.(entry);
+                  });
                   const res = await invoke<[QuizAnswers, QuizReview[]]>("solve_uooc_paper_ai", {
                     questions,
+                    onEvent: channel,
                   });
                   return { answers: res[0], reviews: res[1] };
                 }}

@@ -14,7 +14,12 @@ import {
 vi.mock("./logical-navigation", () => ({
   useLogicalNavigation: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
 }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+  Channel: class MockChannel {
+    onmessage = null;
+  },
+}));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
 
 const ocrManifest = LOCAL_MODELS.ocr.manifest;
@@ -147,7 +152,9 @@ it("checks update and triggers update when hash does not match embedded model.js
 
   await waitFor(() => {
     expect(infoSpy).toHaveBeenCalledWith(expect.stringContaining("检测到模型配置已更新"));
-    expect(invoke).toHaveBeenCalledWith("update_ocr_model");
+    expect(invoke).toHaveBeenCalledWith("update_ocr_model", {
+      onEvent: expect.any(Object),
+    });
     expect(successSpy).toHaveBeenCalledWith(expect.stringContaining("模型更新完成"));
   });
 });
@@ -182,7 +189,9 @@ it("triggers force re-download when clicking 重新下载 / 修复", async () =>
   fireEvent.click(redownloadBtn);
 
   await waitFor(() => {
-    expect(invoke).toHaveBeenCalledWith("update_embedding_model");
+    expect(invoke).toHaveBeenCalledWith("update_embedding_model", {
+      onEvent: expect.any(Object),
+    });
   });
 });
 

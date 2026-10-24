@@ -43,18 +43,19 @@ pub(crate) async fn load_announcement_image(
 #[tauri::command]
 pub(crate) fn start_in_app_update(
     store: State<'_, AppContentStore>,
+    on_progress: tauri::ipc::Channel<super::model::UpdateProgressPayload>,
 ) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
-        super::android_update::start_update(&store)
+        super::android_update::start_update(&store, on_progress)
     }
     #[cfg(target_os = "windows")]
     {
-        super::windows_update::start_update(&store)
+        super::windows_update::start_update(&store, on_progress)
     }
     #[cfg(not(any(target_os = "android", target_os = "windows")))]
     {
-        let _ = store;
+        let _ = (store, on_progress);
         Err("当前平台不支持应用内直接下载更新".to_string())
     }
 }

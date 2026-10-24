@@ -4,6 +4,21 @@ use super::{
     service,
 };
 #[tauri::command]
+pub(crate) fn subscribe_uooc_state(
+    app: tauri::AppHandle,
+    channel: tauri::ipc::Channel<super::UoocDeltaEvent>,
+) -> Result<(), String> {
+    let service = service(&app)?;
+    let snapshot = {
+        let runtime = service.runtime.lock().unwrap();
+        super::Service::visible_snapshot(&runtime)
+    };
+    let _ = channel.send(super::UoocDeltaEvent::Initial(Box::new(snapshot)));
+    service.state_subscribers.subscribe(channel);
+    Ok(())
+}
+
+#[tauri::command]
 pub(crate) fn get_uooc_ai_config(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
@@ -533,9 +548,10 @@ pub(crate) async fn match_uooc_paper_qa(
 pub(crate) async fn solve_uooc_paper_ai(
     app: tauri::AppHandle,
     questions: Vec<super::quiz::model::Question>,
+    on_event: tauri::ipc::Channel<super::quiz::model::AiSessionEntry>,
 ) -> Result<(super::quiz::model::Answers, Vec<super::quiz::model::Review>), String> {
     let service = service(&app)?;
-    service.solve_paper_ai(questions).await
+    service.solve_paper_ai_with_channel(questions, Some(on_event)).await
 }
 
 #[tauri::command]
@@ -563,9 +579,12 @@ pub(crate) async fn get_uooc_course_title(
 }
 
 #[tauri::command]
-pub(crate) async fn build_uooc_local_bank(app: tauri::AppHandle) -> Result<usize, String> {
+pub(crate) async fn build_uooc_local_bank(
+    app: tauri::AppHandle,
+    on_progress: tauri::ipc::Channel<super::model::BankRebuildProgress>,
+) -> Result<usize, String> {
     let service = service(&app)?;
-    service.build_local_bank().await
+    service.build_local_bank_with_channel(Some(on_progress)).await
 }
 
 #[tauri::command]

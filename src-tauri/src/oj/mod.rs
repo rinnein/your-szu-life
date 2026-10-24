@@ -14,6 +14,7 @@ mod work;
 use crate::{campus_network, ocr, storage::SharedCredentialStore};
 use client::Client;
 use model::*;
+use serde::Serialize;
 use serde_json::{json, Value};
 use std::{
     collections::BTreeMap,
@@ -67,6 +68,14 @@ pub(crate) struct Service {
     credentials: SharedCredentialStore,
     path: PathBuf,
     runtime: Mutex<Runtime>,
+    pub(crate) state_subscribers: crate::ipc_channel::SubscriberPool<OjDeltaEvent>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(tag = "type", content = "data", rename_all = "camelCase")]
+pub(crate) enum OjDeltaEvent {
+    Initial(Box<Snapshot>),
+    Snapshot(Box<Snapshot>),
 }
 impl Service {
     fn new(
@@ -112,6 +121,7 @@ impl Service {
                 companion_status: CompanionStatus::default(),
                 companion_requests: BTreeMap::new(),
             }),
+            state_subscribers: crate::ipc_channel::SubscriberPool::new(),
         }))
     }
     fn entry(&self, id: &str) -> Result<Arc<Entry>, String> {
@@ -133,8 +143,10 @@ impl Service {
             && !entry.client.cancel.is_cancelled()
     }
     fn publish(&self) {
+        let snapshot = self.snapshot();
+        self.state_subscribers.broadcast(&OjDeltaEvent::Snapshot(Box::new(snapshot.clone())));
         if let Some(app) = &self.app {
-            let _ = app.emit("oj-state-changed", self.snapshot());
+            let _ = app.emit("oj-state-changed", snapshot);
         }
     }
     pub(crate) fn snapshot(&self) -> Snapshot {

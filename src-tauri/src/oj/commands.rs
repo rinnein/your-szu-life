@@ -14,6 +14,19 @@ pub(crate) fn get_oj_snapshot(
     Ok(service(&app)?.snapshot())
 }
 #[tauri::command]
+pub(crate) fn subscribe_oj_state(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    channel: tauri::ipc::Channel<super::OjDeltaEvent>,
+) -> Result<(), String> {
+    local(&window)?;
+    let service = service(&app)?;
+    let snapshot = service.snapshot();
+    let _ = channel.send(super::OjDeltaEvent::Initial(Box::new(snapshot)));
+    service.state_subscribers.subscribe(channel);
+    Ok(())
+}
+#[tauri::command]
 pub(crate) fn save_oj_site(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,

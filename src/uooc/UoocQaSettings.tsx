@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { createTaskChannel } from "../tauri-channel";
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_QA_SERVER_URL } from "./constants";
 import {
@@ -816,7 +817,10 @@ export function UoocQaSettings({
     setRebuildingBank(true);
     setRebuildModalOpen(true);
     try {
-      const count = await invoke<number>("build_uooc_local_bank");
+      const channel = createTaskChannel(() => {});
+      const count = await invoke<number>("build_uooc_local_bank", {
+        onProgress: channel,
+      });
       toast.success(`题库已重新构建完成，共收录 ${count} 道题目`);
       await refreshLocalQuestions();
     } catch (e: unknown) {

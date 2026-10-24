@@ -205,7 +205,8 @@ export function DownloadSession({
                   <span className="size-2 rounded-xs bg-primary inline-block" /> 已完成
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="size-2 rounded-xs bg-surface-secondary border border-separator/40 inline-block" /> 下载中 / 未完成
+                  <span className="size-2 rounded-xs bg-surface-secondary border border-separator/40 inline-block" />{" "}
+                  下载中 / 未完成
                 </span>
                 <span>
                   {session.numPieces

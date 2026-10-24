@@ -210,6 +210,7 @@ pub(crate) fn record(app: &tauri::AppHandle, store: &CampusNetworkStore, entry: 
         }
     }
     trim_file(&path);
+    store.debug_log_subscribers.broadcast(&entry);
     let _ = app.emit("debug-log-added", &entry);
 }
 

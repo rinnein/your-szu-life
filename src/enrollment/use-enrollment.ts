@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { createTaskChannel } from "../tauri-channel";
 import { listen } from "@tauri-apps/api/event";
 import type { Snapshot } from "./model";
 let snapshot: Snapshot | undefined;
@@ -92,6 +93,14 @@ export function useEnrollment(cacheOnly = false) {
   );
   useEffect(() => {
     if (connections++ === 0) {
+      const channel = createTaskChannel<{ type: string; data: Snapshot }>((e) => {
+        if (isSnapshot(e.data) && accepts(e.data)) {
+          lastApplied = ++sequence;
+          apply(e.data);
+        }
+      });
+      void invoke("subscribe_enrollment_state", { channel }).catch(() => {});
+
       stops = [
         listen<Snapshot>("enrollment-update", (e) => {
           if (isSnapshot(e.payload) && accepts(e.payload)) {

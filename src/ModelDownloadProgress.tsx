@@ -22,6 +22,10 @@ export type ModelDownloadProgress = {
   connections?: number;
 };
 
+export type ModelDownloadChannelEvent =
+  | { type: "status"; data: unknown }
+  | { type: "progress"; data: ModelDownloadProgress };
+
 export function useModelDownloadProgress(kind: "ocr" | "embedding") {
   const eventName =
     kind === "ocr" ? "ocr-model-download-progress" : "embedding-model-download-progress";

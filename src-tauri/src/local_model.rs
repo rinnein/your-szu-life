@@ -69,7 +69,7 @@ impl Manifest {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ModelDownloadProgress {
     pub downloaded_bytes: u64,
@@ -80,6 +80,13 @@ pub(crate) struct ModelDownloadProgress {
     pub piece_length: u64,
     pub bitfield: Option<String>,
     pub connections: u32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data", rename_all = "camelCase")]
+pub(crate) enum ModelDownloadChannelEvent {
+    Status(LocalModelStatus),
+    Progress(ModelDownloadProgress),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
@@ -260,6 +267,7 @@ impl LocalModelStore {
     pub(crate) fn download(
         &self,
         app: Option<&tauri::AppHandle>,
+        channel: Option<&tauri::ipc::Channel<ModelDownloadChannelEvent>>,
         force: bool,
     ) -> Result<(), String> {
         let _guard = self.operation.lock().unwrap();
@@ -296,6 +304,7 @@ impl LocalModelStore {
 
         let progress_event = self.progress_event;
         let app_handle_opt = app.cloned();
+        let channel_opt = channel.cloned();
 
         let aria_res = tauri::async_runtime::block_on(crate::aria2::download_with_aria2(
             app,
@@ -311,6 +320,9 @@ impl LocalModelStore {
                     bitfield: prog.bitfield,
                     connections: prog.connections,
                 };
+                if let Some(ref ch) = channel_opt {
+                    let _ = ch.send(ModelDownloadChannelEvent::Progress(payload.clone()));
+                }
                 if let Some(ref handle) = app_handle_opt {
                     let _ = handle.emit(progress_event, payload);
                 }
@@ -341,6 +353,7 @@ impl LocalModelStore {
     pub(crate) async fn download_command(
         self: Arc<Self>,
         app: tauri::AppHandle,
+        channel: Option<tauri::ipc::Channel<ModelDownloadChannelEvent>>,
         force: bool,
     ) -> Result<LocalModelStatus, String> {
         self.set_status("downloading", None, None);
@@ -348,14 +361,21 @@ impl LocalModelStore {
         downloading_status.downloaded_bytes = Some(0);
         downloading_status.total_bytes = Some(downloading_status.bytes);
         downloading_status.speed_bytes_per_sec = Some(0);
+        if let Some(ref ch) = channel {
+            let _ = ch.send(ModelDownloadChannelEvent::Status(downloading_status.clone()));
+        }
         let _ = app.emit(self.status_event, downloading_status);
 
         let background = self.clone();
         let app_handle = app.clone();
         let status_event = self.status_event;
+        let channel_clone = channel.clone();
         tokio::task::spawn_blocking(move || {
-            let result = background.download(Some(&app_handle), force);
+            let result = background.download(Some(&app_handle), channel_clone.as_ref(), force);
             let status = background.state.lock().unwrap().clone();
+            if let Some(ref ch) = channel_clone {
+                let _ = ch.send(ModelDownloadChannelEvent::Status(status.clone()));
+            }
             let _ = app_handle.emit(status_event, status);
             result
         })

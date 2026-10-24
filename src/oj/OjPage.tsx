@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { useChannelSubscription } from "../tauri-channel";
 import { listen } from "@tauri-apps/api/event";
 import {
   Button,
@@ -85,6 +86,12 @@ export default function OjPage() {
       await refresh().catch(() => {});
     }
   };
+  useChannelSubscription<{ type: "initial" | "snapshot"; data: Snapshot }>(
+    "subscribe_oj_state",
+    (event) => {
+      setSnapshot(event.data);
+    },
+  );
   useEffect(() => {
     let active = true;
     let stop: (() => void) | undefined;

@@ -21,7 +21,12 @@ import {
 } from "./types";
 
 vi.setConfig({ testTimeout: 15000 });
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+  Channel: class MockChannel {
+    onmessage = null;
+  },
+}));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 // jsdom does not implement the Web Animations API used by HeroUI tab indicators.
 Element.prototype.getAnimations = () => [];
@@ -325,7 +330,11 @@ it("displays and saves qa server url field on qa tab", async () => {
 
 it("starts local bank build immediately when entering uooc page with ready session", async () => {
   mount("/uooc");
-  await waitFor(() => expect(invoke).toHaveBeenCalledWith("build_uooc_local_bank"));
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("build_uooc_local_bank", {
+      onProgress: expect.any(Object),
+    }),
+  );
 });
 
 it("does not label a real run as a preview when the settings edit has not been saved", async () => {

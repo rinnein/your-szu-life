@@ -20,16 +20,7 @@ it("accurately parses aria2 hex bitfield into boolean array", () => {
   expect(parseAria2Bitfield("", 8)).toEqual([]);
 
   // "f0" with 8 pieces: 1111 0000 -> 4 true, 4 false
-  expect(parseAria2Bitfield("f0", 8)).toEqual([
-    true,
-    true,
-    true,
-    true,
-    false,
-    false,
-    false,
-    false,
-  ]);
+  expect(parseAria2Bitfield("f0", 8)).toEqual([true, true, true, true, false, false, false, false]);
 
   // "80" with 8 pieces: 1000 0000 -> 1 true, 7 false
   expect(parseAria2Bitfield("80", 8)).toEqual([

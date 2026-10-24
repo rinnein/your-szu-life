@@ -8,7 +8,12 @@ import { OcrModelSettings, type OcrModelStatus } from "./OcrModelSettings";
 vi.mock("./logical-navigation", () => ({
   useLogicalNavigation: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
 }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+  Channel: class MockChannel {
+    onmessage = null;
+  },
+}));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
 
 const initialStatus: OcrModelStatus = {
@@ -56,7 +61,11 @@ it("renders status and triggers OCR model download", async () => {
   const downloadBtn = screen.getByRole("button", { name: "下载模型" });
   fireEvent.click(downloadBtn);
 
-  await waitFor(() => expect(invoke).toHaveBeenCalledWith("download_ocr_model"));
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("download_ocr_model", {
+      onEvent: expect.any(Object),
+    }),
+  );
 });
 
 it("renders progress bar and real-time speed when OCR model is downloading", async () => {

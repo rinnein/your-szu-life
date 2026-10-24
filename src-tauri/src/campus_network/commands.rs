@@ -46,6 +46,14 @@ pub(crate) fn clear_debug_logs(
 }
 
 #[tauri::command]
+pub(crate) fn subscribe_debug_logs(
+    store: State<'_, CampusNetworkStore>,
+    channel: tauri::ipc::Channel<DebugLogEntry>,
+) {
+    store.debug_log_subscribers.subscribe(channel);
+}
+
+#[tauri::command]
 pub(crate) fn get_network_overview(
     store: State<'_, CampusNetworkStore>,
 ) -> Result<NetworkOverviewView, String> {

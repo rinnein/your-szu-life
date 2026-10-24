@@ -25,7 +25,12 @@ const { search, nav, auth } = vi.hoisted(() => ({
 vi.mock("../auth", () => ({ useAuth: () => auth }));
 vi.mock("@tanstack/react-router", () => ({ useSearch: () => search }));
 vi.mock("../logical-navigation", () => ({ useLogicalNavigation: () => nav }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+  Channel: class MockChannel {
+    onmessage = null;
+  },
+}));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
 vi.mock("@tauri-apps/plugin-notification", () => ({
   isPermissionGranted: vi.fn().mockResolvedValue(true),

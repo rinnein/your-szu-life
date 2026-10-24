@@ -10,7 +10,12 @@ import DebugLogPage, { copyText } from "./DebugLogPage";
 const navigate = vi.fn();
 const listeners = new Map<string, (event: { payload: unknown }) => void>();
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+  Channel: class MockChannel {
+    onmessage = null;
+  },
+}));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 vi.mock("./logical-navigation", () => ({
   useLogicalNavigation: () => ({

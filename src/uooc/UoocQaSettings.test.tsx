@@ -13,7 +13,12 @@ import {
 import { getQaAuthClient } from "./qaAuthClient";
 import { openPublicUrl } from "../app-content/external";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+  Channel: class MockChannel {
+    onmessage = null;
+  },
+}));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock("../app-content/external", () => ({ openPublicUrl: vi.fn() }));
 vi.mock("./qaAuthClient", async (importOriginal) => {
@@ -369,7 +374,11 @@ it("browses local question bank with annotated sync status and filters", async (
   const rebuildBtn = await screen.findByRole("button", { name: "重新构建题库" });
   fireEvent.click(rebuildBtn);
 
-  await waitFor(() => expect(invoke).toHaveBeenCalledWith("build_uooc_local_bank"));
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("build_uooc_local_bank", {
+      onProgress: expect.any(Object),
+    }),
+  );
   await waitFor(() =>
     expect(successSpy).toHaveBeenCalledWith("题库已重新构建完成，共收录 2 道题目"),
   );

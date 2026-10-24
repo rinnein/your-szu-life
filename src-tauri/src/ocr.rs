@@ -103,6 +103,7 @@ pub(crate) fn status() -> Result<OcrModelStatus, String> {
 
 pub(crate) async fn download_command(
     app: tauri::AppHandle,
+    channel: Option<tauri::ipc::Channel<crate::local_model::ModelDownloadChannelEvent>>,
     force: bool,
 ) -> Result<OcrModelStatus, String> {
     let service = store()?;
@@ -110,7 +111,7 @@ pub(crate) async fn download_command(
         let mut engine = service.engine.lock().map_err(|_| "验证码识别器不可用")?;
         *engine = None;
     }
-    service.model.clone().download_command(app, force).await
+    service.model.clone().download_command(app, channel, force).await
 }
 
 pub(crate) fn recognize(bytes: &[u8]) -> Result<String, String> {

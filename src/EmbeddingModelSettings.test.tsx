@@ -5,7 +5,12 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { EmbeddingModelSettings, type EmbeddingModelStatus } from "./EmbeddingModelSettings";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+  Channel: class MockChannel {
+    onmessage = null;
+  },
+}));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
 
 const initialStatus: EmbeddingModelStatus = {
@@ -53,7 +58,11 @@ it("renders status and downloads embedding model", async () => {
   const downloadBtn = screen.getByRole("button", { name: "下载 Embedding 模型" });
   fireEvent.click(downloadBtn);
 
-  await waitFor(() => expect(invoke).toHaveBeenCalledWith("download_embedding_model"));
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("download_embedding_model", {
+      onEvent: expect.any(Object),
+    }),
+  );
 });
 
 it("renders progress bar and real-time speed when embedding model is downloading", async () => {

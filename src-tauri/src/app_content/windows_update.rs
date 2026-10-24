@@ -7,44 +7,39 @@ use std::{
         OnceLock,
     },
 };
+use std::sync::Mutex;
 use tauri::Emitter;
+
+pub use super::model::UpdateProgressPayload;
 
 pub(crate) static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 static IS_UPDATING: AtomicBool = AtomicBool::new(false);
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UpdateProgressPayload {
-    pub status: String,
-    pub progress: u32,
-    pub downloaded_bytes: u64,
-    pub total_bytes: u64,
-    pub speed_bytes_per_sec: Option<u64>,
-    pub port: Option<u16>,
-    pub num_pieces: Option<u32>,
-    pub piece_length: Option<u64>,
-    pub bitfield: Option<String>,
-    pub connections: Option<u32>,
-    pub error: Option<String>,
-}
+static UPDATE_CHANNEL: Mutex<Option<tauri::ipc::Channel<UpdateProgressPayload>>> = Mutex::new(None);
 
 pub(crate) fn set_app_handle(handle: tauri::AppHandle) {
     let _ = APP_HANDLE.set(handle);
 }
 
 pub(crate) fn emit_progress(payload: UpdateProgressPayload) {
+    if let Some(ref ch) = *UPDATE_CHANNEL.lock().unwrap() {
+        let _ = ch.send(payload.clone());
+    }
     if let Some(app) = APP_HANDLE.get() {
         let _ = app.emit("in-app-update-progress", payload);
     }
 }
 
-pub(crate) fn start_update(store: &AppContentStore) -> Result<(), String> {
+pub(crate) fn start_update(
+    store: &AppContentStore,
+    channel: tauri::ipc::Channel<UpdateProgressPayload>,
+) -> Result<(), String> {
     if IS_UPDATING
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
         return Err("更新任务已在进行中".to_string());
     }
+    *UPDATE_CHANNEL.lock().unwrap() = Some(channel);
 
     let snapshot = store.snapshot();
     let update = snapshot.update.data.ok_or_else(|| {
@@ -78,6 +73,7 @@ pub(crate) fn start_update(store: &AppContentStore) -> Result<(), String> {
                 error: Some(err_msg),
             });
         }
+        let _ = UPDATE_CHANNEL.lock().unwrap().take();
     });
 
     Ok(())

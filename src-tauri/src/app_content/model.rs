@@ -252,6 +252,22 @@ pub(crate) struct Contributor {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct UpdateProgressPayload {
+    pub status: String,
+    pub progress: u32,
+    pub downloaded_bytes: u64,
+    pub total_bytes: u64,
+    pub speed_bytes_per_sec: Option<u64>,
+    pub port: Option<u16>,
+    pub num_pieces: Option<u32>,
+    pub piece_length: Option<u64>,
+    pub bitfield: Option<String>,
+    pub connections: Option<u32>,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct ContributorList {
     pub contributors: Vec<Contributor>,
     pub truncated: bool,

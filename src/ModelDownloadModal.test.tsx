@@ -13,7 +13,12 @@ const { nav } = vi.hoisted(() => ({
   nav: { push: vi.fn(), replace: vi.fn(), back: vi.fn() },
 }));
 vi.mock("./logical-navigation", () => ({ useLogicalNavigation: () => nav }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+  Channel: class MockChannel {
+    onmessage = null;
+  },
+}));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 
 let ocrProgressListener: EventCallback<ModelDownloadProgress> | undefined;
@@ -92,7 +97,9 @@ it("renders OCR model guidance modal and downloads on demand", async () => {
   fireEvent.click(downloadBtn);
 
   await waitFor(() => {
-    expect(invoke).toHaveBeenCalledWith("download_ocr_model");
+    expect(invoke).toHaveBeenCalledWith("download_ocr_model", {
+      onEvent: expect.any(Object),
+    });
     expect(onSuccess).toHaveBeenCalled();
   });
 });

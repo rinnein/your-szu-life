@@ -5,7 +5,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEnrollment } from "./use-enrollment";
 import { snapshotFixture } from "./testing/fixtures";
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+  Channel: class MockChannel {
+    onmessage = null;
+  },
+}));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 const deferred = () => {
   let resolve!: (v: unknown) => void;

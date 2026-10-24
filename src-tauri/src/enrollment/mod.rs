@@ -21,6 +21,7 @@ mod session;
 mod tests;
 use model::*;
 use protocol::{Error, Failure, Result};
+use serde::Serialize;
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
@@ -50,6 +51,14 @@ pub struct Service {
     session_serial: AtomicU64,
     official_windows: Mutex<HashMap<Mode, String>>,
     official_opener: tokio::sync::Mutex<()>,
+    pub(crate) state_subscribers: crate::ipc_channel::SubscriberPool<EnrollmentDeltaEvent>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(tag = "type", content = "data", rename_all = "camelCase")]
+pub(crate) enum EnrollmentDeltaEvent {
+    Initial(Box<Snapshot>),
+    Snapshot(Box<Snapshot>),
 }
 pub(crate) fn initialize(
     app: &tauri::AppHandle,
@@ -77,6 +86,7 @@ pub(crate) fn initialize(
         session_serial: AtomicU64::new(chrono::Utc::now().timestamp_millis() as u64),
         official_windows: Mutex::new(HashMap::new()),
         official_opener: tokio::sync::Mutex::new(()),
+        state_subscribers: crate::ipc_channel::SubscriberPool::new(),
     });
     platform::initialize(&service);
     app.manage(Store(service.clone()));
@@ -250,7 +260,9 @@ impl Service {
         self.state.lock().unwrap().clone()
     }
     fn publish(&self) {
-        let _ = self.app.emit("enrollment-update", self.snapshot());
+        let snapshot = self.snapshot();
+        self.state_subscribers.broadcast(&EnrollmentDeltaEvent::Snapshot(Box::new(snapshot.clone())));
+        let _ = self.app.emit("enrollment-update", snapshot);
     }
     fn message(&self, message: &str) {
         let mut state = self.state.lock().unwrap();

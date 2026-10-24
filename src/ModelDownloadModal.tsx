@@ -6,7 +6,12 @@ import { useLogicalNavigation } from "./logical-navigation";
 import { formatModelSize } from "./LocalModelSettings";
 import { useOcrModelStatus, type OcrModelStatus } from "./OcrModelSettings";
 import { useEmbeddingModelStatus, type EmbeddingModelStatus } from "./EmbeddingModelSettings";
-import { DownloadSession, useModelDownloadProgress } from "./ModelDownloadProgress";
+import {
+  DownloadSession,
+  useModelDownloadProgress,
+  type ModelDownloadChannelEvent,
+} from "./ModelDownloadProgress";
+import { createTaskChannel } from "./tauri-channel";
 import ocrModelManifest from "../src-tauri/resources/ocr/ddddocr/model.json";
 import embeddingModelManifest from "../src-tauri/resources/embedding/bge-small-zh-v1.5/model.json";
 
@@ -60,7 +65,7 @@ export function ModelDownloadModal({
   const status: OcrModelStatus | EmbeddingModelStatus | undefined =
     kind === "ocr" ? ocrStatus : embeddingStatus;
 
-  const { progress } = useModelDownloadProgress(kind);
+  const { progress, setProgress } = useModelDownloadProgress(kind);
 
   const [downloading, setDownloading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>();
@@ -79,7 +84,12 @@ export function ModelDownloadModal({
     setDownloading(true);
     setErrorMessage(undefined);
     try {
-      await invoke(info.downloadCommand);
+      const channel = createTaskChannel<ModelDownloadChannelEvent>((event) => {
+        if (event.type === "progress") {
+          setProgress(event.data);
+        }
+      });
+      await invoke(info.downloadCommand, { onEvent: channel });
       onSuccess?.();
     } catch (error) {
       setErrorMessage(String(error));

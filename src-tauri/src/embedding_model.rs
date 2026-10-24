@@ -88,10 +88,11 @@ pub(crate) fn status() -> Result<EmbeddingModelStatus, String> {
 
 pub(crate) async fn download_command(
     app: tauri::AppHandle,
+    channel: Option<tauri::ipc::Channel<crate::local_model::ModelDownloadChannelEvent>>,
     force: bool,
 ) -> Result<EmbeddingModelStatus, String> {
     let store = store()?;
-    store.download_command(app, force).await
+    store.download_command(app, channel, force).await
 }
 
 #[cfg(test)]

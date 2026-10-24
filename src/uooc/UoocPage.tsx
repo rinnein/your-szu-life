@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
+import { createTaskChannel, useChannelSubscription } from "../tauri-channel";
 import { listen } from "@tauri-apps/api/event";
 import {
   Accordion,
@@ -168,6 +169,15 @@ export default function UoocPage() {
   });
   const apply = (next: UoocSnapshot) => setSnapshot((old) => newerSnapshot(old, next));
 
+  useChannelSubscription<{ type: "initial" | "snapshot"; data: UoocSnapshot }>(
+    "subscribe_uooc_state",
+    (event) => {
+      if (isUoocSnapshot(event.data)) {
+        apply(event.data);
+      }
+    },
+  );
+
   useEffect(() => {
     let mounted = true;
     let stop: (() => void) | undefined;
@@ -185,7 +195,9 @@ export default function UoocPage() {
           if (isUoocSnapshot(next)) {
             apply(next);
             if (next.session === "ready") {
-              void invoke("build_uooc_local_bank").catch(() => {});
+              void invoke("build_uooc_local_bank", {
+                onProgress: createTaskChannel(() => {}),
+              }).catch(() => {});
               const progress = await invoke("refresh_uooc_progress", { courseIds: [] });
               if (mounted && isUoocSnapshot(progress)) apply(progress);
             }
@@ -203,7 +215,9 @@ export default function UoocPage() {
 
   useEffect(() => {
     if (snapshot?.session === "ready") {
-      void invoke("build_uooc_local_bank").catch(() => {});
+      void invoke("build_uooc_local_bank", {
+        onProgress: createTaskChannel(() => {}),
+      }).catch(() => {});
     }
   }, [snapshot?.session]);
 

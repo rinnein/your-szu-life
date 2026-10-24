@@ -16,6 +16,8 @@ mod runner;
 mod session;
 mod user_agent;
 
+use serde::Serialize;
+
 use crate::storage::SharedCredentialStore;
 use client::{Client, Error};
 use duration::DurationCache;
@@ -72,6 +74,16 @@ pub(super) struct Service {
     discussion_lock: tokio::sync::Mutex<()>,
     pub(super) bank_building: Arc<tokio::sync::Mutex<()>>,
     pub(crate) qa_db: tokio::sync::OnceCell<quiz::db::QaDatabase>,
+    bank_channel: Mutex<Option<tauri::ipc::Channel<model::BankRebuildProgress>>>,
+    ai_channel: Mutex<Option<tauri::ipc::Channel<quiz::model::AiSessionEntry>>>,
+    pub(super) state_subscribers: crate::ipc_channel::SubscriberPool<UoocDeltaEvent>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(tag = "type", content = "data", rename_all = "camelCase")]
+pub(crate) enum UoocDeltaEvent {
+    Initial(Box<model::Snapshot>),
+    Snapshot(Box<model::Snapshot>),
 }
 impl Service {
     fn new(
@@ -127,6 +139,9 @@ impl Service {
             discussion_lock: tokio::sync::Mutex::new(()),
             bank_building: Arc::new(tokio::sync::Mutex::new(())),
             qa_db: tokio::sync::OnceCell::new(),
+            bank_channel: Mutex::new(None),
+            ai_channel: Mutex::new(None),
+            state_subscribers: crate::ipc_channel::SubscriberPool::new(),
             permits: RwLock::new(Arc::new(Semaphore::new(saved.settings.concurrency))),
             client: RwLock::new(Arc::new(Client::new(jar)?)),
             refresh_lock: tokio::sync::Mutex::new(()),
@@ -227,15 +242,23 @@ impl Service {
                     }
                 });
             }
-            let _ = app.emit("uooc-state-changed", Self::visible_snapshot(runtime));
+            let snapshot = Self::visible_snapshot(runtime);
+            self.state_subscribers.broadcast(&UoocDeltaEvent::Snapshot(Box::new(snapshot.clone())));
+            let _ = app.emit("uooc-state-changed", snapshot);
         }
     }
     pub(crate) fn emit_bank_progress(&self, progress: &model::BankRebuildProgress) {
+        if let Some(ref ch) = *self.bank_channel.lock().unwrap() {
+            let _ = ch.send(progress.clone());
+        }
         if let Some(app) = &self.app {
             let _ = app.emit("uooc-bank-rebuild-progress", progress);
         }
     }
     pub(crate) fn emit_ai_session(&self, entry: &quiz::model::AiSessionEntry) {
+        if let Some(ref ch) = *self.ai_channel.lock().unwrap() {
+            let _ = ch.send(entry.clone());
+        }
         if let Some(app) = &self.app {
             let _ = app.emit("uooc-ai-session-progress", entry);
         }
@@ -473,6 +496,15 @@ impl Service {
     }
     pub(crate) async fn build_local_bank(self: &Arc<Self>) -> Result<usize, String> {
         quiz::build_local_bank(self).await
+    }
+    pub(crate) async fn build_local_bank_with_channel(
+        self: &Arc<Self>,
+        channel: Option<tauri::ipc::Channel<model::BankRebuildProgress>>,
+    ) -> Result<usize, String> {
+        *self.bank_channel.lock().unwrap() = channel;
+        let res = quiz::build_local_bank(self).await;
+        let _ = self.bank_channel.lock().unwrap().take();
+        res
     }
     pub(crate) async fn full_qa_sync(self: &Arc<Self>) {
         let (_account_id, cids, qa_server_url) = {
@@ -1638,6 +1670,17 @@ impl Service {
             }
         }
         Ok((answers, reviews))
+    }
+
+    pub(crate) async fn solve_paper_ai_with_channel(
+        &self,
+        questions: Vec<quiz::model::Question>,
+        channel: Option<tauri::ipc::Channel<quiz::model::AiSessionEntry>>,
+    ) -> Result<(quiz::model::Answers, Vec<quiz::model::Review>), String> {
+        *self.ai_channel.lock().unwrap() = channel;
+        let res = self.solve_paper_ai(questions).await;
+        let _ = self.ai_channel.lock().unwrap().take();
+        res
     }
 
     pub(crate) async fn list_evals(&self, cid: Option<&str>) -> Result<Vec<PeerEvalTask>, String> {

@@ -4,7 +4,12 @@ import { useEffect, useState } from "react";
 import { Alert, Button, Card, Chip, Spinner, toast } from "@heroui/react";
 import { LuCircleCheck, LuCpu, LuDownload, LuRefreshCw, LuTriangleAlert } from "react-icons/lu";
 import { useLogicalNavigation } from "./logical-navigation";
-import { ModelProgressBar, useModelDownloadProgress } from "./ModelDownloadProgress";
+import {
+  ModelProgressBar,
+  useModelDownloadProgress,
+  type ModelDownloadChannelEvent,
+} from "./ModelDownloadProgress";
+import { createTaskChannel } from "./tauri-channel";
 import ocrModelManifest from "../src-tauri/resources/ocr/ddddocr/model.json";
 import embeddingModelManifest from "../src-tauri/resources/embedding/bge-small-zh-v1.5/model.json";
 
@@ -150,7 +155,7 @@ export function LocalModelCard({
   const navigation = useOptionalLogicalNavigation();
   const meta = LOCAL_MODELS[kind];
   const status = useLocalModelStatus(kind);
-  const { progress } = useModelDownloadProgress(kind);
+  const { progress, setProgress } = useModelDownloadProgress(kind);
 
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>();
@@ -167,7 +172,14 @@ export function LocalModelCard({
     setBusy(true);
     setMessage(undefined);
     try {
-      await invoke<LocalModelStatus>(isUpdate ? meta.updateCommand : meta.downloadCommand);
+      const channel = createTaskChannel<ModelDownloadChannelEvent>((event) => {
+        if (event.type === "progress") {
+          setProgress(event.data);
+        }
+      });
+      await invoke<LocalModelStatus>(isUpdate ? meta.updateCommand : meta.downloadCommand, {
+        onEvent: channel,
+      });
       toast.success(isUpdate ? `${meta.name} 重新下载完成` : `${meta.name} 下载完成`);
       if (autoReturn && navigation) await navigation.back();
     } catch (error) {
@@ -200,7 +212,12 @@ export function LocalModelCard({
 
       if (installedSha && installedSha !== expectedSha) {
         toast.info(`检测到模型配置已更新（内嵌哈希不匹配），正在开始下载更新...`);
-        await invoke<LocalModelStatus>(meta.updateCommand);
+        const channel = createTaskChannel<ModelDownloadChannelEvent>((event) => {
+          if (event.type === "progress") {
+            setProgress(event.data);
+          }
+        });
+        await invoke<LocalModelStatus>(meta.updateCommand, { onEvent: channel });
         toast.success(`${meta.name} 模型更新完成`);
         if (autoReturn && navigation) await navigation.back();
       } else {

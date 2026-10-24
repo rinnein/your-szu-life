@@ -22,6 +22,9 @@ vi.mock("@tanstack/react-router", () => ({
 const mockInvoke = vi.fn().mockResolvedValue(null);
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
+  Channel: class MockChannel {
+    onmessage = null;
+  },
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -155,7 +158,9 @@ describe("UpdateNotice dialog", () => {
     const updateBtn = await screen.findByRole("button", { name: "下载并安装" });
     fireEvent.click(updateBtn);
 
-    expect(mockInvoke).toHaveBeenCalledWith("start_in_app_update");
+    expect(mockInvoke).toHaveBeenCalledWith("start_in_app_update", {
+      onProgress: expect.any(Object),
+    });
   });
 
   it("Android platform: renders in-app update and browser download buttons", async () => {
