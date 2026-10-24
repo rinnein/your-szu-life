@@ -51,6 +51,10 @@ fn command_names_match_handlers_manifest_and_local_permissions() {
     assert_eq!(commands, handlers);
     let manifest: BTreeSet<_> = include_str!("../build.rs")
         .lines()
+        // 只解析 `AppManifest::new().commands(&[...])` 中的条目，
+        // 避免把 build.rs 里其它字符串（侧车二进制、链接参数等）也算进来。
+        .skip_while(|line| !line.contains("AppManifest::new().commands("))
+        .take_while(|line| !line.trim_start().starts_with("])"))
         .filter_map(|line| line.trim().strip_prefix('"'))
         .filter_map(|line| line.split_once('"').map(|(name, _)| name.to_owned()))
         .collect();

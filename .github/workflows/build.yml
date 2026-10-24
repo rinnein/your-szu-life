@@ -148,6 +148,20 @@ jobs:
             "build-tools;35.0.0" \
             "ndk;27.0.12077973"
 
+      # build.rs 用 NDK 自带的 ld.lld 把 aria2c 侧车二进制打包成 APK 内的
+      # lib/<abi>/libaria2c.so（Tauri CLI 不为 Android 处理 externalBin）。
+      # 这里显式导出 NDK 路径，让构建脚本稳定找到工具链。
+      - name: Export Android NDK path
+        shell: bash
+        run: |
+          ndk_dir="$ANDROID_HOME/ndk/27.0.12077973"
+          test -d "$ndk_dir"
+          {
+            echo "ANDROID_NDK_HOME=$ndk_dir"
+            echo "ANDROID_NDK_ROOT=$ndk_dir"
+            echo "NDK_HOME=$ndk_dir"
+          } >> "$GITHUB_ENV"
+
       - name: Set up Rust targets
         uses: dtolnay/rust-toolchain@stable
         with:
