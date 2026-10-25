@@ -179,3 +179,42 @@ it("renders breakpoint resumed badge and total active tasks count", () => {
   expect(screen.getByText(/已恢复 19.1 MB/)).toBeInTheDocument();
   expect(screen.getByText("RPC :54001")).toBeInTheDocument();
 });
+
+it("distinguishes started (light green) and not-yet-started (white) pieces", () => {
+  const { rerender } = render(
+    <DownloadSession
+      title="下载任务"
+      defaultExpanded
+      session={{ downloadedBytes: 0, totalBytes: 2097152, numPieces: 4, bitfield: "00" }}
+    />,
+  );
+
+  // 未产生任何下载进度：所有分片应显示为“未开始下载”
+  let blocks = screen
+    .getByRole("region", { name: "分片下载状态矩阵" })
+    .querySelectorAll("[data-piece-state]");
+  expect(blocks).toHaveLength(4);
+  expect(Array.from(blocks).every((el) => el.getAttribute("data-piece-state") === "pending")).toBe(
+    true,
+  );
+
+  rerender(
+    <DownloadSession
+      title="下载任务"
+      defaultExpanded
+      session={{ downloadedBytes: 1048576, totalBytes: 2097152, numPieces: 4, bitfield: "80" }}
+    />,
+  );
+
+  // 已完成 → done，其余未完成但有进度 → downloading
+  blocks = screen
+    .getByRole("region", { name: "分片下载状态矩阵" })
+    .querySelectorAll("[data-piece-state]");
+  const states = Array.from(blocks).map((el) => el.getAttribute("data-piece-state"));
+  expect(states).toEqual(["done", "downloading", "downloading", "downloading"]);
+
+  // 图例同步显示三态
+  expect(screen.getByText("未开始下载")).toBeInTheDocument();
+  expect(screen.getByText("下载中")).toBeInTheDocument();
+  expect(screen.getByText("已完成")).toBeInTheDocument();
+});

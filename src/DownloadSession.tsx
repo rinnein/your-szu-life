@@ -89,6 +89,10 @@ export function DownloadSession({
 
   const hasPieceDetails = Boolean(session.numPieces && session.numPieces > 0);
 
+  // 未完成分片的显示状态：有实际下载进度即为“下载中”，否则视为“未开始下载”。
+  // 注意：aria2 的 bitfield 只标记已完成分片，无法区分“其中”的具体分片，因此按整体下载进度推断。
+  const hasStarted = session.downloadedBytes > 0 || completedPiecesCount > 0;
+
   return (
     <div
       data-testid="aria2-download-session"
@@ -209,25 +213,42 @@ export function DownloadSession({
                 role="region"
                 aria-label="分片下载状态矩阵"
               >
-                {pieces.map((isDone, idx) => (
-                  <div
-                    key={`piece-${idx}`}
-                    title={`分片 #${idx + 1}: ${isDone ? "已完成" : "下载中/待分配"}`}
-                    className={`h-2.5 rounded-xs transition-colors duration-150 ${
-                      isDone
-                        ? "bg-primary shadow-xs"
-                        : "bg-surface-secondary/70 border border-separator/40"
-                    }`}
-                  />
-                ))}
+                {pieces.map((isDone, idx) => {
+                  const state: "done" | "downloading" | "pending" = isDone
+                    ? "done"
+                    : hasStarted
+                      ? "downloading"
+                      : "pending";
+                  const stateLabel =
+                    state === "done" ? "已完成" : state === "downloading" ? "下载中" : "未开始下载";
+                  return (
+                    <div
+                      key={`piece-${idx}`}
+                      title={`分片 #${idx + 1}: ${stateLabel}`}
+                      data-piece-state={state}
+                      className={`h-2.5 rounded-xs transition-colors duration-150 ${
+                        state === "done"
+                          ? "border border-success bg-success shadow-xs"
+                          : state === "downloading"
+                            ? "border border-success/50 bg-success-soft"
+                            : "border border-separator/50 bg-surface/60 dark:bg-surface-secondary/60"
+                      }`}
+                    />
+                  );
+                })}
               </div>
-              <div className="flex items-center justify-between text-[10px] font-mono text-muted">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[10px] font-mono text-muted">
                 <span className="flex items-center gap-1">
-                  <span className="size-2 rounded-xs bg-primary inline-block" /> 已完成
+                  <span className="size-2 rounded-xs border border-separator/50 bg-surface/60 inline-block" />{" "}
+                  未开始下载
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="size-2 rounded-xs bg-surface-secondary border border-separator/40 inline-block" />{" "}
-                  下载中 / 未完成
+                  <span className="size-2 rounded-xs border border-success/50 bg-success-soft inline-block" />{" "}
+                  下载中
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="size-2 rounded-xs border border-success bg-success inline-block" />{" "}
+                  已完成
                 </span>
                 <span>
                   {session.numPieces
