@@ -35,7 +35,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Vite+
-        uses: voidzero-dev/setup-vp@v1.21.2
+        uses: voidzero-dev/setup-vp@v1.22.0
         with:
           cache: true
           run-install: false
@@ -113,7 +113,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Vite+
-        uses: voidzero-dev/setup-vp@v1.21.2
+        uses: voidzero-dev/setup-vp@v1.22.0
         with:
           cache: true
           run-install: false
@@ -259,7 +259,7 @@ jobs:
 
   canary:
     name: Publish canary prerelease
-    needs: [desktop, android]
+    needs: [ desktop, android ]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -373,7 +373,7 @@ jobs:
   # 长期 PAT。任一凭据缺失时跳过派发，不影响 release 本身的发布。
   aur:
     name: Publish to AUR
-    needs: [canary]
+    needs: [ canary ]
     # 只让 main 的构建去动 AUR：本 workflow 是 on: push（无分支过滤），
     # 其它分支的构建不该改写 AUR 上的正式包。
     if: github.ref == 'refs/heads/main'
