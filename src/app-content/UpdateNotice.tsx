@@ -2,26 +2,29 @@ import { useEffect, useState } from "react";
 import { useRouterState } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Alert, AlertDialog, Button, Label, ProgressBar, Spinner, toast } from "@heroui/react";
+import { Alert, AlertDialog, Button, Spinner, toast } from "@heroui/react";
 import { LuArrowUpRight, LuDownload } from "react-icons/lu";
 import { useAppContent } from "./context";
 import { openPublicUrl } from "./external";
 import { getPlatform } from "../os-info";
 import { isUpdatePostponed, postponeUpdateReminder } from "./update-postpone";
 import { createTaskChannel } from "../tauri-channel";
-
-function formatBytes(bytes: number): string {
-  if (bytes <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
-}
+import { DownloadSession } from "../DownloadSession";
 
 type UpdateProgress = {
   status: "downloading" | "installing" | "ready" | "error";
   progress: number;
   downloadedBytes: number;
   totalBytes: number;
+  speedBytesPerSec?: number;
+  port?: number;
+  numPieces?: number;
+  pieceLength?: number;
+  bitfield?: string | null;
+  connections?: number;
+  isResumed?: boolean;
+  resumedBytes?: number;
+  totalActiveTasks?: number;
   error: string | null;
 };
 
@@ -177,26 +180,26 @@ export function UpdateNotice() {
               )}
 
               {isDownloading && updateProgress && (
-                <div className="grid gap-2 pt-2">
-                  <ProgressBar value={updateProgress.progress} aria-label="更新包下载进度">
-                    <Label>
-                      正在下载新版本… {updateProgress.progress}%
-                      {updateProgress.downloadedBytes > 0 && (
-                        <span className="text-muted">
-                          {" "}
-                          ({formatBytes(updateProgress.downloadedBytes)}
-                          {updateProgress.totalBytes > 0
-                            ? ` / ${formatBytes(updateProgress.totalBytes)}`
-                            : ""}
-                          )
-                        </span>
-                      )}
-                    </Label>
-                    <ProgressBar.Output />
-                    <ProgressBar.Track>
-                      <ProgressBar.Fill />
-                    </ProgressBar.Track>
-                  </ProgressBar>
+                <div className="pt-2">
+                  <DownloadSession
+                    title={`正在下载新版本 ${latest}...`}
+                    defaultExpanded
+                    session={{
+                      downloadedBytes: updateProgress.downloadedBytes,
+                      totalBytes: updateProgress.totalBytes,
+                      speedBytesPerSec: updateProgress.speedBytesPerSec,
+                      port: updateProgress.port,
+                      numPieces: updateProgress.numPieces,
+                      pieceLength: updateProgress.pieceLength,
+                      bitfield: updateProgress.bitfield,
+                      connections: updateProgress.connections,
+                      isResumed: updateProgress.isResumed,
+                      resumedBytes: updateProgress.resumedBytes,
+                      totalActiveTasks: updateProgress.totalActiveTasks,
+                      status: updateProgress.status,
+                      error: updateProgress.error,
+                    }}
+                  />
                 </div>
               )}
 

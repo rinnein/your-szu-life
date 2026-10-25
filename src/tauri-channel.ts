@@ -8,7 +8,7 @@ export type ChannelLike<T> = {
 
 function getChannelClass(): (new <U>() => ChannelLike<U>) | undefined {
   try {
-    return (tauriCore as { Channel?: new <U>() => ChannelLike<U> }).Channel;
+    return (tauriCore as unknown as { Channel?: new <U>() => ChannelLike<U> }).Channel;
   } catch {
     return undefined;
   }

@@ -7,12 +7,15 @@ export interface DownloadSessionData {
   totalBytes: number;
   speedBytesPerSec?: number;
   port?: number;
-  numPieces?: number;
-  pieceLength?: number;
-  bitfield?: string | null;
+  totalActiveTasks?: number;
   connections?: number;
   status?: string;
   error?: string | null;
+  numPieces?: number;
+  pieceLength?: number;
+  bitfield?: string | null;
+  isResumed?: boolean;
+  resumedBytes?: number;
 }
 
 export function formatDownloadSpeed(bytesPerSec?: number): string {
@@ -91,7 +94,7 @@ export function DownloadSession({
       data-testid="aria2-download-session"
       className={`grid w-full min-w-0 max-w-full gap-3 rounded-2xl border border-separator/60 bg-surface/90 p-3.5 shadow-xs backdrop-blur-sm ${className}`}
     >
-      {/* Session 标头：活动指示点 + 会话标题 + 端口 / 线程标签 */}
+      {/* Session 标头：活动指示点 + 会话标题 + 端口 / 任务数 / 线程 / 续传标签 */}
       <div className="flex flex-wrap items-center justify-between gap-2 min-w-0">
         <div className="flex items-center gap-2 min-w-0 overflow-hidden">
           <span className="relative flex size-2 shrink-0" aria-hidden="true">
@@ -106,7 +109,17 @@ export function DownloadSession({
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+          {session.isResumed && (
+            <Chip
+              size="sm"
+              variant="soft"
+              color="success"
+              className="font-mono text-[11px] font-semibold"
+            >
+              断点续传已恢复
+            </Chip>
+          )}
           {session.port != null && session.port > 0 && (
             <Chip
               size="sm"
@@ -115,6 +128,11 @@ export function DownloadSession({
               className="font-mono text-[11px] font-semibold"
             >
               RPC :{session.port}
+            </Chip>
+          )}
+          {session.totalActiveTasks != null && session.totalActiveTasks > 1 && (
+            <Chip size="sm" variant="soft" color="default" className="font-mono text-[11px]">
+              {session.totalActiveTasks} 个任务并发
             </Chip>
           )}
           {session.connections != null && session.connections > 0 && (
@@ -130,6 +148,9 @@ export function DownloadSession({
         <div className="flex items-center justify-between text-xs min-w-0 gap-2">
           <span className="font-mono text-muted truncate">
             {formatBytes(session.downloadedBytes)} / {formatBytes(session.totalBytes)}
+            {session.isResumed && session.resumedBytes && session.resumedBytes > 0
+              ? ` (已恢复 ${formatBytes(session.resumedBytes)})`
+              : ""}
           </span>
           <span className="font-mono font-medium text-foreground shrink-0">{percent}%</span>
         </div>
@@ -235,6 +256,9 @@ export function ModelProgressBar({
   pieceLength,
   bitfield,
   connections,
+  isResumed,
+  resumedBytes,
+  totalActiveTasks,
 }: {
   downloadedBytes: number;
   totalBytes: number;
@@ -245,6 +269,9 @@ export function ModelProgressBar({
   pieceLength?: number;
   bitfield?: string | null;
   connections?: number;
+  isResumed?: boolean;
+  resumedBytes?: number;
+  totalActiveTasks?: number;
 }) {
   return (
     <DownloadSession
@@ -258,6 +285,9 @@ export function ModelProgressBar({
         pieceLength,
         bitfield,
         connections,
+        isResumed,
+        resumedBytes,
+        totalActiveTasks,
       }}
     />
   );

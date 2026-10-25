@@ -20,6 +20,9 @@ export type ModelDownloadProgress = {
   pieceLength?: number;
   bitfield?: string | null;
   connections?: number;
+  isResumed?: boolean;
+  resumedBytes?: number;
+  totalActiveTasks?: number;
 };
 
 export type ModelDownloadChannelEvent =

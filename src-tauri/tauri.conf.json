@@ -26,9 +26,7 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": [
-          "your-szu-life"
-        ]
+        "schemes": ["your-szu-life"]
       }
     }
   },
@@ -39,9 +37,7 @@
     "homepage": "https://github.com/rinnein/your-szu-life",
     "category": "Utility",
     "shortDescription": "泥深 - 你的SZU助手",
-    "externalBin": [
-      "binaries/aria2c"
-    ],
+    "externalBin": ["binaries/aria2c"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

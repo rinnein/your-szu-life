@@ -115,3 +115,67 @@ it("toggles expandable piece details and renders piece block matrix", () => {
   fireEvent.click(toggleBtn);
   expect(screen.queryByRole("region", { name: "分片下载状态矩阵" })).not.toBeInTheDocument();
 });
+
+it("shows piece block matrix immediately when defaultExpanded is set", () => {
+  render(
+    <DownloadSession
+      title="下载任务"
+      defaultExpanded
+      session={{
+        downloadedBytes: 1048576,
+        totalBytes: 2097152,
+        speedBytesPerSec: 1048576,
+        numPieces: 4,
+        pieceLength: 524288,
+        bitfield: "c0",
+      }}
+    />,
+  );
+
+  // 分片矩阵无需交互即可见，下载开始就能看到分片进度
+  expect(screen.getByRole("region", { name: "分片下载状态矩阵" })).toBeInTheDocument();
+  expect(screen.getByText(/2 \/ 4 完成/)).toBeInTheDocument();
+
+  // 仍可折叠回去
+  fireEvent.click(screen.getByRole("button", { name: /分片进度/ }));
+  expect(screen.queryByRole("region", { name: "分片下载状态矩阵" })).not.toBeInTheDocument();
+});
+
+it("hides the piece panel entirely when aria2 reports no pieces", () => {
+  render(
+    <DownloadSession
+      title="下载任务"
+      defaultExpanded
+      session={{ downloadedBytes: 0, totalBytes: 1000 }}
+    />,
+  );
+
+  // numPieces 缺失时不渲染分片区域，避免空矩阵
+  expect(screen.queryByRole("button", { name: /分片进度/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole("region", { name: "分片下载状态矩阵" })).not.toBeInTheDocument();
+});
+
+it("renders breakpoint resumed badge and total active tasks count", () => {
+  render(
+    <DownloadSession
+      title="断点续传任务"
+      session={{
+        downloadedBytes: 30000000,
+        totalBytes: 50000000,
+        speedBytesPerSec: 2097152,
+        port: 54001,
+        totalActiveTasks: 2,
+        isResumed: true,
+        resumedBytes: 20000000,
+        numPieces: 10,
+        pieceLength: 5000000,
+        bitfield: "f0",
+      }}
+    />,
+  );
+
+  expect(screen.getByText("断点续传已恢复")).toBeInTheDocument();
+  expect(screen.getByText("2 个任务并发")).toBeInTheDocument();
+  expect(screen.getByText(/已恢复 19.1 MB/)).toBeInTheDocument();
+  expect(screen.getByText("RPC :54001")).toBeInTheDocument();
+});

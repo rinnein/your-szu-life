@@ -80,6 +80,9 @@ pub(crate) struct ModelDownloadProgress {
     pub piece_length: u64,
     pub bitfield: Option<String>,
     pub connections: u32,
+    pub is_resumed: bool,
+    pub resumed_bytes: u64,
+    pub total_active_tasks: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -319,6 +322,9 @@ impl LocalModelStore {
                     piece_length: prog.piece_length,
                     bitfield: prog.bitfield,
                     connections: prog.connections,
+                    is_resumed: prog.is_resumed,
+                    resumed_bytes: prog.resumed_bytes,
+                    total_active_tasks: prog.total_active_tasks,
                 };
                 if let Some(ref ch) = channel_opt {
                     let _ = ch.send(ModelDownloadChannelEvent::Progress(payload.clone()));

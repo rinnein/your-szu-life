@@ -70,6 +70,9 @@ pub(crate) fn start_update(
                 piece_length: None,
                 bitfield: None,
                 connections: None,
+                is_resumed: None,
+                resumed_bytes: None,
+                total_active_tasks: None,
                 error: Some(err_msg),
             });
         }
@@ -97,6 +100,9 @@ pub(crate) fn download_and_install(
         piece_length: None,
         bitfield: None,
         connections: None,
+        is_resumed: None,
+        resumed_bytes: None,
+        total_active_tasks: None,
         error: None,
     });
 
@@ -138,6 +144,9 @@ pub(crate) fn download_and_install(
                 piece_length: Some(prog.piece_length),
                 bitfield: prog.bitfield,
                 connections: Some(prog.connections),
+                is_resumed: Some(prog.is_resumed),
+                resumed_bytes: Some(prog.resumed_bytes),
+                total_active_tasks: Some(prog.total_active_tasks),
                 error: None,
             });
         },
@@ -155,6 +164,9 @@ pub(crate) fn download_and_install(
             piece_length: None,
             bitfield: None,
             connections: None,
+            is_resumed: None,
+            resumed_bytes: None,
+            total_active_tasks: None,
             error: None,
         });
 
@@ -232,6 +244,9 @@ pub(crate) fn download_and_install(
                             piece_length: None,
                             bitfield: None,
                             connections: None,
+                            is_resumed: None,
+                            resumed_bytes: None,
+                            total_active_tasks: None,
                             error: None,
                         });
                     }
@@ -263,6 +278,9 @@ pub(crate) fn download_and_install(
             piece_length: None,
             bitfield: None,
             connections: None,
+            is_resumed: None,
+            resumed_bytes: None,
+            total_active_tasks: None,
             error: None,
         });
 

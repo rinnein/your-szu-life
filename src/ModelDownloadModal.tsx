@@ -134,6 +134,7 @@ export function ModelDownloadModal({
             {isDownloading && (
               <DownloadSession
                 title={`正在下载并校验 ${info.title}...`}
+                defaultExpanded
                 session={{
                   downloadedBytes,
                   totalBytes,
@@ -143,6 +144,9 @@ export function ModelDownloadModal({
                   pieceLength: progress?.pieceLength,
                   bitfield: progress?.bitfield,
                   connections: progress?.connections,
+                  isResumed: progress?.isResumed,
+                  resumedBytes: progress?.resumedBytes,
+                  totalActiveTasks: progress?.totalActiveTasks,
                 }}
               />
             )}

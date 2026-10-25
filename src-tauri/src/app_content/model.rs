@@ -263,6 +263,9 @@ pub struct UpdateProgressPayload {
     pub piece_length: Option<u64>,
     pub bitfield: Option<String>,
     pub connections: Option<u32>,
+    pub is_resumed: Option<bool>,
+    pub resumed_bytes: Option<u64>,
+    pub total_active_tasks: Option<u32>,
     pub error: Option<String>,
 }
 

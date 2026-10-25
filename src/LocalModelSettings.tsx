@@ -5,7 +5,7 @@ import { Alert, Button, Card, Chip, Spinner, toast } from "@heroui/react";
 import { LuCircleCheck, LuCpu, LuDownload, LuRefreshCw, LuTriangleAlert } from "react-icons/lu";
 import { useLogicalNavigation } from "./logical-navigation";
 import {
-  ModelProgressBar,
+  DownloadSession,
   useModelDownloadProgress,
   type ModelDownloadChannelEvent,
 } from "./ModelDownloadProgress";
@@ -297,11 +297,22 @@ export function LocalModelCard({
           </Alert>
         )}
         {isDownloading && (
-          <ModelProgressBar
-            downloadedBytes={downloadedBytes}
-            totalBytes={totalBytes}
-            speedBytesPerSec={speedBytesPerSec}
-            label={`正在下载并校验 ${meta.category} 模型...`}
+          <DownloadSession
+            title={`正在下载并校验 ${meta.category} 模型...`}
+            defaultExpanded
+            session={{
+              downloadedBytes,
+              totalBytes,
+              speedBytesPerSec,
+              port: progress?.port,
+              numPieces: progress?.numPieces,
+              pieceLength: progress?.pieceLength,
+              bitfield: progress?.bitfield,
+              connections: progress?.connections,
+              isResumed: progress?.isResumed,
+              resumedBytes: progress?.resumedBytes,
+              totalActiveTasks: progress?.totalActiveTasks,
+            }}
           />
         )}
         {status?.status === "error" && (

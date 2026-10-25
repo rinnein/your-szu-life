@@ -206,6 +206,12 @@ impl Aria2Lease {
         Ok(())
     }
 
+    pub async fn active_leases_count() -> u32 {
+        let mutex = aria2_manager_mutex();
+        let guard = mutex.lock().await;
+        guard.as_ref().map(|s| s.ref_count as u32).unwrap_or(0)
+    }
+
     pub async fn release(mut self) {
         if self.released {
             return;

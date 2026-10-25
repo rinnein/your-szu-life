@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
 #[cfg(target_os = "android")]
@@ -47,6 +46,9 @@ fn emit_error(msg: &str) {
         piece_length: None,
         bitfield: None,
         connections: None,
+        is_resumed: None,
+        resumed_bytes: None,
+        total_active_tasks: None,
         error: Some(msg.to_string()),
     });
 }
@@ -132,6 +134,9 @@ pub(crate) fn start_update(
             piece_length: None,
             bitfield: None,
             connections: None,
+            is_resumed: None,
+            resumed_bytes: None,
+            total_active_tasks: None,
             error: None,
         });
 
@@ -164,6 +169,9 @@ pub(crate) fn start_update(
                     piece_length: Some(prog.piece_length),
                     bitfield: prog.bitfield,
                     connections: Some(prog.connections),
+                    is_resumed: Some(prog.is_resumed),
+                    resumed_bytes: Some(prog.resumed_bytes),
+                    total_active_tasks: Some(prog.total_active_tasks),
                     error: None,
                 });
             },
@@ -202,6 +210,9 @@ pub(crate) fn start_update(
             piece_length: None,
             bitfield: None,
             connections: None,
+            is_resumed: None,
+            resumed_bytes: None,
+            total_active_tasks: None,
             error: None,
         });
 
@@ -348,6 +359,9 @@ pub extern "system" fn Java_in_rinne_your_1szu_1life_AppUpdateBridge_nativeUpdat
         piece_length: None,
         bitfield: None,
         connections: None,
+        is_resumed: None,
+        resumed_bytes: None,
+        total_active_tasks: None,
         error: error_str,
     };
 

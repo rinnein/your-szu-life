@@ -4,6 +4,7 @@ import { createTaskChannel } from "../tauri-channel";
 import { Alert, Button, Modal, Spinner, toast } from "@heroui/react";
 import { QuizPanel, type QuizReview } from "./QuizPanel";
 import type {
+  AiSessionEntry,
   ExamPaper,
   ExamTask,
   HomeworkTask,
@@ -152,9 +153,9 @@ export function ExamPaperModal({
                 }}
                 onSolveAi={async (
                   questions: QuizQuestion[],
-                  onSessionEntry?: (entry: unknown) => void,
+                  onSessionEntry?: (entry: AiSessionEntry) => void,
                 ) => {
-                  const channel = createTaskChannel((entry) => {
+                  const channel = createTaskChannel<AiSessionEntry>((entry) => {
                     onSessionEntry?.(entry);
                   });
                   const res = await invoke<[QuizAnswers, QuizReview[]]>("solve_uooc_paper_ai", {

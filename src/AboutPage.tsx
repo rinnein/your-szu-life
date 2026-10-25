@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Alert, Avatar, Button, Label, ProgressBar, Spinner, toast } from "@heroui/react";
+import { Alert, Avatar, Button, Spinner, toast } from "@heroui/react";
 import { LuArrowUpRight, LuDownload, LuRefreshCw, LuUsers } from "react-icons/lu";
 import { BrandMark, Card, ModuleHeader, PageShell } from "./components";
 import { useAppContent } from "./app-content/context";
@@ -9,21 +9,24 @@ import { contentTime, openPublicUrl } from "./app-content/external";
 import { clearPostponedUpdateReminder } from "./app-content/update-postpone";
 import { createTaskChannel } from "./tauri-channel";
 import { getPlatform } from "./os-info";
+import { DownloadSession } from "./DownloadSession";
 import type { AppContentSnapshot, ContributorsSnapshot } from "./app-content/types";
 import packageInfo from "../package.json";
-
-function formatBytes(bytes: number): string {
-  if (bytes <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
-}
 
 type UpdateProgress = {
   status: "downloading" | "installing" | "ready" | "error";
   progress: number;
   downloadedBytes: number;
   totalBytes: number;
+  speedBytesPerSec?: number;
+  port?: number;
+  numPieces?: number;
+  pieceLength?: number;
+  bitfield?: string | null;
+  connections?: number;
+  isResumed?: boolean;
+  resumedBytes?: number;
+  totalActiveTasks?: number;
   error: string | null;
 };
 
@@ -390,33 +393,29 @@ export default function AboutPage() {
                 {platform === "android" || platform === "windows" ? (
                   <>
                     {updateProgress?.status === "downloading" && (
-                      <div className="grid gap-2">
-                        <ProgressBar
-                          value={updateProgress.progress}
-                          aria-label="更新包下载与解压进度"
-                        >
-                          <Label>
-                            {platform === "windows"
-                              ? "正在下载新版本安装程序…"
-                              : "正在下载并解压新版本…"}{" "}
-                            {updateProgress.progress}%
-                            {updateProgress.downloadedBytes > 0 && (
-                              <span className="content-muted">
-                                {" "}
-                                ({formatBytes(updateProgress.downloadedBytes)}
-                                {updateProgress.totalBytes > 0
-                                  ? ` / ${formatBytes(updateProgress.totalBytes)}`
-                                  : ""}
-                                )
-                              </span>
-                            )}
-                          </Label>
-                          <ProgressBar.Output />
-                          <ProgressBar.Track>
-                            <ProgressBar.Fill />
-                          </ProgressBar.Track>
-                        </ProgressBar>
-                      </div>
+                      <DownloadSession
+                        title={
+                          platform === "windows"
+                            ? `正在下载新版本安装程序 ${update.data.latest_ver}...`
+                            : `正在下载并解压新版本 ${update.data.latest_ver}...`
+                        }
+                        defaultExpanded
+                        session={{
+                          downloadedBytes: updateProgress.downloadedBytes,
+                          totalBytes: updateProgress.totalBytes,
+                          speedBytesPerSec: updateProgress.speedBytesPerSec,
+                          port: updateProgress.port,
+                          numPieces: updateProgress.numPieces,
+                          pieceLength: updateProgress.pieceLength,
+                          bitfield: updateProgress.bitfield,
+                          connections: updateProgress.connections,
+                          isResumed: updateProgress.isResumed,
+                          resumedBytes: updateProgress.resumedBytes,
+                          totalActiveTasks: updateProgress.totalActiveTasks,
+                          status: updateProgress.status,
+                          error: updateProgress.error,
+                        }}
+                      />
                     )}
                     {(updateProgress?.status === "installing" ||
                       updateProgress?.status === "ready") && (

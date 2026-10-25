@@ -8,6 +8,17 @@ use std::{
     time::Duration,
 };
 
+/// 进度轮询间隔（毫秒）。
+///
+/// aria2 的 WebSocket 通知只覆盖状态迁移事件（`onDownloadStart` /
+/// `onDownloadComplete` / `onDownloadError` 等），`onDownloadProgress`
+/// 默认不广播，且 1.37 已移除按 gid 订阅的 `aria2.setNotification`
+/// （调用会返回 `No such method`）。因此获取进度只能轮询 `aria2.tellStatus`。
+///
+/// 150ms 约等于 6.7Hz，足以驱动平滑的进度条与速率显示，同时把 RPC 往返
+/// 控制在每秒个位数。调低更顺滑但 RPC 更频繁，调高更省电但动画变顿。
+pub const PROGRESS_POLL_INTERVAL_MS: u64 = 150;
+
 #[derive(Clone, Debug)]
 pub struct DownloadJobOptions {
     pub uris: Vec<String>,
@@ -28,6 +39,9 @@ pub struct ProgressUpdate {
     pub piece_length: u64,
     pub bitfield: Option<String>,
     pub connections: u32,
+    pub is_resumed: bool,
+    pub resumed_bytes: u64,
+    pub total_active_tasks: u32,
 }
 
 pub fn verify_file_hash_and_size(
@@ -79,24 +93,27 @@ where
         return Err("下载地址列表为空".to_string());
     }
 
-    fs::create_dir_all(&options.dest_dir)
-        .map_err(|e| format!("创建下载目标目录失败: {e}"))?;
+    fs::create_dir_all(&options.dest_dir).map_err(|e| format!("创建下载目标目录失败: {e}"))?;
+
+    let target_file = options.dest_dir.join(&options.filename);
+    let aria2_meta_path = options.dest_dir.join(format!("{}.aria2", options.filename));
+    let had_partial_cache = target_file.is_file() || aria2_meta_path.is_file();
 
     let lease = Aria2Lease::acquire(app).await?;
 
-    let target_file = options.dest_dir.join(&options.filename);
     let mut client = Aria2WebSocketClient::connect(&lease.ws_url, &lease.secret).await?;
     let gid = client
         .add_uri(&options.uris, &options.dest_dir, &options.filename)
         .await?;
 
-    let mut last_progress_emit = std::time::Instant::now();
     let mut last_num_pieces;
     let mut last_piece_length;
     let mut last_bitfield: Option<String> = None;
+    let mut initial_resumed_bytes: Option<u64> = None;
+    let mut is_resumed = false;
 
     loop {
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        tokio::time::sleep(Duration::from_millis(PROGRESS_POLL_INTERVAL_MS)).await;
 
         if let Err(e) = lease.check_alive().await {
             return Err(e);
@@ -113,30 +130,38 @@ where
             }
         };
 
+        if initial_resumed_bytes.is_none() {
+            let start_bytes = status.completed_bytes();
+            initial_resumed_bytes = Some(start_bytes);
+            is_resumed = had_partial_cache && start_bytes > 0;
+        }
+
         last_num_pieces = status.num_pieces();
         last_piece_length = status.piece_length();
         if status.bitfield.is_some() {
             last_bitfield = status.bitfield.clone();
         }
 
-        if last_progress_emit.elapsed() >= Duration::from_millis(100) {
-            last_progress_emit = std::time::Instant::now();
-            let total = if status.total_bytes() > 0 {
-                status.total_bytes()
-            } else {
-                options.expected_size.unwrap_or(0)
-            };
-            on_progress(ProgressUpdate {
-                downloaded_bytes: status.completed_bytes(),
-                total_bytes: total,
-                speed_bytes_per_sec: status.speed_bytes_per_sec(),
-                port: lease.port,
-                num_pieces: last_num_pieces,
-                piece_length: last_piece_length,
-                bitfield: status.bitfield.clone(),
-                connections: status.connections(),
-            });
-        }
+        // 循环周期本身即节流粒度（PROGRESS_POLL_INTERVAL_MS），无需二次判断。
+        let total = if status.total_bytes() > 0 {
+            status.total_bytes()
+        } else {
+            options.expected_size.unwrap_or(0)
+        };
+        let total_active_tasks = Aria2Lease::active_leases_count().await;
+        on_progress(ProgressUpdate {
+            downloaded_bytes: status.completed_bytes(),
+            total_bytes: total,
+            speed_bytes_per_sec: status.speed_bytes_per_sec(),
+            port: lease.port,
+            num_pieces: last_num_pieces,
+            piece_length: last_piece_length,
+            bitfield: status.bitfield.clone(),
+            connections: status.connections(),
+            is_resumed,
+            resumed_bytes: initial_resumed_bytes.unwrap_or(0),
+            total_active_tasks,
+        });
 
         match status.status.as_str() {
             "complete" => break,
@@ -155,6 +180,7 @@ where
 
     // Final progress report
     if let Ok(metadata) = fs::metadata(&target_file) {
+        let total_active_tasks = Aria2Lease::active_leases_count().await;
         on_progress(ProgressUpdate {
             downloaded_bytes: metadata.len(),
             total_bytes: metadata.len(),
@@ -164,6 +190,9 @@ where
             piece_length: last_piece_length,
             bitfield: last_bitfield,
             connections: 0,
+            is_resumed,
+            resumed_bytes: initial_resumed_bytes.unwrap_or(0),
+            total_active_tasks,
         });
     }
 
