@@ -1,5 +1,4 @@
 use super::{service::collect_candidate_urls, AppContentStore};
-use serde::{Deserialize, Serialize};
 use std::{
     io::{Read, Write},
     sync::{
@@ -302,6 +301,15 @@ fn spawn_msi_installer(dest_path: &std::path::Path) -> Result<(), String> {
                 progress: 100,
                 downloaded_bytes: std::fs::metadata(dest_path).map(|m| m.len()).unwrap_or(0),
                 total_bytes: std::fs::metadata(dest_path).map(|m| m.len()).unwrap_or(0),
+                speed_bytes_per_sec: Some(0),
+                port: None,
+                num_pieces: None,
+                piece_length: None,
+                bitfield: None,
+                connections: None,
+                is_resumed: None,
+                resumed_bytes: None,
+                total_active_tasks: None,
                 error: None,
             });
             Ok(())
