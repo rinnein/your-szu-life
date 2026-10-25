@@ -407,38 +407,10 @@ p {
   font-weight: 600;
 }
 
-.network-log-list {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.network-log-list li {
-  display: grid;
-  grid-template-columns: 170px 130px 1fr;
-  gap: 10px;
-  align-items: center;
-  padding: 10px 0;
-  border-bottom: 1px solid #ececf4;
-  font-size: 13px;
-}
-
-.network-log-list span,
-.network-log-list small {
-  color: var(--szu-muted);
-}
-
 @media (max-width: 680px) {
   .campus-header {
     align-items: flex-start;
     flex-direction: column;
-  }
-
-  .network-log-list li {
-    grid-template-columns: 1fr;
-    gap: 3px;
   }
 }
 

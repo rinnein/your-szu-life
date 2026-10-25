@@ -5,7 +5,6 @@ use super::{
 };
 use crate::storage::SharedCredentialStore;
 use std::{
-    collections::VecDeque,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc, Arc, Mutex,
@@ -21,7 +20,6 @@ pub(crate) struct CampusNetworkStore {
     pub(super) custom_configured: AtomicBool,
     pub(super) auto_connect_suspended: AtomicBool,
     pub(super) dorm_status: Mutex<DormLoginStatusView>,
-    pub(super) dorm_logs: Mutex<VecDeque<DormLoginLogView>>,
     pub(super) operations: Arc<OperationGate>,
     dorm_monitor: Mutex<Option<(u64, mpsc::Sender<super::monitor::MonitorCommand>)>>,
     monitor_generation: AtomicU64,
@@ -30,8 +28,6 @@ pub(crate) struct CampusNetworkStore {
     pub(super) dorm_last_fingerprint: Mutex<Option<String>>,
     pub(super) network_overview: Mutex<NetworkOverviewView>,
     pub(super) debug_enabled: AtomicBool,
-    pub(super) debug_logs: Mutex<VecDeque<DebugLogEntry>>,
-    pub(super) debug_log_subscribers: crate::ipc_channel::SubscriberPool<DebugLogEntry>,
     region_evidence: Mutex<RegionEvidence>,
 }
 
@@ -44,7 +40,6 @@ impl CampusNetworkStore {
             custom_configured: AtomicBool::new(false),
             auto_connect_suspended: AtomicBool::new(false),
             dorm_status: Mutex::new(DormLoginStatusView::default()),
-            dorm_logs: Mutex::new(VecDeque::new()),
             operations: Arc::new(OperationGate::default()),
             dorm_monitor: Mutex::new(None),
             monitor_generation: AtomicU64::new(0),
@@ -53,8 +48,6 @@ impl CampusNetworkStore {
             dorm_last_fingerprint: Mutex::new(None),
             network_overview: Mutex::new(NetworkOverviewView::default()),
             debug_enabled: AtomicBool::new(false),
-            debug_logs: Mutex::new(VecDeque::new()),
-            debug_log_subscribers: crate::ipc_channel::SubscriberPool::new(),
             region_evidence: Mutex::new(RegionEvidence::default()),
         }
     }

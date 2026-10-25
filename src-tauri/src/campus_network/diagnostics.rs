@@ -6,16 +6,12 @@ use super::{
 };
 use reqwest::Url;
 use std::{
-    collections::VecDeque,
-    fs::{self, OpenOptions},
-    io::Write,
+    fs,
     sync::atomic::Ordering,
     time::Instant,
 };
 use tauri::{Emitter, Manager};
 
-const MAX_DEBUG_LOGS: usize = 1000;
-const DEBUG_LOG_FILE: &str = "campus-network-debug.jsonl";
 const DEBUG_MODE_FILE: &str = "campus-network-debug.json";
 
 pub(crate) fn initialize(app: &tauri::AppHandle, store: &CampusNetworkStore) {
@@ -26,7 +22,6 @@ pub(crate) fn initialize(app: &tauri::AppHandle, store: &CampusNetworkStore) {
             }
         }
     }
-    let _ = load_logs(app, store);
 }
 
 fn debug_mode_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
@@ -37,23 +32,10 @@ fn debug_mode_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String>
         .join(DEBUG_MODE_FILE))
 }
 
-fn debug_log_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
-    Ok(app
-        .path()
-        .app_log_dir()
-        .map_err(|error| error.to_string())?
-        .join(DEBUG_LOG_FILE))
-}
-
 pub(super) fn mode_view(store: &CampusNetworkStore) -> DebugModeView {
-    let log_count = store
-        .debug_logs
-        .lock()
-        .map(|logs| logs.len())
-        .unwrap_or_default();
     DebugModeView {
         enabled: store.debug_enabled.load(Ordering::Acquire),
-        log_count,
+        log_count: 0,
     }
 }
 
@@ -88,141 +70,51 @@ pub(super) fn set_mode(
     Ok(mode_view(store))
 }
 
-pub(super) fn load_logs(
-    app: &tauri::AppHandle,
-    store: &CampusNetworkStore,
-) -> Result<Vec<DebugLogEntry>, String> {
-    let path = debug_log_path(app)?;
-    let content = fs::read_to_string(path).unwrap_or_default();
-    let lines: Vec<_> = content.lines().collect();
-    let start = lines.len().saturating_sub(MAX_DEBUG_LOGS);
-    let logs: VecDeque<_> = lines[start..]
-        .iter()
-        .filter_map(|line| serde_json::from_str::<DebugLogEntry>(line).ok())
-        .collect();
-    let result = logs.iter().cloned().collect::<Vec<_>>();
-    if let Ok(mut cached) = store.debug_logs.lock() {
-        *cached = logs;
-    }
-    Ok(result)
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct DebugLogJsonlChunk {
-    pub lines: Vec<String>,
-    pub total: usize,
-    pub has_more: bool,
-}
-
-pub(super) fn load_logs_jsonl(
-    app: &tauri::AppHandle,
-    offset: Option<usize>,
-    limit: Option<usize>,
-) -> Result<DebugLogJsonlChunk, String> {
-    let path = debug_log_path(app)?;
-    let content = match fs::read_to_string(&path) {
-        Ok(c) => c,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(e) => return Err(e.to_string()),
-    };
-    Ok(slice_jsonl_lines(&content, offset, limit))
-}
-
-pub(crate) fn slice_jsonl_lines(
-    content: &str,
-    offset: Option<usize>,
-    limit: Option<usize>,
-) -> DebugLogJsonlChunk {
-    let all_lines: Vec<&str> = content
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .collect();
-    let start_in_file = all_lines.len().saturating_sub(MAX_DEBUG_LOGS);
-    let recent_lines = &all_lines[start_in_file..];
-    let total = recent_lines.len();
-
-    let offset_val = offset.unwrap_or(0);
-    let limit_val = limit.unwrap_or(100).max(1);
-
-    if offset_val >= total {
-        return DebugLogJsonlChunk {
-            lines: Vec::new(),
-            total,
-            has_more: false,
-        };
-    }
-
-    let end = (offset_val + limit_val).min(total);
-    let mut lines = Vec::with_capacity(end - offset_val);
-    for idx in offset_val..end {
-        let rev_idx = total - 1 - idx;
-        lines.push(recent_lines[rev_idx].to_string());
-    }
-
-    let has_more = end < total;
-    DebugLogJsonlChunk {
-        lines,
-        total,
-        has_more,
-    }
-}
-
 pub(super) fn clear_logs(app: &tauri::AppHandle, store: &CampusNetworkStore) -> Result<(), String> {
-    let path = debug_log_path(app)?;
-    match fs::remove_file(path) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error.to_string()),
-    }
-    if let Ok(mut cached) = store.debug_logs.lock() {
-        cached.clear();
-    }
     let view = mode_view(store);
     let _ = app.emit("debug-mode-changed", &view);
     Ok(())
 }
 
-pub(crate) fn record(app: &tauri::AppHandle, store: &CampusNetworkStore, entry: DebugLogEntry) {
+pub(crate) fn record(_app: &tauri::AppHandle, store: &CampusNetworkStore, entry: DebugLogEntry) {
     if !store.debug_enabled.load(Ordering::Acquire) {
         return;
     }
     let entry = sanitize_entry(entry);
-    let Ok(path) = debug_log_path(app) else {
-        return;
-    };
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
+    let summary = format_log_entry(&entry);
+    match entry.level.to_lowercase().as_str() {
+        "error" => log::error!(target: "campus_network::diagnostics", "{summary}"),
+        "warn" | "warning" => log::warn!(target: "campus_network::diagnostics", "{summary}"),
+        "debug" => log::debug!(target: "campus_network::diagnostics", "{summary}"),
+        _ => log::info!(target: "campus_network::diagnostics", "{summary}"),
     }
-    let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) else {
-        return;
-    };
-    let Ok(line) = serde_json::to_string(&entry) else {
-        return;
-    };
-    if writeln!(file, "{line}").is_err() {
-        return;
-    }
-    if let Ok(mut cached) = store.debug_logs.lock() {
-        cached.push_back(entry.clone());
-        while cached.len() > MAX_DEBUG_LOGS {
-            cached.pop_front();
-        }
-    }
-    trim_file(&path);
-    store.debug_log_subscribers.broadcast(&entry);
-    let _ = app.emit("debug-log-added", &entry);
 }
 
-fn trim_file(path: &std::path::Path) {
-    let Ok(content) = fs::read_to_string(path) else {
-        return;
-    };
-    let lines: Vec<&str> = content.lines().collect();
-    if lines.len() > MAX_DEBUG_LOGS {
-        let trimmed = &lines[lines.len() - MAX_DEBUG_LOGS..];
-        let _ = fs::write(path, format!("{}\n", trimmed.join("\n")));
+fn format_log_entry(entry: &DebugLogEntry) -> String {
+    let mut parts = Vec::new();
+    parts.push(format!("[{}/{}]", entry.source, entry.stage));
+    if let Some(msg) = &entry.message {
+        parts.push(msg.clone());
     }
+    if let Some(ssid) = &entry.ssid {
+        parts.push(format!("SSID={ssid}"));
+    }
+    if let Some(ip) = &entry.ip {
+        parts.push(format!("IP={ip}"));
+    }
+    if let Some(portal) = &entry.portal {
+        parts.push(format!("门户={portal}"));
+    }
+    if let Some(status) = entry.http_status {
+        parts.push(format!("HTTP={status}"));
+    }
+    if let Some(elapsed) = entry.elapsed_ms {
+        parts.push(format!("{elapsed}ms"));
+    }
+    if let Some(err) = &entry.error_kind {
+        parts.push(format!("错误={err}"));
+    }
+    parts.join(" ")
 }
 
 fn mask_ssid(value: Option<String>) -> Option<String> {
@@ -444,29 +336,5 @@ mod tests {
         assert_eq!(http_error_kind(HttpError::Tls), "tls");
         assert_eq!(http_error_kind(HttpError::Timeout), "timeout");
         assert_eq!(http_error_kind(HttpError::Connection), "connection");
-    }
-
-    #[test]
-    fn slice_jsonl_lines_in_chunks_newest_first() {
-        let content = "line1\nline2\nline3\nline4\nline5\n";
-        let chunk1 = slice_jsonl_lines(content, Some(0), Some(2));
-        assert_eq!(chunk1.total, 5);
-        assert!(chunk1.has_more);
-        assert_eq!(chunk1.lines, vec!["line5", "line4"]);
-
-        let chunk2 = slice_jsonl_lines(content, Some(2), Some(2));
-        assert_eq!(chunk2.total, 5);
-        assert!(chunk2.has_more);
-        assert_eq!(chunk2.lines, vec!["line3", "line2"]);
-
-        let chunk3 = slice_jsonl_lines(content, Some(4), Some(2));
-        assert_eq!(chunk3.total, 5);
-        assert!(!chunk3.has_more);
-        assert_eq!(chunk3.lines, vec!["line1"]);
-
-        let chunk_oob = slice_jsonl_lines(content, Some(5), Some(2));
-        assert_eq!(chunk_oob.total, 5);
-        assert!(!chunk_oob.has_more);
-        assert!(chunk_oob.lines.is_empty());
     }
 }

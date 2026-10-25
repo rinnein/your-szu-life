@@ -7,6 +7,10 @@
     "default",
     "core:default",
     "opener:default",
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [{ "path": "$APPLOG/**" }, { "path": "$APPLOG" }]
+    },
     "notification:default",
     "deep-link:default",
     "os:default",

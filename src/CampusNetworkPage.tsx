@@ -79,15 +79,6 @@ type Status = {
   nextProbeAtMs?: number | null;
   lastResult?: { ok: boolean; alreadyOnline: boolean; message?: string | null } | null;
 };
-type Log = {
-  timestampMs: number;
-  stage: string;
-  outcome: string;
-  portalReachable: boolean;
-  message?: string | null;
-  result?: number | null;
-  retCode?: number | null;
-};
 
 const initialOverview: NetworkOverview = {
   state: "noNetwork",
@@ -173,7 +164,6 @@ export default function CampusNetworkPage() {
   const [overview, setOverview] = useState<NetworkOverview>(initialOverview);
   const [settings, setSettings] = useState<Settings>();
   const [status, setStatus] = useState<Status>(initialStatus);
-  const [logs, setLogs] = useState<Log[]>([]);
   const [staffSettings, setStaffSettings] = useState<StaffSettings>(initialStaffSettings);
   const [staffStatus, setStaffStatus] = useState<StaffStatus>(initialStaffStatus);
   const [regionTab, setRegionTab] = useState<RegionTab>("dormitory");
@@ -190,7 +180,6 @@ export default function CampusNetworkPage() {
     overview: 0,
     settings: 0,
     status: 0,
-    logs: 0,
     staffSettings: 0,
     staffStatus: 0,
     refresh: 0,
@@ -244,12 +233,11 @@ export default function CampusNetworkPage() {
   const refresh = async () => {
     const request = ++revisions.current.refresh;
     const before = { ...revisions.current };
-    const [nextOverview, nextSettings, nextStatus, nextLogs, nextStaffSettings, nextStaffStatus] =
+    const [nextOverview, nextSettings, nextStatus, nextStaffSettings, nextStaffStatus] =
       await Promise.all([
         invoke<NetworkOverview>("get_network_overview"),
         invoke<Settings>("get_dorm_network_settings"),
         invoke<Status>("get_dorm_login_status"),
-        invoke<Log[]>("get_dorm_login_logs"),
         invoke<StaffSettings>("get_staff_network_settings"),
         invoke<StaffStatus>("get_staff_login_status"),
       ]);
@@ -257,7 +245,6 @@ export default function CampusNetworkPage() {
     if (before.overview === revisions.current.overview) applyOverview(nextOverview);
     if (before.settings === revisions.current.settings) applySettings(nextSettings);
     if (before.status === revisions.current.status) setStatus(nextStatus);
-    if (before.logs === revisions.current.logs) setLogs(nextLogs);
     if (before.staffSettings === revisions.current.staffSettings)
       setStaffSettings(nextStaffSettings ?? initialStaffSettings);
     if (before.staffStatus === revisions.current.staffStatus)
@@ -311,10 +298,6 @@ export default function CampusNetworkPage() {
         subscribe<StaffStatus>("staff-login-status-changed", (next) => {
           revisions.current.staffStatus++;
           setStaffStatus(next);
-        }),
-        subscribe<Log>("dorm-login-log-added", (next) => {
-          revisions.current.logs++;
-          setLogs((current) => [next, ...current].slice(0, 100));
         }),
       ]);
       if (!active) return;
@@ -647,27 +630,6 @@ export default function CampusNetworkPage() {
           </Card.Content>
         </Card>
 
-        <Card className="network-status-card" variant="default">
-          <Card.Header>
-            <Card.Title>最近记录</Card.Title>
-            <Card.Description>不会记录校园卡号、密码或完整请求地址。</Card.Description>
-          </Card.Header>
-          <Card.Content>
-            {logs.length === 0 ? (
-              <p className="field-hint">暂无校园网操作记录。</p>
-            ) : (
-              <ul className="network-log-list">
-                {logs.slice(0, 20).map((log, index) => (
-                  <li key={`${log.timestampMs}-${index}`}>
-                    <span>{new Date(log.timestampMs).toLocaleString()}</span>
-                    <strong>{log.outcome}</strong>
-                    <small>{log.message || log.stage}</small>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card.Content>
-        </Card>
         <AlertDialog
           isOpen={logoutOpen}
           onOpenChange={(open) => {

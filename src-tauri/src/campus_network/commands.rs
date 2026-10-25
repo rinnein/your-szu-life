@@ -21,36 +21,22 @@ pub(crate) fn set_debug_mode(
 }
 
 #[tauri::command]
-pub(crate) fn get_debug_logs(
-    app: tauri::AppHandle,
-    store: State<'_, CampusNetworkStore>,
-) -> Result<Vec<DebugLogEntry>, String> {
-    super::diagnostics::load_logs(&app, &store)
-}
-
-#[tauri::command]
-pub(crate) fn get_debug_logs_jsonl(
-    app: tauri::AppHandle,
-    offset: Option<usize>,
-    limit: Option<usize>,
-) -> Result<super::diagnostics::DebugLogJsonlChunk, String> {
-    super::diagnostics::load_logs_jsonl(&app, offset, limit)
-}
-
-#[tauri::command]
 pub(crate) fn clear_debug_logs(
     app: tauri::AppHandle,
     store: State<'_, CampusNetworkStore>,
 ) -> Result<(), String> {
+    crate::logging::clear_logs(&app)?;
     super::diagnostics::clear_logs(&app, &store)
 }
 
 #[tauri::command]
-pub(crate) fn subscribe_debug_logs(
-    store: State<'_, CampusNetworkStore>,
-    channel: tauri::ipc::Channel<DebugLogEntry>,
-) {
-    store.debug_log_subscribers.subscribe(channel);
+pub(crate) fn get_log_info(app: tauri::AppHandle) -> Result<crate::logging::LogInfo, String> {
+    crate::logging::get_log_info(&app)
+}
+
+#[tauri::command]
+pub(crate) fn set_log_level(level: String) -> Result<String, String> {
+    crate::logging::set_log_level(&level)
 }
 
 #[tauri::command]
@@ -92,14 +78,6 @@ pub(crate) fn get_dorm_login_status(
 #[tauri::command]
 pub(crate) fn trigger_dorm_login(app: tauri::AppHandle) -> Result<(), String> {
     service::trigger_dorm_login(app)
-}
-
-#[tauri::command]
-pub(crate) fn get_dorm_login_logs(
-    app: tauri::AppHandle,
-    store: State<'_, CampusNetworkStore>,
-) -> Result<Vec<DormLoginLogView>, String> {
-    service::get_dorm_login_logs(app, &store)
 }
 
 #[tauri::command]

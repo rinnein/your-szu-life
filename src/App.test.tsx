@@ -178,7 +178,6 @@ describe("HeroUI frontend smoke tests", () => {
         };
       if (command === "get_user_data") return { studentId: "1234567890", name: "测试同学" };
       if (command === "get_debug_mode") return { enabled: debugEnabled, logCount: 0 };
-      if (command === "get_debug_logs") return [];
       if (command === "set_debug_mode") {
         debugEnabled = true;
         return { enabled: true, logCount: 0 };
@@ -344,7 +343,6 @@ describe("HeroUI frontend smoke tests", () => {
           portalReachable: false,
           consecutiveFailures: 0,
         };
-      if (command === "get_dorm_login_logs") return [];
       if (command === "consume_dorm_login_failure_notice") return null;
       return undefined;
     });
@@ -382,7 +380,6 @@ describe("HeroUI frontend smoke tests", () => {
           portalReachable: false,
           consecutiveFailures: 0,
         };
-      if (command === "get_dorm_login_logs") return [];
       if (command === "consume_dorm_login_failure_notice") return null;
       if (command === "save_dorm_network_settings")
         return { enabled: true, credentialMode: "currentAccount", customConfigured: false };
@@ -443,7 +440,6 @@ describe("HeroUI frontend smoke tests", () => {
         return { enabled: false, credentialMode: "currentAccount", customConfigured: false };
       if (command === "get_dorm_login_status")
         return { state: "online", connected: true, portalReachable: true, consecutiveFailures: 0 };
-      if (command === "get_dorm_login_logs") return [];
       if (command === "consume_dorm_login_failure_notice") return null;
       return undefined;
     });

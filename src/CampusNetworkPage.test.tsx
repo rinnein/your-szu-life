@@ -174,7 +174,6 @@ describe("campus network status and logout", () => {
           portalReachable: true,
           consecutiveFailures: 0,
         };
-      if (command === "get_dorm_login_logs") return [];
       if (command === "consume_dorm_login_failure_notice") return null;
       return undefined;
     });
@@ -562,7 +561,7 @@ describe("campus network status and logout", () => {
     await act(async () => {
       for (const resolve of pending) resolve();
     });
-    expect(disposers).toHaveLength(6);
+    expect(disposers).toHaveLength(5);
     for (const dispose of disposers) expect(dispose).toHaveBeenCalledOnce();
   });
 

@@ -50,7 +50,6 @@ fn test_all_tools_registered() {
     assert!(tool_names.contains(&"network_trigger_dorm_login"));
     assert!(tool_names.contains(&"network_logout"));
     assert!(tool_names.contains(&"network_apply_staff_login"));
-    assert!(tool_names.contains(&"network_get_dorm_logs"));
 
     // 3. 校园支付与电费模块工具
     assert!(tool_names.contains(&"electricity_query_balance"));

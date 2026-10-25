@@ -13,12 +13,6 @@ pub struct ApplyStaffLoginParams {
     pub confirmation_token: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema, Default)]
-pub struct GetDormLogsParams {
-    /// 返回日志最大条数，默认 20 条
-    pub limit: Option<usize>,
-}
-
 #[tool_router(router = network_tools, vis = "pub(crate)")]
 impl UnifiedSzuMcpService {
     #[tool(
@@ -69,26 +63,5 @@ impl UnifiedSzuMcpService {
             .await
             .map_err(|_| "任务执行失败".to_string())??;
         serde_json::to_string_pretty(&result).map_err(|e| format!("序列化失败: {e}"))
-    }
-
-    #[tool(
-        name = "network_get_dorm_logs",
-        description = "查询最近的宿舍网络认证与连接日志记录"
-    )]
-    pub async fn network_get_dorm_logs(
-        &self,
-        Parameters(params): Parameters<GetDormLogsParams>,
-    ) -> Result<String, String> {
-        let store = self
-            .app
-            .try_state::<CampusNetworkStore>()
-            .ok_or("校园网状态存储不可用")?;
-        let mut logs = service::get_dorm_login_logs(self.app.clone(), &store)?;
-        if let Some(limit) = params.limit {
-            if logs.len() > limit {
-                logs.truncate(limit);
-            }
-        }
-        serde_json::to_string_pretty(&logs).map_err(|e| format!("序列化失败: {e}"))
     }
 }

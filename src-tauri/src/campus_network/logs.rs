@@ -1,65 +1,16 @@
 use super::{model::*, now_ms, settings::dorm_settings, CampusNetworkStore};
-use std::{
-    fs::{self, OpenOptions},
-    io::Write,
-};
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
-const DORM_LOG_FILE: &str = "dorm-network-login.jsonl";
-
-pub(super) fn dorm_log_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
-    Ok(app
-        .path()
-        .app_log_dir()
-        .map_err(|error| error.to_string())?
-        .join(DORM_LOG_FILE))
-}
-
-pub(super) fn append_dorm_log(app: &tauri::AppHandle, log: DormLoginLogView) {
-    let log = sanitized_log(log);
-    let Ok(path) = dorm_log_path(app) else { return };
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) else {
-        return;
-    };
-    let Ok(line) = serde_json::to_string(&log) else {
-        return;
-    };
-    let _ = writeln!(file, "{line}");
-    // Keep the file bounded without retaining secrets in application state.
-    if let Ok(content) = fs::read_to_string(&path) {
-        let mut lines: Vec<&str> = content.lines().collect();
-        if lines.len() > 1000 {
-            lines = lines.split_off(lines.len() - 1000);
-            let _ = fs::write(path, format!("{}\n", lines.join("\n")));
-        }
-    }
-    if let Some(store) = app.try_state::<CampusNetworkStore>() {
-        if let Ok(mut logs) = store.dorm_logs.lock() {
-            logs.push_back(log.clone());
-            while logs.len() > 1000 {
-                logs.pop_front();
-            }
-        }
-        let _ = app.emit("dorm-login-log-added", &log);
-    }
-}
-
-pub(super) fn load_dorm_logs(app: &tauri::AppHandle) -> Vec<DormLoginLogView> {
-    let Ok(path) = dorm_log_path(app) else {
-        return Vec::new();
-    };
-    let Ok(content) = fs::read_to_string(path) else {
-        return Vec::new();
-    };
-    content
-        .lines()
-        .rev()
-        .take(1000)
-        .filter_map(|line| serde_json::from_str::<DormLoginLogView>(line).ok())
-        .collect()
+pub(super) fn append_dorm_log(_app: &tauri::AppHandle, log: DormLoginLogView) {
+    let sanitized = sanitized_log(log);
+    log::info!(
+        target: "campus_network::dorm",
+        "阶段: {}, 结果: {}, 可达: {}, 消息: {:?}",
+        sanitized.stage,
+        sanitized.outcome,
+        sanitized.portal_reachable,
+        sanitized.message
+    );
 }
 
 pub(super) fn dorm_notify_failure(app: &tauri::AppHandle, message: &str) {

@@ -10,6 +10,22 @@ pub(crate) fn run() {
     let credentials: SharedCredentialStore = Arc::new(PlatformCredentialStore);
     let electricity_credentials = credentials.clone();
     let academic_credentials = credentials.clone();
+    let (daily_writer, file_filter) = crate::logging::create_daily_writer();
+    let file_dispatch = tauri_plugin_log::fern::Dispatch::new()
+        .format(move |out, message, record| {
+            out.finish(format_args!(
+                "{}[{}][{}] {}",
+                crate::logging::timestamp_now(),
+                record.target(),
+                record.level(),
+                message
+            ))
+        })
+        .chain(tauri_plugin_log::fern::Output::writer(
+            Box::new(daily_writer),
+            "\n",
+        ));
+
     let builder = tauri::Builder::default()
         .manage(auth::AuthStore::new(credentials.clone()))
         .manage(uooc::UoocStore::new(credentials.clone()))
@@ -29,16 +45,18 @@ pub(crate) fn run() {
             tauri_plugin_log::Builder::new()
                 .targets([
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
-                        file_name: None,
-                    }),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Dispatch(
+                        file_dispatch,
+                    ))
+                    .filter(file_filter),
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
                 ])
-                .level(log::LevelFilter::Info)
+                .level(log::LevelFilter::Trace)
                 .build(),
         )
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(move |app| {
+            crate::logging::initialize(app.handle());
             #[cfg(desktop)]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
@@ -216,10 +234,9 @@ pub(crate) fn run() {
             campus_network::commands::request_campus_network_permissions,
             campus_network::commands::get_debug_mode,
             campus_network::commands::set_debug_mode,
-            campus_network::commands::get_debug_logs,
-            campus_network::commands::get_debug_logs_jsonl,
             campus_network::commands::clear_debug_logs,
-            campus_network::commands::subscribe_debug_logs,
+            campus_network::commands::get_log_info,
+            campus_network::commands::set_log_level,
             campus_network::commands::get_staff_network_settings,
             campus_network::commands::save_staff_network_settings,
             campus_network::commands::get_staff_login_status,
@@ -230,7 +247,6 @@ pub(crate) fn run() {
             campus_network::commands::get_dorm_login_status,
             campus_network::commands::trigger_dorm_login,
             campus_network::commands::logout_campus_network,
-            campus_network::commands::get_dorm_login_logs,
             campus_network::commands::consume_dorm_login_failure_notice,
         ])
         .on_page_load(|window, payload| {

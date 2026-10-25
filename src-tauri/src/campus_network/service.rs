@@ -1,6 +1,5 @@
 use super::{
     login::start_dorm_login,
-    logs::load_dorm_logs,
     model::*,
     monitor::start_dorm_monitor,
     now_ms,
@@ -104,18 +103,6 @@ pub(crate) fn get_dorm_login_status(
 
 pub(crate) fn trigger_dorm_login(app: tauri::AppHandle) -> Result<(), String> {
     start_dorm_login(app, true)
-}
-
-pub(crate) fn get_dorm_login_logs(
-    app: tauri::AppHandle,
-    store: &CampusNetworkStore,
-) -> Result<Vec<DormLoginLogView>, String> {
-    let mut logs = load_dorm_logs(&app);
-    logs.reverse();
-    if let Ok(mut cached) = store.dorm_logs.lock() {
-        *cached = logs.iter().cloned().collect();
-    }
-    Ok(logs)
 }
 
 pub(super) fn consume_dorm_login_failure_notice(
