@@ -36,7 +36,14 @@ pub(crate) fn run() {
         ))
         .manage(settings::SettingsStore::new(Arc::new(
             PlatformCredentialStore,
-        )))
+        )));
+    // 必须最先注册：重复启动的进程在这里把参数交给已运行实例后退出。
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        crate::desktop::focus_main_window(app);
+    }));
+
+    let builder = builder
         .plugin(tauri_plugin_opener::init())
         .plugin(crate::notification::init())
         .plugin(tauri_plugin_deep_link::init())
@@ -57,11 +64,6 @@ pub(crate) fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(move |app| {
             crate::logging::initialize(app.handle());
-            #[cfg(desktop)]
-            {
-                use tauri_plugin_deep_link::DeepLinkExt;
-                app.deep_link().handle_cli_arguments(std::env::args());
-            }
             crate::storage::initialize(app.handle())?;
             if let Err(error) = crate::ocr::initialize(app.handle()) {
                 log::error!("OCR 模型服务初始化失败: {error}");

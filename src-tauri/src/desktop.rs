@@ -2,6 +2,17 @@ use tauri::Manager;
 
 const TRAY_ICON: tauri::image::Image<'static> = tauri::include_image!("icons/32x32.png");
 
+pub(crate) fn focus_main_window(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        log::warn!("主窗口不存在，无法激活");
+        return;
+    };
+    // 窗口可能被最小化到托盘，show 之后还要解除最小化才能前置。
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+}
+
 pub(crate) fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;
@@ -14,10 +25,7 @@ pub(crate) fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
         .tooltip("泥深")
         .on_menu_event(|app, event| match event.id().as_ref() {
             "show" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
+                focus_main_window(app);
             }
             "exit" => app.exit(0),
             _ => {}

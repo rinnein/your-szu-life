@@ -1,5 +1,5 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { onOpenUrl } from "@tauri-apps/plugin-deep-link";
+import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
 
 export function parseDeepLinkUrl(urlStr: string): string | null {
   const trimmed = urlStr.trim();
@@ -20,14 +20,26 @@ export async function setupDeepLinkListener(
 ): Promise<() => void> {
   const unlistens: Array<() => void> = [];
 
+  const navigate = (url: string) => {
+    const route = parseDeepLinkUrl(url);
+    if (route) {
+      onNavigate(route);
+    }
+  };
+
   if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+    // 启动参数和运行期事件可能递送同一个 URL，这期间去重避免多压一层逻辑栈。
+    const handledDuringStartup = new Set<string>();
+    let drainingStartup = true;
+    const handleEventUrl = (url: string) => {
+      if (drainingStartup) handledDuringStartup.add(url);
+      navigate(url);
+    };
+
     try {
       const unlistenDeepLink = await onOpenUrl((urls) => {
         for (const url of urls) {
-          const route = parseDeepLinkUrl(url);
-          if (route) {
-            onNavigate(route);
-          }
+          handleEventUrl(url);
         }
       });
       if (typeof unlistenDeepLink === "function") {
@@ -35,6 +47,21 @@ export async function setupDeepLinkListener(
       }
     } catch {
       // Deep link plugin listener registration failed or unavailable
+    }
+
+    // 先注册监听再读启动参数：链接若在监听就绪前送达，事件会丢失，但
+    // 插件已把它写入 current，这里仍能补回。
+    try {
+      const startupUrls = await getCurrent();
+      for (const url of startupUrls ?? []) {
+        if (!handledDuringStartup.has(url)) {
+          navigate(url);
+        }
+      }
+    } catch {
+      // Deep link startup arguments unavailable
+    } finally {
+      drainingStartup = false;
     }
 
     try {
