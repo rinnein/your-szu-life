@@ -361,3 +361,72 @@ jobs:
               }
             }
             core.info(`Uploaded ${assets.length} assets to ${release.html_url}`);
+
+  # 发布完成后拉起 rinnein/auto-aur，只重建由 canary release 供养的子包
+  # your-szu-life-bin。
+  #
+  # 跨仓库权限靠一个 GitHub App 换取临时的 installation token：
+  #   - 变量 APP_CLIENT_ID：App 的 Client ID
+  #   - secret APP_PRIVATE_KEY：App 的私钥
+  #   - 该 App 需要安装到 rinnein/auto-aur 上，并授予 Actions: write
+  # token 只在本次 job 内有效（1 小时后过期，job 结束即被吊销），不再需要
+  # 长期 PAT。任一凭据缺失时跳过派发，不影响 release 本身的发布。
+  aur:
+    name: Publish to AUR
+    needs: [canary]
+    # 只让 main 的构建去动 AUR：本 workflow 是 on: push（无分支过滤），
+    # 其它分支的构建不该改写 AUR 上的正式包。
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check AUR trigger credentials
+        id: credentials
+        env:
+          APP_CLIENT_ID: ${{ vars.APP_CLIENT_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+        run: |
+          if [ -n "$APP_CLIENT_ID" ] && [ -n "$APP_PRIVATE_KEY" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::未配置 APP_CLIENT_ID / APP_PRIVATE_KEY，跳过 AUR 发布"
+          fi
+
+      - name: Generate a token
+        id: app-token
+        if: steps.credentials.outputs.enabled == 'true'
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: auto-aur
+          # 只申请派发 workflow 所需的权限，token 才真正是最小权限。
+          permission-actions: write
+
+      - name: Dispatch auto-aur for your-szu-life-bin
+        if: steps.credentials.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SOURCE: ${{ github.repository }}
+          TAG: canary
+        run: |
+          set -euo pipefail
+          # tasks 只放「这个 release 供哪些子包」的知识，别的一概不交给
+          # payload；即使 payload 被改写，auto-aur 也只会接受 conf.json 里
+          # 已启用的任务。
+          tasks='["your-szu-life-bin"]'
+          jq -n \
+            --arg source "$SOURCE" \
+            --arg tag "$TAG" \
+            --argjson tasks "$tasks" \
+            '{event_type: "aur-release",
+              client_payload: {source: $source, tag: $tag,
+                               tasks: $tasks, force: false}}' \
+          | curl -sSf -X POST \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              -d @- \
+              "https://api.github.com/repos/rinnein/auto-aur/dispatches"
+          echo "dispatched AUR publish for $SOURCE@$TAG ($tasks)"
