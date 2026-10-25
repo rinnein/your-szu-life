@@ -32,7 +32,7 @@ impl MemoryCredentialStore {
         self.raw
             .lock()
             .unwrap()
-            .get(key.name())
+            .get(key.legacy_name())
             .map(|raw| serde_json::from_str(raw).map_err(|error| error.to_string()))
             .transpose()
     }
@@ -43,13 +43,13 @@ impl MemoryCredentialStore {
             return Err("simulated settings write failure".into());
         }
         self.raw.lock().unwrap().insert(
-            key.name(),
+            key.legacy_name(),
             serde_json::to_string(value).map_err(|error| error.to_string())?,
         );
         Ok(())
     }
     fn delete(&self, key: SecretKey) -> Result<(), String> {
-        self.raw.lock().unwrap().remove(key.name());
+        self.raw.lock().unwrap().remove(key.legacy_name());
         Ok(())
     }
 }
@@ -142,7 +142,7 @@ fn storage_namespace_and_legacy_json_remain_compatible() {
             SecretKey::DormNetworkSettings,
             SecretKey::DormNetworkCredentials
         ]
-        .map(SecretKey::name),
+        .map(SecretKey::legacy_name),
         [
             "profile",
             "pending-auth",

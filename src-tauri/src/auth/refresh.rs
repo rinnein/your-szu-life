@@ -462,20 +462,8 @@ mod tests {
             std::env::var("SZU_READ_SAVED_SESSION").as_deref() == Ok("1"),
             "set SZU_READ_SAVED_SESSION=1 to explicitly enable this live diagnostic"
         );
-        let output = std::process::Command::new("secret-tool")
-            .args([
-                "lookup",
-                "service",
-                "in.rinne.your-szu-life",
-                "username",
-                "auth-session",
-            ])
-            .output()
-            .expect("credential lookup command unavailable");
-        assert!(output.status.success(), "saved session unavailable");
-        let Ok(session) = serde_json::from_slice::<AuthSessionSecret>(&output.stdout) else {
-            panic!("saved session format invalid");
-        };
+        let session =
+            crate::storage::read_saved_session_for_diagnostic().expect("saved session unavailable");
         let expected = session.student_id.clone();
         let outcome = refresh_session(Some(session), &expected);
         eprintln!(

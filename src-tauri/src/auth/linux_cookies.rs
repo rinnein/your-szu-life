@@ -333,22 +333,8 @@ mod tests {
         if std::env::var("SZU_READ_SAVED_SESSION").as_deref() != Ok("1") {
             return;
         }
-        let output = std::process::Command::new("secret-tool")
-            .args([
-                "lookup",
-                "service",
-                "in.rinne.your-szu-life",
-                "username",
-                "auth-session",
-            ])
-            .output()
-            .expect("credential lookup command unavailable");
-        assert!(output.status.success(), "saved session unavailable");
-        let Ok(saved) =
-            serde_json::from_slice::<super::super::session::AuthSessionSecret>(&output.stdout)
-        else {
-            panic!("saved session format invalid");
-        };
+        let saved =
+            crate::storage::read_saved_session_for_diagnostic().expect("saved session unavailable");
         let mut saved = saved
             .restorable_snapshot(&saved.student_id, OffsetDateTime::now_utc())
             .expect("session metadata invalid")

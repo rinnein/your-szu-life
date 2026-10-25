@@ -19,6 +19,8 @@ const conflictNames: Record<string, string> = {
   "fixed.network.staff.settings": "教工区校园网设置",
   "fixed.network.staff.credentials": "教工区校园网凭据",
   "fixed.electricity.location": "宿舍电费位置",
+  "runtime.electricity.monitor": "电费监控与提醒记录",
+  "runtime.account.pending": "待确认的账户资料",
 };
 
 function errorMessage(error: unknown, fallback: string) {

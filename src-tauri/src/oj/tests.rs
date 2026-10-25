@@ -108,6 +108,37 @@ fn url_validation_preserves_subpath() {
     }
 }
 #[test]
+fn credentials_survive_service_restart_through_encrypted_vault() {
+    // 回归：OJ 账号原为单一 JSON 条目，改为加密文档后必须仍能跨重启还原账号与会话。
+    // 直接驱动 vault 与文档层，不依赖全局单例。
+    use crate::storage::{
+        entries::{self, VaultDocument},
+        vault::{Vault, KEY_LEN},
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let key = [11u8; KEY_LEN];
+    let raw = r#"{"szu-1":{"username":"student","password":"fixture-password","url":"http://example.test/","cookies":"session=abc"}}"#;
+
+    let vault = Vault::open(dir.path().to_path_buf(), key);
+    vault
+        .update(|document| entries::set_oj_raw(document, raw))
+        .unwrap();
+
+    // 重新打开，模拟应用重启。
+    let reopened = Vault::open(dir.path().to_path_buf(), key);
+    let loaded = entries::load_oj_accounts(&reopened).unwrap().unwrap();
+    let parsed: std::collections::BTreeMap<String, super::model::Secret> =
+        serde_json::from_str(&loaded).unwrap();
+    assert_eq!(parsed["szu-1"].cookies, "session=abc");
+    assert_eq!(parsed["szu-1"].password, "fixture-password");
+
+    // 文档必须与设置导出共用结构：账号与会话分列两个键。
+    let document: VaultDocument = reopened.document().unwrap();
+    assert!(document.entries.contains_key(entries::OJ_ACCOUNTS));
+    assert!(document.entries.contains_key(entries::OJ_SESSIONS));
+}
+
+#[test]
 fn configuration_enables_without_network_and_never_returns_password() {
     let (_d, s) = setup();
     let id = s.save_site(input("http://example.test/")).unwrap();

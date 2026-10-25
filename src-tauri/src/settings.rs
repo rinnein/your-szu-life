@@ -1,4 +1,7 @@
-use crate::storage::SharedCredentialStore;
+use crate::storage::{
+    entries::{self, SettingEntry, VaultDocument, MAX_DOCUMENT},
+    SharedCredentialStore,
+};
 use argon2::{Algorithm, Argon2, Params, Version};
 use chacha20poly1305::{
     aead::{Aead, KeyInit},
@@ -6,34 +9,11 @@ use chacha20poly1305::{
 };
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::BTreeMap;
 
-const FORMAT: u8 = 1;
 const SALT_LEN: usize = 16;
 const NONCE_LEN: usize = 24;
-const MAX_PACKAGE: usize = 2 * 1024 * 1024;
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub(crate) enum SettingKind {
-    Fixed,
-    Runtime,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct SettingEntry {
-    pub kind: SettingKind,
-    pub value: Value,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Package {
-    version: u8,
-    entries: BTreeMap<String, SettingEntry>,
-}
+const MAX_PACKAGE: usize = MAX_DOCUMENT;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -66,98 +46,35 @@ impl SettingsStore {
         Self { credentials }
     }
 
-    fn snapshot_map(&self) -> Result<BTreeMap<String, SettingEntry>, String> {
-        let c = &self.credentials;
-        let mut out = BTreeMap::new();
-        macro_rules! put { ($key:literal, $kind:expr, $value:expr) => {
-            if let Some(value) = $value? { out.insert($key.into(), SettingEntry { kind: $kind, value: serde_json::to_value(value).map_err(|_| "设置序列化失败")? }); }
-        }}
-        put!(
-            "fixed.account.profile",
-            SettingKind::Fixed,
-            c.load_profile()
-        );
-        put!(
-            "runtime.auth.session",
-            SettingKind::Runtime,
-            c.load_session()
-        );
-        put!("fixed.uooc.ai", SettingKind::Fixed, c.load_uooc_ai());
-        put!(
-            "runtime.uooc.session",
-            SettingKind::Runtime,
-            c.load_uooc_session()
-        );
-        if let Some(raw) = c.load_oj_accounts()? {
-            let secrets: BTreeMap<String, crate::oj::model::Secret> =
-                serde_json::from_str(&raw).map_err(|_| "OJ 账号数据损坏")?;
-            let accounts: BTreeMap<_, _> = secrets.iter().map(|(id, secret)| (id.clone(), serde_json::json!({"username":secret.username,"password":secret.password,"url":secret.url}))).collect();
-            let sessions: BTreeMap<_, _> = secrets
-                .iter()
-                .filter(|(_, secret)| !secret.cookies.is_empty())
-                .map(|(id, secret)| (id.clone(), secret.cookies.clone()))
-                .collect();
-            out.insert(
-                "fixed.oj.accounts".into(),
-                SettingEntry {
-                    kind: SettingKind::Fixed,
-                    value: serde_json::to_value(accounts).map_err(|_| "设置序列化失败")?,
-                },
-            );
-            out.insert(
-                "runtime.oj.sessions".into(),
-                SettingEntry {
-                    kind: SettingKind::Runtime,
-                    value: serde_json::to_value(sessions).map_err(|_| "设置序列化失败")?,
-                },
-            );
+    /// 当前凭据文档。与本地加密文件共用同一结构，保证明文一致。
+    fn document(&self) -> Result<VaultDocument, String> {
+        if let Some(vault) = crate::storage::vault::vault() {
+            return vault.document();
         }
-        put!(
-            "runtime.academic.sessions",
-            SettingKind::Runtime,
-            c.load_academic_sessions()
-        );
-        put!(
-            "fixed.network.dorm.settings",
-            SettingKind::Fixed,
-            c.load_dorm_settings()
-        );
-        put!(
-            "fixed.network.dorm.credentials",
-            SettingKind::Fixed,
-            c.load_dorm_credentials()
-        );
-        put!(
-            "fixed.network.staff.settings",
-            SettingKind::Fixed,
-            c.load_staff_settings()
-        );
-        put!(
-            "fixed.network.staff.credentials",
-            SettingKind::Fixed,
-            c.load_staff_credentials()
-        );
-        put!(
-            "fixed.electricity.location",
-            SettingKind::Fixed,
-            c.load_electricity_settings()
-        );
-        Ok(out)
+        let mut document = VaultDocument::default();
+        for key in entries::ALL_KEYS {
+            if let Some(value) = entries::read_entry(self.credentials.as_ref(), key)? {
+                document.entries.insert(
+                    key.to_owned(),
+                    SettingEntry {
+                        kind: entries::kind_for(key),
+                        value,
+                    },
+                );
+            }
+        }
+        Ok(document)
     }
 
     pub(crate) fn snapshot(&self) -> Result<SettingsSnapshot, String> {
         Ok(SettingsSnapshot {
-            entries: self.snapshot_map()?,
+            entries: self.document()?.entries,
         })
     }
 
     pub(crate) fn export(&self, password: &str) -> Result<String, String> {
         validate_password(password)?;
-        let plain = serde_json::to_vec(&Package {
-            version: FORMAT,
-            entries: self.snapshot_map()?,
-        })
-        .map_err(|_| "设置编码失败")?;
+        let plain = serde_json::to_vec(&self.document()?).map_err(|_| "设置编码失败")?;
         if plain.len() > MAX_PACKAGE {
             return Err("设置包过大".into());
         }
@@ -171,7 +88,7 @@ impl SettingsStore {
             .encrypt((&nonce).into(), plain.as_ref())
             .map_err(|_| "设置加密失败")?;
         let mut bytes = Vec::with_capacity(1 + SALT_LEN + NONCE_LEN + encrypted.len());
-        bytes.push(FORMAT);
+        bytes.push(entries::FORMAT);
         bytes.extend_from_slice(&salt);
         bytes.extend_from_slice(&nonce);
         bytes.extend_from_slice(&encrypted);
@@ -181,7 +98,7 @@ impl SettingsStore {
         ))
     }
 
-    fn decrypt(&self, text: &str, password: &str) -> Result<Package, String> {
+    fn decrypt(&self, text: &str, password: &str) -> Result<VaultDocument, String> {
         validate_password(password)?;
         let bytes = base64::Engine::decode(
             &base64::engine::general_purpose::URL_SAFE_NO_PAD,
@@ -191,7 +108,7 @@ impl SettingsStore {
         if bytes.len() < 1 + SALT_LEN + NONCE_LEN + 16 || bytes.len() > MAX_PACKAGE {
             return Err("设置包格式无效".into());
         }
-        if bytes[0] != FORMAT {
+        if bytes[0] != entries::FORMAT {
             return Err("不支持的设置包版本".into());
         }
         let key = derive(password, &bytes[1..1 + SALT_LEN])?;
@@ -202,11 +119,10 @@ impl SettingsStore {
                 &bytes[1 + SALT_LEN + NONCE_LEN..],
             )
             .map_err(|_| "密码错误或设置包已损坏")?;
-        let package: Package = serde_json::from_slice(&plain).map_err(|_| "设置包内容无效")?;
-        if package.version != FORMAT {
-            return Err("不支持的设置包版本".into());
-        }
-        Ok(package)
+        let document: VaultDocument =
+            serde_json::from_slice(&plain).map_err(|_| "设置包内容无效")?;
+        document.validate()?;
+        Ok(document)
     }
 
     pub(crate) fn preview(
@@ -214,17 +130,16 @@ impl SettingsStore {
         text: &str,
         password: &str,
     ) -> Result<SettingsImportPreview, String> {
-        let package = self.decrypt(text, password)?;
-        self.validate_package(&package)?;
-        let current = self.snapshot_map()?;
+        let document = self.decrypt(text, password)?;
+        let current = self.document()?;
         Ok(SettingsImportPreview {
-            conflicts: package
+            conflicts: document
                 .entries
                 .keys()
-                .filter(|k| current.contains_key(*k))
+                .filter(|key| current.entries.contains_key(*key))
                 .cloned()
                 .collect(),
-            incoming: package.entries.len(),
+            incoming: document.entries.len(),
         })
     }
 
@@ -234,180 +149,39 @@ impl SettingsStore {
         password: &str,
         overwrite: bool,
     ) -> Result<SettingsImportPreview, String> {
-        let package = self.decrypt(text, password)?;
-        self.validate_package(&package)?;
-        let incoming = package.entries.len();
-        let current = self.snapshot_map()?;
-        let conflicts: Vec<String> = package
+        let incoming = self.decrypt(text, password)?;
+        let current = self.document()?;
+        let conflicts: Vec<String> = incoming
             .entries
             .keys()
-            .filter(|k| current.contains_key(*k))
+            .filter(|key| current.entries.contains_key(*key))
             .cloned()
             .collect();
-        for (key, entry) in package.entries {
-            if !overwrite && current.contains_key(&key) {
-                continue;
+        let total = incoming.entries.len();
+
+        if let Some(vault) = crate::storage::vault::vault() {
+            // 整库一次写入，避免逐项加密与 fsync。
+            let mut merged = current;
+            for (key, entry) in incoming.entries {
+                if !overwrite && merged.entries.contains_key(&key) {
+                    continue;
+                }
+                merged.entries.insert(key, entry);
             }
-            self.write_entry(&key, entry)?;
+            vault.replace(merged)?;
+        } else {
+            for (key, entry) in incoming.entries {
+                if !overwrite && current.entries.contains_key(&key) {
+                    continue;
+                }
+                entries::write_entry(self.credentials.as_ref(), &key, entry.value)?;
+            }
         }
         Ok(SettingsImportPreview {
             conflicts,
-            incoming,
+            incoming: total,
         })
     }
-
-    fn validate_package(&self, package: &Package) -> Result<(), String> {
-        for (key, entry) in &package.entries {
-            let expected = if key.starts_with("runtime.") {
-                SettingKind::Runtime
-            } else {
-                SettingKind::Fixed
-            };
-            if entry.kind != expected {
-                return Err("设置分类与键不匹配".into());
-            }
-            let encoded = serde_json::to_string(&entry.value).map_err(|_| "设置值格式无效")?;
-            let value: Value = serde_json::from_str(&encoded).map_err(|_| "设置值格式无效")?;
-            self.validate_entry(key, entry.kind, value)?;
-        }
-        Ok(())
-    }
-
-    fn validate_entry(&self, key: &str, kind: SettingKind, value: Value) -> Result<(), String> {
-        let expected = if key.starts_with("runtime.") {
-            SettingKind::Runtime
-        } else {
-            SettingKind::Fixed
-        };
-        if kind != expected {
-            return Err("设置分类与键不匹配".into());
-        }
-        match key {
-            "fixed.account.profile" => {
-                let _: crate::auth::model::StoredAccountProfile =
-                    serde_json::from_value(value).map_err(|_| "账户设置格式无效")?;
-            }
-            "runtime.auth.session" => {
-                let _: crate::auth::session::AuthSessionSecret =
-                    serde_json::from_value(value).map_err(|_| "登录会话格式无效")?;
-            }
-            "fixed.uooc.ai" | "runtime.uooc.session" | "runtime.academic.sessions" => {
-                let _: String = serde_json::from_value(value).map_err(|_| "设置格式无效")?;
-            }
-            "fixed.oj.accounts" => {
-                let _: BTreeMap<String, OjAccount> =
-                    serde_json::from_value(value).map_err(|_| "OJ 账号设置格式无效")?;
-            }
-            "runtime.oj.sessions" => {
-                let _: BTreeMap<String, String> =
-                    serde_json::from_value(value).map_err(|_| "OJ 会话格式无效")?;
-            }
-            "fixed.network.dorm.settings" => {
-                let _: crate::campus_network::model::DormNetworkSettings =
-                    serde_json::from_value(value).map_err(|_| "校园网设置格式无效")?;
-            }
-            "fixed.network.dorm.credentials" | "fixed.network.staff.credentials" => {
-                let _: crate::campus_network::model::DormCustomCredentials =
-                    serde_json::from_value(value).map_err(|_| "校园网凭据格式无效")?;
-            }
-            "fixed.network.staff.settings" => {
-                let _: crate::campus_network::model::StaffNetworkSettings =
-                    serde_json::from_value(value).map_err(|_| "校园网设置格式无效")?;
-            }
-            "fixed.electricity.location" => {
-                let _: crate::campus_payments::model::ElectricityLocationSettings =
-                    serde_json::from_value(value).map_err(|_| "电费设置格式无效")?;
-            }
-            _ => return Err("设置键无效".into()),
-        }
-        let _ = kind;
-        Ok(())
-    }
-
-    fn write_entry(&self, key: &str, entry: SettingEntry) -> Result<(), String> {
-        let v = entry.value;
-        macro_rules! save {
-            ($ty:ty, $method:ident) => {{
-                let value: $ty = serde_json::from_value(v).map_err(|_| "设置值格式无效")?;
-                self.credentials.$method(&value)
-            }};
-        }
-        match key {
-            "fixed.account.profile" => {
-                save!(crate::auth::model::StoredAccountProfile, save_profile)
-            }
-            "runtime.auth.session" => save!(crate::auth::session::AuthSessionSecret, save_session),
-            "fixed.uooc.ai" => save!(String, save_uooc_ai),
-            "runtime.uooc.session" => save!(String, save_uooc_session),
-            "fixed.oj.accounts" | "runtime.oj.sessions" => self.save_oj_entry(key, v),
-            "runtime.academic.sessions" => save!(String, save_academic_sessions),
-            "fixed.network.dorm.settings" => save!(
-                crate::campus_network::model::DormNetworkSettings,
-                save_dorm_settings
-            ),
-            "fixed.network.dorm.credentials" => save!(
-                crate::campus_network::model::DormCustomCredentials,
-                save_dorm_credentials
-            ),
-            "fixed.network.staff.settings" => save!(
-                crate::campus_network::model::StaffNetworkSettings,
-                save_staff_settings
-            ),
-            "fixed.network.staff.credentials" => save!(
-                crate::campus_network::model::DormCustomCredentials,
-                save_staff_credentials
-            ),
-            "fixed.electricity.location" => save!(
-                crate::campus_payments::model::ElectricityLocationSettings,
-                save_electricity_settings
-            ),
-            _ => Err("设置键无效".into()),
-        }
-    }
-
-    fn save_oj_entry(&self, key: &str, value: Value) -> Result<(), String> {
-        let mut secrets: BTreeMap<String, crate::oj::model::Secret> = self
-            .credentials
-            .load_oj_accounts()?
-            .map(|raw| serde_json::from_str(&raw).map_err(|_| "OJ 账号数据损坏"))
-            .transpose()?
-            .unwrap_or_default();
-        if key == "fixed.oj.accounts" {
-            let accounts: BTreeMap<String, OjAccount> =
-                serde_json::from_value(value).map_err(|_| "OJ 账号设置格式无效")?;
-            for (id, account) in accounts {
-                let cookies = secrets
-                    .get(&id)
-                    .map(|secret| secret.cookies.clone())
-                    .unwrap_or_default();
-                secrets.insert(
-                    id,
-                    crate::oj::model::Secret {
-                        username: account.username,
-                        password: account.password,
-                        url: account.url,
-                        cookies,
-                    },
-                );
-            }
-        } else {
-            let sessions: BTreeMap<String, String> =
-                serde_json::from_value(value).map_err(|_| "OJ 会话格式无效")?;
-            for (id, cookies) in sessions {
-                secrets.entry(id).or_default().cookies = cookies;
-            }
-        }
-        self.credentials
-            .save_oj_accounts(&serde_json::to_string(&secrets).map_err(|_| "OJ 账号序列化失败")?)
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OjAccount {
-    username: String,
-    password: String,
-    url: String,
 }
 
 fn validate_password(password: &str) -> Result<(), String> {
@@ -430,7 +204,9 @@ fn derive(password: &str, salt: &[u8]) -> Result<[u8; 32], String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::{testing::MemoryCredentialStore, CredentialStore};
+    use crate::storage::{
+        testing::MemoryCredentialStore, CredentialStore, PlatformCredentialStore,
+    };
     use std::sync::Arc;
 
     fn store() -> (SettingsStore, Arc<MemoryCredentialStore>) {
@@ -462,27 +238,23 @@ mod tests {
             name: Some("local".into()),
             password: "local-pass".into(),
         };
-        let imported = Package {
-            version: FORMAT,
-            entries: BTreeMap::from([(
-                "fixed.account.profile".into(),
-                SettingEntry {
-                    kind: SettingKind::Fixed,
-                    value: serde_json::to_value(crate::auth::model::StoredAccountProfile {
-                        student_id: "222222".into(),
-                        campus_card_number: "222222".into(),
-                        name: Some("other".into()),
-                        password: "other-pass".into(),
-                    })
-                    .unwrap(),
+        let mut imported = VaultDocument::default();
+        imported
+            .set(
+                entries::PROFILE,
+                &crate::auth::model::StoredAccountProfile {
+                    student_id: "222222".into(),
+                    campus_card_number: "222222".into(),
+                    name: Some("other".into()),
+                    password: "other-pass".into(),
                 },
-            )]),
-        };
+            )
+            .unwrap();
         let (target, target_credentials) = store();
         target_credentials.save_profile(&original).unwrap();
         let encoded = encode_package(&imported, "password-123");
         let summary = target.import(&encoded, "password-123", false).unwrap();
-        assert_eq!(summary.conflicts, ["fixed.account.profile"]);
+        assert_eq!(summary.conflicts, [entries::PROFILE]);
         assert_eq!(
             target_credentials.load_profile().unwrap(),
             Some(original.clone())
@@ -498,7 +270,36 @@ mod tests {
         );
     }
 
-    fn encode_package(package: &Package, password: &str) -> String {
+    #[test]
+    fn export_plaintext_matches_credential_document_shape() {
+        let (store, credentials) = store();
+        credentials
+            .save_profile(&crate::auth::model::StoredAccountProfile {
+                student_id: "333333".into(),
+                campus_card_number: "333333".into(),
+                name: Some("测试".into()),
+                password: "test-only".into(),
+            })
+            .unwrap();
+        let exported = store.export("password-123").unwrap();
+        let plain = decode_package(&exported, "password-123");
+        let document: VaultDocument = serde_json::from_slice(&plain).unwrap();
+        let expected = store.document().unwrap();
+        assert_eq!(
+            serde_json::to_vec(&document).unwrap(),
+            serde_json::to_vec(&expected).unwrap()
+        );
+        // 文档键必须是全量键集合的子集，且与凭据库键名一一对应。
+        for key in document.entries.keys() {
+            assert!(
+                entries::ALL_KEYS.contains(&key.as_str()),
+                "{key} 不在共享键集合中"
+            );
+        }
+        assert!(!document.entries.contains_key(entries::PENDING_AUTH));
+    }
+
+    fn encode_package(document: &VaultDocument, password: &str) -> String {
         let salt = [7u8; SALT_LEN];
         let nonce = [8u8; NONCE_LEN];
         let key = derive(password, &salt).unwrap();
@@ -506,13 +307,60 @@ mod tests {
         let encrypted = cipher
             .encrypt(
                 (&nonce).into(),
-                serde_json::to_vec(package).unwrap().as_ref(),
+                serde_json::to_vec(document).unwrap().as_ref(),
             )
             .unwrap();
-        let mut bytes = vec![FORMAT];
+        let mut bytes = vec![entries::FORMAT];
         bytes.extend_from_slice(&salt);
         bytes.extend_from_slice(&nonce);
         bytes.extend_from_slice(&encrypted);
         base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, bytes)
+    }
+
+    fn decode_package(text: &str, password: &str) -> Vec<u8> {
+        let bytes = base64::Engine::decode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, text)
+            .unwrap();
+        let key = derive(password, &bytes[1..1 + SALT_LEN]).unwrap();
+        XChaCha20Poly1305::new((&key).into())
+            .decrypt(
+                bytes[1 + SALT_LEN..1 + SALT_LEN + NONCE_LEN].into(),
+                &bytes[1 + SALT_LEN + NONCE_LEN..],
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn imported_document_can_be_written_to_platform_store() {
+        // 仅验证类型转换路径：使用测试替身，不接触真实钥匙环。
+        let credentials = Arc::new(MemoryCredentialStore::default());
+        let mut document = VaultDocument::default();
+        document
+            .set(entries::UOOC_SESSION, &"cookies".to_owned())
+            .unwrap();
+        entries::write_entry(
+            credentials.as_ref(),
+            entries::UOOC_SESSION,
+            serde_json::json!("cookies"),
+        )
+        .unwrap();
+        assert_eq!(
+            credentials.load_uooc_session().unwrap().as_deref(),
+            Some("cookies")
+        );
+        let _ = std::marker::PhantomData::<PlatformCredentialStore>;
+    }
+
+    #[test]
+    fn kind_of_shared_keys_matches_setting_prefix() {
+        use crate::storage::entries::SettingKind;
+        assert_eq!(
+            entries::kind_for(entries::PENDING_AUTH),
+            SettingKind::Runtime
+        );
+        assert_eq!(
+            entries::kind_for(entries::ELECTRICITY_MONITOR),
+            SettingKind::Runtime
+        );
+        assert_eq!(entries::kind_for(entries::PROFILE), SettingKind::Fixed);
     }
 }

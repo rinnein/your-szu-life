@@ -64,7 +64,9 @@ pub(crate) fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(move |app| {
             crate::logging::initialize(app.handle());
-            crate::storage::initialize(app.handle())?;
+            if let Err(error) = crate::storage::initialize(app.handle()) {
+                log::error!("凭据存储初始化失败: {error}");
+            }
             if let Err(error) = crate::ocr::initialize(app.handle()) {
                 log::error!("OCR 模型服务初始化失败: {error}");
             }

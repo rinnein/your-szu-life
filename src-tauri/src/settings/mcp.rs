@@ -21,7 +21,7 @@ impl UnifiedSzuMcpService {
 
     #[tool(
         name = "settings_get_storage_status",
-        description = "查询系统底层安全凭据存储（Keyring 密钥环）的运行健康状态与硬件加密支持级别"
+        description = "查询本地加密凭据存储的运行状态。凭据以单一主密钥加密保存于本机文件，钥匙环中仅保留该主密钥"
     )]
     pub async fn settings_get_storage_status(&self) -> Result<String, String> {
         let status = crate::storage::commands::get_credential_storage_status();
