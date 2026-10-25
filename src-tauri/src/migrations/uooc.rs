@@ -3,6 +3,21 @@ use std::collections::HashMap;
 use std::path::Path;
 use toasty::migration::{MigrationFile, MigrationSet};
 
+pub static UOOC_STATE_MIGRATIONS: MigrationSet = MigrationSet::new(&[MigrationFile::new(
+    1,
+    "0001_init_uooc_state.sql",
+    "CREATE TABLE IF NOT EXISTS uooc_state_records (
+        id TEXT PRIMARY KEY,
+        settings_json TEXT NOT NULL,
+        tasks_json TEXT NOT NULL,
+        quizzes_json TEXT NOT NULL,
+        discussion_json TEXT NOT NULL,
+        qa_api_key TEXT,
+        qa_bootstrapped_json TEXT NOT NULL,
+        updated_at_ms INTEGER NOT NULL
+    );",
+)]);
+
 pub static UOOC_MIGRATIONS: MigrationSet = MigrationSet::new(&[MigrationFile::new(
     1,
     "0001_init_uooc.sql",
@@ -90,6 +105,7 @@ pub fn cleanup_legacy_uooc_files(app_data_dir: &Path) {
         "qa-vector-cache.json",
         "video-durations.json",
         "durations.json",
+        "state.json",
     ] {
         let p = app_data_dir.join(legacy);
         if p.exists() {

@@ -2,6 +2,7 @@ mod ai;
 mod checkin;
 mod client;
 pub(crate) mod commands;
+pub(crate) mod db;
 mod discussion;
 mod duration;
 mod login;
@@ -56,12 +57,13 @@ struct Runtime {
     discussion: DiscussionStoreState,
     qa_api_key: Option<String>,
     initial_qa_bootstrapped_accounts: HashSet<String>,
-    last_saved_bytes: Option<Vec<u8>>,
+    last_saved: Option<String>,
 }
 pub(super) struct Service {
     app: Option<tauri::AppHandle>,
     credentials: SharedCredentialStore,
     path: PathBuf,
+    state_db: db::UoocStateDatabase,
     runtime: Mutex<Runtime>,
     client: RwLock<Arc<Client>>,
     refresh_lock: tokio::sync::Mutex<()>,
@@ -91,10 +93,16 @@ impl Service {
         credentials: SharedCredentialStore,
         root: PathBuf,
     ) -> Result<Arc<Self>, String> {
-        let path = root.join("state.json");
-        let saved = persistence::read::<SavedState>(&path);
-        let mut message = saved.as_ref().err().cloned().unwrap_or_default();
-        let mut saved = saved.ok().flatten().unwrap_or_default();
+        let state_db = db::UoocStateDatabase::open(&root.join("state.sqlite"))?;
+        let mut message = String::new();
+        let mut saved = match state_db.load() {
+            Ok(saved) => saved,
+            Err(error) => {
+                message = error;
+                None
+            }
+        }
+        .unwrap_or_default();
         let saved_settings = saved.settings.clone();
         quiz::restore_media(&mut saved.quizzes, &root);
         if saved.settings.validate().is_err() {
@@ -130,8 +138,9 @@ impl Service {
         Ok(Arc::new(Self {
             app,
             credentials,
-            path,
             durations: DurationCache::new(root.join("quiz_qa_bank.db")),
+            path: root,
+            state_db,
             progress_requests: progress::ProgressRequests::default(),
             native_session: Arc::new(tokio::sync::Mutex::new(())),
             ai: Mutex::new(ai),
@@ -169,7 +178,7 @@ impl Service {
                 discussion: saved.discussion,
                 qa_api_key: saved.qa_api_key,
                 initial_qa_bootstrapped_accounts: saved.initial_qa_bootstrapped_accounts,
-                last_saved_bytes: None,
+                last_saved: None,
             }),
         }))
     }
@@ -198,28 +207,29 @@ impl Service {
                 .drain(..runtime.snapshot.logs.len() - 200);
         }
         let saved_res =
-            quiz::saved(&runtime.snapshot.quizzes, self.path.parent().unwrap()).map(|quizzes| {
-                SavedState {
-                    settings: runtime.snapshot.settings.clone(),
-                    tasks: runtime.snapshot.tasks.clone(),
-                    quizzes,
-                    discussion: runtime.discussion.clone(),
-                    qa_api_key: runtime.qa_api_key.clone(),
-                    initial_qa_bootstrapped_accounts: runtime.initial_qa_bootstrapped_accounts.clone(),
-                }
+            quiz::saved(&runtime.snapshot.quizzes, &self.path).map(|quizzes| SavedState {
+                settings: runtime.snapshot.settings.clone(),
+                tasks: runtime.snapshot.tasks.clone(),
+                quizzes,
+                discussion: runtime.discussion.clone(),
+                qa_api_key: runtime.qa_api_key.clone(),
+                initial_qa_bootstrapped_accounts: runtime
+                    .initial_qa_bootstrapped_accounts
+                    .clone(),
             });
         match saved_res {
-            Ok(saved) => {
-                if let Ok(bytes) = serde_json::to_vec(&saved) {
-                    if runtime.last_saved_bytes.as_ref() != Some(&bytes) {
-                        if let Err(error) = persistence::write_bytes(&self.path, &bytes) {
+            Ok(saved) => match serde_json::to_string(&saved) {
+                Ok(signature) => {
+                    if runtime.last_saved.as_ref() != Some(&signature) {
+                        if let Err(error) = self.state_db.save(&saved) {
                             runtime.snapshot.message = error;
                         } else {
-                            runtime.last_saved_bytes = Some(bytes);
+                            runtime.last_saved = Some(signature);
                         }
                     }
                 }
-            }
+                Err(_) => runtime.snapshot.message = "UOOC 数据序列化失败".into(),
+            },
             Err(error) => {
                 runtime.snapshot.message = error;
             }
@@ -489,7 +499,7 @@ impl Service {
     pub(crate) async fn get_qa_db(&self) -> Result<&quiz::db::QaDatabase, String> {
         self.qa_db
             .get_or_try_init(|| async {
-                let db_path = self.path.parent().unwrap().join("quiz_qa_bank.db");
+                let db_path = self.path.join("quiz_qa_bank.db");
                 quiz::db::QaDatabase::open(&db_path).await
             })
             .await

@@ -251,7 +251,7 @@ pub(crate) struct CourseTask {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct SavedState {
+pub(crate) struct SavedState {
     pub settings: Settings,
     pub tasks: Vec<CourseTask>,
     #[serde(default)]

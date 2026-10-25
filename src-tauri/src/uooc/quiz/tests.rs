@@ -26,6 +26,8 @@ fn ready(service: &Service) {
             name: "test".into(),
         });
         s.courses = vec![course("42")];
+        // 单测不得访问真实题库服务：指向必然拒绝连接的本地端口，保持流程走本地题库与 AI。
+        s.settings.qa_server_url = "http://127.0.0.1:1".into();
     });
 }
 #[test]
@@ -160,7 +162,7 @@ async fn approval_flow_is_atomic_and_never_leaks_credentials_to_ai() {
     assert!(passed.load(Ordering::SeqCst));
     assert_eq!(submits.load(Ordering::SeqCst), 1);
     assert_eq!(service.snapshot().tasks[0].status, TaskStatus::Completed);
-    let saved = std::fs::read_to_string(root.join("state.json")).unwrap();
+    let saved = serde_json::to_string(&service.state_db.load().unwrap().unwrap()).unwrap();
     assert!(!saved.contains("test-ai-key"));
     assert!(!saved.contains("private-form-token"));
     service.change(|s| s.user.as_mut().unwrap().id = "8".into());

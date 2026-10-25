@@ -369,16 +369,17 @@ pub(super) async fn run(
                 if !match_res.matched_answers.is_empty() || !match_res.reviews.is_empty() {
                     let all_matched = match_res.matched_answers.len() == fresh.questions.len()
                         && !fresh.questions.is_empty();
+                    // update 持有 runtime 锁执行闭包，必须先取出设置，否则会重入加锁死锁。
+                    let dry_run = service.snapshot().settings.dry_run;
                     update(&service, &ctx, |q| {
                         q.answers.extend(match_res.matched_answers);
                         q.reviews = match_res.reviews;
                         if all_matched {
-                            q.stage =
-                                if q.mode == Mode::Yolo && !service.snapshot().settings.dry_run {
-                                    Stage::Preparing
-                                } else {
-                                    Stage::AwaitingApproval
-                                };
+                            q.stage = if q.mode == Mode::Yolo && !dry_run {
+                                Stage::Preparing
+                            } else {
+                                Stage::AwaitingApproval
+                            };
                             q.message = "已从 UOOC 题库匹配全部标准答案".into();
                         }
                     });

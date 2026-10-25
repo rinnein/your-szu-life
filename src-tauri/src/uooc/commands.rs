@@ -595,9 +595,7 @@ pub(crate) async fn clear_uooc_local_bank(app: tauri::AppHandle) -> Result<usize
     } else {
         0
     };
-    if let Some(parent) = service.path.parent() {
-        crate::migrations::uooc::cleanup_legacy_uooc_files(parent);
-    }
+    crate::migrations::uooc::cleanup_legacy_uooc_files(&service.path);
     service.log_debug("bank", format!("已清空本地题库（共 {count} 道题目）"));
     Ok(count)
 }

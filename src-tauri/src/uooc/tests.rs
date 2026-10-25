@@ -656,18 +656,17 @@ async fn startup_restores_only_running_courses_after_identity_and_course_checks(
         videos: vec![],
         generation: 0,
     };
-    persistence::write(
-        &root.join("state.json"),
-        &SavedState {
+    db::UoocStateDatabase::open(&root.join("state.sqlite"))
+        .unwrap()
+        .save(&SavedState {
             settings: Settings::default(),
             tasks: vec![task("42", true), task("43", false), task("44", true)],
             quizzes: Default::default(),
             discussion: Default::default(),
             qa_api_key: None,
             initial_qa_bootstrapped_accounts: Default::default(),
-        },
-    )
-    .unwrap();
+        })
+        .unwrap();
     let service = service_test(root.clone());
     let progress = Arc::new(AtomicUsize::new(0));
     let calls = progress.clone();
