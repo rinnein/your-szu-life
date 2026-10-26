@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 
 import "@testing-library/jest-dom/vitest";
+import { typeInto } from "./ui/testing";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
-import { toast } from "@heroui/react";
+import { toast } from "./ui";
 import SettingsTransfer from "./SettingsTransfer";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -26,8 +27,8 @@ describe("SettingsTransfer toast notifications", () => {
 
     render(<SettingsTransfer />);
 
-    const passwordInput = screen.getByPlaceholderText("至少 8 个字符");
-    fireEvent.change(passwordInput, { target: { value: "secret123456" } });
+    const passwordInput = screen.getAllByPlaceholderText("至少 8 个字符")[0];
+    typeInto(passwordInput, "secret123456");
 
     const exportBtn = screen.getByRole("button", { name: "生成加密字符串" });
     fireEvent.click(exportBtn);
@@ -43,11 +44,11 @@ describe("SettingsTransfer toast notifications", () => {
 
     render(<SettingsTransfer />);
 
-    const textarea = screen.getByPlaceholderText("粘贴另一台设备生成的加密字符串");
-    fireEvent.change(textarea, { target: { value: "invalid-cipher-text" } });
+    const textarea = screen.getAllByPlaceholderText("粘贴另一台设备生成的加密字符串")[0];
+    typeInto(textarea, "invalid-cipher-text");
 
-    const passwordInput = screen.getByPlaceholderText("输入导出时设置的密码");
-    fireEvent.change(passwordInput, { target: { value: "secret123456" } });
+    const passwordInput = screen.getAllByPlaceholderText("输入导出时设置的密码")[0];
+    typeInto(passwordInput, "secret123456");
 
     const previewBtn = screen.getByRole("button", { name: "检查设置包" });
     fireEvent.click(previewBtn);

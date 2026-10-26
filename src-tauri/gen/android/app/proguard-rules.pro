@@ -25,6 +25,7 @@
 -keep class in.rinne.your_szu_life.CampusNetworkBridge {
     public *;
 }
+-keep class in.rinne.your_szu_life.WallpaperColorBridge { public *; }
 -keep class in.rinne.your_szu_life.AppUpdateBridge { public *; }
 -keep class in.rinne.your_szu_life.PackageReplacedReceiver { public *; }
 -keep class in.rinne.your_szu_life.AuthCookieBridge { public *; }

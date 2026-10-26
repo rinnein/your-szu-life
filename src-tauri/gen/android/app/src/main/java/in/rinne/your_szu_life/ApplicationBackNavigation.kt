@@ -131,6 +131,11 @@ class ApplicationBackNavigation(
     }
   }
 
+  /** 壁纸变更后通知前端重新生成配色。复用同一条消息通道。 */
+  fun notifyWallpaperChanged() {
+    if (!disposed) capabilityReply?.postMessage("wallpaper-changed")
+  }
+
   fun dispose() {
     disposed = true
     callback.remove()

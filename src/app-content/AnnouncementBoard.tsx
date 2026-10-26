@@ -1,7 +1,8 @@
 import { useLogicalNavigation } from "../logical-navigation";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Accordion, Alert, Button, Card, Spinner } from "@heroui/react";
+import { Card, Carousel, LoadingIndicator, Button } from "material/react";
+import { Banner, Disclosure } from "../ui";
 import { LuArrowLeft, LuArrowRight, LuArrowUpRight, LuImage, LuMegaphone } from "react-icons/lu";
 import { useAppContent } from "./context";
 import { contentTime, openPublicUrl } from "./external";
@@ -77,7 +78,11 @@ export function AnnouncementImage({
                 : "正在加载" + title + "头图"
           }
         >
-          {!url || current?.failed ? <LuImage aria-hidden="true" /> : <Spinner size="sm" />}
+          {!url || current?.failed ? (
+            <LuImage aria-hidden="true" />
+          ) : (
+            <LoadingIndicator size={16} />
+          )}
           <span>{!url ? "暂无头图" : current?.failed ? "头图暂不可用" : "正在加载头图"}</span>
         </span>
       )}
@@ -90,12 +95,12 @@ function AnnouncementCard({ unit }: { unit: AnnouncementUnit }) {
   const [error, setError] = useState<string>();
   if ("kind" in unit) {
     return (
-      <Card className="announcement-card">
+      <Card className="announcement-card" variant="outlined">
         <Button
           className="announcement-trigger announcement-link"
-          variant="tertiary"
+          variant="text"
           aria-label={unit.title}
-          onPress={() => {
+          onClick={() => {
             void navigation.push(unit.url);
           }}
         >
@@ -110,35 +115,29 @@ function AnnouncementCard({ unit }: { unit: AnnouncementUnit }) {
   }
   if (unit.desc !== undefined) {
     return (
-      <Card className="announcement-card">
-        <Accordion hideSeparator>
-          <Accordion.Item>
-            <Accordion.Heading>
-              <Accordion.Trigger className="announcement-trigger">
-                <AnnouncementImage url={unit.pic} title={unit.title} />
-                <span className="announcement-title-row">
-                  <span>{unit.title}</span>
-                  <Accordion.Indicator />
-                </span>
-              </Accordion.Trigger>
-            </Accordion.Heading>
-            <Accordion.Panel>
-              <Accordion.Body className="announcement-body content-plaintext">
-                {unit.desc}
-              </Accordion.Body>
-            </Accordion.Panel>
-          </Accordion.Item>
-        </Accordion>
+      <Card className="announcement-card" variant="outlined">
+        <Disclosure
+          title={
+            <span className="announcement-trigger">
+              <AnnouncementImage url={unit.pic} title={unit.title} />
+              <span className="announcement-title-row">
+                <span>{unit.title}</span>
+              </span>
+            </span>
+          }
+        >
+          <div className="announcement-body content-plaintext">{unit.desc}</div>
+        </Disclosure>
       </Card>
     );
   }
   return (
-    <Card className="announcement-card">
+    <Card className="announcement-card" variant="outlined">
       <Button
         className="announcement-trigger announcement-link"
-        variant="tertiary"
+        variant="text"
         aria-label={unit.title + "（在系统浏览器打开）"}
-        onPress={() => {
+        onClick={() => {
           setError(undefined);
           void openPublicUrl(unit.goto).catch(() => setError("无法打开系统浏览器，请稍后重试。"));
         }}
@@ -227,7 +226,7 @@ export function AnnouncementBoard() {
         </h2>
         {refreshing && (
           <span className="content-muted" role="status">
-            <Spinner size="sm" /> 正在刷新
+            <LoadingIndicator size={16} /> 正在刷新
           </span>
         )}
       </div>
@@ -237,25 +236,24 @@ export function AnnouncementBoard() {
         </p>
       )}
       {feed?.error && (
-        <Alert status="warning">
-          <Alert.Indicator />
-          <Alert.Content>
-            <Alert.Title>本次公告获取失败</Alert.Title>
-            <Alert.Description>
-              {feed.error.message}
-              {feed.fromCache &&
-                " 正在显示上次成功获取的公告（" + contentTime(feed.lastSuccessAt) + "）。"}
-            </Alert.Description>
-          </Alert.Content>
-        </Alert>
+        <Banner status="warning">
+          <Banner.Title>本次公告获取失败</Banner.Title>
+          <Banner.Description>
+            {feed.error.message}
+            {feed.fromCache &&
+              " 正在显示上次成功获取的公告（" + contentTime(feed.lastSuccessAt) + "）。"}
+          </Banner.Description>
+        </Banner>
       )}
       {displayUnits.length ? (
-        <div
+        <Carousel
           className="announcement-carousel"
           data-testid="announcement-carousel"
           role="region"
           aria-roledescription="carousel"
           aria-label="校园公告轮播"
+          index={currentIndex}
+          onChange={(e: any) => setCurrentIndex(e.detail?.value ?? e.target?.value ?? 0)}
           onMouseEnter={() => setCarouselPaused(true)}
           onMouseLeave={() => setCarouselPaused(false)}
           onFocus={() => setCarouselPaused(true)}
@@ -279,17 +277,17 @@ export function AnnouncementBoard() {
               <>
                 <Button
                   className="announcement-carousel-control announcement-carousel-control-previous"
-                  variant="secondary"
+                  variant="tonal"
                   aria-label="上一条公告"
-                  onPress={showPrevious}
+                  onClick={showPrevious}
                 >
                   <LuArrowLeft aria-hidden="true" />
                 </Button>
                 <Button
                   className="announcement-carousel-control announcement-carousel-control-next"
-                  variant="secondary"
+                  variant="tonal"
                   aria-label="下一条公告"
-                  onPress={showNext}
+                  onClick={showNext}
                 >
                   <LuArrowRight aria-hidden="true" />
                 </Button>
@@ -310,10 +308,10 @@ export function AnnouncementBoard() {
               ))}
             </div>
           )}
-        </div>
+        </Carousel>
       ) : (
-        <Card className="announcement-empty">
-          <Card.Content>
+        <Card className="announcement-empty" variant="outlined">
+          <div className="p-6 text-center">
             <p>
               {!snapshot
                 ? error
@@ -327,7 +325,7 @@ export function AnnouncementBoard() {
                       ? "暂时无法获取公告，可在关于页手动重试。"
                       : "正在获取公告…"}
             </p>
-          </Card.Content>
+          </div>
         </Card>
       )}
     </section>

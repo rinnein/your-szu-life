@@ -1,11 +1,12 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
+import { typeInto } from "../ui/testing";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type EventCallback } from "@tauri-apps/api/event";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { toast } from "@heroui/react";
+import { toast } from "../ui";
 import { routeTree } from "../routeTree.gen";
 import { initialLogicalEntries } from "../logical-navigation";
 import {
@@ -28,7 +29,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   },
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
-// jsdom does not implement the Web Animations API used by HeroUI tab indicators.
+// jsdom does not implement the Web Animations API used by M3 tab indicators.
 Element.prototype.getAnimations = () => [];
 let snapshot: UoocSnapshot;
 let onState: EventCallback<UoocSnapshot> | undefined;
@@ -315,7 +316,7 @@ it("displays and saves qa server url field on qa tab", async () => {
   expect(qaInput).toBeInTheDocument();
   expect(qaInput).toHaveValue(DEFAULT_QA_SERVER_URL);
 
-  fireEvent.change(qaInput, { target: { value: "http://custom-qa.example:5000" } });
+  typeInto(qaInput, "http://custom-qa.example:5000");
   fireEvent.click(screen.getByRole("button", { name: "保存题库地址" }));
 
   await waitFor(() =>
@@ -415,7 +416,8 @@ it("marks server-completed videos green without changing their reported position
   fireEvent.click(accordionTrigger);
   const completedChips = await screen.findAllByText("已刷完");
   expect(completedChips.length).toBeGreaterThanOrEqual(1);
-  expect(completedChips[0].closest('[data-slot="chip"]')).toHaveClass("chip--success");
+  // M3 的 Chip 用 md-chip 类与 data-color 表达配色，而不是 BEM 类名。
+  expect(completedChips[0].closest(".md-chip")).toHaveAttribute("data-color", "success");
   expect(screen.getByRole("progressbar", { name: "视频一进度" })).toHaveAttribute(
     "aria-valuenow",
     "100",
@@ -518,13 +520,15 @@ it("enables quiz mode picker only when test weight is positive, defaulting to �
   };
   mount("/uooc?tab=courses");
   await screen.findByRole("checkbox", { name: "人工智能" });
+  // 触发按钮的可访问名称是「当前值 + 字段名」（react-aria 的形状），
+  // 读屏因此能一并读出当前选择。
   const pickers = screen
-    .getAllByRole("button")
-    .filter((b) => b.getAttribute("aria-label") === "答题模式");
+    .getAllByRole("combobox")
+    .filter((b) => /答题模式/.test(b.getAttribute("aria-label") ?? ""));
   expect(pickers).toHaveLength(2);
   // Course 1 has test weight 20 -> enabled
   expect(pickers[0]).toBeEnabled();
-  expect(pickers[0]).toHaveTextContent("手动答题");
+  expect(pickers[0]).toHaveValue("手动答题");
   // Course 2 has test weight 0 -> disabled
   expect(pickers[1]).toBeDisabled();
   expect(screen.getByText("测验无权重占比，无需配置答题模式")).toBeInTheDocument();

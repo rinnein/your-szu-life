@@ -1,5 +1,6 @@
 import { useId, useRef, useState, useEffect } from "react";
-import { Button, Label, TextArea, toast } from "@heroui/react";
+import { Button } from "material/react";
+import { toast } from "../ui";
 import { LuCopy, LuSpace } from "react-icons/lu";
 import { copyText } from "../clipboard";
 import { notifySuccess } from "./feedback";
@@ -78,22 +79,24 @@ export function SampleField({
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
-        <Label htmlFor={id}>{label}</Label>
+        <label className="font-medium text-sm" htmlFor={id}>
+          {label}
+        </label>
         <div className="flex items-center gap-1">
           <Button
-            size="sm"
-            variant={showSpaces ? "secondary" : "tertiary"}
+            size="xs"
+            variant={showSpaces ? "tonal" : "text"}
             aria-label={`${showSpaces ? "隐藏" : "显示"}样例 ${sample} ${label}空格`}
-            onPress={() => setShowSpaces((prev) => !prev)}
+            onClick={() => setShowSpaces((prev) => !prev)}
           >
             <LuSpace aria-hidden="true" />
             {showSpaces ? "隐藏空格" : "显示空格"}
           </Button>
           <Button
-            size="sm"
-            variant="tertiary"
+            size="xs"
+            variant="text"
             aria-label={`复制样例 ${sample} ${label}`}
-            onPress={() => {
+            onClick={() => {
               // Copy the original string, not textarea.value (which normalizes CRLF).
               void copyText(value).then((copied) => {
                 if (copied) notifySuccess(`样例 ${sample} ${label}已复制。`);
@@ -111,7 +114,12 @@ export function SampleField({
         </div>
       </div>
       <div className="relative min-w-0">
-        <TextArea
+        {/*
+          样例需要与上方蒙层逐字符对齐：wrap="off"、等宽字体与固定行高都要
+          精确控制，而 material 的 TextField 把这些样式封在 shadow root 里，
+          外部只能通过 CSS 变量微调。这里保留原生 textarea。
+        */}
+        <textarea
           ref={element}
           id={id}
           aria-label={`样例 ${sample} ${label}`}
@@ -120,8 +128,13 @@ export function SampleField({
           rows={Math.max(3, Math.min(12, value.split("\n").length))}
           wrap="off"
           spellCheck={false}
-          fullWidth
-          className="resize-y font-mono whitespace-pre text-sm leading-6"
+          className="md-sample-field resize-y font-mono whitespace-pre text-sm leading-6"
+          style={{
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+            fontSize: "14px",
+            lineHeight: "24px",
+            padding: "12px 16px",
+          }}
           onScroll={handleScroll}
         />
         {showSpaces && (
@@ -129,7 +142,14 @@ export function SampleField({
             ref={overlayRef}
             aria-hidden="true"
             data-testid="whitespace-overlay"
-            className="pointer-events-none select-none absolute inset-0 overflow-hidden font-mono whitespace-pre text-sm leading-6 px-3 py-2 border border-transparent"
+            className="pointer-events-none select-none absolute inset-0 overflow-hidden font-mono whitespace-pre text-sm leading-6"
+            style={{
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+              fontSize: "14px",
+              lineHeight: "24px",
+              padding: "12px 16px",
+              border: "1px solid transparent",
+            }}
           >
             <WhitespaceOverlay text={value} />
           </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Button, Card, Chip, Input, Label, Switch, TextField } from "@heroui/react";
+import { Card, Switch, TextField, Button } from "material/react";
+import { Chip } from "../ui";
 import type { Snapshot } from "./types";
 export function CompanionSettings({
   snapshot,
@@ -28,54 +29,49 @@ export function CompanionSettings({
     }
   };
   return (
-    <Card>
-      <Card.Header>
-        <Card.Title>cph-ng 直接提交</Card.Title>
-        <Card.Description>
-          此处配置适用于全部 OJ。发送题目和 cph-ng
-          直接提交共用同一个本机端口；编译选项仍分别保存在各 OJ 实例中。
-        </Card.Description>
-      </Card.Header>
-      <Card.Content className="oj-form">
+    <Card variant="outlined">
+      <div slot="headline">cph-ng 直接提交</div>
+      <div slot="subhead">
+        此处配置适用于全部 OJ。发送题目和 cph-ng 直接提交共用同一个本机端口；编译选项仍分别保存在各
+        OJ 实例中。
+      </div>
+      <div className="oj-form p-4">
         <div className="oj-actions">
           <Switch
-            isSelected={snapshot.companionEnabled ?? true}
-            isDisabled={busy}
-            onChange={(value) => void apply(value)}
+            checked={snapshot.companionEnabled ?? true}
+            disabled={busy}
+            onChange={(e: any) => void apply(e.detail?.checked ?? e.target?.checked)}
           >
-            <Switch.Content>
-              <Switch.Control>
-                <Switch.Thumb />
-              </Switch.Control>
-              接受 cph-ng 提交
-            </Switch.Content>
+            接受 cph-ng 提交
           </Switch>
           <Chip color={status?.active ? "success" : "default"}>
             {status?.active ? "当前提交端" : status?.connected ? "已连接" : "未连接"}
           </Chip>
         </div>
         <div className="oj-actions">
-          <TextField value={port} onChange={setPort}>
-            <Label>本机接收端口</Label>
-            <Input inputMode="numeric" placeholder="默认 27121，与 cph-ng 保持一致" />
-          </TextField>
+          <TextField
+            label="本机接收端口"
+            value={port}
+            onChange={(e: any) => setPort(e.detail?.value ?? e.target?.value ?? "")}
+            placeholder="默认 27121，与 cph-ng 保持一致"
+          />
           <Button
-            variant="secondary"
-            isDisabled={busy}
-            onPress={() => void apply(snapshot.companionEnabled ?? true)}
+            variant="tonal"
+            disabled={busy}
+            onClick={() => void apply(snapshot.companionEnabled ?? true)}
           >
             保存连接设置
           </Button>
           {status?.connected && !status.active && (
             <Button
-              onPress={() => void invoke("activate_oj_companion").catch((e) => onError(String(e)))}
+              onClick={() => void invoke("activate_oj_companion").catch((e) => onError(String(e)))}
             >
               使用泥深提交
             </Button>
           )}
         </div>
         <p role="status">{status?.message}</p>
-      </Card.Content>
+      </div>
     </Card>
   );
 }

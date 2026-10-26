@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Button } from "@heroui/react";
+import { Button } from "material/react";
 import type { Mode } from "./model";
 type Batch = {
   code?: string;
@@ -134,10 +134,10 @@ export function BatchInfo({ account, mode }: { account: string; mode: Mode }) {
       <div className="flex items-center justify-between">
         <strong>当前选课批次</strong>
         <Button
-          size="sm"
-          variant="tertiary"
-          isPending={!!value.pending}
-          onPress={() => void fetchInfo(key, "batchInfo", mode)}
+          size="xs"
+          variant="text"
+          disabled={!!value.pending}
+          onClick={() => void fetchInfo(key, "batchInfo", mode)}
         >
           刷新批次
         </Button>

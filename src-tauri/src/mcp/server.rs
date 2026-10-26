@@ -17,6 +17,7 @@ impl UnifiedSzuMcpService {
             + Self::embedding_tools()
             + Self::app_content_tools()
             + Self::settings_tools()
+            + Self::appearance_tools()
             + Self::ui_tools()
     }
 }

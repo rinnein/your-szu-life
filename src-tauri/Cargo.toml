@@ -5,6 +5,18 @@ description = "泥深 - 你的SZU助手"
 authors = ["you"]
 edition = "2021"
 
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.test]
+debug = 0
+
+[profile.test.package."*"]
+debug = false
+
 [lib]
 name = "your_szu_life_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]

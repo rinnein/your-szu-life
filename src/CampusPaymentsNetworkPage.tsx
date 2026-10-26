@@ -1,7 +1,8 @@
 import { useLogicalNavigation } from "./logical-navigation";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Alert, Button, Spinner } from "@heroui/react";
+import { LoadingIndicator, Button } from "material/react";
+import { Banner } from "./ui";
 import { LuWifi } from "react-icons/lu";
 import { useAuth } from "./auth";
 import { Card } from "./components";
@@ -58,13 +59,10 @@ export default function CampusPaymentsNetworkPage() {
     >
       <div className="grid gap-4">
         {notice && (
-          <Alert status="warning" role="alert">
-            <Alert.Indicator />
-            <Alert.Content>
-              <Alert.Title>网费办理提示</Alert.Title>
-              <Alert.Description>{notice}</Alert.Description>
-            </Alert.Content>
-          </Alert>
+          <Banner status="warning" role="alert">
+            <Banner.Title>网费办理提示</Banner.Title>
+            <Banner.Description>{notice}</Banner.Description>
+          </Banner>
         )}
 
         <section
@@ -77,8 +75,8 @@ export default function CampusPaymentsNetworkPage() {
           </p>
         </section>
 
-        <Button variant="primary" isDisabled={busy} onPress={() => void open()}>
-          {busy && <Spinner size="sm" color="current" />}
+        <Button variant="filled" disabled={busy} onClick={() => void open()}>
+          {busy && <LoadingIndicator size={16} />}
           {busy ? "正在打开网费官网…" : "打开网费官网"}
         </Button>
 

@@ -1,19 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import {
-  Alert,
-  Button,
-  Card,
-  FieldError,
-  Form,
-  Input,
-  Label,
-  ListBox,
-  Select,
-  Spinner,
-  TextField,
-  toast,
-} from "@heroui/react";
+import { Card, LoadingIndicator, Select, SelectOption, TextField, Button } from "material/react";
+import { Banner, toast } from "./ui";
 import { LuZap } from "react-icons/lu";
 import { copyText } from "./clipboard";
 import { ElectricityDetails } from "./ElectricityDetails";
@@ -44,25 +32,16 @@ function LocationSelect({
 }) {
   return (
     <Select
-      aria-label={label}
-      selectedKey={value || null}
-      isDisabled={disabled}
-      onSelectionChange={(key) => onChange(String(key))}
+      label={label}
+      value={value || ""}
+      disabled={disabled}
+      onChange={(e: any) => onChange(e.detail?.value ?? e.target?.value ?? "")}
     >
-      <Label>{label}</Label>
-      <Select.Trigger>
-        <Select.Value />
-        <Select.Indicator />
-      </Select.Trigger>
-      <Select.Popover>
-        <ListBox aria-label={label} items={options}>
-          {(option) => (
-            <ListBox.Item id={option.id} textValue={option.name}>
-              {option.name}
-            </ListBox.Item>
-          )}
-        </ListBox>
-      </Select.Popover>
+      {options.map((option) => (
+        <SelectOption key={option.id} value={option.id}>
+          {option.name}
+        </SelectOption>
+      ))}
     </Select>
   );
 }
@@ -354,24 +333,28 @@ export default function CampusPaymentsElectricityPage() {
     ((!savedSettings || editing) && (loadingOptions || !optionsReady));
   return (
     <div className="electricity-page">
-      <Card className="payments-card">
-        <Card.Header>
-          <Card.Title className="payments-card-title">
-            <LuZap aria-hidden="true" />
-            查电量
-          </Card.Title>
-          <Card.Description>
-            查询近期开销和当前剩余电量；宿舍配置保存在本机安全存储，也可导出分享。
-          </Card.Description>
-        </Card.Header>
-        <Card.Content>
+      <Card className="payments-card" variant="outlined">
+        <div slot="headline" className="payments-card-title flex items-center gap-2">
+          <LuZap aria-hidden="true" />
+          <span>查电量</span>
+        </div>
+        <div slot="subhead">
+          查询近期开销和当前剩余电量；宿舍配置保存在本机安全存储，也可导出分享。
+        </div>
+        <div>
           {(loading || loadingOptions) && (
             <div className="electricity-loading" aria-live="polite">
-              <Spinner size="sm" aria-label="正在加载电费宿舍选项" />
+              <LoadingIndicator size={16} aria-label="正在加载电费宿舍选项" />
               <span>正在加载宿舍选项…</span>
             </div>
           )}
-          <Form className="electricity-form" onSubmit={submit}>
+          <form
+            className="electricity-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submit(e);
+            }}
+          >
             {(!savedSettings || editing) && (
               <div className="electricity-fields">
                 <LocationSelect
@@ -396,36 +379,33 @@ export default function CampusPaymentsElectricityPage() {
                   onChange={chooseBuilding}
                 />
                 <TextField
+                  label="宿舍号"
                   name="roomName"
-                  isRequired
-                  isInvalid={Boolean(settings.roomName.trim()) && roomFloor === null}
-                >
-                  <Label>宿舍号</Label>
-                  <Input
-                    disabled={formDisabled}
-                    value={settings.roomName}
-                    inputMode="numeric"
-                    onChange={(e) => {
-                      requestId.current += 1;
-                      setResult(undefined);
-                      setError(undefined);
-                      setSettings((s) => ({ ...s, roomName: e.target.value }));
-                    }}
-                    placeholder="如 601 或 1201"
-                  />
-                  {settings.roomName.trim() && roomFloor === null && (
-                    <FieldError>房间号应为一至两位楼层加两位房间号。</FieldError>
-                  )}
-                </TextField>
+                  required
+                  // 校验失败时用 supportingText 承载行内提示 —— material 的
+                  // TextField 没有独立的 FieldError 子组件。
+                  error={Boolean(settings.roomName.trim()) && roomFloor === null}
+                  supportingText="房间号应为一至两位楼层加两位房间号。"
+                  disabled={formDisabled}
+                  value={settings.roomName}
+                  inputMode="numeric"
+                  onChange={(e: any) => {
+                    const value = e.detail?.value ?? e.target?.value ?? "";
+                    requestId.current += 1;
+                    setResult(undefined);
+                    setError(undefined);
+                    setSettings((s) => ({ ...s, roomName: value }));
+                  }}
+                  placeholder="如 601 或 1201"
+                />
                 {area && (
-                  <TextField name="floorRange">
-                    <Label>楼层范围</Label>
-                    <Input
-                      value={roomFloor === null ? "" : `${roomFloor} 层`}
-                      readOnly
-                      placeholder="输入宿舍号后自动识别"
-                    />
-                  </TextField>
+                  <TextField
+                    label="楼层范围"
+                    name="floorRange"
+                    value={roomFloor === null ? "" : `${roomFloor} 层`}
+                    readonly
+                    placeholder="输入宿舍号后自动识别"
+                  />
                 )}
               </div>
             )}
@@ -440,25 +420,25 @@ export default function CampusPaymentsElectricityPage() {
             {savedSettings && editing && (
               <Button
                 type="button"
-                variant="tertiary"
-                isDisabled={busy || sharing}
-                onPress={() => setSettings(savedSettings)}
+                variant="text"
+                disabled={busy || sharing}
+                onClick={() => setSettings(savedSettings)}
               >
                 使用上次配置
               </Button>
             )}
             <p className="text-sm text-muted">展示最近 31 天的用电与充值记录。</p>
             <div className="electricity-actions">
-              <Button type="submit" variant="primary" isDisabled={formDisabled || !canQuery}>
-                {busy && <Spinner size="sm" color="current" />}
+              <Button type="submit" variant="filled" disabled={formDisabled || !canQuery}>
+                {busy && <LoadingIndicator size={16} />}
                 {busy ? "查询中…" : "查询电费"}
               </Button>
               {savedSettings && !editing && (
                 <Button
                   type="button"
-                  variant="outline"
-                  isDisabled={formDisabled}
-                  onPress={() => void refreshLatest()}
+                  variant="outlined"
+                  disabled={formDisabled}
+                  onClick={() => void refreshLatest()}
                 >
                   刷新最新数据
                 </Button>
@@ -466,58 +446,53 @@ export default function CampusPaymentsElectricityPage() {
               {savedSettings && (
                 <Button
                   type="button"
-                  variant="outline"
-                  isDisabled={busy || sharing}
-                  onPress={() => setEditing(!editing)}
+                  variant="outlined"
+                  disabled={busy || sharing}
+                  onClick={() => setEditing(!editing)}
                 >
                   {editing ? "收起配置" : "修改宿舍配置"}
                 </Button>
               )}
             </div>
-          </Form>
+          </form>
           <div className="mt-4 flex flex-col gap-3">
             {savedSettings && (
               <Button
-                variant="outline"
-                isDisabled={formDisabled}
-                onPress={() => void exportConfig()}
+                variant="outlined"
+                disabled={formDisabled}
+                onClick={() => void exportConfig()}
               >
                 导出宿舍配置并复制
               </Button>
             )}
             {(!savedSettings || editing) && (
               <>
-                <TextField value={importText} onChange={setImportText} isDisabled={formDisabled}>
-                  <Label>宿舍配置码</Label>
-                  <Input placeholder="粘贴分享的宿舍配置码" />
-                </TextField>
+                <TextField
+                  label="宿舍配置码"
+                  value={importText}
+                  onChange={(e: any) => setImportText(e.detail?.value ?? e.target?.value ?? "")}
+                  disabled={formDisabled}
+                  placeholder="粘贴分享的宿舍配置码"
+                />
                 <Button
-                  variant="secondary"
-                  isDisabled={formDisabled || !importText.trim()}
-                  onPress={() => void importConfig()}
+                  variant="tonal"
+                  disabled={formDisabled || !importText.trim()}
+                  onClick={() => void importConfig()}
                 >
                   快捷导入宿舍配置
                 </Button>
               </>
             )}
             {shareMessage && <p role="status">{shareMessage}</p>}
-            {exportText && (
-              <TextField value={exportText} isReadOnly>
-                <Label>可复制的宿舍配置码</Label>
-                <Input />
-              </TextField>
-            )}
+            {exportText && <TextField label="可复制的宿舍配置码" value={exportText} readonly />}
           </div>
           {error && (
-            <Alert status="danger" role="alert">
-              <Alert.Indicator />
-              <Alert.Content>
-                <Alert.Title>查询未完成</Alert.Title>
-                <Alert.Description>{error}</Alert.Description>
-              </Alert.Content>
-            </Alert>
+            <Banner status="danger" role="alert">
+              <Banner.Title>查询未完成</Banner.Title>
+              <Banner.Description>{error}</Banner.Description>
+            </Banner>
           )}
-        </Card.Content>
+        </div>
       </Card>
       {result && (
         <ElectricityDetails

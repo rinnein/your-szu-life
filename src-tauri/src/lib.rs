@@ -2,6 +2,7 @@
 
 mod app;
 mod app_content;
+pub(crate) mod appearance;
 pub(crate) mod aria2;
 mod auth;
 mod campus_network;

@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
-import { toast } from "@heroui/react";
+import { toast } from "../ui";
 import { AiSettings } from "./AiSettings";
 import type { AiConfig } from "./types";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -36,12 +36,11 @@ afterEach(() => {
 it("keeps connection fields out of UOOC and saves only model preferences", async () => {
   const successSpy = vi.spyOn(toast, "success");
   render(<AiSettings onMode={vi.fn()} onOpenAiSettings={vi.fn()} />);
-  await screen.findByRole("combobox", { name: "主模型名称" });
+  const combobox = await screen.findByRole("combobox", { name: "主模型名称" });
   expect(screen.queryByLabelText("主模型 API Key")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("主模型 API 地址")).not.toBeInTheDocument();
-  fireEvent.change(screen.getByRole("combobox", { name: "主模型名称" }), {
-    target: { value: "custom-model" },
-  });
+  const select = (combobox.getRootNode() as ShadowRoot).host || combobox;
+  fireEvent(select, new CustomEvent("change", { detail: { value: "custom-model" } }));
   fireEvent.click(screen.getByRole("button", { name: "保存运行设置" }));
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("save_uooc_ai_preferences", {
@@ -92,8 +91,9 @@ it("shows UOOC AI save failures via toast.danger instead of form alerts", async 
       description: "运行设置保存失败",
     }),
   );
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  // 失败只经 toast 呈现：页面上不应出现行内 Banner。
+  // （错误 toast 本身用 role="alert" 播报，因此这里按类名判断行内提示。）
+  expect(document.querySelector(".banner")).toBeNull();
 });
 
 it("shows alert when reading initial AI config fails", async () => {

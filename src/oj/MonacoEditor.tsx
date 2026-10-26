@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, Button, Spinner } from "@heroui/react";
+import { LoadingIndicator, Button } from "material/react";
+import { Banner } from "../ui";
 import { init } from "modern-monaco";
 import type * as Monaco from "modern-monaco/editor-core";
 import { registerOjCompletions } from "./monaco-completions";
@@ -70,15 +71,19 @@ export default function MonacoEditor(props: CodeEditorProps) {
             latest.current.onChange(document.getValue());
         });
         const root = window.document.documentElement;
-        const theme = () =>
-          monaco.editor.setTheme(
-            root.classList.contains("dark") || root.dataset.theme === "dark"
-              ? "vitesse-dark"
-              : "vitesse-light",
-          );
+        const theme = () => {
+          const isDark =
+            root.classList.contains("dark") ||
+            root.dataset.theme === "dark" ||
+            root.getAttribute("data-theme-mode") === "dark";
+          monaco.editor.setTheme(isDark ? "vitesse-dark" : "vitesse-light");
+        };
         theme();
         const observer = new MutationObserver(theme);
-        observer.observe(root, { attributes: true, attributeFilter: ["class", "data-theme"] });
+        observer.observe(root, {
+          attributes: true,
+          attributeFilter: ["class", "data-theme", "data-theme-mode"],
+        });
         release = () => {
           observer.disconnect();
           listener.dispose();
@@ -112,16 +117,14 @@ export default function MonacoEditor(props: CodeEditorProps) {
   return (
     <div>
       {error && (
-        <Alert status="danger">
-          <Alert.Content>
-            {error}
-            <Button variant="secondary" onPress={() => setAttempt((v) => v + 1)}>
-              重试加载编辑器
-            </Button>
-          </Alert.Content>
-        </Alert>
+        <Banner status="danger">
+          {error}
+          <Button variant="tonal" onClick={() => setAttempt((v) => v + 1)}>
+            重试加载编辑器
+          </Button>
+        </Banner>
       )}
-      {!ready && !error && <Spinner aria-label="加载代码编辑器" />}
+      {!ready && !error && <LoadingIndicator size={24} aria-label="加载代码编辑器" />}
       <div ref={host} className="oj-monaco-editor" data-editor="modern-monaco" />
     </div>
   );

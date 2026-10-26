@@ -3,12 +3,14 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { type NavigateOptions } from "@tanstack/react-router";
-import { Alert, AlertDialog, Button, Card, Dropdown, Kbd, Spinner } from "@heroui/react";
+import { Card, Dialog, LoadingIndicator, Menu, MenuItem, Button } from "material/react";
+import { Banner, Kbd } from "./ui";
 import { LuSearch } from "react-icons/lu";
 import { openCommandPalette } from "./command-palette";
 import { authFailureFor, useAuth } from "./auth";
 import { ProfileForm } from "./ProfileForm";
-import { BrandMark, PageShell, Section } from "./components";
+import { BrandMark, Section } from "./components";
+import { PageSurface } from "./shell/AppShell";
 import { AnnouncementBoard } from "./app-content/AnnouncementBoard";
 import {
   FaBug,
@@ -123,22 +125,19 @@ function AuthCard({
   status?: "default" | "danger";
 }) {
   return (
-    <Card className="auth-card" variant="default">
-      <Card.Content className="auth-card-content">
+    <Card className="auth-card" variant="outlined">
+      <div className="auth-card-content p-6 flex flex-col items-center text-center">
         <BrandMark large />
-        <Card.Title>{title}</Card.Title>
-        <Card.Description>{detail}</Card.Description>
+        <h2 className="text-xl font-bold mt-3 text-foreground">{title}</h2>
+        <p className="text-sm text-muted mt-1 max-w-sm">{detail}</p>
         {status === "danger" && (
-          <Alert className="auth-alert" status="danger">
-            <Alert.Indicator />
-            <Alert.Content>
-              <Alert.Title>需要重新处理</Alert.Title>
-              <Alert.Description>请确认当前网络和官方认证窗口状态后再试。</Alert.Description>
-            </Alert.Content>
-          </Alert>
+          <Banner status="danger" className="auth-alert my-3 w-full text-left">
+            <Banner.Title>需要重新处理</Banner.Title>
+            <Banner.Description>请确认当前网络和官方认证窗口状态后再试。</Banner.Description>
+          </Banner>
         )}
-        {children}
-      </Card.Content>
+        <div className="mt-4 w-full">{children}</div>
+      </div>
     </Card>
   );
 }
@@ -155,28 +154,31 @@ function LogoutDialog({
   onConfirm: () => Promise<void>;
 }) {
   return (
-    <AlertDialog isOpen={isOpen} onOpenChange={onOpenChange}>
-      <AlertDialog.Backdrop>
-        <AlertDialog.Container size="sm">
-          <AlertDialog.Dialog>
-            <AlertDialog.Icon status="danger" />
-            <AlertDialog.Header>
-              <AlertDialog.Heading>确认注销？</AlertDialog.Heading>
-            </AlertDialog.Header>
-            <AlertDialog.Body>
-              这会清除本机认证数据，需要重新完成深圳大学统一认证。
-            </AlertDialog.Body>
-            <AlertDialog.Footer>
-              <AlertDialog.CloseTrigger />
-              <Button variant="danger" isDisabled={isBusy} onPress={onConfirm}>
-                {isBusy && <Spinner size="sm" color="current" />}
-                {isBusy ? "注销中…" : "确认注销"}
-              </Button>
-            </AlertDialog.Footer>
-          </AlertDialog.Dialog>
-        </AlertDialog.Container>
-      </AlertDialog.Backdrop>
-    </AlertDialog>
+    <Dialog
+      open={isOpen}
+      onClose={() => onOpenChange(false)}
+      headline="确认注销？"
+      subtitle="这会清除本机认证数据，需要重新完成深圳大学统一认证。"
+      size="small"
+      actions={
+        <>
+          <Button variant="text" onClick={() => onOpenChange(false)}>
+            取消
+          </Button>
+          <Button
+            className="button-danger"
+            variant="filled"
+            disabled={isBusy}
+            onClick={() => void onConfirm()}
+          >
+            {isBusy && <LoadingIndicator size={16} />}
+            {isBusy ? "注销中…" : "确认注销"}
+          </Button>
+        </>
+      }
+    >
+      <p>注销后需要重新登录才能使用学习与生活相关功能。</p>
+    </Dialog>
   );
 }
 
@@ -186,6 +188,7 @@ export default function App() {
   const [placeholder, setPlaceholder] = useState<string>();
   const [authBusy, setAuthBusy] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [debugEnabled, setDebugEnabled] = useState(false);
   const debugTapTimes = useRef<number[]>([]);
@@ -234,58 +237,70 @@ export default function App() {
 
   if ("Checking" in state)
     return (
-      <PageShell centered showAbout>
-        <Card className="status-card" variant="default">
-          <Spinner size="lg" />
-          <Card.Title>正在检查统一认证状态…</Card.Title>
+      <PageSurface centered showAbout>
+        <Card className="status-card" variant="outlined">
+          <div className="p-6 text-center flex flex-col items-center gap-3">
+            <LoadingIndicator size={40} />
+            <span className="font-semibold text-base">正在检查统一认证状态…</span>
+          </div>
         </Card>
-      </PageShell>
+      </PageSurface>
     );
   if ("Unauthenticated" in state)
     return (
-      <PageShell centered showAbout>
+      <PageSurface centered showAbout>
         <AuthCard
           title="请完成统一认证"
           detail="请在当前窗口完成深圳大学官方登录，登录成功后会自动返回工作台。"
         >
-          <Button fullWidth variant="primary" onPress={beginAuthentication} isDisabled={authBusy}>
-            {authBusy && <Spinner size="sm" color="current" />}
+          <Button
+            className="w-full"
+            variant="filled"
+            onClick={beginAuthentication}
+            disabled={authBusy}
+          >
+            {authBusy && <LoadingIndicator size={16} />}
             {authBusy ? "正在打开…" : "打开认证窗口"}
           </Button>
         </AuthCard>
-      </PageShell>
+      </PageSurface>
     );
   if ("Authenticating" in state)
     return (
-      <PageShell centered showAbout>
+      <PageSurface centered showAbout>
         <AuthCard
           title="正在恢复统一认证"
           detail="已有账户将自动尝试登录；需要验证码或出现错误时，请在官方页面手动继续。认证成功后会自动返回。"
         >
           <div className="auth-progress" role="status">
-            <Spinner />
+            <LoadingIndicator size={24} />
             <span>等待官方认证完成…</span>
           </div>
         </AuthCard>
-      </PageShell>
+      </PageSurface>
     );
 
   const failure = authFailureFor(state);
   if (failure)
     return (
-      <PageShell centered showAbout>
+      <PageSurface centered showAbout>
         <AuthCard title={failure.title} detail={failure.detail} status="danger">
-          <Button fullWidth variant="primary" onPress={beginAuthentication} isDisabled={authBusy}>
-            {authBusy && <Spinner size="sm" color="current" />}
+          <Button
+            className="w-full"
+            variant="filled"
+            onClick={beginAuthentication}
+            disabled={authBusy}
+          >
+            {authBusy && <LoadingIndicator size={16} />}
             {authBusy ? "正在打开…" : failure.action}
           </Button>
         </AuthCard>
-      </PageShell>
+      </PageSurface>
     );
   if ("AwaitingProfile" in state) {
     const studentId = state.AwaitingProfile.studentId ?? userData?.studentId ?? "";
     return (
-      <PageShell centered showAbout>
+      <PageSurface centered showAbout>
         <ProfileForm
           onlyCampusCard
           name={state.AwaitingProfile.name ?? userData?.name}
@@ -297,14 +312,14 @@ export default function App() {
               setState({ Authenticated: { name: saved.name, studentId: saved.studentId } });
           }}
         />
-      </PageShell>
+      </PageSurface>
     );
   }
 
   const auth =
     "Authenticated" in state ? state.Authenticated : { studentId: profile?.studentId ?? "" };
   return (
-    <PageShell maxWidth="2xl">
+    <PageSurface maxWidth="2xl">
       <div className="grid gap-12">
         <header className="flex items-start justify-between gap-5 flex-wrap">
           <div className="flex-1 min-w-0">
@@ -323,47 +338,47 @@ export default function App() {
               工作台
             </h1>
           </div>
-          <Dropdown>
-            <Dropdown.Trigger className="account-trigger shrink-0" aria-label="打开账户菜单">
-              <span>{auth.studentId}</span>
-              <span className="account-chevron" aria-hidden="true">
-                ⌄
-              </span>
-            </Dropdown.Trigger>
-            <Dropdown.Popover placement="bottom end">
-              <Dropdown.Menu
-                aria-label="账户操作"
-                onAction={(key) => {
-                  if (key === "settings") void navigation.push("/settings");
-                  if (key === "reauth") void beginAuthentication();
-                  if (key === "logout") setLogoutOpen(true);
-                }}
-              >
-                <Dropdown.Item id="identity" textValue={auth.name ?? "未设置姓名"} isDisabled>
-                  <strong>{auth.name ?? "未设置姓名"}</strong>
-                </Dropdown.Item>
-                <Dropdown.Item
-                  id="card"
-                  textValue={`校园卡号 ${profile?.campusCardNumber ?? "未设置"}`}
-                  isDisabled
-                >
-                  校园卡号：{profile?.campusCardNumber ?? "未设置"}
-                </Dropdown.Item>
-                <Dropdown.Item id="settings">设置</Dropdown.Item>
-                <Dropdown.Item id="reauth">重新认证</Dropdown.Item>
-                <Dropdown.Item id="logout" variant="danger">
-                  注销
-                </Dropdown.Item>
-              </Dropdown.Menu>
-            </Dropdown.Popover>
-          </Dropdown>
+          <div className="account-menu">
+            <Button
+              variant="text"
+              className="account-trigger"
+              aria-label="打开账户菜单"
+              aria-haspopup="menu"
+              aria-expanded={accountMenuOpen}
+              onClick={() => setAccountMenuOpen((value) => !value)}
+            >
+              {auth.studentId}
+            </Button>
+            <Menu
+              aria-label="账户操作"
+              open={accountMenuOpen}
+              onClose={() => setAccountMenuOpen(false)}
+              onSelect={(event) => {
+                const key = event.detail.value;
+                setAccountMenuOpen(false);
+                if (key === "settings") void navigation.push("/settings");
+                if (key === "reauth") void beginAuthentication();
+                if (key === "logout") setLogoutOpen(true);
+              }}
+            >
+              <MenuItem value="identity" disabled>
+                {auth.name ?? "未设置姓名"}
+              </MenuItem>
+              <MenuItem value="card" disabled>
+                校园卡号：{profile?.campusCardNumber ?? "未设置"}
+              </MenuItem>
+              <MenuItem value="settings">设置</MenuItem>
+              <MenuItem value="reauth">重新认证</MenuItem>
+              <MenuItem value="logout">注销</MenuItem>
+            </Menu>
+          </div>
         </header>
 
-        <div>
-          <Button
-            variant="outline"
-            className="w-full justify-between text-muted hover:text-foreground h-11 px-3.5 bg-default-100/50 border-default-200"
-            onPress={() => openCommandPalette()}
+        <div className="w-full flex justify-center">
+          <button
+            type="button"
+            className="w-full h-11 px-4 rounded-xl border border-separator/60 bg-surface-secondary/50 hover:bg-surface-secondary transition-colors flex items-center justify-between text-muted hover:text-foreground cursor-pointer shadow-xs focus-visible:outline-2 focus-visible:outline-primary"
+            onClick={() => openCommandPalette()}
             aria-label="打开命令面板快捷搜索"
           >
             <span className="flex items-center gap-2.5 text-sm">
@@ -371,13 +386,9 @@ export default function App() {
               <span>搜索功能或输入快捷指令</span>
             </span>
             <span className="hidden sm:inline-flex items-center gap-1">
-              <Kbd>
-                <Kbd.Abbr keyValue="command" />
-                <Kbd.Abbr keyValue="shift" />
-                <Kbd.Content>P</Kbd.Content>
-              </Kbd>
+              <Kbd>⌘ ⇧ P</Kbd>
             </span>
-          </Button>
+          </button>
         </div>
 
         <AnnouncementBoard />
@@ -389,11 +400,13 @@ export default function App() {
                 {features
                   .filter(({ debugOnly }) => !debugOnly || debugEnabled)
                   .map(({ label, icon: FeatureIcon, description, to }) => (
-                    <Button
+                    // 富内容入口（图标 + 标题 + 描述）不适合 material 的纯文本按钮，
+                    // 用原生 button 承载 M3 卡片样式，文案天然可被读屏读取。
+                    <button
                       key={label}
+                      type="button"
                       className="feature-button"
-                      variant="outline"
-                      onPress={() => (to ? void navigation.push(to) : setPlaceholder(label))}
+                      onClick={() => (to ? void navigation.push(to) : setPlaceholder(label))}
                     >
                       <span className="feature-icon" aria-hidden="true">
                         <FeatureIcon size={19} focusable="false" />
@@ -405,7 +418,7 @@ export default function App() {
                       <span className="feature-arrow" aria-hidden="true">
                         →
                       </span>
-                    </Button>
+                    </button>
                   ))}
               </div>
             </Section>
@@ -413,20 +426,13 @@ export default function App() {
         </div>
 
         {placeholder && (
-          <Alert className="placeholder-alert" status="default" role="status">
-            <Alert.Indicator />
-            <Alert.Content>
-              <Alert.Title>{placeholder}功能即将支持</Alert.Title>
-              <Alert.Description>当前仅提供入口占位。</Alert.Description>
-            </Alert.Content>
-            <Button
-              variant="tertiary"
-              onPress={() => setPlaceholder(undefined)}
-              aria-label="关闭提示"
-            >
+          <Banner status="default" className="placeholder-alert">
+            <Banner.Title>{placeholder}功能即将支持</Banner.Title>
+            <Banner.Description>当前仅提供入口占位。</Banner.Description>
+            <Button variant="text" onClick={() => setPlaceholder(undefined)} aria-label="关闭提示">
               ×
             </Button>
-          </Alert>
+          </Banner>
         )}
       </div>
 
@@ -446,7 +452,7 @@ export default function App() {
           }
         }}
       />
-    </PageShell>
+    </PageSurface>
   );
 }
 

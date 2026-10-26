@@ -1,4 +1,5 @@
-import { Card, Chip, Kbd, Table } from "@heroui/react";
+import { Card } from "material/react";
+import { Chip, Kbd, Table } from "../ui";
 
 export interface ShortcutEntry {
   shortcut: string;
@@ -60,24 +61,18 @@ export const SHORTCUT_ENTRIES: ShortcutEntry[] = [
 
 export function ShortcutsTable() {
   return (
-    <Card aria-labelledby="shortcuts-table-title">
-      <Card.Header>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Card.Title id="shortcuts-table-title">命令面板快捷指令对照表</Card.Title>
-          <div className="flex items-center gap-1.5 text-xs text-muted">
-            <span>全局快捷键：</span>
-            <Kbd>
-              <Kbd.Abbr keyValue="command" />
-              <Kbd.Abbr keyValue="shift" />
-              <Kbd.Content>P</Kbd.Content>
-            </Kbd>
-          </div>
+    <Card aria-labelledby="shortcuts-table-title" variant="outlined">
+      <div slot="headline" className="flex flex-wrap items-center justify-between gap-3 w-full">
+        <span id="shortcuts-table-title">命令面板快捷指令对照表</span>
+        <div className="flex items-center gap-1.5 text-xs text-muted">
+          <span>全局快捷键：</span>
+          <Kbd>⌘ ⇧ P</Kbd>
         </div>
-        <Card.Description>
-          在应用内任意页面按下快捷键唤起命令面板，输入下方英文缩写或功能名称即可快速跳转。
-        </Card.Description>
-      </Card.Header>
-      <Card.Content className="pt-2 w-full min-w-0 max-w-full overflow-hidden">
+      </div>
+      <div slot="subhead">
+        在应用内任意页面按下快捷键唤起命令面板，输入下方英文缩写或功能名称即可快速跳转。
+      </div>
+      <div className="pt-2 w-full min-w-0 max-w-full overflow-hidden">
         <p className="text-[11px] text-muted mb-2 sm:hidden">
           左右滑动表格可查看完整说明与跳转目标
         </p>
@@ -112,7 +107,7 @@ export function ShortcutsTable() {
             </Table.Content>
           </Table.ScrollContainer>
         </Table>
-      </Card.Content>
+      </div>
     </Card>
   );
 }

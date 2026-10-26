@@ -141,4 +141,7 @@ permissions = [
   "allow-subscribe-enrollment-state",
   "allow-subscribe-oj-state",
   "allow-subscribe-uooc-state",
+  "allow-get-appearance",
+  "allow-save-appearance",
+  "allow-get-wallpaper-seed",
 ]

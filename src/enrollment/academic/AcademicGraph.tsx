@@ -12,7 +12,7 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import dagre from "@dagrejs/dagre";
-import { Button } from "@heroui/react";
+import { Button } from "material/react";
 import { LuChevronRight, LuMinus, LuPlus, LuScan, LuHouse } from "react-icons/lu";
 import { completionSummary, type AcademicTree } from "./tree";
 import { getViewState, saveViewState } from "./view-state";
@@ -33,10 +33,10 @@ function AcademicNode({ data }: NodeProps<Node<Data>>) {
     >
       <Handle type="target" position={Position.Left} className="opacity-0" />
       <Button
-        variant="ghost"
+        variant="text"
         className="nodrag h-full min-w-0 flex-1 flex-col items-start gap-1 whitespace-normal rounded-xl px-4 text-left"
         aria-label={`查看${data.label}的课程`}
-        onPress={data.open}
+        onClick={data.open}
       >
         <span className="line-clamp-2 text-sm font-semibold leading-5">{data.label}</span>
         <span className="text-xs text-muted">{data.summary}</span>
@@ -44,11 +44,10 @@ function AcademicNode({ data }: NodeProps<Node<Data>>) {
       {data.childrenCount > 0 && (
         <Button
           className="nodrag mr-2 shrink-0"
-          size="sm"
-          isIconOnly
-          variant="tertiary"
+          size="xs"
+          variant="text"
           aria-label={`${data.expanded ? "收起" : "展开"}${data.label}`}
-          onPress={data.toggle}
+          onClick={data.toggle}
         >
           {data.expanded ? <LuMinus /> : <LuChevronRight />}
         </Button>
@@ -197,17 +196,17 @@ function Graph({
       </ReactFlow>
       <div className="absolute right-2 top-2 sm:right-3 sm:top-3 flex gap-1.5 sm:gap-2">
         <Button
-          size="sm"
-          variant="secondary"
-          onPress={() => void flow.fitView({ padding: 0.18, maxZoom: 1, duration: 250 })}
+          size="xs"
+          variant="tonal"
+          onClick={() => void flow.fitView({ padding: 0.18, maxZoom: 1, duration: 250 })}
         >
           <LuScan />
           适应窗口
         </Button>
         <Button
-          size="sm"
-          variant="secondary"
-          onPress={() => {
+          size="xs"
+          variant="tonal"
+          onClick={() => {
             const root = elements.nodes.find((n) => n.id === tree.root);
             if (root)
               void flow.setCenter(root.position.x + 120, root.position.y + 45, {

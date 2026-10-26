@@ -3,7 +3,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { toast } from "@heroui/react";
+import { toast } from "./ui";
 import {
   initialLogicalEntries,
   isChildDocument,

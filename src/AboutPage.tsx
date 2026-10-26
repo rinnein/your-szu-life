@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Alert, Avatar, Button, Spinner, toast } from "@heroui/react";
+import { LoadingIndicator, Button } from "material/react";
+import { Banner, Avatar, toast } from "./ui";
 import { LuArrowUpRight, LuDownload, LuRefreshCw, LuUsers } from "react-icons/lu";
 import { BrandMark, Card, ModuleHeader, PageShell } from "./components";
 import { useAppContent } from "./app-content/context";
@@ -96,9 +97,9 @@ function Contributors() {
         {result?.repository && (
           <Button
             className="repository-link"
-            size="sm"
-            variant="tertiary"
-            onPress={() => open(result.repository!.url)}
+            size="xs"
+            variant="text"
+            onClick={() => open(result.repository!.url)}
           >
             {result.repository.fullName}
             <LuArrowUpRight aria-hidden="true" />
@@ -106,7 +107,7 @@ function Contributors() {
         )}
         {loading && (
           <p className="content-loading" role="status">
-            <Spinner size="sm" /> 正在加载贡献者…
+            <LoadingIndicator size={16} /> 正在加载贡献者…
           </p>
         )}
         {result?.status === "unconfigured" && (
@@ -115,20 +116,16 @@ function Contributors() {
           </p>
         )}
         {(error || result?.error) && (
-          <Alert status="warning" role="status">
-            <Alert.Indicator />
-            <Alert.Content>
-              <Alert.Title>
-                {result?.status === "rateLimited" ? "GitHub 请求受限" : "贡献者加载失败"}
-              </Alert.Title>
-              <Alert.Description>
-                {error || result?.error?.message}
-                {result?.fromCache && " 仍显示上次成功加载的贡献者。"}
-                {result?.error?.retryAt &&
-                  " 可在 " + contentTime(result.error.retryAt) + " 后重试。"}
-              </Alert.Description>
-            </Alert.Content>
-          </Alert>
+          <Banner status="warning" role="status">
+            <Banner.Title>
+              {result?.status === "rateLimited" ? "GitHub 请求受限" : "贡献者加载失败"}
+            </Banner.Title>
+            <Banner.Description>
+              {error || result?.error?.message}
+              {result?.fromCache && " 仍显示上次成功加载的贡献者。"}
+              {result?.error?.retryAt && " 可在 " + contentTime(result.error.retryAt) + " 后重试。"}
+            </Banner.Description>
+          </Banner>
         )}
         {!!result?.contributors.length && (
           <ul className="contributors-grid" aria-label="GitHub 贡献者">
@@ -136,20 +133,16 @@ function Contributors() {
               <li key={contributor.login}>
                 <Button
                   className="contributor-link"
-                  variant="tertiary"
-                  onPress={() => open(contributor.url)}
+                  variant="text"
+                  onClick={() => open(contributor.url)}
                   aria-label={contributor.login + " 的 GitHub 主页"}
                 >
-                  <Avatar size="sm">
-                    <Avatar.Image
-                      src={contributor.avatarUrl}
-                      alt={contributor.login + "头像"}
-                      loading="lazy"
-                      crossOrigin="anonymous"
-                      referrerPolicy="no-referrer"
-                    />
-                    <Avatar.Fallback>{contributor.login.slice(0, 2).toUpperCase()}</Avatar.Fallback>
-                  </Avatar>
+                  <Avatar
+                    size="sm"
+                    src={contributor.avatarUrl}
+                    alt={contributor.login + "头像"}
+                    fallback={contributor.login.slice(0, 2).toUpperCase()}
+                  />
                   <span>{contributor.login}</span>
                 </Button>
               </li>
@@ -167,10 +160,10 @@ function Contributors() {
         )}
         {(error || result?.error) && (
           <Button
-            variant="secondary"
-            size="sm"
-            isDisabled={loading}
-            onPress={() => {
+            variant="tonal"
+            size="xs"
+            disabled={loading}
+            onClick={() => {
               request.current = undefined;
               setGeneration((value) => value + 1);
             }}
@@ -300,18 +293,14 @@ export default function AboutPage() {
                 {updateStatus(snapshot, refreshing, error)}
               </p>
               <Button
-                variant="primary"
-                isDisabled={refreshing || (!!snapshot && !hasUpdateSource)}
-                onPress={() => {
+                variant="filled"
+                disabled={refreshing || (!!snapshot && !hasUpdateSource)}
+                onClick={() => {
                   clearPostponedUpdateReminder();
                   void refresh();
                 }}
               >
-                {refreshing ? (
-                  <Spinner size="sm" color="current" />
-                ) : (
-                  <LuRefreshCw aria-hidden="true" />
-                )}
+                {refreshing ? <LoadingIndicator size={16} /> : <LuRefreshCw aria-hidden="true" />}
                 {refreshing ? "正在检查…" : "检查更新"}
               </Button>
             </div>
@@ -319,17 +308,14 @@ export default function AboutPage() {
               <p className="content-muted">{snapshot.configuration.message}</p>
             )}
             {(error || update?.error) && (
-              <Alert status="warning" role="status">
-                <Alert.Indicator />
-                <Alert.Content>
-                  <Alert.Title>未能确认最新版本</Alert.Title>
-                  <Alert.Description>
-                    {error || update?.error?.message}
-                    {update?.fromCache &&
-                      " 以下版本信息与更新日志来自上次成功检查，不代表本次检查成功。"}
-                  </Alert.Description>
-                </Alert.Content>
-              </Alert>
+              <Banner status="warning" role="status">
+                <Banner.Title>未能确认最新版本</Banner.Title>
+                <Banner.Description>
+                  {error || update?.error?.message}
+                  {update?.fromCache &&
+                    " 以下版本信息与更新日志来自上次成功检查，不代表本次检查成功。"}
+                </Banner.Description>
+              </Banner>
             )}
             <dl className="content-times">
               <div>
@@ -420,28 +406,25 @@ export default function AboutPage() {
                     {(updateProgress?.status === "installing" ||
                       updateProgress?.status === "ready") && (
                       <p className="content-muted" role="status">
-                        <Spinner size="sm" /> 正在启动安装程序，请按系统提示完成更新…
+                        <LoadingIndicator size={16} /> 正在启动安装程序，请按系统提示完成更新…
                       </p>
                     )}
                     {updateProgress?.status === "error" && (
-                      <Alert status="danger" role="alert">
-                        <Alert.Indicator />
-                        <Alert.Content>
-                          <Alert.Title>应用内更新失败</Alert.Title>
-                          <Alert.Description>
-                            {updateProgress.error ?? "下载或解压过程中发生错误。"}
-                          </Alert.Description>
-                        </Alert.Content>
-                      </Alert>
+                      <Banner status="danger" role="alert">
+                        <Banner.Title>应用内更新失败</Banner.Title>
+                        <Banner.Description>
+                          {updateProgress.error ?? "下载或解压过程中发生错误。"}
+                        </Banner.Description>
+                      </Banner>
                     )}
                     <div className="flex flex-wrap gap-2">
                       <Button
-                        variant="primary"
-                        isDisabled={updating || updateProgress?.status === "downloading"}
-                        onPress={() => void handleStartInAppUpdate()}
+                        variant="filled"
+                        disabled={updating || updateProgress?.status === "downloading"}
+                        onClick={() => void handleStartInAppUpdate()}
                       >
                         {updating || updateProgress?.status === "downloading" ? (
-                          <Spinner size="sm" color="current" />
+                          <LoadingIndicator size={16} />
                         ) : (
                           <LuDownload aria-hidden="true" />
                         )}
@@ -456,8 +439,8 @@ export default function AboutPage() {
                               : `应用内更新 ${update.data.latest_ver}`}
                       </Button>
                       <Button
-                        variant="secondary"
-                        onPress={() => {
+                        variant="tonal"
+                        onClick={() => {
                           setOpenError(undefined);
                           void openPublicUrl(update.data!.latest_ver_url).catch(() =>
                             setOpenError("无法打开系统浏览器，请稍后重试。"),
@@ -471,8 +454,8 @@ export default function AboutPage() {
                   </>
                 ) : platform === "linux" ? (
                   <Button
-                    variant="secondary"
-                    onPress={() => {
+                    variant="tonal"
+                    onClick={() => {
                       setOpenError(undefined);
                       const targetUrl = update.data!.release_url || update.data!.latest_ver_url;
                       void openPublicUrl(targetUrl).catch(() =>
@@ -485,8 +468,8 @@ export default function AboutPage() {
                   </Button>
                 ) : (
                   <Button
-                    variant="secondary"
-                    onPress={() => {
+                    variant="tonal"
+                    onClick={() => {
                       setOpenError(undefined);
                       void openPublicUrl(update.data!.latest_ver_url).catch(() =>
                         setOpenError("无法打开系统浏览器，请稍后重试。"),
@@ -522,8 +505,8 @@ export default function AboutPage() {
         >
           <div className="flex flex-wrap gap-2">
             <Button
-              variant="tertiary"
-              onPress={() =>
+              variant="text"
+              onClick={() =>
                 void openPublicUrl("https://github.com/rinnein/auto-uooc-go").catch(() =>
                   setOpenError("无法打开参考项目链接"),
                 )
@@ -532,8 +515,8 @@ export default function AboutPage() {
               auto-uooc-go <LuArrowUpRight aria-hidden="true" />
             </Button>
             <Button
-              variant="tertiary"
-              onPress={() =>
+              variant="text"
+              onClick={() =>
                 void openPublicUrl("https://github.com/YusongXiao/fuckuooc").catch(() =>
                   setOpenError("无法打开参考项目链接"),
                 )

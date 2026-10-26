@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Card, Chip, Spinner } from "@heroui/react";
-import { Radio, RadioGroup } from "react-aria-components";
+import { Card, LoadingIndicator } from "material/react";
+import { Chip } from "../ui";
 import { LuGlobe, LuSchool } from "react-icons/lu";
 import { useEnrollment } from "./use-enrollment";
 import { defaultMode, type Probe } from "./model";
@@ -58,32 +58,38 @@ export default function AccessModes({ autoSelect = false }: { autoSelect?: boole
   };
   return (
     <div className="grid gap-3">
-      <RadioGroup
-        aria-label="选课访问源"
-        value={s?.mode ?? "campus"}
-        onChange={(mode) => void choose(mode as "campus" | "webvpn")}
-        isDisabled={!!pending.mode || !!pending["portal-webvpn"]}
-        className="grid gap-3 sm:grid-cols-2"
-      >
+      <div role="radiogroup" aria-label="选课访问源" className="grid gap-3 sm:grid-cols-2">
         {(["campus", "webvpn"] as const).map((mode) => {
           const p = probes.find((p) => p.mode === mode);
           const Icon = mode === "campus" ? LuSchool : LuGlobe;
+          const isSelected = s?.mode === mode;
+          const isDisabled = !!pending.mode || !!pending["portal-webvpn"];
           return (
-            <Radio
+            <label
               key={mode}
-              value={mode}
+              role="radio"
+              aria-checked={isSelected}
               aria-label={mode === "campus" ? "校内访问" : "WebVPN访问"}
-              className="block w-full cursor-pointer rounded-2xl outline-none data-[focus-visible]:ring-2 data-[focus-visible]:ring-accent data-[disabled]:cursor-wait data-[disabled]:opacity-60"
+              tabIndex={isDisabled ? -1 : 0}
+              className="block w-full cursor-pointer rounded-2xl outline-none has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-accent data-[disabled]:cursor-wait data-[disabled]:opacity-60"
               onClick={() => {
-                if (mode === s?.mode && !pending.mode && !pending["portal-webvpn"])
+                if (!isDisabled) void choose(mode);
+              }}
+              onKeyDown={(e) => {
+                if ((e.key === "Enter" || e.key === " ") && !isDisabled) {
+                  e.preventDefault();
                   void choose(mode);
+                }
               }}
             >
-              <Card className={`h-full ${s?.mode === mode ? "ring-2 ring-accent" : ""}`}>
-                <Card.Content className="gap-3">
+              <Card
+                variant="outlined"
+                className={`h-full ${isSelected ? "ring-2 ring-accent" : ""}`}
+              >
+                <div className="grid gap-3 p-4">
                   <div className="flex items-center justify-between">
                     <Icon className="size-6 text-accent" />
-                    {s?.mode === mode && (
+                    {isSelected && (
                       <Chip size="sm" variant="soft">
                         当前选择
                       </Chip>
@@ -101,14 +107,14 @@ export default function AccessModes({ autoSelect = false }: { autoSelect?: boole
                           ? "正在测试连接…"
                           : p?.message || "尚未测试"}
                   </p>
-                </Card.Content>
+                </div>
               </Card>
-            </Radio>
+            </label>
           );
         })}
-      </RadioGroup>
+      </div>
       <OperationError message={errors.mode || errors.probe || errors["portal-webvpn"]} />
-      {pending["portal-webvpn"] && <Spinner aria-label="正在打开2FA认证" />}
+      {pending["portal-webvpn"] && <LoadingIndicator size={24} aria-label="正在打开2FA认证" />}
     </div>
   );
 }

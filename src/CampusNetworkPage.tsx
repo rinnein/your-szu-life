@@ -1,19 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
-  Alert,
-  AlertDialog,
-  Button,
   Card,
-  Input,
-  Label,
-  Spinner,
+  Dialog,
+  LoadingIndicator,
   Switch,
-  Tabs,
   TextField,
-  toast,
-} from "@heroui/react";
+  Button,
+  Tab,
+  Tabs,
+} from "material/react";
+import { Banner, toast } from "./ui";
+import { nameTablist } from "./ui/tablist";
 import { ModuleHeader, PageShell } from "./components";
 import StaffNetworkPanel from "./StaffNetworkPanel";
 import {
@@ -419,142 +419,132 @@ export default function CampusNetworkPage() {
         />
 
         <Tabs
+          ref={(host) => nameTablist(host, "校园网区域")}
           className="campus-region-tabs"
-          selectedKey={regionTab}
-          onSelectionChange={(key) => {
+          value={regionTab}
+          onChange={(event) => {
             initializedTab.current = true;
-            setRegionTab(String(key) as RegionTab);
+            setRegionTab(event.detail.value as RegionTab);
           }}
         >
-          <Tabs.List aria-label="校园网区域">
-            <Tabs.Tab id="staff">教工区</Tabs.Tab>
-            <Tabs.Tab id="dormitory">宿舍区</Tabs.Tab>
-          </Tabs.List>
-          <Tabs.Panel id="staff">
-            <StaffNetworkPanel
-              settings={staffSettings}
-              status={staffStatus}
-              disabled={operationBusy}
-              onSave={saveStaff}
-              onApply={applyStaff}
-            />
-          </Tabs.Panel>
-          <Tabs.Panel id="dormitory">
-            <Card className="network-zone" variant="default">
-              <Card.Header>
-                <Card.Title>宿舍区</Card.Title>
-                <Card.Description>门户地址：172.30.255.42</Card.Description>
-              </Card.Header>
-              <Card.Content>
+          <Tab value="staff">教工区</Tab>
+          <Tab value="dormitory">宿舍区</Tab>
+        </Tabs>
+        {regionTab === "staff" ? (
+          <StaffNetworkPanel
+            settings={staffSettings}
+            status={staffStatus}
+            disabled={operationBusy}
+            onSave={saveStaff}
+            onApply={applyStaff}
+          />
+        ) : (
+          <div>
+            <Card className="network-zone" variant="outlined">
+              <div slot="headline">宿舍区</div>
+              <div slot="subhead">门户地址：172.30.255.42</div>
+              <div className="p-4">
                 <div className="network-setting-row">
                   <Switch
-                    isSelected={enabled}
-                    isDisabled={operationBusy}
-                    onChange={setEnabled}
+                    checked={enabled}
+                    disabled={operationBusy}
+                    onChange={(e: any) => setEnabled(e.detail?.checked ?? e.target?.checked)}
                     aria-label="开启宿舍区自动登录"
                   >
-                    <Switch.Content>
+                    <div className="flex flex-col gap-0.5 ml-2">
                       <strong>自动登录</strong>
                       <span>检测到宿舍区网络后自动认证</span>
-                    </Switch.Content>
-                    <Switch.Control>
-                      <Switch.Thumb />
-                    </Switch.Control>
+                    </div>
                   </Switch>
                 </div>
                 <Tabs
+                  ref={(host) => nameTablist(host, "宿舍区凭据来源")}
                   className="network-credential-tabs"
-                  selectedKey={mode}
-                  onSelectionChange={(key) => {
-                    if (!operationBusy) setMode(String(key) as CredentialMode);
+                  value={mode}
+                  onChange={(event) => {
+                    if (!operationBusy) setMode(event.detail.value as CredentialMode);
                   }}
                 >
-                  <Tabs.List aria-label="宿舍区凭据来源">
-                    <Tabs.Tab id="currentAccount">复用已登录账号</Tabs.Tab>
-                    <Tabs.Tab id="custom">单独配置</Tabs.Tab>
-                  </Tabs.List>
-                  <Tabs.Panel id="currentAccount">
-                    <p className="field-hint">{modeDescription}</p>
-                  </Tabs.Panel>
-                  <Tabs.Panel id="custom">
-                    <p className="field-hint">{modeDescription}</p>
-                    <div className="custom-network-form">
-                      <TextField isDisabled={operationBusy} className="field" name="dormCampusCard">
-                        <Label>校园卡号</Label>
-                        <Input
-                          inputMode="numeric"
-                          value={card}
-                          onChange={(event) => setCard(event.target.value)}
-                          placeholder="6 位数字"
-                        />
-                      </TextField>
-                      <TextField isDisabled={operationBusy} className="field" name="dormPassword">
-                        <Label>密码</Label>
-                        <Input
-                          type="password"
-                          value={password}
-                          onChange={(event) => setPassword(event.target.value)}
-                          placeholder={
-                            settings?.customConfigured ? "已保存（输入新密码可覆盖）" : "请输入密码"
-                          }
-                        />
-                      </TextField>
-                    </div>
-                  </Tabs.Panel>
+                  <Tab value="currentAccount">复用已登录账号</Tab>
+                  <Tab value="custom">单独配置</Tab>
                 </Tabs>
+                <p className="field-hint">{modeDescription}</p>
+                {mode === "custom" && (
+                  <div className="custom-network-form">
+                    <TextField
+                      label="校园卡号"
+                      disabled={operationBusy}
+                      className="field"
+                      name="dormCampusCard"
+                      value={card}
+                      onChange={(e: any) => setCard(e.detail?.value ?? e.target?.value ?? "")}
+                      placeholder="6 位数字"
+                    />
+                    <TextField
+                      label="密码"
+                      type="password"
+                      disabled={operationBusy}
+                      className="field"
+                      name="dormPassword"
+                      value={password}
+                      onChange={(e: any) => setPassword(e.detail?.value ?? e.target?.value ?? "")}
+                      placeholder={
+                        settings?.customConfigured ? "已保存（输入新密码可覆盖）" : "请输入密码"
+                      }
+                    />
+                  </div>
+                )}
                 <div className="network-action-row">
-                  <Button variant="primary" isDisabled={operationBusy} onPress={() => void save()}>
-                    {busy && <Spinner size="sm" color="current" />}保存设置
+                  <Button variant="filled" disabled={operationBusy} onClick={() => void save()}>
+                    {busy && <LoadingIndicator size={16} />}保存设置
                   </Button>
                   <Button
-                    variant="outline"
-                    isDisabled={operationBusy || loginInProgress || overview.region === "staff"}
-                    onPress={() => void manualLogin()}
+                    variant="outlined"
+                    disabled={operationBusy || loginInProgress || overview.region === "staff"}
+                    onClick={() => void manualLogin()}
                   >
                     立即登录
                   </Button>
                 </div>
-              </Card.Content>
+              </div>
             </Card>
-          </Tabs.Panel>
-        </Tabs>
+          </div>
+        )}
 
-        <Card className="network-status-card" variant="default">
-          <Card.Header>
-            <Card.Title>当前状态</Card.Title>
-            <Card.Description>
-              {disconnectBusy
-                ? "正在断开连接…"
-                : overview.region === "staff"
-                  ? staffStatus.state
-                  : status.state}
-            </Card.Description>
-            <div className="network-action-row">
-              <Button
-                variant="outline"
-                isDisabled={operationBusy || refreshBusy}
-                onPress={() => void refreshConnection()}
-              >
-                {refreshBusy && <Spinner size="sm" color="current" />}
-                刷新连接状态
-              </Button>
-              <Button
-                variant="danger"
-                isDisabled={
-                  operationBusy ||
-                  (overview.region === "none" &&
-                    !settings?.enabled &&
-                    !staffSettings.enabled &&
-                    !loginInProgress)
-                }
-                onPress={() => setLogoutOpen(true)}
-              >
-                {disconnectBusy && <Spinner size="sm" color="current" />}
-                断开连接
-              </Button>
-            </div>
-          </Card.Header>
-          <Card.Content className="network-status-grid">
+        <Card className="network-status-card" variant="outlined">
+          <div slot="headline">当前状态</div>
+          <div slot="subhead">
+            {disconnectBusy
+              ? "正在断开连接…"
+              : overview.region === "staff"
+                ? staffStatus.state
+                : status.state}
+          </div>
+          <div className="network-action-row" slot="actions">
+            <Button
+              variant="outlined"
+              disabled={operationBusy || refreshBusy}
+              onClick={() => void refreshConnection()}
+            >
+              {refreshBusy && <LoadingIndicator size={16} />}
+              刷新连接状态
+            </Button>
+            <Button
+              variant="filled"
+              disabled={
+                operationBusy ||
+                (overview.region === "none" &&
+                  !settings?.enabled &&
+                  !staffSettings.enabled &&
+                  !loginInProgress)
+              }
+              onClick={() => setLogoutOpen(true)}
+            >
+              {disconnectBusy && <LoadingIndicator size={16} />}
+              断开连接
+            </Button>
+          </div>
+          <div className="network-status-grid p-4">
             <span>SSID</span>
             <strong>
               {overview.ssid === "有线连接" || status.ssid === "有线连接"
@@ -627,73 +617,60 @@ export default function CampusNetworkPage() {
                 <strong>{formatUsedSeconds(overview.staffSession?.usedSeconds)}</strong>
               </>
             )}
-          </Card.Content>
+          </div>
         </Card>
 
-        <AlertDialog
-          isOpen={logoutOpen}
-          onOpenChange={(open) => {
-            if (!disconnectBusy) setLogoutOpen(open);
-          }}
-        >
-          <AlertDialog.Backdrop>
-            <AlertDialog.Container size="sm">
-              <AlertDialog.Dialog>
-                <AlertDialog.Icon status="danger" />
-                <AlertDialog.Header>
-                  <AlertDialog.Heading>确认断开校园网？</AlertDialog.Heading>
-                </AlertDialog.Header>
-                <AlertDialog.Body>
-                  将注销当前设备的校园网会话，并关闭自动连接。不会退出应用账号、删除已保存的凭据，也不会注销其他设备。
-                </AlertDialog.Body>
-                <AlertDialog.Footer>
-                  <AlertDialog.CloseTrigger
-                    aria-label="取消"
-                    isDisabled={disconnectBusy}
-                    className="dialog-cancel"
-                  />
-                  <Button
-                    variant="danger"
-                    isDisabled={disconnectBusy}
-                    onPress={() => void disconnect()}
-                  >
-                    {disconnectBusy && <Spinner size="sm" color="current" />}
-                    确认断开
-                  </Button>
-                </AlertDialog.Footer>
-              </AlertDialog.Dialog>
-            </AlertDialog.Container>
-          </AlertDialog.Backdrop>
-        </AlertDialog>
+        {logoutOpen &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <Dialog
+              open={logoutOpen}
+              headline="确认断开校园网？"
+              onClose={() => {
+                if (!disconnectBusy) setLogoutOpen(false);
+              }}
+            >
+              <div>
+                将注销当前设备的校园网会话，并关闭自动连接。不会退出应用账号、删除已保存的凭据，也不会注销其他设备。
+              </div>
+              <div slot="actions">
+                <Button
+                  variant="text"
+                  aria-label="取消"
+                  disabled={disconnectBusy}
+                  onClick={() => setLogoutOpen(false)}
+                >
+                  取消
+                </Button>
+                <Button
+                  variant="filled"
+                  disabled={disconnectBusy}
+                  onClick={() => void disconnect()}
+                >
+                  {disconnectBusy && <LoadingIndicator size={16} />}
+                  确认断开
+                </Button>
+              </div>
+            </Dialog>,
+            document.body,
+          )}
         {logoutResult && (
-          <Alert
-            status={
-              logoutResult.outcome === "failed"
-                ? "danger"
-                : logoutResult.outcome === "unknown"
-                  ? "warning"
-                  : "success"
-            }
-          >
-            <Alert.Content>
-              <Alert.Title>
-                {logoutResult.outcome === "unknown"
-                  ? "断开结果待确认"
-                  : logoutResult.outcome === "failed"
-                    ? "断开未完成"
-                    : "已断开校园网"}
-              </Alert.Title>
-              <Alert.Description>{logoutResult.message}</Alert.Description>
-            </Alert.Content>
-          </Alert>
+          <Banner status="default">
+            <Banner.Title>
+              {logoutResult.outcome === "unknown"
+                ? "断开结果待确认"
+                : logoutResult.outcome === "failed"
+                  ? "断开未完成"
+                  : "已断开校园网"}
+            </Banner.Title>
+            <Banner.Description>{logoutResult.message}</Banner.Description>
+          </Banner>
         )}
         {error && (
-          <Alert status="danger">
-            <Alert.Content>
-              <Alert.Title>校园网操作失败</Alert.Title>
-              <Alert.Description>{error}</Alert.Description>
-            </Alert.Content>
-          </Alert>
+          <Banner status="danger">
+            <Banner.Title>校园网操作失败</Banner.Title>
+            <Banner.Description>{error}</Banner.Description>
+          </Banner>
         )}
       </div>
     </PageShell>

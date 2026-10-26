@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
-  Alert,
-  AlertDialog,
-  Button,
   Card,
-  Input,
-  Label,
-  Spinner,
+  Dialog,
+  LoadingIndicator,
   Switch,
-  Tabs,
   TextField,
-  toast,
-} from "@heroui/react";
+  Button,
+  Tab,
+  Tabs,
+} from "material/react";
+import { Banner, toast } from "./ui";
+import { nameTablist } from "./ui/tablist";
 import {
   staffModeText,
   type StaffApplyResult,
@@ -148,94 +148,88 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
   };
 
   return (
-    <Card className="network-zone" variant="default">
-      <Card.Header>
-        <Card.Title>教工区登录</Card.Title>
-        <Card.Description>门户地址：net.szu.edu.cn</Card.Description>
-      </Card.Header>
-      <Card.Content>
+    <Card className="network-zone" variant="outlined">
+      <div slot="headline">教工区登录</div>
+      <div slot="subhead">门户地址：net.szu.edu.cn</div>
+      <div className="p-4">
         <Tabs
-          selectedKey={mode}
-          onSelectionChange={(key) => {
+          ref={(host) => nameTablist(host, "教工区登录方式")}
+          value={mode}
+          onChange={(event) => {
             if (busy) return;
-            setMode(String(key) as StaffLoginMode);
+            const key = event.detail.value;
+            setMode(key as StaffLoginMode);
             if (key === "macAuth") setEnabled(false);
             setConfirmation(undefined);
           }}
         >
-          <Tabs.List aria-label="教工区登录方式">
-            <Tabs.Tab id="macAuth" isDisabled={busy}>
-              无感认证（绑定MAC地址）
-            </Tabs.Tab>
-            <Tabs.Tab id="appAuto" isDisabled={busy}>
-              软件自动登录（不绑定MAC地址）
-            </Tabs.Tab>
-          </Tabs.List>
-          <Tabs.Panel id="macAuth">
-            <p className="field-hint">
-              复现门户勾选“记住密码”的登录流程；后续由校园网处理无感认证，无需应用保持后台运行。
-            </p>
-          </Tabs.Panel>
-          <Tabs.Panel id="appAuto">
+          <Tab value="macAuth" disabled={busy}>
+            无感认证（绑定MAC地址）
+          </Tab>
+          <Tab value="appAuto" disabled={busy}>
+            软件自动登录（不绑定MAC地址）
+          </Tab>
+        </Tabs>
+        {mode === "macAuth" ? (
+          <p className="field-hint">
+            复现门户勾选“记住密码”的登录流程；后续由校园网处理无感认证，无需应用保持后台运行。
+          </p>
+        ) : (
+          <>
             <p className="field-hint">
               不保留门户的“记住密码”Cookie；开启后由应用监测并自动认证，关闭窗口时在后台运行。
             </p>
             <Switch
               aria-label="开启教工区自动登录"
-              isSelected={enabled}
-              isDisabled={disabled || saving}
-              onChange={(value) => void toggleAuto(value)}
+              checked={enabled}
+              disabled={disabled || saving}
+              onChange={(e: any) => void toggleAuto(e.detail?.checked ?? e.target?.checked)}
             >
-              <Switch.Content>
+              <div className="flex flex-col gap-0.5 ml-2">
                 <strong>自动登录</strong>
                 <span>新配置手动应用成功后生效，关闭开关立即停止</span>
-              </Switch.Content>
-              <Switch.Control>
-                <Switch.Thumb />
-              </Switch.Control>
+              </div>
             </Switch>
-          </Tabs.Panel>
-        </Tabs>
+          </>
+        )}
         <Tabs
+          ref={(host) => nameTablist(host, "教工区凭据来源")}
           className="network-credential-tabs"
-          selectedKey={credentialMode}
-          onSelectionChange={(key) => {
-            if (!busy) setCredentialMode(String(key) as StaffCredentialMode);
+          value={credentialMode}
+          onChange={(event) => {
+            if (!busy) setCredentialMode(event.detail.value as StaffCredentialMode);
           }}
         >
-          <Tabs.List aria-label="教工区凭据来源">
-            <Tabs.Tab id="currentAccount" isDisabled={busy}>
-              复用已登录账号
-            </Tabs.Tab>
-            <Tabs.Tab id="custom" isDisabled={busy}>
-              单独配置
-            </Tabs.Tab>
-          </Tabs.List>
-          <Tabs.Panel id="custom">
-            <div className="custom-network-form">
-              <TextField className="field" name="staffCampusCard" isDisabled={busy}>
-                <Label>校园卡号</Label>
-                <Input
-                  inputMode="numeric"
-                  value={card}
-                  onChange={(event) => setCard(event.target.value)}
-                  placeholder={settings.customConfigured ? "已保存，留空沿用" : "6 位数字"}
-                />
-              </TextField>
-              <TextField className="field" name="staffPassword" isDisabled={busy}>
-                <Label>密码</Label>
-                <Input
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder={
-                    settings.customConfigured ? "已保存，输入新密码可覆盖" : "请输入密码"
-                  }
-                />
-              </TextField>
-            </div>
-          </Tabs.Panel>
+          <Tab value="currentAccount" disabled={busy}>
+            复用已登录账号
+          </Tab>
+          <Tab value="custom" disabled={busy}>
+            单独配置
+          </Tab>
         </Tabs>
+        {credentialMode === "custom" && (
+          <div className="custom-network-form">
+            <TextField
+              label="校园卡号"
+              className="field"
+              name="staffCampusCard"
+              disabled={busy}
+              value={card}
+              onChange={(e: any) => setCard(e.detail?.value ?? e.target?.value ?? "")}
+              placeholder={settings.customConfigured ? "已保存，留空沿用" : "6 位数字"}
+            />
+            <TextField
+              label="密码"
+              className="field"
+              name="staffPassword"
+              disabled={busy}
+              type="password"
+              value={password}
+              onChange={(e: any) => setPassword(e.detail?.value ?? e.target?.value ?? "")}
+              placeholder={settings.customConfigured ? "已保存，输入新密码可覆盖" : "请输入密码"}
+            />
+          </div>
+        )}
         <p className="field-hint">
           配置状态：{dirty ? "未保存" : settings.needsApply ? "待应用" : "已应用"}；上次已应用模式：
           {staffModeText(settings.appliedMode)}。
@@ -244,11 +238,11 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
           保存不会主动断网；已在线时，应用模式需要确认下线、解绑本机并重新登录。
         </p>
         <div className="network-action-row">
-          <Button variant="primary" isDisabled={busy} onPress={() => void save()}>
-            {saving && <Spinner size="sm" color="current" />}保存设置
+          <Button variant="filled" disabled={busy} onClick={() => void save()}>
+            {saving && <LoadingIndicator size={16} />}保存设置
           </Button>
-          <Button variant="outline" isDisabled={busy || dirty} onPress={() => void apply()}>
-            {inProgress && <Spinner size="sm" color="current" />}立即登录
+          <Button variant="outlined" disabled={busy || dirty} onClick={() => void apply()}>
+            {inProgress && <LoadingIndicator size={16} />}立即登录
           </Button>
         </div>
         {dirty && <p className="field-hint">请先保存配置，再手动应用。</p>}
@@ -258,58 +252,46 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
           </p>
         )}
         {feedback && (
-          <Alert
-            status={
-              feedback.outcome === "applied" || feedback.outcome === "alreadyOnline"
-                ? "success"
-                : feedback.outcome === "unknown"
-                  ? "warning"
-                  : "danger"
-            }
-          >
-            <Alert.Content>
-              <Alert.Title>结果</Alert.Title>
-              <Alert.Description>{feedback.message}</Alert.Description>
-            </Alert.Content>
-          </Alert>
+          <Banner status="default">
+            <Banner.Title>结果</Banner.Title>
+            <Banner.Description>{feedback.message}</Banner.Description>
+          </Banner>
         )}
         {error && (
-          <Alert status="danger">
-            <Alert.Content>
-              <Alert.Title>操作失败</Alert.Title>
-              <Alert.Description>{error}</Alert.Description>
-            </Alert.Content>
-          </Alert>
+          <Banner status="danger">
+            <Banner.Title>操作失败</Banner.Title>
+            <Banner.Description>{error}</Banner.Description>
+          </Banner>
         )}
-        <AlertDialog
-          isOpen={!!confirmation}
-          onOpenChange={(open) => {
-            if (!open) setConfirmation(undefined);
-          }}
-        >
-          <AlertDialog.Backdrop>
-            <AlertDialog.Container size="sm">
-              <AlertDialog.Dialog>
-                <AlertDialog.Icon status="warning" />
-                <AlertDialog.Header>
-                  <AlertDialog.Heading>确认重新登录教工区？</AlertDialog.Heading>
-                </AlertDialog.Header>
-                <AlertDialog.Body>{confirmation?.message}</AlertDialog.Body>
-                <AlertDialog.Footer>
-                  <AlertDialog.CloseTrigger aria-label="取消教工区重登" className="dialog-cancel" />
-                  <Button
-                    variant="danger"
-                    isDisabled={applying}
-                    onPress={() => void apply(confirmation?.confirmationToken ?? undefined)}
-                  >
-                    确认下线并应用
-                  </Button>
-                </AlertDialog.Footer>
-              </AlertDialog.Dialog>
-            </AlertDialog.Container>
-          </AlertDialog.Backdrop>
-        </AlertDialog>
-      </Card.Content>
+        {confirmation &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <Dialog
+              open={!!confirmation}
+              headline="确认重新登录教工区？"
+              onClose={() => setConfirmation(undefined)}
+            >
+              <div>{confirmation.message}</div>
+              <div slot="actions">
+                <Button
+                  variant="text"
+                  aria-label="取消教工区重登"
+                  onClick={() => setConfirmation(undefined)}
+                >
+                  取消
+                </Button>
+                <Button
+                  variant="filled"
+                  disabled={applying}
+                  onClick={() => void apply(confirmation.confirmationToken ?? undefined)}
+                >
+                  确认下线并应用
+                </Button>
+              </div>
+            </Dialog>,
+            document.body,
+          )}
+      </div>
     </Card>
   );
 }

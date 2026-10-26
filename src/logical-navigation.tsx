@@ -10,7 +10,7 @@ import {
 import { useRouter } from "@tanstack/react-router";
 import { supportsMultipleWindows } from "@tauri-apps/api/app";
 import { getCurrentWebviewWindow, WebviewWindow } from "@tauri-apps/api/webviewWindow";
-import { toast } from "@heroui/react";
+import { toast } from "./ui";
 
 export const CHILD_PARAMETER = "__szu_window";
 export function isChildDocument(href = window.location.href) {
@@ -81,27 +81,46 @@ export async function openLogicalWindow(path: string) {
   });
 }
 
+type NavigationAction = "push" | "replace" | "back";
+
 type Navigation = {
   push: (path: string) => Promise<void>;
   replace: (path: string) => Promise<void>;
   back: () => Promise<void>;
   canBack: () => boolean;
+  /**
+   * 读取最近一次导航动作。用函数而不是值：若把它放进 context 值，
+   * 每次导航都会产生新的 context 对象，所有消费 `useNavigation` 的
+   * useEffect 都会重跑 —— CampusPaymentsPage 的认证守卫因此在返回时
+   * 多调一次 back()，把工作台也弹掉。
+   */
+  lastAction: () => NavigationAction | null;
 };
 const Context = createContext<Navigation | null>(null);
 export function LogicalNavigationProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const child = isChildDocument();
   const opening = useRef(false);
+  const lastActionRef = useRef<NavigationAction | null>(null);
+  const record = useCallback((action: NavigationAction) => {
+    lastActionRef.current = action;
+  }, []);
+  const readLastAction = useCallback(() => lastActionRef.current, []);
   const back = useCallback(async () => {
     if (window.SzuApplicationBack) {
+      record("back");
       // Native chooses pop/overlay/Activity close using the same state as the
       // system gesture. Do not await a Tauri close promise on Android.
       window.SzuApplicationBack.postMessage("back-request");
       return;
     }
-    if (router.history.canGoBack()) router.history.back();
-    else if (child && nativeRuntime()) await getCurrentWebviewWindow().destroy();
-  }, [router, child]);
+    // 先让 router 完成导航，再更新动画状态：在导航中途 setState 会让
+    // 订阅树重挂载，打断正在进行的 history 操作。
+    if (router.history.canGoBack()) {
+      router.history.back();
+      record("back");
+    } else if (child && nativeRuntime()) await getCurrentWebviewWindow().destroy();
+  }, [child, record, router]);
   const replace = useCallback(
     async (path: string) => {
       if (path === "/" && child && !router.history.canGoBack()) {
@@ -109,8 +128,9 @@ export function LogicalNavigationProvider({ children }: { children: ReactNode })
         return;
       }
       await router.navigate({ to: path, replace: true });
+      record("replace");
     },
-    [back, child, router],
+    [back, child, record, router],
   );
   const push = useCallback(
     async (path: string) => {
@@ -122,6 +142,7 @@ export function LogicalNavigationProvider({ children }: { children: ReactNode })
         } else {
           await router.navigate({ to: path });
         }
+        record("push");
       } catch {
         toast.danger("页面未打开", {
           description: "无法打开独立页面，请重试；当前页面已保留。",
@@ -130,7 +151,7 @@ export function LogicalNavigationProvider({ children }: { children: ReactNode })
         opening.current = false;
       }
     },
-    [router],
+    [record, router],
   );
   useEffect(() => {
     if (!nativeRuntime() || window.SzuApplicationBack) return;
@@ -154,8 +175,14 @@ export function LogicalNavigationProvider({ children }: { children: ReactNode })
     };
   }, [back, router]);
   const value = useMemo(
-    () => ({ push, replace, back, canBack: () => child || router.history.canGoBack() }),
-    [push, replace, back, child, router],
+    () => ({
+      push,
+      replace,
+      back,
+      canBack: () => child || router.history.canGoBack(),
+      lastAction: readLastAction,
+    }),
+    [push, replace, back, child, router, readLastAction],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

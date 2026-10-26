@@ -1,20 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSearch } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { useChannelSubscription } from "../tauri-channel";
 import { listen } from "@tauri-apps/api/event";
-import {
-  Button,
-  Card,
-  Chip,
-  Checkbox,
-  Input,
-  Label,
-  Modal,
-  Spinner,
-  TextField,
-  toast,
-} from "@heroui/react";
+import { Card, Checkbox, Dialog, LoadingIndicator, TextField, Button } from "material/react";
+import { Chip, toast } from "../ui";
 import { ModuleHeader, PageShell } from "../components";
 import { useLogicalNavigation } from "../logical-navigation";
 import { OjPaper } from "./OjPaper";
@@ -194,9 +185,9 @@ export default function OjPage() {
           actions={
             <>
               <Button
-                variant="secondary"
-                isDisabled={busy}
-                onPress={() =>
+                variant="tonal"
+                disabled={busy}
+                onClick={() =>
                   void action(async () => {
                     await invoke("refresh_oj");
                     if (site) {
@@ -220,8 +211,8 @@ export default function OjPage() {
               </Button>
               {snapshot?.desktop && isOverview && (
                 <Button
-                  variant="secondary"
-                  onPress={() => {
+                  variant="tonal"
+                  onClick={() => {
                     setConfigurationError(undefined);
                     setConfigurationOpen(true);
                   }}
@@ -229,37 +220,36 @@ export default function OjPage() {
                   全局配置
                 </Button>
               )}
-              <Button onPress={() => setEdit(site ?? "new")}>
+              <Button onClick={() => setEdit(site ?? "new")}>
                 {site ? "账号配置" : "添加 OJ"}
               </Button>
             </>
           }
         />
         <ErrorNotice message={error} />
-        {snapshot?.desktop && isOverview && (
-          <Modal isOpen={configurationOpen} onOpenChange={setConfigurationOpen}>
-            <Modal.Backdrop>
-              <Modal.Container size="lg">
-                <Modal.Dialog>
-                  <Modal.CloseTrigger />
-                  <Modal.Header>
-                    <Modal.Heading>OJ 全局配置</Modal.Heading>
-                  </Modal.Header>
-                  <Modal.Body>
-                    <ErrorNotice message={configurationError} />
-                    <CompanionSettings snapshot={snapshot} onError={setConfigurationError} />
-                  </Modal.Body>
-                  <Modal.Footer>
-                    <Button variant="secondary" onPress={() => setConfigurationOpen(false)}>
-                      完成
-                    </Button>
-                  </Modal.Footer>
-                </Modal.Dialog>
-              </Modal.Container>
-            </Modal.Backdrop>
-          </Modal>
-        )}
-        {busy && <Spinner aria-label="正在加载 OJ" />}
+        {snapshot?.desktop &&
+          isOverview &&
+          configurationOpen &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <Dialog
+              open={configurationOpen}
+              headline="OJ 全局配置"
+              onClose={() => setConfigurationOpen(false)}
+            >
+              <div>
+                <ErrorNotice message={configurationError} />
+                <CompanionSettings snapshot={snapshot} onError={setConfigurationError} />
+              </div>
+              <div slot="actions">
+                <Button variant="tonal" onClick={() => setConfigurationOpen(false)}>
+                  完成
+                </Button>
+              </div>
+            </Dialog>,
+            document.body,
+          )}
+        {busy && <LoadingIndicator size={24} aria-label="正在加载 OJ" />}
         {site && (
           <div className="oj-actions">
             <Chip color={site.session === "ready" ? "success" : "default"}>
@@ -268,7 +258,7 @@ export default function OjPage() {
             <span>{site.username}</span>
             <span className="oj-muted">{site.message}</span>
             {site.enabled && site.session !== "ready" && site.session !== "captchaRequired" && (
-              <Button variant="secondary" isDisabled={busy} onPress={() => void connect()}>
+              <Button variant="tonal" disabled={busy} onClick={() => void connect()}>
                 连接
               </Button>
             )}
@@ -295,10 +285,12 @@ export default function OjPage() {
         )}
         {!site && (
           <>
-            <TextField value={query} onChange={setQuery}>
-              <Label>查找 OJ</Label>
-              <Input placeholder="名称、地址或账号" />
-            </TextField>
+            <TextField
+              label="查找 OJ"
+              value={query}
+              onChange={(e: any) => setQuery(e.detail?.value ?? e.target?.value ?? "")}
+              placeholder="名称、地址或账号"
+            />
             {[true, false].map((enabled) => (
               <section key={String(enabled)}>
                 <h2>{enabled ? "已配置" : "未配置"}</h2>
@@ -306,30 +298,32 @@ export default function OjPage() {
                   {items
                     .filter((s) => s.enabled === enabled)
                     .map((s) => (
-                      <Card key={s.id} className={enabled ? "oj-enabled" : ""}>
-                        <Card.Header>
-                          <Card.Title>{s.name}</Card.Title>
-                          <Card.Description>{s.url}</Card.Description>
-                        </Card.Header>
-                        <Card.Content>
+                      <Card
+                        key={s.id}
+                        variant="outlined"
+                        className={enabled ? "oj-enabled" : ""}
+                        headline={s.name}
+                        subhead={s.url}
+                      >
+                        <div className="p-4 pt-0 space-y-2">
                           <Chip color={enabled ? "accent" : "default"}>
                             {enabled ? sessionName[s.session] : "未配置"}
                           </Chip>
                           {s.username && <p>{s.username}</p>}
-                        </Card.Content>
-                        <Card.Footer>
+                        </div>
+                        <div slot="actions">
                           <Button
-                            variant={enabled ? "primary" : "secondary"}
-                            onPress={() =>
+                            variant={enabled ? "filled" : "tonal"}
+                            onClick={() =>
                               enabled ? void nav.push(route({ site: s.id })) : setEdit(s)
                             }
                           >
                             {enabled ? "进入班级" : "配置账号"}
                           </Button>
-                          <Button variant="tertiary" onPress={() => setEdit(s)}>
+                          <Button variant="text" onClick={() => setEdit(s)}>
                             管理
                           </Button>
-                        </Card.Footer>
+                        </div>
                       </Card>
                     ))}
                 </div>
@@ -344,27 +338,26 @@ export default function OjPage() {
         )}
         {site?.enabled && !search.contest && (
           <>
-            <TextField value={query} onChange={setQuery}>
-              <Label>{search.group ? "查找测验" : "查找班级"}</Label>
-              <Input placeholder={search.group ? "输入测验名称" : "输入班级名称"} />
-            </TextField>
+            <TextField
+              label={search.group ? "查找测验" : "查找班级"}
+              value={query}
+              onChange={(e: any) => setQuery(e.detail?.value ?? e.target?.value ?? "")}
+              placeholder={search.group ? "输入测验名称" : "输入班级名称"}
+            />
             {!search.group ? (
               <div className="oj-site-grid">
                 {groups
                   .filter((g) => g.name.includes(query))
                   .map((g) => (
-                    <Card key={g.id}>
-                      <Card.Header>
-                        <Card.Title>{g.name}</Card.Title>
-                      </Card.Header>
-                      <Card.Footer>
+                    <Card key={g.id} variant="outlined" headline={g.name}>
+                      <div slot="actions">
                         <Button
-                          variant="secondary"
-                          onPress={() => void nav.push(route({ site: site.id, group: g.id }))}
+                          variant="tonal"
+                          onClick={() => void nav.push(route({ site: site.id, group: g.id }))}
                         >
                           查看测验
                         </Button>
-                      </Card.Footer>
+                      </div>
                     </Card>
                   ))}
               </div>
@@ -467,89 +460,95 @@ export function SiteEditor({
       setBusy(false);
     }
   };
-  return (
-    <Modal
-      isOpen
-      onOpenChange={(open) => {
-        if (!open && !busy) close();
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <Dialog
+      open
+      role="dialog"
+      headline={site ? "管理 OJ" : "添加 OJ"}
+      onClose={() => {
+        if (!busy) close();
       }}
     >
-      <Modal.Backdrop>
-        <Modal.Container>
-          <Modal.Dialog>
-            <Modal.CloseTrigger />
-            <Modal.Header>
-              <Modal.Heading>{site ? "管理 OJ" : "添加 OJ"}</Modal.Heading>
-            </Modal.Header>
-            <Modal.Body className="oj-form">
-              <ErrorNotice message={error} />
-              <TextField value={name} onChange={setName} isRequired>
-                <Label>名称</Label>
-                <Input placeholder="例如：数据结构 OJ" />
-              </TextField>
-              <TextField value={url} onChange={setUrl} isRequired>
-                <Label>OJ 地址</Label>
-                <Input type="url" placeholder="http://172.31.221.67/" />
-              </TextField>
-              <TextField
-                value={username}
-                onChange={(value) => {
-                  usernameEdited.current = true;
-                  setUsername(value);
-                }}
-              >
-                <Label>账号</Label>
-                <Input autoComplete="username" placeholder="输入 OJ 账号，默认使用学号" />
-              </TextField>
-              <TextField value={password} onChange={setPassword}>
-                <Label>密码{site?.enabled ? "（留空保留原密码）" : ""}</Label>
-                <Input
-                  type="password"
-                  autoComplete="new-password"
-                  placeholder={site?.enabled ? "留空保留已保存的密码" : "输入 OJ 密码"}
-                />
-              </TextField>
-              <Checkbox isSelected={reminders} onChange={setReminders}>
-                <Checkbox.Content>
-                  <Checkbox.Control>
-                    <Checkbox.Indicator />
-                  </Checkbox.Control>
-                  测验提醒
-                </Checkbox.Content>
-              </Checkbox>
-              <p className="oj-muted">验证码在本机识别。校内地址需连接校园网或 VPN。</p>
-            </Modal.Body>
-            <Modal.Footer>
-              <Button variant="tertiary" isDisabled={busy} onPress={close}>
-                取消
-              </Button>
-              {site?.enabled && (
-                <Button variant="danger" isDisabled={busy} onPress={() => void save(true)}>
-                  清除账号
-                </Button>
-              )}
-              {site && !site.builtin && (
-                <Button
-                  variant="danger"
-                  isDisabled={busy}
-                  onPress={() => {
-                    setBusy(true);
-                    void invoke("remove_oj_site", { siteId: site.id })
-                      .then(close)
-                      .catch((e) => setError(String(e)))
-                      .finally(() => setBusy(false));
-                  }}
-                >
-                  删除站点
-                </Button>
-              )}
-              <Button isDisabled={busy || !name || !url} onPress={() => void save()}>
-                {busy ? "保存中…" : "保存"}
-              </Button>
-            </Modal.Footer>
-          </Modal.Dialog>
-        </Modal.Container>
-      </Modal.Backdrop>
-    </Modal>
+      <div className="oj-form space-y-3">
+        <ErrorNotice message={error} />
+        <TextField
+          label="名称"
+          value={name}
+          onChange={(e: any) => setName(e.detail?.value ?? e.target?.value ?? "")}
+          required
+          placeholder="例如：数据结构 OJ"
+        />
+        <TextField
+          label="OJ 地址"
+          value={url}
+          onChange={(e: any) => setUrl(e.detail?.value ?? e.target?.value ?? "")}
+          required
+          type="url"
+          placeholder="http://172.31.221.67/"
+        />
+        <TextField
+          label="账号"
+          value={username}
+          onChange={(e: any) => {
+            usernameEdited.current = true;
+            setUsername(e.detail?.value ?? e.target?.value ?? "");
+          }}
+          autocomplete="username"
+          placeholder="输入 OJ 账号，默认使用学号"
+        />
+        <TextField
+          label={`密码${site?.enabled ? "（留空保留原密码）" : ""}`}
+          value={password}
+          onChange={(e: any) => setPassword(e.detail?.value ?? e.target?.value ?? "")}
+          type="password"
+          autocomplete="new-password"
+          placeholder={site?.enabled ? "留空保留已保存的密码" : "输入 OJ 密码"}
+        />
+        <Checkbox
+          checked={reminders}
+          onChange={(e: any) => setReminders(Boolean(e.detail?.checked ?? e.target?.checked))}
+        >
+          测验提醒
+        </Checkbox>
+        <p className="oj-muted">验证码在本机识别。校内地址需连接校园网或 VPN。</p>
+      </div>
+      <div slot="actions">
+        <Button variant="text" disabled={busy} onClick={close}>
+          取消
+        </Button>
+        {site?.enabled && (
+          <Button
+            className="button-danger"
+            variant="filled"
+            disabled={busy}
+            onClick={() => void save(true)}
+          >
+            清除账号
+          </Button>
+        )}
+        {site && !site.builtin && (
+          <Button
+            className="button-danger"
+            variant="filled"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              void invoke("remove_oj_site", { siteId: site.id })
+                .then(close)
+                .catch((e) => setError(String(e)))
+                .finally(() => setBusy(false));
+            }}
+          >
+            删除站点
+          </Button>
+        )}
+        <Button disabled={busy || !name || !url} onClick={() => void save()}>
+          {busy ? "保存中…" : "保存"}
+        </Button>
+      </div>
+    </Dialog>,
+    document.body,
   );
 }

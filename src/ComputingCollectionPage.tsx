@@ -1,4 +1,3 @@
-import { Button } from "@heroui/react";
 import { FaCode } from "react-icons/fa6";
 import { ModuleHeader, PageShell, Section } from "./components";
 import { useLogicalNavigation } from "./logical-navigation";
@@ -12,10 +11,10 @@ export default function ComputingCollectionPage() {
 
         <Section title="学习工具">
           <div className="feature-grid">
-            <Button
+            <button
+              type="button"
               className="feature-button"
-              variant="outline"
-              onPress={() => void navigation.push("/oj")}
+              onClick={() => void navigation.push("/oj")}
             >
               <span className="feature-icon" aria-hidden="true">
                 <FaCode size={19} />
@@ -27,7 +26,7 @@ export default function ComputingCollectionPage() {
               <span className="feature-arrow" aria-hidden="true">
                 →
               </span>
-            </Button>
+            </button>
           </div>
         </Section>
       </div>

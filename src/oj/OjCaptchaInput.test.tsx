@@ -1,9 +1,10 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
+import { typeInto } from "../ui/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
-import { toast } from "@heroui/react";
+import { toast } from "../ui";
 import OjCaptchaInput from "./OjCaptchaInput";
 import type { Site } from "./types";
 
@@ -77,7 +78,7 @@ describe("OjCaptchaInput layout and interaction", () => {
   it("clicks 换一张 to refresh captcha and clears answer", async () => {
     render(<OjCaptchaInput site={mockSite} />);
     const input = await screen.findByLabelText("验证码");
-    fireEvent.change(input, { target: { value: "1234" } });
+    typeInto(input, "1234");
     expect(input).toHaveValue("1234");
 
     const newCaptcha = { token: "token-456", image: "data:image/png;base64,new" };
@@ -118,7 +119,7 @@ describe("OjCaptchaInput layout and interaction", () => {
     const onAuth = vi.fn();
     render(<OjCaptchaInput site={mockSite} onAuthenticated={onAuth} />);
     const input = await screen.findByLabelText("验证码");
-    fireEvent.change(input, { target: { value: "a8b2" } });
+    typeInto(input, "a8b2");
 
     const loginBtn = screen.getByRole("button", { name: /登录/ });
     fireEvent.click(loginBtn);

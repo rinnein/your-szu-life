@@ -1,27 +1,23 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useSearch } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { createTaskChannel, useChannelSubscription } from "../tauri-channel";
 import { listen } from "@tauri-apps/api/event";
 import {
-  Accordion,
-  Alert,
-  AlertDialog,
-  Button,
   Card,
-  Chip,
   Checkbox,
-  CloseButton,
-  Label,
-  Modal,
-  NumberField,
-  ProgressBar,
-  Spinner,
+  Dialog,
+  LoadingIndicator,
+  Progress,
   Switch,
-  TextArea,
+  Tab,
   Tabs,
-  toast,
-} from "@heroui/react";
+  TextField,
+  Button,
+} from "material/react";
+import { Banner, Chip, Disclosure, NumberField, toast } from "../ui";
+import { nameTablist } from "../ui/tablist";
 import {
   LuArrowLeft,
   LuCheck,
@@ -82,13 +78,6 @@ export default function UoocPage() {
   const [busy, setBusy] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
   const [defaultMode, setDefaultMode] = useState<QuizMode>("supervised");
-  const [expandedAccordionKeys, setExpandedAccordionKeys] = useState<Record<string, Set<string>>>(
-    {},
-  );
-  const [mobileMainTabKeys, setMobileMainTabKeys] = useState<Set<string | number>>(() => new Set());
-  const [mobileAssessTabKeys, setMobileAssessTabKeys] = useState<Set<string | number>>(
-    () => new Set(),
-  );
   const [selectedQuiz, setSelectedQuiz] = useState<QuizState | null>(null);
   const [modalQuizCid, setModalQuizCid] = useState<string | null>(null);
   const [taskToDelete, setTaskToDelete] = useState<UoocTask | null>(null);
@@ -123,10 +112,6 @@ export default function UoocPage() {
   useEffect(() => {
     if (course) {
       document.getElementById(`uooc-course-${course}`)?.scrollIntoView?.({ block: "start" });
-      setExpandedAccordionKeys((prev) => ({
-        ...prev,
-        [course]: new Set(["completed-tasks"]),
-      }));
       setModalQuizCid(course);
     }
   }, [tab, course]);
@@ -167,6 +152,18 @@ export default function UoocPage() {
     discussionContent: "要好好学习",
     discussionIntervalMin: 30,
   });
+  /**
+   * 草稿是否已被用户改动过。
+   *
+   * 快照是异步到达的：用户可能在第一次快照落地前就改了设置，此时按
+   * 服务端快照重新填充草稿会把刚输入的内容无声抹掉。改动过就以草稿为准，
+   * 直到保存成功后重新接受服务端回声。
+   */
+  const draftDirty = useRef(false);
+  const editDraft = (update: (old: UoocSettings) => UoocSettings) => {
+    draftDirty.current = true;
+    setSettings(update);
+  };
   const apply = (next: UoocSnapshot) => setSnapshot((old) => newerSnapshot(old, next));
 
   useChannelSubscription<{ type: "initial" | "snapshot"; data: UoocSnapshot }>(
@@ -223,7 +220,7 @@ export default function UoocPage() {
 
   const saved = snapshot?.settings;
   useEffect(() => {
-    if (saved) {
+    if (saved && !draftDirty.current) {
       setSettings({
         concurrency: saved.concurrency,
         reportIntervalSec: saved.reportIntervalSec,
@@ -235,7 +232,8 @@ export default function UoocPage() {
         ...(saved.qaServerUrl !== undefined ? { qaServerUrl: saved.qaServerUrl } : {}),
       });
     }
-    // Only actual settings changes replace edits, not progress events.
+    // 只在草稿未被改动时用服务端设置回填：改动过的草稿以用户输入为准，
+    // 保存成功后由保存流程清除 dirty 标记。
   }, [
     saved?.concurrency,
     saved?.reportIntervalSec,
@@ -262,6 +260,12 @@ export default function UoocPage() {
     } finally {
       setBusy(false);
     }
+  };
+  /** 保存设置草稿；成功后草稿重新跟随服务端回声。 */
+  const saveSettings = async () => {
+    const ok = await action("save_uooc_settings", { settings });
+    if (ok) draftDirty.current = false;
+    return ok;
   };
   const ready = snapshot?.session === "ready";
   const refreshDetails = (cid: string) => {
@@ -396,28 +400,28 @@ export default function UoocPage() {
         <div className="flex flex-wrap gap-2">
           {checkinActive(state) ? (
             <Button
-              size="sm"
-              variant="tertiary"
-              isDisabled={busy}
-              onPress={() => void action("cancel_uooc_checkin", { courseIds: [cid] })}
+              size="xs"
+              variant="text"
+              disabled={busy}
+              onClick={() => void action("cancel_uooc_checkin", { courseIds: [cid] })}
             >
               取消签到
             </Button>
           ) : attendance === "needed" || state?.status === "failed" ? (
             <Button
-              size="sm"
-              variant="secondary"
-              isDisabled={busy || !ready}
-              onPress={() => void action("start_uooc_checkin", { courseIds: [cid] })}
+              size="xs"
+              variant="tonal"
+              disabled={busy || !ready}
+              onClick={() => void action("start_uooc_checkin", { courseIds: [cid] })}
             >
               {state?.status === "failed" ? "手动重试签到" : "签到"}
             </Button>
           ) : attendance === "unknown" ? (
             <Button
-              size="sm"
-              variant="tertiary"
-              isDisabled={busy || !ready}
-              onPress={() => void action("refresh_uooc_progress", { courseIds: [cid] })}
+              size="xs"
+              variant="text"
+              disabled={busy || !ready}
+              onClick={() => void action("refresh_uooc_progress", { courseIds: [cid] })}
             >
               查询签到状态
             </Button>
@@ -449,10 +453,10 @@ export default function UoocPage() {
         </div>
         {needsDiscussion && (
           <Button
-            size="sm"
-            variant="secondary"
-            isDisabled={busy || !ready || !discussionEligible(cid)}
-            onPress={() => startDiscussion(cid)}
+            size="xs"
+            variant="tonal"
+            disabled={busy || !ready || !discussionEligible(cid)}
+            onClick={() => startDiscussion(cid)}
           >
             <LuMessageCircle aria-hidden="true" />
             立即参与一次讨论
@@ -474,187 +478,149 @@ export default function UoocPage() {
       />
       <div className="mx-auto grid w-full max-w-4xl min-w-0 gap-5">
         <header className="flex items-center gap-3">
-          <CloseButton
+          <button
+            type="button"
+            className="md-icon-button"
             data-webview-navigation
             aria-label="返回工作台"
-            onPress={() => void navigation.back()}
+            onClick={() => void navigation.back()}
           >
             <LuArrowLeft aria-hidden="true" />
-          </CloseButton>
+          </button>
           <h1 data-webview-navigation className="text-2xl font-semibold">
             UOOC刷课
           </h1>
         </header>
-        <Card>
-          <Card.Header>
-            <Card.Title>{snapshot?.user?.name ?? "优课在线"}</Card.Title>
-            <Card.Description>
-              {snapshot ? sessions[snapshot.session] : "正在连接 UOOC 服务…"}
-            </Card.Description>
-          </Card.Header>
-          <Card.Content className="grid gap-3">
+        <Card variant="outlined">
+          <div slot="headline" className="font-semibold text-lg">
+            {snapshot?.user?.name ?? "优课在线"}
+          </div>
+          <div slot="subhead">{snapshot ? sessions[snapshot.session] : "正在连接 UOOC 服务…"}</div>
+          <div className="grid gap-3 p-4">
             <div className="flex flex-wrap gap-2">
               <Button
-                isDisabled={busy || !snapshot || snapshot.session === "loggingIn"}
-                onPress={() => void action("open_uooc_login")}
+                disabled={busy || !snapshot || snapshot.session === "loggingIn"}
+                onClick={() => void action("open_uooc_login")}
               >
                 {ready ? "恢复官方登录" : "登录 UOOC"}
               </Button>
               <Button
-                variant="secondary"
-                isDisabled={busy || !snapshot || snapshot.session === "loggingIn"}
-                onPress={() => void action("refresh_uooc_session")}
+                variant="tonal"
+                disabled={busy || !snapshot || snapshot.session === "loggingIn"}
+                onClick={() => void action("refresh_uooc_session")}
               >
                 <LuRefreshCw aria-hidden="true" />
                 刷新课程
               </Button>
               {snapshot?.user && (
-                <Button
-                  variant="tertiary"
-                  isDisabled={busy}
-                  onPress={() => void action("logout_uooc")}
-                >
+                <Button variant="text" disabled={busy} onClick={() => void action("logout_uooc")}>
                   退出 UOOC
                 </Button>
               )}
-              {busy && <Spinner aria-label="正在处理" size="sm" />}
+              {busy && <LoadingIndicator aria-label="正在处理" size={16} />}
             </div>
             {snapshot?.message && (
               <p role="status" className="text-sm text-muted">
                 {snapshot.message}
               </p>
             )}
-          </Card.Content>
+          </div>
         </Card>
-        <Tabs
-          selectedKey={tab}
-          onSelectionChange={(key) => void navigation.replace(`/uooc?tab=${key}`)}
-        >
-          {/* 桌面端横向 Tab 导航 */}
-          <div className="hidden sm:block">
-            <Tabs.ListContainer>
-              <Tabs.List aria-label="UOOC 功能">
-                <Tabs.Tab id="courses">
-                  开课中
-                  <Tabs.Indicator />
-                </Tabs.Tab>
-                <Tabs.Tab id="tasks">
-                  任务{tasks.length ? ` (${tasks.length})` : ""}
-                  <Tabs.Indicator />
-                </Tabs.Tab>
-                <Tabs.Tab id="exams">
-                  测验/作业/考试
-                  <Tabs.Indicator />
-                </Tabs.Tab>
-                <Tabs.Tab id="qa">
-                  题库
-                  <Tabs.Indicator />
-                </Tabs.Tab>
-                <Tabs.Tab id="settings">
-                  运行设置
-                  <Tabs.Indicator />
-                </Tabs.Tab>
-              </Tabs.List>
-            </Tabs.ListContainer>
-          </div>
+        {/* 横向 Tab 导航（支持水平滑动，在所有屏幕下均可见） */}
+        <div className="w-full overflow-x-auto scrollbar-none mb-2">
+          <Tabs
+            ref={(host) => nameTablist(host, "UOOC 功能")}
+            value={tab}
+            onChange={(event) => void navigation.replace(`/uooc?tab=${event.detail.value}`)}
+          >
+            <Tab value="courses">开课中</Tab>
+            <Tab value="tasks">任务{tasks.length ? ` (${tasks.length})` : ""}</Tab>
+            <Tab value="exams">测验/作业/考试</Tab>
+            <Tab value="qa">题库</Tab>
+            <Tab value="settings">运行设置</Tab>
+          </Tabs>
+        </div>
 
-          {/* 移动端横向空间不足时：Accordion 竖向下拉可折叠菜单进行选择 */}
-          <div className="sm:hidden mb-2">
-            <Accordion
-              expandedKeys={mobileMainTabKeys}
-              onExpandedChange={setMobileMainTabKeys}
-              className="w-full"
-            >
-              <Accordion.Item
-                id="uooc-tab-menu"
-                className="rounded-xl border border-separator/60 bg-surface"
-              >
-                <Accordion.Heading>
-                  <Accordion.Trigger className="w-full py-2.5 px-3.5 text-left text-sm font-medium flex items-center justify-between">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="truncate">
-                        当前功能：
-                        {tab === "courses"
-                          ? "开课中"
-                          : tab === "tasks"
-                            ? `任务${tasks.length ? ` (${tasks.length})` : ""}`
-                            : tab === "exams"
-                              ? "测验/作业/考试"
-                              : tab === "qa"
-                                ? "题库"
-                                : "运行设置"}
-                      </span>
-                    </div>
-                    <Accordion.Indicator />
-                  </Accordion.Trigger>
-                </Accordion.Heading>
-                <Accordion.Panel>
-                  <Accordion.Body className="grid gap-1 p-2 pt-1 border-t border-separator/40">
-                    {[
-                      { id: "courses", label: "开课中" },
-                      { id: "tasks", label: `任务${tasks.length ? ` (${tasks.length})` : ""}` },
-                      { id: "exams", label: "测验/作业/考试" },
-                      { id: "qa", label: "题库" },
-                      { id: "settings", label: "运行设置" },
-                    ].map((t) => {
-                      const isSelected = tab === t.id;
-                      return (
-                        <Button
-                          key={t.id}
-                          variant={isSelected ? "primary" : "ghost"}
-                          className={`w-full justify-start h-9 px-3 text-xs ${
-                            isSelected ? "font-semibold" : "text-muted hover:text-foreground"
-                          }`}
-                          onPress={() => {
-                            void navigation.replace(`/uooc?tab=${t.id}`);
-                            setMobileMainTabKeys(new Set());
-                          }}
-                        >
-                          <span>{t.label}</span>
-                          {isSelected && <span className="ml-auto text-xs font-medium">当前</span>}
-                        </Button>
-                      );
-                    })}
-                  </Accordion.Body>
-                </Accordion.Panel>
-              </Accordion.Item>
-            </Accordion>
-          </div>
-          <Tabs.Panel id="courses" className="grid gap-6 pt-4">
+        {/* 移动端横向空间不足时：可折叠菜单进行选择 */}
+        <div className="sm:hidden mb-2">
+          <Disclosure
+            title={`当前功能：${
+              tab === "courses"
+                ? "开课中"
+                : tab === "tasks"
+                  ? `任务${tasks.length ? ` (${tasks.length})` : ""}`
+                  : tab === "exams"
+                    ? "测验/作业/考试"
+                    : tab === "qa"
+                      ? "题库"
+                      : "运行设置"
+            }`}
+          >
+            <div className="grid gap-1 p-2 pt-1 border-t border-separator/40">
+              {[
+                { id: "courses", label: "开课中" },
+                { id: "tasks", label: `任务${tasks.length ? ` (${tasks.length})` : ""}` },
+                { id: "exams", label: "测验/作业/考试" },
+                { id: "qa", label: "题库" },
+                { id: "settings", label: "运行设置" },
+              ].map((t) => {
+                const isSelected = tab === t.id;
+                return (
+                  <Button
+                    key={t.id}
+                    variant={isSelected ? "filled" : "text"}
+                    className={`w-full justify-start h-9 px-3 text-xs ${
+                      isSelected ? "font-semibold" : "text-muted hover:text-foreground"
+                    }`}
+                    onClick={() => {
+                      void navigation.replace(`/uooc?tab=${t.id}`);
+                    }}
+                  >
+                    <span>{t.label}</span>
+                    {isSelected && <span className="ml-auto text-xs font-medium">当前</span>}
+                  </Button>
+                );
+              })}
+            </div>
+          </Disclosure>
+        </div>
+        {tab === "courses" && (
+          <div className="grid gap-6 pt-4">
             {!snapshot && !error && <SkeletonCard />}
             <p className="text-sm text-muted">
               已登录且应用运行期间，按北京时间每日自动为有签到考核的待签到课程提交签到，无需加入视频任务。
               提交后根据服务端签到进度确认结果。
             </p>
             {pendingCheckins.length > 0 && (
-              <Alert status="warning" className="flex flex-wrap items-center justify-between gap-3">
-                <Alert.Indicator />
-                <Alert.Content>
-                  <Alert.Title>需要签到</Alert.Title>
-                  <Alert.Description>{pendingCheckins.length} 门课程需要签到</Alert.Description>
-                </Alert.Content>
+              <Banner
+                status="warning"
+                className="flex flex-wrap items-center justify-between gap-3"
+              >
+                <Banner.Title>需要签到</Banner.Title>
+                <Banner.Description>{pendingCheckins.length} 门课程需要签到</Banner.Description>
+
                 <Button
-                  variant="secondary"
-                  isDisabled={!ready || busy}
-                  onPress={() => void action("start_uooc_checkin", { courseIds: pendingCheckins })}
+                  variant="tonal"
+                  disabled={!ready || busy}
+                  onClick={() => void action("start_uooc_checkin", { courseIds: pendingCheckins })}
                 >
                   签到全部待签到课程 ({pendingCheckins.length})
                 </Button>
-              </Alert>
+              </Banner>
             )}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-muted">{snapshot?.courses.length ?? 0} 门开课中的课程</p>
               <div className="flex flex-wrap gap-2">
                 <Button
-                  variant="tertiary"
-                  isDisabled={!ready || selectable.length === 0}
-                  onPress={() => setSelected(ids.length === selectable.length ? [] : selectable)}
+                  variant="text"
+                  disabled={!ready || selectable.length === 0}
+                  onClick={() => setSelected(ids.length === selectable.length ? [] : selectable)}
                 >
                   {ids.length > 0 && ids.length === selectable.length ? "取消全选" : "全选"}
                 </Button>
                 <Button
-                  isDisabled={!ready || busy || ids.length === 0}
-                  onPress={() =>
+                  disabled={!ready || busy || ids.length === 0}
+                  onClick={() =>
                     void start().catch(() => setError("无法启动任务，请检查通知权限后重试。"))
                   }
                 >
@@ -668,26 +634,22 @@ export default function UoocPage() {
               const hasTestWeight = typeof testWeight === "number" && testWeight > 0;
               const isReview = course.status === "33";
               return (
-                <Card key={course.id}>
-                  <Card.Content className="grid gap-2">
+                <Card key={course.id} variant="outlined">
+                  <div className="grid gap-2 p-4">
                     <div className="flex flex-wrap items-center gap-2">
                       <Checkbox
-                        isSelected={!isReview && (added.has(course.id) || ids.includes(course.id))}
-                        isDisabled={!ready || busy || added.has(course.id) || isReview}
-                        onChange={(checked) =>
+                        checked={!isReview && (added.has(course.id) || ids.includes(course.id))}
+                        disabled={!ready || busy || added.has(course.id) || isReview}
+                        onChange={(e: any) => {
+                          const checked = Boolean(e.detail?.checked ?? e.target?.checked);
                           setSelected((old) =>
                             checked
                               ? [...new Set([...old, course.id])]
                               : old.filter((id) => id !== course.id),
-                          )
-                        }
+                          );
+                        }}
                       >
-                        <Checkbox.Content>
-                          <Checkbox.Control>
-                            <Checkbox.Indicator />
-                          </Checkbox.Control>
-                          {course.title}
-                        </Checkbox.Content>
+                        {course.title}
                       </Checkbox>
                       {isReview && (
                         <Chip size="sm" color="warning" variant="soft">
@@ -739,52 +701,50 @@ export default function UoocPage() {
                     />
                     {checkinControls(course.id)}
                     {discussionControls(course.id)}
-                  </Card.Content>
+                  </div>
                 </Card>
               );
             })}
             {snapshot && !snapshot.courses.length && (
-              <Card>
-                <Card.Content>
+              <Card variant="outlined">
+                <div className="p-4">
                   <p className="text-muted">
                     {ready ? "当前没有开课中的课程。" : "登录 UOOC 后查看开课中的课程。"}
                   </p>
-                </Card.Content>
+                </div>
               </Card>
             )}
-          </Tabs.Panel>
-          <Tabs.Panel id="tasks" className="grid gap-4 pt-4">
+          </div>
+        )}
+        {tab === "tasks" && (
+          <div className="grid gap-4 pt-4">
             <div className="flex flex-wrap gap-2">
-              <Button
-                variant="secondary"
-                isDisabled={busy || !running}
-                onPress={() => control("pause")}
-              >
+              <Button variant="tonal" disabled={busy || !running} onClick={() => control("pause")}>
                 <LuPause aria-hidden="true" />
                 暂停全部
               </Button>
               <Button
-                variant="secondary"
-                isDisabled={busy || !ready || !tasks.length}
-                onPress={() => control("resume")}
+                variant="tonal"
+                disabled={busy || !ready || !tasks.length}
+                onClick={() => control("resume")}
               >
                 <LuPlay aria-hidden="true" />
                 继续全部
               </Button>
               <Button
-                variant="tertiary"
-                isDisabled={busy || !tasks.length}
-                onPress={() => control("stop")}
+                variant="text"
+                disabled={busy || !tasks.length}
+                onClick={() => control("stop")}
               >
                 <LuSquare aria-hidden="true" />
                 停止全部
               </Button>
               {tasks.some((t) => t.status === "completed") && (
                 <Button
-                  variant="tertiary"
-                  isDisabled={busy}
+                  variant="text"
+                  disabled={busy}
                   className="text-danger hover:text-danger hover:bg-danger/10"
-                  onPress={() => setConfirmDeleteCompleted(true)}
+                  onClick={() => setConfirmDeleteCompleted(true)}
                 >
                   <LuTrash2 aria-hidden="true" />
                   删除已完成任务
@@ -819,7 +779,6 @@ export default function UoocPage() {
                     : item.quiz.stage === "passed" || item.quiz.videoComplete;
                 const completedItems = taskItems.filter(isItemCompleted);
                 const pendingItems = taskItems.filter((item) => !isItemCompleted(item));
-                const completedKeys = expandedAccordionKeys[task.course.id] ?? new Set<string>([]);
 
                 const renderTaskItem = (item: CourseTaskItem) =>
                   item.kind === "quiz" ? (
@@ -847,24 +806,22 @@ export default function UoocPage() {
                         {item.quiz.stage === "passed" ? (
                           <Chip color="success" size="sm">
                             <LuCheck aria-hidden="true" />
-                            <Chip.Label>已完成</Chip.Label>
+                            已完成
                           </Chip>
                         ) : ["preparing", "generating", "submitting", "verifying"].includes(
                             item.quiz.stage,
                           ) ? (
                           <div className="flex items-center gap-1.5">
-                            <Spinner size="sm" aria-label="处理中" />
+                            <LoadingIndicator size={16} aria-label="处理中" />
                             <span className="text-xs text-muted">处理中</span>
                           </div>
                         ) : (
                           <Chip color="warning" size="sm">
-                            <Chip.Label>
-                              {item.quiz.stage === "awaitingApproval"
-                                ? "待核对"
-                                : item.quiz.stage === "awaitingChoice"
-                                  ? "待答题"
-                                  : "点击答题"}
-                            </Chip.Label>
+                            {item.quiz.stage === "awaitingApproval"
+                              ? "待核对"
+                              : item.quiz.stage === "awaitingChoice"
+                                ? "待答题"
+                                : "点击答题"}
                           </Chip>
                         )}
                       </div>
@@ -882,13 +839,14 @@ export default function UoocPage() {
                         {item.video.status === "completed" ? (
                           <Chip color="success" size="sm">
                             <LuCheck aria-hidden="true" />
-                            <Chip.Label>已刷完</Chip.Label>
+                            已刷完
                           </Chip>
                         ) : (
                           <span className="text-muted">{taskStatus[item.video.status]}</span>
                         )}
                       </div>
-                      <ProgressBar
+                      <Progress
+                        variant="linear"
                         aria-label={`${item.video.title}进度`}
                         value={
                           item.video.status === "completed"
@@ -897,13 +855,9 @@ export default function UoocPage() {
                               ? Math.min(100, (item.video.position / item.video.duration) * 100)
                               : 0
                         }
-                        color={item.video.status === "completed" ? "success" : "accent"}
-                        isIndeterminate={!item.video.duration && item.video.status === "running"}
-                      >
-                        <ProgressBar.Track>
-                          <ProgressBar.Fill />
-                        </ProgressBar.Track>
-                      </ProgressBar>
+                        max={100}
+                        indeterminate={!item.video.duration && item.video.status === "running"}
+                      />
                       <p className="text-xs text-muted">
                         {seconds(item.video.position)} /{" "}
                         {item.video.duration
@@ -917,22 +871,29 @@ export default function UoocPage() {
                   );
 
                 return (
-                  <Card key={task.course.id} id={`uooc-course-${task.course.id}`}>
-                    <Card.Header>
-                      <Card.Title>{task.course.title}</Card.Title>
+                  <Card
+                    key={task.course.id}
+                    id={`uooc-course-${task.course.id}`}
+                    variant="outlined"
+                  >
+                    <div
+                      slot="headline"
+                      className="font-semibold text-lg flex items-center justify-between w-full"
+                    >
+                      <span>{task.course.title}</span>
                       {isCompleted && (
                         <Chip color="success" size="sm" className="justify-self-start">
                           <LuCheck aria-hidden="true" />
-                          <Chip.Label>视频已刷完</Chip.Label>
+                          视频已刷完
                         </Chip>
                       )}
-                      <Card.Description>
-                        {taskStatus[task.status]} · 完成{" "}
-                        {task.videos.filter((v) => v.status === "completed").length} /{" "}
-                        {task.videos.length} 个视频
-                      </Card.Description>
-                    </Card.Header>
-                    <Card.Content className="grid gap-3">
+                    </div>
+                    <div slot="subhead">
+                      {taskStatus[task.status]} · 完成{" "}
+                      {task.videos.filter((v) => v.status === "completed").length} /{" "}
+                      {task.videos.length} 个视频
+                    </div>
+                    <div className="grid gap-3 p-4">
                       <CourseProgressView
                         course={task.course}
                         entry={snapshot?.progress?.[task.course.id]}
@@ -942,35 +903,35 @@ export default function UoocPage() {
                       {discussionControls(task.course.id)}
                       <div className="flex flex-wrap gap-2">
                         <Button
-                          size="sm"
-                          variant="secondary"
-                          isDisabled={busy || !active(task)}
-                          onPress={() => control("pause", [task.course.id])}
+                          size="xs"
+                          variant="tonal"
+                          disabled={busy || !active(task)}
+                          onClick={() => control("pause", [task.course.id])}
                         >
                           暂停
                         </Button>
                         <Button
-                          size="sm"
-                          variant="secondary"
-                          isDisabled={busy || !ready || active(task)}
-                          onPress={() => control("resume", [task.course.id])}
+                          size="xs"
+                          variant="tonal"
+                          disabled={busy || !ready || active(task)}
+                          onClick={() => control("resume", [task.course.id])}
                         >
                           {task.status === "completed" ? "继续测验" : "继续"}
                         </Button>
                         <Button
-                          size="sm"
-                          variant="tertiary"
-                          isDisabled={busy || task.status === "stopped"}
-                          onPress={() => control("stop", [task.course.id])}
+                          size="xs"
+                          variant="text"
+                          disabled={busy || task.status === "stopped"}
+                          onClick={() => control("stop", [task.course.id])}
                         >
                           停止
                         </Button>
                         <Button
-                          size="sm"
-                          variant="tertiary"
-                          isDisabled={busy}
+                          size="xs"
+                          variant="text"
+                          disabled={busy}
                           className="text-danger hover:text-danger hover:bg-danger/10"
-                          onPress={() => setTaskToDelete(task)}
+                          onClick={() => setTaskToDelete(task)}
                         >
                           <LuTrash2 aria-hidden="true" />
                           删除
@@ -983,43 +944,27 @@ export default function UoocPage() {
                       )}
                       <div className="grid max-h-96 gap-3 overflow-auto">
                         {completedItems.length > 0 && (
-                          <Accordion
-                            variant="surface"
-                            expandedKeys={completedKeys}
-                            onExpandedChange={(keys) =>
-                              setExpandedAccordionKeys((prev) => ({
-                                ...prev,
-                                [task.course.id]: new Set(Array.from(keys).map(String)),
-                              }))
+                          <Disclosure
+                            title={
+                              <div className="flex flex-1 items-center gap-2 text-sm font-medium">
+                                <LuCheck className="shrink-0 text-success" aria-hidden="true" />
+                                <span>已刷完任务 ({completedItems.length} 项)</span>
+                                <Chip color="success" size="sm">
+                                  已刷完
+                                </Chip>
+                              </div>
                             }
+                            ariaLabel={`已刷完任务 (${completedItems.length} 项)`}
                           >
-                            <Accordion.Item id="completed-tasks">
-                              <Accordion.Heading>
-                                <Accordion.Trigger
-                                  aria-label={`已刷完任务 (${completedItems.length} 项)`}
-                                >
-                                  <div className="flex flex-1 items-center gap-2 text-sm font-medium">
-                                    <LuCheck className="shrink-0 text-success" aria-hidden="true" />
-                                    <span>已刷完任务 ({completedItems.length} 项)</span>
-                                    <Chip color="success" size="sm">
-                                      <Chip.Label>已刷完</Chip.Label>
-                                    </Chip>
-                                  </div>
-                                  <Accordion.Indicator />
-                                </Accordion.Trigger>
-                              </Accordion.Heading>
-                              <Accordion.Panel>
-                                <Accordion.Body className="grid gap-3 pt-2">
-                                  {completedItems.map(renderTaskItem)}
-                                </Accordion.Body>
-                              </Accordion.Panel>
-                            </Accordion.Item>
-                          </Accordion>
+                            <div className="grid gap-3 pt-2">
+                              {completedItems.map(renderTaskItem)}
+                            </div>
+                          </Disclosure>
                         )}
                         {pendingItems.map(renderTaskItem)}
                         {taskItems.length === 0 && <p className="text-sm text-muted">暂无任务项</p>}
                       </div>
-                    </Card.Content>
+                    </div>
                   </Card>
                 );
               })}
@@ -1036,8 +981,8 @@ export default function UoocPage() {
                 </div>
                 <LuMessageCircle className="text-muted" aria-hidden="true" />
               </div>
-              <Card>
-                <Card.Content className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center">
+              <Card variant="outlined">
+                <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-center p-4">
                   <div className="grid gap-1">
                     <span className="text-xs text-muted">下一次发起讨论</span>
                     <strong className="text-base">
@@ -1060,191 +1005,154 @@ export default function UoocPage() {
                     </span>
                     <span className="text-xs text-muted">全局冷却</span>
                   </div>
-                </Card.Content>
+                </div>
               </Card>
             </section>
             {!tasks.length && (
-              <Card>
-                <Card.Content>选择课程并开始后，任务会显示在这里。</Card.Content>
+              <Card variant="outlined">
+                <div className="p-4 text-muted">选择课程并开始后，任务会显示在这里。</div>
               </Card>
             )}
-            <AlertDialog
-              isOpen={!!taskToDelete}
-              onOpenChange={(open) => {
-                if (!open) setTaskToDelete(null);
-              }}
-            >
-              <AlertDialog.Backdrop>
-                <AlertDialog.Container size="sm">
-                  <AlertDialog.Dialog>
-                    <AlertDialog.Icon status="danger" />
-                    <AlertDialog.Header>
-                      <AlertDialog.Heading>确认删除任务？</AlertDialog.Heading>
-                    </AlertDialog.Header>
-                    <AlertDialog.Body>
-                      确定要删除课程「{taskToDelete?.course.title}
-                      」的运行任务吗？如果该任务正在运行将会立即停止。已记录的学情进度不会丢失，之后仍可从课程列表重新添加。
-                    </AlertDialog.Body>
-                    <AlertDialog.Footer>
-                      <AlertDialog.CloseTrigger />
-                      <Button
-                        variant="danger"
-                        isDisabled={busy}
-                        onPress={async () => {
-                          if (!taskToDelete) return;
-                          const cid = taskToDelete.course.id;
-                          const title = taskToDelete.course.title;
-                          setTaskToDelete(null);
-                          const ok = await action("control_uooc_tasks", {
-                            courseIds: [cid],
-                            action: "delete",
-                          });
-                          if (ok) {
-                            toast.success(`已删除课程「${title}」的任务`);
-                          } else {
-                            toast.danger("删除任务失败，请重试");
-                          }
-                        }}
-                      >
-                        确认删除
-                      </Button>
-                    </AlertDialog.Footer>
-                  </AlertDialog.Dialog>
-                </AlertDialog.Container>
-              </AlertDialog.Backdrop>
-            </AlertDialog>
-            <AlertDialog isOpen={confirmDeleteCompleted} onOpenChange={setConfirmDeleteCompleted}>
-              <AlertDialog.Backdrop>
-                <AlertDialog.Container size="sm">
-                  <AlertDialog.Dialog>
-                    <AlertDialog.Icon status="danger" />
-                    <AlertDialog.Header>
-                      <AlertDialog.Heading>确认删除所有已完成任务？</AlertDialog.Heading>
-                    </AlertDialog.Header>
-                    <AlertDialog.Body>
-                      将从任务列表中移除所有状态为「已完成」的课程任务。已记录的学情进度不会丢失。
-                    </AlertDialog.Body>
-                    <AlertDialog.Footer>
-                      <AlertDialog.CloseTrigger />
-                      <Button
-                        variant="danger"
-                        isDisabled={busy}
-                        onPress={async () => {
-                          setConfirmDeleteCompleted(false);
-                          const completedIds = tasks
-                            .filter((t) => t.status === "completed")
-                            .map((t) => t.course.id);
-                          if (!completedIds.length) return;
-                          const ok = await action("control_uooc_tasks", {
-                            courseIds: completedIds,
-                            action: "delete",
-                          });
-                          if (ok) {
-                            toast.success(`已删除 ${completedIds.length} 个已完成任务`);
-                          } else {
-                            toast.danger("删除任务失败，请重试");
-                          }
-                        }}
-                      >
-                        确认删除
-                      </Button>
-                    </AlertDialog.Footer>
-                  </AlertDialog.Dialog>
-                </AlertDialog.Container>
-              </AlertDialog.Backdrop>
-            </AlertDialog>
-          </Tabs.Panel>
-          <Tabs.Panel id="exams" className="grid gap-4 pt-4">
+            {taskToDelete &&
+              typeof document !== "undefined" &&
+              createPortal(
+                <Dialog
+                  open={!!taskToDelete}
+                  headline="确认删除任务？"
+                  onClose={() => setTaskToDelete(null)}
+                >
+                  <div>
+                    确定要删除课程「{taskToDelete.course.title}
+                    」的运行任务吗？如果该任务正在运行将会立即停止。已记录的学情进度不会丢失，之后仍可从课程列表重新添加。
+                  </div>
+                  <div slot="actions">
+                    <Button variant="tonal" onClick={() => setTaskToDelete(null)}>
+                      取消
+                    </Button>
+                    <Button
+                      className="button-danger"
+                      variant="filled"
+                      disabled={busy}
+                      onClick={async () => {
+                        const cid = taskToDelete.course.id;
+                        const title = taskToDelete.course.title;
+                        setTaskToDelete(null);
+                        const ok = await action("control_uooc_tasks", {
+                          courseIds: [cid],
+                          action: "delete",
+                        });
+                        if (ok) {
+                          toast.success(`已删除课程「${title}」的任务`);
+                        } else {
+                          toast.danger("删除任务失败，请重试");
+                        }
+                      }}
+                    >
+                      确认删除
+                    </Button>
+                  </div>
+                </Dialog>,
+                document.body,
+              )}
+            {confirmDeleteCompleted &&
+              typeof document !== "undefined" &&
+              createPortal(
+                <Dialog
+                  open={confirmDeleteCompleted}
+                  headline="确认删除所有已完成任务？"
+                  onClose={() => setConfirmDeleteCompleted(false)}
+                >
+                  <div>
+                    将从任务列表中移除所有状态为「已完成」的课程任务。已记录的学情进度不会丢失。
+                  </div>
+                  <div slot="actions">
+                    <Button variant="tonal" onClick={() => setConfirmDeleteCompleted(false)}>
+                      取消
+                    </Button>
+                    <Button
+                      className="button-danger"
+                      variant="filled"
+                      disabled={busy}
+                      onClick={async () => {
+                        setConfirmDeleteCompleted(false);
+                        const completedIds = tasks
+                          .filter((t) => t.status === "completed")
+                          .map((t) => t.course.id);
+                        if (!completedIds.length) return;
+                        const ok = await action("control_uooc_tasks", {
+                          courseIds: completedIds,
+                          action: "delete",
+                        });
+                        if (ok) {
+                          toast.success(`已删除 ${completedIds.length} 个已完成任务`);
+                        } else {
+                          toast.danger("删除任务失败，请重试");
+                        }
+                      }}
+                    >
+                      确认删除
+                    </Button>
+                  </div>
+                </Dialog>,
+                document.body,
+              )}
+          </div>
+        )}
+        {tab === "exams" && (
+          <div className="grid gap-4 pt-4">
             <Tabs
-              selectedKey={assessSubtab}
-              onSelectionChange={(key) => {
-                const next = key as "quiz" | "homework" | "exam";
+              ref={(host) => nameTablist(host, "考核子分类")}
+              value={assessSubtab}
+              onChange={(event) => {
+                const next = event.detail.value as "quiz" | "homework" | "exam";
                 setAssessSubtab(next);
                 void navigation.replace(`/uooc?tab=exams&subtab=${next}`);
               }}
             >
-              {/* 桌面端横向子分类 */}
-              <div className="hidden sm:block">
-                <Tabs.ListContainer>
-                  <Tabs.List aria-label="考核子分类">
-                    <Tabs.Tab id="quiz">
-                      测验
-                      <Tabs.Indicator />
-                    </Tabs.Tab>
-                    <Tabs.Tab id="homework">
-                      作业
-                      <Tabs.Indicator />
-                    </Tabs.Tab>
-                    <Tabs.Tab id="exam">
-                      考试
-                      <Tabs.Indicator />
-                    </Tabs.Tab>
-                  </Tabs.List>
-                </Tabs.ListContainer>
-              </div>
+              {/* 横向子分类（支持水平滑动，在所有屏幕下均可见） */}
+              <Tab value="quiz">测验</Tab>
+              <Tab value="homework">作业</Tab>
+              <Tab value="exam">考试</Tab>
+            </Tabs>
 
-              {/* 移动端横向空间不足时：Accordion 竖向下拉可折叠菜单进行选择 */}
-              <div className="sm:hidden mb-2">
-                <Accordion
-                  expandedKeys={mobileAssessTabKeys}
-                  onExpandedChange={setMobileAssessTabKeys}
-                  className="w-full"
-                >
-                  <Accordion.Item
-                    id="assess-subtab-menu"
-                    className="rounded-xl border border-separator/60 bg-surface"
-                  >
-                    <Accordion.Heading>
-                      <Accordion.Trigger className="w-full py-2 px-3 text-left text-xs font-medium flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="text-muted">考核分类：</span>
-                          <span className="font-semibold text-foreground">
-                            {assessSubtab === "quiz"
-                              ? "测验"
-                              : assessSubtab === "homework"
-                                ? "作业"
-                                : "考试"}
-                          </span>
-                        </div>
-                        <Accordion.Indicator />
-                      </Accordion.Trigger>
-                    </Accordion.Heading>
-                    <Accordion.Panel>
-                      <Accordion.Body className="grid gap-1 p-2 pt-1 border-t border-separator/40">
-                        {[
-                          { id: "quiz" as const, label: "测验" },
-                          { id: "homework" as const, label: "作业" },
-                          { id: "exam" as const, label: "考试" },
-                        ].map((sub) => {
-                          const isSelected = assessSubtab === sub.id;
-                          return (
-                            <Button
-                              key={sub.id}
-                              variant={isSelected ? "primary" : "ghost"}
-                              className={`w-full justify-start h-8 px-2.5 text-xs ${
-                                isSelected ? "font-semibold" : "text-muted hover:text-foreground"
-                              }`}
-                              onPress={() => {
-                                const next = sub.id as "quiz" | "homework" | "exam";
-                                setAssessSubtab(next);
-                                void navigation.replace(`/uooc?tab=exams&subtab=${next}`);
-                                setMobileAssessTabKeys(new Set());
-                              }}
-                            >
-                              <span>{sub.label}</span>
-                              {isSelected && (
-                                <span className="ml-auto text-xs font-medium">当前</span>
-                              )}
-                            </Button>
-                          );
-                        })}
-                      </Accordion.Body>
-                    </Accordion.Panel>
-                  </Accordion.Item>
-                </Accordion>
-              </div>
+            {/* 移动端横向空间不足时：可折叠菜单进行选择 */}
+            <div className="sm:hidden mb-2">
+              <Disclosure
+                title={`考核分类：${
+                  assessSubtab === "quiz" ? "测验" : assessSubtab === "homework" ? "作业" : "考试"
+                }`}
+              >
+                <div className="grid gap-1 p-2 pt-1 border-t border-separator/40">
+                  {[
+                    { id: "quiz" as const, label: "测验" },
+                    { id: "homework" as const, label: "作业" },
+                    { id: "exam" as const, label: "考试" },
+                  ].map((sub) => {
+                    const isSelected = assessSubtab === sub.id;
+                    return (
+                      <Button
+                        key={sub.id}
+                        variant={isSelected ? "filled" : "text"}
+                        className={`w-full justify-start h-8 px-2.5 text-xs ${
+                          isSelected ? "font-semibold" : "text-muted hover:text-foreground"
+                        }`}
+                        onClick={() => {
+                          const next = sub.id as "quiz" | "homework" | "exam";
+                          setAssessSubtab(next);
+                          void navigation.replace(`/uooc?tab=exams&subtab=${next}`);
+                        }}
+                      >
+                        <span>{sub.label}</span>
+                        {isSelected && <span className="ml-auto text-xs font-medium">当前</span>}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </Disclosure>
+            </div>
 
-              <Tabs.Panel id="quiz" className="pt-3">
+            {assessSubtab === "quiz" && (
+              <div className="pt-3">
                 <QuizListPanel
                   courses={snapshot?.courses ?? []}
                   quizzes={snapshot?.quizzes}
@@ -1252,24 +1160,28 @@ export default function UoocPage() {
                   onSnapshot={apply}
                   ready={ready}
                 />
-              </Tabs.Panel>
+              </div>
+            )}
 
-              <Tabs.Panel id="homework" className="pt-3">
+            {assessSubtab === "homework" && (
+              <div className="pt-3">
                 <HomeworkListPanel courses={snapshot?.courses ?? []} ready={ready} />
-              </Tabs.Panel>
+              </div>
+            )}
 
-              <Tabs.Panel id="exam" className="pt-3">
+            {assessSubtab === "exam" && (
+              <div className="pt-3">
                 <ExamListPanel courses={snapshot?.courses ?? []} ready={ready} />
-              </Tabs.Panel>
-            </Tabs>
-          </Tabs.Panel>
-          <Tabs.Panel id="settings" className="grid gap-4 pt-4">
-            <Card>
-              <Card.Header>
-                <Card.Title>运行设置</Card.Title>
-                <Card.Description>所有课程共享并发额度。请暂停全部任务后修改。</Card.Description>
-              </Card.Header>
-              <Card.Content className="grid gap-5">
+              </div>
+            )}
+          </div>
+        )}
+        {tab === "settings" && (
+          <div className="grid gap-4 pt-4">
+            <Card variant="outlined">
+              <div slot="headline">运行设置</div>
+              <div slot="subhead">所有课程共享并发额度。请暂停全部任务后修改。</div>
+              <div className="grid gap-5 p-4">
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   {(
                     [
@@ -1287,68 +1199,61 @@ export default function UoocPage() {
                   ).map(({ key, label, min, step }) => (
                     <NumberField
                       key={key}
+                      label={label}
                       minValue={min}
                       step={step}
                       value={settings[key] ?? 30}
                       maxValue={key === "discussionIntervalMin" ? 1440 : undefined}
-                      isDisabled={running || busy || !snapshot}
-                      onChange={(value) => setSettings((old) => ({ ...old, [key]: value }))}
-                    >
-                      <Label>{label}</Label>
-                      <NumberField.Group>
-                        <NumberField.DecrementButton />
-                        <NumberField.Input />
-                        <NumberField.IncrementButton />
-                      </NumberField.Group>
-                    </NumberField>
+                      disabled={running || busy || !snapshot}
+                      onChange={(value) => editDraft((old) => ({ ...old, [key]: value }))}
+                    />
                   ))}
                 </div>
                 <Checkbox
-                  isSelected={settings.dryRun}
-                  isDisabled={running || busy || !snapshot}
-                  onChange={(value) => setSettings((old) => ({ ...old, dryRun: value }))}
+                  checked={settings.dryRun}
+                  disabled={running || busy || !snapshot}
+                  onChange={(e: any) =>
+                    editDraft((old) => ({
+                      ...old,
+                      dryRun: Boolean(e.detail?.checked ?? e.target?.checked),
+                    }))
+                  }
                 >
-                  <Checkbox.Content>
-                    <Checkbox.Control>
-                      <Checkbox.Indicator />
-                    </Checkbox.Control>
-                    仅预览（dry-run），不提交视频进度
-                  </Checkbox.Content>
+                  仅预览（dry-run），不提交视频进度
                 </Checkbox>
                 <p className="text-sm text-muted">
                   视频时长成功获取后会保存在本机，后续任务和重启后均直接复用。仅处理视频，测验、作业与考试需自行完成。
                 </p>
                 <div className="grid gap-3 rounded-xl border border-separator/60 p-4">
                   <Switch
-                    isSelected={discussionEnabled}
-                    isDisabled={busy || !snapshot}
-                    onChange={(value) =>
-                      setSettings((old) => ({ ...old, discussionEnabled: value }))
+                    checked={discussionEnabled}
+                    disabled={busy || !snapshot}
+                    onChange={(e: any) =>
+                      editDraft((old) => ({
+                        ...old,
+                        discussionEnabled: e.detail?.checked ?? e.target?.checked,
+                      }))
                     }
                   >
-                    <Switch.Control>
-                      <Switch.Thumb />
-                    </Switch.Control>
-                    <Switch.Content>
-                      <Label>自动完成讨论</Label>
+                    <div className="flex flex-col gap-0.5 ml-2">
+                      <span className="font-medium text-sm">自动完成讨论</span>
                       <span className="text-xs text-muted">
                         仅处理有讨论权重且完成率未达 100% 的课程，课程之间至少间隔{" "}
                         {discussionIntervalMin} 分钟。
                       </span>
-                    </Switch.Content>
+                    </div>
                   </Switch>
                   <div className="grid gap-2">
-                    <Label htmlFor="uooc-discussion-content">无评论时的发帖内容</Label>
-                    <TextArea
-                      id="uooc-discussion-content"
+                    <TextField
+                      type="multiline"
+                      label="无评论时的发帖内容"
                       value={discussionContent}
-                      rows={3}
-                      maxLength={500}
-                      variant="secondary"
+                      maxlength={500}
                       disabled={busy || !snapshot || !discussionEnabled}
                       onChange={(event) =>
-                        setSettings((old) => ({ ...old, discussionContent: event.target.value }))
+                        editDraft((old) => ({ ...old, discussionContent: event.detail.value }))
                       }
+                      className="w-full"
                     />
                     <span className="text-xs text-muted">
                       发送时会自动包裹为一段 HTML，主题固定为“要好好学习”。
@@ -1358,69 +1263,65 @@ export default function UoocPage() {
                 </div>
                 <Button
                   className="justify-self-start"
-                  isDisabled={running || busy || !snapshot}
-                  onPress={() => void action("save_uooc_settings", { settings })}
+                  disabled={running || busy || !snapshot}
+                  onClick={() => void saveSettings()}
                 >
                   保存设置
                 </Button>
-              </Card.Content>
+              </div>
             </Card>
             <AiSettings
               onMode={setDefaultMode}
               onOpenAiSettings={() => void navigation.push("/settings?tab=ai")}
             />
-          </Tabs.Panel>
-          <Tabs.Panel id="qa" className="grid gap-6 pt-4">
+          </div>
+        )}
+        {tab === "qa" && (
+          <div className="grid gap-6 pt-4">
             <UoocQaSettings
               courses={snapshot?.courses ?? []}
               quizzes={snapshot?.quizzes}
               qaServerUrl={settings.qaServerUrl ?? DEFAULT_QA_SERVER_URL}
-              onQaServerUrlChange={(value) =>
-                setSettings((old) => ({ ...old, qaServerUrl: value }))
-              }
+              onQaServerUrlChange={(value) => editDraft((old) => ({ ...old, qaServerUrl: value }))}
               debugEnabled={debugEnabled}
               disabled={running || busy || !snapshot}
               onSaveSettings={async () => {
-                const ok = await action("save_uooc_settings", { settings });
-                if (ok) toast.success("题库服务设置已保存");
+                if (await saveSettings()) toast.success("题库服务设置已保存");
               }}
             />
-          </Tabs.Panel>
-        </Tabs>
+          </div>
+        )}
 
-        <Modal
-          isOpen={!!activeModalQuiz}
-          onOpenChange={(open) => {
-            if (!open) {
-              setSelectedQuiz(null);
-              setModalQuizCid(null);
-            }
-          }}
-        >
-          <Modal.Backdrop>
-            <Modal.Container size="cover" className="max-w-4xl">
-              <Modal.Dialog
-                aria-label={activeModalQuiz?.title || "课程测验"}
-                className="flex flex-col max-h-[85vh]"
-              >
-                <Modal.CloseTrigger />
-                {activeModalQuiz && (
-                  <QuizPanel
-                    quiz={activeModalQuiz}
-                    active={tasks.some((t) => t.course.id === activeModalQuiz.cid && active(t))}
-                    weight={snapshot?.progress?.[activeModalQuiz.cid]?.data?.test.weight}
-                    dryRun={snapshot?.settings.dryRun ?? false}
-                    onSnapshot={apply}
-                    onClose={() => {
-                      setSelectedQuiz(null);
-                      setModalQuizCid(null);
-                    }}
-                  />
-                )}
-              </Modal.Dialog>
-            </Modal.Container>
-          </Modal.Backdrop>
-        </Modal>
+        {activeModalQuiz &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <Dialog
+              open={!!activeModalQuiz}
+              role="dialog"
+              headline={activeModalQuiz?.title || "课程测验"}
+              aria-label={activeModalQuiz?.title || "课程测验"}
+              className="max-w-4xl"
+              onClose={() => {
+                setSelectedQuiz(null);
+                setModalQuizCid(null);
+              }}
+            >
+              <div className="flex flex-col max-h-[85vh] overflow-y-auto">
+                <QuizPanel
+                  quiz={activeModalQuiz}
+                  active={tasks.some((t) => t.course.id === activeModalQuiz.cid && active(t))}
+                  weight={snapshot?.progress?.[activeModalQuiz.cid]?.data?.test.weight}
+                  dryRun={snapshot?.settings.dryRun ?? false}
+                  onSnapshot={apply}
+                  onClose={() => {
+                    setSelectedQuiz(null);
+                    setModalQuizCid(null);
+                  }}
+                />
+              </div>
+            </Dialog>,
+            document.body,
+          )}
       </div>
     </PageShell>
   );

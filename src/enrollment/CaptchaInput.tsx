@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
-import { Button, Spinner, toast } from "@heroui/react";
+import { LoadingIndicator, Button } from "material/react";
+import { toast } from "../ui";
 import { useEnrollment } from "./use-enrollment";
 import type { Snapshot } from "./model";
 type Point = [number, number];
@@ -241,14 +242,14 @@ export default function CaptchaInput({
           ))}
         </button>
       ) : view.phase === "loading" ? (
-        <Spinner aria-label="正在获取验证码" />
+        <LoadingIndicator size={24} aria-label="正在获取验证码" />
       ) : null}
       <div className="flex flex-wrap items-center justify-center gap-2">
         <Button
-          size="sm"
-          variant="secondary"
-          isDisabled={locked || view.phase === "auto"}
-          onPress={() => {
+          size="xs"
+          variant="tonal"
+          disabled={locked || view.phase === "auto"}
+          onClick={() => {
             const r = cancel();
             update({ retries: 0, phase: "auto" });
             void automate(r, !current.current.id);
@@ -260,10 +261,10 @@ export default function CaptchaInput({
           已重试 {view.retries} 次
         </span>
         <Button
-          size="sm"
-          variant="tertiary"
-          isDisabled={locked}
-          onPress={() => {
+          size="xs"
+          variant="text"
+          disabled={locked}
+          onClick={() => {
             cancel();
             update({ points: [], phase: "manual", message: "按顶部顺序点选四个字" });
           }}
@@ -271,10 +272,10 @@ export default function CaptchaInput({
           重选
         </Button>
         <Button
-          size="sm"
-          variant="tertiary"
-          isDisabled={locked}
-          onPress={() => {
+          size="xs"
+          variant="text"
+          disabled={locked}
+          onClick={() => {
             const r = cancel();
             void prepare(r, false);
           }}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Alert, Button, Card, Chip, Label, ListBox, Select, Spinner, toast } from "@heroui/react";
+import { Card, Divider, LoadingIndicator, Select, SelectOption, Button } from "material/react";
+import { Banner, Chip, toast } from "../ui";
 import { LuBookOpen, LuCalendar, LuCircleCheck, LuRotateCw } from "react-icons/lu";
 import { ExamPaperModal } from "./ExamPaperModal";
 import type { HomeworkTask, QuizState, UoocCourse, UoocSnapshot } from "./types";
@@ -142,49 +143,29 @@ export function QuizListPanel({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
           <Select
+            label="课程筛选"
             aria-label="选择课程筛选"
             className="w-full sm:w-64"
             value={selectedCid}
-            onChange={(val) => {
+            onChange={(e: any) => {
+              const val = e.detail?.value ?? e.target?.value;
               if (typeof val === "string") setSelectedCid(val);
             }}
           >
-            <Label className="sr-only">课程筛选</Label>
-            <Select.Trigger>
-              <Select.Value />
-              <Select.Indicator />
-            </Select.Trigger>
-            <Select.Popover>
-              <ListBox>
-                <ListBox.Item id="all" textValue="全部课程">
-                  全部课程
-                  <ListBox.ItemIndicator />
-                </ListBox.Item>
-                {courses.map((c) => (
-                  <ListBox.Item
-                    key={c.id}
-                    id={c.id}
-                    textValue={c.status === "33" ? `${c.title} (复习中)` : c.title}
-                  >
-                    <div className="flex items-center justify-between w-full">
-                      <span>{c.title}</span>
-                      {c.status === "33" && (
-                        <span className="text-xs text-warning ml-2 font-normal">复习中</span>
-                      )}
-                    </div>
-                    <ListBox.ItemIndicator />
-                  </ListBox.Item>
-                ))}
-              </ListBox>
-            </Select.Popover>
+            <SelectOption value="all">全部课程</SelectOption>
+            {courses.map((c) => (
+              <SelectOption key={c.id} value={c.id}>
+                {c.status === "33" ? `${c.title} (复习中)` : c.title}
+              </SelectOption>
+            ))}
           </Select>
 
           <Button
-            variant="secondary"
-            isDisabled={loading || !ready}
-            onPress={() => void fetchQuizzes(selectedCid)}
+            variant="tonal"
+            disabled={loading || !ready}
+            onClick={() => void fetchQuizzes(selectedCid)}
           >
-            {loading ? <Spinner size="sm" /> : <LuRotateCw />}
+            {loading ? <LoadingIndicator size={16} /> : <LuRotateCw />}
             刷新列表
           </Button>
         </div>
@@ -195,24 +176,21 @@ export function QuizListPanel({
       </div>
 
       {/* 提示信息 */}
-      <Alert status="accent" className="flex items-center gap-2 text-xs">
-        <Alert.Indicator />
-        <Alert.Content>
-          <Alert.Title>测验说明</Alert.Title>
-          <Alert.Description>
-            随堂与章节测验支持单题题库匹配与高相似度向量检索。答题时支持草稿暂存与实时判定，可在列表中直接进入作答并确认提交。
-          </Alert.Description>
-        </Alert.Content>
-      </Alert>
+      <Banner status="accent" className="flex items-center gap-2 text-xs">
+        <Banner.Title>测验说明</Banner.Title>
+        <Banner.Description>
+          随堂与章节测验支持单题题库匹配与高相似度向量检索。答题时支持草稿暂存与实时判定，可在列表中直接进入作答并确认提交。
+        </Banner.Description>
+      </Banner>
 
       {/* 列表内容 */}
       {loading && quizTasks.length === 0 ? (
         <div className="flex h-48 flex-col items-center justify-center gap-3">
-          <Spinner size="lg" />
+          <LoadingIndicator size={40} />
           <p className="text-sm text-muted">正在检索课程测验任务...</p>
         </div>
       ) : quizTasks.length === 0 ? (
-        <Card className="p-8 text-center">
+        <Card variant="outlined" className="p-8 text-center">
           <p className="text-muted">当前课程下暂无开放或收录的章节测验任务</p>
         </Card>
       ) : (
@@ -221,17 +199,15 @@ export function QuizListPanel({
             const statusInfo = getQuizDisplayStatus(task);
 
             return (
-              <Card key={task.id} className="flex flex-col justify-between border border-border/60">
-                <Card.Header className="flex flex-wrap items-start justify-between gap-2 pb-2">
+              <Card key={task.id} variant="outlined" className="flex flex-col justify-between">
+                <div className="flex flex-wrap items-start justify-between gap-2 p-4 pb-2">
                   <div className="space-y-1">
                     {(task.chapterText || task.sectionText) && (
                       <p className="text-[11px] font-medium text-accent">
                         {[task.chapterText, task.sectionText].filter(Boolean).join(" · ")}
                       </p>
                     )}
-                    <Card.Title className="text-base font-bold leading-snug">
-                      {task.title}
-                    </Card.Title>
+                    <h3 className="text-base font-bold leading-snug">{task.title}</h3>
                     <p className="flex items-center gap-1 text-xs text-muted">
                       <LuBookOpen className="h-3 w-3" />
                       {task.courseName}
@@ -241,9 +217,9 @@ export function QuizListPanel({
                   <Chip variant="soft" color={statusInfo.color} size="sm">
                     {statusInfo.label}
                   </Chip>
-                </Card.Header>
+                </div>
 
-                <Card.Content className="space-y-2 py-2 text-xs text-muted">
+                <div className="space-y-2 p-4 py-2 text-xs text-muted">
                   <div className="flex items-center gap-2">
                     <LuCalendar className="h-3.5 w-3.5" />
                     <span>
@@ -264,20 +240,21 @@ export function QuizListPanel({
                         : "不限次数"}
                     </span>
                   </div>
-                </Card.Content>
+                </div>
 
-                <Card.Footer className="flex items-center justify-between border-t bg-surface/30 pt-3">
+                <Divider />
+                <div className="flex items-center justify-between bg-surface/30 p-4 pt-3">
                   <span className="font-mono text-xs text-muted">ID: {task.taskId}</span>
 
                   <Button
-                    variant="primary"
-                    size="sm"
-                    isDisabled={!statusInfo.canEnter}
-                    onPress={() => handleQuizAction(task)}
+                    variant="filled"
+                    size="xs"
+                    disabled={!statusInfo.canEnter}
+                    onClick={() => handleQuizAction(task)}
                   >
                     {statusInfo.actionLabel}
                   </Button>
-                </Card.Footer>
+                </div>
               </Card>
             );
           })}

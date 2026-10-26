@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import { Label, ListBox, Select, toast } from "@heroui/react";
+import { Select, SelectOption } from "material/react";
+import { toast } from "../ui";
 export { ModuleHeader } from "../components";
 export function OperationError({
   message,
@@ -15,12 +16,8 @@ export function OperationError({
     if (message && message !== lastToastRef.current) {
       lastToastRef.current = message;
       toast.danger(message, {
-        actionProps: onRetry
-          ? {
-              children: "重试",
-              onPress: onRetry,
-            }
-          : undefined,
+        actionLabel: onRetry ? "重试" : undefined,
+        onAction: onRetry,
         onClose: onDismiss,
       });
     }
@@ -43,26 +40,20 @@ export function Choice({
 }) {
   return (
     <Select
+      label={label}
       aria-label={label}
-      value={value || null}
-      onChange={(key) => onChange(String(key ?? ""))}
-      isDisabled={disabled}
+      value={value || ""}
+      disabled={disabled}
+      onChange={(e: any) => {
+        const val = e.detail?.value ?? e.target?.value;
+        onChange(String(val ?? ""));
+      }}
     >
-      <Label>{label}</Label>
-      <Select.Trigger>
-        <Select.Value />
-        <Select.Indicator />
-      </Select.Trigger>
-      <Select.Popover>
-        <ListBox>
-          {items.map((i) => (
-            <ListBox.Item key={i.id} id={i.id} textValue={i.label}>
-              {i.label}
-              <ListBox.ItemIndicator />
-            </ListBox.Item>
-          ))}
-        </ListBox>
-      </Select.Popover>
+      {items.map((i) => (
+        <SelectOption key={i.id} value={i.id}>
+          {i.label}
+        </SelectOption>
+      ))}
     </Select>
   );
 }

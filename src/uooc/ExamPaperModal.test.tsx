@@ -136,7 +136,7 @@ describe("ExamPaperModal", () => {
     render(<ExamPaperModal exam={mockExam} isOpen={true} onClose={vi.fn()} />);
 
     await waitFor(() => {
-      expect(screen.getByText("计算机网络期末考试")).toBeInTheDocument();
+      expect(screen.getAllByText("计算机网络期末考试")[0]).toBeInTheDocument();
       expect(screen.getByText("TCP 协议建立连接需要几次握手？")).toBeInTheDocument();
       expect(screen.getByText("下列属于传输层协议的有：")).toBeInTheDocument();
       expect(screen.getByText("请简述三次握手的主要作用。")).toBeInTheDocument();

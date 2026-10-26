@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Button, Table } from "@heroui/react";
+import { Button } from "material/react";
+import { Table } from "./ui";
 import { LuArrowUpRight } from "react-icons/lu";
 import { ModuleHeader, PageShell } from "./components";
 import { openPublicUrl } from "./app-content/external";
@@ -66,9 +67,9 @@ export default function ClassTimetablePage() {
 
         <footer className="grid justify-items-start gap-2">
           <Button
-            size="sm"
-            variant="tertiary"
-            onPress={() => {
+            size="xs"
+            variant="text"
+            onClick={() => {
               setOpenError(undefined);
               void openPublicUrl(sourceUrl).catch(() =>
                 setOpenError("无法打开系统浏览器，请稍后重试。"),

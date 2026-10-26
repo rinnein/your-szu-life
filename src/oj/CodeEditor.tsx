@@ -16,6 +16,31 @@ const syntax = (language: string) =>
         : language === "js"
           ? javascript()
           : cpp();
+
+const darkTheme = EditorView.theme(
+  {
+    "&": {
+      color: "var(--mtrl-sys-color-on-surface)",
+      backgroundColor: "var(--mtrl-sys-color-surface-container-low)",
+    },
+    ".cm-content": {
+      caretColor: "var(--mtrl-sys-color-primary)",
+    },
+    "&.cm-focused .cm-cursor": {
+      borderLeftColor: "var(--mtrl-sys-color-primary)",
+    },
+    "&.cm-focused .cm-selectionBackground, ::selection": {
+      backgroundColor: "color-mix(in srgb, var(--mtrl-sys-color-primary) 30%, transparent)",
+    },
+    ".cm-gutters": {
+      backgroundColor: "var(--mtrl-sys-color-surface-container-lowest)",
+      color: "var(--mtrl-sys-color-on-surface-variant)",
+      borderRight: "1px solid var(--mtrl-sys-color-outline-variant)",
+    },
+  },
+  { dark: true },
+);
+
 export interface CodeEditorProps {
   value: string;
   language: string;
@@ -35,8 +60,13 @@ export function CodeEditor({
   const changed = useRef(onChange);
   changed.current = onChange;
   const config = useRef(new Compartment());
+  const themeCompartment = useRef(new Compartment());
   const external = useRef(false);
   useEffect(() => {
+    const isDark =
+      typeof document !== "undefined" &&
+      (document.documentElement.getAttribute("data-theme-mode") === "dark" ||
+        document.documentElement.classList.contains("dark"));
     const view = new EditorView({
       parent: host.current!,
       state: EditorState.create({
@@ -48,6 +78,7 @@ export function CodeEditor({
             EditorState.readOnly.of(disabled),
             EditorView.editable.of(!disabled),
           ]),
+          themeCompartment.current.of(isDark ? darkTheme : []),
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({
             "aria-label": ariaLabel,
@@ -65,6 +96,20 @@ export function CodeEditor({
       view.destroy();
       editor.current = undefined;
     };
+  }, []);
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    const checkTheme = () => {
+      const isDark =
+        root.getAttribute("data-theme-mode") === "dark" || root.classList.contains("dark");
+      editor.current?.dispatch({
+        effects: themeCompartment.current.reconfigure(isDark ? darkTheme : []),
+      });
+    };
+    const observer = new MutationObserver(checkTheme);
+    observer.observe(root, { attributes: true, attributeFilter: ["data-theme-mode", "class"] });
+    return () => observer.disconnect();
   }, []);
   useEffect(() => {
     const view = editor.current;

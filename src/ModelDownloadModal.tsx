@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { Alert, Button, Chip, Modal } from "@heroui/react";
-import { LuCircleCheck, LuCpu, LuDownload, LuSettings } from "react-icons/lu";
+import { Dialog, Button } from "material/react";
+import { Banner, Chip } from "./ui";
+import { LuCircleCheck, LuDownload, LuSettings } from "react-icons/lu";
 import { useLogicalNavigation } from "./logical-navigation";
 import { formatModelSize } from "./LocalModelSettings";
 import { useOcrModelStatus, type OcrModelStatus } from "./OcrModelSettings";
@@ -108,105 +110,92 @@ export function ModelDownloadModal({
     }
   };
 
-  return (
-    <Modal.Backdrop isOpen={isOpen} onOpenChange={onOpenChange}>
-      <Modal.Container size="sm">
-        <Modal.Dialog aria-labelledby="model-download-modal-heading">
-          <Modal.CloseTrigger aria-label="关闭" />
-          <Modal.Header>
-            <Modal.Icon className="bg-primary-soft text-primary">
-              <LuCpu className="size-5" />
-            </Modal.Icon>
-            <Modal.Heading id="model-download-modal-heading">{info.title}</Modal.Heading>
-          </Modal.Header>
-          <Modal.Body className="grid gap-3 text-sm">
-            <p className="leading-relaxed text-muted">{info.description}</p>
+  if (!isOpen || typeof document === "undefined") return null;
 
-            <div className="flex items-center gap-2">
-              <Chip size="sm" variant="soft">
-                模型体积：{info.sizeHint}
-              </Chip>
-              <Chip size="sm" variant="soft">
-                纯离线运行
-              </Chip>
-            </div>
+  return createPortal(
+    <Dialog open={isOpen} headline={info.title} onClose={() => onOpenChange(false)}>
+      <div className="grid gap-3 text-sm">
+        <p className="leading-relaxed text-muted">{info.description}</p>
 
-            {isDownloading && (
-              <DownloadSession
-                title={`正在下载并校验 ${info.title}...`}
-                defaultExpanded
-                session={{
-                  downloadedBytes,
-                  totalBytes,
-                  speedBytesPerSec,
-                  port: progress?.port,
-                  numPieces: progress?.numPieces,
-                  pieceLength: progress?.pieceLength,
-                  bitfield: progress?.bitfield,
-                  connections: progress?.connections,
-                  isResumed: progress?.isResumed,
-                  resumedBytes: progress?.resumedBytes,
-                  totalActiveTasks: progress?.totalActiveTasks,
-                }}
-              />
-            )}
+        <div className="flex items-center gap-2">
+          <Chip size="sm" variant="soft">
+            模型体积：{info.sizeHint}
+          </Chip>
+          <Chip size="sm" variant="soft">
+            纯离线运行
+          </Chip>
+        </div>
 
-            {isReady && !isDownloading && (
-              <Alert status="success">
-                <Alert.Content>
-                  <Alert.Title className="flex items-center gap-2">
-                    <LuCircleCheck aria-hidden="true" /> 模型已就绪
-                  </Alert.Title>
-                  <Alert.Description>模型已成功安装并校验通过，可离线使用。</Alert.Description>
-                </Alert.Content>
-              </Alert>
-            )}
+        {isDownloading && (
+          <DownloadSession
+            title={`正在下载并校验 ${info.title}...`}
+            defaultExpanded
+            session={{
+              downloadedBytes,
+              totalBytes,
+              speedBytesPerSec,
+              port: progress?.port,
+              numPieces: progress?.numPieces,
+              pieceLength: progress?.pieceLength,
+              bitfield: progress?.bitfield,
+              connections: progress?.connections,
+              isResumed: progress?.isResumed,
+              resumedBytes: progress?.resumedBytes,
+              totalActiveTasks: progress?.totalActiveTasks,
+            }}
+          />
+        )}
 
-            {(errorMessage || status?.status === "error") && (
-              <Alert status="danger">
-                <Alert.Content>
-                  <Alert.Title>下载遇到问题</Alert.Title>
-                  <Alert.Description>
-                    {errorMessage ?? status?.error ?? "下载或校验失败，请检查网络连接后重试"}
-                  </Alert.Description>
-                </Alert.Content>
-              </Alert>
-            )}
-          </Modal.Body>
-          <Modal.Footer className="flex flex-wrap items-center justify-between gap-2">
+        {isReady && !isDownloading && (
+          <Banner status="success">
+            <Banner.Title className="flex items-center gap-2">
+              <LuCircleCheck aria-hidden="true" /> 模型已就绪
+            </Banner.Title>
+            <Banner.Description>模型已成功安装并校验通过，可离线使用。</Banner.Description>
+          </Banner>
+        )}
+
+        {(errorMessage || status?.status === "error") && (
+          <Banner status="danger">
+            <Banner.Title>下载遇到问题</Banner.Title>
+            <Banner.Description>
+              {errorMessage ?? status?.error ?? "下载或校验失败，请检查网络连接后重试"}
+            </Banner.Description>
+          </Banner>
+        )}
+      </div>
+
+      <div slot="actions" className="flex flex-wrap items-center justify-between gap-2 w-full">
+        <Button
+          variant="text"
+          size="xs"
+          disabled={isDownloading || navigating}
+          onClick={() => void goToSettings()}
+        >
+          <LuSettings aria-hidden="true" /> 前往设置
+        </Button>
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="tonal"
+            size="xs"
+            disabled={isDownloading}
+            onClick={() => onOpenChange(false)}
+          >
+            {isReady ? "关闭" : "稍后再说"}
+          </Button>
+          {!isReady && (
             <Button
-              variant="tertiary"
-              size="sm"
-              isPending={navigating}
-              isDisabled={isDownloading}
-              onPress={() => void goToSettings()}
+              size="xs"
+              disabled={isDownloading || isDownloading}
+              onClick={() => void startDownload()}
             >
-              <LuSettings aria-hidden="true" /> 前往设置
+              <LuDownload aria-hidden="true" /> 立即下载
             </Button>
-
-            <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                isDisabled={isDownloading}
-                onPress={() => onOpenChange(false)}
-              >
-                {isReady ? "关闭" : "稍后再说"}
-              </Button>
-              {!isReady && (
-                <Button
-                  size="sm"
-                  isPending={isDownloading}
-                  isDisabled={isDownloading}
-                  onPress={() => void startDownload()}
-                >
-                  <LuDownload aria-hidden="true" /> 立即下载
-                </Button>
-              )}
-            </div>
-          </Modal.Footer>
-        </Modal.Dialog>
-      </Modal.Container>
-    </Modal.Backdrop>
+          )}
+        </div>
+      </div>
+    </Dialog>,
+    document.body,
   );
 }

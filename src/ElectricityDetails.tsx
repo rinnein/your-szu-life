@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Alert, Button, Card, Table } from "@heroui/react";
+import { Card, Button } from "material/react";
+import { Banner, Table } from "./ui";
 import {
   Bar,
   CartesianGrid,
@@ -100,22 +101,19 @@ export function ElectricityDetails({
         </p>
       )}
       {summary?.warningReason && (
-        <Alert status="warning">
-          <Alert.Content>
-            <Alert.Title>电量不足提醒</Alert.Title>
-            <Alert.Description>{summary.warningReason}</Alert.Description>
-          </Alert.Content>
-        </Alert>
+        <Banner status="warning">
+          <Banner.Title>电量不足提醒</Banner.Title>
+          <Banner.Description>{summary.warningReason}</Banner.Description>
+        </Banner>
       )}
-      <Card className="payments-card min-w-0">
-        <Card.Header>
-          <Card.Title>用电趋势</Card.Title>
-          <Card.Description>
-            {result.beginDate} 至 {result.endDate} · 缺失数据不补零
-          </Card.Description>
-        </Card.Header>
-        <Card.Content>
-          <Button variant="outline" isDisabled={rate == null} onPress={() => setMoney((v) => !v)}>
+      <Card
+        className="payments-card min-w-0"
+        variant="outlined"
+        headline="用电趋势"
+        subhead={`${result.beginDate} 至 ${result.endDate} · 缺失数据不补零`}
+      >
+        <div className="p-2 sm:p-4">
+          <Button variant="outlined" disabled={rate == null} onClick={() => setMoney((v) => !v)}>
             {money ? "切换为电量" : "切换为电费"}
           </Button>
           <div className="h-80 min-w-0 w-full" aria-label={`31 天用电趋势，单位${unit}`}>
@@ -125,27 +123,63 @@ export function ElectricityDetails({
                 accessibilityLayer
                 margin={{ top: 20, right: 8, left: 0, bottom: 8 }}
               >
-                <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-                <XAxis dataKey="date" tickFormatter={(v: string) => v.slice(5)} minTickGap={28} />
-                <YAxis yAxisId="balance" width={48} />
-                <YAxis yAxisId="usage" orientation="right" width={44} />
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="var(--mtrl-sys-color-outline-variant)"
+                  opacity={0.4}
+                />
+                <XAxis
+                  dataKey="date"
+                  tickFormatter={(v: string) => v.slice(5)}
+                  minTickGap={28}
+                  stroke="var(--mtrl-sys-color-outline-variant)"
+                  tick={{ fill: "var(--mtrl-sys-color-on-surface-variant)", fontSize: 12 }}
+                />
+                <YAxis
+                  yAxisId="balance"
+                  width={48}
+                  stroke="var(--mtrl-sys-color-outline-variant)"
+                  tick={{ fill: "var(--mtrl-sys-color-on-surface-variant)", fontSize: 12 }}
+                />
+                <YAxis
+                  yAxisId="usage"
+                  orientation="right"
+                  width={44}
+                  stroke="var(--mtrl-sys-color-outline-variant)"
+                  tick={{ fill: "var(--mtrl-sys-color-on-surface-variant)", fontSize: 12 }}
+                />
                 <Tooltip
                   formatter={(value) => `${fmt(typeof value === "number" ? value : null)} ${unit}`}
+                  contentStyle={{
+                    backgroundColor: "var(--mtrl-sys-color-surface-container-high)",
+                    borderColor: "var(--mtrl-sys-color-outline-variant)",
+                    color: "var(--mtrl-sys-color-on-surface)",
+                    borderRadius: "12px",
+                    boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
+                  }}
+                  itemStyle={{
+                    color: "var(--mtrl-sys-color-on-surface)",
+                  }}
+                  labelStyle={{
+                    color: "var(--mtrl-sys-color-on-surface-variant)",
+                    fontWeight: 600,
+                  }}
                 />
-                <Legend />
+                <Legend wrapperStyle={{ color: "var(--mtrl-sys-color-on-surface)" }} />
                 <Bar
                   yAxisId="usage"
                   dataKey="dailyUsed"
                   name={money ? "每日电费" : "每日用电"}
-                  fill="var(--accent)"
-                  fillOpacity={0.5}
+                  fill="var(--mtrl-sys-color-primary)"
+                  fillOpacity={0.7}
                   isAnimationActive={false}
                 />
                 <Line
                   yAxisId="balance"
                   dataKey="remaining"
                   name={money ? "折算余额" : "剩余电量"}
-                  stroke="var(--success)"
+                  stroke="var(--mtrl-sys-color-success)"
+                  strokeWidth={2}
                   connectNulls={false}
                   dot={false}
                   isAnimationActive={false}
@@ -178,24 +212,23 @@ export function ElectricityDetails({
             </Table.ScrollContainer>
           </Table>
           {result.readings.length === 0 && <p>该时间段没有查询到记录。</p>}
-        </Card.Content>
+        </div>
       </Card>
-      <Card className="payments-card min-w-0">
-        <Card.Header>
-          <Card.Title>充值记录及来源</Card.Title>
-          <Card.Description>最近 31 天 · 金额来自充值记录</Card.Description>
-        </Card.Header>
-        <Card.Content>
+      <Card
+        className="payments-card min-w-0"
+        variant="outlined"
+        headline="充值记录及来源"
+        subhead="最近 31 天 · 金额来自充值记录"
+      >
+        <div className="p-2 sm:p-4">
           {result.rechargeError ? (
-            <Alert status="warning">
-              <Alert.Content>
-                <Alert.Title>充值记录查询未完成</Alert.Title>
-                <Alert.Description>{result.rechargeError}</Alert.Description>
-              </Alert.Content>
-            </Alert>
+            <Banner status="warning">
+              <Banner.Title>充值记录查询未完成</Banner.Title>
+              <Banner.Description>{result.rechargeError}</Banner.Description>
+            </Banner>
           ) : null}
           {result.rechargeError && (
-            <Button isDisabled={retrying} onPress={retryRecharges}>
+            <Button disabled={retrying} onClick={retryRecharges}>
               {retrying ? "正在重试…" : "重试充值记录"}
             </Button>
           )}
@@ -228,15 +261,15 @@ export function ElectricityDetails({
           ) : (
             !result.rechargeError && <p>该时间段没有充值记录。</p>
           )}
-        </Card.Content>
-        <Card.Footer>
+        </div>
+        <div slot="actions">
           <Button
-            variant="secondary"
-            onPress={() => void navigation.replace("/campus-payments/recharge")}
+            variant="tonal"
+            onClick={() => void navigation.replace("/campus-payments/recharge")}
           >
             打开官方充值入口
           </Button>
-        </Card.Footer>
+        </div>
       </Card>
     </>
   );

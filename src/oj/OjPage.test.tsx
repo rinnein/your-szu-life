@@ -1,5 +1,7 @@
 /** @vitest-environment jsdom */
+import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { hostOf, typeInto } from "../ui/testing";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { ojProgressCache, progressScope } from "./progress-store";
@@ -190,7 +192,14 @@ it("mobile omits Competitive Companion", async () => {
 });
 it("saves a choice locally before confirmed submission", async () => {
   render(<OjPaper site={site} contestId="1" tab="answer" desktop={false} port={27121} />);
-  fireEvent.click(await screen.findByRole("radio", { name: "A. 甲" }));
+  const choice = await screen.findByRole("radio", { name: "A. 甲" });
+  fireEvent.click(choice);
+  // 选项落定、且防抖保存真的发出之后再看提交：
+  // material 的选择控件异步回写选中态，抢在同一帧提交会让
+  // 「先存草稿」这一步没有内容可存。
+  await waitFor(() => expect(choice).toBeChecked());
+  // 「正在保存…」是组件自己给出的反馈，出现即说明这次选择已经进了草稿状态。
+  await screen.findByText("正在保存…");
   fireEvent.click(screen.getByRole("button", { name: "提交非编程题答卷" }));
   expect(vi.mocked(invoke).mock.calls.some(([cmd]) => cmd === "submit_oj")).toBe(false);
   fireEvent.click(await screen.findByRole("button", { name: "确认提交" }));
@@ -211,7 +220,11 @@ it("does not submit when saving the draft fails", async () => {
     cmd === "save_oj_draft" ? Promise.reject("存储已满") : original(cmd, ...args),
   );
   render(<OjPaper site={site} contestId="1" tab="answer" desktop={false} port={27121} />);
-  fireEvent.click(await screen.findByRole("radio", { name: "A. 甲" }));
+  const choice = await screen.findByRole("radio", { name: "A. 甲" });
+  fireEvent.click(choice);
+  await waitFor(() => expect(choice).toBeChecked());
+  // 选择进入草稿状态后再提交：提交时 flush 才会真的去写这份草稿并撞上错误。
+  await screen.findByText("正在保存…");
   fireEvent.click(screen.getByRole("button", { name: "提交非编程题答卷" }));
   fireEvent.click(await screen.findByRole("button", { name: "确认提交" }));
   await screen.findByText("存储已满");
@@ -222,7 +235,17 @@ it("prefills the school ID but does not overwrite edits when authentication arri
   auth.state.Authenticated.studentId = "";
   const props = { close: () => {}, saved: async () => {} };
   const view = render(<SiteEditor {...props} />);
-  fireEvent.change(screen.getByLabelText("账号"), { target: { value: "custom-user" } });
+  const acct = screen.getByLabelText("账号");
+  console.log(
+    "[OJ] acct tag:",
+    acct.tagName,
+    "type:",
+    (acct as HTMLInputElement).type,
+    "value:",
+    (acct as HTMLInputElement).value,
+  );
+  typeInto(acct, "custom-user");
+  console.log("[OJ] after type:", (acct as HTMLInputElement).value);
   auth.state.Authenticated.studentId = "20260001";
   view.rerender(<SiteEditor {...props} />);
   expect(screen.getByLabelText("账号")).toHaveProperty("value", "custom-user");
@@ -235,14 +258,22 @@ it("fills an untouched empty account when the school ID loads", () => {
   view.rerender(<SiteEditor {...props} />);
   expect(screen.getByLabelText("账号")).toHaveProperty("value", "20260002");
 });
-it("renders contests as table rows with a green active state", async () => {
+it("renders contests as list rows and highlights the running one", async () => {
   search.site = "test";
   search.group = "2";
   render(<OjPage />);
-  const table = await screen.findByRole("grid", { name: "测验列表" });
-  await waitFor(() => expect(table.querySelectorAll("tbody tr")).toHaveLength(2));
-  expect(screen.getByText("进行中").closest(".chip")?.className).toContain("success");
-  expect(table.querySelector("tbody tr")?.textContent).toContain("未来测验");
+  const list = await screen.findByRole("list", { name: "测验列表" });
+  const host =
+    list.tagName.toLowerCase() === "m-list" ? list : (list.getRootNode() as ShadowRoot).host;
+  await waitFor(() =>
+    expect((host as HTMLElement).shadowRoot?.querySelectorAll('[role="listitem"]')).toHaveLength(2),
+  );
+  // 进行中的测验由 List 的选中态表达；行内容在 shadow root 内。
+  const rows = (host as HTMLElement).shadowRoot!.querySelectorAll('[role="listitem"]');
+  expect(rows[0].textContent).toContain("未来测验");
+  expect(
+    (host as HTMLElement).shadowRoot!.querySelector(".mtrl-list__item--selected"),
+  ).not.toBeNull();
 });
 it("saves compilation settings immediately for the instance and retains them on another problem", async () => {
   const programming: Paper = {
@@ -275,7 +306,14 @@ it("saves compilation settings immediately for the instance and retains them on 
   });
   const props = { site, contestId: "1", tab: "answer", desktop: false, port: 27121 };
   const view = render(<OjPaper {...props} selected="0:1" />);
-  fireEvent.click(await screen.findByRole("switch", { name: /ASan ·/ }));
+  const asan = await screen.findByRole("switch", { name: /ASan ·/ });
+  fireEvent.click(asan);
+  // material 的开关在点击后异步回写选中态：不等它落定就点下一步，
+  // 保存动作会读到还没更新的选项。
+  await waitFor(() => expect(asan).toBeChecked());
+  await waitFor(() =>
+    expect(vi.mocked(invoke).mock.calls.some(([cmd]) => cmd === "save_oj_preferences")).toBe(true),
+  );
   await screen.findByText("实例编译配置已保存");
   expect(
     vi.mocked(invoke).mock.calls.find(([cmd]) => cmd === "save_oj_preferences")?.[1],
@@ -313,11 +351,12 @@ it("keeps the newly selected instance language when switching questions", async 
   });
   const props = { site, contestId: "1", tab: "answer", desktop: false, port: 27121 };
   const view = render(<OjPaper {...props} selected="0:1" />);
-  fireEvent.click(await screen.findByRole("button", { name: /编程语言/ }));
-  fireEvent.click(await screen.findByRole("option", { name: "Python 3" }));
+  const combobox = await screen.findByRole("combobox", { name: "编程语言" });
+  const select = (combobox.getRootNode() as ShadowRoot).host || combobox;
+  fireEvent(select, new CustomEvent("change", { detail: { value: "py" } }));
   await screen.findByText("实例编译配置已保存");
   view.rerender(<OjPaper {...props} selected="0:2" />);
-  expect(screen.getByRole("button", { name: /Python 3 编程语言/ })).toBeTruthy();
+  expect(screen.getByRole("combobox", { name: "编程语言" })).toHaveValue("Python 3");
   expect(screen.getByLabelText("代码编辑器")).toHaveProperty("value", "print(1)");
 });
 it("keeps Companion controls inside global configuration", async () => {
@@ -334,10 +373,12 @@ it("adds helpful placeholders for class and contest lookup", async () => {
   search.site = "test";
   const view = render(<OjPage />);
   await screen.findByText("一班");
-  expect(screen.getByPlaceholderText("输入班级名称")).toBeTruthy();
+  expect(screen.getAllByPlaceholderText("输入班级名称")[0]).toBeTruthy();
   search.group = "2";
   view.rerender(<OjPage />);
-  expect(await screen.findByPlaceholderText("输入测验名称")).toBeTruthy();
+  // 宿主与内部输入共用同一占位文案，取首个。
+  const [contestSearch] = await screen.findAllByPlaceholderText("输入测验名称");
+  expect(contestSearch).toBeTruthy();
 });
 it("sends using the latest global port without a per-paper port input", async () => {
   const programming: Paper = {
@@ -417,8 +458,9 @@ it("marks the directory and shows only the selected problem's submissions", asyn
   const view = render(<OjPaper {...props} selected="0:1" />);
   await screen.findByText("#11");
   expect(screen.queryByText("#12")).toBeNull();
-  expect(screen.getByRole("button", { name: /A. 题目 1/ }).textContent).toContain("AC");
-  expect(screen.getByRole("button", { name: /B. 题目 2/ }).textContent).toContain("WA");
+  // 可见文案由自定义元素宿主承接（shadow 内的 <slot> 不参与 textContent）。
+  expect(hostOf(screen.getByRole("button", { name: /A. 题目 1/ }))?.textContent).toContain("AC");
+  expect(hostOf(screen.getByRole("button", { name: /B. 题目 2/ }))?.textContent).toContain("WA");
   view.rerender(<OjPaper {...props} selected="0:2" />);
   await screen.findByText("#12");
   expect(screen.queryByText("#11")).toBeNull();
@@ -448,7 +490,7 @@ it("loads cached CPH code into a clean editor and preserves unsaved edits on con
   };
   await act(async () => callback({ event: "oj-draft-changed", id: 1, payload }));
   expect(editor).toHaveProperty("value", "from-cph");
-  fireEvent.change(editor, { target: { value: "unsaved-local" } });
+  typeInto(editor, "unsaved-local");
   await act(async () =>
     callback({
       event: "oj-draft-changed",

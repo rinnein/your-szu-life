@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Card, Chip, Table } from "@heroui/react";
+import { Card } from "material/react";
+import { Chip, Table } from "../ui";
 import { useCacheMode } from "./view-mode";
 import { useEnrollment } from "./use-enrollment";
 import { Choice } from "./shared";
@@ -35,8 +36,8 @@ export default function TimetablePage() {
           />
         </div>
       </div>
-      <Card>
-        <Card.Content className="p-0">
+      <Card variant="outlined">
+        <div className="p-0 overflow-hidden">
           <Table>
             <Table.ScrollContainer>
               <Table.Content aria-label="选课期间课表" className="min-w-[1000px]">
@@ -77,20 +78,17 @@ export default function TimetablePage() {
               </Table.Content>
             </Table.ScrollContainer>
           </Table>
-        </Card.Content>
+        </div>
       </Card>
       {data.unscheduled.length > 0 && (
-        <Card>
-          <Card.Header>
-            <Card.Title>尚未排入课表</Card.Title>
-          </Card.Header>
-          <Card.Content>
+        <Card variant="outlined" headline="尚未排入课表">
+          <div className="p-4 pt-0">
             {data.unscheduled.map((c) => (
-              <p key={c.id} className="py-2 text-sm">
-                {c.name} · {c.schedule || "学校尚未提供排课信息"}
+              <p key={c.id}>
+                {c.name} · {c.teacher} · {c.schedule}
               </p>
             ))}
-          </Card.Content>
+          </div>
         </Card>
       )}
     </div>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "@tanstack/react-router";
-import { Button, Chip, Spinner } from "@heroui/react";
+import { LoadingIndicator, Button } from "material/react";
+import { Chip } from "../ui";
 import {
   LuBookOpen,
   LuCalendarDays,
@@ -106,9 +107,9 @@ export default function EnrollmentLayout() {
               </Chip>
               {cacheOnly && (
                 <Button
-                  size="sm"
-                  variant="secondary"
-                  onPress={() =>
+                  size="xs"
+                  variant="tonal"
+                  onClick={() =>
                     void nav.replace(
                       `/enrollment/login?returnTo=${encodeURIComponent(livePath(location.href))}`,
                     )
@@ -119,19 +120,19 @@ export default function EnrollmentLayout() {
               )}
               {snapshot?.loggedIn && !cacheOnly && (
                 <Button
-                  size="sm"
-                  variant="secondary"
-                  isPending={!!pending.official}
-                  onPress={() => void official()}
+                  size="xs"
+                  variant="tonal"
+                  disabled={!!pending.official}
+                  onClick={() => void official()}
                 >
                   打开学校官网
                 </Button>
               )}
               {snapshot && !canSelect(snapshot) && !cacheOnly && (
                 <Button
-                  size="sm"
-                  variant="secondary"
-                  onPress={() =>
+                  size="xs"
+                  variant="tonal"
+                  onClick={() =>
                     void nav.replace(
                       `/enrollment/login?returnTo=${encodeURIComponent(location.href)}`,
                     )
@@ -141,7 +142,7 @@ export default function EnrollmentLayout() {
                 </Button>
               )}
               {snapshot?.running && (
-                <Button size="sm" variant="secondary" onPress={() => change("/enrollment/tasks")}>
+                <Button size="xs" variant="tonal" onClick={() => change("/enrollment/tasks")}>
                   后台任务运行中
                 </Button>
               )}
@@ -176,8 +177,8 @@ export default function EnrollmentLayout() {
                 <Button
                   key={p.path}
                   className="mb-1 w-full justify-start"
-                  variant={path === p.path ? "primary" : "ghost"}
-                  onPress={() => change(p.path)}
+                  variant={path === p.path ? "filled" : "text"}
+                  onClick={() => change(p.path)}
                 >
                   <Icon />
                   {p.label}
@@ -187,8 +188,8 @@ export default function EnrollmentLayout() {
             <div className="mt-4 border-t border-separator pt-3">
               <Button
                 className="w-full justify-start"
-                variant="ghost"
-                onPress={() => void nav.push("/academic")}
+                variant="text"
+                onClick={() => void nav.push("/academic")}
               >
                 学业完成查询
               </Button>
@@ -196,7 +197,7 @@ export default function EnrollmentLayout() {
           </aside>
           <section className="min-w-0">
             {!cacheOnly && !snapshot && !checked && !errors.snapshot ? (
-              <Spinner aria-label="正在连接选课服务" />
+              <LoadingIndicator size={24} aria-label="正在连接选课服务" />
             ) : (
               <Outlet />
             )}

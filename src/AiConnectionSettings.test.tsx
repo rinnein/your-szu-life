@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
+import { typeInto } from "./ui/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
@@ -38,8 +39,15 @@ it("updates both providers without sending or exposing saved keys", async () => 
   render(<AiConnectionSettings />);
   const mainUrl = await screen.findByLabelText("主模型 API 地址");
   expect(screen.getByLabelText("主模型 API Key")).toHaveValue("");
-  fireEvent.change(mainUrl, { target: { value: "http://192.168.1.20:8000/v1" } });
-  fireEvent.change(screen.getByLabelText("Jev API Key"), { target: { value: "jev-new-key" } });
+  typeInto(mainUrl, "http://192.168.1.20:8000/v1");
+  typeInto(screen.getByLabelText("Jev API Key"), "jev-new-key");
+  await waitFor(() => expect(screen.getByLabelText("Jev API Key")).toHaveValue("jev-new-key"));
+  // 受控输入需要一次渲染才反映到状态，点保存前先等它落地。
+  // 查询落到 shadow 内的真实输入控件上：受控值反映在 value 属性/属性值上，
+  // 用 toHaveValue 读当前输入值，而不是宿主的 value 属性。
+  await waitFor(() =>
+    expect(screen.getByLabelText("主模型 API 地址")).toHaveValue("http://192.168.1.20:8000/v1"),
+  );
   fireEvent.click(screen.getByRole("button", { name: "保存 AI 连接" }));
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("save_uooc_ai_connections", {

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
+import { typeInto } from "./ui/testing";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
@@ -118,7 +119,7 @@ it("imports into the draft without saving, rejects invalid imports without repla
   mock((command) => (command === "import_electricity_settings" ? imported : undefined));
   render(<CampusPaymentsElectricityPage />);
   fireEvent.click(await screen.findByRole("button", { name: "修改宿舍配置" }));
-  fireEvent.change(screen.getByLabelText("宿舍配置码"), { target: { value: "配置码" } });
+  typeInto(screen.getByLabelText("宿舍配置码"), "配置码");
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "快捷导入宿舍配置" })).toBeEnabled(),
   );
@@ -167,8 +168,14 @@ it.each([
       return undefined;
     });
     render(<CampusPaymentsElectricityPage />);
-    await waitFor(() => expect(screen.getByRole("button", { name: /校区/ })).toBeEnabled());
-    fireEvent.click(screen.getByRole("button", { name: /校区/ }));
+    const campusTrigger = await waitFor(() => {
+      const trigger =
+        screen.queryByRole("button", { name: /校区/ }) ??
+        screen.getByRole("combobox", { name: /校区/ });
+      expect(trigger).toBeEnabled();
+      return trigger;
+    });
+    fireEvent.click(campusTrigger);
     fireEvent.click(await screen.findByRole("option", { name: campusName }));
     const room = screen.getByRole("textbox", { name: "宿舍号" });
     const floor = screen.getByRole("textbox", { name: "楼层范围" });
@@ -176,12 +183,12 @@ it.each([
       ["601", "6 层"],
       ["1201", "12 层"],
     ]) {
-      fireEvent.change(room, { target: { value: roomName } });
+      typeInto(room, roomName);
       expect(floor).toHaveValue(expected);
       expect(screen.getByRole("button", { name: "查询电费" })).toBeEnabled();
     }
     for (const invalid of ["51", "50001", "5A01", "１２０１"]) {
-      fireEvent.change(room, { target: { value: invalid } });
+      typeInto(room, invalid);
       expect(floor).toHaveValue("");
       expect(screen.getByText("房间号应为一至两位楼层加两位房间号。")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "查询电费" })).toBeDisabled();
@@ -189,7 +196,7 @@ it.each([
     expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "query_electricity")).toBe(
       false,
     );
-    fireEvent.change(room, { target: { value: "1201" } });
+    typeInto(room, "1201");
     fireEvent.click(screen.getByRole("button", { name: "查询电费" }));
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("query_electricity", {
@@ -231,7 +238,7 @@ it("does not attach an old recharge retry to an imported room", async () => {
   render(<CampusPaymentsElectricityPage />);
   fireEvent.click(await screen.findByRole("button", { name: "重试充值记录" }));
   fireEvent.click(screen.getByRole("button", { name: "修改宿舍配置" }));
-  fireEvent.change(screen.getByLabelText("宿舍配置码"), { target: { value: "新配置" } });
+  typeInto(screen.getByLabelText("宿舍配置码"), "新配置");
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "快捷导入宿舍配置" })).toBeEnabled(),
   );
@@ -332,7 +339,7 @@ it("saves and queries a repaired legacy room in canonical form", async () => {
   render(<CampusPaymentsElectricityPage />);
   const room = await screen.findByRole("textbox", { name: "宿舍号" });
   await waitFor(() => expect(room).toBeEnabled());
-  fireEvent.change(room, { target: { value: " 1201 " } });
+  typeInto(room, " 1201 ");
   fireEvent.click(screen.getByRole("button", { name: "查询电费" }));
   const canonical = { ...saved, roomName: "1201" };
   await waitFor(() =>

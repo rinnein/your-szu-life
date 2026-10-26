@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
+import { typeInto } from "../ui/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { CommandPalette, openCommandPalette } from "./CommandPalette";
@@ -115,7 +116,7 @@ describe("CommandPalette UI & interaction", () => {
     expect(options[0]).toHaveAttribute("aria-selected", "false");
 
     // Type shortcut "cdl"
-    fireEvent.change(searchInput, { target: { value: "cdl" } });
+    typeInto(searchInput, "cdl");
 
     const cdlOption = await screen.findByRole("option", { name: /查电量/ });
     expect(cdlOption).toBeInTheDocument();
@@ -144,7 +145,16 @@ describe("CommandPalette UI & interaction", () => {
     expect(searchInput).toBeInTheDocument();
 
     // Type "oj"
-    fireEvent.change(searchInput, { target: { value: "oj" } });
+    typeInto(searchInput, "oj");
+
+    // 等筛选结果与选中项都落定再回车：输入事件到列表更新之间隔着一帧，
+    // 抢在列表更新前回车会执行到旧列表的当前项。
+    await waitFor(() =>
+      expect(screen.getByRole("option", { name: /OJ首页/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    );
 
     // Press Enter to execute the first matched option (OJ)
     fireEvent.keyDown(searchInput, { key: "Enter" });
@@ -162,7 +172,7 @@ describe("CommandPalette UI & interaction", () => {
     openCommandPalette();
 
     const searchInput = await screen.findByLabelText("命令面板搜索框");
-    fireEvent.change(searchInput, { target: { value: "ojzj" } });
+    typeInto(searchInput, "ojzj");
 
     const option = await screen.findByRole("option", { name: /最近测验列表/ });
     fireEvent.click(option);

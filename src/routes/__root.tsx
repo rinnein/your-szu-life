@@ -2,7 +2,6 @@ import { LogicalNavigationProvider } from "../logical-navigation";
 import { AndroidBackNavigation } from "../AndroidBackNavigation";
 import { DeepLinkNavigation } from "../DeepLinkNavigation";
 import { createRootRoute, HeadContent, Outlet } from "@tanstack/react-router";
-import { Toast } from "@heroui/react";
 import { AuthProvider } from "../auth";
 import { AppContentProvider } from "../app-content/context";
 import { UpdateNotice } from "../app-content/UpdateNotice";
@@ -12,6 +11,8 @@ import { OjProgressBridge } from "../oj/OjProgressBridge";
 import { OjNotifications } from "../oj/OjNotifications";
 import { QuizNotifications } from "../uooc/QuizNotifications";
 import { CommandPalette } from "../command-palette";
+import { ThemeProvider } from "../theme/ThemeProvider";
+import { AppChrome } from "../shell/AppChrome";
 
 if (typeof window !== "undefined") {
   if (typeof window.matchMedia !== "function") {
@@ -38,24 +39,27 @@ if (typeof window !== "undefined") {
 export const Route = createRootRoute({
   head: () => ({ meta: [{ title: "泥深" }] }),
   component: () => (
-    <LogicalNavigationProvider>
-      <HeadContent />
-      <Toast.Provider />
-      <AppContentProvider>
-        <ElectricityMonitorProvider>
-          <AuthProvider>
-            <AndroidBackNavigation />
-            <DeepLinkNavigation />
-            <QuizNotifications />
-            <OjNotifications />
-            <OjProgressBridge />
-            <OjCompanionBridge />
-            <CommandPalette />
-            <Outlet />
-            <UpdateNotice />
-          </AuthProvider>
-        </ElectricityMonitorProvider>
-      </AppContentProvider>
-    </LogicalNavigationProvider>
+    <ThemeProvider>
+      <LogicalNavigationProvider>
+        <HeadContent />
+        <AppContentProvider>
+          <ElectricityMonitorProvider>
+            <AuthProvider>
+              <AndroidBackNavigation />
+              <DeepLinkNavigation />
+              <QuizNotifications />
+              <OjNotifications />
+              <OjProgressBridge />
+              <OjCompanionBridge />
+              <CommandPalette />
+              <AppChrome>
+                <Outlet />
+              </AppChrome>
+              <UpdateNotice />
+            </AuthProvider>
+          </ElectricityMonitorProvider>
+        </AppContentProvider>
+      </LogicalNavigationProvider>
+    </ThemeProvider>
   ),
 });

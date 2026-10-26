@@ -57,29 +57,31 @@ afterEach(() => {
 it.each(Object.entries(verdicts))("gives status %s a filled semantic label", (status, verdict) => {
   render(<Verdict status={Number(status)} />);
   const chip = screen.getByLabelText(`${verdict.code} · ${verdict.label}`);
-  expect(chip.className).toContain("primary");
-  expect(chip.className).toContain(verdict.color);
+  // M3 的 Chip 用 data 属性表达变体与配色，而不是 BEM 类名。
+  expect(chip).toHaveAttribute("data-variant", "primary");
+  expect(chip).toHaveAttribute("data-color", verdict.color);
 });
-it("adds completed only when all problems are AC and makes ended contests secondary", async () => {
+it("marks a running contest complete only when all problems are AC, and opens on row activation", async () => {
   vi.mocked(invoke).mockResolvedValue({ accepted: 2, total: 2 });
   const open = vi.fn();
   const view = render(
     <ContestTable contests={[contest]} query="" siteId="test" account="fixture" onOpen={open} />,
   );
+  // 「已完成」写在 overline 上，跨行可读。
   expect(await screen.findByText("已完成")).toBeInTheDocument();
-  expect(screen.getByText("进行中").closest(".chip")?.className).toContain("primary");
-  const button = screen.getByRole("button", { name: "进入测验" });
-  fireEvent.click(button);
+  expect(screen.getByText(/进行中/)).toBeInTheDocument();
+  // MD3 List 的行是一次激活（整行可点），不再有单独的「进入测验」按钮。
+  fireEvent.click(screen.getAllByRole("listitem")[0]);
   expect(open).toHaveBeenCalledWith(contest);
   view.unmount();
   const openEnded = vi.fn();
   render(
     <ContestTable contests={[ended]} query="" siteId="test" account="fixture" onOpen={openEnded} />,
   );
-  expect(screen.getByText("已结束").closest(".chip")?.className).toContain("primary");
-  const endedButton = screen.getByRole("button", { name: "查看测验" });
-  expect(endedButton.className).toContain("secondary");
-  fireEvent.click(endedButton);
+  expect(screen.getByText(/已结束/)).toBeInTheDocument();
+  // 已结束的行尾部显示「查看测验」，与进行中的「进入测验」区分。
+  expect(screen.getByText("查看测验")).toBeInTheDocument();
+  fireEvent.click(screen.getAllByRole("listitem")[0]);
   expect(openEnded).toHaveBeenCalledWith(ended);
 });
 it("does not fetch completion for contests that are not running", async () => {

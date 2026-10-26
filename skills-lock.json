@@ -6,12 +6,6 @@
       "sourceType": "github",
       "skillPath": "skills/taste-skill/SKILL.md",
       "computedHash": "6d838b246d0e35d0b53f4f23f98ba7a1dd561937e64f7d0c7553b0928e376c3e"
-    },
-    "heroui-react": {
-      "source": "heroui-inc/heroui",
-      "sourceType": "github",
-      "skillPath": "skills/heroui-react/SKILL.md",
-      "computedHash": "c11684a8843e4c511b03a0c9c5b9cad09eb1babbf23650e1b75c45d387cadd7a"
     }
   }
 }

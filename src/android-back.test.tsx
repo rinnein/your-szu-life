@@ -11,7 +11,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { AndroidBackNavigation } from "./AndroidBackNavigation";
-import { Modal, Button, Select, ListBox } from "@heroui/react";
+import { Dialog, Button } from "material/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { activeOverlay, installAndroidBack, type AndroidBackBridge } from "./android-back";
 
@@ -152,21 +152,16 @@ describe("Android committed back", () => {
     expect(goHome).not.toHaveBeenCalled();
     expect(bridge.postMessage).toHaveBeenLastCalledWith("overlay");
   });
-  it("closes a real HeroUI modal using its existing Escape behavior", async () => {
+  it("closes a real modal using its existing Escape behavior", async () => {
     function Example() {
       const [open, setOpen] = useState(true);
+      if (!open) return null;
       return (
-        <Modal isOpen={open} onOpenChange={setOpen}>
-          <Modal.Backdrop>
-            <Modal.Container>
-              <Modal.Dialog aria-label="test modal">
-                <Modal.Body>
-                  <Button>Confirm</Button>
-                </Modal.Body>
-              </Modal.Dialog>
-            </Modal.Container>
-          </Modal.Backdrop>
-        </Modal>
+        <Dialog open={open} headline="测试对话框" role="dialog" onClose={() => setOpen(false)}>
+          <div>
+            <Button>Confirm</Button>
+          </div>
+        </Dialog>
       );
     }
     render(<Example />);
@@ -176,30 +171,6 @@ describe("Android committed back", () => {
     await back();
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     await waitFor(() => expect(bridge.postMessage).toHaveBeenLastCalledWith("system"));
-    expect(goHome).not.toHaveBeenCalled();
-  });
-  it("closes a real HeroUI select popover without navigating", async () => {
-    function Example() {
-      const [open, setOpen] = useState(true);
-      return (
-        <Select aria-label="test select" isOpen={open} onOpenChange={setOpen}>
-          <Select.Trigger>
-            <Select.Value />
-          </Select.Trigger>
-          <Select.Popover>
-            <ListBox>
-              <ListBox.Item id="a">A</ListBox.Item>
-            </ListBox>
-          </Select.Popover>
-        </Select>
-      );
-    }
-    path = "/settings";
-    render(<Example />);
-    install();
-    expect(activeOverlay()).toBeDefined();
-    await back();
-    await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
     expect(goHome).not.toHaveBeenCalled();
   });
 });

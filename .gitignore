@@ -43,8 +43,6 @@ docs/
 
 # Third-party licenses staged by Tauri from npm packages / source resources
 /src-tauri/gen/android/app/src/main/assets/resources/licenses/
-# heroui-agents-md
-.heroui-docs/
 
 # Tauri sidecar binaries
 /src-tauri/binaries/aria2c*

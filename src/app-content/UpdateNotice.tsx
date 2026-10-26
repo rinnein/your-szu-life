@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouterState } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Alert, AlertDialog, Button, Spinner, toast } from "@heroui/react";
+import { Dialog, LoadingIndicator, Button } from "material/react";
+import { Banner, toast } from "../ui";
 import { LuArrowUpRight, LuDownload } from "react-icons/lu";
 import { useAppContent } from "./context";
 import { openPublicUrl } from "./external";
@@ -154,142 +156,135 @@ export function UpdateNotice() {
   const isInstalling =
     updateProgress?.status === "installing" || updateProgress?.status === "ready";
 
-  return (
-    <AlertDialog isOpen={isOpen} onOpenChange={handleOpenChange}>
-      <AlertDialog.Backdrop>
-        <AlertDialog.Container size="md">
-          <AlertDialog.Dialog className="max-w-lg">
-            <AlertDialog.Icon status="accent" />
-            <AlertDialog.Header>
-              <AlertDialog.Heading>发现新版本 {latest}</AlertDialog.Heading>
-            </AlertDialog.Header>
-            <AlertDialog.Body className="space-y-3">
-              <p className="text-sm text-muted">
-                {snapshot?.update.fromCache
-                  ? "以下版本信息与更新日志来自上次检查缓存。"
-                  : "检测到新版本可用，建议更新以体验最新功能与修复。"}
-              </p>
+  return createPortal(
+    <Dialog
+      open={isOpen}
+      headline={`发现新版本 ${latest}`}
+      className="max-w-lg"
+      onClose={() => handleOpenChange(false)}
+    >
+      <div className="space-y-3">
+        <p className="text-sm text-muted">
+          {snapshot?.update.fromCache
+            ? "以下版本信息与更新日志来自上次检查缓存。"
+            : "检测到新版本可用，建议更新以体验最新功能与修复。"}
+        </p>
 
-              {updateData.changelog ? (
-                <div className="max-h-48 overflow-y-auto rounded-lg bg-surface p-3 text-xs leading-relaxed text-muted whitespace-pre-wrap border border-separator">
-                  <div className="font-semibold text-foreground mb-1">更新日志：</div>
-                  {updateData.changelog}
-                </div>
+        {updateData.changelog ? (
+          <div className="max-h-48 overflow-y-auto rounded-lg bg-surface p-3 text-xs leading-relaxed text-muted whitespace-pre-wrap border border-separator">
+            <div className="font-semibold text-foreground mb-1">更新日志：</div>
+            {updateData.changelog}
+          </div>
+        ) : (
+          <p className="text-xs text-muted">此版本未提供更新日志。</p>
+        )}
+
+        {isDownloading && updateProgress && (
+          <div className="pt-2">
+            <DownloadSession
+              title={`正在下载新版本 ${latest}...`}
+              defaultExpanded
+              session={{
+                downloadedBytes: updateProgress.downloadedBytes,
+                totalBytes: updateProgress.totalBytes,
+                speedBytesPerSec: updateProgress.speedBytesPerSec,
+                port: updateProgress.port,
+                numPieces: updateProgress.numPieces,
+                pieceLength: updateProgress.pieceLength,
+                bitfield: updateProgress.bitfield,
+                connections: updateProgress.connections,
+                isResumed: updateProgress.isResumed,
+                resumedBytes: updateProgress.resumedBytes,
+                totalActiveTasks: updateProgress.totalActiveTasks,
+                status: updateProgress.status,
+                error: updateProgress.error,
+              }}
+            />
+          </div>
+        )}
+
+        {isInstalling && (
+          <p className="text-sm text-muted flex items-center gap-2 pt-2" role="status">
+            <LoadingIndicator size={16} /> 正在启动安装程序，请按提示完成更新…
+          </p>
+        )}
+
+        {updateProgress?.status === "error" && (
+          <Banner status="danger" role="alert">
+            <Banner.Title>更新失败</Banner.Title>
+            <Banner.Description>
+              {updateProgress.error ?? "下载或解压过程中发生错误。"}
+            </Banner.Description>
+          </Banner>
+        )}
+      </div>
+
+      <div slot="actions" className="flex flex-wrap items-center justify-end gap-2">
+        <Button variant="text" onClick={handlePostpone}>
+          稍后再说
+        </Button>
+
+        {isWindows && (
+          <Button
+            variant="filled"
+            disabled={updating || isDownloading}
+            onClick={() => void handleStartInAppUpdate()}
+          >
+            {updating || isDownloading ? (
+              <LoadingIndicator size={16} />
+            ) : (
+              <LuDownload aria-hidden="true" />
+            )}
+            {updating || isDownloading
+              ? "正在下载…"
+              : updateProgress?.status === "error"
+                ? "重试下载安装"
+                : "下载并安装"}
+          </Button>
+        )}
+
+        {isAndroid && (
+          <>
+            <Button
+              variant="filled"
+              disabled={updating || isDownloading}
+              onClick={() => void handleStartInAppUpdate()}
+            >
+              {updating || isDownloading ? (
+                <LoadingIndicator size={16} />
               ) : (
-                <p className="text-xs text-muted">此版本未提供更新日志。</p>
+                <LuDownload aria-hidden="true" />
               )}
-
-              {isDownloading && updateProgress && (
-                <div className="pt-2">
-                  <DownloadSession
-                    title={`正在下载新版本 ${latest}...`}
-                    defaultExpanded
-                    session={{
-                      downloadedBytes: updateProgress.downloadedBytes,
-                      totalBytes: updateProgress.totalBytes,
-                      speedBytesPerSec: updateProgress.speedBytesPerSec,
-                      port: updateProgress.port,
-                      numPieces: updateProgress.numPieces,
-                      pieceLength: updateProgress.pieceLength,
-                      bitfield: updateProgress.bitfield,
-                      connections: updateProgress.connections,
-                      isResumed: updateProgress.isResumed,
-                      resumedBytes: updateProgress.resumedBytes,
-                      totalActiveTasks: updateProgress.totalActiveTasks,
-                      status: updateProgress.status,
-                      error: updateProgress.error,
-                    }}
-                  />
-                </div>
-              )}
-
-              {isInstalling && (
-                <p className="text-sm text-muted flex items-center gap-2 pt-2" role="status">
-                  <Spinner size="sm" /> 正在启动安装程序，请按提示完成更新…
-                </p>
-              )}
-
-              {updateProgress?.status === "error" && (
-                <Alert status="danger" role="alert">
-                  <Alert.Indicator />
-                  <Alert.Content>
-                    <Alert.Title>更新失败</Alert.Title>
-                    <Alert.Description>
-                      {updateProgress.error ?? "下载或解压过程中发生错误。"}
-                    </Alert.Description>
-                  </Alert.Content>
-                </Alert>
-              )}
-            </AlertDialog.Body>
-
-            <AlertDialog.Footer className="flex flex-wrap items-center justify-end gap-2">
-              <Button variant="tertiary" onPress={handlePostpone}>
-                稍后再说
+              {updating || isDownloading
+                ? "正在下载…"
+                : updateProgress?.status === "error"
+                  ? "重试下载安装"
+                  : "应用内更新"}
+            </Button>
+            {!isDownloading && (
+              <Button variant="tonal" onClick={handleOpenBrowserDownload}>
+                浏览器下载
+                <LuArrowUpRight aria-hidden="true" />
               </Button>
+            )}
+          </>
+        )}
 
-              {isWindows && (
-                <Button
-                  variant="primary"
-                  isDisabled={updating || isDownloading}
-                  onPress={() => void handleStartInAppUpdate()}
-                >
-                  {updating || isDownloading ? (
-                    <Spinner size="sm" color="current" />
-                  ) : (
-                    <LuDownload aria-hidden="true" />
-                  )}
-                  {updating || isDownloading
-                    ? "正在下载…"
-                    : updateProgress?.status === "error"
-                      ? "重试下载安装"
-                      : "下载并安装"}
-                </Button>
-              )}
+        {isLinux && (
+          <Button variant="filled" onClick={handleOpenReleasePage}>
+            前往发布页面
+            <LuArrowUpRight aria-hidden="true" />
+          </Button>
+        )}
 
-              {isAndroid && (
-                <>
-                  <Button
-                    variant="primary"
-                    isDisabled={updating || isDownloading}
-                    onPress={() => void handleStartInAppUpdate()}
-                  >
-                    {updating || isDownloading ? (
-                      <Spinner size="sm" color="current" />
-                    ) : (
-                      <LuDownload aria-hidden="true" />
-                    )}
-                    {updating || isDownloading
-                      ? "正在下载…"
-                      : updateProgress?.status === "error"
-                        ? "重试应用内更新"
-                        : "应用内更新"}
-                  </Button>
-                  {!isDownloading && (
-                    <Button variant="secondary" onPress={handleOpenBrowserDownload}>
-                      浏览器下载
-                      <LuArrowUpRight aria-hidden="true" />
-                    </Button>
-                  )}
-                </>
-              )}
-
-              {isLinux && (
-                <Button variant="primary" onPress={handleOpenReleasePage}>
-                  前往发布页面
-                  <LuArrowUpRight aria-hidden="true" />
-                </Button>
-              )}
-
-              {!isWindows && !isAndroid && !isLinux && (
-                <Button variant="primary" onPress={handleOpenBrowserDownload}>
-                  前往下载
-                  <LuArrowUpRight aria-hidden="true" />
-                </Button>
-              )}
-            </AlertDialog.Footer>
-          </AlertDialog.Dialog>
-        </AlertDialog.Container>
-      </AlertDialog.Backdrop>
-    </AlertDialog>
+        {!isWindows && !isAndroid && !isLinux && (
+          <Button variant="filled" onClick={handleOpenBrowserDownload}>
+            前往下载
+            <LuArrowUpRight aria-hidden="true" />
+          </Button>
+        )}
+      </div>
+    </Dialog>,
+    document.body,
   );
 }

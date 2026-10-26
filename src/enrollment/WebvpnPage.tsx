@@ -1,4 +1,4 @@
-import { Button, Card } from "@heroui/react";
+import { Card, Button } from "material/react";
 import { useEffect, useState } from "react";
 import { PageShell } from "../components";
 import { useEnrollment } from "./use-enrollment";
@@ -17,14 +17,12 @@ export default function WebvpnPage() {
     <PageShell>
       <div className="mx-auto grid w-full max-w-3xl gap-6">
         <ModuleHeader title="WebVPN" description="校外访问与学校额外认证" />
-        <Card>
-          <Card.Header>
-            <Card.Title>连接校园服务</Card.Title>
-            <Card.Description>
-              在学校专属页面完成2FA认证后，可访问 WebVPN 下的校园系统。
-            </Card.Description>
-          </Card.Header>
-          <Card.Content>
+        <Card
+          variant="outlined"
+          headline="连接校园服务"
+          subhead="在学校专属页面完成2FA认证后，可访问 WebVPN 下的校园系统。"
+        >
+          <div className="p-4 pt-0">
             <p className="text-muted">
               {probe?.needs2fa
                 ? "需要完成2FA验证"
@@ -33,15 +31,15 @@ export default function WebvpnPage() {
                   : probe?.message || "尚未验证当前会话"}
             </p>
             <OperationError message={errors.probe || errors["portal-webvpn"]} />
-          </Card.Content>
-          <Card.Footer className="flex-wrap gap-3">
-            <Button isPending={!!pending["portal-webvpn"]} onPress={() => void portal("webvpn")}>
+          </div>
+          <div slot="actions" className="flex flex-wrap gap-3">
+            <Button disabled={!!pending["portal-webvpn"]} onClick={() => void portal("webvpn")}>
               打开专属2FA认证
             </Button>
             <Button
-              variant="secondary"
-              isPending={!!pending.probe}
-              onPress={() =>
+              variant="tonal"
+              disabled={!!pending.probe}
+              onClick={() =>
                 void run<Probe[]>({ type: "probe" }).then((p) =>
                   setProbe(p?.find((p) => p.mode === "webvpn")),
                 )
@@ -49,7 +47,7 @@ export default function WebvpnPage() {
             >
               验证当前会话
             </Button>
-          </Card.Footer>
+          </div>
         </Card>
       </div>
     </PageShell>

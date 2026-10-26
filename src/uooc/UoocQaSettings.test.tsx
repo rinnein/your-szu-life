@@ -1,9 +1,10 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
+import { typeInto } from "../ui/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
-import { toast } from "@heroui/react";
+import { toast } from "../ui";
 import {
   UoocQaSettings,
   DEFAULT_QA_SERVER_URL,
@@ -131,7 +132,7 @@ it("saves custom api key", async () => {
   const successSpy = vi.spyOn(toast, "success");
   render(<UoocQaSettings />);
   const keyInput = await screen.findByLabelText("题库 API Key");
-  fireEvent.change(keyInput, { target: { value: "uooc_custom_secret_key" } });
+  typeInto(keyInput, "uooc_custom_secret_key");
 
   const saveKeyBtn = screen.getByRole("button", { name: "保存 Key" });
   fireEvent.click(saveKeyBtn);
@@ -146,8 +147,9 @@ it("saves custom api key", async () => {
 
 it("searches questions using local embedding calculation", async () => {
   render(<UoocQaSettings />);
-  const input = await screen.findByPlaceholderText(/输入题干文本或关键词/);
-  fireEvent.change(input, { target: { value: "积分中值定理" } });
+  // 宿主与内部输入共用同一占位文案，取首个。
+  const [input] = await screen.findAllByPlaceholderText(/输入题干文本或关键词/);
+  typeInto(input, "积分中值定理");
 
   const searchBtn = screen.getByRole("button", { name: "题目搜索" });
   expect(searchBtn).toBeEnabled();
@@ -357,7 +359,7 @@ it("browses local question bank with annotated sync status and filters", async (
   expect(screen.getAllByText("连续必可积").length).toBeGreaterThan(0);
 
   // 题单选择器呈现
-  expect(screen.getByLabelText("选择题单")).toBeInTheDocument();
+  expect(screen.getByLabelText(/选择题单/)).toBeInTheDocument();
 
   // Filter by status: click "已同步" inside modal
   const filterSyncedBtn = screen.getByRole("button", { name: /^已同步 \(1\)/ });
@@ -478,8 +480,9 @@ it("dynamically fetches apikey when initial account status has no key upon click
 
 it("displays search results in a dedicated modal reusing the question card module", async () => {
   render(<UoocQaSettings />);
-  const input = await screen.findByPlaceholderText(/输入题干文本或关键词/);
-  fireEvent.change(input, { target: { value: "极限" } });
+  // 宿主与内部输入共用同一占位文案，取首个。
+  const [input] = await screen.findAllByPlaceholderText(/输入题干文本或关键词/);
+  typeInto(input, "极限");
   const searchBtn = screen.getByRole("button", { name: "题目搜索" });
   fireEvent.click(searchBtn);
 

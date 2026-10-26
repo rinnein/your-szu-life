@@ -1,4 +1,5 @@
-import { Alert, Button, Card, Chip, Label, ProgressBar, Table } from "@heroui/react";
+import { Card, Progress, Button } from "material/react";
+import { Banner, Chip, Table } from "../ui";
 import { LuCheck, LuClock, LuCircleHelp, LuX } from "react-icons/lu";
 import { judgeDetails, megabytes, milliseconds, submissionDate, verdicts } from "./judging";
 import { languageName, type Submission } from "./types";
@@ -15,7 +16,7 @@ export function Verdict({ status, empty = "未提交" }: { status?: number; empt
   return (
     <Chip variant="primary" color={verdict?.color ?? "default"} size="sm" aria-label={label}>
       <Icon aria-hidden="true" />
-      <Chip.Label>{verdict?.code ?? label}</Chip.Label>
+      {verdict?.code ?? label}
     </Chip>
   );
 }
@@ -34,41 +35,35 @@ export function JudgeResult({
   const details = judgeDetails(submission);
   const passed = details.cases.filter((c) => c.status === 0).length;
   return (
-    <Card aria-label={`提交 ${submission.id} 判题结果`}>
-      <Card.Header className="flex flex-wrap items-center justify-between gap-3">
-        <Card.Title>提交 #{submission.id}</Card.Title>
+    <Card aria-label={`提交 ${submission.id} 判题结果`} variant="outlined">
+      <div slot="headline" className="flex flex-wrap items-center justify-between gap-3 w-full">
+        <span className="font-semibold text-base">提交 #{submission.id}</span>
         <Verdict status={submission.status} empty={polling ? "查询中" : "已提交"} />
-      </Card.Header>
-      <Card.Content className="flex flex-col gap-4">
+      </div>
+      <div className="flex flex-col gap-4 p-4">
         <p className="text-sm text-muted">
           {submissionDate(submission)}{" "}
           {languageName[submission.language ?? ""] ?? submission.language}
         </p>
         {polling && (
-          <ProgressBar isIndeterminate aria-label="正在获取判题结果">
-            <Label>正在获取判题结果…</Label>
-            <ProgressBar.Track>
-              <ProgressBar.Fill />
-            </ProgressBar.Track>
-          </ProgressBar>
+          <div className="space-y-1">
+            <span className="text-xs text-muted">正在获取判题结果…</span>
+            <Progress variant="linear" indeterminate aria-label="正在获取判题结果" />
+          </div>
         )}
-        {error && (
-          <Alert status="warning">
-            <Alert.Content>{error}</Alert.Content>
-          </Alert>
-        )}
+        {error && <Banner status="warning">{error}</Banner>}
         <div className="grid grid-cols-2 gap-3">
-          <Card variant="secondary">
-            <Card.Content>
+          <Card variant="filled">
+            <div className="p-3">
               <p className="text-sm text-muted">最大耗时</p>
               <strong>{milliseconds(details.cpu)}</strong>
-            </Card.Content>
+            </div>
           </Card>
-          <Card variant="secondary">
-            <Card.Content>
+          <Card variant="filled">
+            <div className="p-3">
               <p className="text-sm text-muted">峰值内存</p>
               <strong>{megabytes(details.memory)}</strong>
-            </Card.Content>
+            </div>
           </Card>
         </div>
         {details.message && (
@@ -79,19 +74,17 @@ export function JudgeResult({
         )}
         {!!details.cases.length && (
           <>
-            <ProgressBar
-              aria-label="测试点通过比例"
-              value={passed}
-              maxValue={details.cases.length}
-              color={passed === details.cases.length ? "success" : "warning"}
-            >
-              <Label>
+            <div className="space-y-1.5">
+              <span className="text-xs text-muted">
                 通过 {passed} / {details.cases.length} 个可见测试点
-              </Label>
-              <ProgressBar.Track>
-                <ProgressBar.Fill />
-              </ProgressBar.Track>
-            </ProgressBar>
+              </span>
+              <Progress
+                variant="linear"
+                aria-label="测试点通过比例"
+                value={passed}
+                max={details.cases.length}
+              />
+            </div>
             <Table>
               <Table.ScrollContainer>
                 <Table.Content aria-label="测试点判题结果" className="min-w-[460px]">
@@ -125,10 +118,10 @@ export function JudgeResult({
         )}
         {details.lintScore !== undefined && <p>代码规范分：{details.lintScore}</p>}
         {details.lintMessage && <pre>{details.lintMessage}</pre>}
-        <Button variant="secondary" isDisabled={polling} onPress={onRefresh}>
+        <Button variant="tonal" disabled={polling} onClick={onRefresh}>
           刷新判题
         </Button>
-      </Card.Content>
+      </div>
     </Card>
   );
 }

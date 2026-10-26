@@ -1,26 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
 import { createTaskChannel } from "../tauri-channel";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { DEFAULT_QA_SERVER_URL } from "./constants";
 import {
-  Alert,
-  AlertDialog,
-  Button,
   ButtonGroup,
   Card,
-  Chip,
-  Description,
-  Input,
-  Label,
-  ListBox,
-  Modal,
-  Pagination,
+  Dialog,
+  LoadingIndicator,
   Select,
-  Spinner,
+  SelectOption,
   Switch,
   TextField,
-  toast,
-} from "@heroui/react";
+  Button,
+} from "material/react";
+import { Banner, Chip, Pagination, toast } from "../ui";
 import {
   LuCircleCheck,
   LuClock,
@@ -1034,17 +1028,17 @@ export function UoocQaSettings({
   return (
     <div className="grid gap-6">
       {/* 题库共享平台服务与认证配置 */}
-      <Card id="uooc-qa-share-settings" aria-labelledby="uooc-qa-share-title">
-        <Card.Header>
-          <Card.Title id="uooc-qa-share-title">题库服务与账户配置</Card.Title>
-          <Card.Description>
-            管理题库共享平台的连接地址、账户登录、向量同步与全量试题上传。做题前可使用题库答案直接作答或排除错误选项，答题完成后自动回传标准答案。
-          </Card.Description>
-        </Card.Header>
-        <Card.Content className="grid gap-5">
+      <Card id="uooc-qa-share-settings" aria-labelledby="uooc-qa-share-title" variant="outlined">
+        <div slot="headline" className="font-semibold text-lg" id="uooc-qa-share-title">
+          题库服务与账户配置
+        </div>
+        <div slot="subhead">
+          管理题库共享平台的连接地址、账户登录、向量同步与全量试题上传。做题前可使用题库答案直接作答或排除错误选项，答题完成后自动回传标准答案。
+        </div>
+        <div className="grid gap-5 p-4">
           {loading && !vectorStatus && !accountStatus && (
             <div className="flex items-center gap-2 text-sm text-muted" role="status">
-              <Spinner size="sm" /> 正在检查题库状态
+              <LoadingIndicator size={16} /> 正在检查题库状态
             </div>
           )}
 
@@ -1056,24 +1050,32 @@ export function UoocQaSettings({
                   调试选项
                 </Chip>
               )}
-              <Label htmlFor="uooc-qa-server-url">题库共享后端地址 (uooc-qa-share)</Label>
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-              <div className="flex-1">
+            {/*
+              m-text-field 是 inline-flex 且带 contain-intrinsic-inline-size，
+              `flex-1` 只能撑开外壳，输入框本身仍按固有宽度排版，于是按钮被推到
+              很远处。改用换行 flex + `w-full` 让控件真正填满这一列。
+            */}
+            <div className="flex flex-wrap items-start gap-2">
+              <div className="min-w-0 flex-1 basis-72">
+                {/*
+                字段名走 TextField 自带的 label：`<label for>` 无法跨越
+                shadow 边界关联到内部的 <input>，读屏与 getByLabelText 都会失败。
+              */}
                 <TextField
-                  id="uooc-qa-server-url"
+                  className="w-full"
+                  label="题库共享后端地址 (uooc-qa-share)"
+                  placeholder={DEFAULT_QA_SERVER_URL}
+                  supportingText="修改题库共享平台的后端服务地址 (RFC 8628 设备认证与上传接口)"
                   value={qaServerUrl ?? DEFAULT_QA_SERVER_URL}
-                  isDisabled={disabled}
-                  onChange={onQaServerUrlChange}
-                >
-                  <Input placeholder={DEFAULT_QA_SERVER_URL} />
-                  <Description>
-                    修改题库共享平台的后端服务地址 (RFC 8628 设备认证与上传接口)
-                  </Description>
-                </TextField>
+                  disabled={disabled}
+                  onChange={(e: any) =>
+                    onQaServerUrlChange?.(e.detail?.value ?? e.target?.value ?? "")
+                  }
+                />
               </div>
               {onSaveSettings && (
-                <Button variant="secondary" isDisabled={disabled} onPress={onSaveSettings}>
+                <Button variant="tonal" disabled={disabled} onClick={onSaveSettings}>
                   保存题库地址
                 </Button>
               )}
@@ -1105,21 +1107,17 @@ export function UoocQaSettings({
             </p>
 
             <div className="flex flex-wrap items-center gap-2 pt-1">
-              <Button
-                variant="primary"
-                isDisabled={disabled}
-                onPress={() => void handleOpenLogin()}
-              >
+              <Button variant="filled" disabled={disabled} onClick={() => void handleOpenLogin()}>
                 <LuExternalLink aria-hidden="true" />
                 {accountStatus?.canOverwrite ? "个人中心" : "认证账号"}
               </Button>
               <Button
-                variant="secondary"
-                isDisabled={disabled || Boolean(deviceAuthInfo)}
-                onPress={() => void handleStartDeviceAuth()}
+                variant="tonal"
+                disabled={disabled || Boolean(deviceAuthInfo)}
+                onClick={() => void handleStartDeviceAuth()}
               >
                 {deviceAuthPolling && !deviceAuthInfo ? (
-                  <Spinner size="sm" />
+                  <LoadingIndicator size={16} />
                 ) : (
                   <LuLaptop aria-hidden="true" />
                 )}
@@ -1127,9 +1125,9 @@ export function UoocQaSettings({
               </Button>
               {accountStatus?.apiKey && (
                 <Button
-                  variant="tertiary"
-                  isDisabled={disabled || savingKey}
-                  onPress={() => void handleResetApiKey()}
+                  variant="text"
+                  disabled={disabled || savingKey}
+                  onClick={() => void handleResetApiKey()}
                 >
                   重置凭据
                 </Button>
@@ -1144,7 +1142,7 @@ export function UoocQaSettings({
                     设备码授权认证中 (RFC 8628)
                   </div>
                   <Chip size="sm" color="accent" className="flex items-center gap-1">
-                    <Spinner size="sm" /> 等待浏览器批准
+                    <LoadingIndicator size={16} /> 等待浏览器批准
                   </Chip>
                 </div>
                 <p className="text-xs text-muted">
@@ -1158,14 +1156,14 @@ export function UoocQaSettings({
                 </div>
                 <div className="flex flex-wrap items-center gap-2 pt-1">
                   <Button
-                    variant="primary"
-                    size="sm"
-                    onPress={() => void openPublicUrl(deviceAuthInfo.verificationUriComplete)}
+                    variant="filled"
+                    size="xs"
+                    onClick={() => void openPublicUrl(deviceAuthInfo.verificationUriComplete)}
                   >
                     <LuExternalLink aria-hidden="true" />
                     在浏览器中打开授权页
                   </Button>
-                  <Button variant="tertiary" size="sm" onPress={handleCancelDeviceAuth}>
+                  <Button variant="text" size="xs" onClick={handleCancelDeviceAuth}>
                     取消授权
                   </Button>
                 </div>
@@ -1174,28 +1172,26 @@ export function UoocQaSettings({
 
             {/* 手动配置 API Key */}
             <div className="mt-2 border-t border-separator/40 pt-3">
-              <Label className="text-xs font-medium text-muted">手动配置 API Key</Label>
-              <div className="mt-1 flex flex-col gap-2 sm:flex-row">
-                <div className="flex-1">
+              <label className="text-xs font-medium text-muted block mb-1">手动配置 API Key</label>
+              <div className="mt-1 flex flex-wrap items-start gap-2">
+                <div className="min-w-0 flex-1 basis-72">
                   <TextField
+                    className="w-full"
+                    placeholder="粘贴 uooc_ 开头的专属 API Key..."
+                    supportingText="若在其他设备或网页端已生成专属 API Key，可直接填入复用已认证身份"
                     aria-label="题库 API Key"
                     value={customApiKey}
-                    isDisabled={disabled || savingKey}
-                    onChange={setCustomApiKey}
-                  >
-                    <Input placeholder="粘贴 uooc_ 开头的专属 API Key..." />
-                    <Description>
-                      若在其他设备或网页端已生成专属 API Key，可直接填入复用已认证身份
-                    </Description>
-                  </TextField>
+                    disabled={disabled || savingKey}
+                    onChange={(e: any) => setCustomApiKey(e.detail?.value ?? e.target?.value ?? "")}
+                  />
                 </div>
                 <Button
                   className="self-start sm:self-auto"
-                  variant="secondary"
-                  isDisabled={disabled || savingKey || !customApiKey.trim()}
-                  onPress={() => void handleSaveApiKey()}
+                  variant="tonal"
+                  disabled={disabled || savingKey || !customApiKey.trim()}
+                  onClick={() => void handleSaveApiKey()}
                 >
-                  {savingKey ? <Spinner size="sm" /> : <LuKey aria-hidden="true" />}
+                  {savingKey ? <LoadingIndicator size={16} /> : <LuKey aria-hidden="true" />}
                   保存 Key
                 </Button>
               </div>
@@ -1204,113 +1200,111 @@ export function UoocQaSettings({
 
           {/* 向量库状态与同步操作 */}
           {vectorStatus && (
-            <Alert status={vectorStatus.cachedCount > 0 ? "success" : "default"}>
-              <Alert.Content>
-                <Alert.Title className="flex items-center gap-2">
-                  {vectorStatus.cachedCount > 0 ? (
-                    <>
-                      <LuCircleCheck aria-hidden="true" /> 题库向量库已就绪
-                    </>
-                  ) : (
-                    "尚未下载题库向量"
-                  )}
-                </Alert.Title>
-                <Alert.Description>
-                  {vectorStatus.cachedCount > 0
-                    ? `已缓存 ${vectorStatus.cachedCount} 条题目向量 · ${vectorStatus.totalDimension} 维浮点嵌入`
-                    : "点击下方按钮下载题库标记向量，下载后可高速检索或向服务端免计算搜题"}
-                </Alert.Description>
-              </Alert.Content>
-            </Alert>
+            <Banner status={vectorStatus.cachedCount > 0 ? "success" : "default"}>
+              <Banner.Title className="flex items-center gap-2">
+                {vectorStatus.cachedCount > 0 ? (
+                  <>
+                    <LuCircleCheck aria-hidden="true" /> 题库向量库已就绪
+                  </>
+                ) : (
+                  "尚未下载题库向量"
+                )}
+              </Banner.Title>
+              <Banner.Description>
+                {vectorStatus.cachedCount > 0
+                  ? `已缓存 ${vectorStatus.cachedCount} 条题目向量 · ${vectorStatus.totalDimension} 维浮点嵌入`
+                  : "点击下方按钮下载题库标记向量，下载后可高速检索或向服务端免计算搜题"}
+              </Banner.Description>
+            </Banner>
           )}
 
           <div className="flex flex-wrap items-center gap-3">
             <Button
-              variant="primary"
-              isDisabled={downloading || syncing || fullUploading}
-              onPress={() => void handleDownload()}
+              variant="filled"
+              disabled={downloading || syncing || fullUploading}
+              onClick={() => void handleDownload()}
             >
-              {downloading ? <Spinner size="sm" /> : <LuDownload aria-hidden="true" />}
+              {downloading ? <LoadingIndicator size={16} /> : <LuDownload aria-hidden="true" />}
               {vectorStatus && vectorStatus.cachedCount > 0
                 ? "更新题库向量"
                 : "下载 UOOC 标记题库向量"}
             </Button>
 
             <Button
-              variant="secondary"
-              isDisabled={downloading || syncing || fullUploading}
-              onPress={() => void handleSyncBank()}
+              variant="tonal"
+              disabled={downloading || syncing || fullUploading}
+              onClick={() => void handleSyncBank()}
             >
-              {syncing ? <Spinner size="sm" /> : <LuUpload aria-hidden="true" />}
+              {syncing ? <LoadingIndicator size={16} /> : <LuUpload aria-hidden="true" />}
               同步已确认题目至服务端
             </Button>
 
             <Button
-              variant="secondary"
-              isDisabled={downloading || syncing || fullUploading}
-              onPress={() => void handleFullUpload()}
+              variant="tonal"
+              disabled={downloading || syncing || fullUploading}
+              onClick={() => void handleFullUpload()}
             >
-              {fullUploading ? <Spinner size="sm" /> : <LuUpload aria-hidden="true" />}
+              {fullUploading ? <LoadingIndicator size={16} /> : <LuUpload aria-hidden="true" />}
               手动全题目上传
             </Button>
 
             <Button
-              variant="tertiary"
-              isDisabled={loading || downloading || syncing || fullUploading}
-              onPress={() => void refreshStatus()}
+              variant="text"
+              disabled={loading || downloading || syncing || fullUploading}
+              onClick={() => void refreshStatus()}
             >
               <LuRefreshCw aria-hidden="true" />
               刷新状态
             </Button>
           </div>
-        </Card.Content>
+        </div>
       </Card>
 
       {/* 题库内容按课程展开卡片 */}
-      <Card id="uooc-qa-bank-browser" aria-labelledby="uooc-qa-bank-title">
-        <Card.Header>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <Card.Title id="uooc-qa-bank-title">题库浏览</Card.Title>
-              <Card.Description>
-                题库按课程归类展示。点击任意课程或【全部课程】可在弹窗中进行详细的单题过滤浏览。
-              </Card.Description>
+      <Card id="uooc-qa-bank-browser" aria-labelledby="uooc-qa-bank-title" variant="outlined">
+        <div slot="headline" className="flex flex-wrap items-center justify-between gap-3 w-full">
+          <div>
+            <div id="uooc-qa-bank-title" className="font-semibold text-lg">
+              题库浏览
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                isDisabled={rebuildingBank || loadingQuestions}
-                onPress={() => void handleRebuildBank()}
-              >
-                {rebuildingBank ? <Spinner size="sm" /> : <LuRefreshCw aria-hidden="true" />}
-                重新构建题库
-              </Button>
-              <Button
-                variant="tertiary"
-                size="sm"
-                isDisabled={loadingQuestions}
-                onPress={() => void refreshLocalQuestions()}
-              >
-                <LuRefreshCw aria-hidden="true" />
-                刷新列表
-              </Button>
-              {debugEnabled && (
-                <Button
-                  variant="tertiary"
-                  size="sm"
-                  className="text-danger hover:text-danger hover:bg-danger/10"
-                  isDisabled={clearingBank || loadingQuestions || localQuestions.length === 0}
-                  onPress={() => setConfirmClearBank(true)}
-                >
-                  {clearingBank ? <Spinner size="sm" /> : <LuTrash2 aria-hidden="true" />}
-                  清空题库缓存
-                </Button>
-              )}
+            <div className="text-xs text-muted font-normal mt-0.5">
+              题库按课程归类展示。点击任意课程或【全部课程】可在弹窗中进行详细的单题过滤浏览。
             </div>
           </div>
-        </Card.Header>
-        <Card.Content className="grid gap-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="tonal"
+              size="xs"
+              disabled={rebuildingBank || loadingQuestions}
+              onClick={() => void handleRebuildBank()}
+            >
+              {rebuildingBank ? <LoadingIndicator size={16} /> : <LuRefreshCw aria-hidden="true" />}
+              重新构建题库
+            </Button>
+            <Button
+              variant="text"
+              size="xs"
+              disabled={loadingQuestions}
+              onClick={() => void refreshLocalQuestions()}
+            >
+              <LuRefreshCw aria-hidden="true" />
+              刷新列表
+            </Button>
+            {debugEnabled && (
+              <Button
+                variant="text"
+                size="xs"
+                className="text-danger hover:text-danger hover:bg-danger/10"
+                disabled={clearingBank || loadingQuestions || localQuestions.length === 0}
+                onClick={() => setConfirmClearBank(true)}
+              >
+                {clearingBank ? <LoadingIndicator size={16} /> : <LuTrash2 aria-hidden="true" />}
+                清空题库缓存
+              </Button>
+            )}
+          </div>
+        </div>
+        <div className="grid gap-4 p-4">
           {/* 全部课程入口卡片 */}
           <div
             className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/40 bg-primary/5 p-4 transition-colors hover:border-primary cursor-pointer"
@@ -1337,7 +1331,7 @@ export function UoocQaSettings({
                   待同步: {pendingCount} 道
                 </Chip>
               )}
-              <Button variant="primary" size="sm" onPress={() => handleOpenCourseModal("all")}>
+              <Button variant="filled" size="xs" onClick={() => handleOpenCourseModal("all")}>
                 浏览全部题目
               </Button>
             </div>
@@ -1346,7 +1340,7 @@ export function UoocQaSettings({
           {/* 各课程卡片网格 */}
           {loadingQuestions ? (
             <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted">
-              <Spinner size="sm" /> 正在读取题库...
+              <LoadingIndicator size={16} /> 正在读取题库...
             </div>
           ) : courseGroups.length === 0 ? (
             <div className="rounded-xl border border-dashed border-separator/60 p-8 text-center text-sm text-muted">
@@ -1385,9 +1379,9 @@ export function UoocQaSettings({
                       )}
                     </div>
                     <Button
-                      variant="secondary"
-                      size="sm"
-                      onPress={() => handleOpenCourseModal(group.cid)}
+                      variant="tonal"
+                      size="xs"
+                      onClick={() => handleOpenCourseModal(group.cid)}
                     >
                       查看题目
                     </Button>
@@ -1396,69 +1390,63 @@ export function UoocQaSettings({
               ))}
             </div>
           )}
-        </Card.Content>
+        </div>
       </Card>
 
       {/* 课程试题单题过滤浏览 Modal */}
-      <Modal
-        isOpen={modalCourse !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setModalCourse(null);
-            setBankSearchQuery("");
-            setBankStatusFilter("all");
-            setBankTypeFilter("all");
-            setBankPage(1);
-          }
-        }}
-      >
-        <Modal.Backdrop>
-          <Modal.Container size="cover" className="max-w-4xl">
-            <Modal.Dialog
-              aria-label="题库题目浏览"
-              className="w-full max-w-4xl min-w-0 overflow-hidden"
-            >
-              <Modal.CloseTrigger aria-label="关闭" />
-              <Modal.Header className="flex flex-wrap items-center justify-between gap-3 pr-10">
-                <div className="grid gap-1">
-                  <Modal.Heading>
-                    {modalCourse === "all"
-                      ? "全部课程题库"
-                      : `${courseTitles[modalCourse || ""] || courses?.find((c) => c.id === modalCourse)?.title || `课程 ${modalCourse}`}`}
-                  </Modal.Heading>
-                  <p className="text-xs text-muted">
-                    {modalCourse === "all"
-                      ? `已收录 ${localQuestions.length} 道题目 · 已同步 ${uploadedCount} · 待同步 ${pendingCount}`
-                      : `课程号 (cid): ${modalCourse} · 共 ${activeCourseQuestions.length} 道题目 · 已同步 ${activeCourseUploaded} · 待同步 ${activeCoursePending}`}
-                  </p>
-                </div>
+      {modalCourse !== null &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <Dialog
+            open={modalCourse !== null}
+            role="dialog"
+            headline={
+              modalCourse === "all"
+                ? "全部课程题库"
+                : `${courseTitles[modalCourse || ""] || courses?.find((c) => c.id === modalCourse)?.title || `课程 ${modalCourse}`}`
+            }
+            aria-label={
+              modalCourse === "all"
+                ? "全部课程题库"
+                : `${courseTitles[modalCourse || ""] || courses?.find((c) => c.id === modalCourse)?.title || `课程 ${modalCourse}`}`
+            }
+            className="w-full max-w-4xl min-w-0"
+            onClose={() => {
+              setModalCourse(null);
+              setBankSearchQuery("");
+              setBankStatusFilter("all");
+              setBankTypeFilter("all");
+              setBankPage(1);
+            }}
+          >
+            <div className="flex flex-col gap-4 max-h-[75vh] overflow-y-auto p-2">
+              <p className="text-xs text-muted -mt-2">
+                {modalCourse === "all"
+                  ? `已收录 ${localQuestions.length} 道题目 · 已同步 ${uploadedCount} · 待同步 ${pendingCount}`
+                  : `课程号 (cid): ${modalCourse} · 共 ${activeCourseQuestions.length} 道题目 · 已同步 ${activeCourseUploaded} · 待同步 ${activeCoursePending}`}
+              </p>
+              <div className="flex items-center justify-between gap-3">
                 <Switch
-                  size="sm"
-                  isSelected={showHtmlTags}
-                  onChange={setShowHtmlTags}
+                  checked={showHtmlTags}
+                  onChange={(e: any) => setShowHtmlTags(e.detail?.checked ?? e.target?.checked)}
                   aria-label="显示 HTML 标签"
                 >
-                  <Switch.Content className="text-xs">
-                    <Switch.Control>
-                      <Switch.Thumb />
-                    </Switch.Control>
-                    HTML 标签
-                  </Switch.Content>
+                  <span className="text-xs">HTML 标签</span>
                 </Switch>
-              </Modal.Header>
-              <Modal.Body className="max-h-[75vh] overflow-y-auto grid gap-4 p-4 sm:p-6">
+              </div>
+              <div className="grid gap-4">
                 {/* 搜索与筛选工具栏 */}
                 <div className="grid gap-3 rounded-xl border border-separator/50 bg-surface/30 p-3.5 text-sm">
                   <TextField
+                    className="w-full"
+                    placeholder="搜索题干关键词、题号、题组 (tid) 或答案内容..."
                     aria-label="搜索题库内容"
                     value={bankSearchQuery}
-                    onChange={(val) => {
-                      setBankSearchQuery(val);
+                    onChange={(e: any) => {
+                      setBankSearchQuery(e.detail?.value ?? e.target?.value ?? "");
                       setBankPage(1);
                     }}
-                  >
-                    <Input placeholder="搜索题干关键词、题号、题组 (tid) 或答案内容..." />
-                  </TextField>
+                  />
 
                   <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
                     <div className="flex flex-wrap items-center gap-2">
@@ -1468,8 +1456,8 @@ export function UoocQaSettings({
                       <div className="overflow-x-auto max-w-full">
                         <ButtonGroup size="sm" variant="tertiary" className="min-w-max">
                           <Button
-                            variant={bankStatusFilter === "all" ? "primary" : "tertiary"}
-                            onPress={() => {
+                            variant={bankStatusFilter === "all" ? "filled" : "text"}
+                            onClick={() => {
                               setBankStatusFilter("all");
                               setBankPage(1);
                             }}
@@ -1477,8 +1465,8 @@ export function UoocQaSettings({
                             全部 ({activeCourseQuestions.length})
                           </Button>
                           <Button
-                            variant={bankStatusFilter === "synced" ? "primary" : "tertiary"}
-                            onPress={() => {
+                            variant={bankStatusFilter === "synced" ? "filled" : "text"}
+                            onClick={() => {
                               setBankStatusFilter("synced");
                               setBankPage(1);
                             }}
@@ -1486,8 +1474,8 @@ export function UoocQaSettings({
                             已同步 ({activeCourseUploaded})
                           </Button>
                           <Button
-                            variant={bankStatusFilter === "pending" ? "primary" : "tertiary"}
-                            onPress={() => {
+                            variant={bankStatusFilter === "pending" ? "filled" : "text"}
+                            onClick={() => {
                               setBankStatusFilter("pending");
                               setBankPage(1);
                             }}
@@ -1505,8 +1493,8 @@ export function UoocQaSettings({
                       <div className="overflow-x-auto max-w-full">
                         <ButtonGroup size="sm" variant="tertiary" className="min-w-max">
                           <Button
-                            variant={bankTypeFilter === "all" ? "primary" : "tertiary"}
-                            onPress={() => {
+                            variant={bankTypeFilter === "all" ? "filled" : "text"}
+                            onClick={() => {
                               setBankTypeFilter("all");
                               setBankPage(1);
                             }}
@@ -1514,8 +1502,8 @@ export function UoocQaSettings({
                             全部
                           </Button>
                           <Button
-                            variant={bankTypeFilter === "single" ? "primary" : "tertiary"}
-                            onPress={() => {
+                            variant={bankTypeFilter === "single" ? "filled" : "text"}
+                            onClick={() => {
                               setBankTypeFilter("single");
                               setBankPage(1);
                             }}
@@ -1523,8 +1511,8 @@ export function UoocQaSettings({
                             单选
                           </Button>
                           <Button
-                            variant={bankTypeFilter === "multiple" ? "primary" : "tertiary"}
-                            onPress={() => {
+                            variant={bankTypeFilter === "multiple" ? "filled" : "text"}
+                            onClick={() => {
                               setBankTypeFilter("multiple");
                               setBankPage(1);
                             }}
@@ -1532,8 +1520,8 @@ export function UoocQaSettings({
                             多选
                           </Button>
                           <Button
-                            variant={bankTypeFilter === "judge" ? "primary" : "tertiary"}
-                            onPress={() => {
+                            variant={bankTypeFilter === "judge" ? "filled" : "text"}
+                            onClick={() => {
                               setBankTypeFilter("judge");
                               setBankPage(1);
                             }}
@@ -1541,8 +1529,8 @@ export function UoocQaSettings({
                             判断
                           </Button>
                           <Button
-                            variant={bankTypeFilter === "text" ? "primary" : "tertiary"}
-                            onPress={() => {
+                            variant={bankTypeFilter === "text" ? "filled" : "text"}
+                            onClick={() => {
                               setBankTypeFilter("text");
                               setBankPage(1);
                             }}
@@ -1561,9 +1549,10 @@ export function UoocQaSettings({
                         <LuFileText aria-hidden="true" /> 选择题单:
                       </span>
                       <Select
-                        aria-label="选择题单"
+                        label="选择题单"
                         value={bankTidFilter}
-                        onChange={(val) => {
+                        onChange={(e: any) => {
+                          const val = e.detail?.value ?? e.target?.value;
                           if (typeof val === "string") {
                             setBankTidFilter(val);
                             setBankPage(1);
@@ -1571,37 +1560,20 @@ export function UoocQaSettings({
                         }}
                         className="w-full sm:w-72"
                       >
-                        <Select.Trigger>
-                          <Select.Value />
-                          <Select.Indicator />
-                        </Select.Trigger>
-                        <Select.Popover>
-                          <ListBox>
-                            <ListBox.Item
-                              id="all"
-                              textValue={`全部题单 (${activeCourseQuestions.length}题)`}
-                            >
-                              全部题单 ({activeCourseQuestions.length}题)
-                              <ListBox.ItemIndicator />
-                            </ListBox.Item>
-                            {availableTids.map((tid) => (
-                              <ListBox.Item
-                                key={tid}
-                                id={tid}
-                                textValue={tidLabels[tid] || `题单 ${tid}`}
-                              >
-                                {tidLabels[tid] || `题单 ${tid}`}
-                                <ListBox.ItemIndicator />
-                              </ListBox.Item>
-                            ))}
-                          </ListBox>
-                        </Select.Popover>
+                        <SelectOption value="all">
+                          全部题单 ({activeCourseQuestions.length}题)
+                        </SelectOption>
+                        {availableTids.map((tid) => (
+                          <SelectOption key={tid} value={tid}>
+                            {tidLabels[tid] || `题单 ${tid}`}
+                          </SelectOption>
+                        ))}
                       </Select>
                       {bankTidFilter !== "all" && (
                         <Button
-                          variant="tertiary"
-                          size="sm"
-                          onPress={() => {
+                          variant="text"
+                          size="xs"
+                          onClick={() => {
                             setBankTidFilter("all");
                             setBankPage(1);
                           }}
@@ -1630,92 +1602,67 @@ export function UoocQaSettings({
 
                     {/* 分页控制器 */}
                     {totalPages > 1 && (
-                      <Pagination className="justify-center pt-2">
-                        <Pagination.Summary>
+                      <div className="flex flex-col items-center gap-2 pt-2">
+                        <span className="text-xs text-muted">
                           显示第 {startItem}–{endItem} 条，共 {totalItems} 条题目
-                        </Pagination.Summary>
-                        <Pagination.Content>
-                          <Pagination.Item>
-                            <Pagination.Previous
-                              isDisabled={safePage <= 1}
-                              onPress={() => setBankPage((p) => Math.max(1, p - 1))}
-                            >
-                              <Pagination.PreviousIcon />
-                              <span>上一页</span>
-                            </Pagination.Previous>
-                          </Pagination.Item>
-                          {Array.from({ length: totalPages }, (_, i) => i + 1)
-                            .filter(
-                              (p) => p === 1 || p === totalPages || Math.abs(p - safePage) <= 2,
-                            )
-                            .map((p) => (
-                              <Pagination.Item key={p}>
-                                <Pagination.Link
-                                  isActive={p === safePage}
-                                  onPress={() => setBankPage(p)}
-                                >
-                                  {p}
-                                </Pagination.Link>
-                              </Pagination.Item>
-                            ))}
-                          <Pagination.Item>
-                            <Pagination.Next
-                              isDisabled={safePage >= totalPages}
-                              onPress={() => setBankPage((p) => Math.min(totalPages, p + 1))}
-                            >
-                              <span>下一页</span>
-                              <Pagination.NextIcon />
-                            </Pagination.Next>
-                          </Pagination.Item>
-                        </Pagination.Content>
-                      </Pagination>
+                        </span>
+                        <Pagination page={safePage} total={totalPages} onChange={setBankPage} />
+                      </div>
                     )}
                   </div>
                 )}
-              </Modal.Body>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
+              </div>
+            </div>
+            <div slot="actions">
+              <Button
+                variant="tonal"
+                onClick={() => {
+                  setModalCourse(null);
+                  setBankSearchQuery("");
+                  setBankStatusFilter("all");
+                  setBankTypeFilter("all");
+                  setBankPage(1);
+                }}
+              >
+                关闭
+              </Button>
+            </div>
+          </Dialog>,
+          document.body,
+        )}
 
       {/* 题目搜索卡片 */}
-      <Card id="uooc-qa-vector-search" aria-labelledby="uooc-qa-search-title">
-        <Card.Header>
-          <Card.Title id="uooc-qa-search-title">题目搜索</Card.Title>
-          <Card.Description>
-            结合特征向量投影与服务端共享题库，支持按题干语义或关键词高速检索。
-          </Card.Description>
-        </Card.Header>
-        <Card.Content className="grid gap-3">
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <div className="flex-1">
+      <Card id="uooc-qa-vector-search" aria-labelledby="uooc-qa-search-title" variant="outlined">
+        <div slot="headline" className="font-semibold text-lg" id="uooc-qa-search-title">
+          题目搜索
+        </div>
+        <div slot="subhead">结合特征向量投影与服务端共享题库，支持按题干语义或关键词高速检索。</div>
+        <div className="grid gap-3 p-4">
+          <div className="flex flex-wrap items-start gap-2">
+            <div className="min-w-0 flex-1 basis-72">
               <TextField
+                className="w-full"
+                placeholder="输入题干文本或关键词检索题目..."
+                supportingText="支持 512 维语义特征向量与关键词匹配，结合向量缓存与服务端高速检索"
                 aria-label="题目搜索"
                 value={searchQuery}
-                isDisabled={searching}
-                onChange={setSearchQuery}
-              >
-                <Input
-                  placeholder="输入题干文本或关键词检索题目..."
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      void handleSearch();
-                    }
-                  }}
-                />
-                <Description>
-                  支持 512 维语义特征向量与关键词匹配，结合向量缓存与服务端高速检索
-                </Description>
-              </TextField>
+                disabled={searching}
+                onChange={(e: any) => setSearchQuery(e.detail?.value ?? e.target?.value ?? "")}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void handleSearch();
+                  }
+                }}
+              />
             </div>
             <Button
               className="self-start sm:self-auto"
-              variant="secondary"
-              isDisabled={searching || !searchQuery.trim()}
-              onPress={() => void handleSearch()}
+              variant="tonal"
+              disabled={searching || !searchQuery.trim()}
+              onClick={() => void handleSearch()}
             >
-              {searching ? <Spinner size="sm" /> : <LuSearch aria-hidden="true" />}
+              {searching ? <LoadingIndicator size={16} /> : <LuSearch aria-hidden="true" />}
               题目搜索
             </Button>
           </div>
@@ -1726,108 +1673,114 @@ export function UoocQaSettings({
                 已检索到 <strong className="text-foreground">{searchResults.length}</strong>{" "}
                 道相关题目
               </span>
-              <Button size="sm" variant="secondary" onPress={() => setSearchModalOpen(true)}>
+              <Button size="xs" variant="tonal" onClick={() => setSearchModalOpen(true)}>
                 查看搜索结果
               </Button>
             </div>
           )}
-        </Card.Content>
+        </div>
       </Card>
 
       {/* 题目搜索结果弹窗 Modal */}
-      <Modal isOpen={searchModalOpen} onOpenChange={setSearchModalOpen}>
-        <Modal.Backdrop>
-          <Modal.Container size="cover" className="max-w-4xl">
-            <Modal.Dialog aria-label="题目搜索结果">
-              <Modal.CloseTrigger aria-label="关闭" />
-              <Modal.Header className="flex flex-wrap items-center justify-between gap-3 pr-10">
-                <div className="grid gap-1">
-                  <Modal.Heading>题目搜索结果</Modal.Heading>
-                  <p className="text-xs text-muted">
-                    搜索词：「{searchQuery}」· 共匹配到 {searchResults.length}{" "}
-                    条相关题目（按语义相似度降序排列）
-                  </p>
-                </div>
+      {searchModalOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <Dialog
+            open={searchModalOpen}
+            role="dialog"
+            headline="题目搜索结果"
+            aria-label="题目搜索结果"
+            className="w-full max-w-4xl min-w-0"
+            onClose={() => setSearchModalOpen(false)}
+          >
+            <div className="flex flex-col gap-4 max-h-[75vh] overflow-y-auto p-2">
+              <div className="flex flex-wrap items-center justify-between gap-3 -mt-2">
+                <p className="text-xs text-muted">
+                  搜索词：「{searchQuery}」· 共匹配到 {searchResults.length}{" "}
+                  条相关题目（按语义相似度降序排列）
+                </p>
                 <Switch
-                  size="sm"
-                  isSelected={showHtmlTags}
-                  onChange={setShowHtmlTags}
+                  checked={showHtmlTags}
+                  onChange={(e: any) => setShowHtmlTags(e.detail?.checked ?? e.target?.checked)}
                   aria-label="显示 HTML 标签"
                 >
-                  <Switch.Content className="text-xs">
-                    <Switch.Control>
-                      <Switch.Thumb />
-                    </Switch.Control>
-                    HTML 标签
-                  </Switch.Content>
+                  <span className="text-xs">HTML 标签</span>
                 </Switch>
-              </Modal.Header>
-              <Modal.Body className="max-h-[75vh] overflow-y-auto grid gap-4 p-4 sm:p-6">
-                {convertedSearchResults.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-separator/60 p-8 text-center text-sm text-muted">
-                    未找到与「{searchQuery}」匹配的题目。
-                  </div>
-                ) : (
-                  <div className="grid gap-3.5">
-                    {convertedSearchResults.map(({ question, similarity, source }) => (
-                      <BankQuestionCardItem
-                        key={`${question.tid}-${question.questionId}`}
-                        question={question}
-                        similarity={similarity}
-                        sourceOverride={source}
-                        courseTitle={question.cid ? courseTitles[question.cid] : undefined}
-                      />
-                    ))}
-                  </div>
-                )}
-              </Modal.Body>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
+              </div>
 
-      <AlertDialog isOpen={confirmClearBank} onOpenChange={setConfirmClearBank}>
-        <AlertDialog.Backdrop>
-          <AlertDialog.Container size="sm">
-            <AlertDialog.Dialog>
-              <AlertDialog.Icon status="danger" />
-              <AlertDialog.Header>
-                <AlertDialog.Heading>确认清空题库缓存？</AlertDialog.Heading>
-              </AlertDialog.Header>
-              <AlertDialog.Body>
-                确定要清空已收录的本地 SQLite
-                题库缓存吗？清空后如需恢复，可随时点击【重新构建题库】或通过测验流程自动重新发现与收录。
-              </AlertDialog.Body>
-              <AlertDialog.Footer>
-                <AlertDialog.CloseTrigger className="dialog-cancel" />
-                <Button
-                  variant="danger"
-                  isDisabled={clearingBank}
-                  onPress={async () => {
-                    setConfirmClearBank(false);
-                    setClearingBank(true);
-                    try {
-                      const count = await invoke<number>("clear_uooc_local_bank");
-                      toast.success(`已清空题库缓存（共清除 ${count} 道题目）`);
-                      await refreshLocalQuestions();
-                    } catch (e: unknown) {
-                      const msg =
-                        typeof e === "string"
-                          ? e
-                          : (e as { message?: string })?.message || "清空题库缓存失败";
-                      toast.danger("清空题库缓存失败", { description: msg });
-                    } finally {
-                      setClearingBank(false);
-                    }
-                  }}
-                >
-                  确认清空
-                </Button>
-              </AlertDialog.Footer>
-            </AlertDialog.Dialog>
-          </AlertDialog.Container>
-        </AlertDialog.Backdrop>
-      </AlertDialog>
+              {convertedSearchResults.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-separator/60 p-8 text-center text-sm text-muted">
+                  未找到与「{searchQuery}」匹配的题目。
+                </div>
+              ) : (
+                <div className="grid gap-3.5">
+                  {convertedSearchResults.map(({ question, similarity, source }) => (
+                    <BankQuestionCardItem
+                      key={`${question.tid}-${question.questionId}`}
+                      question={question}
+                      similarity={similarity}
+                      sourceOverride={source}
+                      courseTitle={question.cid ? courseTitles[question.cid] : undefined}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+            <div slot="actions">
+              <Button variant="tonal" onClick={() => setSearchModalOpen(false)}>
+                关闭
+              </Button>
+            </div>
+          </Dialog>,
+          document.body,
+        )}
+
+      {confirmClearBank &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <Dialog
+            open={confirmClearBank}
+            role="dialog"
+            headline="确认清空题库缓存？"
+            aria-label="确认清空题库缓存？"
+            onClose={() => setConfirmClearBank(false)}
+          >
+            <div>
+              确定要清空已收录的本地 SQLite
+              题库缓存吗？清空后如需恢复，可随时点击【重新构建题库】或通过测验流程自动重新发现与收录。
+            </div>
+            <div slot="actions">
+              <Button variant="tonal" onClick={() => setConfirmClearBank(false)}>
+                取消
+              </Button>
+              <Button
+                className="button-danger"
+                variant="filled"
+                disabled={clearingBank}
+                onClick={async () => {
+                  setConfirmClearBank(false);
+                  setClearingBank(true);
+                  try {
+                    const count = await invoke<number>("clear_uooc_local_bank");
+                    toast.success(`已清空题库缓存（共清除 ${count} 道题目）`);
+                    await refreshLocalQuestions();
+                  } catch (e: unknown) {
+                    const msg =
+                      typeof e === "string"
+                        ? e
+                        : (e as { message?: string })?.message || "清空题库缓存失败";
+                    toast.danger("清空题库缓存失败", { description: msg });
+                  } finally {
+                    setClearingBank(false);
+                  }
+                }}
+              >
+                确认清空
+              </Button>
+            </div>
+          </Dialog>,
+          document.body,
+        )}
 
       <BankRebuildModal
         isOpen={rebuildModalOpen}

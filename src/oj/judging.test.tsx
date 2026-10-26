@@ -99,7 +99,7 @@ it.each([
   [4, "RE", "danger"],
 ])("shows ACM verdict %s", (status, code, color) => {
   render(<Verdict status={Number(status)} />);
-  expect(screen.getByText(String(code)).closest(".chip")?.className).toContain(color);
+  expect(screen.getByText(String(code)).closest(".md-chip")).toHaveAttribute("data-color", color);
 });
 it("keeps solved status and otherwise uses latest attempt, including zero-valued AC", () => {
   expect(

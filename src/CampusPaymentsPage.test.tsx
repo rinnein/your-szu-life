@@ -8,6 +8,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { routeTree } from "./routeTree.gen";
 import { WECHAT_SERVICES, type NetworkFeePortalNotice } from "./campus-payments";
+import { hostOf } from "./ui/testing";
 
 const qrProps = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -93,11 +94,14 @@ describe("campus payments route", () => {
     expect(await screen.findByRole("heading", { name: "校园卡/电费/网费" })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/campus-payments/electricity");
     const back = screen.getByRole("button", { name: "返回工作台" });
-    expect(back).toHaveAttribute("data-slot", "close-button");
+    // M3 顶栏的返回按钮是原生 button；data-webview-navigation 让 Android
+    // 原生工具栏挂载时隐藏它，两处必须同时成立。
+    expect(back).toHaveAttribute("data-webview-navigation");
     expect(back.querySelector("svg")).toBeInTheDocument();
     fireEvent.click(back);
     await waitFor(() => expect(router.state.location.pathname).toBe("/"));
-    expect(await screen.findByTestId("hero-card")).toBeInTheDocument();
+    // 工作台改用 MD3 卡片式入口。
+    expect(await screen.findByRole("heading", { name: "工作台" })).toBeInTheDocument();
     for (const command of ["begin_authentication", "logout", "capture_auth_credentials"]) {
       expect(invoke).not.toHaveBeenCalledWith(command);
     }
@@ -121,7 +125,9 @@ describe("campus payments route", () => {
   it("waits for authentication checking instead of exposing services or redirecting early", async () => {
     authState = "checking";
     const router = renderAt();
-    expect(await screen.findByLabelText("正在检查统一认证状态")).toBeInTheDocument();
+    // 加载指示器的宿主与内部元素都带同一个可访问名称，取首个即可。
+    const [spinner] = await screen.findAllByLabelText("正在检查统一认证状态");
+    expect(spinner).toBeInTheDocument();
     expect(router.state.location.pathname).toBe("/campus-payments");
     expect(qrProps).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalledWith("consume_network_fee_portal_notice");
@@ -225,7 +231,9 @@ describe("campus payments route", () => {
       .mock.calls.filter(([command]) => command === "open_network_fee_portal");
     expect(calls).toEqual([["open_network_fee_portal"]]);
     expect(open).toBeDisabled();
-    expect(open).toHaveTextContent("正在打开网费官网…");
+    // 可见文案在自定义元素的 light DOM 里（shadow 内的 <slot> 承接它），
+    // 因此断言宿主元素的文本而不是 shadow 内的按钮。
+    expect(hostOf(open)).toHaveTextContent("正在打开网费官网…");
   });
 
   it("shows a recoverable open failure without exposing raw errors and permits retry", async () => {
@@ -328,9 +336,10 @@ describe("campus payments route", () => {
 
     renderAt("/campus-payments/electricity");
     await screen.findByRole("heading", { name: "查电量" });
-    await waitFor(() => expect(screen.getByRole("button", { name: /校区/ })).toBeEnabled());
-    fireEvent.click(screen.getByRole("button", { name: /校区/ }));
-    fireEvent.click(await screen.findByRole("option", { name: "北校区（粤海校区）" }));
+    await screen.findByText("北校区（粤海校区）");
+    const campusSelect = screen.getByRole("combobox", { name: "校区" });
+    const select = (campusSelect.getRootNode() as ShadowRoot).host || campusSelect;
+    fireEvent(select, new CustomEvent("change", { detail: { value: "yuehai" } }));
     fireEvent.change(screen.getByRole("textbox", { name: "宿舍号" }), {
       target: { value: "601" },
     });
@@ -338,9 +347,9 @@ describe("campus payments route", () => {
 
     expect(await screen.findByRole("heading", { name: "用电记录" })).toBeInTheDocument();
     expect(screen.getByLabelText("当前电量")).toHaveTextContent("12.34 度");
-    expect(screen.queryByRole("button", { name: /校区/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "校区" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "修改宿舍配置" }));
-    expect(document.querySelector('button[aria-label="校区"]')).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "校区" })).toBeInTheDocument();
     expect(screen.getByRole("grid", { name: "用电记录" })).toHaveTextContent("2026-09-17");
     expect(screen.getByRole("grid", { name: "用电记录" })).toHaveTextContent("当日用电");
     expect(invoke).toHaveBeenCalledWith("query_electricity", {

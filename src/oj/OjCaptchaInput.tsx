@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
-import { Button, Card, Input, Label, Spinner, TextField, toast } from "@heroui/react";
+import { Card, LoadingIndicator, TextField, Button } from "material/react";
+import { toast } from "../ui";
 import { LuLogIn, LuRefreshCw, LuSparkles } from "react-icons/lu";
 import { useOcrModelStatus } from "../OcrModelSettings";
 import type { Site } from "./types";
@@ -114,22 +115,22 @@ export default function OjCaptchaInput({
   const locked = phase === "loading" || phase === "submitting" || recognizing;
 
   return (
-    <Card className={className ?? "max-w-md w-full"} aria-label="OJ 验证码登录">
-      <Card.Header className="pb-3">
-        <Card.Title className="text-base flex items-center justify-between">
-          <span>验证码登录</span>
-          <span className="text-xs font-normal text-muted">
-            {site.username} · {site.name}
-          </span>
-        </Card.Title>
-        <Card.Description role="status">{message}</Card.Description>
-      </Card.Header>
-      <Card.Content className="grid gap-4">
+    <Card className={className ?? "max-w-md w-full"} variant="outlined" aria-label="OJ 验证码登录">
+      <div slot="headline" className="text-base flex items-center justify-between w-full">
+        <span className="font-semibold">验证码登录</span>
+        <span className="text-xs font-normal text-muted">
+          {site.username} · {site.name}
+        </span>
+      </div>
+      <div slot="subhead" role="status">
+        {message}
+      </div>
+      <div className="grid gap-4 p-4">
         {/* 验证码图片显示框旁边放 换一张、自动识别 */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex items-center justify-center min-h-[50px] min-w-[150px] h-[60px] w-[180px] rounded-lg border border-default-200 bg-default-100 overflow-hidden">
             {phase === "loading" ? (
-              <Spinner size="sm" aria-label="正在获取验证码" />
+              <LoadingIndicator size={16} aria-label="正在获取验证码" />
             ) : captcha?.image ? (
               <img
                 src={captcha.image}
@@ -145,20 +146,19 @@ export default function OjCaptchaInput({
           </div>
           <div className="flex items-center gap-2">
             <Button
-              size="sm"
-              variant="secondary"
-              isDisabled={locked}
-              onPress={() => void fetchCaptcha(true)}
+              size="xs"
+              variant="tonal"
+              disabled={locked}
+              onClick={() => void fetchCaptcha(true)}
             >
               <LuRefreshCw aria-hidden="true" />
               换一张
             </Button>
             <Button
-              size="sm"
-              variant="secondary"
-              isDisabled={locked || !captcha?.image}
-              isPending={recognizing}
-              onPress={() => void handleAutoRecognize()}
+              size="xs"
+              variant="tonal"
+              disabled={locked || !captcha?.image || recognizing}
+              onClick={() => void handleAutoRecognize()}
             >
               <LuSparkles aria-hidden="true" />
               自动识别
@@ -167,32 +167,28 @@ export default function OjCaptchaInput({
         </div>
 
         {/* 验证码输入框 */}
-        <TextField value={answer} onChange={setAnswer} isDisabled={locked}>
-          <Label>验证码</Label>
-          <Input
-            autoComplete="off"
-            placeholder="输入图片中的验证码"
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && answer.trim() && !locked) {
-                void handleLogin();
-              }
-            }}
-          />
-        </TextField>
+        <TextField
+          label="验证码"
+          value={answer}
+          onChange={(e: any) => setAnswer(e.detail?.value ?? e.target?.value ?? "")}
+          disabled={locked}
+          autocomplete="off"
+          placeholder="输入图片中的验证码"
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && answer.trim() && !locked) void handleLogin();
+          }}
+        />
 
         {/* 输入框下面放登录 */}
         <Button
-          variant="primary"
-          fullWidth
-          isPending={phase === "submitting"}
-          isDisabled={locked || !answer.trim()}
-          onPress={() => void handleLogin()}
+          variant="filled"
+          disabled={locked || !answer.trim()}
+          onClick={() => void handleLogin()}
         >
           <LuLogIn aria-hidden="true" />
           登录
         </Button>
-      </Card.Content>
+      </div>
     </Card>
   );
 }

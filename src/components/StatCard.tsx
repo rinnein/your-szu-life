@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Card } from "@heroui/react";
+import { Card } from "material/react";
 
 export function StatCard({
   label,
@@ -27,8 +27,8 @@ export function StatCard({
   };
 
   return (
-    <Card aria-label={label} className="border border-separator/50">
-      <Card.Content className="py-5 px-6">
+    <Card aria-label={label} variant="outlined" className="payments-card">
+      <div className="py-5 px-6">
         <div className="flex items-start justify-between mb-2">
           <span className="text-sm text-[var(--szu-muted)]">{label}</span>
           {icon && <span className={colors[color]}>{icon}</span>}
@@ -39,7 +39,7 @@ export function StatCard({
         </div>
         {trend && <div className="mt-2 text-xs text-success">{trend}</div>}
         {description && <div className="mt-2 text-xs text-[var(--szu-muted)]">{description}</div>}
-      </Card.Content>
+      </div>
     </Card>
   );
 }

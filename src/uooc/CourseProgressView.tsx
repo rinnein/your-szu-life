@@ -1,4 +1,5 @@
-import { Chip, ProgressBar, ProgressCircle, Spinner } from "@heroui/react";
+import { LoadingIndicator, Progress } from "material/react";
+import { Chip } from "../ui";
 import { attendanceText, type ProgressEntry, type UoocCourse } from "./types";
 import { courseSchedule } from "./course-schedule";
 import { CourseProgressDetails, formatPercent } from "./CourseProgressDetails";
@@ -39,33 +40,27 @@ export function CourseProgressView({
         <span className="text-muted">结课日期：{endDate}</span>
       </div>
       {schedule ? (
-        <ProgressBar
+        <Progress
+          variant="linear"
           aria-label="周程进度"
           value={schedule.percent}
+          max={100}
           color={schedule.color}
-          valueLabel={`${course.weeks}，结课日期：${endDate}`}
-        >
-          <ProgressBar.Track>
-            <ProgressBar.Fill />
-          </ProgressBar.Track>
-        </ProgressBar>
+        />
       ) : (
         <p className="text-xs text-muted">周程进度未知</p>
       )}
       {totalPercent != null && (
         <div className="flex items-center gap-4 rounded-xl border border-separator/50 p-4">
-          <ProgressCircle
-            aria-label="课程总进度"
-            value={Math.max(0, Math.min(100, totalPercent))}
-            color={totalPercent >= 100 ? "success" : "accent"}
-            size="lg"
-          >
-            <ProgressCircle.Track>
-              <ProgressCircle.TrackCircle />
-              <ProgressCircle.FillCircle />
-            </ProgressCircle.Track>
-            <span className="text-sm font-semibold">{totalText}</span>
-          </ProgressCircle>
+          <div className="relative inline-flex items-center justify-center shrink-0">
+            <Progress
+              variant="circular"
+              aria-label="课程总进度"
+              value={Math.max(0, Math.min(100, totalPercent))}
+              max={100}
+            />
+            <span className="absolute text-xs font-semibold">{totalText}</span>
+          </div>
           <div className="grid gap-1">
             <span className="text-sm font-semibold">课程总进度{weighted && "（按权重）"}</span>
             {partial && (
@@ -88,7 +83,7 @@ export function CourseProgressView({
         >
           {attendanceText[data?.attendance ?? "unknown"]}
         </Chip>
-        {entry?.refreshing && <Spinner size="sm" aria-label="正在刷新课程进度" />}
+        {entry?.refreshing && <LoadingIndicator size={16} aria-label="正在刷新课程进度" />}
         {entry?.error && <span role="status">进度刷新失败：{entry.error}</span>}
         {entry?.updatedAtMs && (
           <span>

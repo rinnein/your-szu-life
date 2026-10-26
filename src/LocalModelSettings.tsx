@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
-import { Alert, Button, Card, Chip, Spinner, toast } from "@heroui/react";
+import { Card, LoadingIndicator, Button } from "material/react";
+import { Banner, Chip, toast } from "./ui";
 import { LuCircleCheck, LuCpu, LuDownload, LuRefreshCw, LuTriangleAlert } from "react-icons/lu";
 import { useLogicalNavigation } from "./logical-navigation";
 import {
@@ -236,65 +237,63 @@ export function LocalModelCard({
     <Card
       id={meta.anchorId}
       aria-labelledby={`${meta.anchorId}-title`}
+      variant="outlined"
       className={`w-full min-w-0 max-w-full ${className ?? ""}`}
     >
-      <Card.Header className="w-full min-w-0">
-        <div className="flex flex-wrap items-center justify-between gap-2 min-w-0">
-          <Card.Title
-            id={`${meta.anchorId}-title`}
-            className="flex flex-wrap items-center gap-2.5 min-w-0"
-          >
-            <LuCpu aria-hidden="true" className="size-5 text-primary shrink-0" />
-            <span>{meta.name}</span>
-            <Chip size="sm" variant="soft" color="accent">
-              {meta.category}
-            </Chip>
-          </Card.Title>
+      <div
+        slot="headline"
+        className="flex flex-wrap items-center justify-between gap-2 min-w-0 w-full"
+      >
+        <span
+          id={`${meta.anchorId}-title`}
+          className="flex flex-wrap items-center gap-2.5 min-w-0 font-semibold text-base"
+        >
+          <LuCpu aria-hidden="true" className="size-5 text-primary shrink-0" />
+          <span>{meta.name}</span>
+          <Chip size="sm" variant="soft" color="accent">
+            {meta.category}
+          </Chip>
+        </span>
+      </div>
+      <div slot="subhead" className="mt-2 space-y-1.5 text-xs text-muted break-words">
+        <div>
+          <span className="font-medium text-foreground">适用功能：</span>
+          <span>{meta.features}</span>
         </div>
-        <Card.Description className="mt-2 space-y-1.5 text-xs text-muted break-words">
-          <div>
-            <span className="font-medium text-foreground">适用功能：</span>
-            <span>{meta.features}</span>
-          </div>
-          <div className="leading-relaxed">{meta.description}</div>
-        </Card.Description>
-      </Card.Header>
-      <Card.Content className="grid gap-4 w-full min-w-0 max-w-full overflow-hidden">
+        <div className="leading-relaxed">{meta.description}</div>
+      </div>
+      <div className="grid gap-4 w-full min-w-0 max-w-full p-4 overflow-hidden">
         {!status && (
           <div className="flex items-center gap-2 text-sm text-muted" role="status">
-            <Spinner size="sm" /> 正在检查模型状态
+            <LoadingIndicator size={16} /> 正在检查模型状态
           </div>
         )}
         {status?.status === "ready" && (
-          <Alert status="success" className="w-full min-w-0 max-w-full">
-            <Alert.Content className="min-w-0 w-full overflow-hidden">
-              <Alert.Title className="flex items-center gap-2 min-w-0">
-                <LuCircleCheck aria-hidden="true" className="shrink-0" /> 模型已就绪
-              </Alert.Title>
-              <Alert.Description className="grid gap-1 min-w-0 w-full break-all">
-                <div>
-                  {formatModelSize(status.bytes)} ·{" "}
-                  {status.source === "bundled" ? "安装包内置" : "本机缓存"}
+          <Banner status="success" className="w-full min-w-0 max-w-full">
+            <Banner.Title className="flex items-center gap-2 min-w-0">
+              <LuCircleCheck aria-hidden="true" className="shrink-0" /> 模型已就绪
+            </Banner.Title>
+            <Banner.Description className="grid gap-1 min-w-0 w-full break-all">
+              <div>
+                {formatModelSize(status.bytes)} ·{" "}
+                {status.source === "bundled" ? "安装包内置" : "本机缓存"}
+              </div>
+              {status.sha256 && (
+                <div className="text-xs text-muted font-mono break-all">
+                  SHA-256: {status.sha256.slice(0, 16)}...
                 </div>
-                {status.sha256 && (
-                  <div className="text-xs text-muted font-mono break-all">
-                    SHA-256: {status.sha256.slice(0, 16)}...
-                  </div>
-                )}
-              </Alert.Description>
-            </Alert.Content>
-          </Alert>
+              )}
+            </Banner.Description>
+          </Banner>
         )}
         {status?.status === "missing" && (
-          <Alert status="warning" className="w-full min-w-0 max-w-full">
-            <Alert.Content className="min-w-0 w-full overflow-hidden">
-              <Alert.Title>尚未安装 {meta.category} 模型</Alert.Title>
-              <Alert.Description className="break-words">
-                首次下载约 {formatModelSize(status.bytes || meta.manifest.bytes)}
-                ，完成后可离线使用。
-              </Alert.Description>
-            </Alert.Content>
-          </Alert>
+          <Banner status="warning" className="w-full min-w-0 max-w-full">
+            <Banner.Title>尚未安装 {meta.category} 模型</Banner.Title>
+            <Banner.Description className="break-words">
+              首次下载约 {formatModelSize(status.bytes || meta.manifest.bytes)}
+              ，完成后可离线使用。
+            </Banner.Description>
+          </Banner>
         )}
         {isDownloading && (
           <DownloadSession
@@ -316,33 +315,28 @@ export function LocalModelCard({
           />
         )}
         {status?.status === "error" && (
-          <Alert status="danger" className="w-full min-w-0 max-w-full">
-            <Alert.Content className="min-w-0 w-full overflow-hidden">
-              <Alert.Title className="flex items-center gap-2 min-w-0">
-                <LuTriangleAlert aria-hidden="true" className="shrink-0" /> 模型不可用
-              </Alert.Title>
-              <Alert.Description className="break-all max-w-full text-xs leading-relaxed font-mono whitespace-pre-wrap">
-                {status.error ?? message ?? "下载或校验失败，请重试"}
-              </Alert.Description>
-            </Alert.Content>
-          </Alert>
+          <Banner status="danger" className="w-full min-w-0 max-w-full">
+            <Banner.Title className="flex items-center gap-2 min-w-0">
+              <LuTriangleAlert aria-hidden="true" className="shrink-0" /> 模型不可用
+            </Banner.Title>
+            <Banner.Description className="break-all max-w-full text-xs leading-relaxed font-mono whitespace-pre-wrap">
+              {status.error ?? message ?? "下载或校验失败，请重试"}
+            </Banner.Description>
+          </Banner>
         )}
         {message && status?.status !== "error" && (
-          <Alert status="danger" className="w-full min-w-0 max-w-full">
-            <Alert.Content className="min-w-0 w-full overflow-hidden">
-              <Alert.Description className="break-all max-w-full text-xs leading-relaxed font-mono whitespace-pre-wrap">
-                {message}
-              </Alert.Description>
-            </Alert.Content>
-          </Alert>
+          <Banner status="danger" className="w-full min-w-0 max-w-full">
+            <Banner.Description className="break-all max-w-full text-xs leading-relaxed font-mono whitespace-pre-wrap">
+              {message}
+            </Banner.Description>
+          </Banner>
         )}
-      </Card.Content>
-      <Card.Footer className="flex flex-wrap items-center gap-2 min-w-0 w-full">
+      </div>
+      <div slot="actions" className="flex flex-wrap items-center gap-2 min-w-0 w-full p-4 pt-0">
         {!ready && (
           <Button
-            isPending={busy}
-            isDisabled={busy || !status || status.status === "downloading"}
-            onPress={() => void handleDownload(false)}
+            disabled={busy || !status || status.status === "downloading" || busy}
+            onClick={() => void handleDownload(false)}
           >
             <LuDownload aria-hidden="true" /> {downloadButtonLabel ?? meta.defaultDownloadLabel}
           </Button>
@@ -350,25 +344,23 @@ export function LocalModelCard({
         {ready && (
           <>
             <Button
-              variant="secondary"
-              isPending={busy}
-              isDisabled={busy || isDownloading}
-              onPress={() => void handleCheckUpdate()}
+              variant="tonal"
+              disabled={busy || isDownloading || busy}
+              onClick={() => void handleCheckUpdate()}
             >
               <LuRefreshCw aria-hidden="true" /> 检查更新
             </Button>
             <Button
-              variant="outline"
-              size="sm"
-              isPending={busy}
-              isDisabled={busy || isDownloading}
-              onPress={() => void handleDownload(true)}
+              variant="outlined"
+              size="xs"
+              disabled={busy || isDownloading || busy}
+              onClick={() => void handleDownload(true)}
             >
               重新下载 / 修复
             </Button>
           </>
         )}
-      </Card.Footer>
+      </div>
     </Card>
   );
 }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Alert, Button, Card, Input, Label, TextArea, TextField, toast } from "@heroui/react";
+import { Card, TextField, Button } from "material/react";
+import { Banner, toast } from "./ui";
 import { LuCheck, LuCopy, LuDownload, LuKeyRound, LuUpload } from "react-icons/lu";
 import { copyText } from "./clipboard";
 
@@ -124,18 +125,18 @@ export default function SettingsTransfer() {
       </header>
 
       {(error || message) && (
-        <Alert status={error ? "danger" : "success"}>
-          <Alert.Indicator />
-          <Alert.Content>
-            <Alert.Title>{error ? "操作未完成" : "操作完成"}</Alert.Title>
-            <Alert.Description>{error || message}</Alert.Description>
-          </Alert.Content>
-        </Alert>
+        <Banner status={error ? "danger" : "success"}>
+          <Banner.Title>{error ? "操作未完成" : "操作完成"}</Banner.Title>
+          <Banner.Description>{error || message}</Banner.Description>
+        </Banner>
       )}
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
-        <Card className="h-full border border-[rgba(37,40,88,0.1)] shadow-[0_12px_35px_#2528580d]">
-          <Card.Header className="gap-3">
+        <Card
+          variant="outlined"
+          className="h-full border border-[rgba(37,40,88,0.1)] shadow-[0_12px_35px_#2528580d]"
+        >
+          <div slot="headline" className="flex items-center gap-3">
             <div
               className="flex size-10 items-center justify-center rounded-xl bg-[var(--szu-brand-soft)] text-[var(--szu-brand)]"
               aria-hidden="true"
@@ -143,24 +144,24 @@ export default function SettingsTransfer() {
               <LuDownload className="size-5" />
             </div>
             <div className="grid gap-1">
-              <Card.Title>加密导出</Card.Title>
-              <Card.Description>生成可复制的加密字符串，在另一台设备上导入。</Card.Description>
+              <span className="font-semibold">加密导出</span>
             </div>
-          </Card.Header>
-          <Card.Content className="grid gap-4">
+          </div>
+          <div slot="subhead">生成可复制的加密字符串，在另一台设备上导入。</div>
+          <div className="grid gap-4 p-4">
             <TextField
               type="password"
+              label="设置一次性密码"
               value={exportPassword}
-              onChange={setExportPassword}
-              isDisabled={busy}
-            >
-              <Label>设置一次性密码</Label>
-              <Input autoComplete="new-password" placeholder="至少 8 个字符" />
-            </TextField>
+              placeholder="至少 8 个字符"
+              autocomplete="new-password"
+              disabled={busy}
+              onChange={(e: any) => setExportPassword(e.detail?.value ?? e.target?.value ?? "")}
+            />
             <Button
               className="w-fit"
-              onPress={() => void exportSettings()}
-              isDisabled={busy || exportPassword.length < 8}
+              onClick={() => void exportSettings()}
+              disabled={busy || exportPassword.length < 8}
             >
               <LuKeyRound aria-hidden="true" />
               {busy ? "正在加密…" : "生成加密字符串"}
@@ -168,11 +169,11 @@ export default function SettingsTransfer() {
             {exported && (
               <div className="grid gap-2">
                 <div className="flex items-center justify-between gap-3">
-                  <Label htmlFor="settings-export-result">加密字符串</Label>
+                  <span className="field-label">加密字符串</span>
                   <Button
-                    size="sm"
-                    variant="secondary"
-                    onPress={() =>
+                    size="xs"
+                    variant="tonal"
+                    onClick={() =>
                       void copyText(exported).then((success) => {
                         setCopied(success);
                         setError(success ? "" : "无法自动复制，请手动选择并复制加密字符串。");
@@ -183,21 +184,23 @@ export default function SettingsTransfer() {
                     {copied ? "已复制" : "复制"}
                   </Button>
                 </div>
-                <TextArea
-                  id="settings-export-result"
-                  aria-label="导出的加密设置字符串"
-                  className="min-h-28 font-mono text-xs leading-relaxed break-all max-w-full w-full"
+                <TextField
+                  type="multiline"
+                  label="导出的加密设置字符串"
+                  className="export-result"
                   value={exported}
-                  readOnly
-                  rows={5}
+                  readonly
                 />
               </div>
             )}
-          </Card.Content>
+          </div>
         </Card>
 
-        <Card className="h-full border border-[rgba(37,40,88,0.1)] shadow-[0_12px_35px_#2528580d]">
-          <Card.Header className="gap-3">
+        <Card
+          variant="outlined"
+          className="h-full border border-[rgba(37,40,88,0.1)] shadow-[0_12px_35px_#2528580d]"
+        >
+          <div slot="headline" className="flex items-center gap-3">
             <div
               className="flex size-10 items-center justify-center rounded-xl bg-[var(--szu-brand-soft)] text-[var(--szu-brand)]"
               aria-hidden="true"
@@ -205,38 +208,38 @@ export default function SettingsTransfer() {
               <LuUpload className="size-5" />
             </div>
             <div className="grid gap-1">
-              <Card.Title>导入到此设备</Card.Title>
-              <Card.Description>检查现有设置冲突，再选择保留本机或覆盖。</Card.Description>
+              <span className="font-semibold">导入到此设备</span>
             </div>
-          </Card.Header>
-          <Card.Content className="grid gap-4">
-            <TextField value={text} onChange={updateText} isDisabled={busy}>
-              <Label>加密字符串</Label>
-              <TextArea
-                className="min-h-28 font-mono text-xs leading-relaxed"
-                placeholder="粘贴另一台设备生成的加密字符串"
-                rows={5}
-              />
-            </TextField>
+          </div>
+          <div slot="subhead">检查现有设置冲突，再选择保留本机或覆盖。</div>
+          <div className="grid gap-4 p-4">
+            <TextField
+              type="multiline"
+              label="加密字符串"
+              value={text}
+              placeholder="粘贴另一台设备生成的加密字符串"
+              disabled={busy}
+              onChange={(e: any) => updateText(e.detail?.value ?? e.target?.value ?? "")}
+            />
             <TextField
               type="password"
+              label="解密用的一次性密码"
               value={importPassword}
-              onChange={(value) => {
-                setImportPassword(value);
+              placeholder="输入导出时设置的密码"
+              autocomplete="new-password"
+              disabled={busy}
+              onChange={(e: any) => {
+                setImportPassword(e.detail?.value ?? e.target?.value ?? "");
                 setPreview(undefined);
                 clearFeedback();
               }}
-              isDisabled={busy}
-            >
-              <Label>解密用的一次性密码</Label>
-              <Input autoComplete="new-password" placeholder="输入导出时设置的密码" />
-            </TextField>
+            />
             {!preview ? (
               <Button
                 className="w-fit"
-                variant="secondary"
-                onPress={() => void inspectImport()}
-                isDisabled={busy || !text.trim() || importPassword.length < 8}
+                variant="tonal"
+                onClick={() => void inspectImport()}
+                disabled={busy || !text.trim() || importPassword.length < 8}
               >
                 检查设置包
               </Button>
@@ -263,14 +266,14 @@ export default function SettingsTransfer() {
                   </div>
                 )}
                 <div className="flex flex-wrap gap-2">
-                  <Button onPress={() => void importSettings(false)} isDisabled={busy}>
+                  <Button onClick={() => void importSettings(false)} disabled={busy}>
                     {preview.conflicts.length > 0 ? "导入并保留本机内容" : "导入设置"}
                   </Button>
                   {preview.conflicts.length > 0 && (
                     <Button
-                      variant="secondary"
-                      onPress={() => void importSettings(true)}
-                      isDisabled={busy}
+                      variant="tonal"
+                      onClick={() => void importSettings(true)}
+                      disabled={busy}
                     >
                       覆盖冲突项
                     </Button>
@@ -278,7 +281,7 @@ export default function SettingsTransfer() {
                 </div>
               </div>
             )}
-          </Card.Content>
+          </div>
         </Card>
       </div>
     </section>

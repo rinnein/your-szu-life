@@ -1,26 +1,24 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import {
+  Checkbox,
+  Dialog,
+  LoadingIndicator,
+  Radio,
+  Radios,
+  Select,
+  SelectOption,
+  Tab,
+  Tabs,
+  TextField,
+  Button,
+} from "material/react";
 import { useSelector } from "@tanstack/react-store";
 import { ojProgressCache, progressScope, progressScopeKey } from "./progress-store";
-import {
-  Alert,
-  Button,
-  Checkbox,
-  CheckboxGroup,
-  Chip,
-  Input,
-  Label,
-  ListBox,
-  Modal,
-  Radio,
-  RadioGroup,
-  Select,
-  Spinner,
-  Tabs,
-  TextArea,
-  TextField,
-} from "@heroui/react";
+import { Banner, Chip } from "../ui";
+import { nameTablist } from "../ui/tablist";
 import renderMathInElement from "katex/contrib/auto-render";
 import "katex/dist/katex.min.css";
 import { useLogicalNavigation } from "../logical-navigation";
@@ -500,52 +498,44 @@ export function OjPaper({
   if (!paper)
     return (
       <>
-        {busy && <Spinner aria-label="加载测验" />}
-        {error && (
-          <Alert status="warning">
-            <Alert.Content>{error}</Alert.Content>
-          </Alert>
-        )}
-        <Button variant="secondary" onPress={() => void action(load)}>
+        {busy && <LoadingIndicator size={24} aria-label="加载测验" />}
+        {error && <Banner status="warning">{error}</Banner>}
+        <Button variant="tonal" onClick={() => void action(load)}>
           重新加载
         </Button>
       </>
     );
   const recordPanel = (
     <div className="oj-form">
-      <Button variant="secondary" isDisabled={busy} onPress={() => void action(refreshRecords)}>
+      <Button variant="tonal" disabled={busy} onClick={() => void action(refreshRecords)}>
         刷新提交记录
       </Button>
-      {submissions.recordError && (
-        <Alert status="warning">
-          <Alert.Content>{submissions.recordError}</Alert.Content>
-        </Alert>
+      {submissions.recordError && <Banner status="warning">{submissions.recordError}</Banner>}
+      {!records && !submissions.recordError && (
+        <LoadingIndicator size={24} aria-label="正在读取当前题目提交记录" />
       )}
-      {!records && !submissions.recordError && <Spinner aria-label="正在读取当前题目提交记录" />}
       {records && records.records.length === 0 && (
         <p className="oj-muted">当前题目暂无提交记录。</p>
       )}
       {records?.uncertain.map((u) => (
-        <Alert key={u.key} status="warning">
-          <Alert.Content>
-            <Alert.Title>上次提交结果待确认</Alert.Title>
-            <Alert.Description>
-              {new Date(u.details.time).toLocaleString()}
-              。请先核对以下记录，再确认是否需要重新提交。
-            </Alert.Description>
-            <Button
-              variant="secondary"
-              onPress={() =>
-                void action(async () => {
-                  await invoke("acknowledge_oj_submission", { siteId: site.id, key: u.key });
-                  await refreshRecords();
-                })
-              }
-            >
-              已核对，解除待确认状态
-            </Button>
-          </Alert.Content>
-        </Alert>
+        <Banner status="warning" key={u.key}>
+          <Banner.Title>上次提交结果待确认</Banner.Title>
+          <Banner.Description>
+            {new Date(u.details.time).toLocaleString()}
+            。请先核对以下记录，再确认是否需要重新提交。
+          </Banner.Description>
+          <Button
+            variant="tonal"
+            onClick={() =>
+              void action(async () => {
+                await invoke("acknowledge_oj_submission", { siteId: site.id, key: u.key });
+                await refreshRecords();
+              })
+            }
+          >
+            已核对，解除待确认状态
+          </Button>
+        </Banner>
       ))}
       {records?.records.map((r) => (
         <SubmissionRecord
@@ -567,106 +557,90 @@ export function OjPaper({
           <span role="status">{saved}</span>
         </div>
         {incomingDrafts[pk] && (
-          <Alert status="warning">
-            <Alert.Content>
-              <Alert.Title>cph-ng 代码已缓存，编辑器另有未保存修改</Alert.Title>
-              <Alert.Description>当前编辑内容已保留，请选择继续使用哪一份代码。</Alert.Description>
-              <div className="oj-actions">
-                <Button
-                  variant="secondary"
-                  isDisabled={busy}
-                  onPress={() =>
-                    void action(async () => {
-                      await writes.current.catch(() => {});
-                      const next = {
-                        ...draft,
-                        revision: Math.max(Date.now(), incomingDrafts[pk].revision + 1),
-                      };
-                      dirty.current[pk] = next;
-                      setDrafts((old) => ({ ...old, [pk]: next }));
-                      await flush();
-                      setIncomingDrafts((old) => {
-                        const next = { ...old };
-                        delete next[pk];
-                        return next;
-                      });
-                    })
-                  }
-                >
-                  保留编辑器修改
-                </Button>
-                <Button
-                  variant="secondary"
-                  isDisabled={busy}
-                  onPress={() =>
-                    void action(async () => {
-                      await writes.current.catch(() => {});
-                      delete dirty.current[pk];
-                      setDrafts((old) => ({ ...old, [pk]: incomingDrafts[pk] }));
-                      setIncomingDrafts((old) => {
-                        const next = { ...old };
-                        delete next[pk];
-                        return next;
-                      });
-                      setSaved("cph-ng 代码已缓存到本机");
-                    })
-                  }
-                >
-                  载入 cph-ng 缓存
-                </Button>
-              </div>
-            </Alert.Content>
-          </Alert>
+          <Banner status="warning">
+            <Banner.Title>cph-ng 代码已缓存，编辑器另有未保存修改</Banner.Title>
+            <Banner.Description>当前编辑内容已保留，请选择继续使用哪一份代码。</Banner.Description>
+            <div className="oj-actions">
+              <Button
+                variant="tonal"
+                disabled={busy}
+                onClick={() =>
+                  void action(async () => {
+                    await writes.current.catch(() => {});
+                    const next = {
+                      ...draft,
+                      revision: Math.max(Date.now(), incomingDrafts[pk].revision + 1),
+                    };
+                    dirty.current[pk] = next;
+                    setDrafts((old) => ({ ...old, [pk]: next }));
+                    await flush();
+                    setIncomingDrafts((old) => {
+                      const next = { ...old };
+                      delete next[pk];
+                      return next;
+                    });
+                  })
+                }
+              >
+                保留编辑器修改
+              </Button>
+              <Button
+                variant="tonal"
+                disabled={busy}
+                onClick={() =>
+                  void action(async () => {
+                    await writes.current.catch(() => {});
+                    delete dirty.current[pk];
+                    setDrafts((old) => ({ ...old, [pk]: incomingDrafts[pk] }));
+                    setIncomingDrafts((old) => {
+                      const next = { ...old };
+                      delete next[pk];
+                      return next;
+                    });
+                    setSaved("cph-ng 代码已缓存到本机");
+                  })
+                }
+              >
+                载入 cph-ng 缓存
+              </Button>
+            </div>
+          </Banner>
         )}
-        {!writable && (
-          <Alert>
-            <Alert.Content>当前测验不可提交，已保存草稿仍可查看。</Alert.Content>
-          </Alert>
-        )}
+        {!writable && <Banner status="default">当前测验不可提交，已保存草稿仍可查看。</Banner>}
         {[0, 4].includes(p.kind) ? (
           <>
             <p className="oj-muted">语言和编译选项保存于当前 OJ 实例，切换题目时沿用。</p>
             {!p.languages.includes(draft.language) && (
-              <Alert status="warning">
-                <Alert.Content>当前题目不支持已保存的语言，请手动选择支持的语言。</Alert.Content>
-              </Alert>
+              <Banner status="warning">当前题目不支持已保存的语言，请手动选择支持的语言。</Banner>
             )}
             <Select
+              label="语言"
               aria-label="编程语言"
-              value={draft.language || null}
-              onChange={(key) =>
+              value={draft.language || ""}
+              disabled={!writable || busy}
+              onChange={(e: any) => {
+                const language = e.detail?.value ?? e.target?.value;
+                if (!language) return;
                 void action(async () => {
-                  const language = String(key);
                   await savePreferences(
-                    language,
-                    compileOptions(language, preferencesRef.current.optionsByLanguage[language]),
+                    String(language),
+                    compileOptions(
+                      String(language),
+                      preferencesRef.current.optionsByLanguage[String(language)],
+                    ),
                   );
-                })
-              }
-              isDisabled={!writable || busy}
+                });
+              }}
             >
-              <Label>语言</Label>
-              <Select.Trigger>
-                <Select.Value />
-                <Select.Indicator />
-              </Select.Trigger>
-              <Select.Popover>
-                <ListBox>
-                  {[...new Set([draft.language, ...p.languages])]
-                    .filter(Boolean)
-                    .map((language) => (
-                      <ListBox.Item
-                        key={language}
-                        id={language}
-                        isDisabled={!p.languages.includes(language)}
-                        textValue={languageName[language] ?? language}
-                      >
-                        {languageName[language] ?? language}
-                        <ListBox.ItemIndicator />
-                      </ListBox.Item>
-                    ))}
-                </ListBox>
-              </Select.Popover>
+              {[...new Set([draft.language, ...p.languages])].filter(Boolean).map((language) => (
+                <SelectOption
+                  key={language}
+                  value={language}
+                  disabled={!p.languages.includes(language)}
+                >
+                  {languageName[language] ?? language}
+                </SelectOption>
+              ))}
             </Select>
             <CompileOptions
               language={draft.language}
@@ -675,7 +649,7 @@ export function OjPaper({
               onChange={(options) => void action(() => savePreferences(draft.language, options))}
             />
             {desktop ? (
-              <Suspense fallback={<Spinner aria-label="加载桌面编辑器" />}>
+              <Suspense fallback={<LoadingIndicator size={24} aria-label="加载桌面编辑器" />}>
                 <MonacoEditor
                   value={draft.code}
                   language={draft.language}
@@ -692,7 +666,7 @@ export function OjPaper({
               />
             )}
             <Button
-              isDisabled={
+              disabled={
                 busy ||
                 submissions.polling ||
                 !writable ||
@@ -700,81 +674,91 @@ export function OjPaper({
                 !draft.code.trim() ||
                 !p.languages.includes(draft.language)
               }
-              onPress={() => void submit(false)}
+              onClick={() => void submit(false)}
             >
               提交代码
             </Button>
           </>
         ) : p.kind === 1 ? (
           p.multiple ? (
-            <CheckboxGroup
-              aria-label="选择答案"
-              value={Array.isArray(draft.answer) ? draft.answer.map(String) : []}
-              onChange={(values) => edit({ answer: values.map(Number) })}
-              isDisabled={!writable}
-            >
-              <Label>多选</Label>
-              {p.choices.map((c, i) => (
-                <Checkbox value={String(i)} key={i}>
-                  <Checkbox.Content>
-                    <Checkbox.Control>
-                      <Checkbox.Indicator />
-                    </Checkbox.Control>
+            <div className="grid gap-2" role="group" aria-label="选择答案">
+              <span className="font-semibold text-xs text-muted mb-1 block">多选</span>
+              {p.choices.map((c, i) => {
+                const isChecked =
+                  Array.isArray(draft.answer) && draft.answer.map(String).includes(String(i));
+                return (
+                  <Checkbox
+                    key={i}
+                    value={String(i)}
+                    checked={isChecked}
+                    disabled={!writable}
+                    onChange={(e: any) => {
+                      const checked = Boolean(e.detail?.checked ?? e.target?.checked);
+                      const current = Array.isArray(draft.answer) ? draft.answer.map(Number) : [];
+                      const next = checked
+                        ? [...current.filter((x) => x !== i), i].sort()
+                        : current.filter((x) => x !== i);
+                      edit({ answer: next });
+                    }}
+                  >
                     {String.fromCharCode(65 + i)}. {plain(c)}
-                  </Checkbox.Content>
-                </Checkbox>
-              ))}
-            </CheckboxGroup>
+                  </Checkbox>
+                );
+              })}
+            </div>
           ) : (
-            <RadioGroup
-              aria-label="选择答案"
-              value={Array.isArray(draft.answer) ? String(draft.answer[0] ?? "") : ""}
-              onChange={(value) => edit({ answer: [Number(value)] })}
-              isDisabled={!writable}
-            >
-              <Label>单选</Label>
-              {p.choices.map((c, i) => (
-                <Radio key={i} value={String(i)}>
-                  <Radio.Content>
-                    <Radio.Control>
-                      <Radio.Indicator />
-                    </Radio.Control>
+            <div className="grid gap-2">
+              <span className="font-semibold text-xs text-muted mb-1 block">单选</span>
+              <Radios
+                aria-label="选择答案"
+                value={Array.isArray(draft.answer) ? String(draft.answer[0] ?? "") : ""}
+                disabled={!writable}
+                onChange={(e: any) => {
+                  const val = e.detail?.value ?? e.target?.value;
+                  if (val !== undefined && val !== "") edit({ answer: [Number(val)] });
+                }}
+              >
+                {p.choices.map((c, i) => (
+                  <Radio key={i} value={String(i)}>
                     {String.fromCharCode(65 + i)}. {plain(c)}
-                  </Radio.Content>
-                </Radio>
-              ))}
-            </RadioGroup>
+                  </Radio>
+                ))}
+              </Radios>
+            </div>
           )
         ) : p.kind === 2 ? (
           Array.from({ length: p.blanks }, (_, i) => (
             <TextField
+              label="第 {i + 1} 空"
               key={i}
-              isDisabled={!writable}
+              disabled={!writable}
               value={String(Array.isArray(draft.answer) ? (draft.answer[i] ?? "") : "")}
-              onChange={(value) => {
+              onChange={(e: any) => {
+                const value = e.detail?.value ?? e.target?.value ?? "";
                 const values = Array.from({ length: p.blanks }, (_, j) =>
                   String(Array.isArray(draft.answer) ? (draft.answer[j] ?? "") : ""),
                 );
                 values[i] = value;
                 edit({ answer: values });
               }}
-            >
-              <Label>第 {i + 1} 空</Label>
-              <Input />
-            </TextField>
+            />
           ))
         ) : (
-          <TextField
-            isDisabled={!writable}
-            value={typeof draft.answer === "string" ? draft.answer : ""}
-            onChange={(answer) => edit({ answer })}
-          >
-            <Label>问答题作答</Label>
-            <TextArea rows={12} placeholder="填写答案，草稿自动保存在本机" />
-          </TextField>
+          <div className="space-y-1.5">
+            <label className="font-semibold text-xs text-muted block">问答题作答</label>
+            <TextField
+              type="multiline"
+              label="问答题作答"
+              disabled={!writable}
+              value={typeof draft.answer === "string" ? draft.answer : ""}
+              onChange={(event) => edit({ answer: event.detail.value })}
+              placeholder="填写答案，草稿自动保存在本机"
+              className="w-full"
+            />
+          </div>
         )}
         {![0, 4].includes(p.kind) && (
-          <Button isDisabled={!writable || busy} onPress={() => setConfirm(true)}>
+          <Button disabled={!writable || busy} onClick={() => setConfirm(true)}>
             提交非编程题答卷
           </Button>
         )}
@@ -806,9 +790,9 @@ export function OjPaper({
         <div className="oj-actions">
           <RankingTable siteId={site.id} paper={paper} />
           <Button
-            variant="secondary"
-            isDisabled={busy}
-            onPress={() =>
+            variant="tonal"
+            disabled={busy}
+            onClick={() =>
               void action(async () => {
                 await flush();
                 await load();
@@ -818,7 +802,7 @@ export function OjPaper({
             刷新测验
           </Button>
           {paper.problems.some((p) => ![0, 4].includes(p.kind)) && (
-            <Button isDisabled={!writable || busy} onPress={() => setConfirm(true)}>
+            <Button disabled={!writable || busy} onClick={() => setConfirm(true)}>
               提交答卷
             </Button>
           )}
@@ -827,20 +811,33 @@ export function OjPaper({
       {showContestDescription && (
         <Html html={paper.contest.description} base={paper.sourceUrl} siteId={site.id} />
       )}
-      {error && (
-        <Alert status="warning">
-          <Alert.Content>{error}</Alert.Content>
-        </Alert>
-      )}
+      {error && <Banner status="warning">{error}</Banner>}
       {desktop && (
         <div className="oj-actions">
-          <Button variant="secondary" isDisabled={busy} onPress={() => void send(true)}>
+          <Button variant="tonal" disabled={busy} onClick={() => void send(true)}>
             发送全部题目到CPH
           </Button>
         </div>
       )}
+      {/* 移动端横向题目切换（小于 1024px 时在顶部横向滑动展示） */}
+      <div className="lg:hidden w-full overflow-x-auto scrollbar-none mb-4">
+        <Tabs
+          ref={(host) => nameTablist(host, "测验题目切换")}
+          value={pk || undefined}
+          onChange={(event) => {
+            if (event.detail.value) void go({ problem: event.detail.value });
+          }}
+        >
+          {paper.problems.map((problem) => (
+            <Tab value={problemKey(problem)} key={problemKey(problem)}>
+              {problem.displayLabel}. {problem.title}
+            </Tab>
+          ))}
+        </Tabs>
+      </div>
+
       <div className="oj-workspace">
-        <aside className="oj-directory">
+        <aside className="oj-directory hidden lg:block">
           <h3>题目</h3>
           {[0, 1, 2, 3, 4]
             .filter((kind) => paper.problems.some((p) => p.kind === kind))
@@ -868,26 +865,32 @@ export function OjPaper({
                 </h4>
                 {paper.problems
                   .filter((p) => p.kind === kind)
-                  .map((problem) => (
-                    <Button
-                      className="oj-directory-item"
-                      data-verdict-tone={
-                        verdicts[submissions.verdict(problem) ?? 99]?.color ?? "default"
-                      }
-                      data-selected={problemKey(problem) === pk}
-                      key={problemKey(problem)}
-                      variant={problemKey(problem) === pk ? "secondary" : "tertiary"}
-                      onPress={() => void go({ problem: problemKey(problem) })}
-                    >
-                      <span>
-                        {problem.displayLabel}. {problem.title}
-                      </span>
-                      <Verdict
-                        status={submissions.verdict(problem)}
-                        empty={submissions.emptyVerdict(problem)}
-                      />
-                    </Button>
-                  ))}
+                  .map((problem) => {
+                    const verdictStatus = submissions.verdict(problem);
+                    const emptyVerdict = submissions.emptyVerdict(problem);
+                    const tone =
+                      verdictStatus != null
+                        ? (verdicts[verdictStatus]?.color ?? "default")
+                        : emptyVerdict === "已作答"
+                          ? "success"
+                          : "default";
+                    const isSelected = problemKey(problem) === pk;
+                    return (
+                      <button
+                        type="button"
+                        className="oj-directory-item"
+                        data-verdict-tone={tone}
+                        data-selected={isSelected}
+                        key={problemKey(problem)}
+                        onClick={() => void go({ problem: problemKey(problem) })}
+                      >
+                        <span className="truncate flex-1 text-left">
+                          {problem.displayLabel}. {problem.title}
+                        </span>
+                        <Verdict status={verdictStatus} empty={emptyVerdict} />
+                      </button>
+                    );
+                  })}
               </div>
             ))}
         </aside>
@@ -900,8 +903,8 @@ export function OjPaper({
                 </h2>
                 <div className="oj-actions">
                   <Button
-                    variant="secondary"
-                    onPress={() =>
+                    variant="tonal"
+                    onClick={() =>
                       void action(async () => {
                         const markdown = problemMarkdown(p, paper);
                         if (!(await copyText(markdown))) setManualCopy(markdown);
@@ -912,38 +915,31 @@ export function OjPaper({
                     复制 Markdown
                   </Button>
                   {desktop && [0, 4].includes(p.kind) && (
-                    <Button variant="secondary" isDisabled={busy} onPress={() => void send()}>
+                    <Button variant="tonal" disabled={busy} onClick={() => void send()}>
                       发送到CPH
                     </Button>
                   )}
                 </div>
               </div>
-              <Tabs selectedKey={tab} onSelectionChange={(key) => void go({ tab: String(key) })}>
-                <Tabs.ListContainer>
-                  <Tabs.List aria-label="题目内容">
-                    <Tabs.Tab id="statement">
-                      题面
-                      <Tabs.Indicator />
-                    </Tabs.Tab>
-                    <Tabs.Tab id="answer">
-                      作答
-                      <Tabs.Indicator />
-                    </Tabs.Tab>
-                    <Tabs.Tab id="records">
-                      提交记录
-                      <Tabs.Indicator />
-                    </Tabs.Tab>
-                  </Tabs.List>
-                </Tabs.ListContainer>
-                <Tabs.Panel id="statement">
-                  <div className="oj-reading">
-                    <Statement p={p} paper={paper} siteId={site.id} />
-                    <div className="oj-desktop-answer">{answerPanel}</div>
-                  </div>
-                </Tabs.Panel>
-                <Tabs.Panel id="answer">{answerPanel}</Tabs.Panel>
-                <Tabs.Panel id="records">{recordPanel}</Tabs.Panel>
+              <Tabs
+                ref={(host) => nameTablist(host, "题目内容")}
+                value={tab || undefined}
+                onChange={(event) => {
+                  if (event.detail.value) void go({ tab: event.detail.value });
+                }}
+              >
+                <Tab value="statement">题面</Tab>
+                <Tab value="answer">作答</Tab>
+                <Tab value="records">提交记录</Tab>
               </Tabs>
+              {tab === "statement" && (
+                <div className="oj-reading">
+                  <Statement p={p} paper={paper} siteId={site.id} />
+                  <div className="oj-desktop-answer">{answerPanel}</div>
+                </div>
+              )}
+              {tab === "answer" && answerPanel}
+              {tab === "records" && recordPanel}
               {result && tab !== "records" && (
                 <ResultAccordion
                   key={result.id}
@@ -959,65 +955,65 @@ export function OjPaper({
           )}
         </div>
       </div>
-      <Modal isOpen={confirm} onOpenChange={setConfirm}>
-        <Modal.Backdrop>
-          <Modal.Container>
-            <Modal.Dialog>
-              <Modal.CloseTrigger />
-              <Modal.Header>
-                <Modal.Heading>确认提交答卷</Modal.Heading>
-              </Modal.Header>
-              <Modal.Body>
-                <p>提交选择题、填空题和问答题；编程题需分别提交代码。</p>
-                {[1, 2, 3].map((kind) => {
-                  const problems = paper.problems.filter((p) => p.kind === kind);
-                  const answered = problems.filter((p) => {
-                    const a = drafts[problemKey(p)]?.answer;
-                    return Array.isArray(a)
-                      ? a.length > 0 && a.every((v) => String(v).trim())
-                      : !!a?.trim();
-                  }).length;
-                  return (
-                    <p key={kind}>
-                      {kindName[kind]}：已作答 {answered} / {problems.length}
-                    </p>
-                  );
-                })}
-                <p>以服务器允许的提交次数与截止时间为准。</p>
-              </Modal.Body>
-              <Modal.Footer>
-                <Button variant="tertiary" onPress={() => setConfirm(false)}>
-                  继续检查
-                </Button>
-                <Button isDisabled={busy || !writable} onPress={() => void submit(true)}>
-                  {busy ? "提交中…" : "确认提交"}
-                </Button>
-              </Modal.Footer>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
-      <Modal isOpen={!!manualCopy} onOpenChange={(open) => !open && setManualCopy(undefined)}>
-        <Modal.Backdrop>
-          <Modal.Container>
-            <Modal.Dialog>
-              <Modal.CloseTrigger />
-              <Modal.Header>
-                <Modal.Heading>手动复制 Markdown</Modal.Heading>
-              </Modal.Header>
-              <Modal.Body>
-                <TextArea
-                  aria-label="完整 Markdown"
-                  readOnly
-                  value={manualCopy ?? ""}
-                  rows={18}
-                  onFocus={(e) => e.currentTarget.select()}
-                />
-              </Modal.Body>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
+      {confirm &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <Dialog open={confirm} headline="确认提交答卷" onClose={() => setConfirm(false)}>
+            <div className="space-y-3">
+              <p>提交选择题、填空题和问答题；编程题需分别提交代码。</p>
+              {[1, 2, 3].map((kind) => {
+                const problems = paper.problems.filter((p) => p.kind === kind);
+                const answered = problems.filter((p) => {
+                  const a = drafts[problemKey(p)]?.answer;
+                  return Array.isArray(a)
+                    ? a.length > 0 && a.every((v) => String(v).trim())
+                    : !!a?.trim();
+                }).length;
+                return (
+                  <p key={kind}>
+                    {kindName[kind]}：已作答 {answered} / {problems.length}
+                  </p>
+                );
+              })}
+              <p>以服务器允许的提交次数与截止时间为准。</p>
+            </div>
+            <div slot="actions">
+              <Button variant="text" onClick={() => setConfirm(false)}>
+                继续检查
+              </Button>
+              <Button disabled={busy || !writable} onClick={() => void submit(true)}>
+                {busy ? "提交中…" : "确认提交"}
+              </Button>
+            </div>
+          </Dialog>,
+          document.body,
+        )}
+      {!!manualCopy &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <Dialog
+            open={!!manualCopy}
+            headline="手动复制 Markdown"
+            onClose={() => setManualCopy(undefined)}
+          >
+            <TextField
+              type="multiline"
+              aria-label="完整 Markdown"
+              readonly
+              value={manualCopy ?? ""}
+              className="w-full"
+              ref={(host) => {
+                host?.select();
+              }}
+            />
+            <div slot="actions">
+              <Button variant="tonal" onClick={() => setManualCopy(undefined)}>
+                关闭
+              </Button>
+            </div>
+          </Dialog>,
+          document.body,
+        )}
     </section>
   );
 }

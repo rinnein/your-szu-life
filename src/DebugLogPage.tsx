@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
-import { Alert, Button, Card, Chip, Spinner, toast } from "@heroui/react";
+import { Card, LoadingIndicator, Button } from "material/react";
+import { Banner, Chip, toast } from "./ui";
 import { LuFileText, LuFolderOpen, LuPower, LuRefreshCw, LuTrash2 } from "react-icons/lu";
 import { ModuleHeader, PageShell } from "./components";
 import { isAndroidPlatform } from "./os-info";
@@ -152,16 +153,14 @@ export default function DebugLogPage() {
   if (!mode.enabled && !busy) {
     return (
       <PageShell centered>
-        <Card variant="default">
-          <Card.Header>
-            <Card.Title>调试模式未启用</Card.Title>
-            <Card.Description>请返回首页，连续点击左上角应用图标 5 次启用</Card.Description>
-          </Card.Header>
-          <Card.Content>
-            <Button data-webview-navigation onPress={() => void navigation.back()} className="mt-2">
+        <Card variant="outlined">
+          <div slot="headline">调试模式未启用</div>
+          <div slot="subhead">请返回首页，连续点击左上角应用图标 5 次启用</div>
+          <div className="p-4">
+            <Button data-webview-navigation onClick={() => void navigation.back()} className="mt-2">
               返回工作台
             </Button>
-          </Card.Content>
+          </div>
         </Card>
       </PageShell>
     );
@@ -180,17 +179,15 @@ export default function DebugLogPage() {
 
         {busy && !logInfo ? (
           <div className="flex items-center justify-center py-12">
-            <Spinner size="lg" />
+            <LoadingIndicator size={40} />
             <span className="ml-3 text-sm text-muted">正在载入日志状态…</span>
           </div>
         ) : (
           <>
-            <Card variant="default">
-              <Card.Header>
-                <Card.Title>日志文件概览</Card.Title>
-                <Card.Description>日志按天独立存储，可通过系统关联程序直接打开</Card.Description>
-              </Card.Header>
-              <Card.Content className="grid gap-4">
+            <Card variant="outlined">
+              <div slot="headline">日志文件概览</div>
+              <div slot="subhead">日志按天独立存储，可通过系统关联程序直接打开</div>
+              <div className="grid gap-4 p-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                   <div className="flex flex-col gap-1 p-3 rounded-lg bg-default-100/60 border border-default-200">
                     <span className="text-xs text-muted font-medium">今日日志文件</span>
@@ -217,78 +214,70 @@ export default function DebugLogPage() {
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
-                      variant="primary"
-                      size="sm"
+                      variant="filled"
+                      size="xs"
                       className="flex items-center gap-1.5"
-                      onPress={() => void handleOpenTodayLog()}
-                      isDisabled={!logInfo}
+                      onClick={() => void handleOpenTodayLog()}
+                      disabled={!logInfo}
                     >
                       <LuFileText className="size-4" />
                       <span>打开今日日志</span>
                     </Button>
                     {!isAndroid && (
                       <Button
-                        variant="secondary"
-                        size="sm"
+                        variant="tonal"
+                        size="xs"
                         className="flex items-center gap-1.5"
-                        onPress={() => void handleRevealLogDir()}
-                        isDisabled={!logInfo}
+                        onClick={() => void handleRevealLogDir()}
+                        disabled={!logInfo}
                       >
                         <LuFolderOpen className="size-4" />
                         <span>在文件管理器中显示</span>
                       </Button>
                     )}
                     <Button
-                      variant="danger"
-                      size="sm"
+                      variant="filled"
+                      size="xs"
                       className="flex items-center gap-1.5"
-                      onPress={() => void handleClearLogs()}
-                      isDisabled={clearing || !logInfo}
+                      onClick={() => void handleClearLogs()}
+                      disabled={clearing || !logInfo}
                     >
-                      {clearing ? (
-                        <Spinner size="sm" color="current" />
-                      ) : (
-                        <LuTrash2 className="size-4" />
-                      )}
+                      {clearing ? <LoadingIndicator size={16} /> : <LuTrash2 className="size-4" />}
                       <span>清理日志</span>
                     </Button>
                     <Button
-                      variant="ghost"
-                      size="sm"
-                      isIconOnly
+                      variant="text"
+                      size="xs"
                       aria-label="刷新日志信息"
-                      onPress={() => void loadLogInfo()}
-                      isDisabled={busy}
+                      onClick={() => void loadLogInfo()}
+                      disabled={busy}
                     >
                       <LuRefreshCw className={`size-4 ${busy ? "animate-spin" : ""}`} />
                     </Button>
                   </div>
                 </div>
-              </Card.Content>
+              </div>
             </Card>
 
-            <Card variant="default">
-              <Card.Header>
-                <Card.Title>日志文件保留级别</Card.Title>
-                <Card.Description>
-                  控制写入日志文件的最低级别，默认为 INFO。开启 DEBUG
-                  将记录详细的探测与网络请求信息。
-                </Card.Description>
-              </Card.Header>
-              <Card.Content className="grid gap-3">
+            <Card variant="outlined">
+              <div slot="headline">日志文件保留级别</div>
+              <div slot="subhead">
+                控制写入日志文件的最低级别，默认为 INFO。开启 DEBUG 将记录详细的探测与网络请求信息。
+              </div>
+              <div className="grid gap-3 p-4">
                 <div className="flex flex-wrap gap-2 items-center">
                   {levels.map((lvl) => {
                     const isActive = logInfo?.currentLevel.toUpperCase() === lvl;
                     return (
                       <Button
                         key={lvl}
-                        size="sm"
-                        variant={isActive ? "primary" : "outline"}
+                        size="xs"
+                        variant={isActive ? "filled" : "outlined"}
                         className={`min-w-20 font-mono text-xs ${
                           isActive ? "font-semibold shadow-xs" : ""
                         }`}
-                        isDisabled={settingLevel}
-                        onPress={() => void handleSetLogLevel(lvl)}
+                        disabled={settingLevel}
+                        onClick={() => void handleSetLogLevel(lvl)}
                       >
                         {lvl}
                         {lvl === "INFO" && !isActive && (
@@ -299,26 +288,23 @@ export default function DebugLogPage() {
                     );
                   })}
                 </div>
-              </Card.Content>
+              </div>
             </Card>
 
-            <Alert status="accent" className="w-full">
-              <Alert.Indicator />
-              <Alert.Content>
-                <Alert.Title>自动归档与清理机制</Alert.Title>
-                <Alert.Description>
-                  应用内日志按天单独保存文件。当本地日志总大小达到 10MB 或单个日志文件保存超过 7
-                  天时，系统会自动删除最旧的日志，保障磁盘空间不受占用。
-                </Alert.Description>
-              </Alert.Content>
-            </Alert>
+            <Banner status="accent" className="w-full">
+              <Banner.Title>自动归档与清理机制</Banner.Title>
+              <Banner.Description>
+                应用内日志按天单独保存文件。当本地日志总大小达到 10MB 或单个日志文件保存超过 7
+                天时，系统会自动删除最旧的日志，保障磁盘空间不受占用。
+              </Banner.Description>
+            </Banner>
 
             <div className="flex justify-end pt-2">
               <Button
-                variant="ghost"
-                size="sm"
+                variant="text"
+                size="xs"
                 className="text-danger flex items-center gap-1.5"
-                onPress={() => void handleDisable()}
+                onClick={() => void handleDisable()}
               >
                 <LuPower className="size-4" />
                 <span>关闭调试模式</span>

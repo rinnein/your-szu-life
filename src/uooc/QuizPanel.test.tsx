@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
+import { typeInto } from "../ui/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
@@ -200,8 +201,11 @@ it("displays question type chip, option label badges beside options and no botto
   expect(screen.getByText("第 1 题")).toBeInTheDocument();
   expect(screen.getByText("ID: q1")).toBeInTheDocument();
   // 3. Option labels (A., B.)
-  expect(screen.getByText("A.")).toBeInTheDocument();
-  expect(screen.getByText("B.")).toBeInTheDocument();
+  // 选项前缀由 CSS 生成（不进入 DOM 文本，避免污染可访问名称），
+  // 因此断言承载它的元素与内容，而不是纯文本节点。
+  const prefix = document.querySelector("[data-option-prefix='A.']");
+  expect(prefix).toBeInTheDocument();
+  expect(document.querySelector("[data-option-prefix='B.']")).toBeInTheDocument();
   // 4. 标注器不在下方显示
   expect(screen.queryByText(/当前作答 \/ 匹配答案/)).not.toBeInTheDocument();
   expect(screen.queryByText(/标准答案：/)).not.toBeInTheDocument();
@@ -456,8 +460,9 @@ it("automatically caches fill-in-the-blank text to localStorage upon modificatio
   render(
     <QuizPanel quiz={textQuiz} active={false} dryRun={false} weight={20} onSnapshot={vi.fn()} />,
   );
-  const textarea = screen.getByRole("textbox");
-  fireEvent.change(textarea, { target: { value: "北京" } });
+  // 填空题可能有多个空，取首个。
+  const [textarea] = screen.getAllByRole("textbox");
+  typeInto(textarea, "北京");
 
   expect(loadQuizCache(cacheKey)).toEqual({ q_text: ["北京"] });
 });

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Card, Input, Label, TextField } from "@heroui/react";
+import { Card, TextField, Button } from "material/react";
 import { useLogicalNavigation } from "../logical-navigation";
 import { useCacheMode } from "./view-mode";
 import { useEnrollment } from "./use-enrollment";
@@ -24,18 +24,18 @@ export default function SettingsPage() {
   }, [run, cacheOnly]);
   if (cacheOnly)
     return (
-      <Card>
-        <Card.Content>当前为只读缓存模式。退出缓存模式后可修改任务和访问配置。</Card.Content>
+      <Card variant="outlined">
+        <div className="p-4">当前为只读缓存模式。退出缓存模式后可修改任务和访问配置。</div>
       </Card>
     );
   return (
     <div className="grid gap-5">
-      <Card>
-        <Card.Header>
-          <Card.Title>新任务默认配置</Card.Title>
-          <Card.Description>仅用于之后创建的任务，不改变正在运行的课程。</Card.Description>
-        </Card.Header>
-        <Card.Content className="grid gap-4 sm:grid-cols-2">
+      <Card
+        variant="outlined"
+        headline="新任务默认配置"
+        subhead="仅用于之后创建的任务，不改变正在运行的课程。"
+      >
+        <div className="grid gap-4 sm:grid-cols-2 p-4 pt-0">
           <Choice
             label="默认挡位"
             value={prefs.gear}
@@ -43,16 +43,17 @@ export default function SettingsPage() {
             items={Object.entries(gears).map(([id, label]) => ({ id, label }))}
           />
           <TextField
+            label="默认预约时间"
             value={prefs.startAt}
-            onChange={(startAt) => setPrefs((p) => ({ ...p, startAt }))}
-          >
-            <Label>默认预约时间</Label>
-            <Input type="datetime-local" />
-          </TextField>
-        </Card.Content>
-        <Card.Footer className="gap-3">
+            onChange={(e: any) =>
+              setPrefs((p) => ({ ...p, startAt: e.detail?.value ?? e.target?.value ?? "" }))
+            }
+            type="datetime-local"
+          />
+        </div>
+        <div slot="actions" className="flex items-center gap-3">
           <Button
-            onPress={() => {
+            onClick={() => {
               try {
                 savePreferences(prefs);
                 setMessage("已保存");
@@ -66,14 +67,14 @@ export default function SettingsPage() {
           <span role="status" className="text-sm text-muted">
             {message}
           </span>
-        </Card.Footer>
+        </div>
       </Card>
-      <Card>
-        <Card.Header>
-          <Card.Title>批次与校区</Card.Title>
-          <Card.Description>切换后保留各自缓存，运行中的任务会暂停。</Card.Description>
-        </Card.Header>
-        <Card.Content className="grid gap-3 sm:grid-cols-2">
+      <Card
+        variant="outlined"
+        headline="批次与校区"
+        subhead="切换后保留各自缓存，运行中的任务会暂停。"
+      >
+        <div className="grid gap-3 sm:grid-cols-2 p-4 pt-0">
           {options && (
             <>
               <Choice
@@ -105,24 +106,24 @@ export default function SettingsPage() {
             </>
           )}
           <OperationError message={errors.options || errors.context} />
-        </Card.Content>
+        </div>
       </Card>
-      <Card>
-        <Card.Header>
-          <Card.Title>访问与认证</Card.Title>
-          <Card.Description>切换访问方式会暂停提交；存在未决请求时须先核验。</Card.Description>
-        </Card.Header>
-        <Card.Content>
+      <Card
+        variant="outlined"
+        headline="访问与认证"
+        subhead="切换访问方式会暂停提交；存在未决请求时须先核验。"
+      >
+        <div className="p-4 pt-0">
           <AccessModes />
-        </Card.Content>
-        <Card.Footer>
+        </div>
+        <div slot="actions">
           <Button
-            variant="secondary"
-            onPress={() => void nav.replace("/enrollment/login?returnTo=%2Fenrollment%2Fsettings")}
+            variant="tonal"
+            onClick={() => void nav.replace("/enrollment/login?returnTo=%2Fenrollment%2Fsettings")}
           >
             重新验证选课登录
           </Button>
-        </Card.Footer>
+        </div>
       </Card>
     </div>
   );

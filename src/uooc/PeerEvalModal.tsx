@@ -1,20 +1,16 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  Alert,
-  AlertDialog,
-  Button,
   Card,
-  Chip,
-  Label,
-  ListBox,
-  Modal,
-  NumberField,
+  Dialog,
+  LoadingIndicator,
   Select,
-  Spinner,
-  TextArea,
-  toast,
-} from "@heroui/react";
+  SelectOption,
+  TextField,
+  Button,
+} from "material/react";
+import { Banner, Chip, NumberField, toast } from "../ui";
 import { LuCheck, LuSend, LuSparkles, LuUsers } from "react-icons/lu";
 import type { PeerEvalTask, PeerSubmission, UoocCourse } from "./types";
 
@@ -160,61 +156,51 @@ export function PeerEvalModal({ isOpen, onClose, courses, defaultCid }: PeerEval
   const allSubmissions = tasks.flatMap((t) => t.submissions);
   const pendingCount = allSubmissions.filter((s) => !s.isEvaluated).length;
 
+  if (typeof document === "undefined") return null;
+
   return (
     <>
-      <Modal isOpen={isOpen} onOpenChange={(open) => !open && onClose()}>
-        <Modal.Backdrop>
-          <Modal.Container size="cover" className="max-w-3xl">
-            <Modal.Dialog
-              aria-label="课程作业互评助手"
-              className="flex h-[85vh] max-h-[85vh] flex-col overflow-hidden"
-            >
-              <Modal.CloseTrigger aria-label="关闭互评助手" />
-              <Modal.Header className="flex flex-wrap items-center justify-between border-b pb-3 pr-10">
+      {isOpen &&
+        createPortal(
+          <Dialog open={isOpen} headline="课程作业互评助手" className="max-w-3xl" onClose={onClose}>
+            <div className="flex flex-col h-[75vh] max-h-[75vh] overflow-hidden">
+              <div className="flex flex-wrap items-center justify-between border-b border-separator/40 pb-3 pr-2 mb-3">
                 <div className="flex items-center gap-2">
                   <LuUsers className="h-5 w-5 text-accent" />
-                  <Modal.Heading className="text-lg font-bold">课程作业互评助手</Modal.Heading>
+                  <span className="text-sm text-muted">选择要互评的课程</span>
                 </div>
 
                 <div className="flex items-center gap-2">
                   <Select
-                    aria-label="选择课程"
-                    selectedKey={selectedCid}
-                    onSelectionChange={(key) => setSelectedCid(String(key))}
-                    className="w-48 text-xs"
+                    label="选择课程"
+                    value={selectedCid}
+                    onChange={(e) => setSelectedCid((e.target as any).value ?? "")}
+                    className="w-52 text-xs"
                   >
-                    <Select.Trigger />
-                    <Select.Popover>
-                      <ListBox>
-                        {courses.map((c) => (
-                          <ListBox.Item key={c.id} id={c.id} textValue={c.title}>
-                            {c.title}
-                          </ListBox.Item>
-                        ))}
-                      </ListBox>
-                    </Select.Popover>
+                    {courses.map((c) => (
+                      <SelectOption key={c.id} value={c.id}>
+                        {c.title}
+                      </SelectOption>
+                    ))}
                   </Select>
                 </div>
-              </Modal.Header>
+              </div>
 
-              <Modal.Body className="flex-1 overflow-y-auto px-6 py-4">
+              <div className="flex-1 overflow-y-auto px-2 py-2">
                 {loading && (
                   <div className="flex h-48 flex-col items-center justify-center gap-2">
-                    <Spinner size="md" />
+                    <LoadingIndicator size={24} />
                     <p className="text-xs text-muted">正在检索当前课程的互评任务...</p>
                   </div>
                 )}
 
                 {!loading && tasks.length === 0 && (
-                  <Alert status="default">
-                    <Alert.Indicator />
-                    <Alert.Content>
-                      <Alert.Title>暂无待互评任务</Alert.Title>
-                      <Alert.Description>
-                        当前课程未开启互评机制，或尚未到达教师设定的作业互评窗口期。
-                      </Alert.Description>
-                    </Alert.Content>
-                  </Alert>
+                  <Banner status="default">
+                    <Banner.Title>暂无待互评任务</Banner.Title>
+                    <Banner.Description>
+                      当前课程未开启互评机制，或尚未到达教师设定的作业互评窗口期。
+                    </Banner.Description>
+                  </Banner>
                 )}
 
                 {!loading && tasks.length > 0 && (
@@ -226,9 +212,9 @@ export function PeerEvalModal({ isOpen, onClose, courses, defaultCid }: PeerEval
 
                       {pendingCount > 0 && (
                         <Button
-                          size="sm"
-                          variant="secondary"
-                          onPress={() => setBatchDialogOpen(true)}
+                          size="xs"
+                          variant="tonal"
+                          onClick={() => setBatchDialogOpen(true)}
                           className="text-xs"
                         >
                           <LuSparkles className="text-accent" />
@@ -247,8 +233,8 @@ export function PeerEvalModal({ isOpen, onClose, courses, defaultCid }: PeerEval
                         </div>
 
                         {task.submissions.map((sub, idx) => (
-                          <Card key={sub.evalId} className="border border-border/60">
-                            <Card.Header className="flex flex-wrap items-center justify-between gap-2 pb-2">
+                          <Card key={sub.evalId} variant="outlined">
+                            <div className="flex flex-wrap items-center justify-between gap-2 p-3 pb-2">
                               <span className="text-xs font-semibold text-accent">
                                 同学作答样本 #{idx + 1}
                               </span>
@@ -263,9 +249,9 @@ export function PeerEvalModal({ isOpen, onClose, courses, defaultCid }: PeerEval
                                   待评分
                                 </Chip>
                               )}
-                            </Card.Header>
+                            </div>
 
-                            <Card.Content className="space-y-3 pt-1">
+                            <div className="space-y-3 p-3 pt-0">
                               <div className="rounded-lg bg-surface-secondary/40 p-3 text-xs leading-relaxed text-foreground/90">
                                 {sub.content ? (
                                   <p className="whitespace-pre-wrap">{sub.content}</p>
@@ -278,31 +264,25 @@ export function PeerEvalModal({ isOpen, onClose, courses, defaultCid }: PeerEval
 
                               <div className="grid gap-3 sm:grid-cols-2">
                                 <NumberField
+                                  label="评分（满分 100）"
                                   minValue={0}
                                   maxValue={100}
                                   value={scores[sub.evalId] ?? 95}
                                   onChange={(val) =>
                                     setScores((prev) => ({ ...prev, [sub.evalId]: val }))
                                   }
-                                  isDisabled={sub.isEvaluated}
-                                >
-                                  <Label className="text-xs font-medium">评分 (满分100)</Label>
-                                  <NumberField.Group>
-                                    <NumberField.DecrementButton />
-                                    <NumberField.Input />
-                                    <NumberField.IncrementButton />
-                                  </NumberField.Group>
-                                </NumberField>
+                                  disabled={sub.isEvaluated}
+                                />
 
                                 <div className="space-y-1">
                                   <div className="flex items-center justify-between">
-                                    <Label className="text-xs font-medium">互评评语</Label>
+                                    <label className="text-xs font-medium">互评评语</label>
                                     {!sub.isEvaluated && (
                                       <Button
-                                        size="sm"
-                                        variant="tertiary"
-                                        isDisabled={generatingAiId === sub.evalId}
-                                        onPress={() => void handleGenerateComment(sub)}
+                                        size="xs"
+                                        variant="text"
+                                        disabled={generatingAiId === sub.evalId}
+                                        onClick={() => void handleGenerateComment(sub)}
                                         className="h-6 px-2 text-[11px]"
                                       >
                                         <LuSparkles className="text-accent" />
@@ -310,18 +290,19 @@ export function PeerEvalModal({ isOpen, onClose, courses, defaultCid }: PeerEval
                                       </Button>
                                     )}
                                   </div>
-                                  <TextArea
+                                  <TextField
+                                    type="multiline"
+                                    label="互评评语"
                                     value={comments[sub.evalId] ?? ""}
-                                    onChange={(e) =>
+                                    onChange={(event) =>
                                       setComments((prev) => ({
                                         ...prev,
-                                        [sub.evalId]: e.target.value,
+                                        [sub.evalId]: event.detail.value,
                                       }))
                                     }
                                     disabled={sub.isEvaluated}
-                                    rows={2}
                                     placeholder="输入正面鼓励或建议评语…"
-                                    className="text-xs font-normal"
+                                    className="w-full"
                                   />
                                 </div>
                               </div>
@@ -329,57 +310,57 @@ export function PeerEvalModal({ isOpen, onClose, courses, defaultCid }: PeerEval
                               {!sub.isEvaluated && (
                                 <div className="flex justify-end pt-1">
                                   <Button
-                                    size="sm"
-                                    isDisabled={submittingId === sub.evalId}
-                                    onPress={() => void handleSubmitSingle(task.tid, sub)}
+                                    size="xs"
+                                    disabled={submittingId === sub.evalId}
+                                    onClick={() => void handleSubmitSingle(task.tid, sub)}
                                   >
                                     <LuSend />
                                     提交此篇评分
                                   </Button>
                                 </div>
                               )}
-                            </Card.Content>
+                            </div>
                           </Card>
                         ))}
                       </div>
                     ))}
                   </div>
                 )}
-              </Modal.Body>
+              </div>
+            </div>
 
-              <Modal.Footer className="flex justify-end border-t bg-surface/50 p-4">
-                <Button variant="tertiary" onPress={onClose}>
-                  关闭
-                </Button>
-              </Modal.Footer>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
+            <div slot="actions">
+              <Button variant="text" onClick={onClose}>
+                关闭
+              </Button>
+            </div>
+          </Dialog>,
+          document.body,
+        )}
 
-      <AlertDialog isOpen={batchDialogOpen} onOpenChange={setBatchDialogOpen}>
-        <AlertDialog.Backdrop>
-          <AlertDialog.Container size="sm">
-            <AlertDialog.Dialog>
-              <AlertDialog.Icon status="accent" />
-              <AlertDialog.Header>
-                <AlertDialog.Heading>确认批量完成互评？</AlertDialog.Heading>
-              </AlertDialog.Header>
-              <AlertDialog.Body>
-                将为当前课程所有待评的 {pendingCount}{" "}
-                篇同学作业填入推荐高分（95分）与积极肯定的正面评语并正式提交。互评成绩将立即计入您的平时成绩。
-              </AlertDialog.Body>
-              <AlertDialog.Footer>
-                <AlertDialog.CloseTrigger />
-                <Button isDisabled={batchBusy} onPress={() => void handleBatchSubmit()}>
-                  {batchBusy ? <Spinner size="sm" /> : <LuCheck />}
-                  确认提交
-                </Button>
-              </AlertDialog.Footer>
-            </AlertDialog.Dialog>
-          </AlertDialog.Container>
-        </AlertDialog.Backdrop>
-      </AlertDialog>
+      {batchDialogOpen &&
+        createPortal(
+          <Dialog
+            open={batchDialogOpen}
+            headline="确认批量完成互评？"
+            onClose={() => setBatchDialogOpen(false)}
+          >
+            <div>
+              将为当前课程所有待评的 {pendingCount}{" "}
+              篇同学作业填入推荐高分（95分）与积极肯定的正面评语并正式提交。互评成绩将立即计入您的平时成绩。
+            </div>
+            <div slot="actions">
+              <Button variant="text" onClick={() => setBatchDialogOpen(false)}>
+                取消
+              </Button>
+              <Button disabled={batchBusy} onClick={() => void handleBatchSubmit()}>
+                {batchBusy ? <LoadingIndicator size={16} /> : <LuCheck />}
+                确认提交
+              </Button>
+            </div>
+          </Dialog>,
+          document.body,
+        )}
     </>
   );
 }

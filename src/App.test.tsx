@@ -80,7 +80,7 @@ function renderRouterApp(initialEntry = "/") {
   return { ...render(<RouterProvider router={testRouter} />), testRouter };
 }
 
-describe("HeroUI frontend smoke tests", () => {
+describe("frontend smoke tests", () => {
   afterEach(() => cleanup());
 
   beforeEach(() => {
@@ -94,7 +94,7 @@ describe("HeroUI frontend smoke tests", () => {
     });
   });
 
-  it("renders the unauthenticated state with a HeroUI button", async () => {
+  it("renders the unauthenticated state with a primary action", async () => {
     renderRouterApp();
 
     expect(await screen.findByRole("heading", { name: "请完成统一认证" })).toBeInTheDocument();
@@ -252,7 +252,7 @@ describe("HeroUI frontend smoke tests", () => {
     expect(await screen.findByRole("heading", { name: "确认注销？" })).toBeInTheDocument();
   });
 
-  it("renders the workbench HeroUI card with visible slots", async () => {
+  it("renders the workbench entries with visible labels", async () => {
     vi.mocked(invoke).mockImplementation(async (command) => {
       if (command === "get_auth_state")
         return { Authenticated: { studentId: "1234567890", name: "测试同学" } };

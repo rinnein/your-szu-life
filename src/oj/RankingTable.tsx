@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { Alert, Button, Chip, Modal, Spinner, Table } from "@heroui/react";
+import { Dialog, LoadingIndicator, Button } from "material/react";
+import { Banner, Chip, Table } from "../ui";
 import { type Paper, type Ranking } from "./types";
 import { formatRemaining } from "./ContestTable";
 function RankingContent({ siteId, paper }: { siteId: string; paper: Paper }) {
@@ -34,16 +36,12 @@ function RankingContent({ siteId, paper }: { siteId: string; paper: Paper }) {
     <div className="flex min-w-0 flex-col gap-3">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm text-muted">按服务器返回的排名顺序显示</span>
-        <Button variant="secondary" isDisabled={loading} onPress={refresh}>
+        <Button variant="tonal" disabled={loading} onClick={refresh}>
           刷新排名
         </Button>
       </div>
-      {error && (
-        <Alert status="warning">
-          <Alert.Content>{error}</Alert.Content>
-        </Alert>
-      )}
-      {loading && <Spinner aria-label="加载测验排名" />}
+      {error && <Banner status="warning">{error}</Banner>}
+      {loading && <LoadingIndicator size={24} aria-label="加载测验排名" />}
       {data && (
         <>
           <Table>
@@ -110,9 +108,9 @@ function RankingContent({ siteId, paper }: { siteId: string; paper: Paper }) {
           </Table>
           <div className="flex items-center justify-end gap-3">
             <Button
-              variant="secondary"
-              isDisabled={offset === 0 || loading}
-              onPress={() => setOffset((v) => Math.max(0, v - 20))}
+              variant="tonal"
+              disabled={offset === 0 || loading}
+              onClick={() => setOffset((v) => Math.max(0, v - 20))}
             >
               上一页
             </Button>
@@ -120,9 +118,9 @@ function RankingContent({ siteId, paper }: { siteId: string; paper: Paper }) {
               {Math.floor(offset / 20) + 1} / {Math.max(1, Math.ceil(data.count / 20))}
             </span>
             <Button
-              variant="secondary"
-              isDisabled={offset + 20 >= data.count || loading}
-              onPress={() => setOffset((v) => v + 20)}
+              variant="tonal"
+              disabled={offset + 20 >= data.count || loading}
+              onClick={() => setOffset((v) => v + 20)}
             >
               下一页
             </Button>
@@ -136,24 +134,24 @@ export function RankingTable({ siteId, paper }: { siteId: string; paper: Paper }
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant="secondary" onPress={() => setOpen(true)}>
+      <Button variant="tonal" onClick={() => setOpen(true)}>
         排名
       </Button>
-      <Modal isOpen={open} onOpenChange={setOpen}>
-        <Modal.Backdrop>
-          <Modal.Container size="cover">
-            <Modal.Dialog>
-              <Modal.CloseTrigger />
-              <Modal.Header>
-                <Modal.Heading>排名</Modal.Heading>
-              </Modal.Header>
-              <Modal.Body>
-                <RankingContent siteId={siteId} paper={paper} />
-              </Modal.Body>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
+      {open &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <Dialog open={open} headline="排名" className="max-w-4xl" onClose={() => setOpen(false)}>
+            <div className="max-h-[80vh] overflow-y-auto">
+              <RankingContent siteId={siteId} paper={paper} />
+            </div>
+            <div slot="actions">
+              <Button variant="tonal" onClick={() => setOpen(false)}>
+                关闭
+              </Button>
+            </div>
+          </Dialog>,
+          document.body,
+        )}
     </>
   );
 }

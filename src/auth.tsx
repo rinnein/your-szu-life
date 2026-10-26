@@ -9,7 +9,7 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { toast } from "@heroui/react";
+import { toast } from "./ui";
 
 export type Profile = {
   studentId: string;

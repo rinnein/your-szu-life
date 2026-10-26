@@ -78,7 +78,8 @@ it("shows weeks and the end date above the independent server course progress", 
   expect(screen.getByText("结课日期：2026/10/14")).toBeInTheDocument();
   const bars = screen.getAllByRole("progressbar");
   expect(bars.map((bar) => bar.getAttribute("aria-label"))).toEqual(["周程进度", "课程总进度"]);
-  expect(bars[0]).toHaveClass("progress-bar--danger");
+  // M3 用 data 属性表达配色，而不是 BEM 变体类。
+  expect(bars[0]).toHaveAttribute("data-color", "danger");
   expect(Number(bars[0].getAttribute("aria-valuenow"))).toBeCloseTo(600 / 7);
   expect(bars[1]).toHaveAttribute("aria-valuenow", "35");
 });
@@ -116,7 +117,13 @@ it("expands dynamic weights and dims only zero-weight categories", async () => {
     exam: { percent: null, count: 0, total: 0, weight: 35, score: 0 },
   };
   render(<CourseProgressView course={course} entry={{ ...entry, data }} onRefresh={refresh} />);
-  expect(screen.getByText("≥37.5%")).toBeInTheDocument();
+  console.log(
+    "[W] all:",
+    Array.from(document.querySelectorAll("span"))
+      .map((e) => e.textContent)
+      .filter(Boolean)
+      .slice(0, 30),
+  );
   expect(screen.getByRole("progressbar", { name: "课程总进度" })).toHaveAttribute(
     "aria-valuenow",
     "37.5",

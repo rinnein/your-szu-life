@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Chip, Kbd, Modal } from "@heroui/react";
+import { createPortal } from "react-dom";
+import { BottomSheet, Dialog } from "material/react";
+import { Chip, Kbd } from "../ui";
 import { LuArrowRight, LuClock, LuFlame, LuSearch } from "react-icons/lu";
 import { useLogicalNavigation } from "../logical-navigation";
 import { COMMAND_LIST, filterCommands } from "./commands";
@@ -15,10 +17,19 @@ export function openCommandPalette() {
 export function CommandPalette() {
   const navigation = useLogicalNavigation();
   const [isOpen, setIsOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const check = () => setIsMobile(window.innerWidth < 640);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   // Listen for global shortcut Ctrl+Shift+P (or Cmd+Shift+P) and custom event
   useEffect(() => {
@@ -134,177 +145,189 @@ export function CommandPalette() {
     }
   };
 
-  return (
-    <Modal.Backdrop isOpen={isOpen} onOpenChange={setIsOpen}>
-      <Modal.Container size="md">
-        <Modal.Dialog
-          aria-labelledby="command-palette-title"
-          className="overflow-hidden p-0 sm:max-w-xl"
-        >
-          {/* Header Search Bar */}
-          <div className="flex items-center gap-3 border-b border-default-200 px-4 py-3">
-            <LuSearch className="size-5 text-muted shrink-0" aria-hidden="true" />
-            <input
-              ref={inputRef}
-              id="command-palette-search"
-              aria-label="命令面板搜索框"
-              type="text"
-              className="flex-1 bg-transparent text-base outline-none placeholder:text-muted"
-              placeholder="输入功能名称或快捷缩写"
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setSelectedIndex(0);
-              }}
-              onKeyDown={handleInputKeyDown}
-            />
-            <div className="flex items-center gap-1">
-              <Kbd>
-                <Kbd.Content>Esc</Kbd.Content>
-              </Kbd>
-            </div>
-          </div>
+  if (!isOpen) return null;
 
-          {/* Results List */}
-          <div
-            ref={listRef}
-            className="max-h-80 overflow-y-auto p-2"
-            role="listbox"
-            aria-label="命令选项"
-          >
-            {displayedCommands.length === 0 ? (
-              <div className="py-8 text-center text-sm text-muted">未找到匹配的快捷指令或功能</div>
-            ) : (
-              displayedCommands.map((command, idx) => {
-                const isSelected = idx === selectedIndex;
-                const Icon = command.icon;
-                const isRecent = recentCommands.some((r) => r.id === command.id);
-                const isFrequent = frequentCommands.some((f) => f.id === command.id);
+  const content = (
+    <div className="overflow-hidden p-0 w-full">
+      {/* Header Search Bar */}
+      <div className="flex items-center gap-3 border-b border-default-200 px-4 py-3">
+        <LuSearch className="size-5 text-muted shrink-0" aria-hidden="true" />
+        <input
+          ref={inputRef}
+          id="command-palette-search"
+          aria-label="命令面板搜索框"
+          type="text"
+          className="flex-1 bg-transparent text-base outline-none placeholder:text-muted"
+          placeholder="输入功能名称或快捷缩写"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setSelectedIndex(0);
+          }}
+          onKeyDown={handleInputKeyDown}
+        />
+        <div className="flex items-center gap-1">
+          <Kbd>Esc</Kbd>
+        </div>
+      </div>
 
-                return (
-                  <button
-                    key={command.id}
-                    type="button"
-                    data-index={idx}
-                    role="option"
-                    aria-selected={isSelected}
-                    className={`group relative flex w-full items-center justify-between gap-3 rounded-xl p-2.5 text-left text-sm transition-all border ${
+      {/* Results List */}
+      <div
+        ref={listRef}
+        className="max-h-80 overflow-y-auto p-2"
+        role="listbox"
+        aria-label="命令选项"
+      >
+        {displayedCommands.length === 0 ? (
+          <div className="py-8 text-center text-sm text-muted">未找到匹配的快捷指令或功能</div>
+        ) : (
+          displayedCommands.map((command, idx) => {
+            const isSelected = idx === selectedIndex;
+            const Icon = command.icon;
+            const isRecent = recentCommands.some((r) => r.id === command.id);
+            const isFrequent = frequentCommands.some((f) => f.id === command.id);
+
+            return (
+              <button
+                key={command.id}
+                type="button"
+                data-index={idx}
+                role="option"
+                aria-selected={isSelected}
+                className={`group relative flex w-full items-center justify-between gap-3 rounded-xl p-2.5 text-left text-sm transition-all border ${
+                  isSelected
+                    ? "bg-primary/10 border-primary/50 shadow-sm text-foreground ring-1 ring-primary/30"
+                    : "border-transparent hover:bg-default-100/70 text-foreground/80"
+                }`}
+                onClick={() => void executeCommand(command)}
+                onMouseEnter={() => setSelectedIndex(idx)}
+              >
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                  {/* 选中标记 Indicator bar */}
+                  <span
+                    className={`w-1.5 h-8 rounded-full shrink-0 transition-all ${
                       isSelected
-                        ? "bg-primary/10 border-primary/50 shadow-sm text-foreground ring-1 ring-primary/30"
-                        : "border-transparent hover:bg-default-100/70 text-foreground/80"
+                        ? "bg-primary scale-100 opacity-100"
+                        : "bg-transparent scale-50 opacity-0"
                     }`}
-                    onClick={() => void executeCommand(command)}
-                    onMouseEnter={() => setSelectedIndex(idx)}
+                    aria-hidden="true"
+                  />
+                  {/* 左侧图标变色 */}
+                  <div
+                    className={`flex size-9 shrink-0 items-center justify-center rounded-xl transition-all ${
+                      isSelected
+                        ? "bg-primary text-primary-foreground shadow-md shadow-primary/25 scale-105"
+                        : "bg-default-100 text-default-500"
+                    }`}
                   >
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      {/* 选中标记 Indicator bar */}
+                    {Icon ? <Icon className="size-4" /> : <LuSearch className="size-4" />}
+                  </div>
+                  {/* 左侧标题与描述变色 */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
                       <span
-                        className={`w-1.5 h-8 rounded-full shrink-0 transition-all ${
+                        className={`transition-colors ${
                           isSelected
-                            ? "bg-primary scale-100 opacity-100"
-                            : "bg-transparent scale-50 opacity-0"
-                        }`}
-                        aria-hidden="true"
-                      />
-                      {/* 左侧图标变色 */}
-                      <div
-                        className={`flex size-9 shrink-0 items-center justify-center rounded-xl transition-all ${
-                          isSelected
-                            ? "bg-primary text-primary-foreground shadow-md shadow-primary/25 scale-105"
-                            : "bg-default-100 text-default-500"
+                            ? "font-bold text-primary text-[15px]"
+                            : "font-medium text-foreground text-[14px]"
                         }`}
                       >
-                        {Icon ? <Icon className="size-4" /> : <LuSearch className="size-4" />}
-                      </div>
-                      {/* 左侧标题与描述变色 */}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`transition-colors ${
-                              isSelected
-                                ? "font-bold text-primary text-[15px]"
-                                : "font-medium text-foreground text-[14px]"
-                            }`}
-                          >
-                            {command.name}
-                          </span>
-                          {!query && isRecent && (
-                            <span
-                              className={`flex items-center gap-0.5 text-[10px] font-normal transition-colors ${
-                                isSelected ? "text-primary/75" : "text-muted"
-                              }`}
-                            >
-                              <LuClock className="size-3" aria-hidden="true" />
-                              最近
-                            </span>
-                          )}
-                          {!query && isFrequent && (
-                            <span className="flex items-center gap-0.5 text-[10px] text-warning font-normal">
-                              <LuFlame className="size-3" aria-hidden="true" />
-                              常用
-                            </span>
-                          )}
-                        </div>
-                        <div
-                          className={`truncate text-xs font-normal transition-colors ${
+                        {command.name}
+                      </span>
+                      {!query && isRecent && (
+                        <span
+                          className={`flex items-center gap-0.5 text-[10px] font-normal transition-colors ${
                             isSelected ? "text-primary/75" : "text-muted"
                           }`}
                         >
-                          {command.description}
-                        </div>
-                      </div>
+                          <LuClock className="size-3" aria-hidden="true" />
+                          最近
+                        </span>
+                      )}
+                      {!query && isFrequent && (
+                        <span className="flex items-center gap-0.5 text-[10px] text-warning font-normal">
+                          <LuFlame className="size-3" aria-hidden="true" />
+                          常用
+                        </span>
+                      )}
                     </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <div className="flex items-center gap-1">
-                        {command.shortcuts.map((shortcut) => (
-                          <Chip
-                            key={shortcut}
-                            size="sm"
-                            variant={isSelected ? "primary" : "soft"}
-                            color={isSelected ? "accent" : "default"}
-                          >
-                            {shortcut}
-                          </Chip>
-                        ))}
-                      </div>
-                      <LuArrowRight
-                        className={`size-4 transition-all ${
-                          isSelected
-                            ? "text-primary opacity-100 translate-x-0"
-                            : "text-default-400 opacity-0 -translate-x-1"
-                        }`}
-                        aria-hidden="true"
-                      />
+                    <div
+                      className={`truncate text-xs font-normal transition-colors ${
+                        isSelected ? "text-primary/75" : "text-muted"
+                      }`}
+                    >
+                      {command.description}
                     </div>
-                  </button>
-                );
-              })
-            )}
-          </div>
+                  </div>
+                </div>
 
-          {/* Footer Shortcuts Hint */}
-          <div className="flex flex-wrap items-center justify-between border-t border-default-200 px-4 py-2 text-xs text-muted">
-            <div className="flex items-center gap-2">
-              <span>
-                <Kbd>↑↓</Kbd> 切换
-              </span>
-              <span>
-                <Kbd>Enter</Kbd> 打开
-              </span>
-            </div>
-            <div className="flex items-center gap-1">
-              <span>按</span>
-              <Kbd>
-                <Kbd.Abbr keyValue="command" />
-                <Kbd.Abbr keyValue="shift" />
-                <Kbd.Content>P</Kbd.Content>
-              </Kbd>
-              <span>随处唤起</span>
-            </div>
-          </div>
-        </Modal.Dialog>
-      </Modal.Container>
-    </Modal.Backdrop>
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-1">
+                    {command.shortcuts.map((shortcut) => (
+                      <Chip
+                        key={shortcut}
+                        size="sm"
+                        variant={isSelected ? "primary" : "soft"}
+                        color={isSelected ? "accent" : "default"}
+                      >
+                        {shortcut}
+                      </Chip>
+                    ))}
+                  </div>
+                  <LuArrowRight
+                    className={`size-4 transition-all ${
+                      isSelected
+                        ? "text-primary opacity-100 translate-x-0"
+                        : "text-default-400 opacity-0 -translate-x-1"
+                    }`}
+                    aria-hidden="true"
+                  />
+                </div>
+              </button>
+            );
+          })
+        )}
+      </div>
+
+      {/* Footer Shortcuts Hint */}
+      <div className="flex flex-wrap items-center justify-between border-t border-default-200 px-4 py-2 text-xs text-muted">
+        <div className="flex items-center gap-2">
+          <span>
+            <Kbd>↑↓</Kbd> 切换
+          </span>
+          <span>
+            <Kbd>Enter</Kbd> 打开
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span>按</span>
+          <Kbd>⌘ ⇧ P</Kbd>
+          <span>随处唤起</span>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (typeof document === "undefined") return null;
+
+  if (isMobile) {
+    return createPortal(
+      <BottomSheet modal open={isOpen} headline="快捷搜索" onClose={() => setIsOpen(false)}>
+        {content}
+      </BottomSheet>,
+      document.body,
+    );
+  }
+
+  return createPortal(
+    <Dialog
+      open={isOpen}
+      onClose={() => setIsOpen(false)}
+      headline="快捷搜索"
+      className="p-0 sm:max-w-xl"
+    >
+      {content}
+    </Dialog>,
+    document.body,
   );
 }

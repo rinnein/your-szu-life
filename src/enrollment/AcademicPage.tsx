@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button, Card, ProgressCircle } from "@heroui/react";
+import { Card, Progress, Button } from "material/react";
 import { LuRefreshCw } from "react-icons/lu";
 import { PageShell, SkeletonTable, StatCard } from "../components";
 import { useEnrollment } from "./use-enrollment";
@@ -84,27 +84,27 @@ export default function AcademicPage() {
           actions={
             <>
               <Button
-                size="sm"
-                variant="secondary"
-                isPending={!!pending["portal-academic"]}
-                onPress={() => void portal("academic")}
+                size="xs"
+                variant="tonal"
+                disabled={!!pending["portal-academic"]}
+                onClick={() => void portal("academic")}
               >
                 官方认证
               </Button>
               <Button
-                size="sm"
-                variant="secondary"
-                isPending={!!pending.academic && !calculating}
-                onPress={() => void run({ type: "academic", recalculate: false })}
+                size="xs"
+                variant="tonal"
+                disabled={!!pending.academic && !calculating}
+                onClick={() => void run({ type: "academic", recalculate: false })}
               >
                 <LuRefreshCw />
                 刷新
               </Button>
               <Button
-                size="sm"
-                variant="tertiary"
-                isDisabled={calculating || !!pending.academic}
-                onPress={() =>
+                size="xs"
+                variant="text"
+                disabled={calculating || !!pending.academic}
+                onClick={() =>
                   void run({ type: "academic", recalculate: true }).then(
                     (v) => v && setCalculating(true),
                   )
@@ -138,20 +138,13 @@ export default function AcademicPage() {
               description={creditSummary(s.academic.summary[0] ?? {})}
             />
             <div className="flex items-center gap-4 rounded-xl border border-separator/50 bg-surface p-4">
-              <ProgressCircle
+              <Progress
+                variant="circular"
                 aria-label="学分完成度"
                 value={creditStats.percent ?? 0}
-                isIndeterminate={creditStats.percent == null}
-                color={
-                  creditStats.percent != null && creditStats.percent >= 100 ? "success" : "accent"
-                }
-                size="lg"
-              >
-                <ProgressCircle.Track>
-                  <ProgressCircle.TrackCircle />
-                  <ProgressCircle.FillCircle />
-                </ProgressCircle.Track>
-              </ProgressCircle>
+                indeterminate={creditStats.percent == null}
+                max={100}
+              />
               <div className="grid gap-1">
                 <span className="text-sm font-semibold">学分完成度</span>
                 <span className="text-lg font-semibold">
@@ -193,8 +186,8 @@ export default function AcademicPage() {
             )}
           </>
         ) : (
-          <Card>
-            <Card.Content className="grid min-h-[420px] place-content-center justify-items-center gap-4 text-center">
+          <Card variant="outlined">
+            <div className="grid min-h-[420px] place-content-center justify-items-center gap-4 text-center p-6">
               {pending.academic ? (
                 <div className="w-full" role="status" aria-label="正在加载学业数据">
                   <SkeletonTable rows={5} cols={2} />
@@ -205,10 +198,10 @@ export default function AcademicPage() {
                   <p className="max-w-md text-sm text-muted">
                     完成官方认证后刷新。已有缓存会保留，系统暂时不可用时也能浏览培养方案。
                   </p>
-                  <Button onPress={() => void portal("academic")}>打开官方认证</Button>
+                  <Button onClick={() => void portal("academic")}>打开官方认证</Button>
                 </>
               )}
-            </Card.Content>
+            </div>
           </Card>
         )}
       </div>

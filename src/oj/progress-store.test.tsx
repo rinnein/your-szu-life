@@ -208,6 +208,11 @@ it("switches accounts without briefly showing another account's completed label"
   await screen.findByText("已完成");
   vi.mocked(invoke).mockResolvedValue({ accepted: 0, total: 2 });
   view.rerender(<ContestTable {...props} account="second" sessionGeneration={2} />);
+  // List 的行内容由 MutationObserver 在微任务里刷新，先让它跑完再断言，
+  // 否则读到的是上一个账户的行。
+  await act(async () => {
+    await Promise.resolve();
+  });
   expect(screen.queryByText("已完成")).toBeNull();
   await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
 });

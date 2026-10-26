@@ -10,9 +10,13 @@ declare global {
   }
 }
 
-// HeroUI v3 / React Aria expose modal roles and positioned popover roots.
-// Select/listbox menus live inside a popover; inline listboxes are not overlays.
+// material 把模态对话框与浮层各自放进独立的顶层容器：
+// m-dialog / m-bottom-sheet 有 open 属性，下拉菜单走 popover，行内列表框不算浮层。
 export function activeOverlay(): HTMLElement | undefined {
+  const mDialog = Array.from(document.querySelectorAll<HTMLElement>("m-dialog[open]")).pop();
+  if (mDialog) return mDialog;
+  const mSheet = Array.from(document.querySelectorAll<HTMLElement>("m-bottom-sheet[open]")).pop();
+  if (mSheet) return mSheet;
   const overlays = Array.from(
     document.querySelectorAll<HTMLElement>(
       '[role="dialog"], [role="alertdialog"], [data-trigger][data-placement], [data-slot="select-popover"]',
@@ -42,15 +46,44 @@ export function installAndroidBack(options: {
       document.documentElement.dataset.szuNativeToolbar = "true";
       return;
     }
+    // 壁纸换色没有系统广播，原生侧在 onResume 检测到变化后通知这里。
+    if (data === "wallpaper-changed") {
+      window.dispatchEvent(new CustomEvent("szu-wallpaper-changed"));
+      return;
+    }
     if ((data !== "dismiss-overlay" && data !== "navigate-back") || pending || disposed) return;
     const overlay = activeOverlay();
     if (overlay) {
+      const root = overlay.getRootNode() as ShadowRoot | Document;
+      const host = (root instanceof ShadowRoot ? root.host : null) ?? overlay;
+      if (
+        host instanceof HTMLElement &&
+        (host.tagName.toLowerCase() === "m-dialog" ||
+          host.tagName.toLowerCase() === "m-bottom-sheet")
+      ) {
+        (host as { close?: () => void }).close?.();
+        host.dispatchEvent(new CustomEvent("close", { bubbles: true, composed: true }));
+      } else {
+        const custom = overlay.querySelector<HTMLElement>("m-dialog, m-bottom-sheet");
+        if (custom) {
+          (custom as { close?: () => void }).close?.();
+          custom.dispatchEvent(new CustomEvent("close", { bubbles: true, composed: true }));
+        }
+      }
       const focused = document.activeElement;
       const target =
         focused instanceof HTMLElement && overlay.contains(focused) ? focused : overlay;
       // Use React Aria's existing Escape handling, including non-dismissable
       // dialogs. Never click a confirm/destructive button to close a dialog.
       target.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          code: "Escape",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      window.dispatchEvent(
         new KeyboardEvent("keydown", {
           key: "Escape",
           code: "Escape",

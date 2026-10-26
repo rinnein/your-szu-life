@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearch } from "@tanstack/react-router";
-import { Button, Card, Chip, Input, Label, TextField } from "@heroui/react";
+import { Card, TextField, Button } from "material/react";
+import { Chip } from "../ui";
 import { LuPin, LuSearch, LuRefreshCw } from "react-icons/lu";
 import { EmptyState } from "../components";
 import { useCacheMode, canSelect } from "./view-mode";
@@ -75,8 +76,8 @@ export default function CatalogPage() {
     .sort((a, b) => Number(s?.pins.includes(b.id)) - Number(s?.pins.includes(a.id)));
   return (
     <div className="grid gap-4">
-      <Card>
-        <Card.Content className="grid gap-3 md:grid-cols-[180px_minmax(0,1fr)_auto]">
+      <Card variant="outlined">
+        <div className="grid gap-3 md:grid-cols-[180px_minmax(0,1fr)_auto] p-4">
           <Choice
             label="课程目录"
             value={category}
@@ -84,40 +85,45 @@ export default function CatalogPage() {
             items={Object.entries(categories).map(([id, label]) => ({ id, label }))}
           />
           <TextField
+            label="搜索课程"
             value={keyword}
-            onChange={setKeyword}
-            onKeyDown={(e) => e.key === "Enter" && refresh()}
-          >
-            <Label>搜索课程</Label>
-            <Input placeholder="课程名称或课程代码" />
-          </TextField>
+            onChange={(e: any) => setKeyword(e.detail?.value ?? e.target?.value ?? "")}
+            onKeyDown={(e: React.ChangeEvent<HTMLTextAreaElement> | any) =>
+              e.key === "Enter" && refresh()
+            }
+            placeholder="课程名称或课程代码"
+          />
           <Button
             className="self-end"
-            isPending={!!(pending.refresh || pending.cache)}
-            onPress={() => refresh()}
+            disabled={!!(pending.refresh || pending.cache)}
+            onClick={() => refresh()}
           >
             <LuSearch />
             {cacheOnly ? "检索缓存" : "查找课程"}
           </Button>
           <Button
             className="md:hidden"
-            variant="tertiary"
+            variant="text"
             aria-expanded={moreFilters}
-            onPress={() => setMoreFilters((v) => !v)}
+            onClick={() => setMoreFilters((v) => !v)}
           >
             {moreFilters ? "收起筛选" : "更多筛选"}
           </Button>
           <div className={moreFilters ? "contents" : "hidden md:contents"}>
-            <TextField value={teacher} onChange={setTeacher}>
-              <Label>本页教师</Label>
-              <Input placeholder="不限教师" />
-            </TextField>
-            <TextField value={time} onChange={setTime}>
-              <Label>本页上课时间</Label>
-              <Input placeholder="例如 星期一" />
-            </TextField>
+            <TextField
+              label="本页教师"
+              value={teacher}
+              onChange={(e: any) => setTeacher(e.detail?.value ?? e.target?.value ?? "")}
+              placeholder="不限教师"
+            />
+            <TextField
+              label="本页上课时间"
+              value={time}
+              onChange={(e: any) => setTime(e.detail?.value ?? e.target?.value ?? "")}
+              placeholder="例如 星期一"
+            />
           </div>
-        </Card.Content>
+        </div>
       </Card>
       <OperationError
         message={errors.refresh || errors.cache || errors.cacheSnapshot || errors.pin}
@@ -130,7 +136,7 @@ export default function CatalogPage() {
             ? `缓存更新于 ${new Date(shown.updatedAt).toLocaleString()}`
             : "尚未加载课程"}
         </span>
-        <Button size="sm" variant="tertiary" onPress={() => refresh(shown?.query.page ?? 0)}>
+        <Button size="xs" variant="text" onClick={() => refresh(shown?.query.page ?? 0)}>
           <LuRefreshCw />
           {cacheOnly ? "重新读取缓存" : "刷新"}
         </Button>
@@ -146,31 +152,29 @@ export default function CatalogPage() {
           return (
             <Card
               key={c.id}
-              className="hover:shadow-lg hover:-translate-y-1 transition-all duration-200"
+              variant="outlined"
+              className="hover:shadow-lg hover:-translate-y-1 transition-all duration-200 flex flex-col justify-between"
             >
-              <Card.Header>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <Card.Title>{c.name}</Card.Title>
-                    <Card.Description>
-                      {c.code} · {c.teacher || "教师待定"}
-                    </Card.Description>
-                  </div>
-                  <Button
-                    isIconOnly
-                    isDisabled={cacheOnly}
-                    size="sm"
-                    variant={s?.pins.includes(c.id) ? "secondary" : "ghost"}
-                    aria-label={`${s?.pins.includes(c.id) ? "取消" : ""}置顶 ${c.name}`}
-                    onPress={() =>
-                      void run({ type: "pin", id: c.id, pinned: !s?.pins.includes(c.id) })
-                    }
-                  >
-                    <LuPin />
-                  </Button>
+              <div className="flex items-start justify-between gap-3 p-4 pb-2">
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-base">{c.name}</h3>
+                  <p className="text-xs text-muted">
+                    {c.code} · {c.teacher || "教师待定"}
+                  </p>
                 </div>
-              </Card.Header>
-              <Card.Content className="grid gap-3">
+                <Button
+                  disabled={cacheOnly}
+                  size="xs"
+                  variant={s?.pins.includes(c.id) ? "tonal" : "text"}
+                  aria-label={`${s?.pins.includes(c.id) ? "取消" : ""}置顶 ${c.name}`}
+                  onClick={() =>
+                    void run({ type: "pin", id: c.id, pinned: !s?.pins.includes(c.id) })
+                  }
+                >
+                  <LuPin />
+                </Button>
+              </div>
+              <div className="grid gap-3 p-4 pt-0">
                 <div className="flex flex-wrap gap-2">
                   <Chip size="sm" variant="soft">
                     {a ? a.credits.join("、") : (c.credits ?? "未知")} 学分
@@ -190,55 +194,57 @@ export default function CatalogPage() {
                     学业记录优先 · 选课系统记录 {c.credits ?? "未知"} 学分
                   </p>
                 )}
-              </Card.Content>
-              <Card.Footer className="justify-between">
+              </div>
+              <div slot="actions" className="flex items-center justify-between w-full">
                 <span className="text-sm">
                   余量 {c.remaining ?? "待刷新"} / {c.capacity ?? "未知"}
                 </span>
                 <Button
-                  size="sm"
-                  isDisabled={cacheOnly || !canSelect(s)}
-                  onPress={() => setSelection({ course: c })}
+                  size="xs"
+                  disabled={cacheOnly || !canSelect(s)}
+                  onClick={() => setSelection({ course: c })}
                 >
                   选课 / 加入待抢
                 </Button>
-              </Card.Footer>
+              </div>
             </Card>
           );
         })}
       </div>
       {!courses.length && (
-        <Card>
-          <EmptyState
-            icon={<LuSearch className="size-10" aria-hidden="true" />}
-            title={cacheOnly ? "未找到缓存课程" : "暂无匹配课程"}
-            description={
-              cacheOnly
-                ? "未缓存匹配课程；这不代表学校当前没有相关课程。"
-                : "调整目录和关键词后查询；连接不可用时仍可查看已有缓存。"
-            }
-            action={
-              <Button size="sm" variant="secondary" onPress={() => refresh()}>
-                <LuRefreshCw />
-                重新查询
-              </Button>
-            }
-          />
+        <Card variant="outlined">
+          <div className="p-4">
+            <EmptyState
+              icon={<LuSearch className="size-10" aria-hidden="true" />}
+              title={cacheOnly ? "未找到缓存课程" : "暂无匹配课程"}
+              description={
+                cacheOnly
+                  ? "未缓存匹配课程；这不代表学校当前没有相关课程。"
+                  : "调整目录和关键词后查询；连接不可用时仍可查看已有缓存。"
+              }
+              action={
+                <Button size="xs" variant="tonal" onClick={() => refresh()}>
+                  <LuRefreshCw />
+                  重新查询
+                </Button>
+              }
+            />
+          </div>
         </Card>
       )}
       <div className="flex items-center justify-center gap-4">
         <Button
-          variant="secondary"
-          isDisabled={!!(pending.refresh || pending.cache) || !shown?.query.page}
-          onPress={() => refresh((shown?.query.page ?? 1) - 1)}
+          variant="tonal"
+          disabled={!!(pending.refresh || pending.cache) || !shown?.query.page}
+          onClick={() => refresh((shown?.query.page ?? 1) - 1)}
         >
           上一页
         </Button>
         <span className="text-sm">第 {(shown?.query.page ?? 0) + 1} 页</span>
         <Button
-          variant="secondary"
-          isDisabled={!!(pending.refresh || pending.cache) || shown?.complete}
-          onPress={() => refresh((shown?.query.page ?? 0) + 1)}
+          variant="tonal"
+          disabled={!!(pending.refresh || pending.cache) || shown?.complete}
+          onClick={() => refresh((shown?.query.page ?? 0) + 1)}
         >
           下一页
         </Button>

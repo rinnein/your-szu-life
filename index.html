@@ -1,6 +1,26 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="szu">
   <head>
+    <script>
+      // 在首帧前确定深浅色，避免默认浅色闪一下再切深色。
+      // 与 src/theme/ThemeProvider.tsx 的 applyDocumentTheme 保持一致。
+      (function () {
+        var root = document.documentElement;
+        var mode = "light";
+        try {
+          var saved = localStorage.getItem("szu.appearance-mode");
+          if (saved === "dark" || saved === "light") mode = saved;
+          else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches)
+            mode = "dark";
+        } catch (error) {
+          if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches)
+            mode = "dark";
+        }
+        root.dataset.theme = "szu";
+        root.dataset.themeMode = mode;
+        root.style.colorScheme = mode;
+      })();
+    </script>
     <script type="importmap">
       {
         "imports": {

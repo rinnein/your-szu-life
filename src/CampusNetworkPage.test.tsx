@@ -104,7 +104,8 @@ function publishSettings() {
 
 async function openDisconnectDialog() {
   fireEvent.click(screen.getByRole("button", { name: "断开连接" }));
-  return screen.findByRole("alertdialog");
+  const el = await screen.findByRole("alertdialog");
+  return ((el.getRootNode() as ShadowRoot).host as HTMLElement) ?? el;
 }
 
 const logoutCalls = () =>

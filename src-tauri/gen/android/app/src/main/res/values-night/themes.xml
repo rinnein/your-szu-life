@@ -1,6 +1,6 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Theme.your_szu_life" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+    <!-- 夜间变体与日间保持一致：配色由 DynamicColors 在运行时从壁纸派生。 -->
+    <style name="Theme.your_szu_life" parent="Theme.Material3.DayNight.NoActionBar">
         <!-- Customize your theme here. -->
     </style>
 </resources>

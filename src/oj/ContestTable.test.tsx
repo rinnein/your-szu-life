@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { ContestTable, formatRemaining } from "./ContestTable";
@@ -31,31 +32,48 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
-it("highlights the entire active row and counts down using the server clock", () => {
+/**
+ * 进行中的测验由 List 的选中态表达；行元素在 shadow root 里，
+ * 因此断言宿主的 `value` 与内部行的选中类。
+ */
+function selectedRow(container: HTMLElement): boolean {
+  const host = container.querySelector("m-list");
+  return !!host?.shadowRoot?.querySelector(".mtrl-list__item--selected");
+}
+
+/**
+ * List 由 MutationObserver 在微任务里刷新行内容；测试用假时钟，
+ * `waitFor` 会因时钟不推进而挂起，因此手动把微任务跑完。
+ */
+async function flushList(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+  });
+}
+
+it("highlights the running contest and counts down using the server clock", async () => {
   const view = render(<ContestTable contests={[contest]} query="" onOpen={() => {}} />);
-  expect(view.container.querySelector("tbody tr")?.classList.contains("oj-contest-active")).toBe(
-    true,
-  );
-  expect(screen.getByText("（剩余 00:00:02）")).toBeTruthy();
+  expect(selectedRow(view.container)).toBe(true);
+  expect(screen.getByText(/剩余 00:00:02/)).toBeTruthy();
   act(() => vi.advanceTimersByTime(1000));
-  expect(screen.getByText("（剩余 00:00:01）")).toBeTruthy();
+  await flushList();
+  expect(screen.getByText(/剩余 00:00:01/)).toBeTruthy();
   act(() => vi.advanceTimersByTime(1000));
-  expect(screen.getByText("已结束").closest(".chip")?.className).toContain("danger");
-  expect(view.container.querySelector("tbody tr")?.classList.contains("oj-contest-active")).toBe(
-    false,
-  );
+  await flushList();
+  // 结束后不再高亮，也不再显示倒计时。
+  expect(selectedRow(view.container)).toBe(false);
+  expect(screen.getByText(/已结束/)).toBeTruthy();
   expect(screen.queryByText(/剩余/)).toBeNull();
 });
-it("starts highlighting and counting down when a future contest begins", () => {
+it("starts highlighting and counting down when a future contest begins", async () => {
   const future = { ...contest, begin: now + 1000, end: now + 3000 };
   const view = render(<ContestTable contests={[future]} query="" onOpen={() => {}} />);
   expect(screen.getByText("未开始")).toBeTruthy();
   expect(screen.queryByText(/剩余/)).toBeNull();
   act(() => vi.advanceTimersByTime(1000));
-  expect(view.container.querySelector("tbody tr")?.classList.contains("oj-contest-active")).toBe(
-    true,
-  );
-  expect(screen.getByText("（剩余 00:00:02）")).toBeTruthy();
+  await flushList();
+  expect(selectedRow(view.container)).toBe(true);
+  expect(screen.getByText(/剩余 00:00:02/)).toBeTruthy();
 });
 it("formats long and expired durations without negative countdowns", () => {
   expect(formatRemaining(90061000)).toBe("1天 01:01:01");

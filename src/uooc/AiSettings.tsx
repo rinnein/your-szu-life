@@ -1,20 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import {
-  Alert,
-  Button,
-  Card,
-  Checkbox,
-  ComboBox,
-  Description,
-  Input,
-  Label,
-  ListBox,
-  NumberField,
-  Select,
-  Spinner,
-  toast,
-} from "@heroui/react";
+import { Card, Checkbox, LoadingIndicator, Select, SelectOption, Button } from "material/react";
+import { Banner, NumberField, toast } from "../ui";
 import type { AiConfig, QuizMode } from "./types";
 
 export const modeLabels: Record<QuizMode, string> = {
@@ -40,33 +27,27 @@ export function ReasoningEffortPicker({
   disabled?: boolean;
 }) {
   return (
-    <Select
-      aria-label="AI 推理强度"
-      value={value || "default"}
-      onChange={(v) => {
-        if (typeof v === "string") onChange(v);
-      }}
-      isDisabled={disabled}
-    >
-      <Label>AI 推理强度 (Reasoning Effort)</Label>
-      <Select.Trigger>
-        <Select.Value />
-        <Select.Indicator />
-      </Select.Trigger>
-      <Description>
+    <div className="flex flex-col gap-1">
+      <Select
+        aria-label="AI 推理强度"
+        label="AI 推理强度 (Reasoning Effort)"
+        value={value || "default"}
+        disabled={disabled}
+        onChange={(e) => {
+          const v = (e.target as any).value;
+          if (typeof v === "string") onChange(v);
+        }}
+      >
+        {Object.entries(reasoningEffortLabels).map(([key, label]) => (
+          <SelectOption key={key} value={key}>
+            {label}
+          </SelectOption>
+        ))}
+      </Select>
+      <p className="text-xs text-muted">
         针对支持思考链的模型（如 o1、o3、DeepSeek R1 等兼容推理模型）调整推理预算与思考深度。
-      </Description>
-      <Select.Popover>
-        <ListBox>
-          {Object.entries(reasoningEffortLabels).map(([key, label]) => (
-            <ListBox.Item key={key} id={key} textValue={label}>
-              {label}
-              <ListBox.ItemIndicator />
-            </ListBox.Item>
-          ))}
-        </ListBox>
-      </Select.Popover>
-    </Select>
+      </p>
+    </div>
   );
 }
 
@@ -82,31 +63,25 @@ export function QuizModePicker({
   description?: string;
 }) {
   return (
-    <Select
-      aria-label="答题模式"
-      value={value}
-      onChange={(v) => {
-        if (v === "approval" || v === "supervised" || v === "yolo") onChange(v);
-      }}
-      isDisabled={disabled}
-    >
-      <Label>答题模式</Label>
-      <Select.Trigger>
-        <Select.Value />
-        <Select.Indicator />
-      </Select.Trigger>
-      {description && <Description>{description}</Description>}
-      <Select.Popover>
-        <ListBox>
-          {Object.entries(modeLabels).map(([key, label]) => (
-            <ListBox.Item key={key} id={key} textValue={label}>
-              {label}
-              <ListBox.ItemIndicator />
-            </ListBox.Item>
-          ))}
-        </ListBox>
-      </Select.Popover>
-    </Select>
+    <div className="flex flex-col gap-1">
+      <Select
+        aria-label="答题模式"
+        label="答题模式"
+        value={value}
+        disabled={disabled}
+        onChange={(e) => {
+          const v = (e.target as any).value;
+          if (v === "approval" || v === "supervised" || v === "yolo") onChange(v);
+        }}
+      >
+        {Object.entries(modeLabels).map(([key, label]) => (
+          <SelectOption key={key} value={key}>
+            {label}
+          </SelectOption>
+        ))}
+      </Select>
+      {description && <p className="text-xs text-muted">{description}</p>}
+    </div>
   );
 }
 export function AiSettings({
@@ -189,83 +164,119 @@ export function AiSettings({
   };
   if (!config)
     return (
-      <Card>
-        <Card.Header>
-          <Card.Title>测验 AI</Card.Title>
-        </Card.Header>
-        <Card.Content>
+      <Card variant="outlined">
+        <div slot="headline">测验 AI</div>
+        <div className="p-4">
           {loadError ? (
-            <Alert status="danger" role="alert">
-              <Alert.Content>
-                <Alert.Title>AI 配置出错</Alert.Title>
-                <Alert.Description>{loadError}</Alert.Description>
-              </Alert.Content>
-            </Alert>
+            <Banner status="danger" role="alert">
+              <Banner.Title>AI 配置出错</Banner.Title>
+              <Banner.Description>{loadError}</Banner.Description>
+            </Banner>
           ) : (
             <p role="status">正在读取 AI 配置…</p>
           )}
-        </Card.Content>
+        </div>
       </Card>
     );
   return (
-    <Card>
-      <Card.Header>
-        <Card.Title>测验 AI</Card.Title>
-        <Card.Description>
-          API 地址和 Key 在全局设置中管理。测验内容会发送给你配置的供应商。
-        </Card.Description>
-        <Button variant="outline" onPress={onOpenAiSettings}>
+    <Card variant="outlined">
+      <div slot="headline" className="flex flex-wrap items-center justify-between gap-2 w-full">
+        <span className="font-semibold">测验 AI</span>
+        <Button variant="outlined" onClick={onOpenAiSettings}>
           前往 AI 连接设置
         </Button>
-      </Card.Header>
-      <Card.Content className="grid gap-4">
+      </div>
+      <div slot="subhead">API 地址和 Key 在全局设置中管理。测验内容会发送给你配置的供应商。</div>
+      <div className="grid gap-4 p-4">
         {(["main", "jev"] as const).map((provider) => (
           <div className="grid gap-3" key={provider}>
             <h3 className="font-semibold">
               {provider === "main" ? "主模型 · OpenAI 兼容接口" : "Jev · TypeSafe System One"}
             </h3>
-            <ComboBox
-              allowsCustomValue
-              inputValue={config[provider].model}
-              onInputChange={(model) =>
-                setConfig({ ...config, [provider]: { ...config[provider], model } })
-              }
-              isDisabled={busy || !config[provider].baseUrl || !config[provider].hasKey}
-            >
-              <Label>{provider === "main" ? "主模型" : "Jev"}名称</Label>
-              <ComboBox.InputGroup>
-                <Input placeholder="搜索或手动填写模型" />
-                <ComboBox.Trigger />
-              </ComboBox.InputGroup>
-              <ComboBox.Popover>
-                <ListBox>
+            {/*
+              输入框与「加载列表」按钮同一行；空间不足时按钮换到下一行，
+              而不是被压窄或溢出。`min-w-0` 让输入框可以真正收缩。
+            */}
+            <div className="flex flex-wrap items-end gap-3">
+              <div
+                className="min-w-0 flex-1 basis-64"
+                onInput={(e: any) => {
+                  const val = e.target?.value;
+                  if (typeof val === "string") {
+                    setConfig((old) =>
+                      old ? { ...old, [provider]: { ...old[provider], model: val } } : old,
+                    );
+                  }
+                }}
+                onChange={(e: any) => {
+                  const val = e.detail?.value ?? e.target?.value;
+                  if (typeof val === "string") {
+                    setConfig((old) =>
+                      old ? { ...old, [provider]: { ...old[provider], model: val } } : old,
+                    );
+                  }
+                }}
+                onClick={() => {
+                  if (
+                    models[provider].length === 0 &&
+                    !busy &&
+                    config[provider].baseUrl &&
+                    config[provider].hasKey
+                  ) {
+                    void handleLoadModels(provider);
+                  }
+                }}
+                onFocus={() => {
+                  if (
+                    models[provider].length === 0 &&
+                    !busy &&
+                    config[provider].baseUrl &&
+                    config[provider].hasKey
+                  ) {
+                    void handleLoadModels(provider);
+                  }
+                }}
+              >
+                <Select
+                  label={`${provider === "main" ? "主模型" : "Jev"}名称`}
+                  value={config[provider].model}
+                  disabled={busy || !config[provider].baseUrl || !config[provider].hasKey}
+                  onChange={(event: any) => {
+                    const model = event.detail?.value ?? event.target?.value ?? "";
+                    setConfig({ ...config, [provider]: { ...config[provider], model } });
+                  }}
+                >
                   {models[provider].map((model) => (
-                    <ListBox.Item id={model} key={model} textValue={model}>
+                    <SelectOption key={model} value={model}>
                       {model}
-                      <ListBox.ItemIndicator />
-                    </ListBox.Item>
+                    </SelectOption>
                   ))}
-                </ListBox>
-              </ComboBox.Popover>
-            </ComboBox>
-            <Button
-              variant="secondary"
-              isDisabled={busy}
-              onPress={() => void handleLoadModels(provider)}
-            >
-              加载{provider === "main" ? "主模型" : "Jev"}列表
-            </Button>
+                  {config[provider].model && !models[provider].includes(config[provider].model) && (
+                    <SelectOption value={config[provider].model}>
+                      {config[provider].model}
+                    </SelectOption>
+                  )}
+                </Select>
+              </div>
+              <Button
+                variant="tonal"
+                disabled={busy}
+                onClick={() => void handleLoadModels(provider)}
+                className="shrink-0"
+              >
+                加载{provider === "main" ? "主模型" : "Jev"}列表
+              </Button>
+            </div>
           </div>
         ))}
         <Checkbox
-          isSelected={config.jevEnabled}
-          onChange={(jevEnabled) => setConfig({ ...config, jevEnabled })}
-          isDisabled={busy}
+          checked={config.jevEnabled}
+          disabled={busy}
+          onChange={(e: any) =>
+            setConfig({ ...config, jevEnabled: Boolean(e.detail?.checked ?? e.target?.checked) })
+          }
         >
-          <Checkbox.Control>
-            <Checkbox.Indicator />
-          </Checkbox.Control>
-          <Checkbox.Content>启用 Jev 选择题辅助复核</Checkbox.Content>
+          启用 Jev 选择题辅助复核
         </Checkbox>
         <NumberField
           minValue={0.5}
@@ -273,81 +284,70 @@ export function AiSettings({
           step={0.05}
           value={config.confidence}
           onChange={(confidence) => setConfig({ ...config, confidence })}
-          isDisabled={busy}
-        >
-          <Label>Jev 判断阈值</Label>
-          <NumberField.Group>
-            <NumberField.DecrementButton />
-            <NumberField.Input />
-            <NumberField.IncrementButton />
-          </NumberField.Group>
-          <Description>阈值用于转交人工，不代表答案正确率；图片题不经过 Jev 复核。</Description>
-        </NumberField>
+          disabled={busy}
+          label="Jev 判断阈值"
+          description="阈值用于转交人工，不代表答案正确率；图片题不经过 Jev 复核。"
+        />
         <NumberField
           minValue={1}
           maxValue={20}
           step={1}
           value={config.batchSize ?? 10}
           onChange={(batchSize) => setConfig({ ...config, batchSize })}
-          isDisabled={busy}
-        >
-          <Label>题目合并批次大小</Label>
-          <NumberField.Group>
-            <NumberField.DecrementButton />
-            <NumberField.Input />
-            <NumberField.IncrementButton />
-          </NumberField.Group>
-          <Description>
-            每次向 AI 发起请求时合并处理的最大题目数量（1-20，默认
-            10）。合并题目可减少多轮会话反复新开并注入上下文的开销。
-          </Description>
-        </NumberField>
+          disabled={busy}
+          label="题目合并批次大小"
+          description="每次向 AI 发起请求时合并处理的最大题目数量（1-20，默认 10）。合并题目可减少多轮会话反复新开并注入上下文的开销。"
+        />
         <ReasoningEffortPicker
           value={config.reasoningEffort ?? "default"}
           onChange={(reasoningEffort) => setConfig({ ...config, reasoningEffort })}
           disabled={busy}
         />
         <Checkbox
-          isSelected={config.includeReasoning ?? true}
-          onChange={(includeReasoning) => setConfig({ ...config, includeReasoning })}
-          isDisabled={busy}
+          checked={config.includeReasoning ?? true}
+          disabled={busy}
+          onChange={(e: any) =>
+            setConfig({
+              ...config,
+              includeReasoning: Boolean(e.detail?.checked ?? e.target?.checked),
+            })
+          }
         >
-          <Checkbox.Control>
-            <Checkbox.Indicator />
-          </Checkbox.Control>
-          <Checkbox.Content>在提示词中要求 AI 返回推理过程与解题理由</Checkbox.Content>
+          在提示词中要求 AI 返回推理过程与解题理由
         </Checkbox>
-        <Description className="text-xs text-muted -mt-2">
+        <p className="text-xs text-muted -mt-2">
           启用后，AI 判题将在每道题目下方展示得出该结论的理由/解析，便于人工复核与审查。
-        </Description>
+        </p>
         <Checkbox
-          isSelected={config.webSearch ?? true}
-          onChange={(webSearch) => setConfig({ ...config, webSearch })}
-          isDisabled={busy}
+          checked={config.webSearch ?? true}
+          disabled={busy}
+          onChange={(e: any) =>
+            setConfig({
+              ...config,
+              webSearch: Boolean(e.detail?.checked ?? e.target?.checked),
+            })
+          }
         >
-          <Checkbox.Control>
-            <Checkbox.Indicator />
-          </Checkbox.Control>
-          <Checkbox.Content>要求 AI 使用联网搜索工具</Checkbox.Content>
+          要求 AI 使用联网搜索工具
         </Checkbox>
-        <Description className="text-xs text-muted -mt-2">
+        <p className="text-xs text-muted -mt-2">
           在遇到有疑问的题目或冷门知识点时，允许 AI 自动发起 web_search
           工具调用检索互联网权威资料后再作答。
-        </Description>
+        </p>
         <QuizModePicker
           value={config.defaultMode}
           disabled={busy}
           onChange={(defaultMode) => setConfig({ ...config, defaultMode })}
         />
-        <Description>
+        <p className="field-description">
           默认手动答题：需自行作答或在弹窗中选择 AI
           答题。请求批准：先生成整卷答案，确认后才提交。YOLO 未通过时停止当前课程，其他课程继续。
-        </Description>
-        <Button isDisabled={busy} onPress={() => void handleSave()}>
+        </p>
+        <Button disabled={busy} onClick={() => void handleSave()}>
           保存运行设置
         </Button>
-        {busy && <Spinner aria-label="正在处理 AI 配置" />}
-      </Card.Content>
+        {busy && <LoadingIndicator size={24} aria-label="正在处理 AI 配置" />}
+      </div>
     </Card>
   );
 }

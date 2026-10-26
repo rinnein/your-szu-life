@@ -1,4 +1,5 @@
-import { Button, Card, Chip } from "@heroui/react";
+import { Card, Button } from "material/react";
+import { Chip } from "../ui";
 import { LuPause, LuPlay, LuSquare } from "react-icons/lu";
 import { useCacheMode, canSelect } from "./view-mode";
 import { useEnrollment } from "./use-enrollment";
@@ -15,8 +16,8 @@ export default function TasksPage() {
   ) => void run({ type: "control", action, id, gear, priority });
   return (
     <div className="grid gap-4">
-      <Card>
-        <Card.Content className="flex flex-wrap items-center justify-between gap-4">
+      <Card variant="outlined">
+        <div className="flex flex-wrap items-center justify-between gap-4 p-4">
           <div>
             <p className="text-lg font-semibold">{s?.running ? "任务正在运行" : "任务已暂停"}</p>
             <p className="text-sm text-muted">
@@ -25,22 +26,22 @@ export default function TasksPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
-              isDisabled={cacheOnly || !canSelect(s) || !!pending.control}
-              onPress={() => control("start")}
+              disabled={cacheOnly || !canSelect(s) || !!pending.control}
+              onClick={() => control("start")}
             >
               <LuPlay />
               开始 / 继续
             </Button>
-            <Button variant="secondary" onPress={() => control("pause")}>
+            <Button variant="tonal" onClick={() => control("pause")}>
               <LuPause />
               暂停
             </Button>
-            <Button variant="tertiary" onPress={() => control("stop")}>
+            <Button variant="text" onClick={() => control("stop")}>
               <LuSquare />
               停止全部
             </Button>
           </div>
-        </Card.Content>
+        </div>
       </Card>
       <OperationError message={errors.control} />
       {s?.message && (
@@ -49,25 +50,23 @@ export default function TasksPage() {
         </p>
       )}
       {s?.tasks.map((t) => (
-        <Card key={t.id}>
-          <Card.Header>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <Card.Title>{t.course.name}</Card.Title>
-                <Card.Description>
-                  {t.oldCourse
-                    ? `从「${t.oldCourse.name}」换入 · 余量达到 ${t.threshold} 时触发`
-                    : t.group
-                      ? `备选组：${t.group}`
-                      : "独立目标"}
-                </Card.Description>
-              </div>
-              <Chip size="sm" variant="soft">
-                {phases[t.phase] ?? t.phase}
-              </Chip>
+        <Card key={t.id} variant="outlined">
+          <div className="flex items-start justify-between gap-3 p-4 pb-2">
+            <div>
+              <h3 className="font-semibold text-base">{t.course.name}</h3>
+              <p className="text-xs text-muted">
+                {t.oldCourse
+                  ? `从「${t.oldCourse.name}」换入 · 余量达到 ${t.threshold} 时触发`
+                  : t.group
+                    ? `备选组：${t.group}`
+                    : "独立目标"}
+              </p>
             </div>
-          </Card.Header>
-          <Card.Content className="grid gap-3 sm:grid-cols-[180px_1fr]">
+            <Chip size="sm" variant="soft">
+              {phases[t.phase] ?? t.phase}
+            </Chip>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-[180px_1fr] p-4 pt-0">
             <Choice
               label="执行挡位"
               disabled={cacheOnly}
@@ -82,34 +81,34 @@ export default function TasksPage() {
               {t.startedAt && <p>预约时间 {new Date(t.startedAt).toLocaleString()}</p>}
               <p>{t.message}</p>
             </div>
-          </Card.Content>
-          <Card.Footer className="flex-wrap gap-2">
+          </div>
+          <div slot="actions" className="flex flex-wrap gap-2">
             <Button
-              size="sm"
-              variant="secondary"
-              onPress={() => control("configure", t.id, null, t.priority + 1)}
+              size="xs"
+              variant="tonal"
+              onClick={() => control("configure", t.id, null, t.priority + 1)}
             >
               提高优先级
             </Button>
-            <Button size="sm" variant="secondary" onPress={() => control("stop", t.id)}>
+            <Button size="xs" variant="tonal" onClick={() => control("stop", t.id)}>
               停止此项
             </Button>
             <Button
-              size="sm"
-              variant="tertiary"
-              isDisabled={cacheOnly || !!t.pending}
-              onPress={() => control("remove", t.id)}
+              size="xs"
+              variant="text"
+              disabled={cacheOnly || !!t.pending}
+              onClick={() => control("remove", t.id)}
             >
               移除
             </Button>
-          </Card.Footer>
+          </div>
         </Card>
       ))}
       {!s?.tasks.length && (
-        <Card>
-          <Card.Content className="py-12 text-center text-muted">
+        <Card variant="outlined">
+          <div className="py-12 text-center text-muted p-4">
             还没有待抢任务。在课程目录中选择课程，加入待抢列表。
-          </Card.Content>
+          </div>
         </Card>
       )}
       <p className="text-xs text-muted">

@@ -1,7 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import SettingsPage from "../SettingsPage";
 
-export type SettingsTab = "profile" | "models" | "ai" | "mcp" | "transfer" | "shortcuts";
+export type SettingsTab =
+  | "profile"
+  | "appearance"
+  | "models"
+  | "ai"
+  | "mcp"
+  | "transfer"
+  | "shortcuts";
 
 export type SettingsSearch = {
   tab?: SettingsTab;
@@ -11,15 +18,17 @@ export type SettingsSearch = {
 export const Route = createFileRoute("/settings")({
   head: () => ({ meta: [{ title: "账户设置" }] }),
   validateSearch: (s: Record<string, unknown>): SettingsSearch => {
+    const tabs: readonly string[] = [
+      "profile",
+      "appearance",
+      "models",
+      "ai",
+      "mcp",
+      "transfer",
+      "shortcuts",
+    ];
     const tab =
-      s.tab === "profile" ||
-      s.tab === "models" ||
-      s.tab === "ai" ||
-      s.tab === "mcp" ||
-      s.tab === "transfer" ||
-      s.tab === "shortcuts"
-        ? s.tab
-        : undefined;
+      typeof s.tab === "string" && tabs.includes(s.tab) ? (s.tab as SettingsTab) : undefined;
     const focus = s.focus === "ocr" ? "ocr" : s.focus === "embedding" ? "embedding" : undefined;
     return { tab, focus };
   },

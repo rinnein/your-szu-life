@@ -57,9 +57,13 @@ abstract class ApplicationBackActivity : TauriActivity(), app.tauri.AppBackNavig
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    // Must run before super.onCreate so the activity inflates with the
+    // wallpaper-derived colours; NativeWebViewChrome reads them from the theme.
+    com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(this)
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     AuthWindowBridge.created(this)
+    WallpaperColorBridge.bindActivity(this)
     // Required for IME insets on older Android; never pan the toolbar under
     // the status bar when focusing a field near the bottom of a portal.
     @Suppress("DEPRECATION") // Retained for Android 7-10; modern layout uses WindowInsetsCompat.
@@ -96,6 +100,12 @@ abstract class ApplicationBackActivity : TauriActivity(), app.tauri.AppBackNavig
     resumed = true
     AuthWindowBridge.resumed(this)
     chrome?.setResumed(true)
+    // The user may have changed the wallpaper while we were backgrounded.
+    // There is no broadcast for it, so poll here and tell the WebView to
+    // regenerate its palette.
+    if (WallpaperColorBridge.hasSeedChanged()) {
+      applicationBack?.notifyWallpaperChanged()
+    }
   }
 
   override fun onPause() {
@@ -113,6 +123,7 @@ abstract class ApplicationBackActivity : TauriActivity(), app.tauri.AppBackNavig
 
   override fun onDestroy() {
     AuthWindowBridge.destroyed(this)
+    WallpaperColorBridge.unbindActivity()
     authWebView = null
     authBack.remove()
     chrome?.dispose()

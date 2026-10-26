@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Button, Card } from "@heroui/react";
+import { Card, Button } from "material/react";
 import { QRCodeSVG } from "qrcode.react";
 import { LuCopy } from "react-icons/lu";
 import { copyText } from "./clipboard";
@@ -26,21 +26,23 @@ export function WeChatServiceCard({
     setCopying(false);
   };
   return (
-    <Card className="payments-card" aria-labelledby={data.id + "-heading"}>
-      <Card.Header>
-        <Card.Title id={data.id + "-heading"} className="payments-card-title">
-          {icon}
-          {data.title}
-        </Card.Title>
-        <Card.Description>{data.description}</Card.Description>
-      </Card.Header>
-      <Card.Content className="payments-wechat-content">
+    <Card className="payments-card" aria-labelledby={data.id + "-heading"} variant="outlined">
+      <div
+        slot="headline"
+        className="payments-card-title flex items-center gap-2"
+        id={data.id + "-heading"}
+      >
+        {icon}
+        <span>{data.title}</span>
+      </div>
+      <div slot="subhead">{data.description}</div>
+      <div className="payments-wechat-content">
         <p className="payments-instruction">复制链接后在微信内打开，或使用微信扫码</p>
         <Button
-          variant="secondary"
+          variant="tonal"
           aria-label={"复制" + data.title + "链接"}
-          isDisabled={copying}
-          onPress={() => void copy()}
+          disabled={copying}
+          onClick={() => void copy()}
         >
           <LuCopy aria-hidden="true" />
           {copying ? "正在复制…" : "复制链接"}
@@ -65,7 +67,7 @@ export function WeChatServiceCard({
           />
           <figcaption>使用微信扫码打开{data.title}服务</figcaption>
         </figure>
-      </Card.Content>
+      </div>
     </Card>
   );
 }

@@ -1,35 +1,21 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
-  Alert,
-  AlertDialog,
-  Button,
   ButtonGroup,
   Checkbox,
-  CheckboxGroup,
-  Chip,
-  Description,
-  Dropdown,
-  Label,
-  Modal,
-  ProgressBar,
+  Dialog,
+  LoadingIndicator,
+  Progress,
   Radio,
-  RadioGroup,
-  Spinner,
+  Radios,
   Switch,
-  TextArea,
   TextField,
-  toast,
-} from "@heroui/react";
-import {
-  LuBot,
-  LuChevronDown,
-  LuCircleCheck,
-  LuClock,
-  LuDatabase,
-  LuSparkles,
-} from "react-icons/lu";
+  Button,
+} from "material/react";
+import { Banner, Chip, toast } from "../ui";
+import { LuBot, LuCircleCheck, LuClock, LuDatabase, LuSparkles } from "react-icons/lu";
 import { DimmedHtmlText, useHtmlTagVisibility } from "./DimmedHtmlText";
 import type { AiSessionEntry, QuizAnswers, QuizQuestion, QuizState, UoocSnapshot } from "./types";
 
@@ -967,15 +953,13 @@ export function QuizPanel({
 
   return (
     <>
-      {/* 4. 上面的 课程测验 <label>测验已完成</> <button>查看测验</> 等作为 Modal Header */}
-      <Modal.Header className="shrink-0 border-b border-separator/40 p-4 sm:p-5">
+      {/* 4. 上面的 课程测验 <label>测验已完成</> <button>查看测验</> 等作为 Header */}
+      <div className="shrink-0 border-b border-separator/40 p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3 pr-8">
           <div className="flex flex-wrap items-center gap-2">
-            <Modal.Heading className="text-base font-semibold">
-              {quiz.title || "课程测验"}
-            </Modal.Heading>
+            <span className="text-base font-semibold">{quiz.title || "课程测验"}</span>
             {quiz.stage === "passed" && <Chip color="success">已完成</Chip>}
-            {running && <Spinner size="sm" aria-label="处理中" />}
+            {running && <LoadingIndicator size={16} aria-label="处理中" />}
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {typeof limitTime === "number" && limitTime > 0 && quiz.stage !== "passed" && (
@@ -991,25 +975,19 @@ export function QuizPanel({
               </Chip>
             )}
             <Switch
-              size="sm"
-              isSelected={showHtmlTags}
-              onChange={setShowHtmlTags}
+              checked={showHtmlTags}
+              onChange={(e: any) => setShowHtmlTags(e.detail?.checked ?? e.target?.checked)}
               aria-label="显示 HTML 标签"
             >
-              <Switch.Content className="text-xs">
-                <Switch.Control>
-                  <Switch.Thumb />
-                </Switch.Control>
-                HTML 标签
-              </Switch.Content>
+              <span className="text-xs">HTML 标签</span>
             </Switch>
             {(quiz.stage === "passed" || quiz.message.includes("当前测验已由服务端确认完成")) &&
               !isCustomMode && (
                 <Button
-                  variant="secondary"
-                  size="sm"
-                  isDisabled={busy || running}
-                  onPress={() =>
+                  variant="tonal"
+                  size="xs"
+                  disabled={busy || running}
+                  onClick={() =>
                     void run(async () => {
                       const next = await invoke<UoocSnapshot>("fetch_uooc_completed_quiz", {
                         cid: quiz.cid,
@@ -1029,10 +1007,10 @@ export function QuizPanel({
         <p role="status" className="text-xs text-muted mt-1.5">
           {quiz.message || "试卷加载完成"}
         </p>
-      </Modal.Header>
+      </div>
 
       {/* 1. 题目与选项展示模块：仅 Body 随题目滚动；标注器显示在选项旁边，下方不再堆砌答案框 */}
-      <Modal.Body className="flex-1 overflow-y-auto p-4 sm:p-6 min-h-0 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 min-h-0 space-y-4">
         {warningAlert && <div className="mb-2">{warningAlert}</div>}
         {quiz.questions.length === 0 && (
           <div className="flex flex-col items-center justify-center p-8 space-y-3 text-center">
@@ -1040,10 +1018,10 @@ export function QuizPanel({
             <div className="flex items-center gap-2">
               {!isCustomMode && (
                 <Button
-                  variant="secondary"
-                  size="sm"
-                  isDisabled={busy || running}
-                  onPress={() =>
+                  variant="tonal"
+                  size="xs"
+                  disabled={busy || running}
+                  onClick={() =>
                     void run(async () => {
                       const next = await invoke<UoocSnapshot>("fetch_uooc_completed_quiz", {
                         cid: quiz.cid,
@@ -1059,10 +1037,10 @@ export function QuizPanel({
                 </Button>
               )}
               <Button
-                variant="tertiary"
-                size="sm"
-                isDisabled={busy || running}
-                onPress={() => void handleOpenPortal()}
+                variant="text"
+                size="xs"
+                disabled={busy || running}
+                onClick={() => void handleOpenPortal()}
               >
                 在官网打开试卷
               </Button>
@@ -1126,11 +1104,14 @@ export function QuizPanel({
 
                 {/* 2 & 3 & 4. 选项列表交互：标注器直接显示在选项旁边 */}
                 {q.kind === "single" ? (
-                  <RadioGroup
+                  <Radios
                     aria-label={`第 ${i + 1} 题答案`}
                     value={getSelectedRadioValue(q)}
-                    onChange={(v) => set(q.id, [v])}
-                    isDisabled={disabled || quiz.stage === "passed"}
+                    onChange={(e: any) => {
+                      const val = e.detail?.value ?? e.target?.value;
+                      if (val !== undefined && val !== "") set(q.id, [val]);
+                    }}
+                    disabled={disabled || quiz.stage === "passed"}
                     className="grid gap-2"
                   >
                     {q.options.map((o) => {
@@ -1150,58 +1131,47 @@ export function QuizPanel({
                         <Radio
                           key={o.id}
                           value={o.id}
+                          label={stripHtml(o.text) || o.id}
                           className={`flex items-start gap-2.5 rounded-lg border p-2.5 transition-colors cursor-pointer ${borderStyle}`}
                         >
-                          <Radio.Content className="flex flex-wrap sm:flex-nowrap items-start gap-2 w-full min-w-0">
-                            <Radio.Control className="mt-0.5">
-                              <Radio.Indicator />
-                            </Radio.Control>
-                            <span
-                              aria-hidden="true"
-                              className="font-bold text-foreground shrink-0 text-xs"
-                            >
-                              {o.id.toUpperCase()}.
-                            </span>
-                            <span className="flex-1 text-xs text-foreground/90">
-                              <DimmedHtmlText text={o.text} />
-                            </span>
+                          <span
+                            aria-hidden="true"
+                            data-option-prefix={`${o.id.toUpperCase()}.`}
+                            className="option-prefix font-bold text-foreground shrink-0 text-xs"
+                          />
+                          <span className="flex-1 text-xs text-foreground/90">
+                            <DimmedHtmlText text={o.text} />
+                          </span>
 
-                            {/* 选项右侧标注器：标准答案 / 排除答案 / AI判定 / 用户已选 */}
-                            <div className="flex flex-wrap items-center gap-1.5 shrink-0 ml-auto">
-                              {badges.isStandard && (
-                                <Chip size="sm" color="success">
-                                  标准答案
-                                </Chip>
-                              )}
-                              {badges.isExcluded && (
-                                <Chip size="sm" color="danger">
-                                  排除答案
-                                </Chip>
-                              )}
-                              {badges.isAiJudged && (
-                                <Chip size="sm" color="accent">
-                                  AI判定
-                                </Chip>
-                              )}
-                              {isRadioChecked && (
-                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary">
-                                  <LuCircleCheck aria-hidden="true" /> 已选
-                                </span>
-                              )}
-                            </div>
-                          </Radio.Content>
+                          {/* 选项右侧标注器：标准答案 / 排除答案 / AI判定 / 用户已选 */}
+                          <div className="flex flex-wrap items-center gap-1.5 shrink-0 ml-auto">
+                            {badges.isStandard && (
+                              <Chip size="sm" color="success">
+                                标准答案
+                              </Chip>
+                            )}
+                            {badges.isExcluded && (
+                              <Chip size="sm" color="danger">
+                                排除答案
+                              </Chip>
+                            )}
+                            {badges.isAiJudged && (
+                              <Chip size="sm" color="accent">
+                                AI判定
+                              </Chip>
+                            )}
+                            {isRadioChecked && (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary">
+                                <LuCircleCheck aria-hidden="true" /> 已选
+                              </span>
+                            )}
+                          </div>
                         </Radio>
                       );
                     })}
-                  </RadioGroup>
+                  </Radios>
                 ) : q.kind === "multiple" ? (
-                  <CheckboxGroup
-                    aria-label={`第 ${i + 1} 题答案`}
-                    value={getSelectedCheckboxValues(q)}
-                    onChange={(v) => set(q.id, v)}
-                    isDisabled={disabled || quiz.stage === "passed"}
-                    className="grid gap-2"
-                  >
+                  <div role="group" aria-label={`第 ${i + 1} 题答案`} className="grid gap-2">
                     {q.options.map((o) => {
                       const badges = getOptionBadges(q, o.id, o.text, answers[q.id] ?? []);
                       const isBoxChecked = getSelectedCheckboxValues(q).includes(o.id);
@@ -1219,70 +1189,63 @@ export function QuizPanel({
                         <Checkbox
                           key={o.id}
                           value={o.id}
+                          aria-label={stripHtml(o.text) || o.id}
+                          checked={isBoxChecked}
+                          disabled={disabled || quiz.stage === "passed"}
+                          onChange={(e: any) => {
+                            const checked = Boolean(e.detail?.checked ?? e.target?.checked);
+                            const current = getSelectedCheckboxValues(q);
+                            const next = checked
+                              ? [...current.filter((x) => x !== o.id), o.id]
+                              : current.filter((x) => x !== o.id);
+                            set(q.id, next);
+                          }}
                           className={`flex items-start gap-2.5 rounded-lg border p-2.5 transition-colors cursor-pointer ${borderStyle}`}
                         >
-                          <Checkbox.Control className="mt-0.5">
-                            <Checkbox.Indicator />
-                          </Checkbox.Control>
-                          <Checkbox.Content className="flex flex-wrap sm:flex-nowrap items-start gap-2 w-full min-w-0">
-                            <span
-                              aria-hidden="true"
-                              className="font-bold text-foreground shrink-0 text-xs"
-                            >
-                              {o.id.toUpperCase()}.
-                            </span>
-                            <span className="flex-1 text-xs text-foreground/90">
-                              <DimmedHtmlText text={o.text} />
-                            </span>
+                          <span
+                            aria-hidden="true"
+                            data-option-prefix={`${o.id.toUpperCase()}.`}
+                            className="option-prefix font-bold text-foreground shrink-0 text-xs"
+                          />
+                          <span className="flex-1 text-xs text-foreground/90">
+                            <DimmedHtmlText text={o.text} />
+                          </span>
 
-                            {/* 选项右侧标注器：标准答案 / 排除答案 / AI判定 / 用户已选 */}
-                            <div className="flex flex-wrap items-center gap-1.5 shrink-0 ml-auto">
-                              {badges.isStandard && (
-                                <Chip size="sm" color="success">
-                                  标准答案
-                                </Chip>
-                              )}
-                              {badges.isExcluded && (
-                                <Chip size="sm" color="danger">
-                                  排除答案
-                                </Chip>
-                              )}
-                              {badges.isAiJudged && (
-                                <Chip size="sm" color="accent">
-                                  AI判定
-                                </Chip>
-                              )}
-                              {isBoxChecked && (
-                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary">
-                                  <LuCircleCheck aria-hidden="true" /> 已选
-                                </span>
-                              )}
-                            </div>
-                          </Checkbox.Content>
+                          {/* 选项右侧标注器：标准答案 / 排除答案 / AI判定 / 用户已选 */}
+                          <div className="flex flex-wrap items-center gap-1.5 shrink-0 ml-auto">
+                            {badges.isStandard && (
+                              <Chip size="sm" color="success">
+                                标准答案
+                              </Chip>
+                            )}
+                            {badges.isExcluded && (
+                              <Chip size="sm" color="danger">
+                                排除答案
+                              </Chip>
+                            )}
+                            {badges.isAiJudged && (
+                              <Chip size="sm" color="accent">
+                                AI判定
+                              </Chip>
+                            )}
+                            {isBoxChecked && (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary">
+                                <LuCircleCheck aria-hidden="true" /> 已选
+                              </span>
+                            )}
+                          </div>
                         </Checkbox>
                       );
                     })}
-                  </CheckboxGroup>
+                  </div>
                 ) : q.blanks > 1 ? (
                   Array.from({ length: q.blanks }, (_, blank) => {
                     const stdText = passedAnswers[blank] || bankReview?.answers[blank];
                     const aiText = aiReview?.answers[blank];
 
                     return (
-                      <TextField
-                        key={blank}
-                        value={answers[q.id]?.[blank] ?? ""}
-                        onChange={(v) => {
-                          const values = Array.from(
-                            { length: q.blanks },
-                            (_, j) => answers[q.id]?.[j] ?? "",
-                          );
-                          values[blank] = v;
-                          set(q.id, values);
-                        }}
-                        isDisabled={disabled || quiz.stage === "passed"}
-                      >
-                        <Label className="flex items-center justify-between text-xs font-medium w-full">
+                      <div key={blank} className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs font-medium w-full">
                           <span>
                             第 {i + 1} 题 · 第 {blank + 1} 空
                           </span>
@@ -1298,26 +1261,36 @@ export function QuizPanel({
                               </Chip>
                             )}
                           </div>
-                        </Label>
-                        <TextArea rows={2} className="text-xs" />
-                      </TextField>
+                        </div>
+                        <TextField
+                          type="multiline"
+                          label={`第 ${i + 1} 题 · 第 ${blank + 1} 空`}
+                          value={answers[q.id]?.[blank] ?? ""}
+                          disabled={disabled || quiz.stage === "passed"}
+                          onChange={(event) => {
+                            const values = Array.from(
+                              { length: q.blanks },
+                              (_, j) => answers[q.id]?.[j] ?? "",
+                            );
+                            values[blank] = event.detail.value;
+                            set(q.id, values);
+                          }}
+                          className="w-full"
+                        />
+                      </div>
                     );
                   })
                 ) : (
-                  <TextField
-                    value={answers[q.id]?.[0] ?? ""}
-                    onChange={(v) => set(q.id, [v])}
-                    isDisabled={disabled || quiz.stage === "passed"}
-                  >
-                    <Label className="flex items-center justify-between text-xs font-medium w-full">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs font-medium w-full">
                       <span>第 {i + 1} 题作答</span>
                       <div className="flex items-center gap-1.5 shrink-0">
                         {quiz.stage !== "passed" && (
                           <Button
-                            size="sm"
-                            variant="secondary"
-                            isDisabled={disabled}
-                            onPress={() => void handleSubjectiveAi(q)}
+                            size="xs"
+                            variant="tonal"
+                            disabled={disabled}
+                            onClick={() => void handleSubjectiveAi(q)}
                           >
                             <LuSparkles className="mr-1 text-accent size-3.5" /> AI 解答
                           </Button>
@@ -1333,9 +1306,16 @@ export function QuizPanel({
                           </Chip>
                         )}
                       </div>
-                    </Label>
-                    <TextArea rows={3} className="text-xs" />
-                  </TextField>
+                    </div>
+                    <TextField
+                      type="multiline"
+                      label={`第 ${i + 1} 题作答`}
+                      value={answers[q.id]?.[0] ?? ""}
+                      disabled={disabled || quiz.stage === "passed"}
+                      onChange={(event) => set(q.id, [event.detail.value])}
+                      className="w-full"
+                    />
+                  </div>
                 )}
 
                 {/* 题库命中说明 / AI 推荐解析 / Jev 概率分布或错误排除说明（如果有） */}
@@ -1377,11 +1357,11 @@ export function QuizPanel({
               </div>
             );
           })}
-      </Modal.Body>
+      </div>
 
-      {/* 3. 操作按钮作为 Modal Footer，固定在底部不随题目滚动 */}
+      {/* 3. 操作按钮作为 Footer，固定在底部不随题目滚动 */}
       {quiz.taskId && (
-        <Modal.Footer className="shrink-0 border-t border-separator/40 p-3 sm:p-4 flex flex-wrap items-center justify-between gap-2 bg-surface/90 backdrop-blur">
+        <div className="shrink-0 border-t border-separator/40 p-3 sm:p-4 flex flex-wrap items-center justify-between gap-2 bg-surface/90 backdrop-blur">
           <div className="flex items-center gap-2 text-xs text-muted">
             {isExam && quiz.stage !== "passed" && (
               <span>
@@ -1393,41 +1373,40 @@ export function QuizPanel({
 
           <div className="flex flex-wrap items-center gap-2">
             {quiz.stage === "awaitingChoice" && (
-              <Button variant="secondary" isDisabled={disabled} onPress={() => setManual(true)}>
+              <Button variant="tonal" disabled={disabled} onClick={() => setManual(true)}>
                 自主答题
               </Button>
             )}
 
             <ButtonGroup variant="secondary">
               <Button
-                isDisabled={disabled || quiz.questions.length === 0 || quiz.stage === "passed"}
-                onPress={() => void handleActionWithModal("matchQa", "题库匹配流程")}
+                disabled={disabled || quiz.questions.length === 0 || quiz.stage === "passed"}
+                onClick={() => void handleActionWithModal("matchQa", "题库匹配流程")}
               >
                 匹配题库
               </Button>
               <Button
-                isDisabled={disabled || quiz.questions.length === 0 || quiz.stage === "passed"}
-                onPress={() => void handleActionWithModal("generate", "AI 智能答题流程")}
+                disabled={disabled || quiz.questions.length === 0 || quiz.stage === "passed"}
+                onClick={() => void handleActionWithModal("generate", "AI 智能答题流程")}
               >
-                <ButtonGroup.Separator />
                 {isExam ? "AI 智能答题" : "AI 答题"}
               </Button>
             </ButtonGroup>
 
             <ButtonGroup>
               <Button
-                variant="secondary"
-                isDisabled={disabled || quiz.questions.length === 0 || quiz.stage === "passed"}
-                onPress={() => void handleUploadDraft()}
+                variant="tonal"
+                disabled={disabled || quiz.questions.length === 0 || quiz.stage === "passed"}
+                onClick={() => void handleUploadDraft()}
               >
                 {isExam ? "保存草稿" : "上传草稿"}
               </Button>
               <Button
-                variant="primary"
-                isDisabled={
+                variant="filled"
+                disabled={
                   disabled || dryRun || quiz.questions.length === 0 || quiz.stage === "passed"
                 }
-                onPress={() => {
+                onClick={() => {
                   if (isExam) {
                     setConfirmSubmitOpen(true);
                   } else {
@@ -1435,383 +1414,347 @@ export function QuizPanel({
                   }
                 }}
               >
-                <ButtonGroup.Separator />
                 {isExam ? "提交试卷" : "提交答案"}
               </Button>
             </ButtonGroup>
 
-            <ButtonGroup variant="tertiary">
+            <div className="flex items-center gap-1">
               <Button
-                variant="tertiary"
-                isDisabled={busy || running}
-                onPress={() =>
+                variant="text"
+                disabled={busy || running}
+                onClick={() =>
                   void (portalAction === "open" ? handleOpenPortal() : handleSyncPortal())
                 }
               >
                 {portalAction === "open" ? "在官网打开试卷" : "同步官网试卷数据"}
               </Button>
-              <Dropdown>
-                <Button
-                  variant="tertiary"
-                  isIconOnly
-                  aria-label="更多官网试卷操作"
-                  isDisabled={busy || running}
-                >
-                  <ButtonGroup.Separator />
-                  <LuChevronDown className="size-4" aria-hidden="true" />
-                </Button>
-                <Dropdown.Popover className="min-w-[180px]" placement="bottom end">
-                  <Dropdown.Menu
-                    onAction={(key) => {
-                      if (key === "open") {
-                        void handleOpenPortal();
-                      } else if (key === "sync") {
-                        void handleSyncPortal();
-                      }
-                    }}
-                  >
-                    <Dropdown.Item id="open" textValue="在官网打开试卷">
-                      <Label>在官网打开试卷</Label>
-                      <Description>打开 UOOC 官网页面进行答题</Description>
-                    </Dropdown.Item>
-                    <Dropdown.Item id="sync" textValue="同步官网试卷数据">
-                      <Label>同步官网试卷数据</Label>
-                      <Description>拉取并同步官网作答状态</Description>
-                    </Dropdown.Item>
-                  </Dropdown.Menu>
-                </Dropdown.Popover>
-              </Dropdown>
-            </ButtonGroup>
+              <Button
+                variant="text"
+                disabled={busy || running}
+                onClick={() =>
+                  void (portalAction === "open" ? handleSyncPortal() : handleOpenPortal())
+                }
+              >
+                {portalAction === "open" ? "同步官网" : "在官网打开"}
+              </Button>
+            </div>
           </div>
-        </Modal.Footer>
+        </div>
       )}
 
       {dryRun && <p className="text-xs text-muted px-4 pb-2">预览模式：草稿不会提交到官网。</p>}
 
       {/* 2. 点击匹配题库、AI 答题等时弹出的运行流程与会话调用 Modal */}
-      <Modal
-        isOpen={Boolean(actionModal)}
-        onOpenChange={(open) => {
-          if (!open && !busy && !running) {
-            setActionModal(null);
-          }
-        }}
-      >
-        <Modal.Backdrop>
-          <Modal.Container size="cover" className="max-w-2xl">
-            <Modal.Dialog aria-label={actionModal?.title || "测验运行流程"}>
-              {isModalFinished && <Modal.CloseTrigger />}
-              <Modal.Header>
-                <div className="flex items-center gap-2.5">
-                  {!isModalFinished ? (
-                    <Spinner size="sm" aria-label="处理中" />
-                  ) : (
-                    <LuCircleCheck className="text-success text-xl shrink-0" aria-hidden="true" />
-                  )}
-                  <Modal.Heading>{actionModal?.title || "测验运行流程"}</Modal.Heading>
+      {Boolean(actionModal) &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <Dialog
+            open={Boolean(actionModal)}
+            headline={actionModal?.title || "测验运行流程"}
+            className="max-w-2xl"
+            onClose={() => {
+              if (isModalFinished) setActionModal(null);
+            }}
+          >
+            <div className="grid gap-4 p-4 text-sm max-h-[70vh] overflow-y-auto">
+              <div className="rounded-xl border border-separator/50 bg-surface/40 p-4 grid gap-2.5">
+                <div className="flex items-center justify-between text-xs text-muted">
+                  <span>当前执行状态</span>
+                  <span
+                    className={`font-mono ${isModalFinished ? "text-success font-semibold" : "text-accent"}`}
+                  >
+                    {isModalFinished ? "已完成" : "进行中"}
+                  </span>
                 </div>
-              </Modal.Header>
-              <Modal.Body className="grid gap-4 p-4 sm:p-6 text-sm max-h-[70vh] overflow-y-auto">
-                <div className="rounded-xl border border-separator/50 bg-surface/40 p-4 grid gap-2.5">
-                  <div className="flex items-center justify-between text-xs text-muted">
-                    <span>当前执行状态</span>
-                    <span
-                      className={`font-mono ${isModalFinished ? "text-success font-semibold" : "text-accent"}`}
-                    >
-                      {isModalFinished ? "已完成" : "进行中"}
+                <p className="font-medium text-foreground">
+                  {actionModal?.summary ||
+                    quiz.message ||
+                    (isModalFinished ? "流程已处理完成" : "正在处理测验任务...")}
+                </p>
+                {!isModalFinished && (
+                  <Progress variant="linear" indeterminate aria-label="处理中" />
+                )}
+              </div>
+
+              <div className="grid gap-2 text-xs">
+                <span className="font-semibold text-muted">执行流程步骤：</span>
+                <div className="grid gap-2.5 pl-2 border-l-2 border-separator/60">
+                  <div className="flex items-center gap-2">
+                    <span className="size-4 rounded-full bg-success/20 text-success flex items-center justify-center text-[10px] font-bold">
+                      ✓
+                    </span>
+                    <span className="text-foreground">
+                      已提取试卷结构（共 {quiz.questions.length} 道题目）
                     </span>
                   </div>
-                  <p className="font-medium text-foreground">
-                    {actionModal?.summary ||
-                      quiz.message ||
-                      (isModalFinished ? "流程已处理完成" : "正在处理测验任务...")}
-                  </p>
-                  {!isModalFinished && <ProgressBar isIndeterminate size="sm" color="accent" />}
-                </div>
 
-                <div className="grid gap-2 text-xs">
-                  <span className="font-semibold text-muted">执行流程步骤：</span>
-                  <div className="grid gap-2.5 pl-2 border-l-2 border-separator/60">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2">
+                    {actionModal?.type === "matchQa" ? (
+                      <>
+                        {!isModalFinished ? (
+                          <span className="size-4 rounded-full bg-accent/20 text-accent flex items-center justify-center text-[10px] animate-spin font-bold">
+                            ●
+                          </span>
+                        ) : (
+                          <span className="size-4 rounded-full bg-success/20 text-success flex items-center justify-center text-[10px] font-bold">
+                            ✓
+                          </span>
+                        )}
+                        <span className="flex items-center gap-1 text-foreground">
+                          <LuDatabase aria-hidden="true" />{" "}
+                          {isModalFinished
+                            ? "已完成题库平台比对与答案匹配"
+                            : "连接题库平台比对特征向量与答案"}
+                        </span>
+                      </>
+                    ) : actionModal?.type === "generate" ? (
+                      <>
+                        {!isModalFinished ? (
+                          <span className="size-4 rounded-full bg-accent/20 text-accent flex items-center justify-center text-[10px] animate-spin font-bold">
+                            ●
+                          </span>
+                        ) : (
+                          <span className="size-4 rounded-full bg-success/20 text-success flex items-center justify-center text-[10px] font-bold">
+                            ✓
+                          </span>
+                        )}
+                        <span className="flex items-center gap-1 text-foreground">
+                          <LuBot aria-hidden="true" />{" "}
+                          {isModalFinished
+                            ? liveSessions.length === 0
+                              ? "题库已全量覆盖，无需向 AI 发起请求"
+                              : "调用 AI 模型计算题目语义与选项概率已完成"
+                            : "调用 AI 模型计算题目语义与选项概率"}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        {!isModalFinished ? (
+                          <span className="size-4 rounded-full bg-accent/20 text-accent flex items-center justify-center text-[10px] animate-spin font-bold">
+                            ●
+                          </span>
+                        ) : (
+                          <span className="size-4 rounded-full bg-success/20 text-success flex items-center justify-center text-[10px] font-bold">
+                            ✓
+                          </span>
+                        )}
+                        <span className="flex items-center gap-1 text-foreground">
+                          <LuSparkles aria-hidden="true" />{" "}
+                          {isModalFinished
+                            ? "答案草稿已提交至服务端判题确认"
+                            : "提交答案草稿至服务端判题确认"}
+                        </span>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {!isModalFinished ? (
+                      <span className="size-4 rounded-full bg-muted/20 text-muted flex items-center justify-center text-[10px] font-bold">
+                        3
+                      </span>
+                    ) : (
                       <span className="size-4 rounded-full bg-success/20 text-success flex items-center justify-center text-[10px] font-bold">
                         ✓
                       </span>
-                      <span className="text-foreground">
-                        已提取试卷结构（共 {quiz.questions.length} 道题目）
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {actionModal?.type === "matchQa" ? (
-                        <>
-                          {!isModalFinished ? (
-                            <span className="size-4 rounded-full bg-accent/20 text-accent flex items-center justify-center text-[10px] animate-spin font-bold">
-                              ●
-                            </span>
-                          ) : (
-                            <span className="size-4 rounded-full bg-success/20 text-success flex items-center justify-center text-[10px] font-bold">
-                              ✓
-                            </span>
-                          )}
-                          <span className="flex items-center gap-1 text-foreground">
-                            <LuDatabase aria-hidden="true" />{" "}
-                            {isModalFinished
-                              ? "已完成题库平台比对与答案匹配"
-                              : "连接题库平台比对特征向量与答案"}
-                          </span>
-                        </>
-                      ) : actionModal?.type === "generate" ? (
-                        <>
-                          {!isModalFinished ? (
-                            <span className="size-4 rounded-full bg-accent/20 text-accent flex items-center justify-center text-[10px] animate-spin font-bold">
-                              ●
-                            </span>
-                          ) : (
-                            <span className="size-4 rounded-full bg-success/20 text-success flex items-center justify-center text-[10px] font-bold">
-                              ✓
-                            </span>
-                          )}
-                          <span className="flex items-center gap-1 text-foreground">
-                            <LuBot aria-hidden="true" />{" "}
-                            {isModalFinished
-                              ? liveSessions.length === 0
-                                ? "题库已全量覆盖，无需向 AI 发起请求"
-                                : "调用 AI 模型计算题目语义与选项概率已完成"
-                              : "调用 AI 模型计算题目语义与选项概率"}
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          {!isModalFinished ? (
-                            <span className="size-4 rounded-full bg-accent/20 text-accent flex items-center justify-center text-[10px] animate-spin font-bold">
-                              ●
-                            </span>
-                          ) : (
-                            <span className="size-4 rounded-full bg-success/20 text-success flex items-center justify-center text-[10px] font-bold">
-                              ✓
-                            </span>
-                          )}
-                          <span className="flex items-center gap-1 text-foreground">
-                            <LuSparkles aria-hidden="true" />{" "}
-                            {isModalFinished
-                              ? "答案草稿已提交至服务端判题确认"
-                              : "提交答案草稿至服务端判题确认"}
-                          </span>
-                        </>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {!isModalFinished ? (
-                        <span className="size-4 rounded-full bg-muted/20 text-muted flex items-center justify-center text-[10px] font-bold">
-                          3
-                        </span>
-                      ) : (
-                        <span className="size-4 rounded-full bg-success/20 text-success flex items-center justify-center text-[10px] font-bold">
-                          ✓
-                        </span>
-                      )}
-                      <span className="text-foreground">完成防乱序选项对齐并更新试卷作答</span>
-                    </div>
+                    )}
+                    <span className="text-foreground">完成防乱序选项对齐并更新试卷作答</span>
                   </div>
                 </div>
+              </div>
 
-                {/* 1 & 2. AI 会话调用 session 流式与分批合并展示 */}
-                {actionModal?.type === "generate" && (
-                  <div className="rounded-xl border border-separator/50 bg-surface/30 p-3.5 grid gap-3 mt-1">
-                    <div className="flex items-center justify-between text-xs font-semibold text-foreground">
-                      <span className="flex items-center gap-1.5">
-                        <LuBot className="text-accent text-sm" aria-hidden="true" /> AI 会话调用
-                        Session
-                        {liveSessions.length > 0 ? ` (批次数量: ${liveSessions.length})` : ""}
+              {/* 1 & 2. AI 会话调用 session 流式与分批合并展示 */}
+              {actionModal?.type === "generate" && (
+                <div className="rounded-xl border border-separator/50 bg-surface/30 p-3.5 grid gap-3 mt-1">
+                  <div className="flex items-center justify-between text-xs font-semibold text-foreground">
+                    <span className="flex items-center gap-1.5">
+                      <LuBot className="text-accent text-sm" aria-hidden="true" /> AI 会话调用
+                      Session
+                      {liveSessions.length > 0 ? ` (批次数量: ${liveSessions.length})` : ""}
+                    </span>
+                    {liveSessions[0]?.model && (
+                      <span className="font-mono text-muted text-[11px]">
+                        模型: {liveSessions[0].model}
                       </span>
-                      {liveSessions[0]?.model && (
-                        <span className="font-mono text-muted text-[11px]">
-                          模型: {liveSessions[0].model}
-                        </span>
-                      )}
-                    </div>
-
-                    {liveSessions.length > 0 ? (
-                      <div className="max-h-64 overflow-y-auto space-y-2.5 pr-1">
-                        {liveSessions.map((session, sIdx) => {
-                          const isBatchPending = session.status === "pending";
-                          const isBatchError = session.status === "error";
-
-                          return (
-                            <details
-                              key={session.batchIndex || sIdx}
-                              className={`rounded-lg border p-2.5 text-xs grid gap-1.5 transition-colors ${
-                                isBatchPending
-                                  ? "border-accent/40 bg-accent/5 animate-pulse"
-                                  : isBatchError
-                                    ? "border-danger/40 bg-danger/5"
-                                    : "border-separator/40 bg-surface/50 open:border-accent/40"
-                              }`}
-                              open={isBatchPending || sIdx === liveSessions.length - 1}
-                            >
-                              <summary className="font-medium text-foreground cursor-pointer flex items-center justify-between select-none">
-                                <div className="flex items-center gap-2">
-                                  {isBatchPending ? (
-                                    <Spinner size="sm" aria-label="处理中" />
-                                  ) : isBatchError ? (
-                                    <span className="text-danger font-bold text-xs">✕</span>
-                                  ) : (
-                                    <span className="text-success font-bold text-xs">✓</span>
-                                  )}
-                                  <span className="font-semibold">
-                                    批次 {session.batchIndex} (共 {session.questionIds?.length || 1}{" "}
-                                    题)
-                                  </span>
-                                </div>
-                                <span className="text-[11px] font-mono text-accent shrink-0">
-                                  {isBatchPending
-                                    ? session.response
-                                      ? "正在实时响应与工具调用..."
-                                      : "正在请求模型..."
-                                    : isBatchError
-                                      ? "调用失败"
-                                      : `已生成 ${Object.keys(session.answers || {}).length} 题答案`}
-                                </span>
-                              </summary>
-
-                              <div className="mt-1 text-[11px] text-muted">
-                                <span>包含题目：</span>
-                                <span className="font-mono">
-                                  {session.questionTitles?.join("、 ") ||
-                                    session.questionIds?.join(", ")}
-                                </span>
-                              </div>
-
-                              <div className="grid gap-2 pt-2 border-t border-separator/30 text-[11px]">
-                                <div>
-                                  <span className="font-semibold text-muted">
-                                    发送给 AI 的提示词 (Prompt):
-                                  </span>
-                                  <pre className="mt-1 p-2 rounded bg-background/80 font-mono text-[10px] overflow-x-auto whitespace-pre-wrap text-muted max-h-36">
-                                    {session.prompt}
-                                  </pre>
-                                </div>
-
-                                <div>
-                                  <div className="flex items-center justify-between font-semibold text-muted mb-1">
-                                    <span>
-                                      {isBatchPending
-                                        ? "AI 实时响应与工具调用 (Live):"
-                                        : "AI 原始回复内容 (Response):"}
-                                    </span>
-                                    {isBatchPending && (
-                                      <span className="flex items-center gap-1.5 text-accent text-[10px] font-normal">
-                                        <Spinner size="sm" /> 实时交互中...
-                                      </span>
-                                    )}
-                                  </div>
-                                  {session.response ? (
-                                    <pre className="p-2 rounded bg-background/80 font-mono text-[10px] overflow-x-auto whitespace-pre-wrap text-accent font-medium max-h-48 scroll-smooth border border-accent/20">
-                                      {session.response}
-                                    </pre>
-                                  ) : isBatchPending ? (
-                                    <div className="flex items-center gap-2 text-muted italic text-[11px] py-1.5 p-2 rounded bg-background/40">
-                                      <Spinner size="sm" />{" "}
-                                      正在向模型发起请求，等待首字或工具调用...
-                                    </div>
-                                  ) : null}
-                                </div>
-
-                                {session.error && (
-                                  <div className="text-danger text-[11px] p-2 rounded bg-danger/10 border border-danger/20">
-                                    错误: {session.error}
-                                  </div>
-                                )}
-                              </div>
-                            </details>
-                          );
-                        })}
-                      </div>
-                    ) : isModalFinished ? (
-                      <div className="text-xs text-success flex items-center gap-2 p-3 bg-success/10 border border-success/30 rounded-lg">
-                        <LuCircleCheck className="text-success shrink-0" aria-hidden="true" />
-                        <span>
-                          {quiz.questions.length > 0
-                            ? "全部题目已在题库中命中确认答案，无需向 AI 发起请求（已节省 Token 消耗）。"
-                            : "本测验试卷题目列表为空，无需向 AI 发起请求。"}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="text-xs text-muted font-mono flex items-center gap-2 p-3 bg-surface/40 rounded-lg">
-                        <Spinner size="sm" /> 正在准备向 AI 模型发送测验题目并等待会话响应...
-                      </div>
                     )}
                   </div>
-                )}
-              </Modal.Body>
-              <Modal.Footer>
-                <Button
-                  variant="primary"
-                  isDisabled={!isModalFinished}
-                  onPress={() => setActionModal(null)}
-                >
-                  {!isModalFinished
-                    ? "正在处理中..."
-                    : isExam
-                      ? "确认并返回作答"
-                      : "查看试卷与作答结果"}
-                </Button>
-              </Modal.Footer>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
+
+                  {liveSessions.length > 0 ? (
+                    <div className="max-h-64 overflow-y-auto space-y-2.5 pr-1">
+                      {liveSessions.map((session, sIdx) => {
+                        const isBatchPending = session.status === "pending";
+                        const isBatchError = session.status === "error";
+
+                        return (
+                          <details
+                            key={session.batchIndex || sIdx}
+                            className={`rounded-lg border p-2.5 text-xs grid gap-1.5 transition-colors ${
+                              isBatchPending
+                                ? "border-accent/40 bg-accent/5 animate-pulse"
+                                : isBatchError
+                                  ? "border-danger/40 bg-danger/5"
+                                  : "border-separator/40 bg-surface/50 open:border-accent/40"
+                            }`}
+                            open={isBatchPending || sIdx === liveSessions.length - 1}
+                          >
+                            <summary className="font-medium text-foreground cursor-pointer flex items-center justify-between select-none">
+                              <div className="flex items-center gap-2">
+                                {isBatchPending ? (
+                                  <LoadingIndicator size={16} aria-label="处理中" />
+                                ) : isBatchError ? (
+                                  <span className="text-danger font-bold text-xs">✕</span>
+                                ) : (
+                                  <span className="text-success font-bold text-xs">✓</span>
+                                )}
+                                <span className="font-semibold">
+                                  批次 {session.batchIndex} (共 {session.questionIds?.length || 1}{" "}
+                                  题)
+                                </span>
+                              </div>
+                              <span className="text-[11px] font-mono text-accent shrink-0">
+                                {isBatchPending
+                                  ? session.response
+                                    ? "正在实时响应与工具调用..."
+                                    : "正在请求模型..."
+                                  : isBatchError
+                                    ? "调用失败"
+                                    : `已生成 ${Object.keys(session.answers || {}).length} 题答案`}
+                              </span>
+                            </summary>
+
+                            <div className="mt-1 text-[11px] text-muted">
+                              <span>包含题目：</span>
+                              <span className="font-mono">
+                                {session.questionTitles?.join("、 ") ||
+                                  session.questionIds?.join(", ")}
+                              </span>
+                            </div>
+
+                            <div className="grid gap-2 pt-2 border-t border-separator/30 text-[11px]">
+                              <div>
+                                <span className="font-semibold text-muted">
+                                  发送给 AI 的提示词 (Prompt):
+                                </span>
+                                <pre className="mt-1 p-2 rounded bg-background/80 font-mono text-[10px] overflow-x-auto whitespace-pre-wrap text-muted max-h-36">
+                                  {session.prompt}
+                                </pre>
+                              </div>
+
+                              <div>
+                                <div className="flex items-center justify-between font-semibold text-muted mb-1">
+                                  <span>
+                                    {isBatchPending
+                                      ? "AI 实时响应与工具调用 (Live):"
+                                      : "AI 原始回复内容 (Response):"}
+                                  </span>
+                                  {isBatchPending && (
+                                    <span className="flex items-center gap-1.5 text-accent text-[10px] font-normal">
+                                      <LoadingIndicator size={16} /> 实时交互中...
+                                    </span>
+                                  )}
+                                </div>
+                                {session.response ? (
+                                  <pre className="p-2 rounded bg-background/80 font-mono text-[10px] overflow-x-auto whitespace-pre-wrap text-accent font-medium max-h-48 scroll-smooth border border-accent/20">
+                                    {session.response}
+                                  </pre>
+                                ) : isBatchPending ? (
+                                  <div className="flex items-center gap-2 text-muted italic text-[11px] py-1.5 p-2 rounded bg-background/40">
+                                    <LoadingIndicator size={16} />{" "}
+                                    正在向模型发起请求，等待首字或工具调用...
+                                  </div>
+                                ) : null}
+                              </div>
+
+                              {session.error && (
+                                <div className="text-danger text-[11px] p-2 rounded bg-danger/10 border border-danger/20">
+                                  错误: {session.error}
+                                </div>
+                              )}
+                            </div>
+                          </details>
+                        );
+                      })}
+                    </div>
+                  ) : isModalFinished ? (
+                    <div className="text-xs text-success flex items-center gap-2 p-3 bg-success/10 border border-success/30 rounded-lg">
+                      <LuCircleCheck className="text-success shrink-0" aria-hidden="true" />
+                      <span>
+                        {quiz.questions.length > 0
+                          ? "全部题目已在题库中命中确认答案，无需向 AI 发起请求（已节省 Token 消耗）。"
+                          : "本测验试卷题目列表为空，无需向 AI 发起请求。"}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-muted font-mono flex items-center gap-2 p-3 bg-surface/40 rounded-lg">
+                      <LoadingIndicator size={16} /> 正在准备向 AI 模型发送测验题目并等待会话响应...
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div slot="actions">
+              <Button
+                variant="filled"
+                disabled={!isModalFinished}
+                onClick={() => setActionModal(null)}
+              >
+                {!isModalFinished
+                  ? "正在处理中..."
+                  : isExam
+                    ? "确认并返回作答"
+                    : "查看试卷与作答结果"}
+              </Button>
+            </div>
+          </Dialog>,
+          document.body,
+        )}
       {/* 确认交卷弹窗 (用于考试模式) */}
-      <AlertDialog isOpen={confirmSubmitOpen} onOpenChange={setConfirmSubmitOpen}>
-        <AlertDialog.Backdrop>
-          <AlertDialog.Container size="sm">
-            <AlertDialog.Dialog className="max-w-md">
-              <AlertDialog.Icon status="danger" />
-              <AlertDialog.Header>
-                <AlertDialog.Heading>确认提交试卷？</AlertDialog.Heading>
-              </AlertDialog.Header>
-              <AlertDialog.Body className="space-y-3">
-                <p className="text-sm font-medium">提交后将记录最终成绩并不可撤销。</p>
-                {unansweredCount > 0 ? (
-                  <Alert status="danger">
-                    <Alert.Indicator />
-                    <Alert.Content>
-                      <Alert.Title>仍有未作答题目！</Alert.Title>
-                      <Alert.Description>
-                        当前试卷共 {quiz.questions.length} 题，仍有 {unansweredCount} 题未填写答案。
-                      </Alert.Description>
-                    </Alert.Content>
-                  </Alert>
-                ) : (
-                  <Alert status="success">
-                    <Alert.Indicator />
-                    <Alert.Content>
-                      <Alert.Title>所有题目均已作答</Alert.Title>
-                      <Alert.Description>
-                        共 {quiz.questions.length} 题，确认提交吗？
-                      </Alert.Description>
-                    </Alert.Content>
-                  </Alert>
-                )}
-              </AlertDialog.Body>
-              <AlertDialog.Footer className="flex justify-end gap-2">
-                <AlertDialog.CloseTrigger className="dialog-cancel" aria-label="取消" />
-                <Button
-                  variant="danger"
-                  isDisabled={disabled}
-                  onPress={() => {
-                    setConfirmSubmitOpen(false);
-                    void handleActionWithModal("submit", "试卷提交流程");
-                  }}
-                >
-                  确认提交
-                </Button>
-              </AlertDialog.Footer>
-            </AlertDialog.Dialog>
-          </AlertDialog.Container>
-        </AlertDialog.Backdrop>
-      </AlertDialog>
+      {confirmSubmitOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <Dialog
+            open={confirmSubmitOpen}
+            headline="确认提交试卷？"
+            className="max-w-md"
+            onClose={() => setConfirmSubmitOpen(false)}
+          >
+            <div className="space-y-3 p-4">
+              <p className="text-sm font-medium">提交后将记录最终成绩并不可撤销。</p>
+              {unansweredCount > 0 ? (
+                <Banner status="danger">
+                  <Banner.Title>仍有未作答题目！</Banner.Title>
+                  <Banner.Description>
+                    当前试卷共 {quiz.questions.length} 题，仍有 {unansweredCount} 题未填写答案。
+                  </Banner.Description>
+                </Banner>
+              ) : (
+                <Banner status="success">
+                  <Banner.Title>所有题目均已作答</Banner.Title>
+                  <Banner.Description>
+                    共 {quiz.questions.length} 题，确认提交吗？
+                  </Banner.Description>
+                </Banner>
+              )}
+            </div>
+            <div slot="actions" className="flex justify-end gap-2">
+              <Button variant="tonal" onClick={() => setConfirmSubmitOpen(false)}>
+                取消
+              </Button>
+              <Button
+                className="button-danger"
+                variant="filled"
+                disabled={disabled}
+                onClick={() => {
+                  setConfirmSubmitOpen(false);
+                  void handleActionWithModal("submit", "试卷提交流程");
+                }}
+              >
+                确认提交
+              </Button>
+            </div>
+          </Dialog>,
+          document.body,
+        )}
     </>
   );
 }

@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
-import { toast } from "@heroui/react";
+import { toast } from "./ui";
 import { ProfileForm } from "./ProfileForm";
 
 vi.mock("@tauri-apps/api/core", () => ({

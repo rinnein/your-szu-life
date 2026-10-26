@@ -1,57 +1,27 @@
-import { LuArrowLeft, LuRefreshCw } from "react-icons/lu";
 import type { ReactNode } from "react";
-import { Button, CloseButton, Card as HeroCard, Spinner } from "@heroui/react";
-import { useLogicalNavigation } from "./logical-navigation";
+import { LuRefreshCw } from "react-icons/lu";
+import { Card as UiCard, LoadingIndicator, Button } from "material/react";
+import { PageSurface } from "./shell/AppShell";
+import { TopAppBar } from "./shell/TopAppBar";
 import appIcon from "../src-tauri/icons/icon.png";
 
 export { SkeletonCard, SkeletonTable, SkeletonText } from "./components/Skeleton";
 export { StatCard } from "./components/StatCard";
 
-export function PageShell({
-  children,
-  centered = false,
-  showAbout = false,
-  maxWidth = "full",
-}: {
-  children: ReactNode;
-  centered?: boolean;
-  showAbout?: boolean;
-  maxWidth?: "sm" | "md" | "lg" | "xl" | "2xl" | "full";
-}) {
-  const navigation = useLogicalNavigation();
-  const maxWidthClass = {
-    sm: "max-w-screen-sm",
-    md: "max-w-screen-md",
-    lg: "max-w-screen-lg",
-    xl: "max-w-screen-xl",
-    "2xl": "max-w-screen-2xl",
-    full: "max-w-full",
-  }[maxWidth];
+/**
+ * 页面外壳。
+ *
+ * 保留这个名字是因为 14 个页面都在用它；实现改为 M3 的 `PageSurface`。
+ * 顶栏由各页面自行渲染 `TopAppBar`，不再由这里提供。
+ */
+export const PageShell = PageSurface;
 
-  return (
-    <main className={centered ? "app-shell app-shell-centered" : "app-shell"}>
-      <div className={`mx-auto w-full min-w-0 ${maxWidthClass}`}>{children}</div>
-      {showAbout && (
-        <footer className="app-footer">
-          <Button variant="tertiary" onPress={() => void navigation.push("/about")}>
-            关于 · 检查更新
-          </Button>
-        </footer>
-      )}
-    </main>
-  );
-}
-
-export function BrandMark({ large = false }: { large?: boolean }) {
-  return (
-    <img
-      className={large ? "brand-mark brand-mark-large" : "brand-mark"}
-      src={appIcon}
-      alt="泥深"
-    />
-  );
-}
-
+/**
+ * 模块页头。
+ *
+ * 保留这个名称是因为 14 个页面都在用它；实现是 M3 的 `TopAppBar`。
+ * `backLabel` 沿用旧参数名，默认「返回工作台」以兼容既有测试。
+ */
 export function ModuleHeader({
   title,
   description,
@@ -65,46 +35,33 @@ export function ModuleHeader({
   actions?: ReactNode;
   eyebrow?: string;
 }) {
-  const nav = useLogicalNavigation();
   return (
-    <header className="flex flex-wrap items-start justify-between gap-4 mb-8">
-      <div className="flex min-w-0 items-start gap-3 flex-1">
-        <CloseButton
-          data-webview-navigation
-          aria-label={backLabel}
-          onPress={() => void nav.back()}
-          className="mt-1"
-        >
-          <LuArrowLeft aria-hidden="true" />
-        </CloseButton>
-        <div className="min-w-0 flex-1">
-          {eyebrow && (
-            <span
-              data-webview-navigation
-              className="block text-[11px] font-bold tracking-wider text-[#6971ae] mb-2.5"
-            >
-              {eyebrow}
-            </span>
-          )}
-          <h1 data-webview-navigation className="text-2xl md:text-3xl font-semibold tracking-tight">
-            {title}
-          </h1>
-          {description && (
-            <p className="mt-2.5 text-sm leading-relaxed text-[var(--szu-muted)] max-w-[620px]">
-              {description}
-            </p>
-          )}
-        </div>
-      </div>
-      {actions && (
-        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-start sm:justify-end">
-          {actions}
-        </div>
-      )}
-    </header>
+    <TopAppBar
+      title={title}
+      description={description}
+      eyebrow={eyebrow}
+      backLabel={backLabel}
+      actions={actions}
+    />
   );
 }
 
+export function BrandMark({ large = false }: { large?: boolean }) {
+  return (
+    <img
+      className={large ? "brand-mark brand-mark-large" : "brand-mark"}
+      src={appIcon}
+      alt="泥深"
+    />
+  );
+}
+
+/**
+ * 带标题/描述/操作区的卡片。
+ *
+ * 这是 `src/ui` 的 `Card` 之上的便捷包装：3 个页面直接用它，
+ * 其余页面用 `ui/Card` 的复合写法。
+ */
 export function Card({
   title,
   description,
@@ -121,37 +78,23 @@ export function Card({
   className?: string;
 }) {
   return (
-    <HeroCard
-      className={`shadow-[0_12px_35px_#25285812] border border-[rgba(37,40,88,0.08)] ${className ?? ""}`}
-      variant="default"
-    >
-      {(title || description || icon) && (
-        <HeroCard.Header className="px-6 py-5 pb-3">
-          {title && (
-            <HeroCard.Title className="flex items-center gap-2.5">
-              {icon && <span className="text-[var(--szu-brand)]">{icon}</span>}
-              {title}
-            </HeroCard.Title>
-          )}
-          {description && <HeroCard.Description>{description}</HeroCard.Description>}
-        </HeroCard.Header>
+    <UiCard className={className} variant="outlined" headline={title} subhead={description}>
+      {icon && (
+        <span slot="headline" className="card-title-icon mr-2 inline-flex items-center">
+          {icon}
+        </span>
       )}
-      <HeroCard.Content className="px-6 py-4">{children}</HeroCard.Content>
-      {actions && (
-        <HeroCard.Footer className="px-6 py-4 pt-0 flex gap-2 flex-wrap">{actions}</HeroCard.Footer>
-      )}
-    </HeroCard>
+      <div className="p-4">{children}</div>
+      {actions && <div slot="actions">{actions}</div>}
+    </UiCard>
   );
 }
 
 export function LoadingState({ message = "加载中…" }: { message?: string }) {
   return (
-    <div
-      className="flex items-center justify-center gap-3 py-12 text-[var(--szu-muted)]"
-      role="status"
-    >
-      <Spinner size="md" />
-      <span className="text-sm">{message}</span>
+    <div className="empty-state" role="status">
+      <LoadingIndicator size={24} />
+      <span>{message}</span>
     </div>
   );
 }
@@ -172,31 +115,18 @@ export function EmptyState({
   onRetry?: () => void;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+    <div className="empty-state" data-variant={variant}>
       {icon && (
-        <div
-          className={
-            variant === "error"
-              ? "text-red-600 opacity-80 mb-1"
-              : "text-[var(--szu-muted)] opacity-60 mb-1"
-          }
-        >
-          {icon}
-        </div>
+        <div className={variant === "error" ? "empty-state-error" : "empty-state-icon"}>{icon}</div>
       )}
-      <h3
-        className={
-          variant === "error" ? "font-semibold text-red-600" : "font-semibold text-[var(--szu-ink)]"
-        }
-      >
-        {title}
-      </h3>
-      {description && <p className="text-sm text-[var(--szu-muted)] max-w-md">{description}</p>}
+      <h3 className={variant === "error" ? "empty-state-error" : undefined}>{title}</h3>
+      {description && <p className="empty-state-description">{description}</p>}
       {(action || onRetry) && (
-        <div className="mt-2 flex gap-2">
+        <div className="empty-state-actions">
           {onRetry && (
-            <Button variant="secondary" onPress={onRetry}>
-              <LuRefreshCw /> 重试
+            <Button variant="tonal" onClick={onRetry}>
+              <LuRefreshCw aria-hidden="true" />
+              重试
             </Button>
           )}
           {action}
@@ -222,18 +152,16 @@ export function Section({
   return (
     <section className={className} aria-labelledby={title ? `section-${title}` : undefined}>
       {(title || description || actions) && (
-        <div className="flex items-start justify-between gap-4 mb-4">
+        <div className="section-header">
           <div>
             {title && (
-              <h2 id={`section-${title}`} className="text-xl font-semibold tracking-tight mb-1.5">
+              <h2 id={`section-${title}`} className="section-title">
                 {title}
               </h2>
             )}
-            {description && (
-              <p className="text-sm text-[var(--szu-muted)] leading-relaxed">{description}</p>
-            )}
+            {description && <p className="section-description">{description}</p>}
           </div>
-          {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
+          {actions && <div className="section-actions">{actions}</div>}
         </div>
       )}
       {children}

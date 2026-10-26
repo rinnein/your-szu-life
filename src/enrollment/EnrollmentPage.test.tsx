@@ -122,6 +122,7 @@ it("migrates legacy tab links without stacking an extra route", async () => {
 it("redirects an invalid session to dedicated login and replaces it after login", async () => {
   auth = "required";
   const router = mount();
+  // 会话探测是异步的：布局在拿到结果前先渲染页面内容，随后才 replace 到登录页。
   await screen.findByRole("heading", { name: "登录选课系统" });
   fireEvent.click(await screen.findByRole("button", { name: "登录并进入选课" }));
   await screen.findByRole("heading", { name: "查找课程" });

@@ -95,8 +95,10 @@ afterEach(() => {
 it("uses standard icon controls to pop OJ, collection and workbench in order", async () => {
   const history = mount();
   const back = await screen.findByRole("button", { name: "返回上一级" });
-  expect(back).toHaveAttribute("data-slot", "close-button");
+  // M3 顶栏的返回按钮是原生 button；data-webview-navigation 让 Android
+  // 原生工具栏挂载时隐藏它，行为契约与迁移前一致。
   expect(back).toHaveAttribute("data-webview-navigation");
+  expect(back.querySelector("svg")).toBeInTheDocument();
   fireEvent.click(back);
   await screen.findByRole("heading", { name: "计软合集" });
   expect(history.location.pathname).toBe("/computing");

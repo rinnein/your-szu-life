@@ -1,19 +1,17 @@
-import { Card } from "@heroui/react";
+import { Card } from "material/react";
 
 export function SkeletonCard() {
   return (
-    <Card>
-      <Card.Header>
+    <Card variant="outlined">
+      <div slot="headline">
         <div className="h-6 w-32 bg-default-200 rounded animate-pulse" />
         <div className="h-4 w-48 bg-default-100 rounded animate-pulse mt-2" />
-      </Card.Header>
-      <Card.Content>
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-4 bg-default-100 rounded animate-pulse" />
-          ))}
-        </div>
-      </Card.Content>
+      </div>
+      <div className="space-y-3">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-4 bg-default-100 rounded animate-pulse" />
+        ))}
+      </div>
     </Card>
   );
 }

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Chip, ProgressBar } from "@heroui/react";
+import { Progress } from "material/react";
+import { Chip } from "./ui";
 import { LuChevronDown, LuChevronUp, LuLayers } from "react-icons/lu";
 
 export interface DownloadSessionData {
@@ -158,17 +159,13 @@ export function DownloadSession({
           </span>
           <span className="font-mono font-medium text-foreground shrink-0">{percent}%</span>
         </div>
-        <ProgressBar
+        <Progress
+          variant="linear"
           aria-label={title}
           value={percent}
-          minValue={0}
-          maxValue={100}
+          max={100}
           className="w-full"
-        >
-          <ProgressBar.Track>
-            <ProgressBar.Fill />
-          </ProgressBar.Track>
-        </ProgressBar>
+        />
         <div className="flex items-center justify-between font-mono text-xs text-muted gap-2 min-w-0">
           <span className="text-[11px]">
             {session.numPieces ? `分片数: ${session.numPieces}` : "准备中"}

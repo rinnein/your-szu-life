@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Button, Card, Form, Input, Label, Spinner, TextField, toast } from "@heroui/react";
+import { Card, LoadingIndicator, TextField, Button } from "material/react";
+import { toast } from "./ui";
 import type { Profile } from "./auth";
 
 export function ProfileForm({
@@ -45,70 +46,69 @@ export function ProfileForm({
         },
       });
       await onSaved();
-    } catch (err) {
-      toast.danger("保存账户资料失败", { description: String(err) });
+    } catch (error) {
+      toast.danger("保存账户资料失败", { description: String(error) });
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Card className="profile-card" variant="default" data-testid="profile-card">
-      <Card.Header>
-        <Card.Title>{onlyCampusCard ? "补充校园卡号" : "确认账户资料"}</Card.Title>
-        <Card.Description>
-          {onlyCampusCard
-            ? "已验证的学号和密码已安全保存；请补充校园卡号以完成账户设置。"
-            : "确认资料后即可进入工作台。"}
-        </Card.Description>
-      </Card.Header>
-      <Card.Content>
-        <Form onSubmit={save} validationBehavior="aria">
+    <Card className="profile-card" data-testid="profile-card" variant="outlined">
+      <div slot="headline">
+        <span className="font-semibold text-lg">
+          {onlyCampusCard ? "补充校园卡号" : "确认账户资料"}
+        </span>
+      </div>
+      <div slot="subhead">
+        {onlyCampusCard
+          ? "已验证的学号和密码已安全保存；请补充校园卡号以完成账户设置。"
+          : "确认资料后即可进入工作台。"}
+      </div>
+      <div className="p-4">
+        {/* material 的 TextField 自带 label 与 supportingText，不需要外部 Label/Input 组合。 */}
+        <form className="profile-form" onSubmit={save}>
           {!onlyCampusCard && (
-            <TextField className="field" name="name">
-              <Label>姓名</Label>
-              <Input
-                value={displayName}
-                onChange={(event) => setDisplayName(event.target.value)}
-                placeholder="登录后自动获取"
-              />
-            </TextField>
+            <TextField
+              name="name"
+              label="姓名"
+              value={displayName}
+              placeholder="登录后自动获取"
+              onChange={(e: any) => setDisplayName(e.detail?.value ?? e.target?.value ?? "")}
+            />
           )}
-          <TextField className="field" name="studentId" isRequired>
-            <Label>学号</Label>
-            <Input
-              inputMode="numeric"
-              value={studentId}
-              disabled={onlyCampusCard}
-              onChange={(event) => setStudentId(event.target.value)}
-            />
-          </TextField>
-          <TextField className="field" name="campusCardNumber" isRequired>
-            <Label>校园卡号</Label>
-            <Input
-              inputMode="numeric"
-              value={campusCardNumber}
-              autoFocus={onlyCampusCard}
-              onChange={(event) => setCampusCardNumber(event.target.value)}
-            />
-          </TextField>
+          <TextField
+            name="studentId"
+            label="学号"
+            required
+            value={studentId}
+            disabled={onlyCampusCard}
+            onChange={(e: any) => setStudentId(e.detail?.value ?? e.target?.value ?? "")}
+          />
+          <TextField
+            name="campusCardNumber"
+            label="校园卡号"
+            required
+            value={campusCardNumber}
+            onChange={(e: any) => setCampusCardNumber(e.detail?.value ?? e.target?.value ?? "")}
+          />
           {!onlyCampusCard && (
-            <TextField className="field" name="password" isRequired={!initial?.hasPassword}>
-              <Label>密码</Label>
-              <Input
-                type="password"
-                placeholder={initial?.hasPassword ? "已保存（输入新密码可覆盖）" : "请输入密码"}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-              />
-            </TextField>
+            <TextField
+              name="password"
+              label="密码"
+              type="password"
+              required={!initial?.hasPassword}
+              value={password}
+              placeholder={initial?.hasPassword ? "已保存（输入新密码可覆盖）" : "请输入密码"}
+              onChange={(e: any) => setPassword(e.detail?.value ?? e.target?.value ?? "")}
+            />
           )}
-          <Button fullWidth type="submit" variant="primary" isDisabled={saving}>
-            {saving && <Spinner size="sm" color="current" />}
+          <Button className="w-full" type="submit" variant="filled" disabled={saving}>
+            {saving && <LoadingIndicator size={16} />}
             {saving ? "保存中…" : "保存并进入工作台"}
           </Button>
-        </Form>
-      </Card.Content>
+        </form>
+      </div>
     </Card>
   );
 }

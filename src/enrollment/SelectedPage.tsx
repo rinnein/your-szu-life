@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Button, Card, Table } from "@heroui/react";
+import { Card, Button } from "material/react";
+import { Table } from "../ui";
 import { useCacheMode, canSelect } from "./view-mode";
 import { useEnrollment } from "./use-enrollment";
 import { OperationError } from "./shared";
@@ -19,17 +20,17 @@ export default function SelectedPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-muted">已选 {s?.selected.length ?? 0} 个教学班</p>
         <div className="flex gap-2">
-          <Button variant="secondary" onPress={() => void nav.back()}>
+          <Button variant="tonal" onClick={() => void nav.back()}>
             查找新课 / 配置换课
           </Button>
-          <Button isPending={!!pending.selected} onPress={() => void run({ type: "selected" })}>
+          <Button disabled={!!pending.selected} onClick={() => void run({ type: "selected" })}>
             {cacheOnly ? "读取已选缓存" : "刷新已选"}
           </Button>
         </div>
       </div>
       <OperationError message={errors.selected || errors.drop} />
-      <Card>
-        <Card.Content>
+      <Card variant="outlined">
+        <div className="p-4">
           <Table>
             <Table.ScrollContainer>
               <Table.Content aria-label="已选课程" className="min-w-[720px]">
@@ -54,10 +55,11 @@ export default function SelectedPage() {
                       </Table.Cell>
                       <Table.Cell>
                         <Button
-                          size="sm"
-                          variant="danger-soft"
-                          isDisabled={cacheOnly || !canSelect(s)}
-                          onPress={() => setSelection({ course: c, drop: true })}
+                          className="button-danger-soft"
+                          size="xs"
+                          variant="tonal"
+                          disabled={cacheOnly || !canSelect(s)}
+                          onClick={() => setSelection({ course: c, drop: true })}
                         >
                           退课
                         </Button>
@@ -68,7 +70,7 @@ export default function SelectedPage() {
               </Table.Content>
             </Table.ScrollContainer>
           </Table>
-        </Card.Content>
+        </div>
       </Card>
       {!cacheOnly && (
         <CourseActionDialog selection={selection} onClose={() => setSelection(undefined)} />
