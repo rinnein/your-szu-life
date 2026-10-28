@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File},
-    io::{Read, Write},
+    io::Read,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -152,7 +152,6 @@ pub(crate) fn mirror_candidates(primary_url: &str) -> Vec<(String, Url)> {
 pub(crate) struct LocalModelStore {
     pub(crate) manifest: Manifest,
     pub(crate) cache: PathBuf,
-    pub(crate) bundled: Option<PathBuf>,
     pub(crate) state: Mutex<LocalModelStatus>,
     pub(crate) operation: Mutex<()>,
     pub(crate) model_name: &'static str,
@@ -164,7 +163,6 @@ impl LocalModelStore {
     pub(crate) fn new(
         manifest: Manifest,
         cache: PathBuf,
-        bundled: Option<PathBuf>,
         model_name: &'static str,
         progress_event: &'static str,
         status_event: &'static str,
@@ -183,7 +181,6 @@ impl LocalModelStore {
         Self {
             manifest,
             cache,
-            bundled,
             state: Mutex::new(initial_status),
             operation: Mutex::new(()),
             model_name,
@@ -226,45 +223,7 @@ impl LocalModelStore {
             self.set_status("ready", Some("cache".into()), None);
             return;
         }
-        if let Some(bundled) = &self.bundled {
-            if self.manifest.verify(bundled) {
-                if let Err(error) = self.install_file(bundled) {
-                    self.set_status("error", Some("bundled".into()), Some(error));
-                } else {
-                    self.set_status("ready", Some("bundled".into()), None);
-                }
-                return;
-            }
-        }
         self.set_status("missing", None, None);
-    }
-
-    fn install_file(&self, source: &Path) -> Result<(), String> {
-        fs::create_dir_all(&self.cache)
-            .map_err(|e| format!("无法创建 {} 模型目录：{e}", self.model_name))?;
-        let temporary = self.cache.join(format!("{}.install", self.manifest.sha256));
-        let mut input = File::open(source)
-            .map_err(|e| format!("无法读取内置 {} 模型：{e}", self.model_name))?;
-        let mut output = File::create(&temporary)
-            .map_err(|e| format!("无法写入 {} 模型：{e}", self.model_name))?;
-        std::io::copy(&mut input, &mut output)
-            .map_err(|e| format!("复制 {} 模型失败：{e}", self.model_name))?;
-        output
-            .flush()
-            .map_err(|e| format!("保存 {} 模型失败：{e}", self.model_name))?;
-        output
-            .sync_all()
-            .map_err(|e| format!("同步 {} 模型失败：{e}", self.model_name))?;
-        drop(output);
-        if !self.manifest.verify(&temporary) {
-            let _ = fs::remove_file(&temporary);
-            return Err(format!("内置 {} 模型校验失败", self.model_name));
-        }
-        if self.target().exists() {
-            let _ = fs::remove_file(self.target());
-        }
-        fs::rename(temporary, self.target())
-            .map_err(|e| format!("安装 {} 模型失败：{e}", self.model_name))
     }
 
     pub(crate) fn download(

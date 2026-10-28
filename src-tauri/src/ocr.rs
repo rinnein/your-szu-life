@@ -31,16 +31,9 @@ pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
         .join("ocr")
         .join("ddddocr");
     fs::create_dir_all(&cache).map_err(|e| format!("无法创建 OCR 模型目录：{e}"))?;
-    let bundled = app
-        .path()
-        .resource_dir()
-        .ok()
-        .map(|root| root.join("resources/ocr/ddddocr/common.onnx"))
-        .filter(|path| path.is_file());
     let model = Arc::new(LocalModelStore::new(
         manifest,
         cache,
-        bundled,
         "OCR",
         "ocr-model-download-progress",
         "ocr-model-status-changed",
@@ -77,7 +70,6 @@ fn store() -> Result<Arc<OcrService>, String> {
         let model = Arc::new(LocalModelStore::new(
             manifest,
             cache,
-            None,
             "OCR",
             "ocr-model-download-progress",
             "ocr-model-status-changed",

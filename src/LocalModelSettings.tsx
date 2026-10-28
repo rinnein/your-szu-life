@@ -274,10 +274,7 @@ export function LocalModelCard({
               <LuCircleCheck aria-hidden="true" className="shrink-0" /> 模型已就绪
             </Banner.Title>
             <Banner.Description className="grid gap-1 min-w-0 w-full break-all">
-              <div>
-                {formatModelSize(status.bytes)} ·{" "}
-                {status.source === "bundled" ? "安装包内置" : "本机缓存"}
-              </div>
+              <div>{formatModelSize(status.bytes)} · 本机缓存</div>
               {status.sha256 && (
                 <div className="text-xs text-muted font-mono break-all">
                   SHA-256: {status.sha256.slice(0, 16)}...

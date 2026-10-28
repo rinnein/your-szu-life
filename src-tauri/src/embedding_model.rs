@@ -23,16 +23,9 @@ pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
         .join("embedding")
         .join("bge-small-zh-v1.5");
     fs::create_dir_all(&cache).map_err(|e| format!("无法创建 Embedding 模型目录：{e}"))?;
-    let bundled = app
-        .path()
-        .resource_dir()
-        .ok()
-        .map(|root| root.join("resources/embedding/bge-small-zh-v1.5/model_quantized.onnx"))
-        .filter(|path| path.is_file());
     let store = Arc::new(LocalModelStore::new(
         manifest,
         cache,
-        bundled,
         "Embedding",
         "embedding-model-download-progress",
         "embedding-model-status-changed",
@@ -66,7 +59,6 @@ fn store() -> Result<Arc<LocalModelStore>, String> {
         let store = Arc::new(LocalModelStore::new(
             manifest,
             cache,
-            None,
             "Embedding",
             "embedding-model-download-progress",
             "embedding-model-status-changed",
