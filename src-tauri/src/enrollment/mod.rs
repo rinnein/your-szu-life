@@ -274,14 +274,14 @@ impl Service {
         self.publish();
         if message.contains("需2FA") || message.contains("已暂停") || message.contains("任务已完成")
         {
-            use tauri_plugin_notification::NotificationExt;
-            let _ = self
-                .app
-                .notification()
-                .builder()
-                .title("选课任务")
-                .body(message)
-                .show();
+            let payload = crate::notification::NotificationPayload::new(
+                crate::notification::NotificationCategory::Enrollment,
+                "选课任务",
+                message,
+            )
+            .route("/study/enrollment")
+            .action_label("查看任务");
+            crate::notification::notify(&self.app, payload);
         }
     }
     fn persist(&self) -> Result<()> {
@@ -1000,14 +1000,14 @@ impl Service {
         let _ = self.persist();
         let _ = platform::running(0, self.generation.load(Ordering::SeqCst));
         self.publish();
-        use tauri_plugin_notification::NotificationExt;
-        let _ = self
-            .app
-            .notification()
-            .builder()
-            .title("选课任务")
-            .body(message)
-            .show();
+        let payload = crate::notification::NotificationPayload::new(
+            crate::notification::NotificationCategory::Enrollment,
+            "选课任务",
+            message,
+        )
+        .route("/study/enrollment")
+        .action_label("查看任务");
+        crate::notification::notify(&self.app, payload);
     }
     fn resume_authenticated(&self) -> Result<()> {
         if !self.snapshot().can_select() {

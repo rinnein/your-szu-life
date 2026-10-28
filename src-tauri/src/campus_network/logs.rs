@@ -14,13 +14,14 @@ pub(super) fn append_dorm_log(_app: &tauri::AppHandle, log: DormLoginLogView) {
 }
 
 pub(super) fn dorm_notify_failure(app: &tauri::AppHandle, message: &str) {
-    use tauri_plugin_notification::NotificationExt;
-    let _ = app
-        .notification()
-        .builder()
-        .title("校园网登录失败")
-        .body(message)
-        .show();
+    let payload = crate::notification::NotificationPayload::new(
+        crate::notification::NotificationCategory::CampusNetwork,
+        "校园网登录失败",
+        message,
+    )
+    .route("/life/campus-network")
+    .action_label("查看网络");
+    crate::notification::notify(app, payload);
 }
 
 pub(super) fn save_dorm_failure_notice(app: &tauri::AppHandle, message: &str) {

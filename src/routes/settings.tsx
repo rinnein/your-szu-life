@@ -4,6 +4,7 @@ import SettingsPage from "../SettingsPage";
 export type SettingsTab =
   | "profile"
   | "appearance"
+  | "notifications"
   | "models"
   | "ai"
   | "mcp"
@@ -23,6 +24,7 @@ export const Route = createFileRoute("/settings")({
     const tabs: readonly string[] = [
       "profile",
       "appearance",
+      "notifications",
       "models",
       "ai",
       "mcp",

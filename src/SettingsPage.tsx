@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   LuArrowUpDown,
+  LuBell,
   LuBug,
   LuCpu,
   LuInfo,
@@ -22,6 +23,7 @@ import SettingsTransfer from "./SettingsTransfer";
 import { LocalModelsSettings } from "./LocalModelSettings";
 import McpSettings from "./McpSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
+import { NotificationSettings } from "./NotificationSettings";
 import { ShortcutsTable } from "./command-palette";
 import AboutPage from "./AboutPage";
 import DebugLogPage from "./DebugLogPage";
@@ -37,6 +39,7 @@ const SETTINGS_TABS: ReadonlyArray<{
 }> = [
   { id: "profile", label: "个人信息", icon: LuUser },
   { id: "appearance", label: "外观", icon: LuPalette },
+  { id: "notifications", label: "通知", icon: LuBell },
   { id: "models", label: "本地模型", icon: LuCpu },
   { id: "ai", label: "AI配置", icon: LuSparkles },
   { id: "mcp", label: "MCP", icon: LuServer },
@@ -177,6 +180,7 @@ export default function SettingsPage() {
             />
           )}
           {activeTab === "appearance" && <AppearanceSettings />}
+          {activeTab === "notifications" && <NotificationSettings />}
           {activeTab === "models" && <LocalModelsSettings autoReturnKind={focus} />}
           {activeTab === "ai" && <AiConnectionSettings />}
           {activeTab === "mcp" && <McpSettings />}

@@ -227,14 +227,16 @@ impl Service {
     }
     pub(super) fn notify(&self, n: &Notice) {
         let Some(app) = self.app.as_ref() else { return };
-        use tauri_plugin_notification::NotificationExt;
-        let _ = app
-            .notification()
-            .builder()
-            .title(&n.title)
-            .body(&n.message)
-            .extra("ojNotice", n)
-            .show();
+        let route = format!("/study/oj?site={}&contest={}", n.site_id, n.contest_id);
+        let payload = crate::notification::NotificationPayload::new(
+            crate::notification::NotificationCategory::Oj,
+            &n.title,
+            &n.message,
+        )
+        .route(route)
+        .action_label("查看")
+        .extra(serde_json::json!({ "ojNotice": n }));
+        crate::notification::notify(app, payload);
     }
     pub(super) fn cancel_notifications(&self, id: &str) {
         let mut r = self.runtime.lock().unwrap();
@@ -262,6 +264,12 @@ impl Service {
             use sha2::{Digest, Sha256};
             use tauri_plugin_notification::{NotificationExt, Schedule};
             let Some(app) = &self.app else { return };
+            let notification_settings = crate::notification::settings::load(app);
+            if !notification_settings
+                .is_category_enabled(crate::notification::NotificationCategory::Oj)
+            {
+                return;
+            }
             let now = chrono::Utc::now().timestamp_millis();
             let mut desired = BTreeMap::new();
             for c in contests {

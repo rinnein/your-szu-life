@@ -98,14 +98,16 @@ fn update(service: &Service, ctx: &Context, edit: impl FnOnce(&mut QuizState)) {
         service.publish(&mut r);
     }
     if let (Some(app), Some(body)) = (&service.app, notify) {
-        use tauri_plugin_notification::NotificationExt;
-        let _ = app
-            .notification()
-            .builder()
-            .title("UOOC 测验需要处理")
-            .body(body)
-            .extra("uoocCourse", &ctx.cid)
-            .show();
+        let route = format!("/study/uooc?tab=tasks&course={}", ctx.cid);
+        let payload = crate::notification::NotificationPayload::new(
+            crate::notification::NotificationCategory::Uooc,
+            "UOOC 测验需要处理",
+            body,
+        )
+        .route(route)
+        .action_label("查看测验")
+        .extra(serde_json::json!({ "uoocCourse": ctx.cid }));
+        crate::notification::notify(app, payload);
     }
 }
 pub(super) fn saved(

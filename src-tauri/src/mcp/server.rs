@@ -18,6 +18,7 @@ impl UnifiedSzuMcpService {
             + Self::app_content_tools()
             + Self::settings_tools()
             + Self::appearance_tools()
+            + Self::notification_tools()
             + Self::ui_tools()
     }
 }

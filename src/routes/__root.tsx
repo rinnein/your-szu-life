@@ -10,6 +10,7 @@ import { OjCompanionBridge } from "../oj/OjCompanionBridge";
 import { OjProgressBridge } from "../oj/OjProgressBridge";
 import { OjNotifications } from "../oj/OjNotifications";
 import { QuizNotifications } from "../uooc/QuizNotifications";
+import { InAppNotificationBridge } from "../InAppNotificationBridge";
 import { CommandPalette } from "../command-palette";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { AppChrome } from "../shell/AppChrome";
@@ -50,6 +51,7 @@ export const Route = createRootRoute({
               <DeepLinkNavigation />
               <QuizNotifications />
               <OjNotifications />
+              <InAppNotificationBridge />
               <OjProgressBridge />
               <OjCompanionBridge />
               <CommandPalette />

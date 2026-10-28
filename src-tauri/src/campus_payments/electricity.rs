@@ -15,7 +15,6 @@ use std::{
     time::Duration,
 };
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_notification::NotificationExt;
 
 pub(crate) const ELECTRICITY_STATUS_EVENT: &str = "electricity-status-changed";
 mod analytics;
@@ -732,21 +731,21 @@ fn notify_if_needed(app: &AppHandle, store: &ElectricityStore) {
     record.last_notified_date = Some(today);
     save_monitor_record(store, &record);
     let title = format!("当前剩余电量：{:.2} 度", cache.remaining);
-    let _ = app
-        .notification()
-        .builder()
-        .id(0x535a)
-        .title(title)
-        .body(
-            cache
-                .warning_reason
-                .as_deref()
-                .unwrap_or("宿舍电量不足，请及时充值。"),
-        )
-        .action_type_id("electricity-low")
-        .extra("route", "/life/campus-payments/recharge")
-        .auto_cancel()
-        .show();
+    let body = cache
+        .warning_reason
+        .as_deref()
+        .unwrap_or("宿舍电量不足，请及时充值。");
+    let payload = crate::notification::NotificationPayload::new(
+        crate::notification::NotificationCategory::Electricity,
+        title,
+        body,
+    )
+    .id(0x535a)
+    .action_type_id("electricity-low")
+    .route("/life/campus-payments/recharge")
+    .action_label("前往充值")
+    .auto_cancel(true);
+    crate::notification::notify(app, payload);
 }
 
 fn begin_query(store: &ElectricityStore) -> Result<(), String> {
