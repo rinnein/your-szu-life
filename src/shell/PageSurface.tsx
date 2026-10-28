@@ -1,28 +1,5 @@
 import type { ReactNode } from "react";
 import { useLogicalNavigation } from "../logical-navigation";
-import { AppNavigation } from "./AppNavigation";
-import { PageTransition } from "../motion/PageTransition";
-
-/**
- * 应用外壳：导航 + 内容区。
- *
- * 布局约定：
- * - 窄屏：底部 NavigationBar，内容区预留底部安全区。
- * - 宽屏：左侧 NavigationRail，内容区在其右侧。
- *
- * 不在这里渲染顶栏 —— 顶栏由各页面的 `TopAppBar` 提供，
- * 因为工作台、独立门户页与 tab 页的顶栏结构不同。
- */
-export function AppShell({ children }: { children: ReactNode }) {
-  return (
-    <div className="app-frame">
-      <AppNavigation />
-      <main className="app-content">
-        <PageTransition>{children}</PageTransition>
-      </main>
-    </div>
-  );
-}
 
 /** 页面内容的容器，替代原来的 `PageShell` 外层。 */
 export function PageSurface({

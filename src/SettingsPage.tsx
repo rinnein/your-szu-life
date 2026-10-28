@@ -96,8 +96,8 @@ export default function SettingsPage() {
     if (!aboutOnly) return null;
     return (
       <PageShell maxWidth="lg">
+        <TopAppBar title="关于" description="应用信息与检查更新" showBack={false} />
         <div className="settings-page">
-          <TopAppBar title="关于" description="应用信息与检查更新" showBack={false} />
           <div className="settings-panel">
             <AboutPage />
           </div>
@@ -108,9 +108,8 @@ export default function SettingsPage() {
 
   return (
     <PageShell maxWidth="lg">
+      <TopAppBar title="设置" description="管理账户资料与应用配置" showBack={false} />
       <div className="settings-page">
-        <TopAppBar title="设置" description="管理账户资料与应用配置" showBack={false} />
-
         {/* 宽屏用横向 tab，窄屏用下拉。M3 的 tab 在窄屏下会挤成两行。 */}
         <div className="settings-tabs-desktop" role="tablist" aria-label="设置导航">
           {tabs.map((t) => {

@@ -1,5 +1,5 @@
 import { FeatureGrid, type Feature } from "./components";
-import { PageSurface } from "./shell/AppShell";
+import { PageSurface } from "./shell/PageSurface";
 import { TopAppBar } from "./shell/TopAppBar";
 import { AuthGate } from "./shell/AuthGate";
 import { FaWallet, FaWifi } from "react-icons/fa6";
@@ -23,10 +23,8 @@ export default function LifePage() {
   return (
     <AuthGate>
       <PageSurface maxWidth="2xl">
-        <div className="grid gap-12">
-          <TopAppBar title="生活" description="校园网与校园卡相关功能" showBack={false} />
-          <FeatureGrid features={LIFE_FEATURES} />
-        </div>
+        <TopAppBar title="生活" description="校园网与校园卡相关功能" showBack={false} />
+        <FeatureGrid features={LIFE_FEATURES} />
       </PageSurface>
     </AuthGate>
   );

@@ -118,11 +118,6 @@ input {
   text-align: center;
 }
 
-.auth-card-content .md-card-description {
-  color: var(--szu-muted);
-  line-height: 1.65;
-}
-
 .brand-mark {
   width: 30px;
   height: 30px;
@@ -161,14 +156,6 @@ input {
 
 .profile-card {
   padding: 6px;
-}
-
-.profile-card .md-card-header {
-  padding: 28px 30px 18px;
-}
-
-.profile-card .md-card-content {
-  padding: 0 30px 30px;
 }
 
 .field {
@@ -301,29 +288,6 @@ p {
   }
 }
 
-.dialog-cancel {
-  border: 0;
-  border-radius: 10px;
-  padding: 9px 14px;
-  background: transparent;
-  color: var(--szu-muted);
-  cursor: pointer;
-}
-
-.dialog-cancel:hover {
-  background: var(--mtrl-sys-color-surface-container);
-}
-
-.network-zone .md-card-header,
-.network-status-card .md-card-header {
-  padding: 28px 32px 16px;
-}
-
-.network-zone .md-card-content,
-.network-status-card .md-card-content {
-  padding: 16px 32px 32px;
-}
-
 .network-setting-row,
 .network-action-row {
   display: flex;
@@ -378,15 +342,7 @@ p {
   font-weight: 600;
 }
 
-@media (max-width: 680px) {
-}
-
-.campus-network-layout {
-  position: relative;
-  padding-top: 22px;
-}
-
-.campus-region-tabs,
+/* 凭据面板内的 tab 条与上一块的间距（页面顶栏到正文的间距已由统一规则提供）。 */
 .network-credential-tabs {
   margin-top: 26px;
 }
@@ -426,18 +382,6 @@ p {
 .brand-mark-trigger:focus-visible {
   outline: 2px solid var(--szu-brand);
   outline-offset: 2px;
-}
-
-@media (max-width: 640px) {
-}
-
-.payments-layout {
-  position: relative;
-  display: grid;
-  gap: 24px;
-  max-width: 1100px;
-  margin: 0 auto;
-  padding-top: 22px;
 }
 
 .electricity-page {
@@ -503,14 +447,6 @@ p {
 
 .payments-card {
   min-width: 0;
-}
-
-.payments-card .md-card-header {
-  padding: 28px 32px 16px;
-}
-
-.payments-card .md-card-content {
-  padding: 16px 32px 32px;
 }
 
 .payments-card-title {
@@ -583,14 +519,6 @@ p {
   .electricity-fields {
     grid-template-columns: minmax(0, 1fr);
     max-width: none;
-  }
-
-  .payments-card .md-card-header {
-    padding: 20px 20px 10px;
-  }
-
-  .payments-card .md-card-content {
-    padding: 8px 20px 20px;
   }
 
   .payments-wechat-content > button {
@@ -713,53 +641,6 @@ p {
   color: var(--mtrl-sys-color-on-surface);
 }
 
-.announcement-carousel-control-next {
-  right: 14px;
-}
-
-.announcement-carousel-indicators {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-  min-height: 30px;
-  padding-top: 10px;
-}
-
-.announcement-carousel-indicator {
-  width: 8px;
-  height: 8px;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
-  background: var(--mtrl-sys-color-outline-variant);
-  cursor: pointer;
-  transition:
-    width 160ms ease,
-    background-color 160ms ease;
-}
-
-.announcement-carousel-indicator[aria-current="true"] {
-  width: 22px;
-  background: var(--szu-brand);
-}
-
-.announcement-trigger {
-  width: 100%;
-  height: auto;
-  min-height: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--szu-ink);
-  text-align: left;
-  white-space: normal;
-}
-
 .announcement-image {
   display: block;
   width: 100%;
@@ -792,32 +673,6 @@ p {
   height: 28px;
 }
 
-.announcement-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-shrink: 0;
-  height: 52px;
-  padding: 0 16px;
-  font-size: 15px;
-  font-weight: 650;
-  overflow-wrap: anywhere;
-}
-
-.announcement-title-row > svg {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-  color: var(--szu-muted);
-}
-
-.announcement-body {
-  padding: 0 16px 16px;
-  color: var(--szu-muted);
-  font-size: 14px;
-}
-
 .content-plaintext {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -829,25 +684,6 @@ p {
   margin-bottom: 0;
   color: var(--mtrl-sys-color-error);
   font-size: 13px;
-}
-
-.announcement-empty {
-  min-height: clamp(190px, 26vw, 240px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(
-    115deg,
-    var(--mtrl-sys-color-primary-container),
-    var(--mtrl-sys-color-surface-container-low)
-  );
-}
-
-.announcement-empty p {
-  margin: 0;
-  color: var(--szu-muted);
-  font-size: 14px;
-  line-height: 1.7;
 }
 
 .about-layout {
@@ -1017,14 +853,6 @@ p {
     gap: 3px;
   }
 
-  .announcement-title-row {
-    padding: 16px;
-  }
-
-  .announcement-body {
-    padding-inline: 16px;
-  }
-
   .contributors-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1040,70 +868,6 @@ p {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
-}
-
-/* ==========================================================================
-   MD3 自建组件
-   material 没有 Banner / Card / Table / Disclosure / Avatar / Kbd /
-   Pagination / ScrollShadow / NumberStepper，这些由 src/ui 提供。
-   全部使用 --mtrl-sys-color-* 角色，因此自动跟随深浅色与种子色。
-   ========================================================================== */
-
-/* ---------- 卡片 ---------- */
-.md-card {
-  display: flex;
-  flex-direction: column;
-  border-radius: var(--mtrl-sys-shape-corner-medium, 12px);
-  overflow: hidden;
-  background: var(--mtrl-sys-color-surface-container-low);
-  color: var(--mtrl-sys-color-on-surface);
-}
-
-.md-card-elevated {
-  background: var(--mtrl-sys-color-surface-container-low);
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--mtrl-sys-color-shadow) 12%, transparent);
-}
-
-.md-card-filled {
-  background: var(--mtrl-sys-color-surface-container-highest);
-}
-
-.md-card-outlined {
-  background: var(--mtrl-sys-color-surface);
-  border: 1px solid var(--mtrl-sys-color-outline-variant);
-}
-
-.md-card-header {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 16px 16px 8px;
-}
-
-.md-card-title {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  line-height: 1.5rem;
-  letter-spacing: 0.009375em;
-}
-
-.md-card-description {
-  margin: 0;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  color: var(--mtrl-sys-color-on-surface-variant);
-}
-
-.md-card-content {
-  padding: 8px 16px 16px;
-}
-
-.md-card-footer {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 0 16px 16px;
 }
 
 /* ---------- 横幅 ---------- */
@@ -1290,10 +1054,6 @@ p {
   line-height: 1rem;
 }
 
-.kbd-abbr {
-  text-decoration: none;
-}
-
 /* ---------- 分页 ---------- */
 .pagination {
   display: flex;
@@ -1326,12 +1086,6 @@ p {
 .pagination-status {
   font-size: 0.875rem;
   color: var(--mtrl-sys-color-on-surface-variant);
-}
-
-/* ---------- 滚动阴影 ---------- */
-.scroll-shadow {
-  overflow-y: auto;
-  overscroll-behavior: contain;
 }
 
 /* ---------- 数字步进输入框 ---------- */
@@ -1445,11 +1199,6 @@ p {
 .field-description {
   font-size: 0.75rem;
   color: var(--mtrl-sys-color-on-surface-variant);
-}
-
-.field-error {
-  font-size: 0.75rem;
-  color: var(--mtrl-sys-color-error);
 }
 
 /*
@@ -1623,6 +1372,11 @@ body:not(:has(.app-nav-bar)) m-snackbar::part(snackbar) {
  * 不要把顶栏放进带横向内边距或非居中的容器。
  *
  * 顶栏内容与自身边缘的间距由 material 自带的内边距提供（宽屏 16px、窄屏 12px）。
+ *
+ * 顶栏块（顶栏 + 说明文字）必须是页面内容容器的直接子元素。页面里带 `gap` 的
+ * grid/flex 容器会把 gap 插在顶栏和它自己的说明文字之间——两者是同级的两个
+ * 节点——把本该 8px 的间距顶成几十像素。内容的节奏请交给内容块自己的
+ * `margin-block-start`，顶栏到正文的 24px 由下面的统一规则提供。
  */
 .top-app-bar {
   position: sticky;
@@ -1716,11 +1470,28 @@ m-top-app-bar::part(trailing) {
 }
 
 .top-app-bar-description {
-  margin: 8px 0 20px;
+  margin-block: 8px 0;
   max-inline-size: 42rem;
   font-size: 0.875rem;
   line-height: 1.6;
   color: var(--mtrl-sys-color-on-surface-variant);
+}
+
+/*
+ * 顶栏块（顶栏 + 说明文字）与正文第一个内容块的间距：全站唯一一处定义，
+ * 各页不再自己写数字。
+ *
+ * `:not(.top-app-bar-description)` 是关键：说明文字与顶栏同级、紧随其后，
+ * 它是顶栏块内部的一环，不该被这条规则当成「正文第一块」。
+ *
+ * 用 `.page-surface-inner` 前缀把优先级抬到 (0,3,0)：页面里已有的
+ * margin-top（例如 `.network-credential-tabs`）不会把它顶开，
+ * Tailwind 的 `mt-*` 工具类（utilities 层）也盖不过它。
+ */
+.page-surface-inner :is(.top-app-bar, .top-app-bar-description) + *:not(
+    .top-app-bar-description
+  ) {
+  margin-block-start: 24px;
 }
 
 /* ---------- 外观设置 ---------- */
@@ -1937,206 +1708,6 @@ m-top-app-bar::part(trailing) {
 .md-sample-field:disabled {
   opacity: 0.38;
   cursor: not-allowed;
-}
-
-.md-checkbox-group {
-  border: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.md-checkbox-group-items {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-/* ---------- 模态对话框 ---------- */
-.md-modal {
-  position: fixed;
-  inset: 0;
-  inline-size: 100vw;
-  block-size: 100dvh;
-  max-inline-size: 100vw;
-  max-block-size: 100dvh;
-  margin: 0;
-  padding: 0;
-  border: none;
-  background: transparent;
-  overflow: hidden;
-}
-
-.md-modal::backdrop {
-  background: color-mix(in srgb, var(--mtrl-sys-color-scrim) 32%, transparent);
-}
-
-.md-modal-container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: 100%;
-  block-size: 100%;
-  padding: 24px;
-  box-sizing: border-box;
-}
-
-.md-modal-dialog {
-  position: relative;
-  inline-size: min(32rem, calc(100vw - 48px));
-  max-block-size: calc(100vh - 48px);
-  overflow-y: auto;
-  border-radius: var(--mtrl-sys-shape-corner-extra-large, 28px);
-  background: var(--mtrl-sys-color-surface-container-high);
-  color: var(--mtrl-sys-color-on-surface);
-  padding: 24px;
-  box-shadow: 0 8px 28px color-mix(in srgb, var(--mtrl-sys-color-shadow) 24%, transparent);
-}
-
-.md-modal-container[data-size="sm"] .md-modal-dialog {
-  inline-size: min(24rem, calc(100vw - 48px));
-}
-
-.md-modal-container[data-size="lg"] .md-modal-dialog {
-  inline-size: min(48rem, calc(100vw - 48px));
-}
-
-.md-modal-close {
-  position: absolute;
-  inset-block-start: 16px;
-  inset-inline-end: 16px;
-  inline-size: 40px;
-  block-size: 40px;
-  border: none;
-  border-radius: var(--mtrl-sys-shape-corner-full, 9999px);
-  background: none;
-  color: var(--mtrl-sys-color-on-surface-variant);
-  font-size: 1.25rem;
-  cursor: pointer;
-}
-
-.md-modal-close:hover {
-  background: color-mix(in srgb, var(--mtrl-sys-color-on-surface) 8%, transparent);
-}
-
-.md-modal-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-block-end: 16px;
-}
-
-.md-modal-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: 40px;
-  block-size: 40px;
-  border-radius: var(--mtrl-sys-shape-corner-full, 9999px);
-  background: var(--mtrl-sys-color-primary-container);
-  color: var(--mtrl-sys-color-on-primary-container);
-  flex: none;
-}
-
-.md-modal-heading {
-  margin: 0;
-  font-size: 1.375rem;
-  font-weight: 500;
-  line-height: 1.75rem;
-}
-
-.md-modal-body {
-  padding-block-end: 24px;
-  font-size: 0.875rem;
-  line-height: 1.5rem;
-  color: var(--mtrl-sys-color-on-surface-variant);
-}
-
-.md-modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-/* ---------- 下拉选择 ---------- */
-.md-select {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-/* ---------- 图标按钮 ---------- */
-.md-icon-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: 40px;
-  block-size: 40px;
-  border: none;
-  border-radius: var(--mtrl-sys-shape-corner-full, 9999px);
-  background: none;
-  color: var(--mtrl-sys-color-on-surface-variant);
-  cursor: pointer;
-}
-
-.md-icon-button:hover {
-  background: color-mix(in srgb, var(--mtrl-sys-color-on-surface) 8%, transparent);
-}
-
-/* ---------- 下拉菜单 ---------- */
-.dropdown {
-  position: relative;
-  display: inline-flex;
-}
-
-.dropdown-popover {
-  position: absolute;
-  inset-block-start: 100%;
-  inset-inline-end: 0;
-  z-index: 30;
-  min-inline-size: 14rem;
-  margin-block-start: 4px;
-  padding-block: 8px;
-  border-radius: var(--mtrl-sys-shape-corner-small, 8px);
-  background: var(--mtrl-sys-color-surface-container-high);
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--mtrl-sys-color-shadow) 20%, transparent);
-}
-
-.dropdown-menu {
-  display: flex;
-  flex-direction: column;
-}
-
-.dropdown-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  border: none;
-  background: none;
-  color: var(--mtrl-sys-color-on-surface);
-  font: inherit;
-  font-size: 0.875rem;
-  text-align: start;
-  cursor: pointer;
-}
-
-.dropdown-item:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--mtrl-sys-color-on-surface) 8%, transparent);
-}
-
-.dropdown-item:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-/* ---------- 手风琴 ---------- */
-.accordion {
-  display: flex;
-  flex-direction: column;
 }
 
 /* ---------- 设置页 ---------- */
@@ -2372,74 +1943,6 @@ m-top-app-bar::part(trailing) {
   color: var(--mtrl-sys-color-on-secondary-container);
 }
 
-/* ---------- 下拉选择（M3：触发按钮 + 菜单） ---------- */
-.md-select-field {
-  position: relative;
-  display: inline-flex;
-  flex-direction: column;
-  inline-size: 100%;
-}
-
-.md-select-trigger {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  inline-size: 100%;
-  padding: 12px 16px;
-  border: 1px solid var(--mtrl-sys-color-outline);
-  border-radius: var(--mtrl-sys-shape-corner-small, 8px);
-  background: transparent;
-  color: var(--mtrl-sys-color-on-surface);
-  font: inherit;
-  font-size: 0.9375rem;
-  text-align: start;
-  cursor: pointer;
-}
-
-.md-select-trigger:disabled {
-  opacity: 0.38;
-  cursor: not-allowed;
-}
-
-.md-select-arrow {
-  color: var(--mtrl-sys-color-on-surface-variant);
-}
-
-.md-select-popover {
-  position: absolute;
-  inset-inline: 0;
-  inset-block-start: calc(100% + 4px);
-  z-index: 40;
-  max-block-size: 18rem;
-  overflow-y: auto;
-  padding-block: 8px;
-  border-radius: var(--mtrl-sys-shape-corner-small, 8px);
-  background: var(--mtrl-sys-color-surface-container-high);
-  box-shadow: 0 4px 16px color-mix(in srgb, var(--mtrl-sys-color-shadow) 20%, transparent);
-}
-
-.md-select-option {
-  padding: 10px 16px;
-  font-size: 0.875rem;
-  color: var(--mtrl-sys-color-on-surface);
-  cursor: pointer;
-}
-
-.md-select-option:hover {
-  background: color-mix(in srgb, var(--mtrl-sys-color-on-surface) 8%, transparent);
-}
-
-.md-select-option[data-selected] {
-  background: var(--mtrl-sys-color-secondary-container);
-  color: var(--mtrl-sys-color-on-secondary-container);
-}
-
-.md-select-option[aria-disabled] {
-  opacity: 0.5;
-  cursor: default;
-}
-
 /* 收起时仅折叠高度，不移出无障碍树（与 HeroUI 的 Accordion 行为一致）。 */
 .disclosure-panel {
   overflow: hidden;
@@ -2469,20 +1972,6 @@ m-top-app-bar::part(trailing) {
   .disclosure-indicator {
     transition: none;
   }
-}
-
-.md-progress-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  inline-size: 100%;
-}
-
-.md-progress-value {
-  flex: none;
-  font-size: 0.75rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--mtrl-sys-color-on-surface-variant);
 }
 
 /* 选项前缀由 CSS 生成，不进入 DOM 文本，因此不污染可访问名称。 */

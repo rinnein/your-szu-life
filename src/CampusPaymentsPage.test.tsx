@@ -169,7 +169,6 @@ describe("campus payments route", () => {
       const link = screen.getByLabelText(service.title + "完整链接");
       expect(link).toHaveTextContent(service.url);
       expect(link).toHaveAttribute("tabindex", "0");
-      expect(document.querySelector(".payments-layout img[src]")).toBeNull();
     },
   );
 

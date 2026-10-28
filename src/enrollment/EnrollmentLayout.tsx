@@ -95,9 +95,11 @@ export default function EnrollmentLayout() {
   const page = enrollmentPages.find((p) => p.path === path) ?? enrollmentPages[0];
   return (
     <PageShell>
-      <div className="mx-auto grid w-full max-w-[1440px] min-w-0 gap-5">
+      <div className="mx-auto w-full max-w-[1440px] min-w-0">
         {!cacheOnly && snapshot && (
-          <OnlineUsers account={snapshot.context.student} mode={snapshot.mode} />
+          <div className="mb-5">
+            <OnlineUsers account={snapshot.context.student} mode={snapshot.mode} />
+          </div>
         )}
         <ModuleHeader
           title={page.label}
@@ -159,59 +161,62 @@ export default function EnrollmentLayout() {
             </>
           }
         />
-        <OperationError
-          message={errors.snapshot || errors.session || errors.official || unavailable}
-          onRetry={verify}
-        />
-        {cacheOnly && (
-          <p className="text-sm text-muted">
-            仅浏览本地缓存，不自动连接选课系统。未缓存内容不会作为无课或未选课的依据。
-          </p>
-        )}
-        <div className="lg:hidden">
-          <Choice
-            label="选课导航"
-            value={path}
-            onChange={change}
-            items={enrollmentPages.map((p) => ({ id: p.path, label: p.label }))}
+
+        <div className="grid gap-5">
+          <OperationError
+            message={errors.snapshot || errors.session || errors.official || unavailable}
+            onRetry={verify}
           />
-        </div>
-        <div className="grid min-w-0 gap-6 lg:grid-cols-[184px_minmax(0,1fr)]">
-          <aside
-            className="hidden self-start rounded-2xl bg-surface p-2 lg:block"
-            aria-label="选课导航"
-          >
-            {enrollmentPages.map((p, i) => {
-              const Icon = icons[i];
-              return (
+          {cacheOnly && (
+            <p className="text-sm text-muted">
+              仅浏览本地缓存，不自动连接选课系统。未缓存内容不会作为无课或未选课的依据。
+            </p>
+          )}
+          <div className="lg:hidden">
+            <Choice
+              label="选课导航"
+              value={path}
+              onChange={change}
+              items={enrollmentPages.map((p) => ({ id: p.path, label: p.label }))}
+            />
+          </div>
+          <div className="grid min-w-0 gap-6 lg:grid-cols-[184px_minmax(0,1fr)]">
+            <aside
+              className="hidden self-start rounded-2xl bg-surface p-2 lg:block"
+              aria-label="选课导航"
+            >
+              {enrollmentPages.map((p, i) => {
+                const Icon = icons[i];
+                return (
+                  <Button
+                    key={p.path}
+                    className="mb-1 w-full justify-start"
+                    variant={path === p.path ? "filled" : "text"}
+                    onClick={() => change(p.path)}
+                  >
+                    <Icon />
+                    {p.label}
+                  </Button>
+                );
+              })}
+              <div className="mt-4 border-t border-separator pt-3">
                 <Button
-                  key={p.path}
-                  className="mb-1 w-full justify-start"
-                  variant={path === p.path ? "filled" : "text"}
-                  onClick={() => change(p.path)}
+                  className="w-full justify-start"
+                  variant="text"
+                  onClick={() => void nav.push("/study/academic")}
                 >
-                  <Icon />
-                  {p.label}
+                  学业完成查询
                 </Button>
-              );
-            })}
-            <div className="mt-4 border-t border-separator pt-3">
-              <Button
-                className="w-full justify-start"
-                variant="text"
-                onClick={() => void nav.push("/study/academic")}
-              >
-                学业完成查询
-              </Button>
-            </div>
-          </aside>
-          <section className="min-w-0">
-            {!cacheOnly && !snapshot && !checked && !errors.snapshot ? (
-              <LoadingIndicator size={24} aria-label="正在连接选课服务" />
-            ) : (
-              <Outlet />
-            )}
-          </section>
+              </div>
+            </aside>
+            <section className="min-w-0">
+              {!cacheOnly && !snapshot && !checked && !errors.snapshot ? (
+                <LoadingIndicator size={24} aria-label="正在连接选课服务" />
+              ) : (
+                <Outlet />
+              )}
+            </section>
+          </div>
         </div>
       </div>
     </PageShell>

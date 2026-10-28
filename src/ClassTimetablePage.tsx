@@ -31,9 +31,9 @@ export default function ClassTimetablePage() {
 
   return (
     <PageShell maxWidth="lg">
-      <div className="grid gap-6">
-        <ModuleHeader title="上课时间表" description="深圳大学标准课程时间安排" />
+      <ModuleHeader title="上课时间表" description="深圳大学标准课程时间安排" />
 
+      <div className="grid gap-6">
         <Table className="shadow-sm">
           <Table.ScrollContainer>
             <Table.Content aria-label="深圳大学上课时间表">

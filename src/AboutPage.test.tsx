@@ -31,8 +31,6 @@ vi.mock("./components", () => ({
       {children}
     </section>
   ),
-  ModuleHeader: ({ title }: { title: string }) => <header>{title}</header>,
-  PageShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
 function makeSnapshot(

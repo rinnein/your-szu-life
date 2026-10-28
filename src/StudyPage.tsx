@@ -1,6 +1,6 @@
 import { toast } from "./ui";
 import { FeatureGrid, type Feature } from "./components";
-import { PageSurface } from "./shell/AppShell";
+import { PageSurface } from "./shell/PageSurface";
 import { TopAppBar } from "./shell/TopAppBar";
 import { AuthGate } from "./shell/AuthGate";
 import {
@@ -49,16 +49,14 @@ export default function StudyPage() {
   return (
     <AuthGate>
       <PageSurface maxWidth="2xl">
-        <div className="grid gap-12">
-          <TopAppBar title="学习" description="课表、选课与计软相关功能" showBack={false} />
+        <TopAppBar title="学习" description="课表、选课与计软相关功能" showBack={false} />
 
-          <FeatureGrid
-            features={STUDY_FEATURES}
-            onPlaceholder={(label) => {
-              toast.info(`${label}功能即将支持`, { description: "当前仅提供入口占位" });
-            }}
-          />
-        </div>
+        <FeatureGrid
+          features={STUDY_FEATURES}
+          onPlaceholder={(label) => {
+            toast.info(`${label}功能即将支持`, { description: "当前仅提供入口占位" });
+          }}
+        />
       </PageSurface>
     </AuthGate>
   );

@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Button, Dialog, LoadingIndicator, Menu, MenuItem } from "material/react";
 import { useAuth, beginAuthentication } from "./auth";
 import { BrandMark } from "./components";
-import { PageSurface } from "./shell/AppShell";
+import { PageSurface } from "./shell/PageSurface";
 import { TopAppBar } from "./shell/TopAppBar";
 import { AuthGate } from "./shell/AuthGate";
 import { useDebugMode } from "./shell/use-debug-mode";
@@ -41,60 +41,60 @@ export default function HomePage() {
   return (
     <AuthGate>
       <PageSurface maxWidth="2xl">
-        <div className="grid gap-12">
-          <TopAppBar
-            title="首页"
-            eyebrow="YOUR SZU LIFE"
-            showBack={false}
-            leading={
-              <button
-                type="button"
-                className="brand-mark-trigger"
-                aria-label="应用图标，连续点击 5 次启用调试模式"
-                onClick={handleTap}
+        <TopAppBar
+          title="首页"
+          eyebrow="YOUR SZU LIFE"
+          showBack={false}
+          leading={
+            <button
+              type="button"
+              className="brand-mark-trigger"
+              aria-label="应用图标，连续点击 5 次启用调试模式"
+              onClick={handleTap}
+            >
+              <BrandMark />
+            </button>
+          }
+          actions={
+            <div className="account-menu">
+              <Button
+                variant="text"
+                className="account-trigger"
+                aria-label="打开账户菜单"
+                aria-haspopup="menu"
+                aria-expanded={accountMenuOpen}
+                disabled={authBusy}
+                onClick={() => setAccountMenuOpen((value) => !value)}
               >
-                <BrandMark />
-              </button>
-            }
-            actions={
-              <div className="account-menu">
-                <Button
-                  variant="text"
-                  className="account-trigger"
-                  aria-label="打开账户菜单"
-                  aria-haspopup="menu"
-                  aria-expanded={accountMenuOpen}
-                  disabled={authBusy}
-                  onClick={() => setAccountMenuOpen((value) => !value)}
-                >
-                  {auth.studentId}
-                </Button>
-                <Menu
-                  aria-label="账户操作"
-                  open={accountMenuOpen}
-                  onClose={() => setAccountMenuOpen(false)}
-                  onSelect={(event) => {
-                    const key = event.detail.value;
-                    setAccountMenuOpen(false);
-                    if (key === "settings") void navigation.push("/settings");
-                    if (key === "reauth") void reauthenticate();
-                    if (key === "logout") setLogoutOpen(true);
-                  }}
-                >
-                  <MenuItem value="identity" disabled>
-                    {auth.name ?? "未设置姓名"}
-                  </MenuItem>
-                  <MenuItem value="card" disabled>
-                    校园卡号：{profile?.campusCardNumber ?? "未设置"}
-                  </MenuItem>
-                  <MenuItem value="settings">设置</MenuItem>
-                  <MenuItem value="reauth">重新认证</MenuItem>
-                  <MenuItem value="logout">注销</MenuItem>
-                </Menu>
-              </div>
-            }
-          />
+                {auth.studentId}
+              </Button>
+              <Menu
+                aria-label="账户操作"
+                open={accountMenuOpen}
+                onClose={() => setAccountMenuOpen(false)}
+                onSelect={(event) => {
+                  const key = event.detail.value;
+                  setAccountMenuOpen(false);
+                  if (key === "settings") void navigation.push("/settings");
+                  if (key === "reauth") void reauthenticate();
+                  if (key === "logout") setLogoutOpen(true);
+                }}
+              >
+                <MenuItem value="identity" disabled>
+                  {auth.name ?? "未设置姓名"}
+                </MenuItem>
+                <MenuItem value="card" disabled>
+                  校园卡号：{profile?.campusCardNumber ?? "未设置"}
+                </MenuItem>
+                <MenuItem value="settings">设置</MenuItem>
+                <MenuItem value="reauth">重新认证</MenuItem>
+                <MenuItem value="logout">注销</MenuItem>
+              </Menu>
+            </div>
+          }
+        />
 
+        <div className="grid gap-12">
           <AnnouncementBoard />
           <HomeCalendarWidget />
         </div>

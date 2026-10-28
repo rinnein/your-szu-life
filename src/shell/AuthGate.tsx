@@ -5,7 +5,7 @@ import { Banner } from "../ui";
 import { authFailureFor, beginAuthentication, useAuth, type Profile } from "../auth";
 import { ProfileForm } from "../ProfileForm";
 import { BrandMark } from "../components";
-import { PageSurface } from "./AppShell";
+import { PageSurface } from "./PageSurface";
 
 /**
  * 统一认证门。

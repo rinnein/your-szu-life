@@ -4,7 +4,7 @@ import type { IconType } from "react-icons";
 import { LuRefreshCw } from "react-icons/lu";
 import { Card as UiCard, LoadingIndicator, Button } from "material/react";
 import { useLogicalNavigation } from "./logical-navigation";
-import { PageSurface } from "./shell/AppShell";
+import { PageSurface } from "./shell/PageSurface";
 import { TopAppBar } from "./shell/TopAppBar";
 import appIcon from "../src-tauri/icons/icon.png";
 

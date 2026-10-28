@@ -129,11 +129,12 @@ export function LogicalNavigationProvider({ children }: { children: ReactNode })
       window.SzuApplicationBack.postMessage("back-request");
       return;
     }
-    // 先让 router 完成导航，再更新动画状态：在导航中途 setState 会让
-    // 订阅树重挂载，打断正在进行的 history 操作。
+    // 先记录动作再导航：`record` 只写 ref、不触发渲染，因此不会在导航中途
+    // 重挂载订阅树（那会打断 history 操作）；反过来若在导航之后再记录，
+    // 渲染这次跳转的那一帧读到的还是上一个动作，顶栏的入场方向会错一档。
     if (router.history.canGoBack()) {
-      router.history.back();
       record("back");
+      router.history.back();
     } else if (child && nativeRuntime()) await getCurrentWebviewWindow().destroy();
   }, [child, record, router]);
   const replace = useCallback(
@@ -142,8 +143,8 @@ export function LogicalNavigationProvider({ children }: { children: ReactNode })
         await back();
         return;
       }
-      await router.navigate({ to: path, replace: true });
       record("replace");
+      await router.navigate({ to: path, replace: true });
     },
     [back, child, record, router],
   );
@@ -151,13 +152,13 @@ export function LogicalNavigationProvider({ children }: { children: ReactNode })
     async (path: string) => {
       if (opening.current) return;
       opening.current = true;
+      record("push");
       try {
         if (nativeRuntime() && window.SzuApplicationBack && (await supportsMultipleWindows())) {
           await openLogicalWindow(path);
         } else {
           await router.navigate({ to: path });
         }
-        record("push");
       } catch {
         toast.danger("页面未打开", {
           description: "无法打开独立页面，请重试；当前页面已保留。",

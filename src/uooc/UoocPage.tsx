@@ -19,7 +19,6 @@ import {
 import { Banner, Chip, Disclosure, NumberField, toast } from "../ui";
 import { nameTablist } from "../ui/tablist";
 import {
-  LuArrowLeft,
   LuCheck,
   LuCircleHelp,
   LuMessageCircle,
@@ -29,7 +28,7 @@ import {
   LuSquare,
   LuTrash2,
 } from "react-icons/lu";
-import { PageShell, SkeletonCard } from "../components";
+import { ModuleHeader, PageShell, SkeletonCard } from "../components";
 import { useLogicalNavigation } from "../logical-navigation";
 import { ModelDownloadModal } from "../ModelDownloadModal";
 import { useEmbeddingModelStatus } from "../EmbeddingModelSettings";
@@ -510,21 +509,9 @@ export default function UoocPage() {
           if (!open) setEmbeddingDismissed(true);
         }}
       />
+      <ModuleHeader title="UOOC刷课" description="优课在线视频任务" />
+
       <div className="mx-auto grid w-full max-w-4xl min-w-0 gap-5">
-        <header className="flex items-center gap-3">
-          <button
-            type="button"
-            className="md-icon-button"
-            data-webview-navigation
-            aria-label="返回上一页"
-            onClick={() => void navigation.back()}
-          >
-            <LuArrowLeft aria-hidden="true" />
-          </button>
-          <h1 data-webview-navigation className="text-2xl font-semibold">
-            UOOC刷课
-          </h1>
-        </header>
         <Card variant="outlined">
           <div slot="headline" className="font-semibold text-lg">
             {snapshot?.user?.name ?? "优课在线"}

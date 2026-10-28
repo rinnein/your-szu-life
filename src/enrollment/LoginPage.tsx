@@ -99,8 +99,9 @@ export default function LoginPage() {
           setShowCaptcha(true);
         }}
       />
+      <ModuleHeader title="登录选课系统" description="选择访问方式，进入本科选课工作台" />
+
       <div className="mx-auto grid w-full max-w-2xl gap-7">
-        <ModuleHeader title="登录选课系统" description="选择访问方式，进入本科选课工作台" />
         <Card
           variant="outlined"
           headline="连接学校选课系统"

@@ -51,13 +51,13 @@ export default function CampusPaymentsPage() {
 
   return (
     <PageShell maxWidth="xl">
-      <div className="grid gap-8">
-        <ModuleHeader
-          title="校园卡/电费/网费"
-          eyebrow="CAMPUS SERVICES"
-          description="官方服务入口与宿舍电费查询；不会自动充值、扣款或修改套餐"
-        />
+      <ModuleHeader
+        title="校园卡/电费/网费"
+        eyebrow="CAMPUS SERVICES"
+        description="官方服务入口与宿舍电费查询；不会自动充值、扣款或修改套餐"
+      />
 
+      <div className="grid gap-8">
         <Tabs
           ref={(host) => nameTablist(host, "校园服务分类")}
           value={active}

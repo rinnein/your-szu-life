@@ -136,7 +136,7 @@ describe("SettingsPage multi-tab and unified local model card", () => {
     });
 
     expect(await screen.findByText("代理模式")).toBeInTheDocument();
-    expect(screen.getByText("校内网也走代理")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "校内网也走代理" })).toBeInTheDocument();
   });
 
   it("switches to 通知 tab and displays NotificationSettings", async () => {

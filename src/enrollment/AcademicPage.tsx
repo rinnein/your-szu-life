@@ -77,44 +77,45 @@ export default function AcademicPage() {
   }, [calculating, run]);
   return (
     <PageShell>
+      <ModuleHeader
+        title="学业完成查询"
+        description="展开培养方案，点击任意节点检索课程"
+        actions={
+          <>
+            <Button
+              size="xs"
+              variant="tonal"
+              disabled={!!pending["portal-academic"]}
+              onClick={() => void portal("academic")}
+            >
+              官方认证
+            </Button>
+            <Button
+              size="xs"
+              variant="tonal"
+              disabled={!!pending.academic && !calculating}
+              onClick={() => void run({ type: "academic", recalculate: false })}
+            >
+              <LuRefreshCw />
+              刷新
+            </Button>
+            <Button
+              size="xs"
+              variant="text"
+              disabled={calculating || !!pending.academic}
+              onClick={() =>
+                void run({ type: "academic", recalculate: true }).then(
+                  (v) => v && setCalculating(true),
+                )
+              }
+            >
+              重新计算
+            </Button>
+          </>
+        }
+      />
+
       <div className="mx-auto grid w-full max-w-[1600px] min-w-0 gap-5">
-        <ModuleHeader
-          title="学业完成查询"
-          description="展开培养方案，点击任意节点检索课程"
-          actions={
-            <>
-              <Button
-                size="xs"
-                variant="tonal"
-                disabled={!!pending["portal-academic"]}
-                onClick={() => void portal("academic")}
-              >
-                官方认证
-              </Button>
-              <Button
-                size="xs"
-                variant="tonal"
-                disabled={!!pending.academic && !calculating}
-                onClick={() => void run({ type: "academic", recalculate: false })}
-              >
-                <LuRefreshCw />
-                刷新
-              </Button>
-              <Button
-                size="xs"
-                variant="text"
-                disabled={calculating || !!pending.academic}
-                onClick={() =>
-                  void run({ type: "academic", recalculate: true }).then(
-                    (v) => v && setCalculating(true),
-                  )
-                }
-              >
-                重新计算
-              </Button>
-            </>
-          }
-        />
         <OperationError
           message={
             errors.snapshot ||

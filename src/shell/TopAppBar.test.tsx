@@ -91,3 +91,81 @@ describe("TopAppBar", () => {
     expect(await screen.findByRole("textbox", { name: "命令面板搜索框" })).toBeInTheDocument();
   });
 });
+
+/**
+ * 顶栏与说明文字是顶栏块里同级的两个节点，页面若把它们放进带 `gap` 的容器，
+ * 容器的 gap 会插进两者之间，把本该 8px 的间距顶成几十像素。
+ */
+describe("顶栏块不被放进带 gap 的容器", () => {
+  // `/life/campus-network` 不在列表里：它的网络概览由原生侧注入，
+  // jsdom 下页面在渲染前就抛错，没有顶栏可断言。
+  const pages = [
+    "/",
+    "/study",
+    "/life",
+    "/settings",
+    "/study/class-timetable",
+    "/study/computing",
+    "/study/oj",
+    "/study/uooc",
+    "/study/academic",
+    "/study/enrollment",
+    "/life/campus-payments",
+  ];
+
+  // 页面级容器类里自带 gap 的几个（见 src/index.css）。
+  const gapContainers = ["settings-page", "oj-page", "about-layout", "electricity-page"];
+
+  it.each(pages)("%s", async (path) => {
+    renderAt(path);
+
+    const bar = await vi.waitFor(() => {
+      const element = document.querySelector(".top-app-bar");
+      if (!element) throw new Error("页面没有渲染顶栏");
+      return element;
+    });
+    const inner = document.querySelector(".page-surface-inner");
+    expect(inner).not.toBeNull();
+
+    const offenders: string[] = [];
+    for (let node = bar.parentElement; node && node !== inner; node = node.parentElement) {
+      for (const name of node.classList) {
+        if (name.startsWith("gap-") || gapContainers.includes(name)) {
+          offenders.push(`${node.tagName.toLowerCase()}.${name}`);
+        }
+      }
+    }
+
+    expect(offenders).toEqual([]);
+    // 顶栏块必须落在页面容器里，否则间距规则无从生效。
+    expect(document.querySelector(".page-surface-inner")?.contains(bar)).toBe(true);
+  });
+});
+
+describe("页面转场", () => {
+  it("plays when a page is pushed and when it is popped by back", async () => {
+    const router = renderAt("/study");
+    const entry = await screen.findByRole("button", { name: /上课时间表/ });
+    expect(document.querySelector(".page-transition")?.getAttribute("data-motion")).toBe("forward");
+
+    fireEvent.click(entry);
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe("/study/class-timetable"));
+    expect(await screen.findByRole("heading", { name: "上课时间表" })).toBeInTheDocument();
+    expect(document.querySelector(".page-transition")?.getAttribute("data-motion")).toBe("forward");
+
+    fireEvent.click(screen.getByRole("button", { name: "返回上一页" }));
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe("/study"));
+    expect(await screen.findByRole("heading", { name: "学习" })).toBeInTheDocument();
+    expect(document.querySelector(".page-transition")?.getAttribute("data-motion")).toBe("back");
+  });
+
+  it("stays off for tab switches inside a single logical page", async () => {
+    const router = renderAt("/settings");
+
+    fireEvent.click(await screen.findByRole("tab", { name: "网络" }));
+    await vi.waitFor(() => expect(router.state.location.href).toContain("tab=network"));
+    await vi.waitFor(() =>
+      expect(document.querySelector(".page-transition")?.getAttribute("data-motion")).toBe("none"),
+    );
+  });
+});

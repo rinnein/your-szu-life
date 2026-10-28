@@ -198,54 +198,53 @@ export default function OjPage() {
           if (!open) setOcrDismissed(true);
         }}
       />
-      <div className="oj-page">
-        <ModuleHeader
-          title={site?.name ?? "OJ"}
-          description={site ? site.url : "OJ · 班级、测验与练习"}
-          actions={
-            <>
+      <ModuleHeader
+        title={site?.name ?? "OJ"}
+        description={site ? site.url : "OJ · 班级、测验与练习"}
+        actions={
+          <>
+            <Button
+              variant="tonal"
+              disabled={busy}
+              onClick={() =>
+                void action(async () => {
+                  await invoke("refresh_oj");
+                  if (site) {
+                    if (search.group) {
+                      const rows = await invoke<Contest[]>("get_oj_contests", {
+                        siteId: site.id,
+                        groupId: search.group,
+                      });
+                      ojProgressCache.invalidate(
+                        progressScope(site),
+                        rows.map((c) => c.id),
+                        true,
+                      );
+                      setContests(rows);
+                    } else setGroups(await invoke("get_oj_groups", { siteId: site.id }));
+                  }
+                })
+              }
+            >
+              刷新
+            </Button>
+            {snapshot?.desktop && isOverview && (
               <Button
                 variant="tonal"
-                disabled={busy}
-                onClick={() =>
-                  void action(async () => {
-                    await invoke("refresh_oj");
-                    if (site) {
-                      if (search.group) {
-                        const rows = await invoke<Contest[]>("get_oj_contests", {
-                          siteId: site.id,
-                          groupId: search.group,
-                        });
-                        ojProgressCache.invalidate(
-                          progressScope(site),
-                          rows.map((c) => c.id),
-                          true,
-                        );
-                        setContests(rows);
-                      } else setGroups(await invoke("get_oj_groups", { siteId: site.id }));
-                    }
-                  })
-                }
+                onClick={() => {
+                  setConfigurationError(undefined);
+                  setConfigurationOpen(true);
+                }}
               >
-                刷新
+                全局配置
               </Button>
-              {snapshot?.desktop && isOverview && (
-                <Button
-                  variant="tonal"
-                  onClick={() => {
-                    setConfigurationError(undefined);
-                    setConfigurationOpen(true);
-                  }}
-                >
-                  全局配置
-                </Button>
-              )}
-              <Button onClick={() => setEdit(site ?? "new")}>
-                {site ? "账号配置" : "添加 OJ"}
-              </Button>
-            </>
-          }
-        />
+            )}
+            <Button onClick={() => setEdit(site ?? "new")}>{site ? "账号配置" : "添加 OJ"}</Button>
+          </>
+        }
+      />
+
+      <div className="oj-page">
         <ErrorNotice message={error} />
         {snapshot?.desktop &&
           isOverview &&
