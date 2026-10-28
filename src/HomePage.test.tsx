@@ -231,6 +231,13 @@ describe("frontend smoke tests", () => {
     expect(heroCard).toHaveTextContent("从这里开始你的校园生活。");
   });
 
+  it("renders the home calendar and schedule widget", async () => {
+    mockSignedIn();
+
+    renderRouterApp();
+    expect(await screen.findByRole("heading", { name: "日历与待办" })).toBeInTheDocument();
+  });
+
   it("keeps the account trigger avatar-free and the top bar as the only header", async () => {
     mockSignedIn();
 

@@ -1,7 +1,7 @@
 import { useLogicalNavigation } from "../logical-navigation";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Card, Carousel, LoadingIndicator, Button } from "material/react";
+import { Card, LoadingIndicator, Button } from "material/react";
 import { Banner, Disclosure } from "../ui";
 import { LuArrowLeft, LuArrowRight, LuArrowUpRight, LuImage, LuMegaphone } from "react-icons/lu";
 import { useAppContent } from "./context";
@@ -96,9 +96,9 @@ function AnnouncementCard({ unit }: { unit: AnnouncementUnit }) {
   if ("kind" in unit) {
     return (
       <Card className="announcement-card" variant="outlined">
-        <Button
+        <button
+          type="button"
           className="announcement-trigger announcement-link"
-          variant="text"
           aria-label={unit.title}
           onClick={() => {
             void navigation.push(unit.url);
@@ -109,7 +109,7 @@ function AnnouncementCard({ unit }: { unit: AnnouncementUnit }) {
             <span>{unit.title}</span>
             <LuArrowUpRight aria-hidden="true" />
           </span>
-        </Button>
+        </button>
       </Card>
     );
   }
@@ -133,9 +133,9 @@ function AnnouncementCard({ unit }: { unit: AnnouncementUnit }) {
   }
   return (
     <Card className="announcement-card" variant="outlined">
-      <Button
+      <button
+        type="button"
         className="announcement-trigger announcement-link"
-        variant="text"
         aria-label={unit.title + "（在系统浏览器打开）"}
         onClick={() => {
           setError(undefined);
@@ -147,7 +147,7 @@ function AnnouncementCard({ unit }: { unit: AnnouncementUnit }) {
           <span>{unit.title}</span>
           <LuArrowUpRight aria-hidden="true" />
         </span>
-      </Button>
+      </button>
       {error && (
         <p className="announcement-open-error" role="alert">
           {error}
@@ -246,14 +246,12 @@ export function AnnouncementBoard() {
         </Banner>
       )}
       {displayUnits.length ? (
-        <Carousel
+        <div
           className="announcement-carousel"
           data-testid="announcement-carousel"
           role="region"
           aria-roledescription="carousel"
           aria-label="校园公告轮播"
-          index={currentIndex}
-          onChange={(e: any) => setCurrentIndex(e.detail?.value ?? e.target?.value ?? 0)}
           onMouseEnter={() => setCarouselPaused(true)}
           onMouseLeave={() => setCarouselPaused(false)}
           onFocus={() => setCarouselPaused(true)}
@@ -308,7 +306,7 @@ export function AnnouncementBoard() {
               ))}
             </div>
           )}
-        </Carousel>
+        </div>
       ) : (
         <Card className="announcement-empty" variant="outlined">
           <div className="p-6 text-center">

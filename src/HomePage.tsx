@@ -9,6 +9,7 @@ import { AuthGate } from "./shell/AuthGate";
 import { useDebugMode } from "./shell/use-debug-mode";
 import { useLogicalNavigation } from "./logical-navigation";
 import { AnnouncementBoard } from "./app-content/AnnouncementBoard";
+import { HomeCalendarWidget } from "./home-schedule/HomeCalendarWidget";
 
 /**
  * 首页。
@@ -95,6 +96,7 @@ export default function HomePage() {
           />
 
           <AnnouncementBoard />
+          <HomeCalendarWidget />
         </div>
 
         <LogoutDialog
