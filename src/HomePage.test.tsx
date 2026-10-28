@@ -9,6 +9,7 @@ import { routeTree } from "./routeTree.gen";
 import { listen } from "@tauri-apps/api/event";
 import { authFailureFor, normalizeAuthState } from "./auth";
 import { registerDebugTap } from "./shell/use-debug-mode";
+import { toast } from "./ui";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -195,18 +196,20 @@ describe("frontend smoke tests", () => {
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("set_debug_mode", { enabled: true }));
   });
 
-  it("keeps 成绩查询 on the study page with a dismissible placeholder alert", async () => {
+  it("keeps 成绩查询 on the study page with a placeholder toast notification", async () => {
     mockSignedIn();
+    const infoSpy = vi.spyOn(toast, "info");
 
     const { testRouter } = renderRouterApp("/study");
     const feature = await screen.findByRole("button", { name: /^成绩查询/ });
     expect(feature).toHaveTextContent("暂未实现 · 即将支持");
     fireEvent.click(feature);
 
-    expect(await screen.findByRole("status")).toHaveTextContent("成绩查询功能即将支持");
+    expect(infoSpy).toHaveBeenCalledWith("成绩查询功能即将支持", {
+      description: "当前仅提供入口占位",
+    });
     expect(testRouter.state.location.pathname).toBe("/study");
-    fireEvent.click(screen.getByRole("button", { name: "关闭提示" }));
-    await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
+    infoSpy.mockRestore();
   });
 
   it("opens the accessible account menu and logout confirmation", async () => {

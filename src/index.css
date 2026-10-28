@@ -59,6 +59,20 @@ html[data-szu-native-toolbar="true"] [data-webview-navigation] {
   background: var(--mtrl-sys-color-surface);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
+
+  /* 窄屏底部导航栏高度：预留 65px（64px 容器 + 1px 顶边框），宽屏或全屏页面退化为 0px */
+  --app-nav-bar-height: 65px;
+}
+
+@media (min-width: 900px) {
+  :root {
+    --app-nav-bar-height: 0px;
+  }
+}
+
+:root:has(.page-surface[data-fullscreen]),
+:root:has([data-fullscreen]) {
+  --app-nav-bar-height: 0px;
 }
 
 /* 全局图标与文字排版：防止 SVG 因 Tailwind v4 Preflight 设为 block 而与相邻文字换行 */
@@ -256,15 +270,6 @@ p {
   color: var(--mtrl-sys-color-outline);
   font-size: 18px;
   flex-shrink: 0;
-}
-
-.placeholder-alert {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  z-index: 10;
-  width: min(420px, calc(100vw - 48px));
-  box-shadow: 0 14px 35px color-mix(in srgb, var(--mtrl-sys-color-shadow) 15%, transparent);
 }
 
 @media (max-width: 640px) {
@@ -594,120 +599,118 @@ p {
 }
 
 .announcement-board {
-  margin-top: 28px;
+  min-width: 0;
+  width: 100%;
+}
+
+.announcement-bar-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
   min-width: 0;
 }
 
-.content-section-header,
-.content-section-header h2,
-.content-loading {
+.announcement-bar-trigger {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 10px;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--mtrl-sys-color-outline-variant);
+  border-radius: var(--mtrl-sys-shape-corner-medium, 12px);
+  background: var(--mtrl-sys-color-surface-container-low);
+  color: var(--mtrl-sys-color-on-surface);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
 }
 
-.content-section-header {
-  justify-content: space-between;
-  flex-wrap: wrap;
-  margin-bottom: 14px;
+.announcement-bar-trigger:hover {
+  background: var(--mtrl-sys-color-surface-container-high);
+  border-color: var(--mtrl-sys-color-primary);
 }
 
-.content-section-header h2 {
-  margin: 0;
-  font-size: 20px;
-}
-
-.content-section-header > span {
+.announcement-bar-prefix {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
-.announcement-carousel {
-  position: relative;
-  margin-top: 12px;
+.announcement-bar-icon {
+  font-size: 16px;
+  color: var(--mtrl-sys-color-primary);
 }
 
-.announcement-viewport {
-  position: relative;
+.announcement-bar-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--mtrl-sys-color-primary-container);
+  color: var(--mtrl-sys-color-on-primary-container);
+}
+
+.announcement-bar-title {
+  flex: 1;
   min-width: 0;
-  height: clamp(190px, 26vw, 240px);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--mtrl-sys-color-on-surface);
 }
 
-.announcement-slide {
-  min-width: 0;
-  height: 100%;
+.announcement-bar-suffix {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
-.announcement-card {
-  min-width: 0;
-  height: 100%;
-  padding: 0;
-  overflow: hidden;
+.announcement-bar-page-index {
+  font-size: 11px;
+  color: var(--mtrl-sys-color-on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+.announcement-bar-arrow {
+  font-size: 16px;
+  color: var(--mtrl-sys-color-on-surface-variant);
+  transition: transform 150ms ease;
+}
+
+.announcement-bar-trigger:hover .announcement-bar-arrow {
+  transform: translateX(2px);
+  color: var(--mtrl-sys-color-primary);
+}
+
+.announcement-bar-nav {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
 }
 
-.announcement-card::part(content) {
-  padding: 0;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
+.announcement-bar-nav-btn {
+  width: 32px !important;
+  min-width: 32px !important;
+  height: 32px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
 }
 
-.announcement-card .accordion {
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
+.announcement-empty-bar {
+  border-radius: var(--mtrl-sys-shape-corner-medium, 12px);
 }
 
-.announcement-card .disclosure {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.announcement-card .disclosure-heading {
-  height: 100%;
-  margin: 0;
-}
-
-.announcement-carousel-control {
-  position: absolute;
-  top: clamp(60px, 14vw, 95px);
-  z-index: 1;
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
-  min-height: 36px;
-  padding: 0;
-  border: 1px solid var(--mtrl-sys-color-outline-variant);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--mtrl-sys-color-surface-container-lowest) 93%, transparent);
-  color: var(--szu-ink);
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--mtrl-sys-color-shadow) 15%, transparent);
-  transform: translateY(-50%);
-}
-
-.announcement-carousel-control:hover {
-  background: var(--mtrl-sys-color-surface-container-lowest);
-}
-
-.announcement-carousel-control:focus-visible,
-.announcement-carousel-indicator:focus-visible {
-  outline: 2px solid var(--szu-brand);
-  outline-offset: 3px;
-}
-
-.announcement-carousel-control > svg {
-  width: 18px;
-  height: 18px;
-}
-
-.announcement-carousel-control-previous {
-  left: 14px;
+.announcement-modal-desc {
+  color: var(--mtrl-sys-color-on-surface);
 }
 
 .announcement-carousel-control-next {
@@ -760,9 +763,7 @@ p {
 .announcement-image {
   display: block;
   width: 100%;
-  flex: 1 1 0%;
-  min-height: 0;
-  height: clamp(130px, 18vw, 175px);
+  aspect-ratio: 16 / 9;
   background: var(--szu-brand-soft);
   overflow: hidden;
 }
@@ -797,9 +798,9 @@ p {
   justify-content: space-between;
   gap: 12px;
   flex-shrink: 0;
-  height: 60px;
-  padding: 0 22px;
-  font-size: 16px;
+  height: 52px;
+  padding: 0 16px;
+  font-size: 15px;
   font-weight: 650;
   overflow-wrap: anywhere;
 }
@@ -812,7 +813,7 @@ p {
 }
 
 .announcement-body {
-  padding: 0 22px 22px;
+  padding: 0 16px 16px;
   color: var(--szu-muted);
   font-size: 14px;
 }
@@ -1516,6 +1517,50 @@ p {
   .app-content {
     padding-block-end: 0;
   }
+}
+
+/* ==========================================================================
+   Snackbar / 便签条轻提示
+   ========================================================================== */
+
+/*
+ * 宿主与 shadow 内部部件的定位与层级约定：
+ * 1. 作为轻量级弹窗，Snackbar 优先级必须高于页面内其它固定组件
+ *    （NavigationBar 的 z-index 为 20，TopAppBar 为 5，浮动操作栏为 10 等）。
+ * 2. 窄屏下底部有固定的 NavigationBar，Snackbar 的底部高度必须高于 NavigationBar 的上边缘，
+ *    避免重叠遮挡或显示不全。
+ */
+m-snackbar,
+.app-snackbar {
+  position: fixed;
+  inset: auto;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+m-snackbar::part(snackbar),
+.app-snackbar::part(snackbar) {
+  z-index: 1000 !important;
+  pointer-events: auto;
+  /* 避让底部导航栏上边缘（默认 65px） + 16px 留白 */
+  bottom: calc(
+    var(--app-nav-bar-height, 65px) + env(safe-area-inset-bottom, 0px) + 16px
+  ) !important;
+}
+
+/* 宽屏使用侧边导航栏（app-rail），底部无导航栏，snackbar 恢复标准 16px 底部留白 */
+@media (min-width: 900px) {
+  m-snackbar::part(snackbar),
+  .app-snackbar::part(snackbar) {
+    bottom: 16px !important;
+  }
+}
+
+/* 全屏页面（如认证页）隐藏了底部导航栏，或者当前页面没有底部导航栏时，恢复标准 16px 底部留白 */
+body:has(.page-surface[data-fullscreen]) m-snackbar::part(snackbar),
+body:has([data-fullscreen]) m-snackbar::part(snackbar),
+body:not(:has(.app-nav-bar)) m-snackbar::part(snackbar) {
+  bottom: 16px !important;
 }
 
 /* ---------- 页面容器 ---------- */

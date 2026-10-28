@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, TextField, Button } from "material/react";
-import { Banner, toast } from "./ui";
+import { toast } from "./ui";
 import { LuCheck, LuCopy, LuDownload, LuKeyRound, LuUpload } from "react-icons/lu";
 import { copyText } from "./clipboard";
 
@@ -35,29 +35,20 @@ export default function SettingsTransfer() {
   const [preview, setPreview] = useState<Preview>();
   const [exported, setExported] = useState("");
   const [copied, setCopied] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-
-  const clearFeedback = () => {
-    setMessage("");
-    setError("");
-  };
 
   const exportSettings = async () => {
     setBusy(true);
-    clearFeedback();
     setCopied(false);
     try {
       const value = await invoke<string>("export_settings", { password: exportPassword });
       setExported(value);
       setExportPassword("");
-      setMessage("加密字符串已生成。请与一次性密码分开保存并传送。");
-      toast.success("加密字符串已生成");
+      toast.success("加密字符串已生成", {
+        description: "请与一次性密码分开保存并传送。",
+      });
     } catch (e) {
-      const err = errorMessage(e, "设置导出失败");
-      setError(err);
-      toast.danger(err);
+      toast.danger(errorMessage(e, "设置导出失败"));
     } finally {
       setBusy(false);
     }
@@ -65,16 +56,13 @@ export default function SettingsTransfer() {
 
   const inspectImport = async () => {
     setBusy(true);
-    clearFeedback();
     try {
       setPreview(
         await invoke<Preview>("preview_import_settings", { text, password: importPassword }),
       );
     } catch (e) {
       setPreview(undefined);
-      const err = errorMessage(e, "无法读取加密字符串");
-      setError(err);
-      toast.danger(err);
+      toast.danger(errorMessage(e, "无法读取加密字符串"));
     } finally {
       setBusy(false);
     }
@@ -82,7 +70,6 @@ export default function SettingsTransfer() {
 
   const importSettings = async (overwrite: boolean) => {
     setBusy(true);
-    clearFeedback();
     try {
       const result = await invoke<Preview>("import_settings", {
         text,
@@ -94,12 +81,9 @@ export default function SettingsTransfer() {
       const msg = overwrite
         ? "设置已导入，冲突项已由导入内容覆盖。"
         : "设置已导入，冲突项保留本机内容。";
-      setMessage(msg);
       toast.success(msg);
     } catch (e) {
-      const err = errorMessage(e, "设置导入失败");
-      setError(err);
-      toast.danger(err);
+      toast.danger(errorMessage(e, "设置导入失败"));
     } finally {
       setBusy(false);
     }
@@ -110,7 +94,6 @@ export default function SettingsTransfer() {
     setPreview(undefined);
     setExported("");
     setCopied(false);
-    clearFeedback();
   };
 
   return (
@@ -123,13 +106,6 @@ export default function SettingsTransfer() {
           用一次性密码保护设置包。密码不会保存，建议通过不同渠道传送密码和加密字符串。
         </p>
       </header>
-
-      {(error || message) && (
-        <Banner status={error ? "danger" : "success"}>
-          <Banner.Title>{error ? "操作未完成" : "操作完成"}</Banner.Title>
-          <Banner.Description>{error || message}</Banner.Description>
-        </Banner>
-      )}
 
       <div className="grid items-start gap-4 lg:grid-cols-2">
         <Card
@@ -176,7 +152,7 @@ export default function SettingsTransfer() {
                     onClick={() =>
                       void copyText(exported).then((success) => {
                         setCopied(success);
-                        setError(success ? "" : "无法自动复制，请手动选择并复制加密字符串。");
+                        if (!success) toast.danger("无法自动复制，请手动选择并复制加密字符串。");
                       })
                     }
                   >
@@ -231,7 +207,6 @@ export default function SettingsTransfer() {
               onChange={(e: any) => {
                 setImportPassword(e.detail?.value ?? e.target?.value ?? "");
                 setPreview(undefined);
-                clearFeedback();
               }}
             />
             {!preview ? (
