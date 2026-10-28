@@ -5,6 +5,7 @@ import { hostOf, typeInto } from "../ui/testing";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { ojProgressCache, progressScope } from "./progress-store";
+import { clearListCache } from "./list-cache";
 import { listen } from "@tauri-apps/api/event";
 import OjPage, { SiteEditor } from "./OjPage";
 import { OjPaper } from "./OjPaper";
@@ -108,6 +109,7 @@ const paper: Paper = {
 };
 beforeEach(() => {
   ojProgressCache.clear();
+  clearListCache();
   window.matchMedia = vi.fn().mockImplementation((media) => ({
     media,
     matches: false,
@@ -183,6 +185,19 @@ it("loads classes through the public page", async () => {
   expect(await screen.findByText("一班")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "查看测验" }));
   expect(nav.push).toHaveBeenCalledWith("/oj?site=test&group=2");
+});
+it("reuses the cached class list when the page is reopened", async () => {
+  search.site = "test";
+  const first = render(<OjPage />);
+  expect(await screen.findByText("一班")).toBeTruthy();
+  const groupCalls = () =>
+    vi.mocked(invoke).mock.calls.filter(([command]) => command === "get_oj_groups").length;
+  expect(groupCalls()).toBe(1);
+
+  first.unmount();
+  render(<OjPage />);
+  expect(await screen.findByText("一班")).toBeTruthy();
+  expect(groupCalls()).toBe(1);
 });
 it("mobile omits Competitive Companion", async () => {
   render(<OjPaper site={site} contestId="1" tab="answer" desktop={false} port={27121} />);

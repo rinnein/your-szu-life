@@ -83,6 +83,7 @@ permissions = [
   "allow-solve-uooc-paper-ai",
   "allow-fetch-uooc-completed-quiz",
   "allow-get-uooc-local-bank-questions",
+  "allow-get-uooc-local-bank-count",
   "allow-clear-uooc-local-bank",
   "allow-get-uooc-course-title",
   "allow-build-uooc-local-bank",

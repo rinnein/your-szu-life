@@ -3,10 +3,11 @@ use crate::oj::model::Data;
 use std::path::Path;
 use toasty::migration::{MigrationFile, MigrationSet};
 
-pub static OJ_MIGRATIONS: MigrationSet = MigrationSet::new(&[MigrationFile::new(
-    1,
-    "0001_init_oj.sql",
-    "CREATE TABLE IF NOT EXISTS oj_notice_records (
+pub static OJ_MIGRATIONS: MigrationSet = MigrationSet::new(&[
+    MigrationFile::new(
+        1,
+        "0001_init_oj.sql",
+        "CREATE TABLE IF NOT EXISTS oj_notice_records (
         id TEXT PRIMARY KEY,
         site_id TEXT NOT NULL,
         account TEXT NOT NULL,
@@ -32,7 +33,16 @@ pub static OJ_MIGRATIONS: MigrationSet = MigrationSet::new(&[MigrationFile::new(
         companion_enabled INTEGER NOT NULL,
         updated_at_ms INTEGER NOT NULL
     );",
-)]);
+    ),
+    // 班级/测验列表缓存：避免每次打开 OJ 页面都重新请求网络。
+    MigrationFile::new(
+        2,
+        "0002_oj_groups_cache.sql",
+        "ALTER TABLE oj_state_records ADD COLUMN groups_json TEXT NOT NULL DEFAULT '{}';
+-- #[toasty::breakpoint]
+    ALTER TABLE oj_state_records ADD COLUMN contests_json TEXT NOT NULL DEFAULT '{}';",
+    ),
+]);
 
 /// 检查并迁移遗留的 OJ JSON 状态文件 (state.json -> oj.sqlite)
 pub async fn migrate_oj_state_if_needed(

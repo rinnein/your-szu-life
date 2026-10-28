@@ -9,6 +9,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { toast } from "../ui";
 import { routeTree } from "../routeTree.gen";
 import { initialLogicalEntries } from "../logical-navigation";
+import { resetUoocPageCaches } from "./UoocPage";
 import {
   newerSnapshot,
   buildCourseTaskItems,
@@ -46,6 +47,7 @@ function mount(path = "/uooc") {
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  resetUoocPageCaches();
   onState = undefined;
   vi.stubGlobal(
     "ResizeObserver",
@@ -329,13 +331,29 @@ it("displays and saves qa server url field on qa tab", async () => {
   );
 });
 
-it("starts local bank build immediately when entering uooc page with ready session", async () => {
+it("builds the local bank when it is empty on entering a ready session", async () => {
+  vi.mocked(invoke).mockImplementation(async (name) => {
+    if (name === "get_uooc_snapshot") return structuredClone(snapshot);
+    if (name === "get_uooc_local_bank_count") return 0;
+    return undefined;
+  });
   mount("/uooc");
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("build_uooc_local_bank", {
       onProgress: expect.any(Object),
     }),
   );
+});
+
+it("does not rebuild the local bank when questions already exist", async () => {
+  vi.mocked(invoke).mockImplementation(async (name) => {
+    if (name === "get_uooc_snapshot") return structuredClone(snapshot);
+    if (name === "get_uooc_local_bank_count") return 42;
+    return undefined;
+  });
+  mount("/uooc");
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith("get_uooc_local_bank_count"));
+  expect(invoke).not.toHaveBeenCalledWith("build_uooc_local_bank", expect.anything());
 });
 
 it("does not label a real run as a preview when the settings edit has not been saved", async () => {

@@ -43,7 +43,11 @@ impl UoocStateDatabase {
         crate::migrations::db::run_sync(async {
             let row = match UoocStateRecord::get_by_id(&mut db, "current").await {
                 Ok(row) => row,
-                Err(_) => return Ok(None),
+                Err(error) if error.is_record_not_found() => return Ok(None),
+                Err(error) => {
+                    log::warn!("读取 UOOC 本地状态失败: {error}");
+                    return Err("读取 UOOC 本地状态失败，已保留磁盘上的原有数据".into());
+                }
             };
             Ok(Some(SavedState {
                 settings: parse(&row.settings_json)?,
@@ -66,8 +70,8 @@ impl UoocStateDatabase {
         let now = chrono::Utc::now().timestamp_millis();
         let mut db = self.db.clone();
         crate::migrations::db::run_sync(async {
-            if let Ok(mut existing) = UoocStateRecord::get_by_id(&mut db, "current").await {
-                toasty::update!(existing {
+            match UoocStateRecord::get_by_id(&mut db, "current").await {
+                Ok(mut existing) => toasty::update!(existing {
                     settings_json,
                     tasks_json,
                     quizzes_json,
@@ -78,21 +82,27 @@ impl UoocStateDatabase {
                 })
                 .exec(&mut db)
                 .await
-                .map_err(|e| format!("更新 UOOC 状态失败: {e}"))?;
-            } else {
-                toasty::create!(UoocStateRecord {
-                    id: "current".to_string(),
-                    settings_json,
-                    tasks_json,
-                    quizzes_json,
-                    discussion_json,
-                    qa_api_key,
-                    qa_bootstrapped_json,
-                    updated_at_ms: now,
-                })
-                .exec(&mut db)
-                .await
-                .map_err(|e| format!("创建 UOOC 状态失败: {e}"))?;
+                .map_err(|e| format!("更新 UOOC 状态失败: {e}"))?,
+                Err(error) if error.is_record_not_found() => {
+                    toasty::create!(UoocStateRecord {
+                        id: "current".to_string(),
+                        settings_json,
+                        tasks_json,
+                        quizzes_json,
+                        discussion_json,
+                        qa_api_key,
+                        qa_bootstrapped_json,
+                        updated_at_ms: now,
+                    })
+                    .exec(&mut db)
+                    .await
+                    .map_err(|e| format!("创建 UOOC 状态失败: {e}"))?;
+                }
+                Err(error) => {
+                    // 读不出旧行时不要盲目 create：否则会撞主键，或在异常情况下
+                    // 把一份默认状态写到已有数据之上。
+                    return Err(format!("读取 UOOC 状态失败，本次未写入: {error}"));
+                }
             }
             Ok(())
         })

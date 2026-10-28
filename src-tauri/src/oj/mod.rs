@@ -370,6 +370,9 @@ impl Service {
         r.data.sites.retain(|s| s.id != id);
         r.data.preferences.remove(id);
         r.data.notices.retain(|n| n.site_id != id);
+        r.data.groups.remove(id);
+        let prefix = format!("{id}:");
+        r.data.contests.retain(|key, _| !key.starts_with(&prefix));
         self.persist(&r)?;
         drop(r);
         self.cancel_notifications(id);
@@ -673,28 +676,116 @@ impl Service {
         }
     }
     async fn groups(&self, id: &str) -> Result<Vec<Group>, String> {
-        let e = self.entry(id)?;
-        let _guard = e.gate.lock().await;
-        self.ensure(id, &e).await?;
-        self.list(id, &e, "groups/", &[])
-            .await?
-            .iter()
-            .map(protocol::group)
-            .collect::<Result<_, _>>()
-            .map_err(|e| e.message)
+        let stored = self.stored_groups(id);
+        if let Some((groups, updated_at)) = &stored {
+            if !list_cache_expired(*updated_at) {
+                return Ok(groups.clone());
+            }
+        }
+        let result = async {
+            let e = self.entry(id)?;
+            let _guard = e.gate.lock().await;
+            self.ensure(id, &e).await?;
+            self.list(id, &e, "groups/", &[])
+                .await?
+                .iter()
+                .map(protocol::group)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.message)
+        }
+        .await;
+        match result {
+            Ok(groups) => {
+                self.store_groups(id, &groups);
+                Ok(groups)
+            }
+            // 网络失败时回退到上一次成功结果，避免页面看起来像“班级丢了”。
+            Err(error) => stored.map(|(groups, _)| groups).ok_or(error),
+        }
     }
     async fn contests(&self, id: &str, group: &str) -> Result<Vec<Contest>, String> {
         protocol::id(&json!(group)).map_err(|e| e.message)?;
-        let e = self.entry(id)?;
-        let _guard = e.gate.lock().await;
-        self.ensure(id, &e).await?;
-        self.list(id, &e, "contests/", &[("group", group.into())])
-            .await?
-            .iter()
-            .map(protocol::contest)
-            .collect::<Result<_, _>>()
-            .map_err(|e| e.message)
+        let key = format!("{id}:{group}");
+        let stored = self.stored_contests(&key);
+        if let Some((contests, updated_at)) = &stored {
+            if !list_cache_expired(*updated_at) {
+                return Ok(contests.clone());
+            }
+        }
+        let result = async {
+            let e = self.entry(id)?;
+            let _guard = e.gate.lock().await;
+            self.ensure(id, &e).await?;
+            self.list(id, &e, "contests/", &[("group", group.into())])
+                .await?
+                .iter()
+                .map(protocol::contest)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.message)
+        }
+        .await;
+        match result {
+            Ok(contests) => {
+                self.store_contests(&key, &contests);
+                Ok(contests)
+            }
+            Err(error) => stored.map(|(contests, _)| contests).ok_or(error),
+        }
     }
+    fn stored_groups(&self, id: &str) -> Option<(Vec<Group>, i64)> {
+        let r = self.runtime.lock().unwrap();
+        r.data
+            .groups
+            .get(id)
+            .map(|cache| (cache.groups.clone(), cache.updated_at))
+    }
+    fn stored_contests(&self, key: &str) -> Option<(Vec<Contest>, i64)> {
+        let r = self.runtime.lock().unwrap();
+        r.data
+            .contests
+            .get(key)
+            .map(|cache| (cache.contests.clone(), cache.updated_at))
+    }
+    fn store_groups(&self, id: &str, groups: &[Group]) {
+        let snapshot = {
+            let mut r = self.runtime.lock().unwrap();
+            r.data.groups.insert(
+                id.to_string(),
+                GroupCache {
+                    groups: groups.to_vec(),
+                    updated_at: chrono::Utc::now().timestamp_millis(),
+                },
+            );
+            r.data.clone()
+        };
+        if let Err(error) = persistence::write(&self.path, &snapshot) {
+            log::warn!("保存 OJ 班级缓存失败: {error}");
+        }
+    }
+    fn store_contests(&self, key: &str, contests: &[Contest]) {
+        let snapshot = {
+            let mut r = self.runtime.lock().unwrap();
+            r.data.contests.insert(
+                key.to_string(),
+                ContestCache {
+                    contests: contests.to_vec(),
+                    updated_at: chrono::Utc::now().timestamp_millis(),
+                },
+            );
+            r.data.clone()
+        };
+        if let Err(error) = persistence::write(&self.path, &snapshot) {
+            log::warn!("保存 OJ 测验缓存失败: {error}");
+        }
+    }
+}
+
+/// 班级/测验列表的本地缓存有效期。页面再次打开时先用缓存渲染，
+/// 过期后才会走网络；网络失败则继续使用旧缓存。
+const LIST_CACHE_TTL_MS: i64 = 10 * 60 * 1000;
+
+fn list_cache_expired(updated_at: i64) -> bool {
+    chrono::Utc::now().timestamp_millis() - updated_at > LIST_CACHE_TTL_MS
 }
 pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     let store = app.state::<OjStore>();

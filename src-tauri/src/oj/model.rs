@@ -284,6 +284,18 @@ pub(crate) struct Known {
     pub events: BTreeMap<String, i64>,
     pub initialized: bool,
 }
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct GroupCache {
+    pub groups: Vec<Group>,
+    pub updated_at: i64,
+}
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ContestCache {
+    pub contests: Vec<Contest>,
+    pub updated_at: i64,
+}
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Data {
@@ -301,6 +313,12 @@ pub(crate) struct Data {
     pub preferences: BTreeMap<String, Preferences>,
     #[serde(default = "yes")]
     pub companion_enabled: bool,
+    /// 按站点缓存的班级列表，避免每次打开页面都重新请求。
+    #[serde(default)]
+    pub groups: BTreeMap<String, GroupCache>,
+    /// 按 `site:group` 缓存的测验列表。
+    #[serde(default)]
+    pub contests: BTreeMap<String, ContestCache>,
 }
 impl Default for Data {
     fn default() -> Self {
@@ -315,6 +333,8 @@ impl Default for Data {
             companion_port: 27121,
             preferences: BTreeMap::new(),
             companion_enabled: true,
+            groups: BTreeMap::new(),
+            contests: BTreeMap::new(),
         }
     }
 }

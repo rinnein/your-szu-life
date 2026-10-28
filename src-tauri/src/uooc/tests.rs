@@ -168,6 +168,9 @@ async fn duration_cache_single_flight_persists_and_does_not_cache_failures() {
     let raw = std::fs::read(&path).unwrap();
     assert!(!raw.windows(5).any(|w| w == b"https") && !raw.windows(6).any(|w| w == b"cookie"));
     std::fs::write(&path, b"corrupt cache").unwrap();
+    // 该场景模拟“进程重启后发现文件损坏”：清掉进程内句柄缓存，
+    // 让打开逻辑重新走一次损坏隔离流程。
+    crate::migrations::db::reset_registry();
     let cache = DurationCache::new(path);
     assert_eq!(
         cache

@@ -58,6 +58,9 @@ struct Runtime {
     qa_api_key: Option<String>,
     initial_qa_bootstrapped_accounts: HashSet<String>,
     last_saved: Option<String>,
+    /// 启动时读取本地状态失败：在用户解决问题前不允许把默认状态写回磁盘，
+    /// 否则一次读取失败就会永久覆盖真实数据。
+    persistence_blocked: bool,
 }
 pub(super) struct Service {
     app: Option<tauri::AppHandle>,
@@ -95,10 +98,12 @@ impl Service {
     ) -> Result<Arc<Self>, String> {
         let state_db = db::UoocStateDatabase::open(&root.join("state.sqlite"))?;
         let mut message = String::new();
+        let mut persistence_blocked = false;
         let mut saved = match state_db.load() {
             Ok(saved) => saved,
             Err(error) => {
                 message = error;
+                persistence_blocked = true;
                 None
             }
         }
@@ -179,6 +184,7 @@ impl Service {
                 qa_api_key: saved.qa_api_key,
                 initial_qa_bootstrapped_accounts: saved.initial_qa_bootstrapped_accounts,
                 last_saved: None,
+                persistence_blocked,
             }),
         }))
     }
@@ -187,10 +193,11 @@ impl Service {
     }
     fn visible_snapshot(runtime: &Runtime) -> Snapshot {
         let mut snapshot = runtime.snapshot.clone();
-        let account = snapshot.user.as_ref().map(|u| u.id.as_str());
-        snapshot
-            .quizzes
-            .retain(|_, q| Some(q.account_id.as_str()) == account);
+        // 启动时 user 还没恢复，不能因此把已经持久化的测验状态全部过滤掉；
+        // 只有确认了当前账号后才按账号过滤（切换账号后自然会刷新）。
+        if let Some(account) = snapshot.user.as_ref().map(|user| user.id.as_str()) {
+            snapshot.quizzes.retain(|_, q| q.account_id == account);
+        }
         snapshot.discussions = runtime.discussion.courses.clone();
         snapshot.discussion_cooldown_until_ms = runtime
             .discussion
@@ -220,7 +227,10 @@ impl Service {
         match saved_res {
             Ok(saved) => match serde_json::to_string(&saved) {
                 Ok(signature) => {
-                    if runtime.last_saved.as_ref() != Some(&signature) {
+                    if runtime.persistence_blocked {
+                        // 启动时没读出旧状态：此时内存里是默认值，写回会覆盖真实数据。
+                        // 保持只读，直到用户修复本地数据库后重启。
+                    } else if runtime.last_saved.as_ref() != Some(&signature) {
                         if let Err(error) = self.state_db.save(&saved) {
                             runtime.snapshot.message = error;
                         } else {
@@ -1285,7 +1295,9 @@ impl Service {
                         answers: answers.clone(),
                         submitted_at_ms: now_ms,
                     };
-                    let _ = qa_db.save_submitted_paper(&record).await;
+                    if let Err(error) = qa_db.save_submitted_paper(&record).await {
+                        log::warn!("保存提交试卷快照失败: {error}");
+                    }
                 }
             }
         }

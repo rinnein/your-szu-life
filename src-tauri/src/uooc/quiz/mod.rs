@@ -162,9 +162,9 @@ pub(super) fn restore_media(states: &mut BTreeMap<String, QuizState>, root: &std
                 }
             });
             if missing {
-                q.signature.clear();
-                q.stage = Stage::AwaitingChoice;
-                q.message = "试题图片缓存不可用，请刷新试卷后重新确认答案".into();
+                // 图片缓存丢了不代表作答/判分结果失效。保持 signature 与 stage 不变，
+                // 只提示图片需要重新加载，避免每次启动都把测验状态打回未作答。
+                q.message = "部分试题图片缓存已失效，刷新试卷后可重新加载图片".into();
             }
         }
     }
@@ -689,7 +689,9 @@ async fn submit(
             answers: q.answers.clone(),
             submitted_at_ms: now_ms,
         };
-        let _ = qa_db.save_submitted_paper(&record).await;
+        if let Err(error) = qa_db.save_submitted_paper(&record).await {
+            log::warn!("保存提交试卷快照失败: {error}");
+        }
     }
 
     let verdict = sent
@@ -1736,7 +1738,15 @@ pub(crate) async fn build_single_task_group(
                         .map(|d| d.as_millis() as i64)
                         .unwrap_or(0),
                 };
-                let _ = qa_db.upsert_bank_question(&b_q, Some(cid), Some(clean_tid)).await;
+                if let Err(error) = qa_db
+                    .upsert_bank_question(&b_q, Some(cid), Some(clean_tid))
+                    .await
+                {
+                    service.log_debug(
+                        "bank",
+                        format!("写入本地题库失败 [cid: {cid}, tid: {clean_tid}]: {error}"),
+                    );
+                }
             }
         }
     }

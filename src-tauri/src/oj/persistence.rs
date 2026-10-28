@@ -32,16 +32,9 @@ pub(super) fn read(path: &Path) -> Result<Data, String> {
         db.load_data().await
     });
 
-    match res {
-        Ok(data) => Ok(data),
-        Err(e) => {
-            if !db_path.exists() {
-                Ok(Data::default())
-            } else {
-                Err(format!("无法读取 OJ 本地数据: {e}"))
-            }
-        }
-    }
+    // 首次使用时文件会被 open_sqlite_db 创建，load_data 返回 Data::default()。
+    // 其它情况下读取失败必须上抛，否则默认数据会在下一次写入时覆盖真实状态。
+    res.map_err(|e| format!("无法读取 OJ 本地数据: {e}"))
 }
 
 pub(super) fn write(path: &Path, data: &Data) -> Result<(), String> {

@@ -40,23 +40,33 @@ impl ElectricityDatabase {
 
     pub async fn load_all_rooms(&self) -> Result<Vec<Room>, String> {
         let mut db = self.db.clone();
-        let rows = match ElectricityRoomRecord::all().exec(&mut db).await {
-            Ok(rows) => rows,
-            Err(_) => return Ok(vec![]),
-        };
+        let rows = ElectricityRoomRecord::all()
+            .exec(&mut db)
+            .await
+            .map_err(|error| {
+                log::warn!("读取电费本地记录失败: {error}");
+                "读取电费本地记录失败".to_string()
+            })?;
 
         let mut rooms = Vec::new();
         for r in rows {
+            // 任何一列解析失败都意味着这一行已损坏；不能降级成默认值再写回，
+            // 否则会把用户的历史读数永久覆盖。
             let location: ElectricityLocationSettings =
-                serde_json::from_str(&r.location_json).unwrap_or_default();
+                serde_json::from_str(&r.location_json)
+                    .map_err(|_| "电费本地记录损坏（location）".to_string())?;
             let readings: Vec<ElectricityReading> =
-                serde_json::from_str(&r.readings_json).unwrap_or_default();
+                serde_json::from_str(&r.readings_json)
+                    .map_err(|_| "电费本地记录损坏（readings）".to_string())?;
             let loaded_recharges: Vec<Recharge> =
-                serde_json::from_str(&r.recharges_json).unwrap_or_default();
+                serde_json::from_str(&r.recharges_json)
+                    .map_err(|_| "电费本地记录损坏（recharges）".to_string())?;
             let usage_checks: BTreeMap<String, Check> =
-                serde_json::from_str(&r.usage_checks_json).unwrap_or_default();
+                serde_json::from_str(&r.usage_checks_json)
+                    .map_err(|_| "电费本地记录损坏（usageChecks）".to_string())?;
             let recharge_checks: BTreeMap<String, Check> =
-                serde_json::from_str(&r.recharge_checks_json).unwrap_or_default();
+                serde_json::from_str(&r.recharge_checks_json)
+                    .map_err(|_| "电费本地记录损坏（rechargeChecks）".to_string())?;
 
             rooms.push(Room {
                 location,
@@ -90,47 +100,53 @@ impl ElectricityDatabase {
         let now = chrono::Utc::now().timestamp_millis();
 
         let mut db = self.db.clone();
-        if let Ok(mut existing) = ElectricityRoomRecord::get_by_id(&mut db, &key).await {
-            toasty::update!(existing {
-                location_json,
-                readings_json,
-                recharges_json,
-                usage_checks_json,
-                recharge_checks_json,
-                balance: room.balance,
-                balance_date: room.balance_date.clone(),
-                usage_updated_at: room.usage_updated_at,
-                recharge_updated_at: room.recharge_updated_at,
-                retry_after: room.retry_after,
-                error: room.error.clone(),
-                recharge_error: room.recharge_error.clone(),
-                recharge_retry_after: room.recharge_retry_after,
-                updated_at_ms: now,
-            })
-            .exec(&mut db)
-            .await
-            .map_err(|e| format!("更新电量记录失败: {e}"))?;
-        } else {
-            toasty::create!(ElectricityRoomRecord {
-                id: key,
-                location_json,
-                readings_json,
-                recharges_json,
-                usage_checks_json,
-                recharge_checks_json,
-                balance: room.balance,
-                balance_date: room.balance_date.clone(),
-                usage_updated_at: room.usage_updated_at,
-                recharge_updated_at: room.recharge_updated_at,
-                retry_after: room.retry_after,
-                error: room.error.clone(),
-                recharge_error: room.recharge_error.clone(),
-                recharge_retry_after: room.recharge_retry_after,
-                updated_at_ms: now,
-            })
-            .exec(&mut db)
-            .await
-            .map_err(|e| format!("新增电量记录失败: {e}"))?;
+        match ElectricityRoomRecord::get_by_id(&mut db, &key).await {
+            Ok(mut existing) => {
+                toasty::update!(existing {
+                    location_json,
+                    readings_json,
+                    recharges_json,
+                    usage_checks_json,
+                    recharge_checks_json,
+                    balance: room.balance,
+                    balance_date: room.balance_date.clone(),
+                    usage_updated_at: room.usage_updated_at,
+                    recharge_updated_at: room.recharge_updated_at,
+                    retry_after: room.retry_after,
+                    error: room.error.clone(),
+                    recharge_error: room.recharge_error.clone(),
+                    recharge_retry_after: room.recharge_retry_after,
+                    updated_at_ms: now,
+                })
+                .exec(&mut db)
+                .await
+                .map_err(|e| format!("更新电量记录失败: {e}"))?;
+            }
+            Err(error) if error.is_record_not_found() => {
+                toasty::create!(ElectricityRoomRecord {
+                    id: key,
+                    location_json,
+                    readings_json,
+                    recharges_json,
+                    usage_checks_json,
+                    recharge_checks_json,
+                    balance: room.balance,
+                    balance_date: room.balance_date.clone(),
+                    usage_updated_at: room.usage_updated_at,
+                    recharge_updated_at: room.recharge_updated_at,
+                    retry_after: room.retry_after,
+                    error: room.error.clone(),
+                    recharge_error: room.recharge_error.clone(),
+                    recharge_retry_after: room.recharge_retry_after,
+                    updated_at_ms: now,
+                })
+                .exec(&mut db)
+                .await
+                .map_err(|e| format!("新增电量记录失败: {e}"))?;
+            }
+            Err(error) => {
+                return Err(format!("读取电量记录失败，本次未写入: {error}"));
+            }
         }
 
         Ok(())

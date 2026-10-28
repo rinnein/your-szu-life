@@ -63,6 +63,49 @@ const sessions = {
   networkError: "网络连接失败",
   loggingIn: "等待官方登录完成",
 };
+
+/**
+ * 题库与课程进度都不是页面本地状态。
+ *
+ * - 题库已有内容时绝不能重建：重建会重置 uploaded 标记，并在新解析缺答案时
+ *   覆盖已确认的标准答案。
+ * - 进度数据只在应用重启后为空，同一会话里重复打开页面不需要再全量刷新。
+ *
+ * 这两处都用模块级时间戳，组件反复卸载/挂载不会重置它们。
+ */
+const PROGRESS_REFRESH_TTL_MS = 10 * 60 * 1000;
+const BANK_CHECK_TTL_MS = 60 * 1000;
+let progressRefreshedAt = 0;
+let bankCheckedAt = 0;
+
+async function ensureLocalBank(): Promise<void> {
+  if (Date.now() - bankCheckedAt < BANK_CHECK_TTL_MS) return;
+  bankCheckedAt = Date.now();
+  const count = await invoke<number>("get_uooc_local_bank_count").catch(() => -1);
+  // 读取失败（-1）或已有题目（>0）时都不要重建。
+  if (count !== 0) return;
+  await invoke("build_uooc_local_bank", {
+    onProgress: createTaskChannel(() => {}),
+  }).catch(() => {});
+}
+
+async function refreshProgressIfStale(apply: (snapshot: UoocSnapshot) => void): Promise<void> {
+  if (Date.now() - progressRefreshedAt < PROGRESS_REFRESH_TTL_MS) return;
+  const progress = await invoke<UoocSnapshot>("refresh_uooc_progress", {
+    courseIds: [],
+  }).catch(() => null);
+  if (progress && isUoocSnapshot(progress)) {
+    // 只有成功拿到进度才记时间，失败时下次打开页面仍会重试。
+    progressRefreshedAt = Date.now();
+    apply(progress);
+  }
+}
+
+/** 仅用于测试：重置模块级缓存时间戳，避免用例之间互相影响。 */
+export function resetUoocPageCaches(): void {
+  progressRefreshedAt = 0;
+  bankCheckedAt = 0;
+}
 const active = (task: UoocTask) => task.status === "running" || task.status === "queued";
 const seconds = (value: number) =>
   `${Math.floor(value / 60)}:${Math.floor(value % 60)
@@ -192,11 +235,10 @@ export default function UoocPage() {
           if (isUoocSnapshot(next)) {
             apply(next);
             if (next.session === "ready") {
-              void invoke("build_uooc_local_bank", {
-                onProgress: createTaskChannel(() => {}),
-              }).catch(() => {});
-              const progress = await invoke("refresh_uooc_progress", { courseIds: [] });
-              if (mounted && isUoocSnapshot(progress)) apply(progress);
+              void ensureLocalBank();
+              await refreshProgressIfStale((value) => {
+                if (mounted) apply(value);
+              });
             }
           } else setError("请在泥深原生应用中使用 UOOC 功能。");
         }
@@ -209,14 +251,6 @@ export default function UoocPage() {
       stop?.();
     };
   }, []);
-
-  useEffect(() => {
-    if (snapshot?.session === "ready") {
-      void invoke("build_uooc_local_bank", {
-        onProgress: createTaskChannel(() => {}),
-      }).catch(() => {});
-    }
-  }, [snapshot?.session]);
 
   const saved = snapshot?.settings;
   useEffect(() => {

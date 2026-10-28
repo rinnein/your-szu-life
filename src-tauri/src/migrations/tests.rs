@@ -3,6 +3,61 @@ use std::fs;
 use tempfile::tempdir;
 
 #[tokio::test]
+async fn oj_persists_notice_read_state_and_group_cache() {
+    use crate::oj::model::{Group, GroupCache, Notice, Site};
+
+    let dir = tempdir().unwrap();
+    let db_path = dir.path().join("oj.sqlite");
+    let db = crate::oj::db::OjDatabase::open(&db_path).await.unwrap();
+
+    let site = Site {
+        id: "site".into(),
+        name: "测试 OJ".into(),
+        url: "http://oj.test/".into(),
+        builtin: false,
+        reminders: true,
+    };
+    let mut data = crate::oj::model::Data {
+        sites: vec![site],
+        ..Default::default()
+    };
+    data.notices.push(Notice {
+        id: "n1".into(),
+        site_id: "site".into(),
+        account: "student".into(),
+        contest_id: "1".into(),
+        title: "标题".into(),
+        message: "内容".into(),
+        timestamp: 1,
+        read: false,
+    });
+    data.groups.insert(
+        "site".into(),
+        GroupCache {
+            groups: vec![Group {
+                id: "2".into(),
+                name: "一班".into(),
+            }],
+            updated_at: 123,
+        },
+    );
+    db.save_data(&data).await.unwrap();
+
+    // 已读状态必须写回数据库，而不是只在内存里生效。
+    data.notices[0].read = true;
+    db.save_data(&data).await.unwrap();
+    let loaded = db.load_data().await.unwrap();
+    assert!(loaded.notices[0].read);
+    assert_eq!(loaded.groups["site"].groups[0].name, "一班");
+
+    // 站点删除后，其通知不应在下次加载时“复活”。
+    data.sites.clear();
+    db.save_data(&data).await.unwrap();
+    let loaded = db.load_data().await.unwrap();
+    assert!(loaded.notices.is_empty());
+}
+
+#[tokio::test]
 async fn test_oj_state_migration() {
     let dir = tempdir().unwrap();
     let db_path = dir.path().join("oj.sqlite");
@@ -19,6 +74,8 @@ async fn test_oj_state_migration() {
         companion_port: 8080,
         preferences: BTreeMap::new(),
         companion_enabled: true,
+        groups: BTreeMap::new(),
+        contests: BTreeMap::new(),
     };
 
     fs::write(&json_path, serde_json::to_vec(&initial_data).unwrap()).unwrap();

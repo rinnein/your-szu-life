@@ -340,6 +340,7 @@ fn main() {
             "solve_uooc_paper_ai",
             "fetch_uooc_completed_quiz",
             "get_uooc_local_bank_questions",
+            "get_uooc_local_bank_count",
             "clear_uooc_local_bank",
             "get_uooc_course_title",
             "build_uooc_local_bank",

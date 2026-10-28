@@ -51,12 +51,16 @@ impl Cache {
     ) -> Result<Option<T>, String> {
         let key = format!("{account}:{kind}:{scope}");
         let mut db = self.db.clone();
-        let raw: Option<String> = crate::migrations::db::run_sync(async {
+        let raw = crate::migrations::db::run_sync(async {
             match EnrollmentSnapshot::get_by_id(&mut db, &key).await {
-                Ok(row) => Some(row.payload),
-                Err(_) => None,
+                Ok(row) => Ok(Some(row.payload)),
+                Err(error) if error.is_record_not_found() => Ok(None),
+                Err(error) => {
+                    log::warn!("读取选课缓存失败: {error}");
+                    Err("读取选课缓存失败，已保留磁盘上的原数据".to_string())
+                }
             }
-        });
+        })?;
         raw.map(|s| serde_json::from_str(&s).map_err(|_| "选课缓存损坏，未覆盖原数据".to_string()))
             .transpose()
     }
@@ -136,26 +140,32 @@ impl Cache {
         let now = chrono::Utc::now().timestamp_millis();
         let mut db = self.db.clone();
         crate::migrations::db::run_sync(async {
-            if let Ok(mut existing) = EnrollmentSnapshot::get_by_id(&mut db, &key).await {
-                toasty::update!(existing {
-                    payload: raw.to_string(),
-                    updated: now,
-                })
-                .exec(&mut db)
-                .await
-                .map_err(|e| format!("无法保存选课缓存: {e}"))?;
-            } else {
-                toasty::create!(EnrollmentSnapshot {
-                    id: key,
-                    account: account.to_string(),
-                    kind: kind.to_string(),
-                    scope: scope.to_string(),
-                    payload: raw.to_string(),
-                    updated: now,
-                })
-                .exec(&mut db)
-                .await
-                .map_err(|e| format!("无法保存选课缓存: {e}"))?;
+            match EnrollmentSnapshot::get_by_id(&mut db, &key).await {
+                Ok(mut existing) => {
+                    toasty::update!(existing {
+                        payload: raw.to_string(),
+                        updated: now,
+                    })
+                    .exec(&mut db)
+                    .await
+                    .map_err(|e| format!("无法保存选课缓存: {e}"))?;
+                }
+                Err(error) if error.is_record_not_found() => {
+                    toasty::create!(EnrollmentSnapshot {
+                        id: key,
+                        account: account.to_string(),
+                        kind: kind.to_string(),
+                        scope: scope.to_string(),
+                        payload: raw.to_string(),
+                        updated: now,
+                    })
+                    .exec(&mut db)
+                    .await
+                    .map_err(|e| format!("无法保存选课缓存: {e}"))?;
+                }
+                Err(error) => {
+                    return Err(format!("读取选课缓存失败，本次未写入: {error}"));
+                }
             }
             Ok(())
         })

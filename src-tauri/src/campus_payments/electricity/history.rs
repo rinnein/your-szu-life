@@ -45,6 +45,9 @@ pub(super) struct History {
     path: Option<PathBuf>,
     rooms: Vec<Room>,
     persistence_error: Option<String>,
+    /// 启动时是否成功读出了已有记录。读取失败时禁止写回，
+    /// 否则一次查询就会用 31 天窗口覆盖掉磁盘上 62 天的历史。
+    loaded: bool,
 }
 fn today_at(now: i64) -> NaiveDate {
     Utc.timestamp_millis_opt(now)
@@ -92,15 +95,24 @@ impl History {
             db.load_all_rooms().await
         });
 
-        let rooms = match db_res {
-            Ok(loaded) => loaded,
-            Err(_) => Vec::new(),
-        };
-
-        Self {
-            path: Some(path),
-            rooms,
-            persistence_error: None,
+        match db_res {
+            Ok(rooms) => Self {
+                path: Some(path),
+                rooms,
+                persistence_error: None,
+                loaded: true,
+            },
+            Err(error) => {
+                log::warn!("读取电费本地缓存失败: {error}");
+                Self {
+                    path: Some(path),
+                    rooms: Vec::new(),
+                    persistence_error: Some(
+                        "本地电费缓存读取失败，本次仅显示新查询结果，不会覆盖历史记录。".into(),
+                    ),
+                    loaded: false,
+                }
+            }
         }
     }
     fn room(&self, location: &ElectricityLocationSettings) -> Room {
@@ -129,6 +141,12 @@ impl History {
         let Some(path) = self.path.as_ref() else {
             return;
         };
+        if !self.loaded {
+            self.persistence_error = Some(
+                "本地电费缓存读取失败，本次不会写回，避免覆盖已有历史记录。".into(),
+            );
+            return;
+        }
         let result = crate::migrations::db::run_sync(async {
             let db = super::db::ElectricityDatabase::open(path).await?;
             db.save_room(&room).await

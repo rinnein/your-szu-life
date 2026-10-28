@@ -439,15 +439,19 @@ pub(crate) async fn fetch_uooc_completed_quiz(
 }
 
 #[tauri::command]
+pub(crate) async fn get_uooc_local_bank_count(app: tauri::AppHandle) -> Result<usize, String> {
+    let service = service(&app)?;
+    let qa_db = service.get_qa_db().await?;
+    qa_db.count_questions().await
+}
+
+#[tauri::command]
 pub(crate) async fn get_uooc_local_bank_questions(
     app: tauri::AppHandle,
 ) -> Result<Vec<super::quiz::qa::LocalBankQuestion>, String> {
     let service = service(&app)?;
-    let bank = if let Ok(qa_db) = service.get_qa_db().await {
-        qa_db.load_all_bank_questions().await.unwrap_or_default()
-    } else {
-        Default::default()
-    };
+    let qa_db = service.get_qa_db().await?;
+    let bank = qa_db.load_all_bank_questions().await?;
     let courses = {
         let r = service.runtime.lock().unwrap();
         r.snapshot.courses.clone()

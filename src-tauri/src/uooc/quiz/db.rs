@@ -75,32 +75,37 @@ impl QaDatabase {
         let a_json = serde_json::to_string(&record.answers).unwrap_or_default();
 
         let mut db = self.db.clone();
-        // 尝试查找旧记录
-        if let Ok(mut existing) = SubmittedPaper::get_by_id(&mut db, &key).await {
-            toasty::update!(existing {
-                cid: record.cid.clone(),
-                tid: record.tid.clone(),
-                task_title: record.task_title.clone(),
-                questions_json: q_json,
-                answers_json: a_json,
-                submitted_at_ms: record.submitted_at_ms,
-            })
-            .exec(&mut db)
-            .await
-            .map_err(|e| format!("更新提交试卷记录失败: {e}"))?;
-        } else {
-            toasty::create!(SubmittedPaper {
-                id: key,
-                cid: record.cid.clone(),
-                tid: record.tid.clone(),
-                task_title: record.task_title.clone(),
-                questions_json: q_json,
-                answers_json: a_json,
-                submitted_at_ms: record.submitted_at_ms,
-            })
-            .exec(&mut db)
-            .await
-            .map_err(|e| format!("创建提交试卷记录失败: {e}"))?;
+        match SubmittedPaper::get_by_id(&mut db, &key).await {
+            Ok(mut existing) => {
+                toasty::update!(existing {
+                    cid: record.cid.clone(),
+                    tid: record.tid.clone(),
+                    task_title: record.task_title.clone(),
+                    questions_json: q_json,
+                    answers_json: a_json,
+                    submitted_at_ms: record.submitted_at_ms,
+                })
+                .exec(&mut db)
+                .await
+                .map_err(|e| format!("更新提交试卷记录失败: {e}"))?;
+            }
+            Err(error) if error.is_record_not_found() => {
+                toasty::create!(SubmittedPaper {
+                    id: key,
+                    cid: record.cid.clone(),
+                    tid: record.tid.clone(),
+                    task_title: record.task_title.clone(),
+                    questions_json: q_json,
+                    answers_json: a_json,
+                    submitted_at_ms: record.submitted_at_ms,
+                })
+                .exec(&mut db)
+                .await
+                .map_err(|e| format!("创建提交试卷记录失败: {e}"))?;
+            }
+            Err(error) => {
+                return Err(format!("读取提交试卷记录失败，本次未写入: {error}"));
+            }
         }
         Ok(())
     }
@@ -117,8 +122,13 @@ impl QaDatabase {
         // 1. 若提供 cid，直接按复合键 id 检索
         if let Some(c) = cid {
             let key = format!("{c}:{clean_tid}");
-            if let Ok(row) = SubmittedPaper::get_by_id(&mut db, &key).await {
-                return Ok(Some(self.row_to_submitted_paper_record(&row)));
+            match SubmittedPaper::get_by_id(&mut db, &key).await {
+                Ok(row) => return Ok(Some(self.row_to_submitted_paper_record(&row))),
+                Err(error) if error.is_record_not_found() => {}
+                Err(error) => {
+                    // 读失败时不要继续走 tid 兜底：那可能返回旧试卷并覆盖当前试卷。
+                    return Err(format!("读取提交试卷记录失败: {error}"));
+                }
             }
         }
 
@@ -193,53 +203,81 @@ impl QaDatabase {
         let computed_blob = super::qa::vector_to_blob(&vec_f32);
 
         let mut db = self.db.clone();
-        if let Ok(mut existing) = BankQuestion::get_by_question_id(&mut db, &q.question_id).await {
-            let next_cid = cid.map(str::to_string).or_else(|| existing.cid.clone());
-            let next_tid = tid.map(str::to_string).or_else(|| existing.tid.clone());
-            let next_cname = q.course_name.clone().or_else(|| existing.course_name.clone());
-            let next_tname = q.task_name.clone().or_else(|| existing.task_name.clone());
-            let embedding_blob = existing.embedding_blob.clone().or(Some(computed_blob));
+        match BankQuestion::get_by_question_id(&mut db, &q.question_id).await {
+            Ok(mut existing) => {
+                let next_cid = cid.map(str::to_string).or_else(|| existing.cid.clone());
+                let next_tid = tid.map(str::to_string).or_else(|| existing.tid.clone());
+                let next_cname = q.course_name.clone().or_else(|| existing.course_name.clone());
+                let next_tname = q.task_name.clone().or_else(|| existing.task_name.clone());
+                let embedding_blob = existing.embedding_blob.clone().or(Some(computed_blob));
+                // 重建题库时新解析经常拿不到标准答案/作答记录；这些字段必须沿用旧值，
+                // 否则每次打开页面重建都会把已经积累的答案抹掉。
+                let next_correct =
+                    correct_answers_json.or_else(|| existing.correct_answers_json.clone());
+                let next_answers = if q.answers.is_empty() {
+                    existing.answers_json.clone()
+                } else {
+                    answers_json
+                };
+                let next_options = options_json.or_else(|| existing.options_json.clone());
+                let next_stem = if stem.is_empty() {
+                    existing.stem.clone()
+                } else {
+                    stem
+                };
+                let next_stem_hash = if next_stem.is_empty() {
+                    existing.stem_hash.clone()
+                } else {
+                    stem_h
+                };
+                let was_uploaded = existing.uploaded;
+                let next_updated_at = q.updated_at_ms.max(existing.updated_at_ms);
 
-            toasty::update!(existing {
-                cid: next_cid,
-                tid: next_tid,
-                course_name: next_cname,
-                task_name: next_tname,
-                question_type: q.question_type.clone(),
-                stem,
-                stem_hash: stem_h,
-                options_json,
-                answers_json,
-                correct_answers_json,
-                blanks: q.blanks as i64,
-                uploaded: q.uploaded,
-                embedding_blob,
-                updated_at_ms: q.updated_at_ms,
-            })
-            .exec(&mut db)
-            .await
-            .map_err(|e| format!("更新题库题目失败: {e}"))?;
-        } else {
-            toasty::create!(BankQuestion {
-                question_id: q.question_id.clone(),
-                cid: cid.map(str::to_string),
-                tid: tid.map(str::to_string),
-                course_name: q.course_name.clone(),
-                task_name: q.task_name.clone(),
-                question_type: q.question_type.clone(),
-                stem,
-                stem_hash: stem_h,
-                options_json,
-                answers_json,
-                correct_answers_json,
-                blanks: q.blanks as i64,
-                uploaded: q.uploaded,
-                embedding_blob: Some(computed_blob),
-                updated_at_ms: q.updated_at_ms,
-            })
-            .exec(&mut db)
-            .await
-            .map_err(|e| format!("新增题库题目失败: {e}"))?;
+                toasty::update!(existing {
+                    cid: next_cid,
+                    tid: next_tid,
+                    course_name: next_cname,
+                    task_name: next_tname,
+                    question_type: q.question_type.clone(),
+                    stem: next_stem,
+                    stem_hash: next_stem_hash,
+                    options_json: next_options,
+                    answers_json: next_answers,
+                    correct_answers_json: next_correct,
+                    blanks: q.blanks as i64,
+                    uploaded: was_uploaded || q.uploaded,
+                    embedding_blob,
+                    updated_at_ms: next_updated_at,
+                })
+                .exec(&mut db)
+                .await
+                .map_err(|e| format!("更新题库题目失败: {e}"))?;
+            }
+            Err(error) if error.is_record_not_found() => {
+                toasty::create!(BankQuestion {
+                    question_id: q.question_id.clone(),
+                    cid: cid.map(str::to_string),
+                    tid: tid.map(str::to_string),
+                    course_name: q.course_name.clone(),
+                    task_name: q.task_name.clone(),
+                    question_type: q.question_type.clone(),
+                    stem,
+                    stem_hash: stem_h,
+                    options_json,
+                    answers_json,
+                    correct_answers_json,
+                    blanks: q.blanks as i64,
+                    uploaded: q.uploaded,
+                    embedding_blob: Some(computed_blob),
+                    updated_at_ms: q.updated_at_ms,
+                })
+                .exec(&mut db)
+                .await
+                .map_err(|e| format!("新增题库题目失败: {e}"))?;
+            }
+            Err(error) => {
+                return Err(format!("读取题库题目失败，本次未写入: {error}"));
+            }
         }
 
         Ok(())
@@ -317,23 +355,29 @@ impl QaDatabase {
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
         let mut db = self.db.clone();
-        if let Ok(mut existing) = VideoDuration::get_by_id(&mut db, &key).await {
-            toasty::update!(existing {
-                duration,
-                updated_at_ms: now,
-            })
-            .exec(&mut db)
-            .await
-            .map_err(|e| format!("更新视频时长失败: {e}"))?;
-        } else {
-            toasty::create!(VideoDuration {
-                id: key,
-                duration,
-                updated_at_ms: now,
-            })
-            .exec(&mut db)
-            .await
-            .map_err(|e| format!("保存视频时长失败: {e}"))?;
+        match VideoDuration::get_by_id(&mut db, &key).await {
+            Ok(mut existing) => {
+                toasty::update!(existing {
+                    duration,
+                    updated_at_ms: now,
+                })
+                .exec(&mut db)
+                .await
+                .map_err(|e| format!("更新视频时长失败: {e}"))?;
+            }
+            Err(error) if error.is_record_not_found() => {
+                toasty::create!(VideoDuration {
+                    id: key,
+                    duration,
+                    updated_at_ms: now,
+                })
+                .exec(&mut db)
+                .await
+                .map_err(|e| format!("保存视频时长失败: {e}"))?;
+            }
+            Err(error) => {
+                return Err(format!("读取视频时长失败，本次未写入: {error}"));
+            }
         }
         Ok(())
     }
@@ -343,10 +387,19 @@ impl QaDatabase {
         let mut count = 0;
         let mut db = self.db.clone();
         for qid in question_ids {
-            if let Ok(mut existing) = BankQuestion::get_by_question_id(&mut db, qid).await {
-                if !existing.uploaded {
-                    let _ = toasty::update!(existing { uploaded: true }).exec(&mut db).await;
-                    count += 1;
+            match BankQuestion::get_by_question_id(&mut db, qid).await {
+                Ok(mut existing) => {
+                    if !existing.uploaded {
+                        toasty::update!(existing { uploaded: true })
+                            .exec(&mut db)
+                            .await
+                            .map_err(|e| format!("标记题库上传状态失败: {e}"))?;
+                        count += 1;
+                    }
+                }
+                Err(error) if error.is_record_not_found() => {}
+                Err(error) => {
+                    return Err(format!("读取题库题目失败: {error}"));
                 }
             }
         }
@@ -467,44 +520,53 @@ impl QaDatabase {
             .unwrap_or(0);
 
         let mut db = self.db.clone();
-        if let Ok(mut existing) = BankQuestion::get_by_question_id(&mut db, question_id).await {
-            let next_cid = cid.map(str::to_string).or_else(|| existing.cid.clone());
-            let next_tid = Some(tid.to_string()).or_else(|| existing.tid.clone());
-            toasty::update!(existing {
-                cid: next_cid,
-                tid: next_tid,
-                question_type: question_type.to_string(),
-                stem: stem.to_string(),
-                stem_hash: stem_h,
-                options_json,
-                correct_answers_json: correct_answers_json.or_else(|| existing.correct_answers_json.clone()),
-                embedding_blob: Some(embedding_blob),
-                updated_at_ms: now,
-            })
-            .exec(&mut db)
-            .await
-            .map_err(|e| format!("更新服务端拉取题目失败: {e}"))?;
-        } else {
-            toasty::create!(BankQuestion {
-                question_id: question_id.to_string(),
-                cid: cid.map(str::to_string),
-                tid: Some(tid.to_string()),
-                course_name: None,
-                task_name: None,
-                question_type: question_type.to_string(),
-                stem: stem.to_string(),
-                stem_hash: stem_h,
-                options_json,
-                answers_json: "[]".to_string(),
-                correct_answers_json,
-                blanks: 0,
-                uploaded: true,
-                embedding_blob: Some(embedding_blob),
-                updated_at_ms: now,
-            })
-            .exec(&mut db)
-            .await
-            .map_err(|e| format!("新增服务端拉取题目失败: {e}"))?;
+        match BankQuestion::get_by_question_id(&mut db, question_id).await {
+            Ok(mut existing) => {
+                let next_cid = cid.map(str::to_string).or_else(|| existing.cid.clone());
+                let next_tid = Some(tid.to_string()).or_else(|| existing.tid.clone());
+                let next_correct =
+                    correct_answers_json.or_else(|| existing.correct_answers_json.clone());
+                let next_options = options_json.or_else(|| existing.options_json.clone());
+                toasty::update!(existing {
+                    cid: next_cid,
+                    tid: next_tid,
+                    question_type: question_type.to_string(),
+                    stem: stem.to_string(),
+                    stem_hash: stem_h,
+                    options_json: next_options,
+                    correct_answers_json: next_correct,
+                    embedding_blob: Some(embedding_blob),
+                    updated_at_ms: now,
+                })
+                .exec(&mut db)
+                .await
+                .map_err(|e| format!("更新服务端拉取题目失败: {e}"))?;
+            }
+            Err(error) if error.is_record_not_found() => {
+                toasty::create!(BankQuestion {
+                    question_id: question_id.to_string(),
+                    cid: cid.map(str::to_string),
+                    tid: Some(tid.to_string()),
+                    course_name: None,
+                    task_name: None,
+                    question_type: question_type.to_string(),
+                    stem: stem.to_string(),
+                    stem_hash: stem_h,
+                    options_json,
+                    answers_json: "[]".to_string(),
+                    correct_answers_json,
+                    blanks: 0,
+                    uploaded: true,
+                    embedding_blob: Some(embedding_blob),
+                    updated_at_ms: now,
+                })
+                .exec(&mut db)
+                .await
+                .map_err(|e| format!("新增服务端拉取题目失败: {e}"))?;
+            }
+            Err(error) => {
+                return Err(format!("读取题库题目失败，本次未写入: {error}"));
+            }
         }
         Ok(())
     }

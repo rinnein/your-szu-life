@@ -17,6 +17,7 @@ import OjCaptchaInput from "./OjCaptchaInput";
 import { useAuth } from "../auth";
 import { notifySuccess } from "./feedback";
 import { ojProgressCache, progressScope } from "./progress-store";
+import { readContests, readGroups, writeContests, writeGroups } from "./list-cache";
 import { OcrModelRequiredDialog } from "../OcrModelGate";
 import { useOcrModelStatus } from "../OcrModelSettings";
 export function ErrorNotice({ message }: { message?: string }) {
@@ -105,30 +106,50 @@ export default function OjPage() {
   }, [refresh]);
   useEffect(() => {
     let active = true;
-    setGroups([]);
-    setContests([]);
-    setQuery("");
-    setError(undefined);
-    if (site?.enabled && !search.contest) {
-      setBusy(true);
-      const request = search.group
-        ? invoke<Contest[]>("get_oj_contests", { siteId: site.id, groupId: search.group })
-        : invoke<Group[]>("get_oj_groups", { siteId: site.id });
-      void request
-        .then((rows) => {
-          if (active) {
-            if (search.group) setContests(rows as Contest[]);
-            else setGroups(rows as Group[]);
-          }
-        })
-        .catch((e) => active && setError(String(e)))
-        .finally(() => {
-          if (active) {
-            setBusy(false);
-            void refresh();
-          }
-        });
+    if (!site?.enabled || search.contest) {
+      return;
     }
+    const siteId = site.id;
+    const groupId = search.group;
+    // 命中缓存时直接渲染，不清空列表、也不再发一次 IPC。
+    if (groupId) {
+      const cached = readContests(siteId, groupId);
+      if (cached) {
+        setContests(cached.rows);
+        setBusy(false);
+        return;
+      }
+    } else {
+      const cached = readGroups(siteId);
+      if (cached) {
+        setGroups(cached.rows);
+        setBusy(false);
+        return;
+      }
+    }
+    setBusy(true);
+    const request = groupId
+      ? invoke<Contest[]>("get_oj_contests", { siteId, groupId })
+      : invoke<Group[]>("get_oj_groups", { siteId });
+    void request
+      .then((rows) => {
+        if (!active) return;
+        setError(undefined);
+        if (groupId) {
+          setContests(rows as Contest[]);
+          writeContests(siteId, groupId, rows as Contest[]);
+        } else {
+          setGroups(rows as Group[]);
+          writeGroups(siteId, rows as Group[]);
+        }
+      })
+      .catch((e) => active && setError(String(e)))
+      .finally(() => {
+        if (active) {
+          setBusy(false);
+          void refresh();
+        }
+      });
     return () => {
       active = false;
     };

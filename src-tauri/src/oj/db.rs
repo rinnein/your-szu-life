@@ -29,6 +29,9 @@ pub struct OjStateRecord {
     pub preferences_json: String,
     pub companion_enabled: bool,
     pub updated_at_ms: i64,
+    /// 班级/测验缓存（迁移 2 新增）。
+    pub groups_json: String,
+    pub contests_json: String,
 }
 
 #[derive(Clone)]
@@ -51,10 +54,17 @@ impl OjDatabase {
         let mut db = self.db.clone();
         let state_row = match OjStateRecord::get_by_id(&mut db, "current").await {
             Ok(row) => row,
-            Err(_) => return Ok(Data::default()),
+            // 只有“这一行还不存在”才是首次使用；其它错误必须上抛，
+            // 否则默认数据会被随后的 save_data 写回磁盘。
+            Err(error) if error.is_record_not_found() => return Ok(Data::default()),
+            Err(error) => {
+                log::warn!("读取 OJ 本地状态失败: {error}");
+                return Err("读取 OJ 本地状态失败，已保留磁盘上的原有数据".into());
+            }
         };
 
-        let sites: Vec<Site> = serde_json::from_str(&state_row.sites_json).unwrap_or_else(|_| defaults());
+        let sites: Vec<Site> = serde_json::from_str(&state_row.sites_json)
+            .map_err(|_| "OJ 站点数据损坏，已保留磁盘上的原有数据")?;
         let drafts: std::collections::BTreeMap<String, Draft> =
             serde_json::from_str(&state_row.drafts_json).unwrap_or_default();
         let known: std::collections::BTreeMap<String, Known> =
@@ -65,11 +75,18 @@ impl OjDatabase {
             serde_json::from_str(&state_row.scheduled_json).unwrap_or_default();
         let preferences: std::collections::BTreeMap<String, Preferences> =
             serde_json::from_str(&state_row.preferences_json).unwrap_or_default();
+        let groups: std::collections::BTreeMap<String, GroupCache> =
+            serde_json::from_str(&state_row.groups_json).unwrap_or_default();
+        let contests: std::collections::BTreeMap<String, ContestCache> =
+            serde_json::from_str(&state_row.contests_json).unwrap_or_default();
 
-        let notice_rows = match OjNoticeRecord::all().exec(&mut db).await {
-            Ok(rows) => rows,
-            Err(_) => vec![],
-        };
+        let notice_rows = OjNoticeRecord::all()
+            .exec(&mut db)
+            .await
+            .map_err(|error| {
+                log::warn!("读取 OJ 通知失败: {error}");
+                "读取 OJ 通知失败，已保留磁盘上的原有数据".to_string()
+            })?;
         let mut notices: Vec<Notice> = notice_rows
             .into_iter()
             .map(|r| Notice {
@@ -99,6 +116,8 @@ impl OjDatabase {
             companion_port: state_row.companion_port.max(1).min(65535) as u16,
             preferences,
             companion_enabled: state_row.companion_enabled,
+            groups,
+            contests,
         })
     }
 
@@ -109,59 +128,95 @@ impl OjDatabase {
         let uncertain_json = serde_json::to_string(&data.uncertain).unwrap_or_default();
         let scheduled_json = serde_json::to_string(&data.scheduled).unwrap_or_default();
         let preferences_json = serde_json::to_string(&data.preferences).unwrap_or_default();
+        let groups_json = serde_json::to_string(&data.groups).unwrap_or_default();
+        let contests_json = serde_json::to_string(&data.contests).unwrap_or_default();
         let now = chrono::Utc::now().timestamp_millis();
 
         let mut db = self.db.clone();
-        if let Ok(mut existing) = OjStateRecord::get_by_id(&mut db, "current").await {
-            toasty::update!(existing {
-                version: data.version as i64,
-                sites_json,
-                drafts_json,
-                known_json,
-                uncertain_json,
-                scheduled_json,
-                companion_port: data.companion_port as i64,
-                preferences_json,
-                companion_enabled: data.companion_enabled,
-                updated_at_ms: now,
-            })
-            .exec(&mut db)
-            .await
-            .map_err(|e| format!("更新 OJ 状态失败: {e}"))?;
-        } else {
-            toasty::create!(OjStateRecord {
-                id: "current".to_string(),
-                version: data.version as i64,
-                sites_json,
-                drafts_json,
-                known_json,
-                uncertain_json,
-                scheduled_json,
-                companion_port: data.companion_port as i64,
-                preferences_json,
-                companion_enabled: data.companion_enabled,
-                updated_at_ms: now,
-            })
-            .exec(&mut db)
-            .await
-            .map_err(|e| format!("创建 OJ 状态失败: {e}"))?;
-        }
-
-        // 保存通知记录（避免每次全量替换全表，只插入新增的通知）
-        for n in &data.notices {
-            if OjNoticeRecord::get_by_id(&mut db, &n.id).await.is_err() {
-                let _ = toasty::create!(OjNoticeRecord {
-                    id: n.id.clone(),
-                    site_id: n.site_id.clone(),
-                    account: n.account.clone(),
-                    contest_id: n.contest_id.clone(),
-                    title: n.title.clone(),
-                    message: n.message.clone(),
-                    timestamp: n.timestamp,
-                    read: n.read,
+        match OjStateRecord::get_by_id(&mut db, "current").await {
+            Ok(mut existing) => {
+                toasty::update!(existing {
+                    version: data.version as i64,
+                    sites_json,
+                    drafts_json,
+                    known_json,
+                    uncertain_json,
+                    scheduled_json,
+                    companion_port: data.companion_port as i64,
+                    preferences_json,
+                    companion_enabled: data.companion_enabled,
+                    updated_at_ms: now,
+                    groups_json,
+                    contests_json,
                 })
                 .exec(&mut db)
-                .await;
+                .await
+                .map_err(|e| format!("更新 OJ 状态失败: {e}"))?;
+            }
+            Err(error) if error.is_record_not_found() => {
+                toasty::create!(OjStateRecord {
+                    id: "current".to_string(),
+                    version: data.version as i64,
+                    sites_json,
+                    drafts_json,
+                    known_json,
+                    uncertain_json,
+                    scheduled_json,
+                    companion_port: data.companion_port as i64,
+                    preferences_json,
+                    companion_enabled: data.companion_enabled,
+                    updated_at_ms: now,
+                    groups_json,
+                    contests_json,
+                })
+                .exec(&mut db)
+                .await
+                .map_err(|e| format!("创建 OJ 状态失败: {e}"))?;
+            }
+            Err(error) => {
+                // 读不出旧行时不要盲目 create，避免把默认状态写到已有数据之上。
+                return Err(format!("读取 OJ 状态失败，本次未写入: {error}"));
+            }
+        }
+
+        // 通知按 id 增量同步：已存在的行要更新 read，站点删除后残留的行要清理。
+        let site_ids: std::collections::BTreeSet<&str> =
+            data.sites.iter().map(|site| site.id.as_str()).collect();
+        for n in &data.notices {
+            match OjNoticeRecord::get_by_id(&mut db, &n.id).await {
+                Ok(mut existing) => {
+                    toasty::update!(existing { read: n.read })
+                        .exec(&mut db)
+                        .await
+                        .map_err(|e| format!("更新 OJ 通知状态失败: {e}"))?;
+                }
+                Err(error) if error.is_record_not_found() => {
+                    toasty::create!(OjNoticeRecord {
+                        id: n.id.clone(),
+                        site_id: n.site_id.clone(),
+                        account: n.account.clone(),
+                        contest_id: n.contest_id.clone(),
+                        title: n.title.clone(),
+                        message: n.message.clone(),
+                        timestamp: n.timestamp,
+                        read: n.read,
+                    })
+                    .exec(&mut db)
+                    .await
+                    .map_err(|e| format!("创建 OJ 通知失败: {e}"))?;
+                }
+                Err(error) => {
+                    return Err(format!("读取 OJ 通知失败，本次未写入: {error}"));
+                }
+            }
+        }
+        for row in OjNoticeRecord::all()
+            .exec(&mut db)
+            .await
+            .map_err(|e| format!("读取 OJ 通知失败: {e}"))?
+        {
+            if !site_ids.contains(row.site_id.as_str()) {
+                let _ = row.delete().exec(&mut db).await;
             }
         }
 

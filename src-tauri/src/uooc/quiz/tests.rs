@@ -311,8 +311,10 @@ fn cached_question_images_restore_and_corruption_invalidates_approval() {
     std::fs::write(&file, "\"data:image/png;base64,bad\"").unwrap();
     let mut broken = saved;
     restore_media(&mut broken, &root);
-    assert_eq!(broken["7/42"].stage, Stage::AwaitingChoice);
-    assert!(broken["7/42"].signature.is_empty());
+    // 图片缓存损坏不应把已确认的测验状态打回未作答，只提示图片需要重新加载。
+    assert_eq!(broken["7/42"].stage, Stage::AwaitingApproval);
+    assert_eq!(broken["7/42"].signature, "approved");
+    assert!(broken["7/42"].message.contains("图片缓存"));
     assert!(!file.exists());
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -491,4 +493,68 @@ async fn jev_uses_systemone_and_requests_only_one_main_model_recheck() {
     assert_eq!(reviews.len(), 1);
     assert_eq!(calls.load(Ordering::SeqCst), 2);
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn bank_upsert_keeps_confirmed_answers_and_uploaded_flag() {
+    use super::qa::{LocalBankAnswer, LocalBankQuestion, QaUploadOption};
+
+    let dir = tempfile::tempdir().unwrap();
+    let db = super::db::QaDatabase::open(&dir.path().join("bank.db"))
+        .await
+        .unwrap();
+
+    let mut question = LocalBankQuestion {
+        cid: "c".into(),
+        course_name: Some("课程".into()),
+        tid: "t".into(),
+        task_name: Some("测验".into()),
+        question_id: "q1".into(),
+        question_type: "single".into(),
+        stem: Some("题干".into()),
+        options: Some(vec![
+            QaUploadOption {
+                id: "A".into(),
+                text: "甲".into(),
+            },
+            QaUploadOption {
+                id: "B".into(),
+                text: "乙".into(),
+            },
+        ]),
+        blanks: 0,
+        answers: vec![LocalBankAnswer {
+            id: None,
+            values: vec![json!("A")],
+            is_correct: true,
+            source: "local".into(),
+            confidence: 1.0,
+        }],
+        correct_answers: vec!["A".into()],
+        uploaded: true,
+        updated_at_ms: 1,
+    };
+    db.upsert_bank_question(&question, Some("c"), Some("t"))
+        .await
+        .unwrap();
+
+    // 重建题库时，新解析往往拿不到答案，也没有 uploaded 标记。
+    question.answers.clear();
+    question.correct_answers.clear();
+    question.uploaded = false;
+    question.updated_at_ms = 2;
+    db.upsert_bank_question(&question, Some("c"), Some("t"))
+        .await
+        .unwrap();
+
+    let stored = db
+        .load_all_bank_questions()
+        .await
+        .unwrap()
+        .into_values()
+        .next()
+        .unwrap();
+    assert_eq!(stored.correct_answers, vec!["A".to_string()]);
+    assert!(stored.uploaded);
+    assert!(!stored.answers.is_empty());
 }
