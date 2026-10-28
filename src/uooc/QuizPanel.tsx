@@ -1312,7 +1312,9 @@ export function QuizPanel({
                       label={`第 ${i + 1} 题作答`}
                       value={answers[q.id]?.[0] ?? ""}
                       disabled={disabled || quiz.stage === "passed"}
-                      onChange={(event) => set(q.id, [event.detail.value])}
+                      onChange={(event: any) =>
+                        set(q.id, [event.detail?.value ?? event.target?.value ?? ""])
+                      }
                       className="w-full"
                     />
                   </div>

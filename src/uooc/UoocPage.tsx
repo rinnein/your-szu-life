@@ -1284,8 +1284,11 @@ export default function UoocPage() {
                       value={discussionContent}
                       maxlength={500}
                       disabled={busy || !snapshot || !discussionEnabled}
-                      onChange={(event) =>
-                        editDraft((old) => ({ ...old, discussionContent: event.detail.value }))
+                      onChange={(event: any) =>
+                        editDraft((old) => ({
+                          ...old,
+                          discussionContent: event.detail?.value ?? event.target?.value ?? "",
+                        }))
                       }
                       className="w-full"
                     />

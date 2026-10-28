@@ -294,10 +294,11 @@ export function PeerEvalModal({ isOpen, onClose, courses, defaultCid }: PeerEval
                                     type="multiline"
                                     label="互评评语"
                                     value={comments[sub.evalId] ?? ""}
-                                    onChange={(event) =>
+                                    onChange={(event: any) =>
                                       setComments((prev) => ({
                                         ...prev,
-                                        [sub.evalId]: event.detail.value,
+                                        [sub.evalId]:
+                                          event.detail?.value ?? event.target?.value ?? "",
                                       }))
                                     }
                                     disabled={sub.isEvaluated}

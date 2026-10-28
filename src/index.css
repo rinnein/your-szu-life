@@ -1107,6 +1107,8 @@ p {
   border-radius: var(--mtrl-sys-shape-corner-medium, 12px);
   font-size: 0.875rem;
   line-height: 1.25rem;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
 }
 
 .banner-default {
@@ -1142,17 +1144,26 @@ p {
 .banner-title {
   margin: 0;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .banner-description {
   margin: 0;
   opacity: 0.9;
+  overflow-wrap: anywhere;
 }
 
 /* ---------- 表格 ---------- */
 .data-table-scroll {
   overflow-x: auto;
   border-radius: var(--mtrl-sys-shape-corner-medium, 12px);
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.md-table-root {
+  min-inline-size: 0;
+  max-inline-size: 100%;
 }
 
 .data-table {
@@ -1189,12 +1200,14 @@ p {
 /* ---------- 可展开区块 ---------- */
 .disclosure {
   border-block-end: 1px solid var(--mtrl-sys-color-outline-variant);
+  min-inline-size: 0;
 }
 
 .disclosure-heading {
   margin: 0;
   font-size: inherit;
   font-weight: inherit;
+  min-inline-size: 0;
 }
 
 .disclosure-trigger {
@@ -1203,6 +1216,7 @@ p {
   justify-content: space-between;
   gap: 12px;
   inline-size: 100%;
+  min-inline-size: 0;
   padding: 16px 4px;
   background: none;
   border: none;
@@ -1217,13 +1231,21 @@ p {
   background: color-mix(in srgb, var(--mtrl-sys-color-on-surface) 6%, transparent);
 }
 
+.disclosure-title {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
 .disclosure-indicator {
   display: inline-flex;
+  flex: none;
   color: var(--mtrl-sys-color-on-surface-variant);
 }
 
 .disclosure-content {
   padding: 0 4px 16px;
+  min-inline-size: 0;
 }
 
 /* ---------- 头像 ---------- */
@@ -1560,11 +1582,25 @@ p {
 /*
  * material 的 `m-top-app-bar` 默认是绝对定位、固定 64px；这里覆盖成静态定位并让它
  * 跟随内容高度（横向撑满由上面的 sticky 外壳负责）。
+ *
+ * 动作区在窄屏下可能放不下全部按钮，允许换行且将 headline / trailing 设为可收缩，
+ * 避免按钮把顶栏撑破视口导致 Android 端横向截断。
  */
 m-top-app-bar::part(top-app-bar) {
   position: static;
   block-size: auto;
   min-block-size: 56px;
+  flex-wrap: wrap;
+  row-gap: 8px;
+  padding-block: 8px;
+}
+
+m-top-app-bar::part(headline) {
+  min-inline-size: 0;
+}
+
+m-top-app-bar::part(trailing) {
+  min-inline-size: 0;
 }
 
 .top-app-bar-leading {
@@ -1621,8 +1657,10 @@ m-top-app-bar::part(top-app-bar) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
-  flex: none;
+  flex: 1 1 auto;
+  min-inline-size: 0;
 }
 
 .top-app-bar-description {
@@ -2401,3 +2439,42 @@ m-top-app-bar::part(top-app-bar) {
 }
 
 /* 标签页改用 material/react 的 <m-tabs>，样式由组件自带。 */
+
+/* ---------- material 控件的固有宽度 ---------- */
+/*
+ * material 的几个控件自带大于窄屏的固有最小宽度。它们在普通块流里没问题，
+ * 但一旦成为栅格/弹性子项，`min-width: auto` 会把「固有最小宽度」当成整条轨道的
+ * 下限，于是页面被撑得比视口宽 —— Android 上表现为右侧内容整块被裁掉。
+ *
+ * - `m-tabs`：滚动档的内部滚动区有 `padding-inline: 52px`（给两侧滚动按钮留位），
+ *   每个 tab 又有 `min-width: 90px`，4 个 tab 的固有宽度就是 464px。
+ * - `m-text-field` / `m-datepicker`：`contain: inline-size` 配
+ *   `contain-intrinsic-inline-size: 280px`，容器按内容推导最小宽度时按 280px 计。
+ *
+ * 组件自己已经会滚动或吃满容器，这里只收掉「自动最小尺寸」——宽度交给容器决定。
+ * 不要用 `width: 100%`：那是指定尺寸，对固有宽度计算无效，撑宽照旧。
+ */
+m-tabs,
+m-text-field,
+m-select,
+m-datepicker,
+m-button-group {
+  min-inline-size: 0;
+}
+
+/*
+ * `m-card` 的副标题槽：material 给 shadow 内的 `.mtrl-card__header-subtitle` 设了
+ * `white-space: nowrap`（配合单行省略号），而 white-space 是继承属性，会作用到插槽里的
+ * 浅 DOM 内容上。长说明文字因此永不折行，卡片的最小宽度就等于整行文字（实测 955px），
+ * 整页随之被撑到约 1000px。插槽内容在浅 DOM 里，这里改写不会穿透 shadow root。
+ */
+m-card [slot="subhead"],
+m-card [slot="headline"] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* 卡片本体同样可能被当作栅格子项，同 m-tabs 一样收掉自动最小尺寸。 */
+m-card {
+  min-inline-size: 0;
+}

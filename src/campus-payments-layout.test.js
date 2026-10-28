@@ -20,3 +20,29 @@ describe("campus payments responsive layout contract", () => {
     );
   });
 });
+
+describe("material component narrow screen layout contract", () => {
+  it("strips automatic minimum inline size from material custom elements", () => {
+    expect(styles).toMatch(/m-tabs,\s*m-text-field,\s*m-select,\s*m-datepicker/);
+    expect(styles).toMatch(/m-tabs,[\s\S]*?min-inline-size:\s*0/);
+    expect(styles).toMatch(/m-card\s*\{[^}]*min-inline-size:\s*0/);
+  });
+
+  it("permits text wrapping on card headlines and subheads", () => {
+    expect(styles).toMatch(
+      /m-card\s+\[slot="subhead"\],\s*m-card\s+\[slot="headline"\]\s*\{[^}]*white-space:\s*normal/,
+    );
+  });
+
+  it("permits top app bar actions to wrap without pushing off-screen", () => {
+    expect(styles).toMatch(/m-top-app-bar::part\(top-app-bar\)[\s\S]*?flex-wrap:\s*wrap/);
+    expect(styles).toMatch(/m-top-app-bar::part\(headline\)[\s\S]*?min-inline-size:\s*0/);
+    expect(styles).toMatch(/m-top-app-bar::part\(trailing\)[\s\S]*?min-inline-size:\s*0/);
+  });
+
+  it("ensures banners, disclosures, and data tables can shrink within grid tracks", () => {
+    expect(styles).toMatch(/\.banner\s*\{[^}]*min-inline-size:\s*0/);
+    expect(styles).toMatch(/\.disclosure\s*\{[^}]*min-inline-size:\s*0/);
+    expect(styles).toMatch(/\.data-table-scroll\s*\{[^}]*min-inline-size:\s*0/);
+  });
+});
