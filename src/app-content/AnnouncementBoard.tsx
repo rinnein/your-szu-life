@@ -1,27 +1,37 @@
-import { useLogicalNavigation } from "../logical-navigation";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { Card, LoadingIndicator, Button } from "material/react";
-import { Banner, Disclosure } from "../ui";
-import { LuArrowLeft, LuArrowRight, LuArrowUpRight, LuImage, LuMegaphone } from "react-icons/lu";
+import { Card, Dialog, LoadingIndicator, Button } from "material/react";
+import { Banner } from "../ui";
+import {
+  LuArrowLeft,
+  LuArrowRight,
+  LuArrowUpRight,
+  LuChevronRight,
+  LuImage,
+  LuMegaphone,
+} from "react-icons/lu";
 import { useAppContent } from "./context";
 import { contentTime, openPublicUrl } from "./external";
+import { useLogicalNavigation } from "../logical-navigation";
+import { parseDeepLinkUrl } from "../deep-link";
 import type { Announcement } from "./types";
-import { EMPTY_ELECTRICITY_STATUS, useElectricityMonitor } from "../electricity-monitor";
-import { useActiveOjContests } from "../oj/active-contests";
 
-type LocalAnnouncement =
-  | {
-      kind: "electricity-low";
-      title: string;
-      url: "/life/campus-payments/recharge";
-    }
-  | {
-      kind: "oj-active";
-      title: string;
-      url: string;
-    };
-type AnnouncementUnit = Announcement | LocalAnnouncement;
+export type AnnouncementLinkTarget =
+  | { kind: "internal"; route: string }
+  | { kind: "external"; url: string };
+
+export function resolveAnnouncementLink(link: string): AnnouncementLinkTarget {
+  const trimmed = link.trim();
+  if (trimmed.startsWith("/")) {
+    return { kind: "internal", route: trimmed };
+  }
+  const deepRoute = parseDeepLinkUrl(trimmed);
+  if (deepRoute) {
+    return { kind: "internal", route: deepRoute };
+  }
+  return { kind: "external", url: trimmed };
+}
 
 export function AnnouncementImage({
   url: sourceUrl,
@@ -36,8 +46,6 @@ export function AnnouncementImage({
   useEffect(() => {
     if (!url) return;
     let active = true;
-    // Use the restricted native channel for HTTPS as well: no WebView auth cookies,
-    // no CORS dependency, and identical validation/caching on desktop and Android.
     if (request.current?.url !== url) {
       request.current = { url, promise: invoke<string>("load_announcement_image", { url }) };
     }
@@ -90,103 +98,22 @@ export function AnnouncementImage({
   );
 }
 
-function AnnouncementCard({ unit }: { unit: AnnouncementUnit }) {
-  const navigation = useLogicalNavigation();
-  const [error, setError] = useState<string>();
-  if ("kind" in unit) {
-    return (
-      <Card className="announcement-card" variant="outlined">
-        <button
-          type="button"
-          className="announcement-trigger announcement-link"
-          aria-label={unit.title}
-          onClick={() => {
-            void navigation.push(unit.url);
-          }}
-        >
-          <AnnouncementImage title={unit.title} />
-          <span className="announcement-title-row">
-            <span>{unit.title}</span>
-            <LuArrowUpRight aria-hidden="true" />
-          </span>
-        </button>
-      </Card>
-    );
-  }
-  if (unit.desc !== undefined) {
-    return (
-      <Card className="announcement-card" variant="outlined">
-        <Disclosure
-          title={
-            <span className="announcement-trigger">
-              <AnnouncementImage url={unit.pic} title={unit.title} />
-              <span className="announcement-title-row">
-                <span>{unit.title}</span>
-              </span>
-            </span>
-          }
-        >
-          <div className="announcement-body content-plaintext">{unit.desc}</div>
-        </Disclosure>
-      </Card>
-    );
-  }
-  return (
-    <Card className="announcement-card" variant="outlined">
-      <button
-        type="button"
-        className="announcement-trigger announcement-link"
-        aria-label={unit.title + "（在系统浏览器打开）"}
-        onClick={() => {
-          setError(undefined);
-          void openPublicUrl(unit.goto).catch(() => setError("无法打开系统浏览器，请稍后重试。"));
-        }}
-      >
-        <AnnouncementImage url={unit.pic} title={unit.title} />
-        <span className="announcement-title-row">
-          <span>{unit.title}</span>
-          <LuArrowUpRight aria-hidden="true" />
-        </span>
-      </button>
-      {error && (
-        <p className="announcement-open-error" role="alert">
-          {error}
-        </p>
-      )}
-    </Card>
-  );
-}
-
 export function AnnouncementBoard() {
+  const navigation = useLogicalNavigation();
   const { snapshot, error, refreshing } = useAppContent();
-  const electricity = useElectricityMonitor() ?? EMPTY_ELECTRICITY_STATUS;
-  const activeOjContests = useActiveOjContests();
   const feed = snapshot?.announcements;
   const units = feed?.data?.announcements;
+  const displayUnits: Announcement[] = units ?? [];
 
-  const localUnits: LocalAnnouncement[] = [];
-  if (electricity.low && electricity.remaining != null) {
-    localUnits.push({
-      kind: "electricity-low",
-      title: `当前剩余电量：${electricity.remaining.toFixed(2)} 度${electricity.warningReason ? ` · ${electricity.warningReason}` : ""}`,
-      url: "/life/campus-payments/recharge",
-    });
-  }
-
-  for (const contest of activeOjContests) {
-    localUnits.push({
-      kind: "oj-active",
-      title: `进行中测验：${contest.title}`,
-      url: contest.url,
-    });
-  }
-
-  const displayUnits: AnnouncementUnit[] = [...localUnits, ...(units ?? [])];
   const unavailable =
     snapshot?.configuration.status !== "ready" &&
     !(snapshot?.configuration.status === "unconfigured" && snapshot.repository);
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [carouselPaused, setCarouselPaused] = useState(false);
+  const [activeModal, setActiveModal] = useState<Announcement | null>(null);
+  const [openError, setOpenError] = useState<string>();
+
   const announcementCount = displayUnits.length;
   const hasMultipleAnnouncements = announcementCount > 1;
 
@@ -211,6 +138,9 @@ export function AnnouncementBoard() {
     setCurrentIndex((index) => (index + 1) % announcementCount);
   };
 
+  const currentAnnouncement = displayUnits[currentIndex];
+  const linkTarget = activeModal?.goto ? resolveAnnouncementLink(activeModal.goto) : null;
+
   return (
     <section
       className="announcement-board"
@@ -220,38 +150,34 @@ export function AnnouncementBoard() {
       <div className="sr-only" data-testid="hero-card" data-slot="card" aria-hidden="true">
         <div data-slot="card-content">欢迎回来 从这里开始你的校园生活。</div>
       </div>
-      <div className="content-section-header">
-        <h2 id="announcements-heading">
-          <LuMegaphone aria-hidden="true" /> 公告板
-        </h2>
-        {refreshing && (
-          <span className="content-muted" role="status">
-            <LoadingIndicator size={16} /> 正在刷新
-          </span>
-        )}
+      <div className="sr-only">
+        <h2 id="announcements-heading">公告板</h2>
+        {refreshing && <span>正在刷新公告</span>}
       </div>
+
       {error && (
-        <p className="content-muted" aria-live="polite">
+        <p className="content-muted mb-2 text-xs" aria-live="polite">
           {error}
         </p>
       )}
+
       {feed?.error && (
-        <Banner status="warning">
-          <Banner.Title>本次公告获取失败</Banner.Title>
-          <Banner.Description>
-            {feed.error.message}
-            {feed.fromCache &&
-              " 正在显示上次成功获取的公告（" + contentTime(feed.lastSuccessAt) + "）。"}
-          </Banner.Description>
-        </Banner>
+        <div className="mb-2">
+          <Banner status="warning">
+            <Banner.Title>本次公告获取失败</Banner.Title>
+            <Banner.Description>
+              {feed.error.message}
+              {feed.fromCache &&
+                " 正在显示上次成功获取的公告（" + contentTime(feed.lastSuccessAt) + "）。"}
+            </Banner.Description>
+          </Banner>
+        </div>
       )}
+
       {displayUnits.length ? (
         <div
-          className="announcement-carousel"
-          data-testid="announcement-carousel"
-          role="region"
-          aria-roledescription="carousel"
-          aria-label="校园公告轮播"
+          className="announcement-bar-wrapper"
+          data-testid="announcement-bar"
           onMouseEnter={() => setCarouselPaused(true)}
           onMouseLeave={() => setCarouselPaused(false)}
           onFocus={() => setCarouselPaused(true)}
@@ -261,56 +187,55 @@ export function AnnouncementBoard() {
             }
           }}
         >
-          <div className="announcement-viewport">
-            <div
-              className="announcement-slide"
-              data-testid="announcement-slide"
-              role="group"
-              aria-roledescription="slide"
-              aria-label={`第 ${currentIndex + 1} 条公告，共 ${announcementCount} 条`}
-            >
-              <AnnouncementCard unit={displayUnits[currentIndex]} />
-            </div>
-            {hasMultipleAnnouncements && (
-              <>
-                <Button
-                  className="announcement-carousel-control announcement-carousel-control-previous"
-                  variant="tonal"
-                  aria-label="上一条公告"
-                  onClick={showPrevious}
-                >
-                  <LuArrowLeft aria-hidden="true" />
-                </Button>
-                <Button
-                  className="announcement-carousel-control announcement-carousel-control-next"
-                  variant="tonal"
-                  aria-label="下一条公告"
-                  onClick={showNext}
-                >
-                  <LuArrowRight aria-hidden="true" />
-                </Button>
-              </>
-            )}
-          </div>
+          <button
+            type="button"
+            className="announcement-bar-trigger"
+            onClick={() => setActiveModal(currentAnnouncement)}
+            aria-label={`查看公告详情：${currentAnnouncement.title}`}
+          >
+            <span className="announcement-bar-prefix">
+              <LuMegaphone className="announcement-bar-icon" aria-hidden="true" />
+              <span className="announcement-bar-tag">公告</span>
+            </span>
+
+            <span className="announcement-bar-title truncate">{currentAnnouncement.title}</span>
+
+            <span className="announcement-bar-suffix">
+              {hasMultipleAnnouncements && (
+                <span className="announcement-bar-page-index">
+                  {currentIndex + 1}/{announcementCount}
+                </span>
+              )}
+              <LuChevronRight className="announcement-bar-arrow" aria-hidden="true" />
+            </span>
+          </button>
+
           {hasMultipleAnnouncements && (
-            <div className="announcement-carousel-indicators" aria-label="公告页码">
-              {displayUnits.map((unit, index) => (
-                <button
-                  key={index + ":" + unit.title}
-                  className="announcement-carousel-indicator"
-                  type="button"
-                  aria-label={`查看第 ${index + 1} 条公告`}
-                  aria-current={index === currentIndex ? "true" : undefined}
-                  onClick={() => setCurrentIndex(index)}
-                />
-              ))}
+            <div className="announcement-bar-nav">
+              <Button
+                variant="text"
+                className="announcement-bar-nav-btn"
+                aria-label="上一条公告"
+                onClick={showPrevious}
+              >
+                <LuArrowLeft aria-hidden="true" />
+              </Button>
+              <Button
+                variant="text"
+                className="announcement-bar-nav-btn"
+                aria-label="下一条公告"
+                onClick={showNext}
+              >
+                <LuArrowRight aria-hidden="true" />
+              </Button>
             </div>
           )}
         </div>
       ) : (
-        <Card className="announcement-empty" variant="outlined">
-          <div className="p-6 text-center">
-            <p>
+        <Card className="announcement-empty-bar" variant="outlined">
+          <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted">
+            <LuMegaphone aria-hidden="true" />
+            <span>
               {!snapshot
                 ? error
                   ? "公告服务暂不可用"
@@ -322,10 +247,86 @@ export function AnnouncementBoard() {
                     : feed?.error
                       ? "暂时无法获取公告，可在关于页手动重试。"
                       : "正在获取公告…"}
-            </p>
+            </span>
           </div>
         </Card>
       )}
+
+      {/* 点击弹出的公告详情模态框 */}
+      {activeModal &&
+        createPortal(
+          <Dialog
+            open={!!activeModal}
+            headline={activeModal.title}
+            role="dialog"
+            aria-label={activeModal.title}
+            className="announcement-modal max-w-lg w-full"
+            onClose={() => {
+              setActiveModal(null);
+              setOpenError(undefined);
+            }}
+            actions={
+              <>
+                <Button
+                  variant="text"
+                  onClick={() => {
+                    setActiveModal(null);
+                    setOpenError(undefined);
+                  }}
+                >
+                  关闭
+                </Button>
+                {linkTarget && (
+                  <Button
+                    variant="filled"
+                    onClick={() => {
+                      if (linkTarget.kind === "internal") {
+                        setActiveModal(null);
+                        setOpenError(undefined);
+                        void navigation.push(linkTarget.route);
+                      } else {
+                        setOpenError(undefined);
+                        void openPublicUrl(linkTarget.url).catch(() =>
+                          setOpenError("无法打开系统浏览器，请稍后重试。"),
+                        );
+                      }
+                    }}
+                  >
+                    {linkTarget.kind === "internal" ? "在软件内打开" : "在浏览器打开"}
+                    {linkTarget.kind === "internal" ? (
+                      <LuArrowRight className="ml-1" aria-hidden="true" />
+                    ) : (
+                      <LuArrowUpRight className="ml-1" aria-hidden="true" />
+                    )}
+                  </Button>
+                )}
+              </>
+            }
+          >
+            <div className="flex flex-col gap-4 max-h-[70vh] overflow-y-auto pr-1">
+              {/* 图片区域（可选） */}
+              {activeModal.pic && (
+                <div className="rounded-lg overflow-hidden border border-outline-variant/60 w-full aspect-[16/9] bg-surface-container-high">
+                  <AnnouncementImage url={activeModal.pic} title={activeModal.title} />
+                </div>
+              )}
+
+              {/* 描述文本（可选） */}
+              {activeModal.desc && (
+                <div className="announcement-modal-desc text-sm text-foreground leading-relaxed whitespace-pre-wrap">
+                  {activeModal.desc}
+                </div>
+              )}
+
+              {openError && (
+                <p className="announcement-open-error text-error text-xs" role="alert">
+                  {openError}
+                </p>
+              )}
+            </div>
+          </Dialog>,
+          document.body,
+        )}
     </section>
   );
 }

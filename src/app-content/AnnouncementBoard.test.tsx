@@ -7,8 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { AnnouncementBoard, AnnouncementImage } from "./AnnouncementBoard";
 import { useAppContent } from "./context";
 import type { Announcement, AppContentSnapshot, ContentError } from "./types";
-import { EMPTY_ELECTRICITY_STATUS, useElectricityMonitor } from "../electricity-monitor";
-import { useActiveOjContests } from "../oj/active-contests";
+import * as externalModule from "./external";
 
 const { nav } = vi.hoisted(() => ({
   nav: {
@@ -27,22 +26,13 @@ vi.mock("./context", () => ({
   useAppContent: vi.fn(),
 }));
 
-vi.mock("../electricity-monitor", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../electricity-monitor")>()),
-  useElectricityMonitor: vi.fn(),
-}));
-
-vi.mock("../oj/active-contests", () => ({
-  useActiveOjContests: vi.fn().mockReturnValue([]),
-}));
-
 vi.mock("../logical-navigation", () => ({
   useLogicalNavigation: () => nav,
 }));
 
 const announcements: Announcement[] = [
-  { title: "公告一", pic: "https://example.com/one.png", desc: "第一条公告" },
-  { title: "公告二", pic: "https://example.com/two.png", desc: "第二条公告" },
+  { title: "公告一", pic: "https://example.com/one.png", desc: "第一条公告内容描述" },
+  { title: "公告二", pic: "https://example.com/two.png", desc: "第二条公告内容描述" },
   { title: "公告三", pic: "https://example.com/three.png", goto: "https://example.com/three" },
 ];
 
@@ -87,11 +77,9 @@ function mockContent(snapshot: AppContentSnapshot, error?: string) {
   });
 }
 
-describe("AnnouncementBoard carousel", () => {
+describe("AnnouncementBoard compact bar & modal", () => {
   beforeEach(() => {
     vi.mocked(invoke).mockResolvedValue("data:image/png;base64,AA==");
-    vi.mocked(useElectricityMonitor).mockReturnValue(EMPTY_ELECTRICITY_STATUS);
-    vi.mocked(useActiveOjContests).mockReturnValue([]);
   });
 
   afterEach(() => {
@@ -102,14 +90,11 @@ describe("AnnouncementBoard carousel", () => {
   it.each([undefined, null, "", "  "])(
     "shows a static placeholder without requesting an absent picture (%s)",
     (pic) => {
-      mockContent(makeSnapshot([{ title: "无图公告", pic, desc: "公告正文" }]));
-      render(<AnnouncementBoard />);
+      render(<AnnouncementImage url={pic} title="无图公告" />);
 
       expect(screen.getByRole("img", { name: "无图公告暂无头图" })).toBeInTheDocument();
       expect(screen.queryByText("正在加载头图")).not.toBeInTheDocument();
       expect(invoke).not.toHaveBeenCalled();
-      fireEvent.click(screen.getByRole("button", { name: /无图公告/ }));
-      expect(screen.getByText("公告正文")).toBeInTheDocument();
     },
   );
 
@@ -126,95 +111,146 @@ describe("AnnouncementBoard carousel", () => {
     expect(invoke).toHaveBeenCalledTimes(1);
   });
 
-  it("gives the local electricity notice the same image slot as a remote picture", async () => {
-    vi.mocked(useElectricityMonitor).mockReturnValue({
-      ...EMPTY_ELECTRICITY_STATUS,
-      low: true,
-      remaining: 5,
-    });
-    mockContent(makeSnapshot([announcements[0]]));
-    render(<AnnouncementBoard />);
-
-    const placeholder = screen.getByRole("img", { name: "当前剩余电量：5.00 度暂无头图" });
-    expect(placeholder.parentElement).toHaveClass("announcement-image");
-    expect(invoke).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "下一条公告" }));
-    expect((await screen.findByRole("img", { name: "公告一头图" })).parentElement).toHaveClass(
-      "announcement-image",
-    );
-  });
-
-  it("renders one announcement at a time and switches with controls and indicators", () => {
+  it("renders compact announcement bar with title and counter", () => {
     mockContent(makeSnapshot(announcements));
     render(<AnnouncementBoard />);
 
-    expect(screen.getAllByTestId("announcement-slide")).toHaveLength(1);
-    expect(screen.getByRole("group", { name: "第 1 条公告，共 3 条" })).toBeInTheDocument();
+    const bar = screen.getByTestId("announcement-bar");
+    expect(bar).toBeInTheDocument();
     expect(screen.getByText("公告一")).toBeInTheDocument();
-    expect(screen.queryByText("公告二")).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /查看第/ })).toHaveLength(3);
-    expect(screen.getAllByRole("button", { name: /查看第/ })[0]).toHaveAttribute(
-      "aria-current",
-      "true",
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "下一条公告" }));
-    expect(screen.getByRole("group", { name: "第 2 条公告，共 3 条" })).toBeInTheDocument();
-    expect(screen.getByText("公告二")).toBeInTheDocument();
-    expect(screen.queryByText("公告一")).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /查看第/ })[1]).toHaveAttribute(
-      "aria-current",
-      "true",
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "上一条公告" }));
-    expect(screen.getByRole("group", { name: "第 1 条公告，共 3 条" })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "查看第 3 条公告" }));
-    expect(screen.getByRole("group", { name: "第 3 条公告，共 3 条" })).toBeInTheDocument();
-    expect(screen.getByText("公告三")).toBeInTheDocument();
+    expect(screen.getByText("1/3")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "上一条公告" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "下一条公告" })).toBeInTheDocument();
   });
 
-  it("autoplays and pauses while the carousel is hovered", () => {
+  it("cycles to next announcement when clicking next and prev", () => {
+    mockContent(makeSnapshot(announcements));
+    render(<AnnouncementBoard />);
+
+    expect(screen.getByText("公告一")).toBeInTheDocument();
+    expect(screen.getByText("1/3")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "下一条公告" }));
+    expect(screen.getByText("公告二")).toBeInTheDocument();
+    expect(screen.getByText("2/3")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "上一条公告" }));
+    expect(screen.getByText("公告一")).toBeInTheDocument();
+    expect(screen.getByText("1/3")).toBeInTheDocument();
+  });
+
+  it("opens modal dialog showing details on click and closes on dismiss", () => {
+    mockContent(makeSnapshot(announcements));
+    render(<AnnouncementBoard />);
+
+    const barTrigger = screen.getByRole("button", { name: /查看公告详情：公告一/ });
+    fireEvent.click(barTrigger);
+
+    // Modal is opened
+    expect(screen.getByRole("dialog", { name: "公告一" })).toBeInTheDocument();
+    expect(screen.getByText("第一条公告内容描述")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "关闭" })).toBeInTheDocument();
+
+    // Close modal
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("opens in browser when goto URL is HTTP/HTTPS", () => {
+    const openSpy = vi.spyOn(externalModule, "openPublicUrl").mockResolvedValue();
+    mockContent(makeSnapshot([announcements[2]])); // Announcement 3 has external goto URL
+    render(<AnnouncementBoard />);
+
+    fireEvent.click(screen.getByRole("button", { name: /查看公告详情：公告三/ }));
+
+    expect(screen.getByRole("dialog", { name: "公告三" })).toBeInTheDocument();
+    const jumpBtn = screen.getByRole("button", { name: /在浏览器打开/ });
+    expect(jumpBtn).toBeInTheDocument();
+
+    fireEvent.click(jumpBtn);
+    expect(openSpy).toHaveBeenCalledWith("https://example.com/three");
+  });
+
+  it("opens inside the app when goto URL is an internal route or deep link", () => {
+    const internalAnnouncement: Announcement = {
+      title: "选课提醒公告",
+      desc: "选课系统已开放",
+      goto: "/study/enrollment",
+    };
+    mockContent(makeSnapshot([internalAnnouncement]));
+    render(<AnnouncementBoard />);
+
+    fireEvent.click(screen.getByRole("button", { name: /查看公告详情：选课提醒公告/ }));
+
+    expect(screen.getByRole("dialog", { name: "选课提醒公告" })).toBeInTheDocument();
+    const internalBtn = screen.getByRole("button", { name: /在软件内打开/ });
+    expect(internalBtn).toBeInTheDocument();
+
+    fireEvent.click(internalBtn);
+    expect(nav.push).toHaveBeenCalledWith("/study/enrollment");
+    // Modal should be closed upon internal navigation
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("handles deep link URLs as internal app navigation", () => {
+    const deepLinkAnnouncement: Announcement = {
+      title: "OJ测验提醒",
+      goto: "your-szu-life://page/study/oj?site=1",
+    };
+    mockContent(makeSnapshot([deepLinkAnnouncement]));
+    render(<AnnouncementBoard />);
+
+    fireEvent.click(screen.getByRole("button", { name: /查看公告详情：OJ测验提醒/ }));
+
+    const internalBtn = screen.getByRole("button", { name: /在软件内打开/ });
+    expect(internalBtn).toBeInTheDocument();
+
+    fireEvent.click(internalBtn);
+    expect(nav.push).toHaveBeenCalledWith("/study/oj?site=1");
+  });
+
+  it("pauses auto-cycling on hover and resumes on mouse leave", () => {
     vi.useFakeTimers();
     mockContent(makeSnapshot(announcements));
     render(<AnnouncementBoard />);
 
-    const carousel = screen.getByTestId("announcement-carousel");
-    fireEvent.mouseEnter(carousel);
-    act(() => {
-      vi.advanceTimersByTime(5000);
-    });
-    expect(screen.getByRole("group", { name: "第 1 条公告，共 3 条" })).toBeInTheDocument();
+    const bar = screen.getByTestId("announcement-bar");
+    fireEvent.mouseEnter(bar);
 
-    fireEvent.mouseLeave(carousel);
     act(() => {
       vi.advanceTimersByTime(5000);
     });
-    expect(screen.getByRole("group", { name: "第 2 条公告，共 3 条" })).toBeInTheDocument();
+    // Still on first
+    expect(screen.getByText("公告一")).toBeInTheDocument();
+
+    fireEvent.mouseLeave(bar);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    // Advanced to second
+    expect(screen.getByText("公告二")).toBeInTheDocument();
     vi.useRealTimers();
   });
 
-  it("hides carousel controls when there is only one announcement", () => {
+  it("hides navigation controls when there is only one announcement", () => {
     mockContent(makeSnapshot([announcements[0]]));
     render(<AnnouncementBoard />);
 
-    expect(screen.getByRole("group", { name: "第 1 条公告，共 1 条" })).toBeInTheDocument();
+    expect(screen.getByText("公告一")).toBeInTheDocument();
+    expect(screen.queryByText("1/1")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "上一条公告" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "下一条公告" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /查看第/ })).not.toBeInTheDocument();
   });
 
-  it("keeps the empty state when the announcement feed has no items", () => {
+  it("renders empty bar when announcement feed has no items", () => {
     mockContent(makeSnapshot([]));
     render(<AnnouncementBoard />);
 
+    expect(screen.queryByTestId("announcement-bar")).not.toBeInTheDocument();
     expect(screen.getByText("暂无公告")).toBeInTheDocument();
-    expect(screen.queryByTestId("announcement-carousel")).not.toBeInTheDocument();
   });
 
-  it("keeps the cached-feed warning when loading announcements fails", () => {
+  it("displays warning banner when feed fails to load", () => {
     mockContent(
       makeSnapshot([announcements[0]], {
         kind: "network",
@@ -225,59 +261,6 @@ describe("AnnouncementBoard carousel", () => {
     render(<AnnouncementBoard />);
 
     expect(screen.getByText("本次公告获取失败")).toBeInTheDocument();
-    expect(screen.getByText("网络暂不可用")).toBeInTheDocument();
-    expect(screen.getByText("公告一")).toBeInTheDocument();
-  });
-
-  it("renders an OJ ongoing contest announcement card and navigates to the contest", async () => {
-    vi.mocked(useActiveOjContests).mockReturnValue([
-      {
-        siteId: "test-site",
-        siteName: "测试 OJ",
-        contestId: "contest-101",
-        title: "期中程序设计测验",
-        begin: Date.now() - 10000,
-        end: Date.now() + 3600000,
-        url: "/study/oj?site=test-site&contest=contest-101",
-      },
-    ]);
-    mockContent(makeSnapshot([announcements[0]]));
-    render(<AnnouncementBoard />);
-
-    const ojBtn = screen.getByRole("button", { name: "进行中测验：期中程序设计测验" });
-    expect(ojBtn).toBeInTheDocument();
-
-    fireEvent.click(ojBtn);
-    expect(nav.push).toHaveBeenCalledWith("/study/oj?site=test-site&contest=contest-101");
-  });
-
-  it("renders both electricity low warning and ongoing OJ contest cards in carousel", async () => {
-    vi.mocked(useElectricityMonitor).mockReturnValue({
-      ...EMPTY_ELECTRICITY_STATUS,
-      low: true,
-      remaining: 8.5,
-    });
-    vi.mocked(useActiveOjContests).mockReturnValue([
-      {
-        siteId: "test-site",
-        siteName: "测试 OJ",
-        contestId: "contest-102",
-        title: "期末大作业测验",
-        begin: Date.now() - 10000,
-        end: Date.now() + 3600000,
-        url: "/study/oj?site=test-site&contest=contest-102",
-      },
-    ]);
-    mockContent(makeSnapshot([]));
-    render(<AnnouncementBoard />);
-
-    // First slide is electricity
-    expect(screen.getByText("当前剩余电量：8.50 度")).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "第 1 条公告，共 2 条" })).toBeInTheDocument();
-
-    // Next slide is OJ contest
-    fireEvent.click(screen.getByRole("button", { name: "下一条公告" }));
-    expect(screen.getByText("进行中测验：期末大作业测验")).toBeInTheDocument();
-    expect(screen.getByRole("group", { name: "第 2 条公告，共 2 条" })).toBeInTheDocument();
+    expect(screen.getByText(/网络暂不可用/)).toBeInTheDocument();
   });
 });

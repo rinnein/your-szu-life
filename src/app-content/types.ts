@@ -7,7 +7,9 @@ export type ContentError = {
 export type Announcement = {
   title: string;
   pic?: string | null;
-} & ({ desc: string; goto?: never } | { goto: string; desc?: never });
+  desc?: string;
+  goto?: string;
+};
 
 export type UpdateInfo = {
   latest_ver: string;
