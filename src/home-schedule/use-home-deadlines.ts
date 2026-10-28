@@ -5,16 +5,26 @@ import { formatDateKey } from "./calendar-math";
 import type { ScheduleCategory, ScheduleItem } from "./types";
 import { useElectricityMonitor } from "../electricity-monitor";
 import { ojProgressCache, progressScope } from "../oj/progress-store";
-import type { Contest, Group, Snapshot } from "../oj/types";
+import type { Contest, Group, Snapshot as OjSnapshot } from "../oj/types";
+import type { ExamTask, HomeworkTask, UoocSnapshot } from "../uooc/types";
+
+function parseDateSafely(raw: string | undefined): Date | null {
+  if (!raw) return null;
+  const normalized = raw.replace(/\//g, "-").trim();
+  const full = normalized.includes(" ") ? normalized : `${normalized} 23:59:59`;
+  const parsed = new Date(full);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
 
 export function useHomeDeadlines() {
   const electricity = useElectricityMonitor();
   const [ojItems, setOjItems] = useState<ScheduleItem[]>([]);
+  const [uoocItems, setUoocItems] = useState<ScheduleItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchOjDeadlines = useCallback(async () => {
     try {
-      const snapshot = await invoke<Snapshot>("get_oj_snapshot");
+      const snapshot = await invoke<OjSnapshot>("get_oj_snapshot");
       if (!snapshot?.sites) return;
 
       const items: ScheduleItem[] = [];
@@ -83,14 +93,110 @@ export function useHomeDeadlines() {
       setOjItems(items);
     } catch {
       // Ignore network errors
-    } finally {
-      setLoading(false);
     }
   }, []);
 
+  const fetchUoocDeadlines = useCallback(async () => {
+    try {
+      const snapshot = await invoke<UoocSnapshot>("get_uooc_snapshot");
+      if (!snapshot || snapshot.session !== "ready") return;
+
+      const items: ScheduleItem[] = [];
+      const now = Date.now();
+
+      // 1. UOOC 课程结课时间
+      for (const course of snapshot.courses || []) {
+        if (!course.endDate) continue;
+        const endDate = parseDateSafely(course.endDate);
+        if (endDate && endDate.getTime() > now) {
+          items.push({
+            id: `uooc:course:${course.id}`,
+            category: "uooc-course-end",
+            title: `${course.title} 课程结课`,
+            subtitle: "UOOC · 课程结课",
+            targetDate: endDate,
+            dateKey: formatDateKey(endDate),
+            actionUrl: "/study/uooc?tab=courses",
+            urgent: endDate.getTime() - now < 86_400_000 * 3,
+          });
+        }
+      }
+
+      // 2. UOOC 考试截止时间
+      try {
+        const exams = await invoke<ExamTask[]>("list_uooc_exams", { cid: null });
+        for (const exam of exams || []) {
+          const isCompleted =
+            exam.canView ||
+            (exam.statusCode !== undefined && exam.statusCode >= 20) ||
+            exam.statusText === "已批改" ||
+            (exam.score !== null && exam.score !== undefined) ||
+            (exam.chance > 0 && exam.submitCount >= exam.chance);
+
+          if (isCompleted || !exam.endTime) continue;
+          const endDate = parseDateSafely(exam.endTime);
+          if (endDate && endDate.getTime() > now) {
+            items.push({
+              id: `uooc:exam:${exam.id}`,
+              category: "uooc-exam",
+              title: exam.title,
+              subtitle: `${exam.courseName} · 考试`,
+              targetDate: endDate,
+              dateKey: formatDateKey(endDate),
+              actionUrl: "/study/uooc?tab=exams&subtab=exam",
+              urgent: endDate.getTime() - now < 86_400_000,
+            });
+          }
+        }
+      } catch {
+        // Ignore exam fetch error
+      }
+
+      // 3. UOOC 作业截止时间
+      try {
+        const homeworks = await invoke<HomeworkTask[]>("list_uooc_homeworks", { cid: null });
+        for (const hw of homeworks || []) {
+          const isCompleted =
+            hw.canView ||
+            (hw.statusCode !== undefined && hw.statusCode >= 20) ||
+            hw.statusText === "已批改" ||
+            (hw.score !== null && hw.score !== undefined) ||
+            (hw.chance > 0 && hw.submitCount >= hw.chance);
+
+          if (isCompleted || !hw.endTime) continue;
+          const endDate = parseDateSafely(hw.endTime);
+          if (endDate && endDate.getTime() > now) {
+            items.push({
+              id: `uooc:homework:${hw.id}`,
+              category: "uooc-homework",
+              title: hw.title,
+              subtitle: `${hw.courseName} · 作业`,
+              targetDate: endDate,
+              dateKey: formatDateKey(endDate),
+              actionUrl: "/study/uooc?tab=exams&subtab=homework",
+              urgent: endDate.getTime() - now < 86_400_000,
+            });
+          }
+        }
+      } catch {
+        // Ignore homework fetch error
+      }
+
+      setUoocItems(items);
+    } catch {
+      // Ignore UOOC snapshot error
+    }
+  }, []);
+
+  const refreshAll = useCallback(async () => {
+    setLoading(true);
+    await Promise.allSettled([fetchOjDeadlines(), fetchUoocDeadlines()]);
+    setLoading(false);
+  }, [fetchOjDeadlines, fetchUoocDeadlines]);
+
   useEffect(() => {
     let active = true;
-    void fetchOjDeadlines();
+    void refreshAll();
 
     const unlistenState = listen("oj-state-changed", () => {
       if (active) void fetchOjDeadlines();
@@ -98,9 +204,21 @@ export function useHomeDeadlines() {
     const unlistenProgress = listen("oj-progress-invalidated", () => {
       if (active) void fetchOjDeadlines();
     });
+    const unlistenUooc = listen("uooc-state-changed", () => {
+      if (active) void fetchUoocDeadlines();
+    });
+    const unlistenNotification = listen<{ category?: string }>(
+      "app://in-app-notification",
+      (event) => {
+        if (!active) return;
+        const cat = event.payload?.category;
+        if (cat === "uooc") void fetchUoocDeadlines();
+        else if (cat === "oj") void fetchOjDeadlines();
+      },
+    );
 
     const interval = setInterval(() => {
-      if (active) void fetchOjDeadlines();
+      if (active) void refreshAll();
     }, 60_000);
 
     return () => {
@@ -108,8 +226,10 @@ export function useHomeDeadlines() {
       clearInterval(interval);
       void unlistenState.then((fn) => fn());
       void unlistenProgress.then((fn) => fn());
+      void unlistenUooc.then((fn) => fn());
+      void unlistenNotification.then((fn) => fn());
     };
-  }, [fetchOjDeadlines]);
+  }, [fetchOjDeadlines, fetchUoocDeadlines, refreshAll]);
 
   // 计算电量预估断电事项
   const electricityItems = useMemo<ScheduleItem[]>(() => {
@@ -145,10 +265,10 @@ export function useHomeDeadlines() {
 
   // 合并全部事项并排序
   const items = useMemo(() => {
-    return [...ojItems, ...electricityItems].sort(
+    return [...ojItems, ...uoocItems, ...electricityItems].sort(
       (a, b) => a.targetDate.getTime() - b.targetDate.getTime(),
     );
-  }, [ojItems, electricityItems]);
+  }, [ojItems, uoocItems, electricityItems]);
 
   // 构建日期到类别的快速索引 Map
   const categoryMap = useMemo(() => {
@@ -167,6 +287,6 @@ export function useHomeDeadlines() {
     items,
     categoryMap,
     loading,
-    refresh: fetchOjDeadlines,
+    refresh: refreshAll,
   };
 }

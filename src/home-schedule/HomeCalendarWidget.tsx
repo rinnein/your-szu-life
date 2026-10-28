@@ -12,6 +12,7 @@ import {
 import { generateCalendarGrid, formatDateKey } from "./calendar-math";
 import { useHomeDeadlines } from "./use-home-deadlines";
 import { useLogicalNavigation } from "../logical-navigation";
+import type { ScheduleCategory } from "./types";
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
 
@@ -30,6 +31,71 @@ function formatDeadlineText(date: Date, now: Date = new Date()): string {
 
   const daysLeft = Math.ceil(diffMs / 86400_000);
   return `${timeStr} (剩余 ${daysLeft} 天)`;
+}
+
+function getCategoryDotClass(category: ScheduleCategory): string {
+  switch (category) {
+    case "oj-quiz":
+      return "bg-primary";
+    case "electricity-outage":
+      return "bg-error";
+    case "uooc-exam":
+      return "bg-warning";
+    case "uooc-homework":
+      return "bg-success";
+    case "uooc-course-end":
+      return "bg-info";
+  }
+}
+
+function renderCategoryChip(category: ScheduleCategory) {
+  switch (category) {
+    case "oj-quiz":
+      return (
+        <Chip size="sm" color="accent" variant="soft">
+          OJ测验
+        </Chip>
+      );
+    case "electricity-outage":
+      return (
+        <Chip size="sm" color="danger" variant="soft">
+          电量
+        </Chip>
+      );
+    case "uooc-exam":
+      return (
+        <Chip size="sm" color="warning" variant="soft">
+          UOOC考试
+        </Chip>
+      );
+    case "uooc-homework":
+      return (
+        <Chip size="sm" color="success" variant="soft">
+          UOOC作业
+        </Chip>
+      );
+    case "uooc-course-end":
+      return (
+        <Chip size="sm" color="info" variant="soft">
+          UOOC结课
+        </Chip>
+      );
+  }
+}
+
+function getCategoryAriaLabel(category: ScheduleCategory): string {
+  switch (category) {
+    case "oj-quiz":
+      return "OJ测验";
+    case "electricity-outage":
+      return "电量预警";
+    case "uooc-exam":
+      return "UOOC考试";
+    case "uooc-homework":
+      return "UOOC作业";
+    case "uooc-course-end":
+      return "UOOC结课";
+  }
 }
 
 export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
@@ -178,11 +244,7 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
                       <span
                         key={category}
                         className={`w-1.5 h-1.5 rounded-full ${
-                          isSelected
-                            ? "bg-on-primary"
-                            : category === "oj-quiz"
-                              ? "bg-primary"
-                              : "bg-error"
+                          isSelected ? "bg-on-primary" : getCategoryDotClass(category)
                         }`}
                         aria-hidden="true"
                       />
@@ -194,14 +256,26 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
           </div>
 
           {/* 图例说明 */}
-          <div className="flex items-center gap-4 mt-3 px-1 text-xs text-muted">
-            <span className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-3 px-1 text-xs text-muted">
+            <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-primary" aria-hidden="true" />
               <span>OJ 测验</span>
             </span>
-            <span className="flex items-center gap-1.5">
+            <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-error" aria-hidden="true" />
-              <span>电量预警/断电</span>
+              <span>电量预警</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-warning" aria-hidden="true" />
+              <span>UOOC 考试</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-success" aria-hidden="true" />
+              <span>UOOC 作业</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-info" aria-hidden="true" />
+              <span>UOOC 结课</span>
             </span>
           </div>
         </div>
@@ -241,19 +315,11 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
                   type="button"
                   onClick={() => void navigation.push(item.actionUrl)}
                   className="w-full text-left p-3 rounded-lg border border-outline-variant/60 hover:border-primary hover:bg-surface-container-low transition-colors flex items-start justify-between gap-3 group"
-                  aria-label={`${item.category === "oj-quiz" ? "OJ测验" : "电量预警"}：${item.title}`}
+                  aria-label={`${getCategoryAriaLabel(item.category)}：${item.title}`}
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      {item.category === "oj-quiz" ? (
-                        <Chip size="sm" color="accent" variant="soft">
-                          测验
-                        </Chip>
-                      ) : (
-                        <Chip size="sm" color="danger" variant="soft">
-                          电量
-                        </Chip>
-                      )}
+                      {renderCategoryChip(item.category)}
                       <span className="text-xs text-muted truncate">{item.subtitle}</span>
                     </div>
                     <div className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">

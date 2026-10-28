@@ -36,7 +36,7 @@ describe("useHomeDeadlines", () => {
       estimatedDaysLeft: 3.5, // outage in 3.5 days -> 2026-10-31
     });
 
-    // Mock OJ commands
+    // Mock OJ and UOOC commands
     vi.mocked(invoke).mockImplementation(async (command) => {
       if (command === "get_oj_snapshot") {
         return {
@@ -68,6 +68,9 @@ describe("useHomeDeadlines", () => {
           },
         ];
       }
+      if (command === "get_uooc_snapshot") {
+        return { session: "loginRequired", courses: [] };
+      }
       return undefined;
     });
 
@@ -89,6 +92,97 @@ describe("useHomeDeadlines", () => {
 
     expect(result.current.categoryMap.get(ojItem!.dateKey)).toContain("oj-quiz");
     expect(result.current.categoryMap.get(elecItem!.dateKey)).toContain("electricity-outage");
+  });
+
+  it("aggregates UOOC course end date, exam deadline, and homework deadline", async () => {
+    const now = new Date("2026-10-28T10:00:00Z").getTime();
+    vi.spyOn(Date, "now").mockReturnValue(now);
+
+    vi.spyOn(electricityModule, "useElectricityMonitor").mockReturnValue({
+      remaining: null,
+      observedDate: null,
+      expiresAtMs: null,
+      expired: true,
+      low: false,
+    });
+
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_oj_snapshot") {
+        return { sites: [] };
+      }
+      if (command === "get_uooc_snapshot") {
+        return {
+          session: "ready",
+          courses: [
+            {
+              id: "c101",
+              title: "大学计算机",
+              semester: "2026秋",
+              organization: "深大",
+              weeks: "10/16",
+              endDate: "2026-11-20",
+            },
+          ],
+        };
+      }
+      if (command === "list_uooc_exams") {
+        return [
+          {
+            id: "exam1",
+            title: "期中考试",
+            cid: "c101",
+            courseName: "大学计算机",
+            startTime: "2026-10-25",
+            endTime: "2026-10-29 20:00:00",
+            status: 1,
+            chance: 1,
+            submitCount: 0,
+            canDo: true,
+            canView: false,
+            score: null,
+          },
+        ];
+      }
+      if (command === "list_uooc_homeworks") {
+        return [
+          {
+            id: "hw1",
+            title: "第三次作业",
+            cid: "c101",
+            courseName: "大学计算机",
+            startTime: "2026-10-20",
+            endTime: "2026-10-31 23:59:59",
+            status: 1,
+            chance: 1,
+            submitCount: 0,
+            canDo: true,
+            canView: false,
+            score: null,
+          },
+        ];
+      }
+      return undefined;
+    });
+
+    const { result } = renderHook(() => useHomeDeadlines());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.items).toHaveLength(3);
+
+    const courseEnd = result.current.items.find((i) => i.category === "uooc-course-end");
+    expect(courseEnd).toBeDefined();
+    expect(courseEnd?.title).toBe("大学计算机 课程结课");
+    expect(courseEnd?.actionUrl).toBe("/study/uooc?tab=courses");
+
+    const exam = result.current.items.find((i) => i.category === "uooc-exam");
+    expect(exam).toBeDefined();
+    expect(exam?.title).toBe("期中考试");
+    expect(exam?.actionUrl).toBe("/study/uooc?tab=exams&subtab=exam");
+
+    const hw = result.current.items.find((i) => i.category === "uooc-homework");
+    expect(hw).toBeDefined();
+    expect(hw?.title).toBe("第三次作业");
+    expect(hw?.actionUrl).toBe("/study/uooc?tab=exams&subtab=homework");
   });
 
   it("excludes completed OJ contests where accepted equals total", async () => {
@@ -132,6 +226,9 @@ describe("useHomeDeadlines", () => {
           },
         ];
       }
+      if (command === "get_uooc_snapshot") return { session: "ready", courses: [] };
+      if (command === "list_uooc_exams") return [];
+      if (command === "list_uooc_homeworks") return [];
       return undefined;
     });
 

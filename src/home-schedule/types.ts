@@ -1,4 +1,9 @@
-export type ScheduleCategory = "oj-quiz" | "electricity-outage";
+export type ScheduleCategory =
+  | "oj-quiz"
+  | "electricity-outage"
+  | "uooc-exam"
+  | "uooc-homework"
+  | "uooc-course-end";
 
 export interface ScheduleItem {
   id: string;

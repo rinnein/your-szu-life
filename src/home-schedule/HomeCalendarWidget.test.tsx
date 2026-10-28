@@ -25,7 +25,7 @@ describe("HomeCalendarWidget", () => {
     });
   });
 
-  it("renders calendar month and list of deadlines", () => {
+  it("renders calendar month and list of deadlines with UOOC items", () => {
     const testDate = new Date(2026, 9, 28, 12, 0, 0); // 2026-10-28
     const mockItems = [
       {
@@ -46,13 +46,43 @@ describe("HomeCalendarWidget", () => {
         dateKey: "2026-10-31",
         actionUrl: "/life/campus-payments/recharge",
       },
+      {
+        id: "uooc:exam:1",
+        category: "uooc-exam" as const,
+        title: "计算机网络期末考试",
+        subtitle: "计算机网络 · 考试",
+        targetDate: new Date(2026, 9, 29, 20, 0, 0),
+        dateKey: "2026-10-29",
+        actionUrl: "/study/uooc?tab=exams&subtab=exam",
+      },
+      {
+        id: "uooc:hw:1",
+        category: "uooc-homework" as const,
+        title: "操作系统第四章作业",
+        subtitle: "操作系统 · 作业",
+        targetDate: new Date(2026, 9, 30, 23, 59, 0),
+        dateKey: "2026-10-30",
+        actionUrl: "/study/uooc?tab=exams&subtab=homework",
+      },
+      {
+        id: "uooc:course:1",
+        category: "uooc-course-end" as const,
+        title: "大学英语 课程结课",
+        subtitle: "UOOC · 课程结课",
+        targetDate: new Date(2026, 10, 5, 23, 59, 0),
+        dateKey: "2026-11-05",
+        actionUrl: "/study/uooc?tab=courses",
+      },
     ];
 
     vi.spyOn(deadlinesModule, "useHomeDeadlines").mockReturnValue({
       items: mockItems,
       categoryMap: new Map([
         ["2026-10-28", ["oj-quiz"]],
+        ["2026-10-29", ["uooc-exam"]],
+        ["2026-10-30", ["uooc-homework"]],
         ["2026-10-31", ["electricity-outage"]],
+        ["2026-11-05", ["uooc-course-end"]],
       ]),
       loading: false,
       refresh: vi.fn(),
@@ -67,10 +97,21 @@ describe("HomeCalendarWidget", () => {
     // Check todo items rendered
     expect(screen.getByText("算法第四次测验")).toBeInTheDocument();
     expect(screen.getByText("预计电量耗尽（剩余 5 度）")).toBeInTheDocument();
+    expect(screen.getByText("计算机网络期末考试")).toBeInTheDocument();
+    expect(screen.getByText("操作系统第四章作业")).toBeInTheDocument();
+    expect(screen.getByText("大学英语 课程结课")).toBeInTheDocument();
 
     // Check category chips
-    expect(screen.getByText("测验")).toBeInTheDocument();
+    expect(screen.getByText("OJ测验")).toBeInTheDocument();
     expect(screen.getByText("电量")).toBeInTheDocument();
+    expect(screen.getByText("UOOC考试")).toBeInTheDocument();
+    expect(screen.getByText("UOOC作业")).toBeInTheDocument();
+    expect(screen.getByText("UOOC结课")).toBeInTheDocument();
+
+    // Check legend items
+    expect(screen.getByText("UOOC 考试")).toBeInTheDocument();
+    expect(screen.getByText("UOOC 作业")).toBeInTheDocument();
+    expect(screen.getByText("UOOC 结课")).toBeInTheDocument();
   });
 
   it("filters todo list when clicking on a date with events and clears filter on click again", () => {
@@ -128,31 +169,31 @@ describe("HomeCalendarWidget", () => {
     expect(screen.getByText("预计电量耗尽")).toBeInTheDocument();
   });
 
-  it("navigates to the corresponding feature when clicking a todo item", () => {
+  it("navigates to the corresponding feature when clicking a UOOC exam or homework item", () => {
     const testDate = new Date(2026, 9, 28);
     const mockItems = [
       {
-        id: "oj:1",
-        category: "oj-quiz" as const,
-        title: "算法第四次测验",
-        targetDate: new Date(2026, 9, 28, 23, 59, 0),
-        dateKey: "2026-10-28",
-        actionUrl: "/study/oj?site=oj1&contest=1",
+        id: "uooc:exam:1",
+        category: "uooc-exam" as const,
+        title: "期中考试",
+        targetDate: new Date(2026, 9, 29, 20, 0, 0),
+        dateKey: "2026-10-29",
+        actionUrl: "/study/uooc?tab=exams&subtab=exam",
       },
     ];
 
     vi.spyOn(deadlinesModule, "useHomeDeadlines").mockReturnValue({
       items: mockItems,
-      categoryMap: new Map([["2026-10-28", ["oj-quiz"]]]),
+      categoryMap: new Map([["2026-10-29", ["uooc-exam"]]]),
       loading: false,
       refresh: vi.fn(),
     });
 
     render(<HomeCalendarWidget initialDate={testDate} />);
 
-    const itemBtn = screen.getByRole("button", { name: /算法第四次测验/ });
+    const itemBtn = screen.getByRole("button", { name: /期中考试/ });
     fireEvent.click(itemBtn);
 
-    expect(pushMock).toHaveBeenCalledWith("/study/oj?site=oj1&contest=1");
+    expect(pushMock).toHaveBeenCalledWith("/study/uooc?tab=exams&subtab=exam");
   });
 });
