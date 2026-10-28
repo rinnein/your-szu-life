@@ -18,13 +18,13 @@ export function getLastVisitedOjGroupUrl(): string {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed.siteId && parsed.groupId) {
-        return `/oj?site=${encodeURIComponent(parsed.siteId)}&group=${encodeURIComponent(parsed.groupId)}`;
+        return `/study/oj?site=${encodeURIComponent(parsed.siteId)}&group=${encodeURIComponent(parsed.groupId)}`;
       }
     }
   } catch {
     // fallback
   }
-  return "/oj";
+  return "/study/oj";
 }
 
 export const COMMAND_LIST: CommandItem[] = [
@@ -34,7 +34,7 @@ export const COMMAND_LIST: CommandItem[] = [
     shortcuts: ["time"],
     description: "查看各节次上课时间与作息安排",
     category: "学习",
-    target: "/class-timetable",
+    target: "/study/class-timetable",
     icon: FaCalendarDays,
     keywords: ["sk", "sksjb", "kechengbiao", "schedule", "timetable"],
   },
@@ -44,7 +44,7 @@ export const COMMAND_LIST: CommandItem[] = [
     shortcuts: ["oj"],
     description: "在线评测系统（OJ）首页与题库列表",
     category: "学习",
-    target: "/oj",
+    target: "/study/oj",
     icon: LuCode,
     keywords: ["online judge", "ceyan", "tiku", "programming"],
   },
@@ -64,7 +64,7 @@ export const COMMAND_LIST: CommandItem[] = [
     shortcuts: ["uooc", "mooc"],
     description: "优课在线视频学习与平时任务",
     category: "学习",
-    target: "/uooc?tab=tasks",
+    target: "/study/uooc?tab=tasks",
     icon: FaCirclePlay,
     keywords: ["youke", "shuake", "renwu", "video"],
   },
@@ -74,7 +74,7 @@ export const COMMAND_LIST: CommandItem[] = [
     shortcuts: ["net", "xyw"],
     description: "教工区与宿舍区校园网认证与登录",
     category: "生活",
-    target: "/campus-network",
+    target: "/life/campus-network",
     icon: FaWifi,
     keywords: ["wangluo", "denglu", "wifi", "network", "portal"],
   },
@@ -84,7 +84,7 @@ export const COMMAND_LIST: CommandItem[] = [
     shortcuts: ["card", "xyk"],
     description: "校园卡充值与明细查询",
     category: "生活",
-    target: "/campus-payments/card",
+    target: "/life/campus-payments/card",
     icon: LuCreditCard,
     keywords: ["yikatong", "chongzhi", "yue", "card balance"],
   },
@@ -94,7 +94,7 @@ export const COMMAND_LIST: CommandItem[] = [
     shortcuts: ["cdl"],
     description: "宿舍剩余电量与用电明细查询",
     category: "生活",
-    target: "/campus-payments/electricity",
+    target: "/life/campus-payments/electricity",
     icon: LuZap,
     keywords: ["dianfei", "dianliang", "chadian", "power", "electricity"],
   },
@@ -104,7 +104,7 @@ export const COMMAND_LIST: CommandItem[] = [
     shortcuts: ["cdf"],
     description: "通过官方微信服务办理宿舍电费充值",
     category: "生活",
-    target: "/campus-payments/recharge",
+    target: "/life/campus-payments/recharge",
     icon: FaWallet,
     keywords: ["chongdian", "chongzhi", "recharge", "pay electricity"],
   },
@@ -124,7 +124,7 @@ export const COMMAND_LIST: CommandItem[] = [
     shortcuts: ["xk", "enrollment"],
     description: "查课、抢课与选课期间课表",
     category: "学习",
-    target: "/enrollment",
+    target: "/study/enrollment",
     icon: FaClipboardList,
     keywords: ["xuanke", "qiangke", "course"],
   },
@@ -134,19 +134,39 @@ export const COMMAND_LIST: CommandItem[] = [
     shortcuts: ["xy", "academic"],
     description: "培养方案、学分与课程完成情况",
     category: "学习",
-    target: "/academic",
+    target: "/study/academic",
     icon: FaGraduationCap,
     keywords: ["xueye", "xuefen", "degree"],
   },
   {
-    id: "webvpn",
-    name: "WebVPN",
-    shortcuts: ["vpn", "webvpn"],
-    description: "校外访问与专属2FA认证",
-    category: "其它",
-    target: "/webvpn",
-    icon: FaWifi,
-    keywords: ["xiaowai", "fangwen"],
+    id: "home",
+    name: "首页",
+    shortcuts: ["home", "sy"],
+    description: "公告板与账户入口",
+    category: "导航",
+    target: "/",
+    icon: FaCircleInfo,
+    keywords: ["shouye", "workbench", "gongzuotai"],
+  },
+  {
+    id: "study",
+    name: "学习",
+    shortcuts: ["xx", "study"],
+    description: "课表、选课与计软相关功能",
+    category: "导航",
+    target: "/study",
+    icon: FaGraduationCap,
+    keywords: ["xuexi", "study"],
+  },
+  {
+    id: "life",
+    name: "生活",
+    shortcuts: ["sh", "life"],
+    description: "校园网与校园卡服务",
+    category: "导航",
+    target: "/life",
+    icon: FaWallet,
+    keywords: ["shenghuo", "life"],
   },
   {
     id: "about",
@@ -154,7 +174,7 @@ export const COMMAND_LIST: CommandItem[] = [
     shortcuts: ["about", "gy"],
     description: "应用信息与检查更新",
     category: "系统",
-    target: "/about",
+    target: "/settings?tab=about",
     icon: FaCircleInfo,
     keywords: ["guanyu", "gengxin", "version", "info"],
   },
@@ -164,7 +184,7 @@ export const COMMAND_LIST: CommandItem[] = [
     shortcuts: ["debug", "log"],
     description: "查看网络与运行时诊断记录",
     category: "系统",
-    target: "/debug",
+    target: "/settings?tab=debug",
     icon: FaBug,
     keywords: ["rizhi", "zhenduan"],
   },

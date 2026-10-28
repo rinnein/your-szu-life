@@ -89,16 +89,18 @@ describe("SettingsPage multi-tab and unified local model card", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders 6 tabs and defaults to 个人信息 without privacy storage card", async () => {
+  it("renders the settings tabs and defaults to 个人信息 without privacy storage card", async () => {
     renderRouterApp("/settings");
 
-    // Check all 6 tabs exist
     expect(await screen.findByRole("tab", { name: /个人信息/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /本地模型/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /AI配置/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /MCP/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /设置迁移/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /快捷键/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /关于/ })).toBeInTheDocument();
+    // 诊断日志是开发者 tab，只在调试模式启用后出现。
+    expect(screen.queryByRole("tab", { name: /诊断日志/ })).not.toBeInTheDocument();
 
     // Default tab shows ProfileForm
     expect(screen.getByText("确认账户资料")).toBeInTheDocument();
@@ -202,5 +204,36 @@ describe("SettingsPage multi-tab and unified local model card", () => {
     renderRouterApp("/settings?tab=ai");
 
     expect(await screen.findByText("AI 连接")).toBeInTheDocument();
+  });
+
+  it("opens the about tab directly and renders the app info panel", async () => {
+    renderRouterApp("/settings?tab=about");
+
+    // 公共内容快照到达会引起一次重渲染，用 waitFor 反复查询避免拿到被替换的节点。
+    await waitFor(() => expect(screen.getByText("泥深 · Your SZU Life")).toBeInTheDocument());
+    expect(screen.getByTestId("app-version")).toBeInTheDocument();
+  });
+
+  it("shows the diagnostics tab once debug mode is enabled", async () => {
+    const original = vi.mocked(invoke).getMockImplementation()!;
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_debug_mode") return { enabled: true, logCount: 0 };
+      if (command === "get_log_info")
+        return {
+          todayLogPath: "/tmp/app_logs/today.log",
+          logDir: "/tmp/app_logs",
+          totalSizeBytes: 1024,
+          fileCount: 0,
+          currentLevel: "INFO",
+          availableLevels: ["DEBUG", "INFO"],
+          files: [],
+        };
+      return original(command);
+    });
+
+    renderRouterApp("/settings?tab=debug");
+
+    expect(await screen.findByRole("tab", { name: /诊断日志/ })).toBeInTheDocument();
+    expect(await screen.findByText("日志文件概览")).toBeInTheDocument();
   });
 });

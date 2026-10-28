@@ -34,7 +34,7 @@ vi.mock("@tauri-apps/api/webviewWindow", () => ({
   }),
 }));
 const originalUrl = window.location.href;
-function mount(entries = ["/", "/computing", "/oj"]) {
+function mount(entries = ["/", "/study/computing", "/study/oj"]) {
   const root = createRootRoute({
     component: () => (
       <LogicalNavigationProvider>
@@ -47,12 +47,12 @@ function mount(entries = ["/", "/computing", "/oj"]) {
     createRoute({ getParentRoute: () => root, path: "/", component: () => <h1>工作台</h1> }),
     createRoute({
       getParentRoute: () => root,
-      path: "/computing",
+      path: "/study/computing",
       component: ComputingCollectionPage,
     }),
     createRoute({
       getParentRoute: () => root,
-      path: "/oj",
+      path: "/study/oj",
       validateSearch: () => ({ tab: "statement" }),
       component: OjPage,
     }),
@@ -94,15 +94,15 @@ afterEach(() => {
 });
 it("uses standard icon controls to pop OJ, collection and workbench in order", async () => {
   const history = mount();
-  const back = await screen.findByRole("button", { name: "返回上一级" });
+  const back = await screen.findByRole("button", { name: "返回上一页" });
   // M3 顶栏的返回按钮是原生 button；data-webview-navigation 让 Android
   // 原生工具栏挂载时隐藏它，行为契约与迁移前一致。
   expect(back).toHaveAttribute("data-webview-navigation");
   expect(back.querySelector("svg")).toBeInTheDocument();
   fireEvent.click(back);
   await screen.findByRole("heading", { name: "计软合集" });
-  expect(history.location.pathname).toBe("/computing");
-  const parent = screen.getByRole("button", { name: "返回工作台" });
+  expect(history.location.pathname).toBe("/study/computing");
+  const parent = screen.getByRole("button", { name: "返回上一页" });
   expect(parent).toHaveAttribute("data-webview-navigation");
   fireEvent.click(parent);
   await screen.findByRole("heading", { name: "工作台" });
@@ -111,27 +111,31 @@ it("uses standard icon controls to pop OJ, collection and workbench in order", a
 it("uses the same stack for desktop window close", async () => {
   vi.stubGlobal("__TAURI_INTERNALS__", {});
   const history = mount();
-  await screen.findByRole("button", { name: "返回上一级" });
+  await screen.findByRole("button", { name: "返回上一页" });
   await waitFor(() => expect(native.close).toBeTypeOf("function"));
   const preventDefault = vi.fn();
   await act(async () => native.close!({ preventDefault }));
-  await waitFor(() => expect(history.location.pathname).toBe("/computing"));
+  await waitFor(() => expect(history.location.pathname).toBe("/study/computing"));
   expect(preventDefault).toHaveBeenCalledOnce();
 });
 it("routes page presses through Android's bridge and hands off navigation after toolbar acknowledgement", async () => {
   const bridge: AndroidBackBridge = { postMessage: vi.fn(), onmessage: null };
   window.SzuApplicationBack = bridge;
   const history = mount();
-  const button = await screen.findByRole("button", { name: "返回上一级" });
+  const button = await screen.findByRole("button", { name: "返回上一页" });
   expect(button).toHaveAttribute("data-webview-navigation");
   expect(document.documentElement).not.toHaveAttribute("data-szu-native-toolbar");
   fireEvent.click(button);
   expect(bridge.postMessage).toHaveBeenCalledWith("back-request");
-  expect(history.location.pathname).toBe("/oj");
+  expect(history.location.pathname).toBe("/study/oj");
   await act(async () => bridge.onmessage?.({ data: "navigate-back" }));
-  const heading = await screen.findByRole("heading", { name: "计软合集" });
-  expect(heading).toHaveAttribute("data-webview-navigation");
-  expect(screen.getByRole("button", { name: "返回工作台" })).toHaveAttribute(
+  // 标题的可访问名称来自顶栏槽位里的标题文本，该节点带
+  // data-webview-navigation：Android 原生工具栏挂载时隐藏它，避免重复标题。
+  expect(await screen.findByRole("heading", { name: "计软合集" })).toBeInTheDocument();
+  const title = document.querySelector(".top-app-bar-title");
+  expect(title).toHaveAttribute("data-webview-navigation");
+  expect(title).toHaveTextContent("计软合集");
+  expect(screen.getByRole("button", { name: "返回上一页" })).toHaveAttribute(
     "data-webview-navigation",
   );
   expect(document.documentElement).not.toHaveAttribute("data-szu-native-toolbar");
@@ -139,11 +143,11 @@ it("routes page presses through Android's bridge and hands off navigation after 
   expect(document.documentElement).toHaveAttribute("data-szu-native-toolbar", "true");
 });
 it("leaves a child Activity's exit to the native bridge rather than WebView history", async () => {
-  window.history.replaceState(null, "", "/oj?__szu_window=child");
+  window.history.replaceState(null, "", "/study/oj?__szu_window=child");
   const bridge: AndroidBackBridge = { postMessage: vi.fn(), onmessage: null };
   window.SzuApplicationBack = bridge;
-  const history = mount(["/oj"]);
-  fireEvent.click(await screen.findByRole("button", { name: "返回上一级" }));
+  const history = mount(["/study/oj"]);
+  fireEvent.click(await screen.findByRole("button", { name: "返回上一页" }));
   expect(bridge.postMessage).toHaveBeenCalledWith("back-request");
   expect(history.canGoBack()).toBe(false);
   expect(native.destroy).not.toHaveBeenCalled();

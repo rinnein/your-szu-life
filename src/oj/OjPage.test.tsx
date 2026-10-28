@@ -172,7 +172,7 @@ it("separates configured sites and opens the class list", async () => {
   expect(await screen.findByText("已配置")).toBeTruthy();
   expect(screen.getByRole("heading", { name: "未配置" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "进入班级" }));
-  expect(nav.push).toHaveBeenCalledWith("/oj?site=test");
+  expect(nav.push).toHaveBeenCalledWith("/study/oj?site=test");
 });
 it("shows stored username but never requests stored passwords", async () => {
   render(<OjPage />);
@@ -187,7 +187,7 @@ it("loads classes through the public page", async () => {
   render(<OjPage />);
   expect(await screen.findByText("一班")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "查看测验" }));
-  expect(nav.push).toHaveBeenCalledWith("/oj?site=test&group=2");
+  expect(nav.push).toHaveBeenCalledWith("/study/oj?site=test&group=2");
 });
 it("reuses the cached class list when the page is reopened", async () => {
   search.site = "test";

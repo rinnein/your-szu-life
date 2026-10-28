@@ -5,7 +5,7 @@ export interface CommandItem {
   name: string;
   shortcuts: string[]; // 英文缩写列表
   description: string;
-  category: "学习" | "生活" | "系统" | "其它";
+  category: "导航" | "学习" | "生活" | "系统";
   target: string | (() => string);
   icon?: IconType;
   keywords?: string[];

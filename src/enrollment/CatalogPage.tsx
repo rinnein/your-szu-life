@@ -27,7 +27,7 @@ export default function CatalogPage() {
       ? cached
       : undefined
     : s;
-  const search = useSearch({ from: "/enrollment/" });
+  const search = useSearch({ from: "/study/enrollment/" });
   const [keyword, setKeyword] = useState(search.keyword ?? s?.query.keyword ?? "");
   const [category, setCategory] = useState(s?.query.category ?? "TJKC");
   const [moreFilters, setMoreFilters] = useState(false);

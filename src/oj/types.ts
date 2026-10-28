@@ -163,4 +163,4 @@ export const sessionName: Record<Session, string> = {
 export const phase = (c: Contest, now = c.now) =>
   now < c.begin ? "未开始" : now < c.end ? "进行中" : "已结束";
 export const route = (values: Record<string, string | undefined>) =>
-  `/oj?${new URLSearchParams(Object.entries(values).filter((v): v is [string, string] => v[1] !== undefined))}`;
+  `/study/oj?${new URLSearchParams(Object.entries(values).filter((v): v is [string, string] => v[1] !== undefined))}`;

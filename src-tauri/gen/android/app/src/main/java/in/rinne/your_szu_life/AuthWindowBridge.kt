@@ -1,6 +1,7 @@
 package `in`.rinne.your_szu_life
 
 import android.view.ViewGroup
+import android.view.Window
 import android.view.WindowManager
 import androidx.activity.ComponentDialog
 import androidx.activity.OnBackPressedCallback
@@ -20,6 +21,9 @@ object AuthWindowBridge {
   private var active = false
   private var presentation: ComponentDialog? = null
   private var restoreContent: (() -> Unit)? = null
+
+  /** 认证浮层的窗口，用于让它的系统栏也取 WebView 的底色。 */
+  val presentationWindow: Window? get() = presentation?.window
 
   fun created(activity: ApplicationBackActivity) {
     if (activity is MainActivity) main = WeakReference(activity)
@@ -90,6 +94,8 @@ object AuthWindowBridge {
           @Suppress("DEPRECATION") // Match the Activity's IME behavior on Android 7-10.
           window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
+        // 浮层换成了另一个窗口，系统栏要重新上色（认证页是外部页面，原生栏可见）。
+        target.applySystemBarsTo(dialog.window)
         target.setAuthenticationPresented(true)
       } catch (_: Exception) {
         dialog.dismiss()

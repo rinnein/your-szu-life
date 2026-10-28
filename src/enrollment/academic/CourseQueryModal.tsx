@@ -166,7 +166,9 @@ export default function CourseQueryModal({
                             variant="tonal"
                             disabled={!c.code}
                             onClick={() =>
-                              void nav.push(`/enrollment?keyword=${encodeURIComponent(c.code)}`)
+                              void nav.push(
+                                `/study/enrollment?keyword=${encodeURIComponent(c.code)}`,
+                              )
                             }
                           >
                             查找开课

@@ -12,8 +12,8 @@ export function QuizNotifications() {
     const dispose: (() => void)[] = [];
     const open = (cid: unknown) => {
       if (!live || typeof cid !== "string" || !/^\d+$/.test(cid)) return;
-      const href = `/uooc?tab=tasks&course=${cid}`;
-      void (router.state.location.pathname === "/uooc"
+      const href = `/study/uooc?tab=tasks&course=${cid}`;
+      void (router.state.location.pathname === "/study/uooc"
         ? navigation.replace(href)
         : navigation.push(href));
     };

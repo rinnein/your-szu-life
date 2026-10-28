@@ -1,8 +1,10 @@
 import { createMemoryHistory } from "@tanstack/react-router";
 import { initialLogicalEntries, isChildDocument } from "./logical-navigation";
 
-export const LOGICAL_HISTORY_KEY = "szu.logical-history.v1";
-type Snapshot = { version: 1; child: boolean; entries: string[]; index: number };
+// v2：路由改为按归属部件嵌套（`/study/uooc`）后，v1 里存的旧路径不再存在，
+// 直接换键丢弃，避免升级后恢复到已删除的路径。
+export const LOGICAL_HISTORY_KEY = "szu.logical-history.v2";
+type Snapshot = { version: 2; child: boolean; entries: string[]; index: number };
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
 
 export function consumeAuthReturn(
@@ -24,7 +26,7 @@ function restore(raw: string | null, href: string): Snapshot | undefined {
   const current = new URL(href);
   current.searchParams.delete("__szu_window");
   if (
-    value?.version !== 1 ||
+    value?.version !== 2 ||
     value.child !== isChildDocument(href) ||
     !Array.isArray(value.entries) ||
     !value.entries.length ||
@@ -70,7 +72,7 @@ export function createReloadableLogicalHistory(options: {
       options.storage?.setItem(
         LOGICAL_HISTORY_KEY,
         JSON.stringify({
-          version: 1,
+          version: 2,
           child: isChildDocument(options.href),
           entries,
           index,

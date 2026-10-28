@@ -28,7 +28,9 @@ export function OjNotifications() {
       )
         return;
       const target = route({ site: notice.siteId, contest: notice.contestId });
-      await (router.state.location.pathname === "/oj" ? nav.replace(target) : nav.push(target));
+      await (router.state.location.pathname === "/study/oj"
+        ? nav.replace(target)
+        : nav.push(target));
     };
     void listen<Notice>("oj-open", (e) => void open(e.payload)).then((stop) =>
       active ? stops.push(stop) : stop(),

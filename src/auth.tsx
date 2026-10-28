@@ -151,6 +151,11 @@ export function authFailureFor(state: AuthState): AuthFailure | undefined {
     };
 }
 
+/** 打开官方统一认证窗口。 */
+export async function beginAuthentication(): Promise<void> {
+  await invoke("begin_authentication", { userAgent: navigator.userAgent });
+}
+
 type AuthContextValue = {
   state: AuthState;
   profile?: Profile;

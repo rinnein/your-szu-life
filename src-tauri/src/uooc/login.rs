@@ -30,7 +30,7 @@ pub(super) fn is_completion_url(url: &Url) -> bool {
 }
 
 pub(super) fn local_parent(parent: &WebviewWindow) -> Result<(), String> {
-    trusted_local_page(parent, Some("/uooc"), "请从应用内的 UOOC 页面打开登录")
+    trusted_local_page(parent, Some("/study/uooc"), "请从应用内的 UOOC 页面打开登录")
 }
 
 pub(super) fn local_app_parent(parent: &WebviewWindow) -> Result<(), String> {

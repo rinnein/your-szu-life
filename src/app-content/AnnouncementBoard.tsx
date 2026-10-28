@@ -14,7 +14,7 @@ type LocalAnnouncement =
   | {
       kind: "electricity-low";
       title: string;
-      url: "/campus-payments/recharge";
+      url: "/life/campus-payments/recharge";
     }
   | {
       kind: "oj-active";
@@ -169,7 +169,7 @@ export function AnnouncementBoard() {
     localUnits.push({
       kind: "electricity-low",
       title: `当前剩余电量：${electricity.remaining.toFixed(2)} 度${electricity.warningReason ? ` · ${electricity.warningReason}` : ""}`,
-      url: "/campus-payments/recharge",
+      url: "/life/campus-payments/recharge",
     });
   }
 

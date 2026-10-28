@@ -114,7 +114,7 @@ const seconds = (value: number) =>
 
 export default function UoocPage() {
   const navigation = useLogicalNavigation();
-  const { tab, subtab, course } = useSearch({ from: "/uooc" });
+  const { tab, subtab, course } = useSearch({ from: "/study/uooc" });
   const [assessSubtab, setAssessSubtab] = useState<"quiz" | "homework" | "exam">(subtab || "exam");
   const [snapshot, setSnapshot] = useState<UoocSnapshot>();
   const [error, setError] = useState<string>();
@@ -418,7 +418,7 @@ export default function UoocPage() {
       if (!(await isPermissionGranted())) await requestPermission();
     }
     if (await action("start_uooc_courses", { courseIds: ids }))
-      await navigation.replace("/uooc?tab=tasks");
+      await navigation.replace("/study/uooc?tab=tasks");
   };
   const startDiscussion = async (cid: string) => {
     const ok = await action("start_uooc_discussion", { courseId: cid });
@@ -516,7 +516,7 @@ export default function UoocPage() {
             type="button"
             className="md-icon-button"
             data-webview-navigation
-            aria-label="返回工作台"
+            aria-label="返回上一页"
             onClick={() => void navigation.back()}
           >
             <LuArrowLeft aria-hidden="true" />
@@ -565,7 +565,7 @@ export default function UoocPage() {
           <Tabs
             ref={(host) => nameTablist(host, "UOOC 功能")}
             value={tab}
-            onChange={(event) => void navigation.replace(`/uooc?tab=${event.detail.value}`)}
+            onChange={(event) => void navigation.replace(`/study/uooc?tab=${event.detail.value}`)}
           >
             <Tab value="courses">开课中</Tab>
             <Tab value="tasks">任务{tasks.length ? ` (${tasks.length})` : ""}</Tab>
@@ -607,7 +607,7 @@ export default function UoocPage() {
                       isSelected ? "font-semibold" : "text-muted hover:text-foreground"
                     }`}
                     onClick={() => {
-                      void navigation.replace(`/uooc?tab=${t.id}`);
+                      void navigation.replace(`/study/uooc?tab=${t.id}`);
                     }}
                   >
                     <span>{t.label}</span>
@@ -1140,7 +1140,7 @@ export default function UoocPage() {
               onChange={(event) => {
                 const next = event.detail.value as "quiz" | "homework" | "exam";
                 setAssessSubtab(next);
-                void navigation.replace(`/uooc?tab=exams&subtab=${next}`);
+                void navigation.replace(`/study/uooc?tab=exams&subtab=${next}`);
               }}
             >
               {/* 横向子分类（支持水平滑动，在所有屏幕下均可见） */}
@@ -1173,7 +1173,7 @@ export default function UoocPage() {
                         onClick={() => {
                           const next = sub.id as "quiz" | "homework" | "exam";
                           setAssessSubtab(next);
-                          void navigation.replace(`/uooc?tab=exams&subtab=${next}`);
+                          void navigation.replace(`/study/uooc?tab=exams&subtab=${next}`);
                         }}
                       >
                         <span>{sub.label}</span>

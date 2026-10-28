@@ -31,7 +31,7 @@ export function ErrorNotice({ message }: { message?: string }) {
   return null;
 }
 export default function OjPage() {
-  const search = useSearch({ from: "/oj" });
+  const search = useSearch({ from: "/study/oj" });
   const nav = useLogicalNavigation();
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [error, setError] = useState<string>();
@@ -202,7 +202,6 @@ export default function OjPage() {
         <ModuleHeader
           title={site?.name ?? "OJ"}
           description={site ? site.url : "OJ · 班级、测验与练习"}
-          backLabel="返回上一级"
           actions={
             <>
               <Button

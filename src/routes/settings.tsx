@@ -8,7 +8,9 @@ export type SettingsTab =
   | "ai"
   | "mcp"
   | "transfer"
-  | "shortcuts";
+  | "shortcuts"
+  | "about"
+  | "debug";
 
 export type SettingsSearch = {
   tab?: SettingsTab;
@@ -26,6 +28,8 @@ export const Route = createFileRoute("/settings")({
       "mcp",
       "transfer",
       "shortcuts",
+      "about",
+      "debug",
     ];
     const tab =
       typeof s.tab === "string" && tabs.includes(s.tab) ? (s.tab as SettingsTab) : undefined;

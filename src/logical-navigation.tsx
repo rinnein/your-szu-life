@@ -16,33 +16,48 @@ export const CHILD_PARAMETER = "__szu_window";
 export function isChildDocument(href = window.location.href) {
   return new URL(href, "http://localhost").searchParams.get(CHILD_PARAMETER) === "child";
 }
+/**
+ * 深链接进入时补齐的逻辑父链。
+ *
+ * 路径按归属部件嵌套（`/study/uooc`、`/life/campus-payments/electricity`），
+ * 因此父链直接由 URL 层级推出：首页 → 部件页 → 中间布局页 → 当前页。
+ * 只有两处中间层级需要在 URL 之外补出来：选课页（登录页的 returnTo 与
+ * view=cache 都挂在选课页下）与校园卡页。
+ */
 export function initialLogicalEntries(href: string) {
   const url = new URL(href, "http://localhost");
   const child = url.searchParams.get(CHILD_PARAMETER) === "child";
   url.searchParams.delete(CHILD_PARAMETER);
   const path = url.pathname + url.search + url.hash;
   if (child || url.pathname === "/") return [path];
-  const enrollmentPath = url.pathname.replace(/\/+$/, "") || "/";
+  const pathname = url.pathname.replace(/\/+$/, "") || "/";
+  const hub = pathname.split("/").filter(Boolean)[0];
+  if (!hub) return ["/", path];
+  const hubPath = `/${hub}`;
+  const enrollmentPage = "/study/enrollment";
   const enrollmentChildren = [
-    "/enrollment/selected",
-    "/enrollment/tasks",
-    "/enrollment/timetable",
-    "/enrollment/settings",
+    `${enrollmentPage}/selected`,
+    `${enrollmentPage}/tasks`,
+    `${enrollmentPage}/timetable`,
+    `${enrollmentPage}/settings`,
   ];
-  const legacyChild =
-    enrollmentPath === "/enrollment" &&
+  const legacyTabChild =
+    pathname === enrollmentPage &&
     ["selected", "tasks", "timetable"].includes(url.searchParams.get("tab") ?? "");
   const loginChild =
-    enrollmentPath === "/enrollment/login" &&
+    pathname === `${enrollmentPage}/login` &&
     enrollmentChildren.includes((url.searchParams.get("returnTo") ?? "").split("?")[0]);
   const cachedParent =
     url.searchParams.get("view") === "cache" ||
     (loginChild &&
       new URLSearchParams((url.searchParams.get("returnTo") ?? "").split("?")[1]).get("view") ===
         "cache");
-  if (enrollmentChildren.includes(enrollmentPath) || legacyChild || loginChild)
-    return ["/", cachedParent ? "/enrollment?view=cache" : "/enrollment", path];
-  return url.pathname === "/oj" ? ["/", "/computing", path] : ["/", path];
+  if (enrollmentChildren.includes(pathname) || legacyTabChild || loginChild)
+    return ["/", hubPath, cachedParent ? `${enrollmentPage}?view=cache` : enrollmentPage, path];
+  if (pathname.startsWith("/life/campus-payments/"))
+    return ["/", hubPath, "/life/campus-payments", path];
+  if (pathname === hubPath) return ["/", path];
+  return ["/", hubPath, path];
 }
 export function logicalBackAction(hasParent: boolean, child: boolean) {
   return hasParent ? "pop" : child ? "close" : "exit";

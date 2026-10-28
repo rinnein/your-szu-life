@@ -744,7 +744,7 @@ fn notify_if_needed(app: &AppHandle, store: &ElectricityStore) {
                 .unwrap_or("宿舍电量不足，请及时充值。"),
         )
         .action_type_id("electricity-low")
-        .extra("route", "/campus-payments/recharge")
+        .extra("route", "/life/campus-payments/recharge")
         .auto_cancel()
         .show();
 }

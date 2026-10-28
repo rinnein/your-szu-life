@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
+import type { NavigateOptions } from "@tanstack/react-router";
+import type { IconType } from "react-icons";
 import { LuRefreshCw } from "react-icons/lu";
 import { Card as UiCard, LoadingIndicator, Button } from "material/react";
+import { useLogicalNavigation } from "./logical-navigation";
 import { PageSurface } from "./shell/AppShell";
 import { TopAppBar } from "./shell/TopAppBar";
 import appIcon from "../src-tauri/icons/icon.png";
@@ -19,13 +22,14 @@ export const PageShell = PageSurface;
 /**
  * 模块页头。
  *
- * 保留这个名称是因为 14 个页面都在用它；实现是 M3 的 `TopAppBar`。
- * `backLabel` 沿用旧参数名，默认「返回工作台」以兼容既有测试。
+ * 保留这个名称是因为 14 个页面都在用它；实现是 M3 的 `TopAppBar`，
+ * 并由 `TopAppBar` 统一提供命令面板搜索入口。
+ * `backLabel` 沿用旧参数名，默认「返回上一页」。
  */
 export function ModuleHeader({
   title,
   description,
-  backLabel = "返回工作台",
+  backLabel = "返回上一页",
   actions,
   eyebrow,
 }: {
@@ -166,5 +170,52 @@ export function Section({
       )}
       {children}
     </section>
+  );
+}
+
+export type Feature = {
+  label: string;
+  icon: IconType;
+  description: string;
+  to?: NavigateOptions["to"];
+};
+
+/**
+ * 功能入口网格，学习页与生活页共用。
+ *
+ * 富内容入口（图标 + 标题 + 描述）不适合 material 的纯文本按钮，用原生
+ * button 承载 M3 卡片样式，文案天然可被读屏读取。没有 `to` 的入口（尚未
+ * 实现的占位）交给 `onPlaceholder` 处理。
+ */
+export function FeatureGrid({
+  features,
+  onPlaceholder,
+}: {
+  features: readonly Feature[];
+  onPlaceholder?: (label: string) => void;
+}) {
+  const navigation = useLogicalNavigation();
+  return (
+    <div className="feature-grid">
+      {features.map(({ label, icon: FeatureIcon, description, to }) => (
+        <button
+          key={label}
+          type="button"
+          className="feature-button"
+          onClick={() => (to ? void navigation.push(to) : onPlaceholder?.(label))}
+        >
+          <span className="feature-icon" aria-hidden="true">
+            <FeatureIcon size={19} focusable="false" />
+          </span>
+          <span className="feature-copy">
+            <strong>{label}</strong>
+            <small>{description}</small>
+          </span>
+          <span className="feature-arrow" aria-hidden="true">
+            →
+          </span>
+        </button>
+      ))}
+    </div>
   );
 }

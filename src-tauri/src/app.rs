@@ -51,14 +51,30 @@ pub(crate) fn run() {
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    // 控制台/系统日志只收 Info 及以上：库的 DEBUG/TRACE 会把真机
+                    // logcat 刷到每秒上万行（Android 还会按每进程配额丢弃）。
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout)
+                        .filter(crate::logging::quiet_targets),
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Dispatch(
                         file_dispatch,
                     ))
                     .filter(file_filter),
-                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
+                    // WebView 目标每转发一条日志都要过一次 JNI。若放行 `jni` 自己的
+                    // 调试日志，「转发 → JNI 调用 → jni 日志 → 再转发」会互相放大，
+                    // 真机实测几秒内就把主线程压到 ANR。因此这里同样只收 Info 及以上。
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview)
+                        .filter(crate::logging::quiet_targets),
                 ])
+                // 全局仍放行 Trace，好让文件目标按用户选择记录 DEBUG/TRACE 的应用日志；
+                // 噪声库单独关掉。
                 .level(log::LevelFilter::Trace)
+                .level_for("jni", log::LevelFilter::Off)
+                .level_for("tao", log::LevelFilter::Off)
+                .level_for("wry", log::LevelFilter::Off)
+                .level_for("tungstenite", log::LevelFilter::Warn)
+                .level_for("hyper", log::LevelFilter::Warn)
+                .level_for("h2", log::LevelFilter::Warn)
+                .level_for("rustls", log::LevelFilter::Warn)
                 .build(),
         )
         .plugin(tauri_plugin_clipboard_manager::init())

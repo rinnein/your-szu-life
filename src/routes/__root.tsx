@@ -13,6 +13,7 @@ import { QuizNotifications } from "../uooc/QuizNotifications";
 import { CommandPalette } from "../command-palette";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { AppChrome } from "../shell/AppChrome";
+import { WebvpnAuthProvider } from "../enrollment/webvpn-gate";
 
 if (typeof window !== "undefined") {
   if (typeof window.matchMedia !== "function") {
@@ -52,9 +53,11 @@ export const Route = createRootRoute({
               <OjProgressBridge />
               <OjCompanionBridge />
               <CommandPalette />
-              <AppChrome>
-                <Outlet />
-              </AppChrome>
+              <WebvpnAuthProvider>
+                <AppChrome>
+                  <Outlet />
+                </AppChrome>
+              </WebvpnAuthProvider>
               <UpdateNotice />
             </AuthProvider>
           </ElectricityMonitorProvider>

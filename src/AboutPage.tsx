@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { LoadingIndicator, Button } from "material/react";
 import { Banner, Avatar, toast } from "./ui";
 import { LuArrowUpRight, LuDownload, LuRefreshCw, LuUsers } from "react-icons/lu";
-import { BrandMark, Card, ModuleHeader, PageShell } from "./components";
+import { BrandMark, Card } from "./components";
 import { useAppContent } from "./app-content/context";
 import { contentTime, openPublicUrl } from "./app-content/external";
 import { clearPostponedUpdateReminder } from "./app-content/update-postpone";
@@ -259,274 +259,264 @@ export default function AboutPage() {
   const configured = snapshot?.configuration.status === "ready";
   const hasUpdateSource =
     configured || (snapshot?.configuration.status === "unconfigured" && !!snapshot.repository);
+  // 作为设置页的「关于」tab 呈现，页面外壳与标题由设置页提供。
   return (
-    <PageShell>
-      <div className="about-layout">
-        <ModuleHeader title="关于" />
-        <header className="about-header">
-          <span data-webview-navigation className="eyebrow">
-            ABOUT YOUR SZU LIFE
-          </span>
-          <h1 data-webview-navigation className="sr-only">
-            关于
-          </h1>
-          <div className="about-brand">
-            <BrandMark large />
-            <div>
-              <h2>泥深 · Your SZU Life</h2>
-              <p className="content-muted">
-                当前版本{" "}
-                <strong data-testid="app-version">
-                  {snapshot?.version ?? packageInfo.version}
-                </strong>
-              </p>
-            </div>
-          </div>
-        </header>
-        <Card
-          title="更新与公告"
-          description="启动时自动检查,持续运行每 24 小时检查一次。手动检查同时刷新公告与更新信息"
-        >
-          <div className="grid gap-4">
-            <div className="about-update-toolbar">
-              <p className="update-status" role="status">
-                {updateStatus(snapshot, refreshing, error)}
-              </p>
-              <Button
-                variant="filled"
-                disabled={refreshing || (!!snapshot && !hasUpdateSource)}
-                onClick={() => {
-                  clearPostponedUpdateReminder();
-                  void refresh();
-                }}
-              >
-                {refreshing ? <LoadingIndicator size={16} /> : <LuRefreshCw aria-hidden="true" />}
-                {refreshing ? "正在检查…" : "检查更新"}
-              </Button>
-            </div>
-            {snapshot?.configuration.message && (
-              <p className="content-muted">{snapshot.configuration.message}</p>
-            )}
-            {(error || update?.error) && (
-              <Banner status="warning" role="status">
-                <Banner.Title>未能确认最新版本</Banner.Title>
-                <Banner.Description>
-                  {error || update?.error?.message}
-                  {update?.fromCache &&
-                    " 以下版本信息与更新日志来自上次成功检查，不代表本次检查成功。"}
-                </Banner.Description>
-              </Banner>
-            )}
-            <dl className="content-times">
-              <div>
-                <dt>最近检查</dt>
-                <dd>{contentTime(update?.lastAttemptAt)}</dd>
-              </div>
-              <div>
-                <dt>更新信息最后成功</dt>
-                <dd>
-                  {contentTime(update?.lastSuccessAt)}
-                  {update?.source === "fallback"
-                    ? " · 备用源"
-                    : update?.source === "github"
-                      ? " · GitHub"
-                      : ""}
-                </dd>
-              </div>
-              <div>
-                <dt>公告最后成功</dt>
-                <dd>
-                  {contentTime(announcements?.lastSuccessAt)}
-                  {announcements?.source === "fallback"
-                    ? " · 备用源"
-                    : announcements?.source === "github"
-                      ? " · GitHub"
-                      : ""}
-                </dd>
-              </div>
-              {snapshot?.nextAutomaticCheckAt != null && (
-                <div>
-                  <dt>下次自动检查</dt>
-                  <dd>{contentTime(snapshot.nextAutomaticCheckAt)}</dd>
-                </div>
-              )}
-            </dl>
-            {announcements?.error && (
-              <p className="content-error" role="status">
-                公告获取失败：{announcements.error.message}
-                {announcements.fromCache && " 已保留上次成功的公告。"}
-              </p>
-            )}
-            {hasUpdateSource && !refreshing && announcements?.data && !announcements.error && (
-              <p className="content-muted">
-                {announcements.fromCache ? "公告缓存" : "公告已刷新"} ·{" "}
-                {announcements.data.announcements.length} 条
-              </p>
-            )}
-            {update?.data && (
-              <section className="changelog" aria-labelledby="changelog-heading">
-                <h3 id="changelog-heading">
-                  更新日志 · {update.data.latest_ver}
-                  {update.fromCache ? "（缓存）" : ""}
-                </h3>
-                <p className="content-plaintext">
-                  {update.data.changelog || "此版本未提供更新日志。"}
-                </p>
-              </section>
-            )}
-            {snapshot?.updateAvailable && update?.data && (
-              <div className="grid gap-3">
-                {platform === "android" || platform === "windows" ? (
-                  <>
-                    {updateProgress?.status === "downloading" && (
-                      <DownloadSession
-                        title={
-                          platform === "windows"
-                            ? `正在下载新版本安装程序 ${update.data.latest_ver}...`
-                            : `正在下载并解压新版本 ${update.data.latest_ver}...`
-                        }
-                        defaultExpanded
-                        session={{
-                          downloadedBytes: updateProgress.downloadedBytes,
-                          totalBytes: updateProgress.totalBytes,
-                          speedBytesPerSec: updateProgress.speedBytesPerSec,
-                          port: updateProgress.port,
-                          numPieces: updateProgress.numPieces,
-                          pieceLength: updateProgress.pieceLength,
-                          bitfield: updateProgress.bitfield,
-                          connections: updateProgress.connections,
-                          isResumed: updateProgress.isResumed,
-                          resumedBytes: updateProgress.resumedBytes,
-                          totalActiveTasks: updateProgress.totalActiveTasks,
-                          status: updateProgress.status,
-                          error: updateProgress.error,
-                        }}
-                      />
-                    )}
-                    {(updateProgress?.status === "installing" ||
-                      updateProgress?.status === "ready") && (
-                      <p className="content-muted" role="status">
-                        <LoadingIndicator size={16} /> 正在启动安装程序，请按系统提示完成更新…
-                      </p>
-                    )}
-                    {updateProgress?.status === "error" && (
-                      <Banner status="danger" role="alert">
-                        <Banner.Title>应用内更新失败</Banner.Title>
-                        <Banner.Description>
-                          {updateProgress.error ?? "下载或解压过程中发生错误。"}
-                        </Banner.Description>
-                      </Banner>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                      <Button
-                        variant="filled"
-                        disabled={updating || updateProgress?.status === "downloading"}
-                        onClick={() => void handleStartInAppUpdate()}
-                      >
-                        {updating || updateProgress?.status === "downloading" ? (
-                          <LoadingIndicator size={16} />
-                        ) : (
-                          <LuDownload aria-hidden="true" />
-                        )}
-                        {updating || updateProgress?.status === "downloading"
-                          ? "正在下载…"
-                          : updateProgress?.status === "error"
-                            ? platform === "windows"
-                              ? `重试下载安装 ${update.data.latest_ver}`
-                              : `重试应用内更新 ${update.data.latest_ver}`
-                            : platform === "windows"
-                              ? `下载并安装 ${update.data.latest_ver}`
-                              : `应用内更新 ${update.data.latest_ver}`}
-                      </Button>
-                      <Button
-                        variant="tonal"
-                        onClick={() => {
-                          setOpenError(undefined);
-                          void openPublicUrl(update.data!.latest_ver_url).catch(() =>
-                            setOpenError("无法打开系统浏览器，请稍后重试。"),
-                          );
-                        }}
-                      >
-                        前往浏览器下载
-                        <LuArrowUpRight aria-hidden="true" />
-                      </Button>
-                    </div>
-                  </>
-                ) : platform === "linux" ? (
-                  <Button
-                    variant="tonal"
-                    onClick={() => {
-                      setOpenError(undefined);
-                      const targetUrl = update.data!.release_url || update.data!.latest_ver_url;
-                      void openPublicUrl(targetUrl).catch(() =>
-                        setOpenError("无法打开系统浏览器，请稍后重试。"),
-                      );
-                    }}
-                  >
-                    <LuDownload aria-hidden="true" /> 前往发布页面 {update.data.latest_ver}
-                    <LuArrowUpRight aria-hidden="true" />
-                  </Button>
-                ) : (
-                  <Button
-                    variant="tonal"
-                    onClick={() => {
-                      setOpenError(undefined);
-                      void openPublicUrl(update.data!.latest_ver_url).catch(() =>
-                        setOpenError("无法打开系统浏览器，请稍后重试。"),
-                      );
-                    }}
-                  >
-                    <LuDownload aria-hidden="true" /> 前往下载 {update.data.latest_ver}
-                    <LuArrowUpRight aria-hidden="true" />
-                  </Button>
-                )}
-              </div>
-            )}
-            {openError && (
-              <p className="content-error" role="alert">
-                {openError}
-              </p>
-            )}
-            <p className="content-muted about-download-note">
-              {platform === "android"
-                ? "Android 端支持应用内流式解压更新与加速节点，也可以点击前往系统浏览器下载。"
-                : platform === "windows"
-                  ? "Windows 端支持应用内下载 msi 安装程序与加速节点，下载完成后自动执行安装。"
-                  : platform === "linux"
-                    ? "Linux 端建议通过包管理器自动更新，也可点击前往发布页面手动获取安装包。"
-                    : "仅检查版本，不会自动下载或安装；点击下载后在系统浏览器打开。"}
+    <div className="about-layout">
+      <header className="about-header">
+        <div className="about-brand">
+          <BrandMark large />
+          <div>
+            <h2>泥深 · Your SZU Life</h2>
+            <p className="content-muted">
+              当前版本{" "}
+              <strong data-testid="app-version">{snapshot?.version ?? packageInfo.version}</strong>
             </p>
           </div>
-        </Card>
-        <Contributors />
-        <Card
-          title="UOOC 功能参考"
-          description="视频流程参考 auto-uooc-go，测验交互参考 fuckuooc，使用 Rust 独立实现"
-        >
-          <div className="flex flex-wrap gap-2">
+        </div>
+      </header>
+      <Card
+        title="更新与公告"
+        description="启动时自动检查,持续运行每 24 小时检查一次。手动检查同时刷新公告与更新信息"
+      >
+        <div className="grid gap-4">
+          <div className="about-update-toolbar">
+            <p className="update-status" role="status">
+              {updateStatus(snapshot, refreshing, error)}
+            </p>
             <Button
-              variant="text"
-              onClick={() =>
-                void openPublicUrl("https://github.com/rinnein/auto-uooc-go").catch(() =>
-                  setOpenError("无法打开参考项目链接"),
-                )
-              }
+              variant="filled"
+              disabled={refreshing || (!!snapshot && !hasUpdateSource)}
+              onClick={() => {
+                clearPostponedUpdateReminder();
+                void refresh();
+              }}
             >
-              auto-uooc-go <LuArrowUpRight aria-hidden="true" />
-            </Button>
-            <Button
-              variant="text"
-              onClick={() =>
-                void openPublicUrl("https://github.com/YusongXiao/fuckuooc").catch(() =>
-                  setOpenError("无法打开参考项目链接"),
-                )
-              }
-            >
-              fuckuooc <LuArrowUpRight aria-hidden="true" />
+              {refreshing ? <LoadingIndicator size={16} /> : <LuRefreshCw aria-hidden="true" />}
+              {refreshing ? "正在检查…" : "检查更新"}
             </Button>
           </div>
-        </Card>
-      </div>
-    </PageShell>
+          {snapshot?.configuration.message && (
+            <p className="content-muted">{snapshot.configuration.message}</p>
+          )}
+          {(error || update?.error) && (
+            <Banner status="warning" role="status">
+              <Banner.Title>未能确认最新版本</Banner.Title>
+              <Banner.Description>
+                {error || update?.error?.message}
+                {update?.fromCache &&
+                  " 以下版本信息与更新日志来自上次成功检查，不代表本次检查成功。"}
+              </Banner.Description>
+            </Banner>
+          )}
+          <dl className="content-times">
+            <div>
+              <dt>最近检查</dt>
+              <dd>{contentTime(update?.lastAttemptAt)}</dd>
+            </div>
+            <div>
+              <dt>更新信息最后成功</dt>
+              <dd>
+                {contentTime(update?.lastSuccessAt)}
+                {update?.source === "fallback"
+                  ? " · 备用源"
+                  : update?.source === "github"
+                    ? " · GitHub"
+                    : ""}
+              </dd>
+            </div>
+            <div>
+              <dt>公告最后成功</dt>
+              <dd>
+                {contentTime(announcements?.lastSuccessAt)}
+                {announcements?.source === "fallback"
+                  ? " · 备用源"
+                  : announcements?.source === "github"
+                    ? " · GitHub"
+                    : ""}
+              </dd>
+            </div>
+            {snapshot?.nextAutomaticCheckAt != null && (
+              <div>
+                <dt>下次自动检查</dt>
+                <dd>{contentTime(snapshot.nextAutomaticCheckAt)}</dd>
+              </div>
+            )}
+          </dl>
+          {announcements?.error && (
+            <p className="content-error" role="status">
+              公告获取失败：{announcements.error.message}
+              {announcements.fromCache && " 已保留上次成功的公告。"}
+            </p>
+          )}
+          {hasUpdateSource && !refreshing && announcements?.data && !announcements.error && (
+            <p className="content-muted">
+              {announcements.fromCache ? "公告缓存" : "公告已刷新"} ·{" "}
+              {announcements.data.announcements.length} 条
+            </p>
+          )}
+          {update?.data && (
+            <section className="changelog" aria-labelledby="changelog-heading">
+              <h3 id="changelog-heading">
+                更新日志 · {update.data.latest_ver}
+                {update.fromCache ? "（缓存）" : ""}
+              </h3>
+              <p className="content-plaintext">
+                {update.data.changelog || "此版本未提供更新日志。"}
+              </p>
+            </section>
+          )}
+          {snapshot?.updateAvailable && update?.data && (
+            <div className="grid gap-3">
+              {platform === "android" || platform === "windows" ? (
+                <>
+                  {updateProgress?.status === "downloading" && (
+                    <DownloadSession
+                      title={
+                        platform === "windows"
+                          ? `正在下载新版本安装程序 ${update.data.latest_ver}...`
+                          : `正在下载并解压新版本 ${update.data.latest_ver}...`
+                      }
+                      defaultExpanded
+                      session={{
+                        downloadedBytes: updateProgress.downloadedBytes,
+                        totalBytes: updateProgress.totalBytes,
+                        speedBytesPerSec: updateProgress.speedBytesPerSec,
+                        port: updateProgress.port,
+                        numPieces: updateProgress.numPieces,
+                        pieceLength: updateProgress.pieceLength,
+                        bitfield: updateProgress.bitfield,
+                        connections: updateProgress.connections,
+                        isResumed: updateProgress.isResumed,
+                        resumedBytes: updateProgress.resumedBytes,
+                        totalActiveTasks: updateProgress.totalActiveTasks,
+                        status: updateProgress.status,
+                        error: updateProgress.error,
+                      }}
+                    />
+                  )}
+                  {(updateProgress?.status === "installing" ||
+                    updateProgress?.status === "ready") && (
+                    <p className="content-muted" role="status">
+                      <LoadingIndicator size={16} /> 正在启动安装程序，请按系统提示完成更新…
+                    </p>
+                  )}
+                  {updateProgress?.status === "error" && (
+                    <Banner status="danger" role="alert">
+                      <Banner.Title>应用内更新失败</Banner.Title>
+                      <Banner.Description>
+                        {updateProgress.error ?? "下载或解压过程中发生错误。"}
+                      </Banner.Description>
+                    </Banner>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="filled"
+                      disabled={updating || updateProgress?.status === "downloading"}
+                      onClick={() => void handleStartInAppUpdate()}
+                    >
+                      {updating || updateProgress?.status === "downloading" ? (
+                        <LoadingIndicator size={16} />
+                      ) : (
+                        <LuDownload aria-hidden="true" />
+                      )}
+                      {updating || updateProgress?.status === "downloading"
+                        ? "正在下载…"
+                        : updateProgress?.status === "error"
+                          ? platform === "windows"
+                            ? `重试下载安装 ${update.data.latest_ver}`
+                            : `重试应用内更新 ${update.data.latest_ver}`
+                          : platform === "windows"
+                            ? `下载并安装 ${update.data.latest_ver}`
+                            : `应用内更新 ${update.data.latest_ver}`}
+                    </Button>
+                    <Button
+                      variant="tonal"
+                      onClick={() => {
+                        setOpenError(undefined);
+                        void openPublicUrl(update.data!.latest_ver_url).catch(() =>
+                          setOpenError("无法打开系统浏览器，请稍后重试。"),
+                        );
+                      }}
+                    >
+                      前往浏览器下载
+                      <LuArrowUpRight aria-hidden="true" />
+                    </Button>
+                  </div>
+                </>
+              ) : platform === "linux" ? (
+                <Button
+                  variant="tonal"
+                  onClick={() => {
+                    setOpenError(undefined);
+                    const targetUrl = update.data!.release_url || update.data!.latest_ver_url;
+                    void openPublicUrl(targetUrl).catch(() =>
+                      setOpenError("无法打开系统浏览器，请稍后重试。"),
+                    );
+                  }}
+                >
+                  <LuDownload aria-hidden="true" /> 前往发布页面 {update.data.latest_ver}
+                  <LuArrowUpRight aria-hidden="true" />
+                </Button>
+              ) : (
+                <Button
+                  variant="tonal"
+                  onClick={() => {
+                    setOpenError(undefined);
+                    void openPublicUrl(update.data!.latest_ver_url).catch(() =>
+                      setOpenError("无法打开系统浏览器，请稍后重试。"),
+                    );
+                  }}
+                >
+                  <LuDownload aria-hidden="true" /> 前往下载 {update.data.latest_ver}
+                  <LuArrowUpRight aria-hidden="true" />
+                </Button>
+              )}
+            </div>
+          )}
+          {openError && (
+            <p className="content-error" role="alert">
+              {openError}
+            </p>
+          )}
+          <p className="content-muted about-download-note">
+            {platform === "android"
+              ? "Android 端支持应用内流式解压更新与加速节点，也可以点击前往系统浏览器下载。"
+              : platform === "windows"
+                ? "Windows 端支持应用内下载 msi 安装程序与加速节点，下载完成后自动执行安装。"
+                : platform === "linux"
+                  ? "Linux 端建议通过包管理器自动更新，也可点击前往发布页面手动获取安装包。"
+                  : "仅检查版本，不会自动下载或安装；点击下载后在系统浏览器打开。"}
+          </p>
+        </div>
+      </Card>
+      <Contributors />
+      <Card
+        title="UOOC 功能参考"
+        description="视频流程参考 auto-uooc-go，测验交互参考 fuckuooc，使用 Rust 独立实现"
+      >
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="text"
+            onClick={() =>
+              void openPublicUrl("https://github.com/rinnein/auto-uooc-go").catch(() =>
+                setOpenError("无法打开参考项目链接"),
+              )
+            }
+          >
+            auto-uooc-go <LuArrowUpRight aria-hidden="true" />
+          </Button>
+          <Button
+            variant="text"
+            onClick={() =>
+              void openPublicUrl("https://github.com/YusongXiao/fuckuooc").catch(() =>
+                setOpenError("无法打开参考项目链接"),
+              )
+            }
+          >
+            fuckuooc <LuArrowUpRight aria-hidden="true" />
+          </Button>
+        </div>
+      </Card>
+    </div>
   );
 }

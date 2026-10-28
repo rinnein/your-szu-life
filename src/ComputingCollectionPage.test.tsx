@@ -8,7 +8,7 @@ afterEach(cleanup);
 it("opens OJ as another logical page and returns using the shared bridge", () => {
   render(<ComputingCollectionPage />);
   fireEvent.click(screen.getByRole("button", { name: /OJ/ }));
-  expect(nav.push).toHaveBeenCalledWith("/oj");
+  expect(nav.push).toHaveBeenCalledWith("/study/oj");
   fireEvent.click(screen.getByRole("button", { name: /返回/ }));
   expect(nav.back).toHaveBeenCalled();
 });

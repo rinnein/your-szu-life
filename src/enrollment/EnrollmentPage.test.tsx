@@ -14,7 +14,7 @@ vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 Element.prototype.getAnimations = () => [];
 let snapshot: Snapshot;
 let auth = "ready";
-function mount(path = "/enrollment") {
+function mount(path = "/study/enrollment") {
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({
@@ -82,7 +82,7 @@ afterEach(() => {
 it("uses the existing arrow header and keeps authentication out of the catalog", async () => {
   mount();
   await screen.findByRole("heading", { name: "查找课程" });
-  expect(await screen.findByRole("button", { name: "返回工作台" })).toHaveAttribute(
+  expect(await screen.findByRole("button", { name: "返回上一页" })).toHaveAttribute(
     "data-webview-navigation",
   );
   await screen.findByText("中国历史与文化");
@@ -102,7 +102,7 @@ it("opens functional child pages and replaces sibling navigation", async () => {
   expect(router.history.length).toBe(initial + 1);
   fireEvent.click(screen.getByRole("button", { name: "返回选课" }));
   await waitFor(() =>
-    expect(router.state.location.pathname.replace(/\/$/, "")).toBe("/enrollment"),
+    expect(router.state.location.pathname.replace(/\/$/, "")).toBe("/study/enrollment"),
   );
   expect(
     vi
@@ -114,9 +114,9 @@ it("opens functional child pages and replaces sibling navigation", async () => {
   ).toBe(false);
 });
 it("migrates legacy tab links without stacking an extra route", async () => {
-  const router = mount("/enrollment?tab=tasks&keyword=CS101");
+  const router = mount("/study/enrollment?tab=tasks&keyword=CS101");
   await screen.findByRole("heading", { name: "抢课任务" });
-  expect(router.state.location.pathname).toBe("/enrollment/tasks");
+  expect(router.state.location.pathname).toBe("/study/enrollment/tasks");
   expect(router.state.location.searchStr).toContain("CS101");
 });
 it("redirects an invalid session to dedicated login and replaces it after login", async () => {
@@ -126,21 +126,26 @@ it("redirects an invalid session to dedicated login and replaces it after login"
   await screen.findByRole("heading", { name: "登录选课系统" });
   fireEvent.click(await screen.findByRole("button", { name: "登录并进入选课" }));
   await screen.findByRole("heading", { name: "查找课程" });
-  expect(router.state.location.pathname.replace(/\/$/, "")).toBe("/enrollment");
-  fireEvent.click(screen.getByRole("button", { name: "返回工作台" }));
-  await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+  expect(router.state.location.pathname.replace(/\/$/, "")).toBe("/study/enrollment");
+  fireEvent.click(screen.getByRole("button", { name: "返回上一页" }));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/study"));
 });
-it("opens dedicated 2FA from the login access card", async () => {
+it("asks for confirmation before opening dedicated 2FA from the login access card", async () => {
   auth = "required";
-  mount("/enrollment/login");
+  mount("/study/enrollment/login");
   await screen.findByText("需2FA验证");
   fireEvent.click(screen.getByRole("radio", { name: "WebVPN访问" }));
+  expect(await screen.findByRole("heading", { name: "需要 WebVPN 认证" })).toBeInTheDocument();
+  expect(
+    vi.mocked(invoke).mock.calls.filter(([name]) => name === "open_academic_portal"),
+  ).toHaveLength(0);
+  fireEvent.click(screen.getByRole("button", { name: "打开认证窗口" }));
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("open_academic_portal", { kind: "webvpn", target: null }),
   );
 });
 it("renders a separate timetable with a week control", async () => {
-  mount("/enrollment/timetable");
+  mount("/study/enrollment/timetable");
   await screen.findByRole("grid", { name: "选课期间课表" });
   expect(screen.getAllByRole("columnheader")).toHaveLength(8);
   expect(screen.getByText("显示周次")).toBeInTheDocument();
@@ -198,12 +203,12 @@ it("keeps a successful but restricted login separate from captcha failure", asyn
       });
     return original(name, args);
   });
-  const router = mount("/enrollment/login");
+  const router = mount("/study/enrollment/login");
   fireEvent.click(await screen.findByRole("button", { name: "登录并进入选课" }));
   await screen.findByText("登录成功，当前暂不可选课");
   expect(screen.getByText("抱歉,未评教,学籍信息不对,无法选课!")).toBeInTheDocument();
   expect(screen.queryByLabelText("点选验证码")).toBeNull();
-  expect(router.state.location.pathname).toBe("/enrollment/login");
+  expect(router.state.location.pathname).toBe("/study/enrollment/login");
   expect(
     vi
       .mocked(invoke)
@@ -216,7 +221,7 @@ it("keeps a successful but restricted login separate from captcha failure", asyn
 });
 it("reads and navigates cache without any enrollment network commands", async () => {
   auth = "required";
-  const router = mount("/enrollment?view=cache");
+  const router = mount("/study/enrollment?view=cache");
   await screen.findByText("中国历史与文化");
   expect(screen.getByRole("button", { name: "检索缓存" })).toBeInTheDocument();
   expect(
@@ -236,10 +241,11 @@ it("reads and navigates cache without any enrollment network commands", async ()
 });
 it("activates the entire radio card once when its blank area is clicked", async () => {
   auth = "required";
-  mount("/enrollment/login");
+  mount("/study/enrollment/login");
   const radio = await screen.findByRole("radio", { name: "WebVPN访问" });
   await screen.findByText("需2FA验证");
   fireEvent.click(radio.closest("label")!);
+  fireEvent.click(await screen.findByRole("button", { name: "打开认证窗口" }));
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("open_academic_portal", { kind: "webvpn", target: null }),
   );
@@ -259,16 +265,18 @@ it("activates the entire radio card once when its blank area is clicked", async 
 
 it("reopens 2FA once from the selected card latency without resetting its mode", async () => {
   auth = "required";
-  mount("/enrollment/login");
+  mount("/study/enrollment/login");
   const radio = await screen.findByRole("radio", { name: "WebVPN访问" });
   await screen.findByText("需2FA验证");
   fireEvent.click(radio.closest("label")!);
   await waitFor(() => expect(radio).toBeChecked());
+  fireEvent.click(await screen.findByRole("button", { name: "打开认证窗口" }));
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("open_academic_portal", { kind: "webvpn", target: null }),
   );
   vi.mocked(invoke).mockClear();
   fireEvent.click(screen.getByText("需2FA验证"));
+  fireEvent.click(await screen.findByRole("button", { name: "打开认证窗口" }));
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("open_academic_portal", { kind: "webvpn", target: null }),
   );
@@ -297,7 +305,7 @@ it("never renders a standalone zero through repeated login requests", async () =
       return Promise.reject("学校暂不可用");
     return original(name, args);
   });
-  mount("/enrollment/login");
+  mount("/study/enrollment/login");
   const button = await screen.findByRole("button", { name: "登录并进入选课" });
   const hasZero = () => {
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -314,4 +322,29 @@ it("never renders a standalone zero through repeated login requests", async () =
   fireEvent.click(button);
   await screen.findByText("学校暂不可用");
   expect(hasZero()).toBe(false);
+});
+
+it("does not prompt for WebVPN authentication when the session does not need 2FA", async () => {
+  auth = "required";
+  const original = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (name, args) => {
+    if (
+      name === "enrollment_command" &&
+      ((args as Record<string, unknown>).action as { type: string }).type === "probe"
+    )
+      return [
+        { mode: "campus", latency: 10, needs2fa: false, message: "" },
+        { mode: "webvpn", latency: 30, needs2fa: false, message: "" },
+      ];
+    return original(name, args);
+  });
+  mount("/study/enrollment/login");
+  await screen.findByText("30 ms");
+  fireEvent.click(screen.getByRole("radio", { name: "WebVPN访问" }));
+  await waitFor(() =>
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([name]) => name === "open_academic_portal"),
+    ).toHaveLength(0),
+  );
+  expect(screen.queryByRole("heading", { name: "需要 WebVPN 认证" })).not.toBeInTheDocument();
 });

@@ -32,7 +32,12 @@ type UpdateProgress = {
 
 export function UpdateNotice() {
   const { snapshot } = useAppContent();
-  const path = useRouterState({ select: (state) => state.location.pathname });
+  const location = useRouterState({
+    select: (state) => ({
+      pathname: state.location.pathname,
+      searchStr: state.location.searchStr,
+    }),
+  });
   const [isOpen, setIsOpen] = useState(false);
   const [platform, setPlatform] = useState<string>("unknown");
   const [updating, setUpdating] = useState(false);
@@ -70,14 +75,15 @@ export function UpdateNotice() {
   }, []);
 
   useEffect(() => {
+    // 设置页的「关于」tab 自带更新面板，那里不再重复弹窗。
+    const onAboutTab =
+      location.pathname === "/settings" &&
+      new URLSearchParams(location.searchStr ?? "").get("tab") === "about";
     const shouldShow =
-      Boolean(snapshot?.updateAvailable) &&
-      Boolean(latest) &&
-      !isUpdatePostponed() &&
-      path !== "/about";
+      Boolean(snapshot?.updateAvailable) && Boolean(latest) && !isUpdatePostponed() && !onAboutTab;
 
     setIsOpen(shouldShow);
-  }, [snapshot?.updateAvailable, latest, path]);
+  }, [snapshot?.updateAvailable, latest, location.pathname, location.searchStr]);
 
   const handlePostpone = () => {
     postponeUpdateReminder();

@@ -238,7 +238,7 @@ describe("AnnouncementBoard carousel", () => {
         title: "期中程序设计测验",
         begin: Date.now() - 10000,
         end: Date.now() + 3600000,
-        url: "/oj?site=test-site&contest=contest-101",
+        url: "/study/oj?site=test-site&contest=contest-101",
       },
     ]);
     mockContent(makeSnapshot([announcements[0]]));
@@ -248,7 +248,7 @@ describe("AnnouncementBoard carousel", () => {
     expect(ojBtn).toBeInTheDocument();
 
     fireEvent.click(ojBtn);
-    expect(nav.push).toHaveBeenCalledWith("/oj?site=test-site&contest=contest-101");
+    expect(nav.push).toHaveBeenCalledWith("/study/oj?site=test-site&contest=contest-101");
   });
 
   it("renders both electricity low warning and ongoing OJ contest cards in carousel", async () => {
@@ -265,7 +265,7 @@ describe("AnnouncementBoard carousel", () => {
         title: "期末大作业测验",
         begin: Date.now() - 10000,
         end: Date.now() + 3600000,
-        url: "/oj?site=test-site&contest=contest-102",
+        url: "/study/oj?site=test-site&contest=contest-102",
       },
     ]);
     mockContent(makeSnapshot([]));

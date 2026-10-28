@@ -1,4 +1,7 @@
-use crate::appearance::{Appearance, WallpaperSeed};
+use crate::appearance::Appearance;
+// 只在非 Android 平台构造兜底值；Android 走 Kotlin 壁纸色桥，不需要这个类型。
+#[cfg(not(target_os = "android"))]
+use crate::appearance::WallpaperSeed;
 use crate::mcp::service::UnifiedSzuMcpService;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::tool;

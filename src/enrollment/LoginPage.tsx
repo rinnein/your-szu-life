@@ -15,23 +15,23 @@ import type { Snapshot } from "./model";
 import { OcrModelRequiredDialog } from "../OcrModelGate";
 import { useOcrModelStatus } from "../OcrModelSettings";
 export function safeReturn(path?: string) {
-  return path?.startsWith("/enrollment") &&
-    !path.startsWith("/enrollment/login") &&
+  return path?.startsWith("/study/enrollment") &&
+    !path.startsWith("/study/enrollment/login") &&
     [
-      "/enrollment",
-      "/enrollment/selected",
-      "/enrollment/tasks",
-      "/enrollment/timetable",
-      "/enrollment/settings",
+      "/study/enrollment",
+      "/study/enrollment/selected",
+      "/study/enrollment/tasks",
+      "/study/enrollment/timetable",
+      "/study/enrollment/settings",
     ].includes(path.split("?")[0])
     ? path
-    : "/enrollment";
+    : "/study/enrollment";
 }
 export default function LoginPage() {
   const cacheOnly = useCacheMode();
   const { snapshot: s, run, pending, errors, official } = useEnrollment(cacheOnly);
   const nav = useLogicalNavigation();
-  const { returnTo } = useSearch({ from: "/enrollment/login" });
+  const { returnTo } = useSearch({ from: "/study/enrollment/login" });
   const [showCaptcha, setShowCaptcha] = useState(false);
   const [ocrRequired, setOcrRequired] = useState(false);
   const [ocrDismissed, setOcrDismissed] = useState(false);
@@ -69,7 +69,7 @@ export default function LoginPage() {
   useEffect(() => {
     let live = true;
     if (cacheOnly) {
-      void nav.replace(cachePath("/enrollment"));
+      void nav.replace(cachePath("/study/enrollment"));
       return;
     }
     void run<{ status: string }>({ type: "session" }).then((v) => {

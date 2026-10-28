@@ -54,7 +54,7 @@ describe("filterCommands", () => {
 
 describe("getLastVisitedOjGroupUrl", () => {
   it("returns /oj when no last visit recorded", () => {
-    expect(getLastVisitedOjGroupUrl()).toBe("/oj");
+    expect(getLastVisitedOjGroupUrl()).toBe("/study/oj");
   });
 
   it("returns group url when last visit is saved in localStorage", () => {
@@ -62,7 +62,7 @@ describe("getLastVisitedOjGroupUrl", () => {
       "oj_last_visited",
       JSON.stringify({ siteId: "test-site", groupId: "group-8" }),
     );
-    expect(getLastVisitedOjGroupUrl()).toBe("/oj?site=test-site&group=group-8");
+    expect(getLastVisitedOjGroupUrl()).toBe("/study/oj?site=test-site&group=group-8");
   });
 });
 
@@ -128,7 +128,7 @@ describe("CommandPalette UI & interaction", () => {
 
     // Navigates and closes
     await waitFor(() => {
-      expect(nav.push).toHaveBeenCalledWith("/campus-payments/electricity");
+      expect(nav.push).toHaveBeenCalledWith("/life/campus-payments/electricity");
       expect(screen.queryByLabelText("命令面板搜索框")).not.toBeInTheDocument();
     });
 
@@ -160,7 +160,7 @@ describe("CommandPalette UI & interaction", () => {
     fireEvent.keyDown(searchInput, { key: "Enter" });
 
     await waitFor(() => {
-      expect(nav.push).toHaveBeenCalledWith("/oj");
+      expect(nav.push).toHaveBeenCalledWith("/study/oj");
       expect(screen.queryByLabelText("命令面板搜索框")).not.toBeInTheDocument();
     });
   });
@@ -178,7 +178,7 @@ describe("CommandPalette UI & interaction", () => {
     fireEvent.click(option);
 
     await waitFor(() => {
-      expect(nav.push).toHaveBeenCalledWith("/oj?site=szu&group=10");
+      expect(nav.push).toHaveBeenCalledWith("/study/oj?site=szu&group=10");
     });
   });
 

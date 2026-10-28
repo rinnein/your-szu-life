@@ -10,6 +10,24 @@ declare global {
   }
 }
 
+/**
+ * 向原生侧发送一条桥接消息（仅 Android 存在该桥）。
+ *
+ * 桥接协议（原生侧只接受本地主框架来源的消息，见 ApplicationBackNavigation）：
+ * 前端 → 原生：`toolbar-query`、`parent:yes|no`、`back-request`、`document`、
+ * `route|overlay|loading|system`、`chrome-status-bar:<#rrggbb>`、`chrome-nav-bar:<#rrggbb>`；
+ * 原生 → 前端：`native-toolbar-ready`、`navigate-back`、`dismiss-overlay`、`wallpaper-changed`。
+ *
+ * `chrome-status-bar` 是顶部应用栏的当前颜色（滚动会变），`chrome-nav-bar` 是底部导航栏的颜色；
+ * 原生侧据此给状态栏与「小白条」上色（桌面端没有该桥，调用方静默跳过）。
+ */
+export function postNativeMessage(message: string): boolean {
+  const bridge = window.SzuApplicationBack;
+  if (!bridge) return false;
+  bridge.postMessage(message);
+  return true;
+}
+
 // material 把模态对话框与浮层各自放进独立的顶层容器：
 // m-dialog / m-bottom-sheet 有 open 属性，下拉菜单走 popover，行内列表框不算浮层。
 export function activeOverlay(): HTMLElement | undefined {

@@ -57,6 +57,7 @@ class ApplicationBackNavigation(
         capabilityReply = null
         policy.document(url)
         callback.isEnabled = policy.enabled
+        activity.updateBrowserToolbar(policy.localDocument)
         activity.updateToolbarBack(policy.hasLogicalParent)
       }
       // No WebView history fallback: unknown state belongs to the system.
@@ -83,7 +84,8 @@ class ApplicationBackNavigation(
       WebViewCompat.addWebMessageListener(webView, bridgeName, setOf("*")) {
           _, message, sourceOrigin, isMainFrame, proxy ->
         if (!disposed && isMainFrame && message.type == WebMessageCompat.TYPE_STRING) {
-          when (message.data) {
+          val data = message.data ?: ""
+          when (data) {
             // Read-only capability: remote main frames may ask whether the native
             // bar is mounted, but cannot publish local navigation state.
             "toolbar-query" -> {
@@ -91,7 +93,7 @@ class ApplicationBackNavigation(
               toolbarMounted()
             }
             "parent:yes", "parent:no" -> if (policy.logicalParent(
-                message.data == "parent:yes", sourceOrigin.toString(), webView.url, isMainFrame)) {
+                data == "parent:yes", sourceOrigin.toString(), webView.url, isMainFrame)) {
               activity.updateToolbarBack(policy.hasLogicalParent)
             }
             "back-request" -> if (policy.acceptsSource(sourceOrigin.toString(), webView.url, true)) {
@@ -103,14 +105,26 @@ class ApplicationBackNavigation(
               capabilityReply = null
               policy.document(sourceOrigin.toString())
               callback.isEnabled = policy.enabled
+              activity.updateBrowserToolbar(policy.localDocument)
               activity.updateToolbarBack(policy.hasLogicalParent)
             }
             "route", "overlay", "loading", "system" -> if (policy.localState(
-                message.data, sourceOrigin.toString(), webView.url, isMainFrame)) {
+                data, sourceOrigin.toString(), webView.url, isMainFrame)) {
               reply = proxy
               lastUrl = webView.url
               callback.isEnabled = policy.enabled
               activity.updateToolbarBack(policy.hasLogicalParent)
+            }
+            // Web 端推来的系统栏颜色：状态栏取顶栏当前颜色（滚动会变），
+            // 小白条取底部导航栏颜色。只有本地主框架能改窗口外观，与导航状态同一套来源校验。
+            else -> if (policy.acceptsSource(sourceOrigin.toString(), webView.url, true)) {
+              when {
+                data.startsWith(CHROME_STATUS_BAR_PREFIX) -> activity.setChromeStatusBarColor(
+                  parseCssColor(data.substring(CHROME_STATUS_BAR_PREFIX.length)))
+                data.startsWith(CHROME_NAVIGATION_BAR_PREFIX) ->
+                  activity.setChromeNavigationBarColor(
+                    parseCssColor(data.substring(CHROME_NAVIGATION_BAR_PREFIX.length)))
+              }
             }
           }
         }

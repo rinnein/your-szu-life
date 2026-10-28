@@ -43,7 +43,7 @@ it("opens an ancestor as a searchable paginated table and closes with Escape", a
   expect(screen.getByText("人文与艺术素养、科学思维与创新")).toBeInTheDocument();
   expect(screen.getAllByText("记录存在差异").some((el) => el.tagName !== "OPTION")).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "查找开课" }));
-  expect(push).toHaveBeenCalledWith("/enrollment?keyword=GE001");
+  expect(push).toHaveBeenCalledWith("/study/enrollment?keyword=GE001");
   const dialog = screen.getByRole("dialog");
   fireEvent(dialog, new CustomEvent("close"));
   await waitFor(() => expect(close).toHaveBeenCalled());

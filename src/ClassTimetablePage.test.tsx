@@ -14,7 +14,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
 
-function renderPage(path = "/class-timetable") {
+function renderPage(path = "/study/class-timetable") {
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({
@@ -83,26 +83,27 @@ describe("class timetable", () => {
       if (command === "get_user_data") return { studentId: "1234567890", name: "测试同学" };
       return undefined;
     });
-    const router = renderPage("/");
+    const router = renderPage("/study");
     const entry = await screen.findByRole("button", { name: /^上课时间表/ });
     expect(entry).toHaveTextContent("查看各节次上课时间");
     expect(screen.queryByRole("button", { name: /^课表/ })).not.toBeInTheDocument();
     fireEvent.click(entry);
     expect(await screen.findByRole("grid", { name: "深圳大学上课时间表" })).toBeInTheDocument();
-    expect(router.state.location.pathname).toBe("/class-timetable");
+    expect(router.state.location.pathname).toBe("/study/class-timetable");
     expect(screen.queryByText("上课时间表功能即将支持")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "返回工作台" }));
-    expect(await screen.findByRole("heading", { name: "工作台" })).toBeInTheDocument();
-    expect(router.state.location.pathname).toBe("/");
-    expect(router.history.canGoBack()).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "返回上一页" }));
+    expect(await screen.findByRole("heading", { name: "学习" })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/study");
+    expect(router.history.canGoBack()).toBe(true);
   });
 
-  it("returns a direct link to the workbench root", async () => {
+  it("returns a direct link to its parent destination page", async () => {
     const router = renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "返回工作台" }));
-    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+    fireEvent.click(await screen.findByRole("button", { name: "返回上一页" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/study"));
+    // 该用例没有 mock 认证状态，落地页展示全屏认证卡片。
     expect(await screen.findByRole("heading", { name: "请完成统一认证" })).toBeInTheDocument();
-    expect(router.history.canGoBack()).toBe(false);
+    expect(router.history.canGoBack()).toBe(true);
   });
 
   it("sends the page back action to Android and handles its committed navigation", async () => {
@@ -111,14 +112,14 @@ describe("class timetable", () => {
     >;
     window.SzuApplicationBack = bridge;
     const router = renderPage();
-    const button = await screen.findByRole("button", { name: "返回工作台" });
+    const button = await screen.findByRole("button", { name: "返回上一页" });
     await waitFor(() => expect(bridge.onmessage).not.toBeNull());
     fireEvent.click(button);
     expect(bridge.postMessage).toHaveBeenCalledWith("back-request");
-    expect(router.state.location.pathname).toBe("/class-timetable");
+    expect(router.state.location.pathname).toBe("/study/class-timetable");
     await act(async () => bridge.onmessage?.({ data: "navigate-back" }));
-    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
-    await waitFor(() => expect(bridge.postMessage).toHaveBeenLastCalledWith("system"));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/study"));
+    await waitFor(() => expect(bridge.postMessage).toHaveBeenLastCalledWith("route"));
   });
 
   it("opens the official source and allows retry after an opener failure", async () => {
@@ -132,6 +133,6 @@ describe("class timetable", () => {
     fireEvent.click(source);
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
     expect(openUrl).toHaveBeenCalledTimes(2);
-    expect(router.state.location.pathname).toBe("/class-timetable");
+    expect(router.state.location.pathname).toBe("/study/class-timetable");
   });
 });

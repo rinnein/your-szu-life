@@ -101,7 +101,7 @@ mod source_tests {
     use super::trusted_source;
     #[test]
     fn accepts_logical_route_timing_and_nested_pages() {
-        for _path in ["/", "/enrollment", "/enrollment/tasks", "/academic/"] {
+        for _path in ["/", "/study/enrollment", "/study/enrollment/tasks", "/study/academic/"] {
             assert!(trusted_source("main"));
             assert!(trusted_source("feature-test"));
         }

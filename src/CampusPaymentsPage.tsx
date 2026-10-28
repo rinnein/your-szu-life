@@ -14,10 +14,10 @@ import { nameTablist } from "./ui/tablist";
  * 语义表达，并用 `replace` 同步 URL——不制造新的返回层级。
  */
 const SERVICES = [
-  { path: "/campus-payments/card", label: "校园卡" },
-  { path: "/campus-payments/network", label: "网费" },
-  { path: "/campus-payments/electricity", label: "查电量" },
-  { path: "/campus-payments/recharge", label: "充电费" },
+  { path: "/life/campus-payments/card", label: "校园卡" },
+  { path: "/life/campus-payments/network", label: "网费" },
+  { path: "/life/campus-payments/electricity", label: "查电量" },
+  { path: "/life/campus-payments/recharge", label: "充电费" },
 ] as const;
 
 export default function CampusPaymentsPage() {

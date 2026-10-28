@@ -8,7 +8,8 @@ use tauri::{Emitter, Manager};
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct OpenPageParams {
-    /// 目标页面 URI，格式为 your-szu-life://page/<route>，例如 your-szu-life://page/electricity、your-szu-life://page/uooc
+    /// 目标页面 URI，格式为 your-szu-life://page/<route>，值为前端路由路径，例如
+    /// your-szu-life://page/life/campus-payments/electricity、your-szu-life://page/study/uooc
     pub uri: String,
 }
 
@@ -16,7 +17,7 @@ pub struct OpenPageParams {
 impl UnifiedSzuMcpService {
     #[tool(
         name = "open_page",
-        description = "打开或激活your-szu-life桌面窗口，并导航到指定的 your-szu-life://page/... 页面（例如 workbench, auth, network, electricity, enrollment, uooc, oj, settings, debug）"
+        description = "打开或激活your-szu-life桌面窗口，并导航到指定的 your-szu-life://page/... 页面。可用页面：空路径(首页)、study、life、settings、study/class-timetable、study/computing、study/oj、study/uooc、study/academic、study/enrollment、life/campus-network、life/campus-payments、life/campus-payments/card、life/campus-payments/network、life/campus-payments/electricity、life/campus-payments/recharge。设置页的关于与诊断日志是 tab，使用 settings?tab=about 与 settings?tab=debug。"
     )]
     pub async fn open_page(
         &self,

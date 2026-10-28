@@ -21,14 +21,14 @@ function storage() {
 describe("logical navigation across WebView reload", () => {
   it("restores the logical parents once after returning from official authentication", () => {
     const store = storage();
-    const href = "https://tauri.localhost/campus-payments/network?tab=current#details";
+    const href = "https://tauri.localhost/life/campus-payments/network?tab=current#details";
     const history = createReloadableLogicalHistory({
       href: "https://tauri.localhost/",
       reload: false,
       storage: store,
     });
     history.push("/settings");
-    history.push("/campus-payments/network?tab=current#details");
+    history.push("/life/campus-payments/network?tab=current#details");
     store.setItem("szu.auth-return.v1", href);
     const restored = createReloadableLogicalHistory({
       href,
@@ -50,15 +50,15 @@ describe("logical navigation across WebView reload", () => {
       storage: store,
     });
     history.push("/settings");
-    history.push("/campus-payments/card");
-    history.replace("/campus-payments/network");
+    history.push("/life/campus-payments/card");
+    history.replace("/life/campus-payments/network");
     const reloaded = createReloadableLogicalHistory({
-      href: "https://tauri.localhost/campus-payments/network",
+      href: "https://tauri.localhost/life/campus-payments/network",
       reload: true,
       storage: store,
     });
     expect(reloaded.length).toBe(3);
-    expect(reloaded.location.pathname).toBe("/campus-payments/network");
+    expect(reloaded.location.pathname).toBe("/life/campus-payments/network");
     reloaded.back();
     expect(reloaded.location.pathname).toBe("/settings");
     reloaded.back();
@@ -84,13 +84,13 @@ describe("logical navigation across WebView reload", () => {
     restored.forward();
     expect(restored.location.pathname).toBe("/settings");
     restored.back();
-    restored.push("/about");
-    expect(JSON.parse(store.getItem(LOGICAL_HISTORY_KEY)!).entries).toEqual(["/", "/about"]);
+    restored.push("/study/uooc");
+    expect(JSON.parse(store.getItem(LOGICAL_HISTORY_KEY)!).entries).toEqual(["/", "/study/uooc"]);
   });
 
   it("keeps a child window as its own root", () => {
     const store = storage();
-    const href = "https://tauri.localhost/campus-payments/network?__szu_window=child";
+    const href = "https://tauri.localhost/life/campus-payments/network?__szu_window=child";
     createReloadableLogicalHistory({ href, reload: false, storage: store });
     const restored = createReloadableLogicalHistory({ href, reload: true, storage: store });
     expect(restored.length).toBe(1);
@@ -154,7 +154,7 @@ describe("logical navigation across WebView reload", () => {
       reload: true,
       storage: blocked,
     });
-    expect(() => history.push("/about")).not.toThrow();
+    expect(() => history.push("/study/uooc")).not.toThrow();
     history.back();
     expect(history.location.pathname).toBe("/settings");
   });

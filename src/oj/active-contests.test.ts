@@ -126,7 +126,7 @@ describe("useActiveOjContests", () => {
       siteName: "深大 OJ",
       contestId: "contest-running-incomplete",
       title: "进行中未完成测验",
-      url: "/oj?site=szu-oj&contest=contest-running-incomplete",
+      url: "/study/oj?site=szu-oj&contest=contest-running-incomplete",
     });
   });
 

@@ -72,12 +72,12 @@ export function ElectricityMonitorProvider({ children }: { children: ReactNode }
           const extra = event.notification?.extra as { route?: string } | undefined;
           if (
             active &&
-            (extra?.route === "/campus-payments/recharge" ||
+            (extra?.route === "/life/campus-payments/recharge" ||
               event.notification?.actionTypeId === "electricity-low" ||
               event.actionId === "open-recharge" ||
               event.actionId === "electricity-low")
           ) {
-            void navigation.push("/campus-payments/recharge");
+            void navigation.push("/life/campus-payments/recharge");
           }
         });
         if (active) stop = listener;

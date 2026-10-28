@@ -21,7 +21,7 @@ fn url(value: &str) -> Url {
     value.parse().unwrap()
 }
 fn local() -> Url {
-    url("http://tauri.localhost/campus-payments/network")
+    url("http://tauri.localhost/life/campus-payments/network")
 }
 fn login() -> Url {
     url("https://self.szu.edu.cn/self/nav_login")
@@ -69,7 +69,7 @@ fn credentials_are_only_eligible_for_the_exact_https_login_endpoint() {
 #[test]
 fn application_origin_matches_development_and_production() {
     assert!(!same_application_origin(
-        &url("http://user@tauri.localhost/campus-payments"),
+        &url("http://user@tauri.localhost/life/campus-payments"),
         &local()
     ));
 }

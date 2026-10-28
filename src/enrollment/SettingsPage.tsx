@@ -119,7 +119,9 @@ export default function SettingsPage() {
         <div slot="actions">
           <Button
             variant="tonal"
-            onClick={() => void nav.replace("/enrollment/login?returnTo=%2Fenrollment%2Fsettings")}
+            onClick={() =>
+              void nav.replace("/study/enrollment/login?returnTo=%2Fstudy%2Fenrollment%2Fsettings")
+            }
           >
             重新验证选课登录
           </Button>

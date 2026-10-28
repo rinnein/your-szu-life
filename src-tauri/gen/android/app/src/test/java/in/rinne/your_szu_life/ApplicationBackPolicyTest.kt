@@ -8,7 +8,7 @@ class ApplicationBackPolicyTest {
   private fun policy() = ApplicationBackPolicy(setOf(origin))
 
   @Test fun entryOfEveryActivityYieldsRegardlessOfItsUrl() {
-    for (path in listOf("/", "/settings", "/campus-payments/network")) {
+    for (path in listOf("/", "/settings", "/life/campus-payments/network")) {
       val policy = policy()
       policy.document("$origin$path")
       assertFalse(policy.enabled)

@@ -69,15 +69,17 @@ function makeSnapshot(updateAvailable: boolean, latestVer?: string): AppContentS
 
 describe("UpdateNotice dialog", () => {
   let currentPath = "/";
+  let currentSearch = "";
 
   beforeEach(() => {
     vi.restoreAllMocks();
     localStorage.clear();
     currentPath = "/";
+    currentSearch = "";
     vi.mocked(useRouterState).mockImplementation(((opts?: {
       select?: (state: unknown) => unknown;
     }) => {
-      const state = { location: { pathname: currentPath } };
+      const state = { location: { pathname: currentPath, searchStr: currentSearch } };
       return opts?.select ? opts.select(state) : state;
     }) as never);
     vi.spyOn(osInfo, "getPlatform").mockResolvedValue("windows");
@@ -89,7 +91,7 @@ describe("UpdateNotice dialog", () => {
     localStorage.clear();
   });
 
-  it("renders update dialog when update is available and not on about page", async () => {
+  it("renders update dialog when update is available and not on the about tab", async () => {
     vi.mocked(useAppContent).mockReturnValue({
       snapshot: makeSnapshot(true, "0.2.0"),
       refreshing: false,
@@ -103,8 +105,9 @@ describe("UpdateNotice dialog", () => {
     expect(screen.getByText("下载并安装")).toBeInTheDocument();
   });
 
-  it("does not render dialog when on about page", () => {
-    currentPath = "/about";
+  it("does not render dialog when on the settings about tab", () => {
+    currentPath = "/settings";
+    currentSearch = "?tab=about";
     vi.mocked(useAppContent).mockReturnValue({
       snapshot: makeSnapshot(true, "0.2.0"),
       refreshing: false,

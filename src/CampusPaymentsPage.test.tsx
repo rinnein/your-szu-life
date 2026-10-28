@@ -44,7 +44,7 @@ function defaultCommand(command: string) {
   return null;
 }
 
-function renderAt(path = "/campus-payments", strict = false) {
+function renderAt(path = "/life/campus-payments", strict = false) {
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries: path === "/" ? [path] : ["/", path] }),
@@ -86,22 +86,21 @@ describe("campus payments route", () => {
   });
 
   it("replaces the workbench placeholder with the generated route and returns without changing authentication", async () => {
-    const router = renderAt("/");
+    const router = renderAt("/life");
     const entry = await screen.findByRole("button", { name: /校园卡\/电费\/网费/ });
     expect(entry).not.toHaveTextContent("暂未实现");
     expect(screen.queryByRole("button", { name: /网费与电费/ })).not.toBeInTheDocument();
     fireEvent.click(entry);
     expect(await screen.findByRole("heading", { name: "校园卡/电费/网费" })).toBeInTheDocument();
-    expect(router.state.location.pathname).toBe("/campus-payments/electricity");
-    const back = screen.getByRole("button", { name: "返回工作台" });
+    expect(router.state.location.pathname).toBe("/life/campus-payments/electricity");
+    const back = screen.getByRole("button", { name: "返回上一页" });
     // M3 顶栏的返回按钮是原生 button；data-webview-navigation 让 Android
     // 原生工具栏挂载时隐藏它，两处必须同时成立。
     expect(back).toHaveAttribute("data-webview-navigation");
     expect(back.querySelector("svg")).toBeInTheDocument();
     fireEvent.click(back);
-    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
-    // 工作台改用 MD3 卡片式入口。
-    expect(await screen.findByRole("heading", { name: "工作台" })).toBeInTheDocument();
+    await waitFor(() => expect(router.state.location.pathname).toBe("/life"));
+    expect(await screen.findByRole("heading", { name: "生活" })).toBeInTheDocument();
     for (const command of ["begin_authentication", "logout", "capture_auth_credentials"]) {
       expect(invoke).not.toHaveBeenCalledWith(command);
     }
@@ -128,7 +127,7 @@ describe("campus payments route", () => {
     // 加载指示器的宿主与内部元素都带同一个可访问名称，取首个即可。
     const [spinner] = await screen.findAllByLabelText("正在检查统一认证状态");
     expect(spinner).toBeInTheDocument();
-    expect(router.state.location.pathname).toBe("/campus-payments");
+    expect(router.state.location.pathname).toBe("/life/campus-payments");
     expect(qrProps).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalledWith("consume_network_fee_portal_notice");
   });
@@ -142,7 +141,7 @@ describe("campus payments route", () => {
   });
 
   it("keeps network instructions on the network subroute", async () => {
-    renderAt("/campus-payments/network");
+    renderAt("/life/campus-payments/network");
     const open = await screen.findByRole("button", { name: "打开网费官网" });
     const guidance = screen.getByRole("region", { name: "网费办理说明" });
     expect(guidance).toHaveTextContent("请先在校园卡「通用代扣费账户」充值足够金额");
@@ -154,7 +153,7 @@ describe("campus payments route", () => {
   });
 
   const routeForService = (service: (typeof WECHAT_SERVICES)[number]) =>
-    service.id === "electricity" ? "/campus-payments/recharge" : "/campus-payments/card";
+    service.id === "electricity" ? "/life/campus-payments/recharge" : "/life/campus-payments/card";
 
   it.each(WECHAT_SERVICES)(
     "locally renders the %s QR SVG with the entire official URL",
@@ -222,7 +221,7 @@ describe("campus payments route", () => {
     vi.mocked(invoke).mockImplementation(async (command) =>
       command === "open_network_fee_portal" ? new Promise(() => {}) : defaultCommand(command),
     );
-    renderAt("/campus-payments/network");
+    renderAt("/life/campus-payments/network");
     const open = await screen.findByRole("button", { name: "打开网费官网" });
     fireEvent.click(open);
     fireEvent.click(open);
@@ -241,7 +240,7 @@ describe("campus payments route", () => {
       if (command === "open_network_fee_portal") throw new Error("do-not-display-native-details");
       return defaultCommand(command);
     });
-    renderAt("/campus-payments/network");
+    renderAt("/life/campus-payments/network");
     const open = await screen.findByRole("button", { name: "打开网费官网" });
     fireEvent.click(open);
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -265,7 +264,7 @@ describe("campus payments route", () => {
     vi.mocked(invoke).mockImplementation(async (command) =>
       command === "consume_network_fee_portal_notice" ? notice : defaultCommand(command),
     );
-    renderAt("/campus-payments/network", true);
+    renderAt("/life/campus-payments/network", true);
     await screen.findByRole("heading", { name: "校园卡/电费/网费" });
     act(() => resolveNotice({ code: "loadTimeout", message: "官网加载超时，请重试。" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("官网加载超时，请重试。");
@@ -284,7 +283,7 @@ describe("campus payments route", () => {
     vi.mocked(invoke).mockImplementation(async (command) =>
       command === "consume_network_fee_portal_notice" ? notice : defaultCommand(command),
     );
-    renderAt("/campus-payments/network");
+    renderAt("/life/campus-payments/network");
     fireEvent.click(await screen.findByRole("button", { name: "打开网费官网" }));
     await act(async () => resolveNotice({ code: "loginTimeout", message: "上一次登录超时" }));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -334,7 +333,7 @@ describe("campus payments route", () => {
       return defaultCommand(command);
     });
 
-    renderAt("/campus-payments/electricity");
+    renderAt("/life/campus-payments/electricity");
     await screen.findByRole("heading", { name: "查电量" });
     await screen.findByText("北校区（粤海校区）");
     const campusSelect = screen.getByRole("combobox", { name: "校区" });
@@ -399,7 +398,7 @@ describe("campus payments route", () => {
       return defaultCommand(command);
     });
 
-    renderAt("/campus-payments/electricity");
+    renderAt("/life/campus-payments/electricity");
     expect(await screen.findByLabelText("当前电量")).toHaveTextContent("9.87 度");
     expect(screen.queryByRole("button", { name: /校区/ })).not.toBeInTheDocument();
     expect(invoke).toHaveBeenCalledWith("query_electricity", {
@@ -442,7 +441,7 @@ describe("campus payments route", () => {
       return defaultCommand(command);
     });
 
-    renderAt("/campus-payments/electricity", true);
+    renderAt("/life/campus-payments/electricity", true);
     expect(await screen.findByRole("heading", { name: "查电量" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: /查询中/ })).toBeDisabled());
     expect(screen.queryByLabelText("当前电量")).not.toBeInTheDocument();
@@ -478,7 +477,7 @@ describe("campus payments route", () => {
       return defaultCommand(command);
     });
 
-    renderAt("/campus-payments/electricity");
+    renderAt("/life/campus-payments/electricity");
     expect(await screen.findByRole("heading", { name: "查电量" })).toBeInTheDocument();
     expect(screen.getByText("正在加载宿舍选项…")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "查询电费" })).toBeDisabled();

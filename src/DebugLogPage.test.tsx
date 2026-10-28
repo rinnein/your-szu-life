@@ -83,14 +83,15 @@ describe("debug log page", () => {
 
     render(<DebugLogPage />);
     expect(await screen.findByText("调试模式未启用")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "返回工作台" }));
-    expect(navigate).toHaveBeenCalledWith({ to: "/" });
+    expect(screen.getByText("在首页连续点击左上角应用图标 5 次即可启用")).toBeInTheDocument();
+    // 作为设置页 tab 呈现，不自行跳转。
+    expect(navigate).not.toHaveBeenCalled();
   });
 
   it("loads log overview and enables quick opening via opener plugin", async () => {
     render(<DebugLogPage />);
 
-    expect(await screen.findByText("诊断日志")).toBeInTheDocument();
+    expect(await screen.findByText("日志文件概览")).toBeInTheDocument();
     expect(screen.getByText("/tmp/app_logs/your-szu-life_2026-10-25.log")).toBeInTheDocument();
     expect(screen.getByText("/tmp/app_logs")).toBeInTheDocument();
     expect(screen.getByText("2 个历史文件")).toBeInTheDocument();
@@ -111,7 +112,7 @@ describe("debug log page", () => {
 
   it("switches log level and triggers backend update", async () => {
     render(<DebugLogPage />);
-    await screen.findByText("诊断日志");
+    await screen.findByText("日志文件概览");
 
     // Click "DEBUG" level button
     const debugBtn = screen.getByRole("button", { name: /DEBUG/ });
@@ -124,7 +125,7 @@ describe("debug log page", () => {
 
   it("clears logs and refreshes log info", async () => {
     render(<DebugLogPage />);
-    await screen.findByText("诊断日志");
+    await screen.findByText("日志文件概览");
 
     // Click "清理日志"
     const clearBtn = screen.getByRole("button", { name: /清理日志/ });
@@ -135,9 +136,9 @@ describe("debug log page", () => {
     });
   });
 
-  it("disables debug mode and navigates back", async () => {
+  it("disables debug mode without leaving the settings page", async () => {
     render(<DebugLogPage />);
-    await screen.findByText("诊断日志");
+    await screen.findByText("日志文件概览");
 
     // Click "关闭调试模式"
     const disableBtn = screen.getByRole("button", { name: /关闭调试模式/ });
@@ -146,6 +147,6 @@ describe("debug log page", () => {
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("set_debug_mode", { enabled: false });
     });
-    expect(navigate).toHaveBeenCalledWith({ to: "/" });
+    expect(navigate).not.toHaveBeenCalled();
   });
 });

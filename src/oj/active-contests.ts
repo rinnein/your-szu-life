@@ -85,7 +85,7 @@ export function useActiveOjContests(): ActiveOjContest[] {
                   begin: contest.begin,
                   end: contest.end,
                   now: contest.now,
-                  url: `/oj?site=${encodeURIComponent(site.id)}&contest=${encodeURIComponent(contest.id)}`,
+                  url: `/study/oj?site=${encodeURIComponent(site.id)}&contest=${encodeURIComponent(contest.id)}`,
                 });
               }
             }

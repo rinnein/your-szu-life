@@ -35,30 +35,46 @@ describe("logical navigation entry stack", () => {
   });
 });
 
-it("includes the computing collection for an OJ deep link", () => {
-  expect(initialLogicalEntries("https://tauri.localhost/oj?site=szu-67")).toEqual([
+it("includes the study hub for an OJ deep link", () => {
+  expect(initialLogicalEntries("https://tauri.localhost/study/oj?site=szu-67")).toEqual([
     "/",
-    "/computing",
-    "/oj?site=szu-67",
+    "/study",
+    "/study/oj?site=szu-67",
   ]);
-  expect(initialLogicalEntries("https://tauri.localhost/oj?__szu_window=child")).toEqual(["/oj"]);
+  expect(initialLogicalEntries("https://tauri.localhost/study/oj?__szu_window=child")).toEqual([
+    "/study/oj",
+  ]);
+});
+
+it("derives the parent chain from the nested route path", () => {
+  expect(initialLogicalEntries("https://tauri.localhost/study/uooc?tab=tasks")).toEqual([
+    "/",
+    "/study",
+    "/study/uooc?tab=tasks",
+  ]);
+  expect(initialLogicalEntries("https://tauri.localhost/life")).toEqual(["/", "/life"]);
+  expect(initialLogicalEntries("https://tauri.localhost/life/campus-payments/electricity")).toEqual(
+    ["/", "/life", "/life/campus-payments", "/life/campus-payments/electricity"],
+  );
 });
 
 it("restores enrollment parents for nested, legacy and authentication return links", () => {
   for (const path of [
-    "/enrollment/tasks",
-    "/enrollment?tab=tasks",
-    "/enrollment/login?returnTo=%2Fenrollment%2Ftasks",
+    "/study/enrollment/tasks",
+    "/study/enrollment?tab=tasks",
+    "/study/enrollment/login?returnTo=%2Fstudy%2Fenrollment%2Ftasks",
   ]) {
     expect(initialLogicalEntries(`https://tauri.localhost${path}`)).toEqual([
       "/",
-      "/enrollment",
+      "/study",
+      "/study/enrollment",
       path,
     ]);
   }
-  expect(initialLogicalEntries("https://tauri.localhost/enrollment/login")).toEqual([
+  expect(initialLogicalEntries("https://tauri.localhost/study/enrollment/login")).toEqual([
     "/",
-    "/enrollment/login",
+    "/study",
+    "/study/enrollment/login",
   ]);
 });
 

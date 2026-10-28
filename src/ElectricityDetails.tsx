@@ -265,7 +265,7 @@ export function ElectricityDetails({
         <div slot="actions">
           <Button
             variant="tonal"
-            onClick={() => void navigation.replace("/campus-payments/recharge")}
+            onClick={() => void navigation.replace("/life/campus-payments/recharge")}
           >
             打开官方充值入口
           </Button>

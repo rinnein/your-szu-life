@@ -141,6 +141,16 @@ pub(crate) fn get_log_state() -> Arc<LogState> {
         .clone()
 }
 
+/// 控制台与 WebView 目标只收 Info 及以上。
+///
+/// 库（jni、reqwest、toasty 等）在 DEBUG/TRACE 下会持续输出：真机 logcat 会被刷到
+/// 每秒上万行，而 WebView 目标每转发一条都要过一次 JNI，`jni` 又会为这次调用再记一条
+/// 日志——放行它们会在几秒内把主线程压到 ANR。逐条的 DEBUG/TRACE 应用日志仍然写进
+/// 日志文件（由用户的保留级别控制）。
+pub(crate) fn quiet_targets(metadata: &log::Metadata) -> bool {
+    metadata.level() <= log::Level::Warn
+}
+
 pub(crate) fn create_daily_writer() -> (
     DailyLogWriter,
     impl Fn(&log::Metadata) -> bool + Send + Sync + 'static,

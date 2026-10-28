@@ -1464,6 +1464,13 @@ p {
   flex: 1;
   min-inline-size: 0;
   padding-block-end: 88px;
+  /*
+   * 顶栏靠内容区宽度（cqw）横向撑满，基准容器就是这里。
+   * 代价是 layout containment：内容区里的 position: fixed 元素改为相对内容区
+   * 定位，浮动提示应当用 createPortal(..., document.body) 挂到 body
+   * （见 src/StudyPage.tsx 的占位提示与 src/app-content/UpdateNotice.tsx）。
+   */
+  container-type: inline-size;
 }
 
 /* 宽屏：侧边导航栏，内容区左移。 */
@@ -1532,21 +1539,42 @@ p {
 }
 
 /* ---------- 顶部应用栏 ---------- */
+/*
+ * 顶栏吸顶固定并横向撑满内容区，内容从它下面滚过。
+ *
+ * `calc(50% - 50cqw)` 抵消内容列自身的横向留白：50% 是内容列的一半，50cqw 是
+ * 内容区的一半，两者之差正好把顶栏推到内容区的左右边缘，因此它既跨越内层内容
+ * 列的 max-inline-size，也跨越页面内边距。前提是顶栏的祖先链水平居中
+ * ——`.page-surface-inner` 的 `margin-inline: auto` 已经保证这一点；新增页面
+ * 不要把顶栏放进带横向内边距或非居中的容器。
+ *
+ * 顶栏内容与自身边缘的间距由 material 自带的内边距提供（宽屏 16px、窄屏 12px）。
+ */
 .top-app-bar {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-block-end: 20px;
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 5;
+  margin-inline: calc(50% - 50cqw);
 }
 
-.top-app-bar-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+/*
+ * material 的 `m-top-app-bar` 默认是绝对定位、固定 64px；这里覆盖成静态定位并让它
+ * 跟随内容高度（横向撑满由上面的 sticky 外壳负责）。
+ */
+m-top-app-bar::part(top-app-bar) {
+  position: static;
+  block-size: auto;
   min-block-size: 56px;
 }
 
-.top-app-bar-back {
+.top-app-bar-leading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
+
+.top-app-bar-icon-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1560,12 +1588,13 @@ p {
   cursor: pointer;
 }
 
-.top-app-bar-back:hover {
+.top-app-bar-icon-button:hover {
   background: color-mix(in srgb, var(--mtrl-sys-color-on-surface) 8%, transparent);
 }
 
 .top-app-bar-text {
-  flex: 1;
+  display: flex;
+  flex-direction: column;
   min-inline-size: 0;
 }
 
@@ -1579,11 +1608,13 @@ p {
 }
 
 .top-app-bar-title {
-  margin: 0;
   font-size: clamp(1.375rem, 2.5vw, 1.75rem);
   font-weight: 600;
   line-height: 1.3;
   letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .top-app-bar-actions {
@@ -1595,7 +1626,7 @@ p {
 }
 
 .top-app-bar-description {
-  margin: 0;
+  margin: 8px 0 20px;
   max-inline-size: 42rem;
   font-size: 0.875rem;
   line-height: 1.6;

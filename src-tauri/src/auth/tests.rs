@@ -519,7 +519,7 @@ fn finishing_authentication_clears_transient_secrets_and_resumes_the_local_flow(
         identifier: "123456".into(),
         password: "test-only".into(),
     });
-    let local: tauri::Url = "http://tauri.localhost/campus-network".parse().unwrap();
+    let local: tauri::Url = "http://tauri.localhost/life/campus-network".parse().unwrap();
     *store.resume_url.lock().unwrap() = Some(local.clone());
     let terminal = AuthState::Authenticated {
         student_id: "1234567890".into(),

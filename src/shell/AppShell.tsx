@@ -60,7 +60,7 @@ export function PageSurface({
           <button
             type="button"
             className="page-surface-footer-link"
-            onClick={() => void navigation.push("/about")}
+            onClick={() => void navigation.push("/settings?tab=about")}
           >
             关于 · 检查更新
           </button>

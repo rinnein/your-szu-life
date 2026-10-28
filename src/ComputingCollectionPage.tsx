@@ -14,7 +14,7 @@ export default function ComputingCollectionPage() {
             <button
               type="button"
               className="feature-button"
-              onClick={() => void navigation.push("/oj")}
+              onClick={() => void navigation.push("/study/oj")}
             >
               <span className="feature-icon" aria-hidden="true">
                 <FaCode size={19} />

@@ -23,7 +23,7 @@ vi.mock("@tauri-apps/plugin-deep-link", () => ({
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn((event: string, callback: (e: { payload: { route: string } }) => void) => {
     if (event === "navigate-page") {
-      callback({ payload: { route: "/uooc" } });
+      callback({ payload: { route: "/study/uooc" } });
     }
     return Promise.resolve(vi.fn());
   }),
@@ -43,7 +43,7 @@ describe("deep-link handling", () => {
 
   it("correctly parses your-szu-life:// schemes", () => {
     expect(parseDeepLinkUrl("your-szu-life://page/electricity")).toBe("/electricity");
-    expect(parseDeepLinkUrl("your-szu-life://page/uooc/courses")).toBe("/uooc/courses");
+    expect(parseDeepLinkUrl("your-szu-life://page/study/uooc")).toBe("/study/uooc");
     expect(parseDeepLinkUrl("your-szu-life://workbench")).toBe("/workbench");
     expect(parseDeepLinkUrl("https://szu.edu.cn")).toBeNull();
   });
@@ -53,7 +53,7 @@ describe("deep-link handling", () => {
     const navigate = vi.fn();
     const cleanup = await setupDeepLinkListener(navigate);
 
-    expect(routesOf(navigate)).toEqual(["/electricity", "/uooc"]);
+    expect(routesOf(navigate)).toEqual(["/electricity", "/study/uooc"]);
     cleanup();
   });
 
@@ -63,7 +63,7 @@ describe("deep-link handling", () => {
     const navigate = vi.fn();
     const cleanup = await setupDeepLinkListener(navigate);
 
-    expect(routesOf(navigate)).toEqual(["/electricity", "/uooc"]);
+    expect(routesOf(navigate)).toEqual(["/electricity", "/study/uooc"]);
     cleanup();
   });
 
@@ -83,7 +83,7 @@ describe("deep-link handling", () => {
     const navigate = vi.fn();
     const cleanup = await setupDeepLinkListener(navigate);
 
-    expect(routesOf(navigate)).toEqual(["/electricity", "/uooc"]);
+    expect(routesOf(navigate)).toEqual(["/electricity", "/study/uooc"]);
     cleanup();
   });
 });

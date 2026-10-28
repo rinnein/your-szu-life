@@ -86,13 +86,13 @@ describe("Android committed back", () => {
   });
   it.each([
     "/settings",
-    "/class-timetable",
-    "/about",
-    "/debug",
-    "/campus-network",
-    "/campus-payments/electricity",
-    "/campus-payments/network",
-  ])("returns %s to the workbench rather than replaying browser history", async (route) => {
+    "/study",
+    "/life",
+    "/study/class-timetable",
+    "/life/campus-network",
+    "/life/campus-payments/electricity",
+    "/life/campus-payments/network",
+  ])("returns %s to the home page rather than replaying browser history", async (route) => {
     path = route;
     install();
     expect(bridge.postMessage).toHaveBeenLastCalledWith("route");
@@ -107,7 +107,7 @@ describe("Android committed back", () => {
     expect(bridge.postMessage).toHaveBeenLastCalledWith("route");
   });
   it("does not navigate on unknown/progress/cancel messages", async () => {
-    path = "/about";
+    path = "/study/uooc";
     install();
     for (const data of ["start", "progress", "cancel"]) bridge.onmessage?.({ data });
     expect(goHome).not.toHaveBeenCalled();

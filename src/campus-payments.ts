@@ -15,10 +15,10 @@ export const WECHAT_SERVICES = [
 
 export const CAMPUS_PAYMENTS_LAST_ROUTE_KEY = "your-szu-life.campus-payments.last-route";
 export const CAMPUS_PAYMENTS_ROUTES = [
-  "/campus-payments/network",
-  "/campus-payments/card",
-  "/campus-payments/electricity",
-  "/campus-payments/recharge",
+  "/life/campus-payments/network",
+  "/life/campus-payments/card",
+  "/life/campus-payments/electricity",
+  "/life/campus-payments/recharge",
 ] as const;
 
 export function readLastCampusPaymentsRoute() {

@@ -12,6 +12,7 @@ import {
 import { PageShell } from "../components";
 import { useLogicalNavigation } from "../logical-navigation";
 import { useEnrollment } from "./use-enrollment";
+import { useWebvpnGate } from "./webvpn-gate";
 import { Choice, ModuleHeader, OperationError } from "./shared";
 import { enrollmentPages } from "./navigation";
 import { useCacheMode, cachePath, livePath, canSelect } from "./view-mode";
@@ -21,11 +22,13 @@ const icons = [LuBookOpen, LuCheckCheck, LuListOrdered, LuCalendarDays, LuSettin
 export default function EnrollmentLayout() {
   const cacheOnly = useCacheMode();
   const { snapshot, run, errors, official, pending } = useEnrollment(cacheOnly);
+  const webvpnGate = useWebvpnGate();
   const location = useLocation();
   const nav = useLogicalNavigation();
   const [checked, setChecked] = useState(false);
   const [unavailable, setUnavailable] = useState("");
   const account = useRef<string | undefined>(undefined);
+  const gateAsked = useRef(false);
   const mounted = useRef(true);
   const currentLocation = useRef(location);
   currentLocation.current = location;
@@ -35,7 +38,7 @@ export default function EnrollmentLayout() {
       mounted.current = false;
     };
   }, []);
-  const login = location.pathname === "/enrollment/login";
+  const login = location.pathname === "/study/enrollment/login";
   const path = location.pathname.replace(/\/$/, "");
   const verify = () => {
     if (cacheOnly) {
@@ -50,7 +53,7 @@ export default function EnrollmentLayout() {
         if (!result) return;
         if (result.status === "required" || result.status === "restricted") {
           const target = currentLocation.current.href;
-          void nav.replace(`/enrollment/login?returnTo=${encodeURIComponent(target)}`);
+          void nav.replace(`/study/enrollment/login?returnTo=${encodeURIComponent(target)}`);
         } else if (result.status === "unavailable")
           setUnavailable(result.message ?? "学校暂时无法连接，可继续查看缓存");
       },
@@ -71,14 +74,21 @@ export default function EnrollmentLayout() {
     account.current = snapshot.context.student;
     verify();
   }, [snapshot?.context.student, login, cacheOnly]);
+  // 校外访问模式下进入选课区时，只在确实需要 2FA 时问一次是否立即认证。
+  useEffect(() => {
+    if (cacheOnly || login || gateAsked.current) return;
+    if (snapshot?.mode !== "webvpn") return;
+    gateAsked.current = true;
+    void webvpnGate("继续使用校外 WebVPN 访问");
+  }, [cacheOnly, login, snapshot?.mode, webvpnGate]);
   const change = (target: string) => {
     if (target === path) return;
-    if (target === "/enrollment") {
+    if (target === "/study/enrollment") {
       void nav.back();
       return;
     }
     const destination = cacheOnly ? cachePath(target) : target;
-    if (path === "/enrollment") void nav.push(destination);
+    if (path === "/study/enrollment") void nav.push(destination);
     else void nav.replace(destination);
   };
   if (login) return <Outlet />;
@@ -91,7 +101,7 @@ export default function EnrollmentLayout() {
         )}
         <ModuleHeader
           title={page.label}
-          backLabel={path === "/enrollment" ? "返回工作台" : "返回选课"}
+          backLabel={path === "/study/enrollment" ? "返回上一页" : "返回选课"}
           description="选课工作台"
           actions={
             <>
@@ -111,7 +121,7 @@ export default function EnrollmentLayout() {
                   variant="tonal"
                   onClick={() =>
                     void nav.replace(
-                      `/enrollment/login?returnTo=${encodeURIComponent(livePath(location.href))}`,
+                      `/study/enrollment/login?returnTo=${encodeURIComponent(livePath(location.href))}`,
                     )
                   }
                 >
@@ -134,7 +144,7 @@ export default function EnrollmentLayout() {
                   variant="tonal"
                   onClick={() =>
                     void nav.replace(
-                      `/enrollment/login?returnTo=${encodeURIComponent(location.href)}`,
+                      `/study/enrollment/login?returnTo=${encodeURIComponent(location.href)}`,
                     )
                   }
                 >
@@ -142,7 +152,7 @@ export default function EnrollmentLayout() {
                 </Button>
               )}
               {snapshot?.running && (
-                <Button size="xs" variant="tonal" onClick={() => change("/enrollment/tasks")}>
+                <Button size="xs" variant="tonal" onClick={() => change("/study/enrollment/tasks")}>
                   后台任务运行中
                 </Button>
               )}
@@ -189,7 +199,7 @@ export default function EnrollmentLayout() {
               <Button
                 className="w-full justify-start"
                 variant="text"
-                onClick={() => void nav.push("/academic")}
+                onClick={() => void nav.push("/study/academic")}
               >
                 学业完成查询
               </Button>

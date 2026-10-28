@@ -10,78 +10,39 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AboutRouteImport } from './routes/about'
-import { Route as AcademicRouteImport } from './routes/academic'
-import { Route as CampusNetworkRouteImport } from './routes/campus-network'
-import { Route as CampusPaymentsRouteRouteImport } from './routes/campus-payments/route'
-import { Route as ClassTimetableRouteImport } from './routes/class-timetable'
-import { Route as ComputingRouteImport } from './routes/computing'
-import { Route as DebugRouteImport } from './routes/debug'
-import { Route as EnrollmentRouteImport } from './routes/enrollment'
-import { Route as OjRouteImport } from './routes/oj'
+import { Route as LifeRouteRouteImport } from './routes/life/route'
 import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as UoocRouteImport } from './routes/uooc'
-import { Route as WebvpnRouteImport } from './routes/webvpn'
-import { Route as CampusPaymentsIndexRouteImport } from './routes/campus-payments/index'
-import { Route as CampusPaymentsCardRouteImport } from './routes/campus-payments/card'
-import { Route as CampusPaymentsElectricityRouteImport } from './routes/campus-payments/electricity'
-import { Route as CampusPaymentsNetworkRouteImport } from './routes/campus-payments/network'
-import { Route as CampusPaymentsRechargeRouteImport } from './routes/campus-payments/recharge'
-import { Route as EnrollmentIndexRouteImport } from './routes/enrollment.index'
-import { Route as EnrollmentLoginRouteImport } from './routes/enrollment.login'
-import { Route as EnrollmentSelectedRouteImport } from './routes/enrollment.selected'
-import { Route as EnrollmentSettingsRouteImport } from './routes/enrollment.settings'
-import { Route as EnrollmentTasksRouteImport } from './routes/enrollment.tasks'
-import { Route as EnrollmentTimetableRouteImport } from './routes/enrollment.timetable'
+import { Route as StudyRouteRouteImport } from './routes/study/route'
+import { Route as LifeIndexRouteImport } from './routes/life/index'
+import { Route as LifeCampusNetworkRouteImport } from './routes/life/campus-network'
+import { Route as LifeCampusPaymentsRouteRouteImport } from './routes/life/campus-payments/route'
+import { Route as StudyIndexRouteImport } from './routes/study/index'
+import { Route as StudyAcademicRouteImport } from './routes/study/academic'
+import { Route as StudyClassTimetableRouteImport } from './routes/study/class-timetable'
+import { Route as StudyComputingRouteImport } from './routes/study/computing'
+import { Route as StudyEnrollmentRouteImport } from './routes/study/enrollment'
+import { Route as StudyOjRouteImport } from './routes/study/oj'
+import { Route as StudyUoocRouteImport } from './routes/study/uooc'
+import { Route as LifeCampusPaymentsIndexRouteImport } from './routes/life/campus-payments/index'
+import { Route as LifeCampusPaymentsCardRouteImport } from './routes/life/campus-payments/card'
+import { Route as LifeCampusPaymentsElectricityRouteImport } from './routes/life/campus-payments/electricity'
+import { Route as LifeCampusPaymentsNetworkRouteImport } from './routes/life/campus-payments/network'
+import { Route as LifeCampusPaymentsRechargeRouteImport } from './routes/life/campus-payments/recharge'
+import { Route as StudyEnrollmentIndexRouteImport } from './routes/study/enrollment.index'
+import { Route as StudyEnrollmentLoginRouteImport } from './routes/study/enrollment.login'
+import { Route as StudyEnrollmentSelectedRouteImport } from './routes/study/enrollment.selected'
+import { Route as StudyEnrollmentSettingsRouteImport } from './routes/study/enrollment.settings'
+import { Route as StudyEnrollmentTasksRouteImport } from './routes/study/enrollment.tasks'
+import { Route as StudyEnrollmentTimetableRouteImport } from './routes/study/enrollment.timetable'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AboutRoute = AboutRouteImport.update({
-  id: '/about',
-  path: '/about',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AcademicRoute = AcademicRouteImport.update({
-  id: '/academic',
-  path: '/academic',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CampusNetworkRoute = CampusNetworkRouteImport.update({
-  id: '/campus-network',
-  path: '/campus-network',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CampusPaymentsRouteRoute = CampusPaymentsRouteRouteImport.update({
-  id: '/campus-payments',
-  path: '/campus-payments',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ClassTimetableRoute = ClassTimetableRouteImport.update({
-  id: '/class-timetable',
-  path: '/class-timetable',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ComputingRoute = ComputingRouteImport.update({
-  id: '/computing',
-  path: '/computing',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DebugRoute = DebugRouteImport.update({
-  id: '/debug',
-  path: '/debug',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EnrollmentRoute = EnrollmentRouteImport.update({
-  id: '/enrollment',
-  path: '/enrollment',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OjRoute = OjRouteImport.update({
-  id: '/oj',
-  path: '/oj',
+const LifeRouteRoute = LifeRouteRouteImport.update({
+  id: '/life',
+  path: '/life',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -89,243 +50,284 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
-const UoocRoute = UoocRouteImport.update({
+const StudyRouteRoute = StudyRouteRouteImport.update({
+  id: '/study',
+  path: '/study',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LifeIndexRoute = LifeIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => LifeRouteRoute,
+} as any)
+const LifeCampusNetworkRoute = LifeCampusNetworkRouteImport.update({
+  id: '/campus-network',
+  path: '/campus-network',
+  getParentRoute: () => LifeRouteRoute,
+} as any)
+const LifeCampusPaymentsRouteRoute = LifeCampusPaymentsRouteRouteImport.update({
+  id: '/campus-payments',
+  path: '/campus-payments',
+  getParentRoute: () => LifeRouteRoute,
+} as any)
+const StudyIndexRoute = StudyIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => StudyRouteRoute,
+} as any)
+const StudyAcademicRoute = StudyAcademicRouteImport.update({
+  id: '/academic',
+  path: '/academic',
+  getParentRoute: () => StudyRouteRoute,
+} as any)
+const StudyClassTimetableRoute = StudyClassTimetableRouteImport.update({
+  id: '/class-timetable',
+  path: '/class-timetable',
+  getParentRoute: () => StudyRouteRoute,
+} as any)
+const StudyComputingRoute = StudyComputingRouteImport.update({
+  id: '/computing',
+  path: '/computing',
+  getParentRoute: () => StudyRouteRoute,
+} as any)
+const StudyEnrollmentRoute = StudyEnrollmentRouteImport.update({
+  id: '/enrollment',
+  path: '/enrollment',
+  getParentRoute: () => StudyRouteRoute,
+} as any)
+const StudyOjRoute = StudyOjRouteImport.update({
+  id: '/oj',
+  path: '/oj',
+  getParentRoute: () => StudyRouteRoute,
+} as any)
+const StudyUoocRoute = StudyUoocRouteImport.update({
   id: '/uooc',
   path: '/uooc',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => StudyRouteRoute,
 } as any)
-const WebvpnRoute = WebvpnRouteImport.update({
-  id: '/webvpn',
-  path: '/webvpn',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CampusPaymentsIndexRoute = CampusPaymentsIndexRouteImport.update({
+const LifeCampusPaymentsIndexRoute = LifeCampusPaymentsIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => CampusPaymentsRouteRoute,
+  getParentRoute: () => LifeCampusPaymentsRouteRoute,
 } as any)
-const CampusPaymentsCardRoute = CampusPaymentsCardRouteImport.update({
+const LifeCampusPaymentsCardRoute = LifeCampusPaymentsCardRouteImport.update({
   id: '/card',
   path: '/card',
-  getParentRoute: () => CampusPaymentsRouteRoute,
+  getParentRoute: () => LifeCampusPaymentsRouteRoute,
 } as any)
-const CampusPaymentsElectricityRoute =
-  CampusPaymentsElectricityRouteImport.update({
+const LifeCampusPaymentsElectricityRoute =
+  LifeCampusPaymentsElectricityRouteImport.update({
     id: '/electricity',
     path: '/electricity',
-    getParentRoute: () => CampusPaymentsRouteRoute,
+    getParentRoute: () => LifeCampusPaymentsRouteRoute,
   } as any)
-const CampusPaymentsNetworkRoute = CampusPaymentsNetworkRouteImport.update({
-  id: '/network',
-  path: '/network',
-  getParentRoute: () => CampusPaymentsRouteRoute,
-} as any)
-const CampusPaymentsRechargeRoute = CampusPaymentsRechargeRouteImport.update({
-  id: '/recharge',
-  path: '/recharge',
-  getParentRoute: () => CampusPaymentsRouteRoute,
-} as any)
-const EnrollmentIndexRoute = EnrollmentIndexRouteImport.update({
+const LifeCampusPaymentsNetworkRoute =
+  LifeCampusPaymentsNetworkRouteImport.update({
+    id: '/network',
+    path: '/network',
+    getParentRoute: () => LifeCampusPaymentsRouteRoute,
+  } as any)
+const LifeCampusPaymentsRechargeRoute =
+  LifeCampusPaymentsRechargeRouteImport.update({
+    id: '/recharge',
+    path: '/recharge',
+    getParentRoute: () => LifeCampusPaymentsRouteRoute,
+  } as any)
+const StudyEnrollmentIndexRoute = StudyEnrollmentIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => EnrollmentRoute,
+  getParentRoute: () => StudyEnrollmentRoute,
 } as any)
-const EnrollmentLoginRoute = EnrollmentLoginRouteImport.update({
+const StudyEnrollmentLoginRoute = StudyEnrollmentLoginRouteImport.update({
   id: '/login',
   path: '/login',
-  getParentRoute: () => EnrollmentRoute,
+  getParentRoute: () => StudyEnrollmentRoute,
 } as any)
-const EnrollmentSelectedRoute = EnrollmentSelectedRouteImport.update({
+const StudyEnrollmentSelectedRoute = StudyEnrollmentSelectedRouteImport.update({
   id: '/selected',
   path: '/selected',
-  getParentRoute: () => EnrollmentRoute,
+  getParentRoute: () => StudyEnrollmentRoute,
 } as any)
-const EnrollmentSettingsRoute = EnrollmentSettingsRouteImport.update({
+const StudyEnrollmentSettingsRoute = StudyEnrollmentSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
-  getParentRoute: () => EnrollmentRoute,
+  getParentRoute: () => StudyEnrollmentRoute,
 } as any)
-const EnrollmentTasksRoute = EnrollmentTasksRouteImport.update({
+const StudyEnrollmentTasksRoute = StudyEnrollmentTasksRouteImport.update({
   id: '/tasks',
   path: '/tasks',
-  getParentRoute: () => EnrollmentRoute,
+  getParentRoute: () => StudyEnrollmentRoute,
 } as any)
-const EnrollmentTimetableRoute = EnrollmentTimetableRouteImport.update({
-  id: '/timetable',
-  path: '/timetable',
-  getParentRoute: () => EnrollmentRoute,
-} as any)
+const StudyEnrollmentTimetableRoute =
+  StudyEnrollmentTimetableRouteImport.update({
+    id: '/timetable',
+    path: '/timetable',
+    getParentRoute: () => StudyEnrollmentRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/campus-payments': typeof CampusPaymentsRouteRouteWithChildren
-  '/about': typeof AboutRoute
-  '/academic': typeof AcademicRoute
-  '/campus-network': typeof CampusNetworkRoute
-  '/class-timetable': typeof ClassTimetableRoute
-  '/computing': typeof ComputingRoute
-  '/debug': typeof DebugRoute
-  '/enrollment': typeof EnrollmentRouteWithChildren
-  '/oj': typeof OjRoute
+  '/life': typeof LifeRouteRouteWithChildren
+  '/study': typeof StudyRouteRouteWithChildren
   '/settings': typeof SettingsRoute
-  '/uooc': typeof UoocRoute
-  '/webvpn': typeof WebvpnRoute
-  '/campus-payments/card': typeof CampusPaymentsCardRoute
-  '/campus-payments/electricity': typeof CampusPaymentsElectricityRoute
-  '/campus-payments/network': typeof CampusPaymentsNetworkRoute
-  '/campus-payments/recharge': typeof CampusPaymentsRechargeRoute
-  '/enrollment/login': typeof EnrollmentLoginRoute
-  '/enrollment/selected': typeof EnrollmentSelectedRoute
-  '/enrollment/settings': typeof EnrollmentSettingsRoute
-  '/enrollment/tasks': typeof EnrollmentTasksRoute
-  '/enrollment/timetable': typeof EnrollmentTimetableRoute
-  '/campus-payments/': typeof CampusPaymentsIndexRoute
-  '/enrollment/': typeof EnrollmentIndexRoute
+  '/life/campus-payments': typeof LifeCampusPaymentsRouteRouteWithChildren
+  '/life/campus-network': typeof LifeCampusNetworkRoute
+  '/study/academic': typeof StudyAcademicRoute
+  '/study/class-timetable': typeof StudyClassTimetableRoute
+  '/study/computing': typeof StudyComputingRoute
+  '/study/enrollment': typeof StudyEnrollmentRouteWithChildren
+  '/study/oj': typeof StudyOjRoute
+  '/study/uooc': typeof StudyUoocRoute
+  '/life/': typeof LifeIndexRoute
+  '/study/': typeof StudyIndexRoute
+  '/life/campus-payments/card': typeof LifeCampusPaymentsCardRoute
+  '/life/campus-payments/electricity': typeof LifeCampusPaymentsElectricityRoute
+  '/life/campus-payments/network': typeof LifeCampusPaymentsNetworkRoute
+  '/life/campus-payments/recharge': typeof LifeCampusPaymentsRechargeRoute
+  '/study/enrollment/login': typeof StudyEnrollmentLoginRoute
+  '/study/enrollment/selected': typeof StudyEnrollmentSelectedRoute
+  '/study/enrollment/settings': typeof StudyEnrollmentSettingsRoute
+  '/study/enrollment/tasks': typeof StudyEnrollmentTasksRoute
+  '/study/enrollment/timetable': typeof StudyEnrollmentTimetableRoute
+  '/life/campus-payments/': typeof LifeCampusPaymentsIndexRoute
+  '/study/enrollment/': typeof StudyEnrollmentIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/about': typeof AboutRoute
-  '/academic': typeof AcademicRoute
-  '/campus-network': typeof CampusNetworkRoute
-  '/class-timetable': typeof ClassTimetableRoute
-  '/computing': typeof ComputingRoute
-  '/debug': typeof DebugRoute
-  '/oj': typeof OjRoute
   '/settings': typeof SettingsRoute
-  '/uooc': typeof UoocRoute
-  '/webvpn': typeof WebvpnRoute
-  '/campus-payments/card': typeof CampusPaymentsCardRoute
-  '/campus-payments/electricity': typeof CampusPaymentsElectricityRoute
-  '/campus-payments/network': typeof CampusPaymentsNetworkRoute
-  '/campus-payments/recharge': typeof CampusPaymentsRechargeRoute
-  '/enrollment/login': typeof EnrollmentLoginRoute
-  '/enrollment/selected': typeof EnrollmentSelectedRoute
-  '/enrollment/settings': typeof EnrollmentSettingsRoute
-  '/enrollment/tasks': typeof EnrollmentTasksRoute
-  '/enrollment/timetable': typeof EnrollmentTimetableRoute
-  '/campus-payments': typeof CampusPaymentsIndexRoute
-  '/enrollment': typeof EnrollmentIndexRoute
+  '/life/campus-network': typeof LifeCampusNetworkRoute
+  '/study/academic': typeof StudyAcademicRoute
+  '/study/class-timetable': typeof StudyClassTimetableRoute
+  '/study/computing': typeof StudyComputingRoute
+  '/study/oj': typeof StudyOjRoute
+  '/study/uooc': typeof StudyUoocRoute
+  '/life': typeof LifeIndexRoute
+  '/study': typeof StudyIndexRoute
+  '/life/campus-payments/card': typeof LifeCampusPaymentsCardRoute
+  '/life/campus-payments/electricity': typeof LifeCampusPaymentsElectricityRoute
+  '/life/campus-payments/network': typeof LifeCampusPaymentsNetworkRoute
+  '/life/campus-payments/recharge': typeof LifeCampusPaymentsRechargeRoute
+  '/study/enrollment/login': typeof StudyEnrollmentLoginRoute
+  '/study/enrollment/selected': typeof StudyEnrollmentSelectedRoute
+  '/study/enrollment/settings': typeof StudyEnrollmentSettingsRoute
+  '/study/enrollment/tasks': typeof StudyEnrollmentTasksRoute
+  '/study/enrollment/timetable': typeof StudyEnrollmentTimetableRoute
+  '/life/campus-payments': typeof LifeCampusPaymentsIndexRoute
+  '/study/enrollment': typeof StudyEnrollmentIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/campus-payments': typeof CampusPaymentsRouteRouteWithChildren
-  '/about': typeof AboutRoute
-  '/academic': typeof AcademicRoute
-  '/campus-network': typeof CampusNetworkRoute
-  '/class-timetable': typeof ClassTimetableRoute
-  '/computing': typeof ComputingRoute
-  '/debug': typeof DebugRoute
-  '/enrollment': typeof EnrollmentRouteWithChildren
-  '/oj': typeof OjRoute
+  '/life': typeof LifeRouteRouteWithChildren
+  '/study': typeof StudyRouteRouteWithChildren
   '/settings': typeof SettingsRoute
-  '/uooc': typeof UoocRoute
-  '/webvpn': typeof WebvpnRoute
-  '/campus-payments/card': typeof CampusPaymentsCardRoute
-  '/campus-payments/electricity': typeof CampusPaymentsElectricityRoute
-  '/campus-payments/network': typeof CampusPaymentsNetworkRoute
-  '/campus-payments/recharge': typeof CampusPaymentsRechargeRoute
-  '/enrollment/login': typeof EnrollmentLoginRoute
-  '/enrollment/selected': typeof EnrollmentSelectedRoute
-  '/enrollment/settings': typeof EnrollmentSettingsRoute
-  '/enrollment/tasks': typeof EnrollmentTasksRoute
-  '/enrollment/timetable': typeof EnrollmentTimetableRoute
-  '/campus-payments/': typeof CampusPaymentsIndexRoute
-  '/enrollment/': typeof EnrollmentIndexRoute
+  '/life/campus-payments': typeof LifeCampusPaymentsRouteRouteWithChildren
+  '/life/campus-network': typeof LifeCampusNetworkRoute
+  '/study/academic': typeof StudyAcademicRoute
+  '/study/class-timetable': typeof StudyClassTimetableRoute
+  '/study/computing': typeof StudyComputingRoute
+  '/study/enrollment': typeof StudyEnrollmentRouteWithChildren
+  '/study/oj': typeof StudyOjRoute
+  '/study/uooc': typeof StudyUoocRoute
+  '/life/': typeof LifeIndexRoute
+  '/study/': typeof StudyIndexRoute
+  '/life/campus-payments/card': typeof LifeCampusPaymentsCardRoute
+  '/life/campus-payments/electricity': typeof LifeCampusPaymentsElectricityRoute
+  '/life/campus-payments/network': typeof LifeCampusPaymentsNetworkRoute
+  '/life/campus-payments/recharge': typeof LifeCampusPaymentsRechargeRoute
+  '/study/enrollment/login': typeof StudyEnrollmentLoginRoute
+  '/study/enrollment/selected': typeof StudyEnrollmentSelectedRoute
+  '/study/enrollment/settings': typeof StudyEnrollmentSettingsRoute
+  '/study/enrollment/tasks': typeof StudyEnrollmentTasksRoute
+  '/study/enrollment/timetable': typeof StudyEnrollmentTimetableRoute
+  '/life/campus-payments/': typeof LifeCampusPaymentsIndexRoute
+  '/study/enrollment/': typeof StudyEnrollmentIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/campus-payments'
-    | '/about'
-    | '/academic'
-    | '/campus-network'
-    | '/class-timetable'
-    | '/computing'
-    | '/debug'
-    | '/enrollment'
-    | '/oj'
+    | '/life'
+    | '/study'
     | '/settings'
-    | '/uooc'
-    | '/webvpn'
-    | '/campus-payments/card'
-    | '/campus-payments/electricity'
-    | '/campus-payments/network'
-    | '/campus-payments/recharge'
-    | '/enrollment/login'
-    | '/enrollment/selected'
-    | '/enrollment/settings'
-    | '/enrollment/tasks'
-    | '/enrollment/timetable'
-    | '/campus-payments/'
-    | '/enrollment/'
+    | '/life/campus-payments'
+    | '/life/campus-network'
+    | '/study/academic'
+    | '/study/class-timetable'
+    | '/study/computing'
+    | '/study/enrollment'
+    | '/study/oj'
+    | '/study/uooc'
+    | '/life/'
+    | '/study/'
+    | '/life/campus-payments/card'
+    | '/life/campus-payments/electricity'
+    | '/life/campus-payments/network'
+    | '/life/campus-payments/recharge'
+    | '/study/enrollment/login'
+    | '/study/enrollment/selected'
+    | '/study/enrollment/settings'
+    | '/study/enrollment/tasks'
+    | '/study/enrollment/timetable'
+    | '/life/campus-payments/'
+    | '/study/enrollment/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/about'
-    | '/academic'
-    | '/campus-network'
-    | '/class-timetable'
-    | '/computing'
-    | '/debug'
-    | '/oj'
     | '/settings'
-    | '/uooc'
-    | '/webvpn'
-    | '/campus-payments/card'
-    | '/campus-payments/electricity'
-    | '/campus-payments/network'
-    | '/campus-payments/recharge'
-    | '/enrollment/login'
-    | '/enrollment/selected'
-    | '/enrollment/settings'
-    | '/enrollment/tasks'
-    | '/enrollment/timetable'
-    | '/campus-payments'
-    | '/enrollment'
+    | '/life/campus-network'
+    | '/study/academic'
+    | '/study/class-timetable'
+    | '/study/computing'
+    | '/study/oj'
+    | '/study/uooc'
+    | '/life'
+    | '/study'
+    | '/life/campus-payments/card'
+    | '/life/campus-payments/electricity'
+    | '/life/campus-payments/network'
+    | '/life/campus-payments/recharge'
+    | '/study/enrollment/login'
+    | '/study/enrollment/selected'
+    | '/study/enrollment/settings'
+    | '/study/enrollment/tasks'
+    | '/study/enrollment/timetable'
+    | '/life/campus-payments'
+    | '/study/enrollment'
   id:
     | '__root__'
     | '/'
-    | '/campus-payments'
-    | '/about'
-    | '/academic'
-    | '/campus-network'
-    | '/class-timetable'
-    | '/computing'
-    | '/debug'
-    | '/enrollment'
-    | '/oj'
+    | '/life'
+    | '/study'
     | '/settings'
-    | '/uooc'
-    | '/webvpn'
-    | '/campus-payments/card'
-    | '/campus-payments/electricity'
-    | '/campus-payments/network'
-    | '/campus-payments/recharge'
-    | '/enrollment/login'
-    | '/enrollment/selected'
-    | '/enrollment/settings'
-    | '/enrollment/tasks'
-    | '/enrollment/timetable'
-    | '/campus-payments/'
-    | '/enrollment/'
+    | '/life/campus-payments'
+    | '/life/campus-network'
+    | '/study/academic'
+    | '/study/class-timetable'
+    | '/study/computing'
+    | '/study/enrollment'
+    | '/study/oj'
+    | '/study/uooc'
+    | '/life/'
+    | '/study/'
+    | '/life/campus-payments/card'
+    | '/life/campus-payments/electricity'
+    | '/life/campus-payments/network'
+    | '/life/campus-payments/recharge'
+    | '/study/enrollment/login'
+    | '/study/enrollment/selected'
+    | '/study/enrollment/settings'
+    | '/study/enrollment/tasks'
+    | '/study/enrollment/timetable'
+    | '/life/campus-payments/'
+    | '/study/enrollment/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  CampusPaymentsRouteRoute: typeof CampusPaymentsRouteRouteWithChildren
-  AboutRoute: typeof AboutRoute
-  AcademicRoute: typeof AcademicRoute
-  CampusNetworkRoute: typeof CampusNetworkRoute
-  ClassTimetableRoute: typeof ClassTimetableRoute
-  ComputingRoute: typeof ComputingRoute
-  DebugRoute: typeof DebugRoute
-  EnrollmentRoute: typeof EnrollmentRouteWithChildren
-  OjRoute: typeof OjRoute
+  LifeRouteRoute: typeof LifeRouteRouteWithChildren
+  StudyRouteRoute: typeof StudyRouteRouteWithChildren
   SettingsRoute: typeof SettingsRoute
-  UoocRoute: typeof UoocRoute
-  WebvpnRoute: typeof WebvpnRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -337,67 +339,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/about': {
-      id: '/about'
-      path: '/about'
-      fullPath: '/about'
-      preLoaderRoute: typeof AboutRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/academic': {
-      id: '/academic'
-      path: '/academic'
-      fullPath: '/academic'
-      preLoaderRoute: typeof AcademicRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/campus-network': {
-      id: '/campus-network'
-      path: '/campus-network'
-      fullPath: '/campus-network'
-      preLoaderRoute: typeof CampusNetworkRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/campus-payments': {
-      id: '/campus-payments'
-      path: '/campus-payments'
-      fullPath: '/campus-payments'
-      preLoaderRoute: typeof CampusPaymentsRouteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/class-timetable': {
-      id: '/class-timetable'
-      path: '/class-timetable'
-      fullPath: '/class-timetable'
-      preLoaderRoute: typeof ClassTimetableRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/computing': {
-      id: '/computing'
-      path: '/computing'
-      fullPath: '/computing'
-      preLoaderRoute: typeof ComputingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/debug': {
-      id: '/debug'
-      path: '/debug'
-      fullPath: '/debug'
-      preLoaderRoute: typeof DebugRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/enrollment': {
-      id: '/enrollment'
-      path: '/enrollment'
-      fullPath: '/enrollment'
-      preLoaderRoute: typeof EnrollmentRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/oj': {
-      id: '/oj'
-      path: '/oj'
-      fullPath: '/oj'
-      preLoaderRoute: typeof OjRouteImport
+    '/life': {
+      id: '/life'
+      path: '/life'
+      fullPath: '/life'
+      preLoaderRoute: typeof LifeRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -407,155 +353,252 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/uooc': {
-      id: '/uooc'
+    '/study': {
+      id: '/study'
+      path: '/study'
+      fullPath: '/study'
+      preLoaderRoute: typeof StudyRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/life/': {
+      id: '/life/'
+      path: '/'
+      fullPath: '/life/'
+      preLoaderRoute: typeof LifeIndexRouteImport
+      parentRoute: typeof LifeRouteRoute
+    }
+    '/life/campus-network': {
+      id: '/life/campus-network'
+      path: '/campus-network'
+      fullPath: '/life/campus-network'
+      preLoaderRoute: typeof LifeCampusNetworkRouteImport
+      parentRoute: typeof LifeRouteRoute
+    }
+    '/life/campus-payments': {
+      id: '/life/campus-payments'
+      path: '/campus-payments'
+      fullPath: '/life/campus-payments'
+      preLoaderRoute: typeof LifeCampusPaymentsRouteRouteImport
+      parentRoute: typeof LifeRouteRoute
+    }
+    '/study/': {
+      id: '/study/'
+      path: '/'
+      fullPath: '/study/'
+      preLoaderRoute: typeof StudyIndexRouteImport
+      parentRoute: typeof StudyRouteRoute
+    }
+    '/study/academic': {
+      id: '/study/academic'
+      path: '/academic'
+      fullPath: '/study/academic'
+      preLoaderRoute: typeof StudyAcademicRouteImport
+      parentRoute: typeof StudyRouteRoute
+    }
+    '/study/class-timetable': {
+      id: '/study/class-timetable'
+      path: '/class-timetable'
+      fullPath: '/study/class-timetable'
+      preLoaderRoute: typeof StudyClassTimetableRouteImport
+      parentRoute: typeof StudyRouteRoute
+    }
+    '/study/computing': {
+      id: '/study/computing'
+      path: '/computing'
+      fullPath: '/study/computing'
+      preLoaderRoute: typeof StudyComputingRouteImport
+      parentRoute: typeof StudyRouteRoute
+    }
+    '/study/enrollment': {
+      id: '/study/enrollment'
+      path: '/enrollment'
+      fullPath: '/study/enrollment'
+      preLoaderRoute: typeof StudyEnrollmentRouteImport
+      parentRoute: typeof StudyRouteRoute
+    }
+    '/study/oj': {
+      id: '/study/oj'
+      path: '/oj'
+      fullPath: '/study/oj'
+      preLoaderRoute: typeof StudyOjRouteImport
+      parentRoute: typeof StudyRouteRoute
+    }
+    '/study/uooc': {
+      id: '/study/uooc'
       path: '/uooc'
-      fullPath: '/uooc'
-      preLoaderRoute: typeof UoocRouteImport
-      parentRoute: typeof rootRouteImport
+      fullPath: '/study/uooc'
+      preLoaderRoute: typeof StudyUoocRouteImport
+      parentRoute: typeof StudyRouteRoute
     }
-    '/webvpn': {
-      id: '/webvpn'
-      path: '/webvpn'
-      fullPath: '/webvpn'
-      preLoaderRoute: typeof WebvpnRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/campus-payments/': {
-      id: '/campus-payments/'
+    '/life/campus-payments/': {
+      id: '/life/campus-payments/'
       path: '/'
-      fullPath: '/campus-payments/'
-      preLoaderRoute: typeof CampusPaymentsIndexRouteImport
-      parentRoute: typeof CampusPaymentsRouteRoute
+      fullPath: '/life/campus-payments/'
+      preLoaderRoute: typeof LifeCampusPaymentsIndexRouteImport
+      parentRoute: typeof LifeCampusPaymentsRouteRoute
     }
-    '/campus-payments/card': {
-      id: '/campus-payments/card'
+    '/life/campus-payments/card': {
+      id: '/life/campus-payments/card'
       path: '/card'
-      fullPath: '/campus-payments/card'
-      preLoaderRoute: typeof CampusPaymentsCardRouteImport
-      parentRoute: typeof CampusPaymentsRouteRoute
+      fullPath: '/life/campus-payments/card'
+      preLoaderRoute: typeof LifeCampusPaymentsCardRouteImport
+      parentRoute: typeof LifeCampusPaymentsRouteRoute
     }
-    '/campus-payments/electricity': {
-      id: '/campus-payments/electricity'
+    '/life/campus-payments/electricity': {
+      id: '/life/campus-payments/electricity'
       path: '/electricity'
-      fullPath: '/campus-payments/electricity'
-      preLoaderRoute: typeof CampusPaymentsElectricityRouteImport
-      parentRoute: typeof CampusPaymentsRouteRoute
+      fullPath: '/life/campus-payments/electricity'
+      preLoaderRoute: typeof LifeCampusPaymentsElectricityRouteImport
+      parentRoute: typeof LifeCampusPaymentsRouteRoute
     }
-    '/campus-payments/network': {
-      id: '/campus-payments/network'
+    '/life/campus-payments/network': {
+      id: '/life/campus-payments/network'
       path: '/network'
-      fullPath: '/campus-payments/network'
-      preLoaderRoute: typeof CampusPaymentsNetworkRouteImport
-      parentRoute: typeof CampusPaymentsRouteRoute
+      fullPath: '/life/campus-payments/network'
+      preLoaderRoute: typeof LifeCampusPaymentsNetworkRouteImport
+      parentRoute: typeof LifeCampusPaymentsRouteRoute
     }
-    '/campus-payments/recharge': {
-      id: '/campus-payments/recharge'
+    '/life/campus-payments/recharge': {
+      id: '/life/campus-payments/recharge'
       path: '/recharge'
-      fullPath: '/campus-payments/recharge'
-      preLoaderRoute: typeof CampusPaymentsRechargeRouteImport
-      parentRoute: typeof CampusPaymentsRouteRoute
+      fullPath: '/life/campus-payments/recharge'
+      preLoaderRoute: typeof LifeCampusPaymentsRechargeRouteImport
+      parentRoute: typeof LifeCampusPaymentsRouteRoute
     }
-    '/enrollment/': {
-      id: '/enrollment/'
+    '/study/enrollment/': {
+      id: '/study/enrollment/'
       path: '/'
-      fullPath: '/enrollment/'
-      preLoaderRoute: typeof EnrollmentIndexRouteImport
-      parentRoute: typeof EnrollmentRoute
+      fullPath: '/study/enrollment/'
+      preLoaderRoute: typeof StudyEnrollmentIndexRouteImport
+      parentRoute: typeof StudyEnrollmentRoute
     }
-    '/enrollment/login': {
-      id: '/enrollment/login'
+    '/study/enrollment/login': {
+      id: '/study/enrollment/login'
       path: '/login'
-      fullPath: '/enrollment/login'
-      preLoaderRoute: typeof EnrollmentLoginRouteImport
-      parentRoute: typeof EnrollmentRoute
+      fullPath: '/study/enrollment/login'
+      preLoaderRoute: typeof StudyEnrollmentLoginRouteImport
+      parentRoute: typeof StudyEnrollmentRoute
     }
-    '/enrollment/selected': {
-      id: '/enrollment/selected'
+    '/study/enrollment/selected': {
+      id: '/study/enrollment/selected'
       path: '/selected'
-      fullPath: '/enrollment/selected'
-      preLoaderRoute: typeof EnrollmentSelectedRouteImport
-      parentRoute: typeof EnrollmentRoute
+      fullPath: '/study/enrollment/selected'
+      preLoaderRoute: typeof StudyEnrollmentSelectedRouteImport
+      parentRoute: typeof StudyEnrollmentRoute
     }
-    '/enrollment/settings': {
-      id: '/enrollment/settings'
+    '/study/enrollment/settings': {
+      id: '/study/enrollment/settings'
       path: '/settings'
-      fullPath: '/enrollment/settings'
-      preLoaderRoute: typeof EnrollmentSettingsRouteImport
-      parentRoute: typeof EnrollmentRoute
+      fullPath: '/study/enrollment/settings'
+      preLoaderRoute: typeof StudyEnrollmentSettingsRouteImport
+      parentRoute: typeof StudyEnrollmentRoute
     }
-    '/enrollment/tasks': {
-      id: '/enrollment/tasks'
+    '/study/enrollment/tasks': {
+      id: '/study/enrollment/tasks'
       path: '/tasks'
-      fullPath: '/enrollment/tasks'
-      preLoaderRoute: typeof EnrollmentTasksRouteImport
-      parentRoute: typeof EnrollmentRoute
+      fullPath: '/study/enrollment/tasks'
+      preLoaderRoute: typeof StudyEnrollmentTasksRouteImport
+      parentRoute: typeof StudyEnrollmentRoute
     }
-    '/enrollment/timetable': {
-      id: '/enrollment/timetable'
+    '/study/enrollment/timetable': {
+      id: '/study/enrollment/timetable'
       path: '/timetable'
-      fullPath: '/enrollment/timetable'
-      preLoaderRoute: typeof EnrollmentTimetableRouteImport
-      parentRoute: typeof EnrollmentRoute
+      fullPath: '/study/enrollment/timetable'
+      preLoaderRoute: typeof StudyEnrollmentTimetableRouteImport
+      parentRoute: typeof StudyEnrollmentRoute
     }
   }
 }
 
-interface CampusPaymentsRouteRouteChildren {
-  CampusPaymentsCardRoute: typeof CampusPaymentsCardRoute
-  CampusPaymentsElectricityRoute: typeof CampusPaymentsElectricityRoute
-  CampusPaymentsNetworkRoute: typeof CampusPaymentsNetworkRoute
-  CampusPaymentsRechargeRoute: typeof CampusPaymentsRechargeRoute
-  CampusPaymentsIndexRoute: typeof CampusPaymentsIndexRoute
+interface LifeCampusPaymentsRouteRouteChildren {
+  LifeCampusPaymentsCardRoute: typeof LifeCampusPaymentsCardRoute
+  LifeCampusPaymentsElectricityRoute: typeof LifeCampusPaymentsElectricityRoute
+  LifeCampusPaymentsNetworkRoute: typeof LifeCampusPaymentsNetworkRoute
+  LifeCampusPaymentsRechargeRoute: typeof LifeCampusPaymentsRechargeRoute
+  LifeCampusPaymentsIndexRoute: typeof LifeCampusPaymentsIndexRoute
 }
 
-const CampusPaymentsRouteRouteChildren: CampusPaymentsRouteRouteChildren = {
-  CampusPaymentsCardRoute: CampusPaymentsCardRoute,
-  CampusPaymentsElectricityRoute: CampusPaymentsElectricityRoute,
-  CampusPaymentsNetworkRoute: CampusPaymentsNetworkRoute,
-  CampusPaymentsRechargeRoute: CampusPaymentsRechargeRoute,
-  CampusPaymentsIndexRoute: CampusPaymentsIndexRoute,
+const LifeCampusPaymentsRouteRouteChildren: LifeCampusPaymentsRouteRouteChildren =
+  {
+    LifeCampusPaymentsCardRoute: LifeCampusPaymentsCardRoute,
+    LifeCampusPaymentsElectricityRoute: LifeCampusPaymentsElectricityRoute,
+    LifeCampusPaymentsNetworkRoute: LifeCampusPaymentsNetworkRoute,
+    LifeCampusPaymentsRechargeRoute: LifeCampusPaymentsRechargeRoute,
+    LifeCampusPaymentsIndexRoute: LifeCampusPaymentsIndexRoute,
+  }
+
+const LifeCampusPaymentsRouteRouteWithChildren =
+  LifeCampusPaymentsRouteRoute._addFileChildren(
+    LifeCampusPaymentsRouteRouteChildren,
+  )
+
+interface LifeRouteRouteChildren {
+  LifeCampusPaymentsRouteRoute: typeof LifeCampusPaymentsRouteRouteWithChildren
+  LifeCampusNetworkRoute: typeof LifeCampusNetworkRoute
+  LifeIndexRoute: typeof LifeIndexRoute
 }
 
-const CampusPaymentsRouteRouteWithChildren =
-  CampusPaymentsRouteRoute._addFileChildren(CampusPaymentsRouteRouteChildren)
-
-interface EnrollmentRouteChildren {
-  EnrollmentLoginRoute: typeof EnrollmentLoginRoute
-  EnrollmentSelectedRoute: typeof EnrollmentSelectedRoute
-  EnrollmentSettingsRoute: typeof EnrollmentSettingsRoute
-  EnrollmentTasksRoute: typeof EnrollmentTasksRoute
-  EnrollmentTimetableRoute: typeof EnrollmentTimetableRoute
-  EnrollmentIndexRoute: typeof EnrollmentIndexRoute
+const LifeRouteRouteChildren: LifeRouteRouteChildren = {
+  LifeCampusPaymentsRouteRoute: LifeCampusPaymentsRouteRouteWithChildren,
+  LifeCampusNetworkRoute: LifeCampusNetworkRoute,
+  LifeIndexRoute: LifeIndexRoute,
 }
 
-const EnrollmentRouteChildren: EnrollmentRouteChildren = {
-  EnrollmentLoginRoute: EnrollmentLoginRoute,
-  EnrollmentSelectedRoute: EnrollmentSelectedRoute,
-  EnrollmentSettingsRoute: EnrollmentSettingsRoute,
-  EnrollmentTasksRoute: EnrollmentTasksRoute,
-  EnrollmentTimetableRoute: EnrollmentTimetableRoute,
-  EnrollmentIndexRoute: EnrollmentIndexRoute,
+const LifeRouteRouteWithChildren = LifeRouteRoute._addFileChildren(
+  LifeRouteRouteChildren,
+)
+
+interface StudyEnrollmentRouteChildren {
+  StudyEnrollmentLoginRoute: typeof StudyEnrollmentLoginRoute
+  StudyEnrollmentSelectedRoute: typeof StudyEnrollmentSelectedRoute
+  StudyEnrollmentSettingsRoute: typeof StudyEnrollmentSettingsRoute
+  StudyEnrollmentTasksRoute: typeof StudyEnrollmentTasksRoute
+  StudyEnrollmentTimetableRoute: typeof StudyEnrollmentTimetableRoute
+  StudyEnrollmentIndexRoute: typeof StudyEnrollmentIndexRoute
 }
 
-const EnrollmentRouteWithChildren = EnrollmentRoute._addFileChildren(
-  EnrollmentRouteChildren,
+const StudyEnrollmentRouteChildren: StudyEnrollmentRouteChildren = {
+  StudyEnrollmentLoginRoute: StudyEnrollmentLoginRoute,
+  StudyEnrollmentSelectedRoute: StudyEnrollmentSelectedRoute,
+  StudyEnrollmentSettingsRoute: StudyEnrollmentSettingsRoute,
+  StudyEnrollmentTasksRoute: StudyEnrollmentTasksRoute,
+  StudyEnrollmentTimetableRoute: StudyEnrollmentTimetableRoute,
+  StudyEnrollmentIndexRoute: StudyEnrollmentIndexRoute,
+}
+
+const StudyEnrollmentRouteWithChildren = StudyEnrollmentRoute._addFileChildren(
+  StudyEnrollmentRouteChildren,
+)
+
+interface StudyRouteRouteChildren {
+  StudyAcademicRoute: typeof StudyAcademicRoute
+  StudyClassTimetableRoute: typeof StudyClassTimetableRoute
+  StudyComputingRoute: typeof StudyComputingRoute
+  StudyEnrollmentRoute: typeof StudyEnrollmentRouteWithChildren
+  StudyOjRoute: typeof StudyOjRoute
+  StudyUoocRoute: typeof StudyUoocRoute
+  StudyIndexRoute: typeof StudyIndexRoute
+}
+
+const StudyRouteRouteChildren: StudyRouteRouteChildren = {
+  StudyAcademicRoute: StudyAcademicRoute,
+  StudyClassTimetableRoute: StudyClassTimetableRoute,
+  StudyComputingRoute: StudyComputingRoute,
+  StudyEnrollmentRoute: StudyEnrollmentRouteWithChildren,
+  StudyOjRoute: StudyOjRoute,
+  StudyUoocRoute: StudyUoocRoute,
+  StudyIndexRoute: StudyIndexRoute,
+}
+
+const StudyRouteRouteWithChildren = StudyRouteRoute._addFileChildren(
+  StudyRouteRouteChildren,
 )
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  CampusPaymentsRouteRoute: CampusPaymentsRouteRouteWithChildren,
-  AboutRoute: AboutRoute,
-  AcademicRoute: AcademicRoute,
-  CampusNetworkRoute: CampusNetworkRoute,
-  ClassTimetableRoute: ClassTimetableRoute,
-  ComputingRoute: ComputingRoute,
-  DebugRoute: DebugRoute,
-  EnrollmentRoute: EnrollmentRouteWithChildren,
-  OjRoute: OjRoute,
+  LifeRouteRoute: LifeRouteRouteWithChildren,
+  StudyRouteRoute: StudyRouteRouteWithChildren,
   SettingsRoute: SettingsRoute,
-  UoocRoute: UoocRoute,
-  WebvpnRoute: WebvpnRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

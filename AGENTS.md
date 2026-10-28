@@ -46,7 +46,11 @@ release. Add a tool name to select part of the graph. For example, run
 - 深色模式由 `data-theme-mode` 与 `color-scheme` 驱动；Android 端种子色由 Kotlin 桥读取壁纸色，桌面端可在设置页手动选色，二者互斥，用户手动选色后壁纸不再覆盖。
 - material 的组件强制使用 shadow DOM，组件外观只能通过 CSS 自定义属性影响。需要给宿主加布局时用宿主标签（如 `m-button`）或外层容器，不要试图用选择器穿透 shadow root。
 - 缺口组件（DataTable、Banner、Disclosure、Avatar、Kbd、Pagination、ComboBox、CheckboxGroup、ScrollShadow、NumberField、Toast 命令式 API、ProgressCircle）在 `src/ui` 内自建，保留原有复合 API 形状以降低迁移成本；不要为了这些去引入第二套组件库。
+- 页面顶栏是 `src/shell/TopAppBar.tsx` 里对 material `m-top-app-bar` 的组合：返回键、标题、搜索与页面动作都以 light DOM 放进 `leading`/`trailing`/标题槽位，因此它们仍能带 `data-webview-navigation`（material 自己的 IconButton 把真实按钮放进 shadow root，做不到）。顶栏壳子默认 `position: absolute`、固定 64px，已在 `src/index.css` 里用 `::part(top-app-bar)` 覆盖成静态定位；外层 `.top-app-bar` 用 `position: sticky` 吸顶、并用 `margin-inline: calc(50% - 50cqw)` 横向撑满内容区（`cqw` 基准是 `.app-content` 的 `container-type: inline-size`，代价是内容区内的 `position: fixed` 元素改为相对内容区定位——浮动层请用 `createPortal(..., document.body)`）。该撑满依赖「顶栏祖先链水平居中且无横向内边距」，新增页面不要把顶栏放进别的容器里。滚动状态交给 material 自己按 `window.scrollY` 驱动，不要传 `no-scroll` 或调 `setScrollState`。顶级部件页（首页/学习/生活/设置）用 `showBack={false}`，只有子页面给返回键。
 - 动效统一走 `src/motion/`（motion 库）与 MD3 的弹簧参数；material 自带动效的组件不要叠加二次动画。页面切换动画只在 `push`/`back` 时启用，tab 切换（`replace`）不动画。
+- Android 的原生浏览器栏（`NativeWebViewChrome` 自绘的 `MaterialToolbar`）**只在外部页面出现**：统一认证、自助服务、官方网费等受控打开的非 Tauri 本地页面才需要它提供标题与返回/刷新；本地页面一律由 Web 顶栏负责，因此 Android 本地页面不会收到 `native-toolbar-ready`，也就不会再隐藏页内的 `data-webview-navigation` 控件。判定依据是当前 document 的来源是否属于本地 origin（`ApplicationBackPolicy.localDocument` → `shouldShowBrowserToolbar`），切换页面时随 `document` 通知即时显隐。
+- Android 的状态栏与「小白条」（手势导航条）共用同一套沉浸式逻辑：上下两条 inset 区域各由一块占位视图（`NativeWebViewChrome` 的 `statusBarBand` / `navigationBarBand`）绘制，因为 Android 15 起 `window.statusBarColor` / `navigationBarColor` 会被系统忽略、边到边模式下只能自己画；旧版本系统会用不透明系统栏盖住这两块，效果一致。`SystemBars.apply(window, statusBar, navigationBar)` 一个入口给两条栏上色并一起决定图标明暗，内容区留白由 `NativeWebViewChrome` 的 insets 监听统一处理（内容不画到系统栏下面，栏上的颜色就是应用自己画的那条带状区域；Android 15 起 `statusBarColor` 被系统忽略时由该区域兜住）。取色规则：**状态栏取「顶部条」当前的颜色**——本地页面是 Web 顶栏（滚动到一定位置会从 `surface` 变成 `surface-container`，因此随滚动变化），外部页面是原生浏览器栏（取其主题色）；**小白条固定取底部导航栏的颜色**，不随滚动变化。Web 端在 `src/shell/native-chrome.ts` 里**读控件的 computed style**得到颜色（不在前端重复 M3 令牌值），用 `chrome-status-bar:#rrggbb` / `chrome-nav-bar:#rrggbb` 两条消息推送，并且只在颜色真的变了时才发——滚动每一帧都发会刷爆原生侧。原生侧解析失败或还没收到推送时退回主题的 `colorSurface` / `colorSurfaceContainer`。
+- 日志插件的 `Webview` 目标是「每条 Rust 日志过一次 JNI 转发」，因此**不要**给它或 `Stdout` 放开 DEBUG/TRACE：`jni` crate 会为转发本身的 JNI 调用再记一条日志，两者互相放大，真机实测几秒内刷出每秒上万行并把主线程压到 ANR。现状是 `src-tauri/src/logging.rs` 的 `quiet_targets` 只放行 Info 及以上、并在 `app.rs` 里关掉 `jni`/`tao`/`wry` 等噪声库；逐条的 DEBUG/TRACE 应用日志仍然写进日志文件（由用户的保留级别控制）。
 - 测试里 material 控件的角色与可访问名称在 shadow root 内部：全局补丁 `src/test-setup-element-internals.ts` 让 `getByRole` 能穿透 open shadow root；输入请用 `src/ui/testing.ts` 的 `typeInto`，断言可见文案请用 `hostOf` 取宿主元素。
 
 ---
@@ -111,8 +115,11 @@ release. Add a tool name to select part of the graph. For example, run
 
 ### 页面层级
 
-- 工作台（Workbench）是逻辑导航栈的 root。
-- 从工作台打开的功能模块是子逻辑页面，例如校园卡、电费、网费、校园网、设置、公告、诊断日志等。
+- 首页（`/`）是逻辑导航栈的 root。
+- 顶级部件只有四个，宽屏 rail 与窄屏 bar 显示完全相同的入口：首页 `/`、学习 `/study`、生活 `/life`、设置 `/settings`。
+- 子页面在路径上带归属前缀：`/study/uooc`、`/study/oj`、`/study/computing`、`/study/class-timetable`、`/study/academic`、`/study/enrollment/...`、`/life/campus-network`、`/life/campus-payments/...`。返回层级由路径层级决定（例如从 `/study/uooc` 返回落到 `/study`）。
+- 「关于」与「诊断日志」不是独立路由，而是设置页的 tab：`/settings?tab=about`、`/settings?tab=debug`（后者仅在调试模式启用后出现）。
+- WebVPN 没有独立页面与入口：需要校外访问的操作在发起前探测，只在确实需要 2FA 时弹出确认 Dialog。
 - 功能模块内部通过 tab、筛选器或步骤切换内容，仍属于同一个逻辑页面；这些切换不应制造新的返回层级。
 - 功能模块内部再次打开的独立页面或外部门户（例如官方网费页面）才建立新的子逻辑页面或独立窗口。
 
@@ -121,7 +128,7 @@ release. Add a tool name to select part of the graph. For example, run
 - 统一通过逻辑导航 API（如 `LogicalNavigationProvider` / `useLogicalNavigation()`）执行 `push`、`replace`、`back` 和 `canBack`，不要在业务组件中直接依赖 `window.history.back()`。
 - 页面内部 tab 或同一功能页的 URL/状态切换使用 `replace`；需要形成新的页面层级时才使用 `push`。
 - TanStack Router 的 WebView URL 同步应使用替换语义（`replaceState` 或 memory history），避免把逻辑页面切换写入真实 WebView history。
-- 深链接进入功能页时，应补齐逻辑栈上下文（通常为 `[工作台, 当前页面]`），使返回仍能回到工作台。
+- 深链接进入功能页时，应补齐逻辑栈上下文（由路径层级推出：`[/, /study, /study/enrollment, 当前页面]`），使返回仍能回到上一层级。
 - 单 WebView 内打开网费 fallback 页面时使用 `location.replace()`；不要通过 `location.href` 或普通链接额外堆积 WebView history。
 - 需要独立生命周期、取消任务或对应 Android Activity 的外部/门户页面，使用独立 `WebviewWindow` / `FeatureActivity`；关闭后应回到其父逻辑页面并清理关联任务。
 
