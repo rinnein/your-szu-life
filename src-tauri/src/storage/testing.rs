@@ -21,8 +21,10 @@ impl MemoryCredentialStore {
         self.raw.lock().unwrap().insert(name, raw.to_owned());
     }
     fn load<T: for<'a> Deserialize<'a>>(&self, key: SecretKey) -> Result<Option<T>, String> {
-        if matches!(key, SecretKey::DormNetworkSettings)
-            && self.fail_settings_load.load(Ordering::Relaxed)
+        if matches!(
+            key,
+            SecretKey::DormNetworkSettings | SecretKey::NetworkProxy
+        ) && self.fail_settings_load.load(Ordering::Relaxed)
         {
             return Err("simulated settings read failure".into());
         }
@@ -37,8 +39,10 @@ impl MemoryCredentialStore {
             .transpose()
     }
     fn save<T: Serialize>(&self, key: SecretKey, value: &T) -> Result<(), String> {
-        if matches!(key, SecretKey::DormNetworkSettings)
-            && self.fail_settings_save.load(Ordering::Relaxed)
+        if matches!(
+            key,
+            SecretKey::DormNetworkSettings | SecretKey::NetworkProxy
+        ) && self.fail_settings_save.load(Ordering::Relaxed)
         {
             return Err("simulated settings write failure".into());
         }
@@ -119,6 +123,12 @@ impl CredentialStore for MemoryCredentialStore {
         save_electricity_monitor,
         ElectricityMonitorRecord,
         ElectricityMonitor
+    );
+    stored_value!(
+        load_proxy_settings,
+        save_proxy_settings,
+        ProxySettings,
+        NetworkProxy
     );
     fn delete_profile(&self) -> Result<(), String> {
         self.delete(SecretKey::Profile)

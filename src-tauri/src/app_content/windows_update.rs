@@ -175,7 +175,7 @@ pub(crate) fn download_and_install(
     log::warn!("aria2c 更新下载失败，正在尝试使用备用下载器...");
 
     // 2. Fallback to reqwest blocking client
-    let client = reqwest::blocking::Client::builder()
+    let client = crate::netproxy::blocking_client_builder()
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(600))
         .build()

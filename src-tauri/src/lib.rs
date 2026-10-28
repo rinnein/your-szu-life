@@ -15,6 +15,7 @@ pub(crate) mod ipc_channel;
 pub(crate) mod local_model;
 pub mod mcp;
 pub(crate) mod migrations;
+pub(crate) mod netproxy;
 mod notification;
 pub(crate) mod logging;
 mod ocr;

@@ -7,6 +7,7 @@ use crate::{
     },
     campus_network::model::{DormCustomCredentials, DormNetworkSettings, StaffNetworkSettings},
     campus_payments::model::{ElectricityLocationSettings, ElectricityMonitorRecord},
+    netproxy::ProxySettings,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -34,6 +35,7 @@ pub(crate) enum SecretKey {
     StaffNetworkCredentials,
     ElectricitySettings,
     ElectricityMonitor,
+    NetworkProxy,
 }
 
 impl SecretKey {
@@ -53,6 +55,7 @@ impl SecretKey {
             Self::StaffNetworkCredentials => entries::STAFF_CREDENTIALS,
             Self::ElectricitySettings => entries::ELECTRICITY_LOCATION,
             Self::ElectricityMonitor => entries::ELECTRICITY_MONITOR,
+            Self::NetworkProxy => entries::PROXY_SETTINGS,
         })
     }
 
@@ -73,6 +76,7 @@ impl SecretKey {
             Self::StaffNetworkCredentials => "staff-network-credentials",
             Self::ElectricitySettings => "electricity-settings",
             Self::ElectricityMonitor => "electricity-monitor",
+            Self::NetworkProxy => "network-proxy",
         }
     }
 
@@ -134,6 +138,8 @@ pub(crate) trait CredentialStore: Send + Sync {
     ) -> Result<(), String>;
     fn load_electricity_monitor(&self) -> Result<Option<ElectricityMonitorRecord>, String>;
     fn save_electricity_monitor(&self, record: &ElectricityMonitorRecord) -> Result<(), String>;
+    fn load_proxy_settings(&self) -> Result<Option<ProxySettings>, String>;
+    fn save_proxy_settings(&self, settings: &ProxySettings) -> Result<(), String>;
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -285,6 +291,12 @@ impl CredentialStore for PlatformCredentialStore {
         save_electricity_monitor,
         ElectricityMonitorRecord,
         ElectricityMonitor
+    );
+    stored_value!(
+        load_proxy_settings,
+        save_proxy_settings,
+        ProxySettings,
+        NetworkProxy
     );
 
     fn storage_status(&self) -> CredentialStorageStatus {

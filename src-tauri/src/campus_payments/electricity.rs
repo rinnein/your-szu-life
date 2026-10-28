@@ -222,8 +222,8 @@ const SIMS_AREAS: [SimsArea; 4] = [
 ];
 
 fn client() -> Result<Client, String> {
-    Client::builder()
-        .no_proxy()
+    // 电费接口都在内网：走不走代理交给 netproxy 按目标地址判断。
+    crate::netproxy::blocking_client_builder()
         .cookie_store(true)
         .connect_timeout(Duration::from_secs(3))
         .timeout(Duration::from_secs(12))

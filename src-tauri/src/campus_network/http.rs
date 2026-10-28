@@ -77,8 +77,8 @@ fn classify_reqwest_error(error: reqwest::Error) -> HttpError {
 }
 
 pub(super) fn client_builder() -> reqwest::blocking::ClientBuilder {
-    Client::builder()
-        .no_proxy()
+    // 校内网地址是否走代理由 netproxy 按目标地址统一判断，调用方不再自己决定。
+    crate::netproxy::blocking_client_builder()
         .redirect(Policy::none())
         .connect_timeout(Duration::from_secs(3))
         .timeout(REQUEST_TIMEOUT)

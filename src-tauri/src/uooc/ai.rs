@@ -265,7 +265,7 @@ pub(super) fn normalize_url(raw: &str) -> Result<String, String> {
 fn http() -> Result<reqwest::Client, String> {
     #[cfg(target_os = "android")]
     crate::platform_tls::initialize_platform_verifier()?;
-    reqwest::Client::builder()
+    crate::netproxy::client_builder()
         .timeout(Duration::from_secs(180))
         .connect_timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::none())
@@ -521,7 +521,7 @@ mod config_tests {
 }
 
 fn search_http_client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
+    crate::netproxy::client_builder()
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::limited(5))

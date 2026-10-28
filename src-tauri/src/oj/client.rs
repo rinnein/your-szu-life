@@ -77,7 +77,7 @@ impl Client {
                 .map_err(|_| "OJ 会话数据无效")?
         };
         let jar = Arc::new(CookieStoreMutex::new(store));
-        let builder = Http::builder()
+        let builder = crate::netproxy::client_builder()
             .cookie_provider(jar.clone())
             .redirect(reqwest::redirect::Policy::none())
             .timeout(Duration::from_secs(20))
@@ -86,6 +86,7 @@ impl Client {
         #[cfg(target_os = "android")]
         crate::platform_tls::initialize_platform_verifier()?;
         Ok(Self {
+            // OJ 站点地址由用户填写：内网/校内网是否绕过代理交给 netproxy 判断。
             http: builder.build().map_err(|_| "无法建立 OJ 连接")?,
             jar,
             base,

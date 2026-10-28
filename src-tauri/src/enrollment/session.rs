@@ -82,7 +82,7 @@ pub fn merge(target: &CookieStoreMutex, source: &CookieStoreMutex) {
 pub fn client(jar: Arc<CookieStoreMutex>) -> Result<reqwest::blocking::Client> {
     #[cfg(target_os = "android")]
     crate::platform_tls::initialize_platform_verifier().map_err(Error::from)?;
-    reqwest::blocking::Client::builder()
+    crate::netproxy::blocking_client_builder()
         .cookie_provider(jar)
         .redirect(reqwest::redirect::Policy::none())
         .timeout(std::time::Duration::from_secs(20))

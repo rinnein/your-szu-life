@@ -7,7 +7,7 @@ use super::{
     session::SessionRestoreError,
     session::{AuthSessionSecret, StoredAuthCookie},
 };
-use reqwest::{blocking::Client, cookie::Jar, redirect::Policy, Url};
+use reqwest::{cookie::Jar, redirect::Policy, Url};
 use std::{io::Read, sync::Arc, time::Duration};
 use time::{format_description::well_known::Rfc2822, OffsetDateTime};
 
@@ -68,7 +68,7 @@ pub(super) fn refresh_session(
             jar.add_cookie_str(&serialized.to_string(), &endpoint);
         }
     }
-    let client = match Client::builder()
+    let client = match crate::netproxy::blocking_client_builder()
         .connect_timeout(Duration::from_secs(3))
         .timeout(Duration::from_secs(8))
         .redirect(Policy::none())

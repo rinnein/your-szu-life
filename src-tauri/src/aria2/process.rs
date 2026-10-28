@@ -31,38 +31,91 @@ pub struct Aria2Process {
     child: Option<Child>,
 }
 
+/// aria2 的固定参数表。抽成纯函数是为了能直接断言代理注入前后的命令行。
+pub(super) fn base_args(port: u16, secret: &str, log_path: &Path) -> Vec<String> {
+    vec![
+        "--enable-rpc=true".into(),
+        "--rpc-listen-all=false".into(),
+        format!("--rpc-listen-port={port}"),
+        format!("--rpc-secret={secret}"),
+        "--max-connection-per-server=16".into(),
+        "--split=16".into(),
+        "--min-split-size=1M".into(),
+        "--no-conf=true".into(),
+        "--console-log-level=warn".into(),
+        format!("--log={}", log_path.display()),
+        "--log-level=warn".into(),
+        "--quiet=true".into(),
+        "--allow-overwrite=true".into(),
+        "--auto-file-renaming=false".into(),
+        "--continue=true".into(),
+        "--connect-timeout=15".into(),
+        "--timeout=15".into(),
+        "--max-tries=5".into(),
+        "--retry-wait=2".into(),
+        "--check-certificate=false".into(),
+    ]
+}
+
+/// 代理相关的额外参数，以及必须先清掉的环境变量。
+#[derive(Debug, PartialEq, Eq)]
+pub(super) struct ProxyInjection {
+    pub(super) args: Vec<String>,
+    pub(super) removed_env: Vec<&'static str>,
+}
+
+const PROXY_ENV: [&str; 8] = [
+    "http_proxy",
+    "HTTP_PROXY",
+    "https_proxy",
+    "HTTPS_PROXY",
+    "all_proxy",
+    "ALL_PROXY",
+    "ftp_proxy",
+    "FTP_PROXY",
+];
+
+pub(super) fn proxy_injection(proxy: &crate::netproxy::Aria2Proxy) -> ProxyInjection {
+    use crate::netproxy::Aria2Proxy;
+    match proxy {
+        // 显式空值 = 禁用 aria2 的全部代理；同时清掉环境变量，免得它自己又读回来。
+        Aria2Proxy::Disabled => ProxyInjection {
+            args: vec!["--all-proxy=".into()],
+            removed_env: PROXY_ENV.to_vec(),
+        },
+        // 「自动」交给 aria2 自己按环境变量/系统设置决定，这里不干预。
+        Aria2Proxy::Environment => ProxyInjection {
+            args: Vec::new(),
+            removed_env: Vec::new(),
+        },
+        // 手动指定时清掉环境变量，保证显式参数优先。
+        Aria2Proxy::Manual(url) => ProxyInjection {
+            args: vec![format!("--all-proxy={url}")],
+            removed_env: PROXY_ENV.to_vec(),
+        },
+    }
+}
+
 impl Aria2Process {
     pub fn spawn(binary_path: &Path) -> Result<Self, String> {
         let port = find_available_aria2_port()?;
         let secret = uuid::Uuid::new_v4().to_string();
         let log_path = std::env::temp_dir().join(format!("aria2c-{port}.log"));
 
+        let injection = proxy_injection(&crate::netproxy::aria2_proxy());
         let mut cmd = Command::new(binary_path);
-        cmd.env_remove("ftp_proxy")
-            .env_remove("FTP_PROXY")
-            .stdin(Stdio::null())
+        cmd.stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .arg("--enable-rpc=true")
-            .arg("--rpc-listen-all=false")
-            .arg(format!("--rpc-listen-port={port}"))
-            .arg(format!("--rpc-secret={secret}"))
-            .arg("--max-connection-per-server=16")
-            .arg("--split=16")
-            .arg("--min-split-size=1M")
-            .arg("--no-conf=true")
-            .arg("--console-log-level=warn")
-            .arg(format!("--log={}", log_path.display()))
-            .arg("--log-level=warn")
-            .arg("--quiet=true")
-            .arg("--allow-overwrite=true")
-            .arg("--auto-file-renaming=false")
-            .arg("--continue=true")
-            .arg("--connect-timeout=15")
-            .arg("--timeout=15")
-            .arg("--max-tries=5")
-            .arg("--retry-wait=2")
-            .arg("--check-certificate=false");
+            .stderr(Stdio::null());
+        for arg in base_args(port, &secret, &log_path) {
+            cmd.arg(arg);
+        }
+        for key in injection.removed_env {
+            cmd.env_remove(key);
+        }
+        for arg in injection.args {
+            cmd.arg(arg);
+        }
 
         // Android 上没有 /etc/resolv.conf，c-ares 异步 DNS 会持续超时导致解析失败或崩溃，
         // 显式禁用 async-dns，回退至 Android 系统的标准 libc getaddrinfo 进行 DNS 解析。

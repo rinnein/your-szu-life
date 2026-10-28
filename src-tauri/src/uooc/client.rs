@@ -653,7 +653,7 @@ impl Client {
     pub fn with_base(jar: Arc<CookieStoreMutex>, base: &str) -> Result<Self, String> {
         #[cfg(target_os = "android")]
         crate::platform_tls::initialize_platform_verifier()?;
-        let http = reqwest::Client::builder()
+        let http = crate::netproxy::client_builder()
             .cookie_provider(jar.clone())
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(10))

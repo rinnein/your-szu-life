@@ -42,6 +42,12 @@ pub fn list_available_resources() -> Vec<Resource> {
         .with_title("公告")
         .with_description("获取软件公告、电费/OJ提醒")
         .with_mime_type("application/json"),
+        Resource::new("your-szu-life://data/network/proxy", "network_proxy")
+            .with_title("全局网络代理设置")
+            .with_description(
+                "返回代理模式、协议、服务器地址与校内网开关（不含代理密码）",
+            )
+            .with_mime_type("application/json"),
         Resource::new(
             "your-szu-life://data/settings/snapshot",
             "settings_snapshot",
@@ -120,6 +126,14 @@ pub async fn read_resource_by_uri(
             if let Some(store) = app.try_state::<crate::app_content::AppContentStore>() {
                 let snapshot = store.snapshot();
                 serde_json::to_string_pretty(&snapshot).unwrap_or_else(|_| "{}".to_string())
+            } else {
+                "{}".to_string()
+            }
+        }
+        "your-szu-life://data/network/proxy" => {
+            if let Some(store) = app.try_state::<crate::netproxy::ProxyStore>() {
+                let view = crate::netproxy::model::view(store.credentials.as_ref()).ok();
+                serde_json::to_string_pretty(&view).unwrap_or_else(|_| "{}".to_string())
             } else {
                 "{}".to_string()
             }

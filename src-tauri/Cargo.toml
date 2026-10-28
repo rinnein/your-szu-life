@@ -50,6 +50,8 @@ reqwest = { version = "0.13", default-features = false, features = [
   "cookies",
   "form",
   "query",
+  # SOCKS5 代理仅在打开该 feature 时才被 reqwest 接受（见 netproxy）。
+  "socks",
 ] }
 sha1 = "0.10"
 hmac = "0.12"

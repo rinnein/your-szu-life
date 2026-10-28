@@ -6,6 +6,7 @@ import {
   LuBell,
   LuBug,
   LuCpu,
+  LuGlobe,
   LuInfo,
   LuKeyboard,
   LuPalette,
@@ -24,6 +25,7 @@ import { LocalModelsSettings } from "./LocalModelSettings";
 import McpSettings from "./McpSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { NotificationSettings } from "./NotificationSettings";
+import { NetworkSettings } from "./NetworkSettings";
 import { ShortcutsTable } from "./command-palette";
 import AboutPage from "./AboutPage";
 import DebugLogPage from "./DebugLogPage";
@@ -40,6 +42,7 @@ const SETTINGS_TABS: ReadonlyArray<{
   { id: "profile", label: "个人信息", icon: LuUser },
   { id: "appearance", label: "外观", icon: LuPalette },
   { id: "notifications", label: "通知", icon: LuBell },
+  { id: "network", label: "网络", icon: LuGlobe },
   { id: "models", label: "本地模型", icon: LuCpu },
   { id: "ai", label: "AI配置", icon: LuSparkles },
   { id: "mcp", label: "MCP", icon: LuServer },
@@ -181,6 +184,7 @@ export default function SettingsPage() {
           )}
           {activeTab === "appearance" && <AppearanceSettings />}
           {activeTab === "notifications" && <NotificationSettings />}
+          {activeTab === "network" && <NetworkSettings />}
           {activeTab === "models" && <LocalModelsSettings autoReturnKind={focus} />}
           {activeTab === "ai" && <AiConnectionSettings />}
           {activeTab === "mcp" && <McpSettings />}

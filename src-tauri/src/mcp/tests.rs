@@ -30,6 +30,7 @@ fn test_resources_uris_and_metadata() {
     assert!(uris.contains(&"your-szu-life://data/uooc/courses"));
     assert!(uris.contains(&"your-szu-life://data/oj/contests"));
     assert!(uris.contains(&"your-szu-life://data/app/announcements"));
+    assert!(uris.contains(&"your-szu-life://data/network/proxy"));
     assert!(uris.contains(&"your-szu-life://data/settings/snapshot"));
 }
 
@@ -98,6 +99,11 @@ fn test_all_tools_registered() {
 
     // 11. 全局 UI 页面直达工具
     assert!(tool_names.contains(&"open_page"));
+
+    // 12. 全局网络代理
+    assert!(tool_names.contains(&"netproxy_get_settings"));
+    assert!(tool_names.contains(&"netproxy_set_settings"));
+    assert!(tool_names.contains(&"netproxy_test_proxy"));
 
     // 验证每个工具都有描述且参数 schema 合法
     for tool in &tools {

@@ -390,41 +390,23 @@ pub(crate) struct QaHttpResponse {
     pub body: String,
 }
 
-pub(crate) fn http_client_for_url(url: &str) -> Result<reqwest::Client, String> {
+/// 题库相关的出网客户端。
+///
+/// 题库服务器地址由用户填写，本地/内网/校内网是否绕过代理统一由 netproxy
+/// 按请求目标判断，这里不需要（也不应该）自己区分。
+pub(crate) fn http_client() -> Result<reqwest::Client, String> {
     #[cfg(target_os = "android")]
     crate::platform_tls::initialize_platform_verifier()?;
-
-    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(15));
-    if let Ok(parsed) = reqwest::Url::parse(url) {
-        if let Some(host) = parsed.host_str() {
-            let h = host.to_lowercase();
-            if h == "localhost"
-                || h == "127.0.0.1"
-                || h == "::1"
-                || h == "0.0.0.0"
-                || h.starts_with("192.168.")
-                || h.starts_with("10.")
-                || h.starts_with("172.")
-                || h.ends_with(".local")
-            {
-                builder = builder.no_proxy();
-            }
-        }
-    } else {
-        builder = builder.no_proxy();
-    }
-
-    builder.build().map_err(|e| format!("无法构建 HTTP 客户端: {e}"))
-}
-
-pub(crate) fn http_client() -> Result<reqwest::Client, String> {
-    http_client_for_url("http://localhost")
+    crate::netproxy::client_builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("无法构建 HTTP 客户端: {e}"))
 }
 
 pub(crate) async fn execute_qa_http_request(
     request: QaHttpRequest,
 ) -> Result<QaHttpResponse, String> {
-    let client = http_client_for_url(&request.url)?;
+    let client = http_client()?;
     let method = match request.method.to_uppercase().as_str() {
         "POST" => reqwest::Method::POST,
         "PUT" => reqwest::Method::PUT,

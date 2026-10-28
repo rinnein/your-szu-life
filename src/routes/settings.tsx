@@ -5,6 +5,7 @@ export type SettingsTab =
   | "profile"
   | "appearance"
   | "notifications"
+  | "network"
   | "models"
   | "ai"
   | "mcp"
@@ -25,6 +26,7 @@ export const Route = createFileRoute("/settings")({
       "profile",
       "appearance",
       "notifications",
+      "network",
       "models",
       "ai",
       "mcp",

@@ -145,4 +145,10 @@ permissions = [
   "allow-get-appearance",
   "allow-save-appearance",
   "allow-get-wallpaper-seed",
+  "allow-get-notification-settings",
+  "allow-save-notification-settings",
+  "allow-set-application-focus",
+  "allow-get-proxy-settings",
+  "allow-save-proxy-settings",
+  "allow-test-proxy-settings",
 ]

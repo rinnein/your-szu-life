@@ -1757,7 +1757,7 @@ pub(crate) async fn build_single_task_group(
     if !server_lacks_task_group {
         let course_api_url = format!("{}/api/courses/{}", qa_url.trim_end_matches('/'), cid);
         let mut server_has_tid = false;
-        if let Ok(client_http) = qa::http_client_for_url(&course_api_url) {
+        if let Ok(client_http) = qa::http_client() {
             let mut req = client_http.get(&course_api_url);
             if let Some(key) = &qa_key {
                 let trimmed = key.trim();
@@ -1900,7 +1900,7 @@ pub(crate) async fn build_local_bank(service: &Arc<Service>) -> Result<usize, St
         // 对照服务端检查当前课程下已收录的题单与题目覆盖率，拉取服务端已知 taskGroups
         let mut server_tids = HashSet::new();
         let course_api_url = format!("{}/api/courses/{}", qa_url.trim_end_matches('/'), course.id);
-        if let Ok(client_http) = qa::http_client_for_url(&course_api_url) {
+        if let Ok(client_http) = qa::http_client() {
             let mut req = client_http.get(&course_api_url);
             if let Some(key) = &qa_key {
                 let trimmed = key.trim();

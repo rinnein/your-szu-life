@@ -17,7 +17,7 @@ pub struct OpenPageParams {
 impl UnifiedSzuMcpService {
     #[tool(
         name = "open_page",
-        description = "打开或激活your-szu-life桌面窗口，并导航到指定的 your-szu-life://page/... 页面。可用页面：空路径(首页)、study、life、settings、study/class-timetable、study/computing、study/oj、study/uooc、study/academic、study/enrollment、life/campus-network、life/campus-payments、life/campus-payments/card、life/campus-payments/network、life/campus-payments/electricity、life/campus-payments/recharge。设置页的关于与诊断日志是 tab，使用 settings?tab=about 与 settings?tab=debug。"
+        description = "打开或激活your-szu-life桌面窗口，并导航到指定的 your-szu-life://page/... 页面。可用页面：空路径(首页)、study、life、settings、study/class-timetable、study/computing、study/oj、study/uooc、study/academic、study/enrollment、life/campus-network、life/campus-payments、life/campus-payments/card、life/campus-payments/network、life/campus-payments/electricity、life/campus-payments/recharge。设置页的外观、通知、网络、关于与诊断日志是 tab，使用 settings?tab=appearance、settings?tab=notifications、settings?tab=network、settings?tab=about 与 settings?tab=debug。"
     )]
     pub async fn open_page(
         &self,

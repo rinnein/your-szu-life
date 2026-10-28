@@ -372,7 +372,7 @@ mod tests {
 }
 
 fn media_client() -> Result<Client, String> {
-    Client::builder()
+    crate::netproxy::blocking_client_builder()
         .user_agent(super::user_agent::DESKTOP)
         .timeout(Duration::from_secs(15))
         .connect_timeout(Duration::from_secs(8))

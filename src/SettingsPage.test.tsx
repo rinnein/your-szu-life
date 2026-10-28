@@ -73,6 +73,17 @@ describe("SettingsPage multi-tab and unified local model card", () => {
           jev: { baseUrl: "https://api.typesafe.ai/v1", hasKey: false },
         };
       }
+      if (command === "get_proxy_settings") {
+        return {
+          mode: "auto",
+          protocol: "http",
+          host: "",
+          port: 8080,
+          username: "",
+          hasPassword: false,
+          campusThroughProxy: false,
+        };
+      }
       if (command === "get_mcp_server_status") {
         return {
           running: true,
@@ -95,6 +106,7 @@ describe("SettingsPage multi-tab and unified local model card", () => {
     expect(await screen.findByRole("tab", { name: /个人信息/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /外观/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /通知/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /网络/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /本地模型/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /AI配置/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /MCP/ })).toBeInTheDocument();
@@ -111,6 +123,20 @@ describe("SettingsPage multi-tab and unified local model card", () => {
     expect(screen.queryByText("隐私信息存储")).not.toBeInTheDocument();
     expect(screen.queryByText("当前使用系统密钥环")).not.toBeInTheDocument();
     expect(invoke).not.toHaveBeenCalledWith("get_credential_storage_status");
+  });
+
+  it("switches to 网络 tab and displays NetworkSettings", async () => {
+    const { testRouter } = renderRouterApp("/settings");
+
+    await screen.findByRole("tab", { name: /网络/ });
+    fireEvent.click(screen.getByRole("tab", { name: /网络/ }));
+
+    await waitFor(() => {
+      expect(testRouter.state.location.search).toMatchObject({ tab: "network" });
+    });
+
+    expect(await screen.findByText("代理模式")).toBeInTheDocument();
+    expect(screen.getByText("校内网也走代理")).toBeInTheDocument();
   });
 
   it("switches to 通知 tab and displays NotificationSettings", async () => {

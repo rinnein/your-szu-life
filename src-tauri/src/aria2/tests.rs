@@ -2,10 +2,68 @@ use super::{
     binary::find_aria2c_binary,
     client::Aria2WebSocketClient,
     downloader::{verify_file_hash_and_size, PROGRESS_POLL_INTERVAL_MS},
-    process::Aria2Lease,
+    process::{base_args, proxy_injection, Aria2Lease},
 };
+use crate::netproxy::Aria2Proxy;
 use std::io::Write;
+use std::path::Path;
 use tempfile::NamedTempFile;
+
+#[test]
+fn base_args_keep_the_expected_rpc_and_transfer_options() {
+    let args = base_args(54001, "secret", Path::new("/tmp/aria2c.log"));
+    for expected in [
+        "--enable-rpc=true",
+        "--rpc-listen-all=false",
+        "--rpc-listen-port=54001",
+        "--rpc-secret=secret",
+        "--split=16",
+        "--no-conf=true",
+        "--check-certificate=false",
+        "--log=/tmp/aria2c.log",
+    ] {
+        assert!(args.iter().any(|arg| arg == expected), "缺少 {expected}");
+    }
+    // --no-conf 必须在：只有这一份参数表，没有配置文件会覆盖它。
+    assert!(args.iter().all(|arg| !arg.starts_with("--all-proxy")));
+}
+
+#[test]
+fn disabled_proxy_clears_every_proxy_env_var() {
+    let injection = proxy_injection(&Aria2Proxy::Disabled);
+    assert_eq!(injection.args, vec!["--all-proxy=".to_owned()]);
+    for key in [
+        "http_proxy",
+        "HTTP_PROXY",
+        "https_proxy",
+        "HTTPS_PROXY",
+        "all_proxy",
+        "ALL_PROXY",
+        "ftp_proxy",
+        "FTP_PROXY",
+    ] {
+        assert!(injection.removed_env.contains(&key), "未清理 {key}");
+    }
+}
+
+#[test]
+fn auto_proxy_leaves_aria2_alone() {
+    let injection = proxy_injection(&Aria2Proxy::Environment);
+    assert!(injection.args.is_empty());
+    assert!(injection.removed_env.is_empty());
+}
+
+#[test]
+fn manual_proxy_wins_over_the_environment() {
+    let injection = proxy_injection(&Aria2Proxy::Manual(
+        "http://user:pass@proxy.example:7890".into(),
+    ));
+    assert_eq!(
+        injection.args,
+        vec!["--all-proxy=http://user:pass@proxy.example:7890".to_owned()]
+    );
+    assert!(!injection.removed_env.is_empty());
+}
 
 #[test]
 fn test_find_aria2c_binary() {

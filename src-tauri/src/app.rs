@@ -1,5 +1,5 @@
 use crate::{
-    app_content, auth, campus_network, campus_payments, oj, settings,
+    app_content, auth, campus_network, campus_payments, netproxy, oj, settings,
     storage::{PlatformCredentialStore, SharedCredentialStore},
     uooc,
 };
@@ -10,6 +10,7 @@ pub(crate) fn run() {
     let credentials: SharedCredentialStore = Arc::new(PlatformCredentialStore);
     let electricity_credentials = credentials.clone();
     let academic_credentials = credentials.clone();
+    let proxy_credentials = credentials.clone();
     let (daily_writer, file_filter) = crate::logging::create_daily_writer();
     let file_dispatch = tauri_plugin_log::fern::Dispatch::new()
         .format(move |out, message, record| {
@@ -36,7 +37,8 @@ pub(crate) fn run() {
         ))
         .manage(settings::SettingsStore::new(Arc::new(
             PlatformCredentialStore,
-        )));
+        )))
+        .manage(netproxy::ProxyStore::new(proxy_credentials));
     // 必须最先注册：重复启动的进程在这里把参数交给已运行实例后退出。
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -82,6 +84,10 @@ pub(crate) fn run() {
             crate::logging::initialize(app.handle());
             if let Err(error) = crate::storage::initialize(app.handle()) {
                 log::error!("凭据存储初始化失败: {error}");
+            }
+            // 必须在任何 HTTP 客户端被构建之前：代理设置以进程级缓存决定所有出网策略。
+            if let Err(error) = crate::netproxy::initialize(app.handle()) {
+                log::error!("代理设置初始化失败，本次运行按「自动」处理: {error}");
             }
             if let Err(error) = crate::ocr::initialize(app.handle()) {
                 log::error!("OCR 模型服务初始化失败: {error}");
@@ -178,6 +184,9 @@ pub(crate) fn run() {
             crate::notification::commands::get_notification_settings,
             crate::notification::commands::save_notification_settings,
             crate::notification::commands::set_application_focus,
+            crate::netproxy::commands::get_proxy_settings,
+            crate::netproxy::commands::save_proxy_settings,
+            crate::netproxy::commands::test_proxy_settings,
             uooc::commands::get_uooc_snapshot,
             uooc::commands::subscribe_uooc_state,
             uooc::commands::get_uooc_ai_config,

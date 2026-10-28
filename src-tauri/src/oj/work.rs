@@ -641,8 +641,7 @@ impl Service {
             })
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| e.message)?;
-        let http = reqwest::Client::builder()
-            .no_proxy()
+        let http = crate::netproxy::client_builder()
             .redirect(reqwest::redirect::Policy::none())
             .timeout(std::time::Duration::from_secs(5))
             .build()

@@ -45,19 +45,20 @@ pub(super) struct PublicClient {
 
 impl PublicClient {
     pub fn new(version: &str) -> Self {
-        let client = Self::build(version);
-        Self { client }
+        Self {
+            client: Self::build(version),
+        }
     }
 
     fn build(version: &str) -> Result<Client, ContentError> {
         #[cfg(target_os = "android")]
         crate::platform_tls::initialize_platform_verifier()
             .map_err(|_| ContentError::new(ErrorKind::Unavailable, "无法初始化系统 TLS 验证器"))?;
-        Client::builder()
+        // 代理策略与绕过判断都在 netproxy 里，这里只描述这个客户端自己要什么。
+        crate::netproxy::blocking_client_builder()
             .user_agent(format!("your-szu-life/{version}"))
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(15))
-            // Use the platform/environment proxy policy; never the portal client's no_proxy.
             .cookie_store(false)
             .referer(false)
             // A redirect is a non-success response, not permission to proxy another image URL.

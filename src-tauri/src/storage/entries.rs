@@ -11,6 +11,7 @@ use crate::{
     },
     campus_network::model::{DormCustomCredentials, DormNetworkSettings, StaffNetworkSettings},
     campus_payments::model::{ElectricityLocationSettings, ElectricityMonitorRecord},
+    netproxy::ProxySettings,
     oj::model::Secret as OjSecret,
     storage::CredentialStore,
 };
@@ -142,6 +143,12 @@ pub(crate) fn validate_value(key: &str, value: Value) -> Result<(), String> {
             serde_json::from_value::<ElectricityMonitorRecord>(value)
                 .map_err(|_| "电费监控记录格式无效")?;
         }
+        PROXY_SETTINGS => {
+            serde_json::from_value::<ProxySettings>(value)
+                .map_err(|_| "网络代理设置格式无效")?
+                .validate()
+                .map_err(|_| "网络代理设置取值无效")?;
+        }
         _ => return Err("设置键无效".into()),
     }
     Ok(())
@@ -169,9 +176,11 @@ pub(crate) const STAFF_SETTINGS: &str = "fixed.network.staff.settings";
 pub(crate) const STAFF_CREDENTIALS: &str = "fixed.network.staff.credentials";
 pub(crate) const ELECTRICITY_LOCATION: &str = "fixed.electricity.location";
 pub(crate) const ELECTRICITY_MONITOR: &str = "runtime.electricity.monitor";
+/// 全局网络代理。属于用户配置（`fixed.`），随设置迁移导出。
+pub(crate) const PROXY_SETTINGS: &str = "fixed.network.proxy";
 
 /// 设置导出与本地凭据文档共享的完整键集合。
-pub(crate) const ALL_KEYS: [&str; 14] = [
+pub(crate) const ALL_KEYS: [&str; 15] = [
     PROFILE,
     PENDING_AUTH,
     AUTH_SESSION,
@@ -186,6 +195,7 @@ pub(crate) const ALL_KEYS: [&str; 14] = [
     STAFF_CREDENTIALS,
     ELECTRICITY_LOCATION,
     ELECTRICITY_MONITOR,
+    PROXY_SETTINGS,
 ];
 
 /// 旧版钥匙环条目名与文档键的对应关系，供迁移使用。
@@ -324,6 +334,7 @@ pub(crate) fn read_entry(store: &dyn CredentialStore, key: &str) -> Result<Optio
         STAFF_CREDENTIALS => value!(store.load_staff_credentials()),
         ELECTRICITY_LOCATION => value!(store.load_electricity_settings()),
         ELECTRICITY_MONITOR => value!(store.load_electricity_monitor()),
+        PROXY_SETTINGS => value!(store.load_proxy_settings()),
         OJ_ACCOUNTS | OJ_SESSIONS => {
             let raw = store.load_oj_accounts()?;
             match raw {
@@ -386,6 +397,7 @@ pub(crate) fn write_entry(
         STAFF_CREDENTIALS => save!(DormCustomCredentials, save_staff_credentials),
         ELECTRICITY_LOCATION => save!(ElectricityLocationSettings, save_electricity_settings),
         ELECTRICITY_MONITOR => save!(ElectricityMonitorRecord, save_electricity_monitor),
+        PROXY_SETTINGS => save!(ProxySettings, save_proxy_settings),
         OJ_ACCOUNTS | OJ_SESSIONS => write_oj_entry(store, key, value),
         _ => Err("设置键无效".into()),
     }
