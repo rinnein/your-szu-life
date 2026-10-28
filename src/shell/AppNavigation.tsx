@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useRouterState } from "@tanstack/react-router";
 import {
   NavigationBar,
@@ -25,6 +26,36 @@ export function AppNavigation() {
   const navigation = useLogicalNavigation();
   const wide = useMediaQuery(RAIL_QUERY);
   const active = activeDestination(pathname);
+
+  // 动态测量底部导航栏高度，供弹窗（如 Snackbar）避让定位使用
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (wide) {
+      document.documentElement.style.removeProperty("--app-nav-bar-height");
+      return;
+    }
+    const update = () => {
+      const bar = document.querySelector(".app-nav-bar");
+      if (!bar) {
+        document.documentElement.style.removeProperty("--app-nav-bar-height");
+        return;
+      }
+      const rect = bar.getBoundingClientRect();
+      if (rect.height > 0) {
+        document.documentElement.style.setProperty("--app-nav-bar-height", `${rect.height}px`);
+      } else {
+        document.documentElement.style.removeProperty("--app-nav-bar-height");
+      }
+    };
+    update();
+    const bar = document.querySelector(".app-nav-bar");
+    const ro = bar && typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
+    if (bar && ro) ro.observe(bar);
+    return () => {
+      ro?.disconnect();
+      document.documentElement.style.removeProperty("--app-nav-bar-height");
+    };
+  }, [wide, pathname]);
 
   const navigate = (value: string) => {
     const destination = DESTINATIONS.find((item) => item.value === value);

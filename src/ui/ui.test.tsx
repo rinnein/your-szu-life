@@ -178,6 +178,7 @@ describe("toast", () => {
     toast.success("已保存", { description: "共 3 项" });
     const host = document.querySelector("m-snackbar")!;
     expect(host).not.toBeNull();
+    expect(host.classList.contains("app-snackbar")).toBe(true);
     // 正文由 Snackbar 自己在 top layer 的表面上渲染，宿主只承载配置属性。
     expect(host.getAttribute("message")).toBe("已保存 · 共 3 项");
     expect(document.querySelector(".mtrl-snackbar__text")?.textContent).toBe("已保存 · 共 3 项");

@@ -44,6 +44,7 @@ class ToastQueue {
     const indefinite = timeout === 0;
 
     const host = document.createElement("m-snackbar") as SnackbarElement;
+    host.className = "app-snackbar";
     host.setAttribute("message", text);
     host.setAttribute("duration", indefinite ? "indefinite" : String(timeout));
     host.setAttribute("position", "center");

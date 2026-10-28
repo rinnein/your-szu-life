@@ -89,4 +89,51 @@ describe("AppNavigation", () => {
 
     expect(labelsOf("m-navigation-bar-item")).toEqual(NAV_LABELS);
   });
+
+  it("sets --app-nav-bar-height on document root when narrow navigation bar has measured height", async () => {
+    const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      if (this.classList.contains("app-nav-bar")) {
+        return {
+          height: 65,
+          width: 390,
+          top: 779,
+          bottom: 844,
+          left: 0,
+          right: 390,
+          x: 0,
+          y: 779,
+          toJSON: () => {},
+        };
+      }
+      return originalGetBoundingClientRect.call(this);
+    };
+
+    try {
+      renderAt("/");
+      await screen.findByRole("heading", { name: "首页" });
+      expect(document.documentElement.style.getPropertyValue("--app-nav-bar-height")).toBe("65px");
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalGetBoundingClientRect;
+      document.documentElement.style.removeProperty("--app-nav-bar-height");
+    }
+  });
+
+  it("clears --app-nav-bar-height on wide screen rail navigation", async () => {
+    document.documentElement.style.setProperty("--app-nav-bar-height", "65px");
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockImplementation((query: string) => ({
+        media: query,
+        matches: query.includes("min-width: 900px"),
+        addEventListener() {},
+        removeEventListener() {},
+        addListener() {},
+        removeListener() {},
+      })),
+    );
+    renderAt("/");
+    await screen.findByRole("heading", { name: "首页" });
+    expect(document.documentElement.style.getPropertyValue("--app-nav-bar-height")).toBe("");
+  });
 });
