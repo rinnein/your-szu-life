@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { useRouterState } from "@tanstack/react-router";
 import {
   NavigationBar,
@@ -7,28 +6,12 @@ import {
   NavigationRailItem,
 } from "material/react";
 import { useLogicalNavigation } from "../logical-navigation";
+import { useMediaQuery } from "../responsive";
 import { activeDestination, DESTINATIONS } from "./destinations";
 import { icon, type IconName } from "./icons";
 
 /** 桌面侧边导航的断点。低于此宽度用底部导航栏。 */
 const RAIL_QUERY = "(min-width: 900px)";
-
-function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(() =>
-    typeof window !== "undefined" && typeof window.matchMedia === "function"
-      ? window.matchMedia(query).matches
-      : false,
-  );
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
-    const list = window.matchMedia(query);
-    const update = () => setMatches(list.matches);
-    update();
-    list.addEventListener("change", update);
-    return () => list.removeEventListener("change", update);
-  }, [query]);
-  return matches;
-}
 
 /**
  * 应用导航外壳。

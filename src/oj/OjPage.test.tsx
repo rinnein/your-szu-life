@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { hostOf, typeInto } from "../ui/testing";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { shadowOf, typeInto, waitForUpgrade } from "../ui/testing";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { ojProgressCache, progressScope } from "./progress-store";
@@ -9,6 +9,7 @@ import { clearListCache } from "./list-cache";
 import { listen } from "@tauri-apps/api/event";
 import OjPage, { SiteEditor } from "./OjPage";
 import { OjPaper } from "./OjPaper";
+import { mockElementRects, mockViewportHeight } from "../test-layout";
 import type { Paper, Site } from "./types";
 const { search, nav, auth } = vi.hoisted(() => ({
   search: {
@@ -127,6 +128,8 @@ beforeEach(() => {
       disconnect() {}
     },
   );
+  // 默认按「无布局」起步（宽度 0、窗口高 768），档位测试自己按需打桩。
+  mockElementRects({});
   vi.clearAllMocks();
   search.site = undefined;
   search.group = undefined;
@@ -439,23 +442,26 @@ it.each([
   expect(screen.queryByLabelText("本机接收端口")).toBeNull();
 });
 
-it("marks the directory and shows only the selected problem's submissions", async () => {
-  const coding: Paper = {
-    ...paper,
-    problems: [1, 2].map((id) => ({
-      ...paper.problems[0],
-      id: String(id),
-      displayLabel: id === 1 ? "A" : "B",
-      kind: 0,
-      title: `题目 ${id}`,
-      choices: [],
-      languages: ["cpp"],
-    })),
-    drafts: {
-      "0:1": { code: "first", language: "cpp", options: null, answer: "", revision: 1 },
-      "0:2": { code: "second", language: "cpp", options: null, answer: "", revision: 1 },
-    },
-  };
+/** 两道编程题的测验：题目目录与切换器都只有多题时才有意义。 */
+const twoCodingProblems: Paper = {
+  ...paper,
+  problems: [1, 2].map((id) => ({
+    ...paper.problems[0],
+    id: String(id),
+    displayLabel: id === 1 ? "A" : "B",
+    kind: 0,
+    title: `题目 ${id}`,
+    choices: [],
+    languages: ["cpp"],
+  })),
+  drafts: {
+    "0:1": { code: "first", language: "cpp", options: null, answer: "", revision: 1 },
+    "0:2": { code: "second", language: "cpp", options: null, answer: "", revision: 1 },
+  },
+};
+
+/** 第一题 AC、第二题 WA 的提交记录。 */
+function serveRecords(coding: Paper) {
   const previous = vi.mocked(invoke).getMockImplementation()!;
   vi.mocked(invoke).mockImplementation(async (cmd, args) => {
     if (cmd === "get_oj_paper") return coding;
@@ -469,16 +475,142 @@ it("marks the directory and shows only the selected problem's submissions", asyn
       };
     return previous(cmd, args);
   });
+}
+
+/** oj.css 依据这两个属性切换布局，断言值相等才算接上了。 */
+const layoutOf = (container: HTMLElement) =>
+  container.querySelector(".oj-paper")?.getAttribute("data-oj-layout");
+const readingOf = (container: HTMLElement) =>
+  container.querySelector(".oj-detail")?.getAttribute("data-oj-reading");
+
+/**
+ * 题目列表的行在 Drawer 的 shadow root 里（`<m-drawer-item>` 只是声明，不渲染内容），
+ * 而 material 是在升级后按声明建行、并在声明属性变化时重建，所以要等升级再查。
+ */
+async function drawerRows(host: HTMLElement) {
+  await waitForUpgrade(host);
+  const root = host.shadowRoot as unknown as HTMLElement;
+  return {
+    inner: within(root),
+    rows: () => Array.from(root.querySelectorAll<HTMLElement>(".mtrl-drawer__item")),
+  };
+}
+
+/** 判定胶囊是 icon 槽里那个带行内样式的 span（胶囊在 shadow 内，只能靠行内样式着色）。 */
+const pillOf = (row: HTMLElement) => row.querySelector<HTMLElement>(".mtrl-drawer__item-icon span");
+
+it("容器放得下侧栏时用常开抽屉列出题目与判定", async () => {
+  mockElementRects({ "oj-paper": 1600, "oj-detail": 1100 });
+  serveRecords(twoCodingProblems);
   const props = { site, contestId: "1", tab: "records", desktop: false, port: 27121 };
   const view = render(<OjPaper {...props} selected="0:1" />);
   await screen.findByText("#11");
+  expect(layoutOf(view.container)).toBe("docked");
+  // 详情区自己宽到放得下题面与作答两栏。
+  expect(readingOf(view.container)).toBe("split");
+  expect(view.container.querySelector(".oj-switcher-strip")).toBeNull();
+  expect(view.container.querySelector(".oj-switcher-compact")).toBeNull();
+
+  const drawer = view.container.querySelector<HTMLElement>("m-drawer");
+  expect(drawer).not.toBeNull();
+  expect(drawer!.hasAttribute("modal")).toBe(false);
+  // 宽度由 width 属性写成的内联样式供给，网格那一列（oj.css 的 240px）只是与之对齐。
+  expect(drawer!.shadowRoot!.querySelector(".mtrl-drawer")?.getAttribute("style")).toContain(
+    "--mtrl-drawer-width: 240px",
+  );
+
+  const { inner } = await drawerRows(drawer!);
+  await waitFor(() =>
+    expect(inner.getByRole("button", { name: /A\. 题目 1/ }).textContent).toContain("AC"),
+  );
+  const accepted = inner.getByRole("button", { name: /A\. 题目 1/ });
+  const wrong = inner.getByRole("button", { name: /B\. 题目 2/ });
+  expect(wrong.textContent).toContain("WA");
+  // 判定仍是绿/红语义色：胶囊底色取 MD3 的 success / error 令牌。
+  expect(pillOf(accepted)?.getAttribute("style")).toContain("--mtrl-sys-color-success");
+  expect(pillOf(wrong)?.getAttribute("style")).toContain("--mtrl-sys-color-error");
+  // 选中项由 Drawer 自己的 active 状态表达（value 与当前题目对齐）。
+  expect(drawer!.shadowRoot!.querySelector(".mtrl-drawer__item--active")?.textContent).toContain(
+    "A. 题目 1",
+  );
+
   expect(screen.queryByText("#12")).toBeNull();
-  // 可见文案由自定义元素宿主承接（shadow 内的 <slot> 不参与 textContent）。
-  expect(hostOf(screen.getByRole("button", { name: /A. 题目 1/ }))?.textContent).toContain("AC");
-  expect(hostOf(screen.getByRole("button", { name: /B. 题目 2/ }))?.textContent).toContain("WA");
   view.rerender(<OjPaper {...props} selected="0:2" />);
   await screen.findByText("#12");
   expect(screen.queryByText("#11")).toBeNull();
+});
+
+it("容器窄而窗口高时只出现横向题目切换，胶囊带判定", async () => {
+  mockElementRects({ "oj-paper": 600 });
+  mockViewportHeight(900);
+  serveRecords(twoCodingProblems);
+  const view = render(
+    <OjPaper site={site} contestId="1" tab="records" desktop={false} port={27121} />,
+  );
+  await screen.findByText("#11");
+  expect(layoutOf(view.container)).toBe("strip");
+  expect(readingOf(view.container)).toBe("stacked");
+  expect(view.container.querySelector(".oj-switcher-strip")).not.toBeNull();
+  expect(view.container.querySelector(".oj-switcher-compact")).toBeNull();
+  expect(view.container.querySelector("m-drawer")).toBeNull();
+
+  const tabs = shadowOf(view.container, "m-tabs");
+  await waitFor(() =>
+    expect(tabs.inner.getByRole("tab", { name: /A\. 题目 1/ }).textContent).toContain("AC"),
+  );
+  const accepted = tabs.inner.getByRole("tab", { name: /A\. 题目 1/ });
+  const wrong = tabs.inner.getByRole("tab", { name: /B\. 题目 2/ });
+  expect(wrong.textContent).toContain("WA");
+  // 横条与抽屉用同一套彩色判定胶囊。
+  expect(
+    accepted.querySelector<HTMLElement>(".mtrl-button__icon span")?.getAttribute("style"),
+  ).toContain("--mtrl-sys-color-success");
+  expect(
+    wrong.querySelector<HTMLElement>(".mtrl-button__icon span")?.getAttribute("style"),
+  ).toContain("--mtrl-sys-color-error");
+});
+
+it("容器窄而窗口矮时用触发按钮加模态抽屉切换题目", async () => {
+  mockElementRects({ "oj-paper": 600 });
+  mockViewportHeight(500);
+  serveRecords(twoCodingProblems);
+  const view = render(
+    <OjPaper site={site} contestId="1" tab="records" desktop={false} port={27121} />,
+  );
+  await screen.findByText("#11");
+  expect(layoutOf(view.container)).toBe("sheet");
+  expect(view.container.querySelector(".oj-switcher-compact")).not.toBeNull();
+  expect(view.container.querySelector(".oj-switcher-strip")).toBeNull();
+  // 窄屏的题目列表是模态抽屉，挂在 body 上而不是纸张里。
+  expect(view.container.querySelector("m-drawer")).toBeNull();
+  const drawer = document.querySelector<HTMLElement>("m-drawer")!;
+  expect(drawer.hasAttribute("modal")).toBe(true);
+  expect(drawer.hasAttribute("open")).toBe(false);
+
+  fireEvent.click(screen.getByRole("button", { name: /题目 1\/2/ }));
+  await waitFor(() => expect(drawer.hasAttribute("open")).toBe(true));
+  const { inner } = await drawerRows(drawer);
+  await waitFor(() =>
+    expect(inner.getByRole("button", { name: /A\. 题目 1/ }).textContent).toContain("AC"),
+  );
+  fireEvent.click(inner.getByRole("button", { name: /B\. 题目 2/ }));
+  await waitFor(() => expect(drawer.hasAttribute("open")).toBe(false));
+  const calls = vi.mocked(nav.replace).mock.calls;
+  const url = calls[calls.length - 1][0] as string;
+  expect(new URLSearchParams(url.split("?")[1]).get("problem")).toBe("0:2");
+});
+
+it("只有一道题时不渲染任何题目切换器", async () => {
+  mockElementRects({ "oj-paper": 600 });
+  mockViewportHeight(900);
+  const view = render(
+    <OjPaper site={site} contestId="1" tab="statement" desktop={false} port={27121} />,
+  );
+  await screen.findByRole("heading", { name: "测验" });
+  expect(view.container.querySelector(".oj-switcher-strip")).toBeNull();
+  expect(view.container.querySelector(".oj-switcher-compact")).toBeNull();
+  expect(view.container.querySelector("m-drawer")).toBeNull();
+  expect(document.querySelector("m-drawer")).toBeNull();
 });
 
 it("loads cached CPH code into a clean editor and preserves unsaved edits on conflict", async () => {

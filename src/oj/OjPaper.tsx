@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import {
   Checkbox,
   Dialog,
+  Drawer,
   LoadingIndicator,
   Radio,
   Radios,
@@ -29,12 +30,13 @@ import { CompileOptions } from "./CompileOptions";
 import { compileOptions } from "./compile-options";
 import { notifySuccess } from "./feedback";
 import { SampleField } from "./SampleField";
-import { Verdict } from "./JudgeResult";
+import { ProblemList } from "./ProblemList";
+import { problemStatus, statusPillHtml } from "./problem-status";
+import { useOjLayout } from "./layout";
 import { SubmissionRecord, ResultAccordion } from "./SubmissionRecord";
 import { RankingTable } from "./RankingTable";
 import { ContestStatus, formatRemaining } from "./ContestTable";
 import { useSubmissions } from "./useSubmissions";
-import { verdicts } from "./judging";
 const MonacoEditor = lazy(() => import("./MonacoEditor"));
 import {
   type Site,
@@ -195,6 +197,8 @@ export function OjPaper({
   const [saved, setSaved] = useState("已保存");
   const [confirm, setConfirm] = useState(false);
   const [manualCopy, setManualCopy] = useState<string>();
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const { layout, reading, paperRef, detailRef } = useOjLayout();
   const [now, setNow] = useState(Date.now());
   const dirty = useRef<Record<string, Draft>>({});
   const loaded = useRef<Paper>(undefined);
@@ -764,8 +768,16 @@ export function OjPaper({
         )}
       </div>
     ) : null;
+  const problemTotal = paper.problems.length;
+  // 只有一道题时切换器没有意义，省掉那一行。
+  const showSwitcher = problemTotal > 1;
+  const problemOrdinal = paper.problems.findIndex((problem) => problemKey(problem) === pk) + 1;
+  // 窄屏横条那一档没有常驻列表，触发按钮上带一个当前题目的判定胶囊。
+  const currentStatus = p
+    ? problemStatus(p, submissions.verdict, submissions.emptyVerdict)
+    : undefined;
   return (
-    <section className="oj-paper">
+    <section className="oj-paper" ref={paperRef} data-oj-layout={layout}>
       <div className="oj-toolbar">
         <div>
           <h2>{paper.contest.title}</h2>
@@ -819,82 +831,66 @@ export function OjPaper({
           </Button>
         </div>
       )}
-      {/* 移动端横向题目切换（小于 1024px 时在顶部横向滑动展示） */}
-      <div className="lg:hidden w-full overflow-x-auto scrollbar-none mb-4">
-        <Tabs
-          ref={(host) => nameTablist(host, "测验题目切换")}
-          value={pk || undefined}
-          onChange={(event) => {
-            if (event.detail.value) void go({ problem: event.detail.value });
-          }}
-        >
-          {paper.problems.map((problem) => (
-            <Tab value={problemKey(problem)} key={problemKey(problem)}>
-              {problem.displayLabel}. {problem.title}
-            </Tab>
-          ))}
-        </Tabs>
-      </div>
+      {/* 题目选择器：三档只渲染一档，档位由纸张容器的实测宽度决定（见 layout.ts）。 */}
+      {layout === "strip" && showSwitcher && (
+        <div className="oj-switcher-strip">
+          <Tabs
+            className="oj-problem-tabs"
+            ref={(host) => nameTablist(host, "测验题目切换")}
+            value={pk || undefined}
+            onChange={(event) => {
+              if (event.detail.value) void go({ problem: event.detail.value });
+            }}
+          >
+            {paper.problems.map((problem) => {
+              const status = problemStatus(problem, submissions.verdict, submissions.emptyVerdict);
+              return (
+                <Tab
+                  value={problemKey(problem)}
+                  key={problemKey(problem)}
+                  icon={statusPillHtml(status.tone, status.text)}
+                >
+                  {problem.displayLabel}. {problem.title}
+                </Tab>
+              );
+            })}
+          </Tabs>
+        </div>
+      )}
+      {layout === "sheet" && showSwitcher && (
+        <div className="oj-switcher-compact">
+          <Button
+            className="oj-switcher-compact-trigger"
+            variant="tonal"
+            icon={currentStatus && statusPillHtml(currentStatus.tone, currentStatus.text)}
+            onClick={() => setSheetOpen(true)}
+          >
+            题目 {problemOrdinal}/{problemTotal}
+          </Button>
+        </div>
+      )}
 
       <div className="oj-workspace">
-        <aside className="oj-directory hidden lg:block">
-          <h3>题目</h3>
-          {[0, 1, 2, 3, 4]
-            .filter((kind) => paper.problems.some((p) => p.kind === kind))
-            .map((kind) => (
-              <div className="oj-problem-group" key={kind}>
-                <h4 className="flex flex-wrap items-center gap-2">
-                  {kindName[kind]}
-                  {[0, 4].includes(kind) && (
-                    <span>
-                      {
-                        paper.problems.filter(
-                          (p) => p.kind === kind && submissions.verdict(p) === 0,
-                        ).length
-                      }
-                      /{paper.problems.length}
-                    </span>
-                  )}
-                  {paper.problems
-                    .filter((p) => p.kind === kind)
-                    .every((p) => submissions.verdict(p) === 0) && (
-                    <Chip size="sm" variant="primary" color="success">
-                      已完成
-                    </Chip>
-                  )}
-                </h4>
-                {paper.problems
-                  .filter((p) => p.kind === kind)
-                  .map((problem) => {
-                    const verdictStatus = submissions.verdict(problem);
-                    const emptyVerdict = submissions.emptyVerdict(problem);
-                    const tone =
-                      verdictStatus != null
-                        ? (verdicts[verdictStatus]?.color ?? "default")
-                        : emptyVerdict === "已作答"
-                          ? "success"
-                          : "default";
-                    const isSelected = problemKey(problem) === pk;
-                    return (
-                      <button
-                        type="button"
-                        className="oj-directory-item"
-                        data-verdict-tone={tone}
-                        data-selected={isSelected}
-                        key={problemKey(problem)}
-                        onClick={() => void go({ problem: problemKey(problem) })}
-                      >
-                        <span className="truncate flex-1 text-left">
-                          {problem.displayLabel}. {problem.title}
-                        </span>
-                        <Verdict status={verdictStatus} empty={emptyVerdict} />
-                      </button>
-                    );
-                  })}
-              </div>
-            ))}
-        </aside>
-        <div className="oj-detail">
+        {layout === "docked" && (
+          <Drawer
+            className="oj-problem-drawer"
+            open
+            headline="题目"
+            position="start"
+            width="240"
+            value={pk}
+            onChange={(event) => {
+              if (event.detail.value) void go({ problem: event.detail.value });
+            }}
+          >
+            <ProblemList
+              problems={paper.problems}
+              verdict={submissions.verdict}
+              emptyVerdict={submissions.emptyVerdict}
+            />
+          </Drawer>
+        )}
+        <div className="oj-detail" ref={detailRef} data-oj-reading={reading ? "split" : "stacked"}>
           {p ? (
             <>
               <div className="oj-toolbar">
@@ -955,6 +951,32 @@ export function OjPaper({
           )}
         </div>
       </div>
+      {layout === "sheet" &&
+        showSwitcher &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <Drawer
+            className="oj-problem-drawer"
+            modal
+            open={sheetOpen}
+            headline="题目"
+            position="start"
+            width="280"
+            value={pk}
+            onClose={() => setSheetOpen(false)}
+            onChange={(event) => {
+              setSheetOpen(false);
+              if (event.detail.value) void go({ problem: event.detail.value });
+            }}
+          >
+            <ProblemList
+              problems={paper.problems}
+              verdict={submissions.verdict}
+              emptyVerdict={submissions.emptyVerdict}
+            />
+          </Drawer>,
+          document.body,
+        )}
       {confirm &&
         typeof document !== "undefined" &&
         createPortal(
