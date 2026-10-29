@@ -1,4 +1,4 @@
-use super::model::{courses_page, id, number, text, Course, User, Video};
+use super::model::{courses_page, id, learned_courses_page, number, text, Course, User, Video};
 use reqwest_cookie_store::CookieStoreMutex;
 use serde_json::Value;
 use std::{collections::HashSet, sync::Arc, time::Duration};
@@ -790,6 +790,17 @@ impl Client {
         })
     }
     pub async fn courses(&self, cancel: &CancellationToken) -> Result<Vec<Course>, Error> {
+        self.course_pages(cancel, false).await
+    }
+    /// 全部已学课程，包含已结课/已退课等非开课中状态。
+    pub async fn learned_courses(&self, cancel: &CancellationToken) -> Result<Vec<Course>, Error> {
+        self.course_pages(cancel, true).await
+    }
+    async fn course_pages(
+        &self,
+        cancel: &CancellationToken,
+        include_all_statuses: bool,
+    ) -> Result<Vec<Course>, Error> {
         let mut courses = vec![];
         let mut seen = HashSet::new();
         let mut page = 1;
@@ -806,7 +817,12 @@ impl Client {
                     cancel,
                 )
                 .await?;
-            let (rows, pages) = courses_page(&data).map_err(|_| Error::Invalid)?;
+            let (rows, pages) = if include_all_statuses {
+                learned_courses_page(&data)
+            } else {
+                courses_page(&data)
+            }
+            .map_err(|_| Error::Invalid)?;
             courses.extend(rows.into_iter().filter(|c| seen.insert(c.id.clone())));
             if page >= pages {
                 break;

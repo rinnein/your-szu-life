@@ -351,7 +351,16 @@ pub(crate) async fn sync_uooc_qa_bank(
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
     let api_key = service.qa_api_key_for_server(Some(&url)).await;
-    super::quiz::qa::sync_missing_to_server(qa_db, &url, api_key.as_deref(), None, None, Some(&service)).await
+    super::quiz::qa::sync_missing_to_server(
+        qa_db,
+        &url,
+        api_key.as_deref(),
+        None,
+        None,
+        false,
+        Some(&service),
+    )
+    .await
 }
 
 #[tauri::command]

@@ -532,32 +532,40 @@ impl Service {
             let Some(user_id) = r.snapshot.user.as_ref().map(|u| u.id.clone()) else {
                 return;
             };
-            let cids: Vec<String> = r.snapshot.courses.iter().map(|c| c.id.clone()).collect();
+            let cids: Vec<String> = r
+                .snapshot
+                .courses
+                .iter()
+                .filter(|c| c.status == "31" || c.status == "33")
+                .map(|c| c.id.clone())
+                .collect();
             let server_url = r.snapshot.settings.qa_server_url.clone();
             (user_id, cids, server_url)
         };
 
-        if cids.is_empty() {
-            return;
-        }
-
         self.log_debug(
             "qa",
-            format!("完成登录，开始全量同步已添加的 {} 门课程服务端题库向量缓存…", cids.len()),
+            format!(
+                "完成登录，开始同步题库：{} 门开课中/复习模式课程拉取服务端题库，历史课程按需补齐…",
+                cids.len()
+            ),
         );
 
         let api_key = self.qa_api_key_for_server(Some(&qa_server_url)).await;
 
-        if let Ok(qa_db) = self.get_qa_db().await {
-            match quiz::qa::download_qa_vectors(qa_db, &qa_server_url, api_key.as_deref(), &cids).await {
-                Ok(status) => {
-                    self.log_debug(
-                        "qa",
-                        format!("服务端题库向量缓存拉取成功，已缓存 {} 条题目向量", status.cached_count),
-                    );
-                }
-                Err(err) => {
-                    self.log_debug("qa", format!("拉取服务端题库向量缓存失败: {err}"));
+        // 只有开课中/复习模式课程允许从服务端拉取题库向量。
+        if !cids.is_empty() {
+            if let Ok(qa_db) = self.get_qa_db().await {
+                match quiz::qa::download_qa_vectors(qa_db, &qa_server_url, api_key.as_deref(), &cids).await {
+                    Ok(status) => {
+                        self.log_debug(
+                            "qa",
+                            format!("服务端题库向量缓存拉取成功，已缓存 {} 条题目向量", status.cached_count),
+                        );
+                    }
+                    Err(err) => {
+                        self.log_debug("qa", format!("拉取服务端题库向量缓存失败: {err}"));
+                    }
                 }
             }
         }
@@ -1303,7 +1311,7 @@ impl Service {
         }
 
         // 提交后触发单个题单解析与题库自动构建
-        let _ = quiz::build_single_task_group(self, cid, clean_tid, Some(true)).await;
+        let _ = quiz::build_single_task_group(self, cid, clean_tid, Some(true), quiz::BankSyncMode::Active).await;
 
         let msg = text(&val["msg"]);
         Ok(if msg.is_empty() { "试卷已成功提交".into() } else { msg })

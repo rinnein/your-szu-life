@@ -1789,3 +1789,239 @@ async fn test_uooc_exam_601_auto_course_evaluation_and_retry() {
 
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[test]
+fn learned_courses_page_includes_ended_courses_for_shared_bank_checks() {
+    let rows = json!({"data": [
+        {"id":42,"status":"31","parent_name":"开课中"},
+        {"id":43,"status":"33","parent_name":"复习模式"},
+        {"id":77,"status":"35","parent_name":"已结课"},
+        {"id":78,"status":34,"parent_name":"其他状态"},
+        {"id":79,"status":0}
+    ],"page":{"pages":1}});
+
+    let (active, _) = model::courses_page(&rows).unwrap();
+    assert_eq!(
+        active.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
+        ["42", "43"]
+    );
+
+    let (learned, _) = model::learned_courses_page(&rows).unwrap();
+    assert_eq!(
+        learned.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
+        ["42", "43", "77", "78", "79"]
+    );
+}
+
+#[tokio::test]
+async fn course_share_need_asks_server_by_cid() {
+    let server = Server::new(|request| {
+        match request.path.as_str() {
+            "/api/courses/missing" => json!({"error": "Course not found", "taskGroups": []}),
+            "/api/courses/full" => json!({"course": {"cid": "full"}, "taskGroups": []}),
+            "/api/courses/need" => json!({"course": {"cid": "need"}, "taskGroups": []}),
+            _ if request.path.starts_with("/api/automation/tasks") => {
+                let fields = request.fields();
+                if fields.get("cid").map(String::as_str) != Some("need") {
+                    return json!({"ok": true, "tasks": []});
+                }
+                json!({"ok": true, "tasks": [
+                    {"taskType": "answer_request", "cid": "need", "tid": "901"},
+                    {"taskType": "answer_request", "cid": "need", "tid": "901"},
+                    {"taskType": "answer_request", "cid": "need", "tid": "902"},
+                    {"taskType": "stem_request", "cid": "need", "tid": "903"}
+                ]})
+            }
+            _ => json!({"ok": true}),
+        }
+    });
+
+    assert_eq!(
+        super::quiz::qa::course_share_need(&server.base, Some("key"), "missing")
+            .await
+            .unwrap(),
+        super::quiz::qa::CourseShareNeed::EntireCourse
+    );
+    assert_eq!(
+        super::quiz::qa::course_share_need(&server.base, Some("key"), "full")
+            .await
+            .unwrap(),
+        super::quiz::qa::CourseShareNeed::Satisfied
+    );
+    assert_eq!(
+        super::quiz::qa::course_share_need(&server.base, Some("key"), "need")
+            .await
+            .unwrap(),
+        super::quiz::qa::CourseShareNeed::TaskGroups(vec!["901".into(), "902".into()])
+    );
+}
+
+#[tokio::test]
+async fn download_qa_vectors_never_pulls_other_courses() {
+    use std::sync::Mutex;
+
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let observed = seen.clone();
+    let server = Server::new(move |request| {
+        observed.lock().unwrap().push(request.path.clone());
+        if request.path == "/api/courses/42" {
+            return json!({
+                "course": {"cid": "42"},
+                "taskGroups": [{"tid": "100"}]
+            });
+        }
+        if request.path.starts_with("/api/automation/tasks") {
+            return json!({"ok": true, "tasks": [
+                {"cid": "42", "tid": "101"},
+                {"cid": "99", "tid": "102"}
+            ]});
+        }
+        if let Some(tid) = request
+            .path
+            .strip_prefix("/api/courses/42/tasks/")
+        {
+            return json!({"questions": [{
+                "questionId": format!("q_{tid}"),
+                "type": "single",
+                "stem": format!("题目 {tid}"),
+                "answers": [{"values": ["A"], "isCorrect": true}]
+            }]});
+        }
+        json!({"ok": true})
+    });
+
+    let dir = tempfile::tempdir().unwrap();
+    let qa_db = super::quiz::db::QaDatabase::open(&dir.path().join("qa.db"))
+        .await
+        .unwrap();
+    let status = super::quiz::qa::download_qa_vectors(
+        &qa_db,
+        &server.base,
+        Some("key"),
+        &["42".to_string()],
+    )
+    .await
+    .unwrap();
+    assert_eq!(status.cached_count, 2);
+
+    let seen = seen.lock().unwrap();
+    assert!(seen.iter().any(|path| path == "/api/courses/42/tasks/100"));
+    assert!(seen.iter().any(|path| path == "/api/courses/42/tasks/101"));
+    assert!(!seen.iter().any(|path| path.contains("102")));
+    assert!(!seen.iter().any(|path| path.contains("/api/courses/99")));
+
+    let _ = std::fs::remove_dir_all(dir.path());
+}
+
+#[tokio::test]
+async fn build_local_bank_only_builds_ended_course_when_server_needs_it() {
+    use std::sync::Mutex;
+
+    let root = root();
+    let service = service_test(root.clone());
+
+    let qa_requests = Arc::new(Mutex::new(Vec::new()));
+    let qa_seen = qa_requests.clone();
+    let upload_bodies = Arc::new(Mutex::new(Vec::new()));
+    let upload_seen = upload_bodies.clone();
+
+    let qa_server = Server::new(move |request| {
+        qa_seen.lock().unwrap().push(request.path.clone());
+        match request.path.as_str() {
+            "/api/courses/42" => json!({
+                "course": {"cid": "42", "name": "开课课程"},
+                "taskGroups": []
+            }),
+            "/api/courses/77" => json!({"error": "Course not found", "taskGroups": []}),
+            "/api/automation/tasks" => json!({"ok": true, "tasks": [], "count": 0}),
+            "/api/automation/match" => json!({"ok": true, "missingOnServer": []}),
+            "/api/upload/batch" => {
+                upload_seen.lock().unwrap().push(request.body.clone());
+                json!({"ok": true, "results": []})
+            }
+            _ => json!({"ok": true, "questions": []}),
+        }
+    });
+
+    let uooc_server = Server::new(|request| {
+        if request.path.starts_with(super::client::LIST) {
+            return ok(json!({"data": [
+                {"id":42,"status":"31","parent_name":"开课课程"},
+                {"id":77,"status":"35","parent_name":"已结课课程"}
+            ],"page":{"pages":1}}));
+        }
+        if request.path.starts_with("/home/learn/getCatalogList") {
+            let cid = request.fields().get("cid").cloned().unwrap_or_default();
+            let (id, task_id) = if cid == "77" { (2, 902) } else { (1, 901) };
+            return ok(json!([{
+                "id": id,
+                "name": "章节",
+                "children": [{
+                    "id": id * 10,
+                    "name": "测验",
+                    "task_id": task_id,
+                    "finished": 1,
+                    "icon_list": [{"id": task_id, "type": "80", "type_name": "测验"}]
+                }]
+            }]));
+        }
+        if request.path.starts_with("/exam/getTaskPaper") {
+            let tid = request.fields().get("tid").cloned().unwrap_or_default();
+            return json!({
+                "code": 1,
+                "data": {"questions": [{
+                    "id": format!("q_{tid}"),
+                    "question": format!("题目 {tid}"),
+                    "type": "10",
+                    "options_app": [{"key": "A", "value": "选项"}],
+                    "answer": "A"
+                }]}
+            });
+        }
+        ok(json!({"code": 1}))
+    });
+
+    *service.client.write().unwrap() = Arc::new(
+        Client::with_base(session::load(None).unwrap(), &uooc_server.base).unwrap(),
+    );
+    service.change(|s| {
+        s.session = SessionStatus::Ready;
+        s.user = Some(User { id: "7".into(), name: "test".into() });
+        s.courses = vec![course("42")];
+        s.settings.qa_server_url = qa_server.base.clone();
+    });
+
+    let count = service.build_local_bank().await.unwrap();
+    assert_eq!(count, 2);
+
+    let bank = service
+        .get_qa_db()
+        .await
+        .unwrap()
+        .load_all_bank_questions()
+        .await
+        .unwrap();
+    assert!(bank.values().any(|q| q.cid == "42" && q.tid == "901"));
+    assert!(bank.values().any(|q| q.cid == "77" && q.tid == "902"));
+
+    let qa_requests = qa_requests.lock().unwrap();
+    // 开课中课程允许拉取题库
+    assert!(qa_requests.iter().any(|p| p == "/api/courses/42/tasks/901"));
+    // 已结课课程不拉取服务端题库，只上传缺失内容
+    assert!(!qa_requests.iter().any(|p| p.starts_with("/api/courses/77/tasks/")));
+
+    let uploaded_tids: Vec<String> = upload_bodies
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|body| {
+            serde_json::from_str::<serde_json::Value>(body).unwrap()["tid"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string()
+        })
+        .collect();
+    assert!(uploaded_tids.contains(&"902".to_string()));
+
+    let _ = std::fs::remove_dir_all(root);
+}

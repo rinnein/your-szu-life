@@ -34,7 +34,7 @@ pub(crate) struct Course {
     #[serde(default)]
     pub status: String,
 }
-pub(super) fn courses_page(value: &Value) -> Result<(Vec<Course>, u64), String> {
+fn parse_courses_page(value: &Value) -> Result<(Vec<Course>, u64), String> {
     let rows = value["data"].as_array().ok_or("课程列表格式无效")?;
     let pages = text(&value["page"]["pages"])
         .parse::<u64>()
@@ -44,10 +44,6 @@ pub(super) fn courses_page(value: &Value) -> Result<(Vec<Course>, u64), String> 
     }
     let courses = rows
         .iter()
-        .filter(|row| {
-            let s = text(&row["status"]);
-            s == "31" || s == "33"
-        })
         .filter_map(|row| {
             Some(Course {
                 id: id(&row["id"])?,
@@ -61,6 +57,21 @@ pub(super) fn courses_page(value: &Value) -> Result<(Vec<Course>, u64), String> 
         })
         .collect();
     Ok((courses, pages))
+}
+
+/// 开课中（31）与复习模式（33）的课程，也是当前学习任务与页面展示的课程集合。
+pub(super) fn courses_page(value: &Value) -> Result<(Vec<Course>, u64), String> {
+    let (courses, pages) = parse_courses_page(value)?;
+    let active = courses
+        .into_iter()
+        .filter(|course| course.status == "31" || course.status == "33")
+        .collect();
+    Ok((active, pages))
+}
+
+/// 用户“学过”的全部课程（含已结课/已退课），仅用于题库众包补齐时按 cid 询问服务端。
+pub(super) fn learned_courses_page(value: &Value) -> Result<(Vec<Course>, u64), String> {
+    parse_courses_page(value)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

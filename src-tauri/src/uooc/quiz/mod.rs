@@ -772,7 +772,7 @@ async fn submit(
             service.fetch_progress(&ctx.cid, cancel).await?;
 
             // 完成测验时，直接执行单个题组构建与同步
-            let _ = build_single_task_group(service, &ctx.cid, &q.task_id, Some(true)).await;
+            let _ = build_single_task_group(service, &ctx.cid, &q.task_id, Some(true), BankSyncMode::Active).await;
 
             return Ok(TaskStatus::Queued);
         }
@@ -804,6 +804,7 @@ async fn match_qa_action(service: &Arc<Service>, ctx: &Context, cancel: &Cancell
             qa_key.as_deref(),
             Some(&ctx.cid),
             Some(&q.task_id),
+            false,
             Some(service),
         )
         .await;
@@ -1247,7 +1248,7 @@ impl Service {
         let mut details = fetch_task_group_content(&client, cid, clean_tid, is_finished, submitted.as_ref(), &cancel).await?;
 
         if details.questions.is_empty() {
-            let (_, fallback_details) = build_single_task_group(self, cid, clean_tid, Some(is_finished)).await?;
+            let (_, fallback_details) = build_single_task_group(self, cid, clean_tid, Some(is_finished), BankSyncMode::Active).await?;
             details = fallback_details;
         }
 
@@ -1475,11 +1476,33 @@ async fn fetch_task_group_content(
     Ok(details)
 }
 
+/// 构建单个题组时与共享题库交互的方式。
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BankSyncMode {
+    /// 开课中/复习模式课程：允许从服务端拉取已有答案，并回传本地新增题目。
+    Active,
+    /// 已结课且服务端尚未收录该课程：只从官方接口构建，整门课程题库直接上传。
+    HistoryMissingCourse,
+    /// 已结课但服务端已有课程：只构建指定题组，并强制重传以补齐缺失答案。
+    HistoryRepair,
+}
+
+impl BankSyncMode {
+    fn pulls_server_answers(self) -> bool {
+        matches!(self, Self::Active)
+    }
+
+    fn forces_upload(self) -> bool {
+        matches!(self, Self::HistoryRepair)
+    }
+}
+
 pub(crate) async fn build_single_task_group(
     service: &Service,
     cid: &str,
     tid: &str,
     known_finished: Option<bool>,
+    mode: BankSyncMode,
 ) -> Result<(usize, qa::ExamViewDetails), String> {
     let clean_tid = qa::sanitize_task_id(tid);
     let (client, qa_url, qa_key) = {
@@ -1600,38 +1623,40 @@ pub(crate) async fn build_single_task_group(
         });
     }
 
-    // 3. 从服务端尝试拉取已有众包答案，并检测题组在服务端的存在状态
+    // 3. 开课中/复习模式课程才从服务端拉取已有众包答案；已结课课程只从官方接口构建。
     let mut server_lacks_task_group = false;
-    match qa::query_task_answers(&qa_url, qa_key.as_deref(), clean_tid, Some(cid)).await {
-        Ok(server_qs) => {
-            let mut server_answers = Answers::new();
-            for sq in &server_qs {
-                if let Some(qid) = &sq.question_id {
-                    if let Some(ca) = sq.answers.iter().find(|a| a.is_correct) {
-                        if !ca.values.is_empty() {
-                            server_answers.insert(qid.clone(), ca.values.clone());
+    if mode.pulls_server_answers() {
+        match qa::query_task_answers(&qa_url, qa_key.as_deref(), clean_tid, Some(cid)).await {
+            Ok(server_qs) => {
+                let mut server_answers = Answers::new();
+                for sq in &server_qs {
+                    if let Some(qid) = &sq.question_id {
+                        if let Some(ca) = sq.answers.iter().find(|a| a.is_correct) {
+                            if !ca.values.is_empty() {
+                                server_answers.insert(qid.clone(), ca.values.clone());
+                            }
                         }
                     }
                 }
-            }
-            if !server_answers.is_empty() {
-                for (qid, ans) in server_answers {
-                    details.answers.entry(qid).or_insert(ans);
+                if !server_answers.is_empty() {
+                    for (qid, ans) in server_answers {
+                        details.answers.entry(qid).or_insert(ans);
+                    }
                 }
             }
-        }
-        Err(e) if e.contains("Task group not found in this course") => {
-            service.log_debug(
-                "bank",
-                format!("服务端提示「Task group not found in this course」[cid: {cid}, tid: {clean_tid}]，需要创建该新题组到服务器"),
-            );
-            server_lacks_task_group = true;
-        }
-        Err(e) => {
-            service.log_debug(
-                "bank",
-                format!("查询服务端题组失败 [cid: {cid}, tid: {clean_tid}]: {e}"),
-            );
+            Err(e) if e.contains("Task group not found in this course") => {
+                service.log_debug(
+                    "bank",
+                    format!("服务端提示「Task group not found in this course」[cid: {cid}, tid: {clean_tid}]，需要创建该新题组到服务器"),
+                );
+                server_lacks_task_group = true;
+            }
+            Err(e) => {
+                service.log_debug(
+                    "bank",
+                    format!("查询服务端题组失败 [cid: {cid}, tid: {clean_tid}]: {e}"),
+                );
+            }
         }
     }
 
@@ -1754,7 +1779,10 @@ pub(crate) async fn build_single_task_group(
     }
 
     // 5. 当检测到服务端缺少该题组（无论是提示 Task group not found in this course，还是课程接口中未包含），创建该题组到服务器
-    if !server_lacks_task_group {
+    if mode == BankSyncMode::HistoryMissingCourse {
+        // course_share_need 已确认服务端没有该课程，无需每个题组再查一次。
+        server_lacks_task_group = true;
+    } else if !server_lacks_task_group {
         let course_api_url = format!("{}/api/courses/{}", qa_url.trim_end_matches('/'), cid);
         let mut server_has_tid = false;
         if let Ok(client_http) = qa::http_client() {
@@ -1814,15 +1842,18 @@ pub(crate) async fn build_single_task_group(
                 qa_key.as_deref(),
                 Some(cid),
                 Some(clean_tid),
+                mode.forces_upload(),
                 Some(service),
             )
             .await;
         }
     }
 
-    // 完成题目收录后，部分同步该课程的向量缓存
-    if let Ok(qa_db) = service.get_qa_db().await {
-        let _ = qa::download_qa_vectors(qa_db, &qa_url, qa_key.as_deref(), &[cid.to_string()]).await;
+    // 完成题目收录后，开课中/复习模式课程才同步该课程的向量缓存；已结课课程不拉服务端题库。
+    if mode.pulls_server_answers() {
+        if let Ok(qa_db) = service.get_qa_db().await {
+            let _ = qa::download_qa_vectors(qa_db, &qa_url, qa_key.as_deref(), &[cid.to_string()]).await;
+        }
     }
 
     service.emit_bank_progress(&super::model::BankRebuildProgress {
@@ -1871,8 +1902,8 @@ pub(crate) async fn build_local_bank(service: &Arc<Service>) -> Result<usize, St
     // 规范要求 2：AI 判题或内存中的未交卷草稿绝对不直接进入题库！
     // 题库构建严格只扫描官方 API 确定已完成/已判分试卷，通过 /exam/getTaskPaper 和 /exam/view 提取标准答案。
 
-    // 1. Scan enrolled courses & compare with server
-    let (client, courses, qa_url, qa_key) = {
+    // 1. 开课中（31）与复习模式（33）课程：允许从服务端拉取题库并回传本地题目。
+    let (client, active_courses, qa_url, qa_key) = {
         let r = service.runtime.lock().unwrap();
         (
             service.client(),
@@ -1881,9 +1912,98 @@ pub(crate) async fn build_local_bank(service: &Arc<Service>) -> Result<usize, St
             r.qa_api_key.clone(),
         )
     };
+    // 按 cid 询问服务端需要可用的 API Key；没有时走匿名 Key 申请。
+    let qa_key = match qa_key {
+        Some(key) if !key.trim().is_empty() => Some(key),
+        _ => service.qa_api_key_for_server(Some(&qa_url)).await,
+    };
 
     let cancel = CancellationToken::new();
-    for (c_idx, course) in courses.iter().enumerate() {
+    let mut work: Vec<(super::model::Course, BankSyncMode, Option<HashSet<String>>)> =
+        active_courses
+            .into_iter()
+            .map(|course| (course, BankSyncMode::Active, None))
+            .collect();
+    let active_ids: HashSet<String> = work.iter().map(|(c, _, _)| c.id.clone()).collect();
+    let active_count = work.len();
+    let mut history_resolved = false;
+    let mut index = 0;
+    loop {
+        // 2. 其它学过的课程（已结课等）：等开课中/复习模式课程全部构建完，再按 cid 询问服务端。
+        //    只有服务端没有该课程、或仍有待补答案的题组时，才从官方接口构建并回传。
+        if !history_resolved && index >= active_count {
+            history_resolved = true;
+            match client.learned_courses(&cancel).await {
+                Ok(learned) => {
+                    for course in learned.into_iter().filter(|c| {
+                        !active_ids.contains(&c.id) && c.status != "0" && !c.title.trim().is_empty()
+                    }) {
+                        match qa::course_share_need(&qa_url, qa_key.as_deref(), &course.id).await {
+                            Ok(qa::CourseShareNeed::EntireCourse) => {
+                                service.log_debug(
+                                    "bank",
+                                    format!(
+                                        "服务端尚未收录课程「{}」(cid: {})，将从官方接口构建并上传整门课程题库",
+                                        course.title, course.id
+                                    ),
+                                );
+                                work.push((course, BankSyncMode::HistoryMissingCourse, None));
+                            }
+                            Ok(qa::CourseShareNeed::TaskGroups(tids)) => {
+                                let tids: HashSet<String> = tids
+                                    .into_iter()
+                                    .map(|tid| qa::sanitize_task_id(&tid).to_string())
+                                    .collect();
+                                if tids.is_empty() {
+                                    continue;
+                                }
+                                service.log_debug(
+                                    "bank",
+                                    format!(
+                                        "服务端报告课程「{}」(cid: {}) 有 {} 个题组待补答案，将按题组构建并重传",
+                                        course.title,
+                                        course.id,
+                                        tids.len()
+                                    ),
+                                );
+                                work.push((course, BankSyncMode::HistoryRepair, Some(tids)));
+                            }
+                            Ok(qa::CourseShareNeed::Satisfied) => {}
+                            Err(error) => {
+                                service.log_debug(
+                                    "bank",
+                                    format!(
+                                        "询问服务端课程「{}」(cid: {}) 是否需要共享失败: {error}",
+                                        course.title, course.id
+                                    ),
+                                );
+                            }
+                        }
+                    }
+                }
+                Err(error) => {
+                    service.log_debug(
+                        "bank",
+                        format!(
+                            "获取已学课程列表失败，本次跳过历史课程题库补齐: {}",
+                            error.message()
+                        ),
+                    );
+                }
+            }
+        }
+
+        if index >= work.len() {
+            break;
+        }
+
+        let (course, mode, only_tids) = work[index].clone();
+        let course_total = if index < active_count { active_count } else { work.len() };
+        let current = if index < active_count {
+            index + 1
+        } else {
+            index - active_count + 1
+        };
         service.emit_bank_progress(&super::model::BankRebuildProgress {
             stage: "course".into(),
             cid: course.id.clone(),
@@ -1892,28 +2012,30 @@ pub(crate) async fn build_local_bank(service: &Arc<Service>) -> Result<usize, St
             task_name: None,
             question_id: None,
             question_stem: None,
-            current: c_idx + 1,
-            total: courses.len(),
+            current,
+            total: course_total,
             message: format!("正在检索课程「{}」(cid: {}) 的题单与测验...", course.title, course.id),
         });
 
-        // 对照服务端检查当前课程下已收录的题单与题目覆盖率，拉取服务端已知 taskGroups
+        // 只有开课中/复习模式课程才对照服务端已知 taskGroups；已结课课程不拉服务端题库数据。
         let mut server_tids = HashSet::new();
-        let course_api_url = format!("{}/api/courses/{}", qa_url.trim_end_matches('/'), course.id);
-        if let Ok(client_http) = qa::http_client() {
-            let mut req = client_http.get(&course_api_url);
-            if let Some(key) = &qa_key {
-                let trimmed = key.trim();
-                if !trimmed.is_empty() {
-                    req = req.header("x-api-key", trimmed);
+        if mode.pulls_server_answers() {
+            let course_api_url = format!("{}/api/courses/{}", qa_url.trim_end_matches('/'), course.id);
+            if let Ok(client_http) = qa::http_client() {
+                let mut req = client_http.get(&course_api_url);
+                if let Some(key) = &qa_key {
+                    let trimmed = key.trim();
+                    if !trimmed.is_empty() {
+                        req = req.header("x-api-key", trimmed);
+                    }
                 }
-            }
-            if let Ok(resp) = req.send().await {
-                if let Ok(val) = resp.json::<serde_json::Value>().await {
-                    if let Some(groups) = val["taskGroups"].as_array() {
-                        for g in groups {
-                            if let Some(tid) = id(&g["tid"]) {
-                                server_tids.insert(tid);
+                if let Ok(resp) = req.send().await {
+                    if let Ok(val) = resp.json::<serde_json::Value>().await {
+                        if let Some(groups) = val["taskGroups"].as_array() {
+                            for g in groups {
+                                if let Some(tid) = id(&g["tid"]) {
+                                    server_tids.insert(tid);
+                                }
                             }
                         }
                     }
@@ -2091,23 +2213,32 @@ pub(crate) async fn build_local_bank(service: &Arc<Service>) -> Result<usize, St
         }
 
         // 6. 对每个测验题单执行单个题组构建
+        if let Some(only_tids) = only_tids.as_ref() {
+            course_quizzes.retain(|(task_id, _, _)| only_tids.contains(task_id));
+        }
         for (task_id, _title, is_fin) in &course_quizzes {
             let fin = *is_fin || finished_tids.contains(task_id);
-            let _ = build_single_task_group(service, &course.id, task_id, Some(fin)).await;
+            let _ = build_single_task_group(service, &course.id, task_id, Some(fin), mode).await;
         }
 
-        // 7. 课程级别最终全量同步
-        if let Ok(qa_db) = service.get_qa_db().await {
-            let _ = qa::sync_missing_to_server(
-                qa_db,
-                &qa_url,
-                qa_key.as_deref(),
-                Some(&course.id),
-                None,
-                Some(service),
-            )
-            .await;
+        // 7. 课程级别最终全量同步。按题组补答案的模式已在单题组内强制重传，
+        //    这里只处理“服务端缺少整门课程/缺失题目”的情况。
+        if only_tids.is_none() {
+            if let Ok(qa_db) = service.get_qa_db().await {
+                let _ = qa::sync_missing_to_server(
+                    qa_db,
+                    &qa_url,
+                    qa_key.as_deref(),
+                    Some(&course.id),
+                    None,
+                    false,
+                    Some(service),
+                )
+                .await;
+            }
         }
+
+        index += 1;
     }
 
     let total = if let Ok(qa_db) = service.get_qa_db().await {

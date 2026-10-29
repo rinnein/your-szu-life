@@ -307,6 +307,101 @@ pub(crate) struct BankMatchResponse {
     pub missing_on_server: Vec<MissingOnServerItem>,
 }
 
+/// 已结课/复习模式之外的课程是否需要向共享题库贡献数据。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum CourseShareNeed {
+    /// 服务端完全没有收录该 cid，需要从官方接口构建整门课程题库并上传。
+    EntireCourse,
+    /// 服务端已有该课程，但这些题组里存在缺少正确答案、需要补传的题目。
+    TaskGroups(Vec<String>),
+    /// 服务端已有该课程，且没有待补答案的题目。
+    Satisfied,
+}
+
+/// 按 cid 询问共享题库：课程不存在，或存在但仍有 `answer_request` 任务时，才需要本地构建。
+pub(crate) async fn course_share_need(
+    server_url: &str,
+    api_key: Option<&str>,
+    cid: &str,
+) -> Result<CourseShareNeed, String> {
+    let api_base = resolve_api_base(server_url);
+    let client = http_client()?;
+
+    let course_url = format!("{api_base}/courses/{cid}");
+    let mut req = client.get(&course_url);
+    if let Some(key) = api_key {
+        let trimmed = key.trim();
+        if !trimmed.is_empty() {
+            req = req.header("x-api-key", trimmed);
+        }
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("查询题库课程失败: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("查询题库课程失败，状态码: {}", resp.status()));
+    }
+    let data: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("解析题库课程响应失败: {e}"))?;
+    let course_exists = data
+        .get("course")
+        .is_some_and(|course| !course.is_null());
+    if !course_exists {
+        return Ok(CourseShareNeed::EntireCourse);
+    }
+
+    let tasks_url = format!("{api_base}/automation/tasks?cid={cid}&type=answer_request&limit=100");
+    let mut req = client.get(&tasks_url);
+    if let Some(key) = api_key {
+        let trimmed = key.trim();
+        if !trimmed.is_empty() {
+            req = req.header("x-api-key", trimmed);
+        }
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("查询题库待补答案任务失败: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!(
+            "查询题库待补答案任务失败，状态码: {}",
+            resp.status()
+        ));
+    }
+    let data: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("解析题库待补答案任务失败: {e}"))?;
+    let mut tids = Vec::new();
+    if let Some(tasks) = data.get("tasks").and_then(|tasks| tasks.as_array()) {
+        for task in tasks {
+            if task.get("taskType").and_then(|t| t.as_str()) != Some("answer_request") {
+                continue;
+            }
+            if task
+                .get("cid")
+                .and_then(|c| c.as_str())
+                .is_some_and(|task_cid| task_cid != cid)
+            {
+                continue;
+            }
+            if let Some(tid) = task.get("tid").and_then(|t| t.as_str()) {
+                if !tid.trim().is_empty() && !tids.iter().any(|existing| existing == tid) {
+                    tids.push(tid.to_string());
+                }
+            }
+        }
+    }
+    if tids.is_empty() {
+        Ok(CourseShareNeed::Satisfied)
+    } else {
+        Ok(CourseShareNeed::TaskGroups(tids))
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct EmbeddingModelStatus {
@@ -1962,13 +2057,15 @@ pub(crate) async fn record_passed_quiz(
 }
 
 /// 针对本地维护的确认答案题目列表，调用 POST /api/automation/match 进行服务端缺失确认，
-/// 并自动将服务端缺失（或本地未上传）的题库打包上传至 /api/upload/batch
+/// 并自动将服务端缺失（或本地未上传）的题库打包上传至 /api/upload/batch。
+/// `force_upload` 为 true 时，本地已标记 uploaded 的题目也会重传，用于补齐服务端缺失的答案。
 pub(crate) async fn sync_missing_to_server(
     qa_db: &super::db::QaDatabase,
     server_url: &str,
     api_key: Option<&str>,
     cid: Option<&str>,
     tid: Option<&str>,
+    force_upload: bool,
     service: Option<&crate::uooc::Service>,
 ) -> Result<usize, String> {
     let mut bank = qa_db.load_all_bank_questions().await.unwrap_or_default();
@@ -2117,6 +2214,12 @@ pub(crate) async fn sync_missing_to_server(
                 to_upload_keys.insert(k.clone());
             }
         }
+    }
+
+    // 服务端明确回报该题组存在缺答案题目时，即使本地标记过 uploaded 也要重新提交，
+    // 否则覆盖不了服务端已有的“无正确答案”记录。
+    if force_upload {
+        to_upload_keys.extend(candidate_keys.iter().cloned());
     }
 
     if to_upload_keys.is_empty() {
@@ -3300,6 +3403,12 @@ pub(crate) async fn download_qa_vectors(
     let base = server_url.trim_end_matches('/');
     let client = http_client()?;
 
+    // 只有显式传入的课程（开课中/复习模式）才允许从服务端拉取题库；
+    // 没有课程时绝不能退化成“拉全站”，否则会把其他用户/课程的题库灌进本地。
+    if cids.is_empty() {
+        return Ok(get_vector_status(qa_db).await);
+    }
+
     // 1. 如果提供了课程列表，优先按课程抓取题组
     let mut tids_to_fetch = std::collections::HashSet::new();
     for cid in cids {
@@ -3321,19 +3430,24 @@ pub(crate) async fn download_qa_vectors(
         }
     }
 
-    // 2. 同时从 /api/automation/tasks 发现所有缺失或现存的题组
-    let auto_url = format!("{base}/api/automation/tasks?type=all&limit=100");
-    let mut auto_req = client.get(&auto_url);
-    if let Some(key) = api_key {
-        auto_req = auto_req.header("x-api-key", key);
-    }
-    if let Ok(resp) = auto_req.send().await {
-        if let Ok(data) = resp.json::<serde_json::Value>().await {
-            if let Some(tasks) = data["tasks"].as_array() {
-                for t in tasks {
-                    let cid = t["cid"].as_str().unwrap_or("").to_string();
-                    if let Some(tid) = t["tid"].as_str() {
-                        tids_to_fetch.insert((cid, tid.to_string()));
+    // 2. 从 /api/automation/tasks 发现这些课程缺失数据对应的题组。
+    // 必须逐个 cid 过滤，服务端即使忽略 cid 参数也不能收录到其他课程。
+    for cid in cids {
+        let auto_url = format!("{base}/api/automation/tasks?type=all&limit=100&cid={cid}");
+        let mut auto_req = client.get(&auto_url);
+        if let Some(key) = api_key {
+            auto_req = auto_req.header("x-api-key", key);
+        }
+        if let Ok(resp) = auto_req.send().await {
+            if let Ok(data) = resp.json::<serde_json::Value>().await {
+                if let Some(tasks) = data["tasks"].as_array() {
+                    for t in tasks {
+                        if t["cid"].as_str().is_some_and(|task_cid| task_cid != cid) {
+                            continue;
+                        }
+                        if let Some(tid) = t["tid"].as_str() {
+                            tids_to_fetch.insert((cid.clone(), tid.to_string()));
+                        }
                     }
                 }
             }
@@ -3831,7 +3945,7 @@ mod tests {
             json!({ "error": "not found" })
         });
 
-        let uploaded_count = sync_missing_to_server(&qa_db, &server.base, Some("test_key"), Some("200"), Some("100"), None)
+        let uploaded_count = sync_missing_to_server(&qa_db, &server.base, Some("test_key"), Some("200"), Some("100"), false, None)
             .await
             .unwrap();
         assert_eq!(uploaded_count, 1);
@@ -3841,6 +3955,85 @@ mod tests {
         // Check local bank marked as uploaded
         let updated_bank = qa_db.load_all_bank_questions().await.unwrap();
         assert_eq!(updated_bank.get("100:q1").unwrap().uploaded, true);
+    }
+
+    #[tokio::test]
+    async fn force_upload_resubmits_already_uploaded_questions() {
+        use crate::uooc::tests::Server;
+        use serde_json::json;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let qa_db = super::super::db::QaDatabase::open(&dir.path().join("qa.db"))
+            .await
+            .unwrap();
+
+        let mut answers = Answers::new();
+        answers.insert("q1".into(), vec!["A".into()]);
+        let questions = vec![Question {
+            id: "q1".into(),
+            text: "1 + 1 = ?".into(),
+            kind: Kind::Single,
+            options: vec![
+                OptionItem { id: "A".into(), text: "2".into() },
+                OptionItem { id: "B".into(), text: "3".into() },
+            ],
+            blanks: 0,
+            images: vec![],
+        }];
+        record_passed_quiz(&qa_db, "200", "100", &questions, &answers, None)
+            .await
+            .unwrap();
+        // 模拟历史上已成功上传过，但服务端后来丢失了正确答案。
+        qa_db.mark_questions_uploaded(&["q1".to_string()])
+            .await
+            .unwrap();
+
+        let upload_calls = Arc::new(AtomicUsize::new(0));
+        let upload_calls_clone = upload_calls.clone();
+        let server = Server::new(move |request| {
+            if request.path == "/api/automation/match" && request.method == "POST" {
+                // 服务端认为题目都在，但没有正确答案，只能靠强制重传补答案。
+                return json!({"ok": true, "missingOnServer": []});
+            }
+            if request.path == "/api/upload/batch" && request.method == "POST" {
+                upload_calls_clone.fetch_add(1, Ordering::SeqCst);
+                return json!({"ok": true, "results": []});
+            }
+            json!({"error": "not found"})
+        });
+
+        let normal = sync_missing_to_server(
+            &qa_db,
+            &server.base,
+            Some("test_key"),
+            Some("200"),
+            Some("100"),
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(normal, 0);
+        assert_eq!(upload_calls.load(Ordering::SeqCst), 0);
+
+        let repaired = sync_missing_to_server(
+            &qa_db,
+            &server.base,
+            Some("test_key"),
+            Some("200"),
+            Some("100"),
+            true,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(repaired, 1);
+        assert_eq!(upload_calls.load(Ordering::SeqCst), 1);
+
+        let _ = std::fs::remove_dir_all(dir.path());
     }
 
     #[tokio::test]
