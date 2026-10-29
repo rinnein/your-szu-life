@@ -31,7 +31,8 @@ import { SampleField } from "./SampleField";
 import { ProblemList } from "./ProblemList";
 import { problemStatus, statusPillHtml } from "./problem-status";
 import { useOjLayout } from "./layout";
-import { SubmissionRecord, ResultAccordion } from "./SubmissionRecord";
+import { SubmissionRecord } from "./SubmissionRecord";
+import { JudgeResult } from "./JudgeResult";
 import { RankingTable } from "./RankingTable";
 import { ContestStatus, formatRemaining } from "./ContestTable";
 import { useSubmissions } from "./useSubmissions";
@@ -196,6 +197,7 @@ export function OjPaper({
   const [confirm, setConfirm] = useState(false);
   const [manualCopy, setManualCopy] = useState<string>();
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [resultModalOpen, setResultModalOpen] = useState(false);
   const { layout, reading, paperRef, detailRef } = useOjLayout();
   const [now, setNow] = useState(Date.now());
   const dirty = useRef<Record<string, Draft>>({});
@@ -513,6 +515,7 @@ export function OjPaper({
       } else {
         notifySuccess("代码已提交，正在查询判题结果。");
         submissions.show(value);
+        setResultModalOpen(true);
       }
     });
   const send = (all = false) =>
@@ -963,15 +966,6 @@ export function OjPaper({
                   {tab === "records" && recordPanel}
                 </>
               )}
-              {result && tab !== "records" && (
-                <ResultAccordion
-                  key={result.id}
-                  submission={result}
-                  polling={submissions.polling}
-                  error={submissions.pollError}
-                  onRefresh={() => submissions.show(result)}
-                />
-              )}
             </>
           ) : (
             <p>当前没有可见题目。</p>
@@ -1059,6 +1053,38 @@ export function OjPaper({
               <Button variant="tonal" onClick={() => setManualCopy(undefined)}>
                 关闭
               </Button>
+            </div>
+          </Dialog>,
+          document.body,
+        )}
+      {resultModalOpen &&
+        result &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <Dialog
+            open={resultModalOpen}
+            headline={`判题结果 #${result.id}`}
+            onClose={() => setResultModalOpen(false)}
+          >
+            <div className="max-h-[65vh] overflow-y-auto pr-1">
+              <JudgeResult
+                submission={result}
+                polling={submissions.polling}
+                error={submissions.pollError}
+                onRefresh={() => submissions.show(result)}
+              />
+            </div>
+            <div slot="actions">
+              <Button
+                variant="tonal"
+                onClick={() => {
+                  setResultModalOpen(false);
+                  void go({ tab: "records" });
+                }}
+              >
+                前往提交记录
+              </Button>
+              <Button onClick={() => setResultModalOpen(false)}>关闭</Button>
             </div>
           </Dialog>,
           document.body,

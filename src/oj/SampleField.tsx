@@ -1,9 +1,24 @@
-import { useId, useRef, useState, useEffect } from "react";
+import { useId, useRef, useEffect } from "react";
 import { Button } from "material/react";
 import { toast } from "../ui";
 import { LuCopy, LuSpace } from "react-icons/lu";
 import { copyText } from "../clipboard";
 import { notifySuccess } from "./feedback";
+import {
+  useWhitespaceVisible,
+  toggleWhitespaceVisible,
+  whitespaceStore,
+  setWhitespaceVisible,
+  resetWhitespaceVisible,
+} from "./whitespace-store";
+
+export {
+  whitespaceStore,
+  useWhitespaceVisible,
+  toggleWhitespaceVisible,
+  setWhitespaceVisible,
+  resetWhitespaceVisible,
+};
 
 export function WhitespaceOverlay({ text }: { text: string }) {
   const tokens = text.match(/([ ]+|\t|\r?\n|[^\t\r\n ]+)/g) ?? [];
@@ -48,19 +63,32 @@ export function WhitespaceOverlay({ text }: { text: string }) {
   );
 }
 
+export interface SampleFieldProps {
+  label: string;
+  value?: string;
+  sample?: number | string;
+  ariaLabel?: string;
+  placeholder?: string;
+  minRows?: number;
+  maxRows?: number;
+}
+
 export function SampleField({
   label,
   value,
   sample,
-}: {
-  label: string;
-  value: string;
-  sample: number;
-}) {
+  ariaLabel,
+  placeholder,
+  minRows = 3,
+  maxRows = 12,
+}: SampleFieldProps) {
   const id = useId();
   const element = useRef<HTMLTextAreaElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
-  const [showSpaces, setShowSpaces] = useState(false);
+  const showSpaces = useWhitespaceVisible();
+
+  const itemLabel = ariaLabel ?? (sample !== undefined ? `样例 ${sample} ${label}` : label);
+  const hasValue = value !== undefined && value !== "";
 
   useEffect(() => {
     if (showSpaces && element.current && overlayRef.current) {
@@ -86,8 +114,9 @@ export function SampleField({
           <Button
             size="xs"
             variant={showSpaces ? "tonal" : "text"}
-            aria-label={`${showSpaces ? "隐藏" : "显示"}样例 ${sample} ${label}空格`}
-            onClick={() => setShowSpaces((prev) => !prev)}
+            aria-label={`${showSpaces ? "隐藏" : "显示"}${itemLabel}空格`}
+            disabled={!hasValue}
+            onClick={toggleWhitespaceVisible}
           >
             <LuSpace aria-hidden="true" />
             {showSpaces ? "隐藏空格" : "显示空格"}
@@ -95,15 +124,17 @@ export function SampleField({
           <Button
             size="xs"
             variant="text"
-            aria-label={`复制样例 ${sample} ${label}`}
+            aria-label={`复制${itemLabel}`}
+            disabled={!hasValue}
             onClick={() => {
+              if (!hasValue || value === undefined) return;
               // Copy the original string, not textarea.value (which normalizes CRLF).
               void copyText(value).then((copied) => {
-                if (copied) notifySuccess(`样例 ${sample} ${label}已复制。`);
+                if (copied) notifySuccess(`${itemLabel}已复制。`);
                 else {
                   element.current?.focus();
                   element.current?.select();
-                  toast.warning("自动复制失败，已选中样例，请手动复制。", { timeout: 3000 });
+                  toast.warning("自动复制失败，已选中文本，请手动复制。", { timeout: 3000 });
                 }
               });
             }}
@@ -114,45 +145,46 @@ export function SampleField({
         </div>
       </div>
       <div className="relative min-w-0">
-        {/*
-          样例需要与上方蒙层逐字符对齐：wrap="off"、等宽字体与固定行高都要
-          精确控制，而 material 的 TextField 把这些样式封在 shadow root 里，
-          外部只能通过 CSS 变量微调。这里保留原生 textarea。
-        */}
-        <textarea
-          ref={element}
-          id={id}
-          aria-label={`样例 ${sample} ${label}`}
-          readOnly
-          value={value}
-          rows={Math.max(3, Math.min(12, value.split("\n").length))}
-          wrap="off"
-          spellCheck={false}
-          className="md-sample-field resize-y font-mono whitespace-pre text-sm leading-6"
-          style={{
-            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-            fontSize: "14px",
-            lineHeight: "24px",
-            padding: "12px 16px",
-          }}
-          onScroll={handleScroll}
-        />
-        {showSpaces && (
-          <div
-            ref={overlayRef}
-            aria-hidden="true"
-            data-testid="whitespace-overlay"
-            className="pointer-events-none select-none absolute inset-0 overflow-hidden font-mono whitespace-pre text-sm leading-6"
-            style={{
-              fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-              fontSize: "14px",
-              lineHeight: "24px",
-              padding: "12px 16px",
-              border: "1px solid transparent",
-            }}
-          >
-            <WhitespaceOverlay text={value} />
-          </div>
+        {hasValue ? (
+          <>
+            <textarea
+              ref={element}
+              id={id}
+              aria-label={itemLabel}
+              readOnly
+              value={value}
+              rows={Math.max(minRows, Math.min(maxRows, value.split("\n").length))}
+              wrap="off"
+              spellCheck={false}
+              className="md-sample-field resize-y font-mono whitespace-pre text-sm leading-6"
+              style={{
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                fontSize: "14px",
+                lineHeight: "24px",
+                padding: "12px 16px",
+              }}
+              onScroll={handleScroll}
+            />
+            {showSpaces && (
+              <div
+                ref={overlayRef}
+                aria-hidden="true"
+                data-testid="whitespace-overlay"
+                className="pointer-events-none select-none absolute inset-0 overflow-hidden font-mono whitespace-pre text-sm leading-6"
+                style={{
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                  fontSize: "14px",
+                  lineHeight: "24px",
+                  padding: "12px 16px",
+                  border: "1px solid transparent",
+                }}
+              >
+                <WhitespaceOverlay text={value} />
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="text-xs text-muted italic py-1">{placeholder ?? "（未提供）"}</p>
         )}
       </div>
     </div>

@@ -47,12 +47,16 @@ export function judgeDetails(s: Submission) {
   const result = object(s.result);
   const cases = (Array.isArray(result.data) ? result.data : []).map((item, index) => {
     const row = object(item);
+    const rawOutput = row.output ?? row.user_output ?? row.stdout ?? row.user_out;
+    const rawInput = row.input ?? row.stdin ?? row.test_input ?? row.user_input;
     return {
       id: String(row.test_case ?? index + 1),
       status: typeof row.result === "number" ? row.result : undefined,
       cpu: number(row.cpu_time),
       real: number(row.real_time),
       memory: number(row.memory),
+      output: typeof rawOutput === "string" ? rawOutput : undefined,
+      input: typeof rawInput === "string" ? rawInput : undefined,
     };
   });
   const maximum = (values: (number | undefined)[]) => {

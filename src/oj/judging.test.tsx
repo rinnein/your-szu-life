@@ -13,7 +13,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { copyText } from "../clipboard";
-import { SampleField } from "./SampleField";
+import { SampleField, resetWhitespaceVisible } from "./SampleField";
 import { JudgeResult, Verdict } from "./JudgeResult";
 import { isPending, judgeDetails, problemVerdict } from "./judging";
 import { useSubmissions } from "./useSubmissions";
@@ -85,6 +85,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  resetWhitespaceVisible();
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -313,4 +314,134 @@ it("receives CPH results only for the current account generation", async () => {
   expect(hook.result.current.result).toBeUndefined();
   await act(async () => callback({ event: "oj-companion-result", id: 1, payload }));
   expect(hook.result.current.result?.status).toBe(0);
+});
+
+it("extracts stdout/output and stdin/input per test case across field variants", () => {
+  const submission = {
+    id: 1,
+    status: 0,
+    result: {
+      data: [
+        { test_case: "1", result: 0, output: "line1\nline2", input: "1 2\n" },
+        { test_case: "2", result: 0, stdout: "test2 stdout", stdin: "3 4\n" },
+        { test_case: "3", result: 0, user_output: "test3 output", test_input: "5 6\n" },
+        { test_case: "4", result: 0, user_out: "test4 output", user_input: "7 8\n" },
+        { test_case: "5", result: 0 },
+      ],
+    },
+  };
+  const details = judgeDetails(submission);
+  expect(details.cases[0].output).toBe("line1\nline2");
+  expect(details.cases[0].input).toBe("1 2\n");
+  expect(details.cases[1].output).toBe("test2 stdout");
+  expect(details.cases[1].input).toBe("3 4\n");
+  expect(details.cases[2].output).toBe("test3 output");
+  expect(details.cases[2].input).toBe("5 6\n");
+  expect(details.cases[3].output).toBe("test4 output");
+  expect(details.cases[3].input).toBe("7 8\n");
+  expect(details.cases[4].output).toBeUndefined();
+  expect(details.cases[4].input).toBeUndefined();
+});
+
+it("expands and collapses checkpoint input and output and copies them independently", async () => {
+  const submissionWithIO = {
+    id: 99,
+    status: 0,
+    result: {
+      data: [
+        {
+          test_case: "1",
+          result: 0,
+          cpu_time: 10,
+          real_time: 12,
+          memory: 1048576,
+          input: "10 20\n",
+          output: "Server stdout 1",
+        },
+        { test_case: "2", result: 0, cpu_time: 10, real_time: 12, memory: 1048576 },
+      ],
+    },
+  };
+  render(<JudgeResult submission={submissionWithIO} polling={false} onRefresh={() => {}} />);
+
+  // Initially, input and output are not visible
+  expect(screen.queryByRole("textbox", { name: "测试点 1 输入" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "测试点 1 输出" })).toBeNull();
+
+  // Find the toggle button or row for test case 1 and click to expand
+  const toggleBtn1 = screen.getByRole("button", { name: "展开测试点 1 详情" });
+  fireEvent.click(toggleBtn1);
+
+  // Now both input and output textareas are displayed
+  const inputField = screen.getByRole("textbox", { name: "测试点 1 输入" }) as HTMLTextAreaElement;
+  const outputField = screen.getByRole("textbox", { name: "测试点 1 输出" }) as HTMLTextAreaElement;
+  expect(inputField).toHaveValue("10 20\n");
+  expect(outputField).toHaveValue("Server stdout 1");
+  expect(screen.getByText("测试点 1 输入 (stdin)")).toBeInTheDocument();
+  expect(screen.getByText("测试点 1 在线输出 (stdout)")).toBeInTheDocument();
+
+  // Click copy input button
+  const copyInputBtn = screen.getByRole("button", { name: "复制测试点 1 输入" });
+  fireEvent.click(copyInputBtn);
+  await waitFor(() => expect(copyText).toHaveBeenCalledWith("10 20\n"));
+
+  // Click copy output button
+  const copyOutputBtn = screen.getByRole("button", { name: "复制测试点 1 输出" });
+  fireEvent.click(copyOutputBtn);
+  await waitFor(() => expect(copyText).toHaveBeenCalledWith("Server stdout 1"));
+
+  // Click to collapse
+  const collapseBtn1 = screen.getByRole("button", { name: "收起测试点 1 详情" });
+  fireEvent.click(collapseBtn1);
+  expect(screen.queryByRole("textbox", { name: "测试点 1 输入" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "测试点 1 输出" })).toBeNull();
+});
+
+it("shares whitespace visibility state globally across sample fields and checkpoints", () => {
+  render(
+    <div>
+      <SampleField sample={1} label="输入" value="sample 1  spaces" />
+      <SampleField label="测试点 1 输出" value="check 1  spaces" ariaLabel="测试点 1 输出" />
+    </div>,
+  );
+
+  // Both overlays initially not mounted
+  expect(screen.queryAllByTestId("whitespace-overlay")).toHaveLength(0);
+
+  // Toggle on first field
+  fireEvent.click(screen.getByRole("button", { name: "显示样例 1 输入空格" }));
+
+  // Both fields now have overlays mounted due to shared global state
+  expect(screen.getAllByTestId("whitespace-overlay")).toHaveLength(2);
+  expect(screen.getByRole("button", { name: "隐藏样例 1 输入空格" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "隐藏测试点 1 输出空格" })).toBeInTheDocument();
+
+  // Toggle off from the second field
+  fireEvent.click(screen.getByRole("button", { name: "隐藏测试点 1 输出空格" }));
+
+  // Both fields now unmount their overlays
+  expect(screen.queryAllByTestId("whitespace-overlay")).toHaveLength(0);
+  expect(screen.getByRole("button", { name: "显示样例 1 输入空格" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "显示测试点 1 输出空格" })).toBeInTheDocument();
+});
+
+it("shows placeholder hints and disables copy when checkpoint has neither input nor stdout", () => {
+  const submissionEmpty = {
+    id: 99,
+    status: 0,
+    result: {
+      data: [{ test_case: "1", result: 0, cpu_time: 10, real_time: 12, memory: 1048576 }],
+    },
+  };
+  render(<JudgeResult submission={submissionEmpty} polling={false} onRefresh={() => {}} />);
+
+  const toggleBtn1 = screen.getByRole("button", { name: "展开测试点 1 详情" });
+  fireEvent.click(toggleBtn1);
+
+  expect(screen.getByText("（服务端未返回测试输入）")).toBeInTheDocument();
+  expect(screen.getByText("（服务端未返回标准输出）")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "复制测试点 1 输入" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "复制测试点 1 输出" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "显示测试点 1 输入空格" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "显示测试点 1 输出空格" })).toBeDisabled();
 });

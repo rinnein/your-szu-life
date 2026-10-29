@@ -737,3 +737,45 @@ it("keeps the cached completed status visible while a paper reloads its records"
   expect(await screen.findByText("已完成")).toBeTruthy();
   expect(vi.mocked(invoke).mock.calls.some(([cmd]) => cmd === "get_oj_progress")).toBe(false);
 });
+
+it("opens judging result in a modal dialog upon submitting code and can be closed", async () => {
+  const programming: Paper = {
+    ...paper,
+    problems: [{ ...paper.problems[0], kind: 0, languages: ["cpp"] }],
+    drafts: {
+      "0:1": {
+        code: "int main() { return 0; }",
+        language: "cpp",
+        options: null,
+        answer: "",
+        revision: 1,
+      },
+    },
+  };
+  const previous = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (cmd, args) => {
+    if (cmd === "get_oj_paper") return programming;
+    if (cmd === "submit_oj") return { id: 999, status: 0, language: "cpp" };
+    return previous(cmd, args);
+  });
+  render(
+    <OjPaper site={site} contestId="1" tab="answer" desktop={false} port={27121} selected="0:1" />,
+  );
+  const submitBtn = await screen.findByRole("button", { name: "提交代码" });
+  fireEvent.click(submitBtn);
+
+  // 模态弹窗打开
+  const dialog = await waitFor(() => {
+    const el = document.querySelector<HTMLElement>("m-dialog");
+    expect(el).not.toBeNull();
+    expect(el?.getAttribute("headline")).toContain("判题结果 #999");
+    expect(el?.hasAttribute("open")).toBe(true);
+    return el!;
+  });
+  expect(dialog).toBeInTheDocument();
+
+  // 点击关闭按钮收起弹窗
+  const closeBtn = screen.getByRole("button", { name: "关闭" });
+  fireEvent.click(closeBtn);
+  await waitFor(() => expect(document.querySelector("m-dialog")).toBeNull());
+});
