@@ -14,10 +14,9 @@ export function mockElementRects(widths: Record<string, number>) {
   rectSpy = vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
     this: Element,
   ) {
-    const classes = this.getAttribute("class");
-    const matched = classes
-      ? Object.keys(widths).find((name) => classes.split(/\s+/).includes(name))
-      : undefined;
+    const matched = Object.keys(widths).find(
+      (name) => this.classList?.contains(name) || Boolean(this.closest?.(`.${name}`)),
+    );
     const width = matched ? widths[matched] : 0;
     return {
       x: 0,

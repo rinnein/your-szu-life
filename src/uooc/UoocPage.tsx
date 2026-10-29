@@ -11,13 +11,10 @@ import {
   LoadingIndicator,
   Progress,
   Switch,
-  Tab,
-  Tabs,
   TextField,
   Button,
 } from "material/react";
-import { Banner, Chip, Disclosure, NumberField, toast } from "../ui";
-import { nameTablist } from "../ui/tablist";
+import { AdaptiveTabs, Banner, Chip, Disclosure, NumberField, toast } from "../ui";
 import {
   LuCheck,
   LuCircleHelp,
@@ -28,7 +25,8 @@ import {
   LuSquare,
   LuTrash2,
 } from "react-icons/lu";
-import { ModuleHeader, PageShell, SkeletonCard } from "../components";
+import { PageShell, SkeletonCard } from "../components";
+import { TopAppBar } from "../shell/TopAppBar";
 import { useLogicalNavigation } from "../logical-navigation";
 import { ModelDownloadModal } from "../ModelDownloadModal";
 import { useEmbeddingModelStatus } from "../EmbeddingModelSettings";
@@ -315,6 +313,30 @@ export default function UoocPage() {
   };
   const tasks =
     snapshot?.tasks.filter((task) => !snapshot.user || task.accountId === snapshot.user.id) ?? [];
+
+  const uoocTabItems = useMemo(
+    () => [
+      { value: "courses", label: "开课中" },
+      {
+        value: "tasks",
+        label: tasks.length ? `任务 (${tasks.length})` : "任务",
+        badge: tasks.length || undefined,
+      },
+      { value: "exams", label: "测验/作业/考试" },
+      { value: "qa", label: "题库" },
+      { value: "settings", label: "运行设置" },
+    ],
+    [tasks.length],
+  );
+
+  const assessItems = useMemo(
+    () => [
+      { value: "quiz", label: "测验" },
+      { value: "homework", label: "作业" },
+      { value: "exam", label: "考试" },
+    ],
+    [],
+  );
   const activeModalQuiz = selectedQuiz
     ? (Object.values(snapshot?.quizzes ?? {}).find(
         (q) =>
@@ -509,7 +531,7 @@ export default function UoocPage() {
           if (!open) setEmbeddingDismissed(true);
         }}
       />
-      <ModuleHeader title="UOOC刷课" description="优课在线视频任务" />
+      <TopAppBar title="UOOC刷课" description="优课在线视频任务" />
 
       <div className="mx-auto grid w-full max-w-4xl min-w-0 gap-5">
         <Card variant="outlined">
@@ -547,64 +569,14 @@ export default function UoocPage() {
             )}
           </div>
         </Card>
-        {/* 横向 Tab 导航（支持水平滑动，在所有屏幕下均可见） */}
-        <div className="w-full overflow-x-auto scrollbar-none mb-2">
-          <Tabs
-            ref={(host) => nameTablist(host, "UOOC 功能")}
-            value={tab}
-            onChange={(event) => void navigation.replace(`/study/uooc?tab=${event.detail.value}`)}
-          >
-            <Tab value="courses">开课中</Tab>
-            <Tab value="tasks">任务{tasks.length ? ` (${tasks.length})` : ""}</Tab>
-            <Tab value="exams">测验/作业/考试</Tab>
-            <Tab value="qa">题库</Tab>
-            <Tab value="settings">运行设置</Tab>
-          </Tabs>
-        </div>
-
-        {/* 移动端横向空间不足时：可折叠菜单进行选择 */}
-        <div className="sm:hidden mb-2">
-          <Disclosure
-            title={`当前功能：${
-              tab === "courses"
-                ? "开课中"
-                : tab === "tasks"
-                  ? `任务${tasks.length ? ` (${tasks.length})` : ""}`
-                  : tab === "exams"
-                    ? "测验/作业/考试"
-                    : tab === "qa"
-                      ? "题库"
-                      : "运行设置"
-            }`}
-          >
-            <div className="grid gap-1 p-2 pt-1 border-t border-separator/40">
-              {[
-                { id: "courses", label: "开课中" },
-                { id: "tasks", label: `任务${tasks.length ? ` (${tasks.length})` : ""}` },
-                { id: "exams", label: "测验/作业/考试" },
-                { id: "qa", label: "题库" },
-                { id: "settings", label: "运行设置" },
-              ].map((t) => {
-                const isSelected = tab === t.id;
-                return (
-                  <Button
-                    key={t.id}
-                    variant={isSelected ? "filled" : "text"}
-                    className={`w-full justify-start h-9 px-3 text-xs ${
-                      isSelected ? "font-semibold" : "text-muted hover:text-foreground"
-                    }`}
-                    onClick={() => {
-                      void navigation.replace(`/study/uooc?tab=${t.id}`);
-                    }}
-                  >
-                    <span>{t.label}</span>
-                    {isSelected && <span className="ml-auto text-xs font-medium">当前</span>}
-                  </Button>
-                );
-              })}
-            </div>
-          </Disclosure>
-        </div>
+        <AdaptiveTabs
+          label="功能导航"
+          items={uoocTabItems}
+          value={tab}
+          onChange={(next) => void navigation.replace(`/study/uooc?tab=${next}`)}
+          ariaLabel="UOOC 功能"
+          className="mb-2"
+        />
         {tab === "courses" && (
           <div className="grid gap-6 pt-4">
             {!snapshot && !error && <SkeletonCard />}
@@ -1121,56 +1093,17 @@ export default function UoocPage() {
         )}
         {tab === "exams" && (
           <div className="grid gap-4 pt-4">
-            <Tabs
-              ref={(host) => nameTablist(host, "考核子分类")}
+            <AdaptiveTabs
+              label="考核子分类"
+              items={assessItems}
               value={assessSubtab}
-              onChange={(event) => {
-                const next = event.detail.value as "quiz" | "homework" | "exam";
-                setAssessSubtab(next);
-                void navigation.replace(`/study/uooc?tab=exams&subtab=${next}`);
+              onChange={(next) => {
+                const nextVal = next as "quiz" | "homework" | "exam";
+                setAssessSubtab(nextVal);
+                void navigation.replace(`/study/uooc?tab=exams&subtab=${nextVal}`);
               }}
-            >
-              {/* 横向子分类（支持水平滑动，在所有屏幕下均可见） */}
-              <Tab value="quiz">测验</Tab>
-              <Tab value="homework">作业</Tab>
-              <Tab value="exam">考试</Tab>
-            </Tabs>
-
-            {/* 移动端横向空间不足时：可折叠菜单进行选择 */}
-            <div className="sm:hidden mb-2">
-              <Disclosure
-                title={`考核分类：${
-                  assessSubtab === "quiz" ? "测验" : assessSubtab === "homework" ? "作业" : "考试"
-                }`}
-              >
-                <div className="grid gap-1 p-2 pt-1 border-t border-separator/40">
-                  {[
-                    { id: "quiz" as const, label: "测验" },
-                    { id: "homework" as const, label: "作业" },
-                    { id: "exam" as const, label: "考试" },
-                  ].map((sub) => {
-                    const isSelected = assessSubtab === sub.id;
-                    return (
-                      <Button
-                        key={sub.id}
-                        variant={isSelected ? "filled" : "text"}
-                        className={`w-full justify-start h-8 px-2.5 text-xs ${
-                          isSelected ? "font-semibold" : "text-muted hover:text-foreground"
-                        }`}
-                        onClick={() => {
-                          const next = sub.id as "quiz" | "homework" | "exam";
-                          setAssessSubtab(next);
-                          void navigation.replace(`/study/uooc?tab=exams&subtab=${next}`);
-                        }}
-                      >
-                        <span>{sub.label}</span>
-                        {isSelected && <span className="ml-auto text-xs font-medium">当前</span>}
-                      </Button>
-                    );
-                  })}
-                </div>
-              </Disclosure>
-            </div>
+              ariaLabel="考核子分类"
+            />
 
             {assessSubtab === "quiz" && (
               <div className="pt-3">

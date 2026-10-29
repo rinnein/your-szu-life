@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useLogicalNavigation } from "../logical-navigation";
+import { PageDrawerProvider } from "./PageDrawerContext";
 
 /** 页面内容的容器，替代原来的 `PageShell` 外层。 */
 export function PageSurface({
@@ -24,25 +25,27 @@ export function PageSurface({
   }[maxWidth];
 
   return (
-    <div
-      className={centered ? "page-surface page-surface-centered" : "page-surface"}
-      // 居中的认证流程是全屏独立页面，不应显示底部导航栏。
-      data-fullscreen={centered || undefined}
-    >
-      <div className="page-surface-inner" style={{ maxInlineSize: width }}>
-        {children}
+    <PageDrawerProvider>
+      <div
+        className={centered ? "page-surface page-surface-centered" : "page-surface"}
+        // 居中的认证流程是全屏独立页面，不应显示底部导航栏。
+        data-fullscreen={centered || undefined}
+      >
+        <div className="page-surface-inner" style={{ maxInlineSize: width }}>
+          {children}
+        </div>
+        {showAbout && (
+          <footer className="page-surface-footer">
+            <button
+              type="button"
+              className="page-surface-footer-link"
+              onClick={() => void navigation.push("/settings?tab=about")}
+            >
+              关于 · 检查更新
+            </button>
+          </footer>
+        )}
       </div>
-      {showAbout && (
-        <footer className="page-surface-footer">
-          <button
-            type="button"
-            className="page-surface-footer-link"
-            onClick={() => void navigation.push("/settings?tab=about")}
-          >
-            关于 · 检查更新
-          </button>
-        </footer>
-      )}
-    </div>
+    </PageDrawerProvider>
   );
 }

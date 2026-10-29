@@ -7,7 +7,7 @@ import {
   type ProgressScope,
 } from "./progress-store";
 import { List, ListItem } from "material/react";
-import { Chip } from "../ui";
+import { Chip, AdaptiveTabs } from "../ui";
 import { type Contest, phase } from "./types";
 
 export function ContestStatus({
@@ -112,7 +112,25 @@ export function ContestTable({
     };
   }, []);
 
-  const visible = contests.filter((c) => c.title.includes(query)).sort((a, b) => b.begin - a.begin);
+  const [statusFilter, setStatusFilter] = useState<"all" | "running" | "ended">("all");
+
+  const runningCount = contests.filter(
+    (c) => phase(c, c.now + Math.max(0, clock - sampledAt)) === "进行中",
+  ).length;
+  const endedCount = contests.filter(
+    (c) => phase(c, c.now + Math.max(0, clock - sampledAt)) === "已结束",
+  ).length;
+
+  const visible = contests
+    .filter((c) => {
+      if (query && !c.title.includes(query)) return false;
+      if (statusFilter === "all") return true;
+      const state = phase(c, c.now + Math.max(0, clock - sampledAt));
+      if (statusFilter === "running") return state === "进行中";
+      if (statusFilter === "ended") return state === "已结束";
+      return true;
+    })
+    .sort((a, b) => b.begin - a.begin);
   const byId = new Map(visible.map((contest) => [contest.id, contest]));
   // 进行中的测验用列表的选中态表达：M3 的 List 只提供这一种行级强调，
   // 而它正好对应「当前可进入」的语义。
@@ -121,47 +139,74 @@ export function ContestTable({
   );
 
   return (
-    <List
-      aria-label="测验列表"
-      selection="single"
-      className="oj-contest-list"
-      /* 传空串而不是 undefined：后者会被 React 当作移除属性，元素收不到更新。 */
-      value={running?.id ?? ""}
-      onActivate={(event) => {
-        const contest = byId.get(event.detail.value);
-        if (contest) onOpen(contest);
-      }}
-    >
-      {visible.map((contest) => {
-        // Anchor each response's server clock instead of trusting the device timezone/clock.
-        const now = contest.now + Math.max(0, clock - sampledAt);
-        const state = phase(contest, now);
-        const active = state === "进行中";
-        const complete =
-          (progress[contest.id]?.value?.total ?? 0) > 0 &&
-          progress[contest.id].value?.accepted === progress[contest.id].value?.total;
-        return (
-          <ListItem
-            key={contest.id}
-            value={contest.id}
-            overline={complete ? "已完成" : undefined}
-            headline={contest.title}
-            supportingText={
-              active
-                ? `${state} · 截止 ${new Date(contest.end).toLocaleString()}（剩余 ${formatRemaining(
-                    contest.end - now,
-                  )}）`
-                : `${state} · ${new Date(contest.begin).toLocaleString()} — ${new Date(
-                    contest.end,
-                  ).toLocaleString()}`
-            }
-            trailingText={
-              state === "已结束" ? "查看测验" : state === "未开始" ? "未开始" : "进入测验"
-            }
+    <div className="space-y-3">
+      {contests.length > 0 && (
+        <div className="oj-contest-filters">
+          <AdaptiveTabs
+            variant="pill"
+            size="sm"
+            injectDrawer={false}
+            value={statusFilter}
+            onChange={(val) => setStatusFilter(val as "all" | "running" | "ended")}
+            items={[
+              { value: "all", label: "全部", badge: contests.length },
+              {
+                value: "running",
+                label: "进行中",
+                badge: runningCount > 0 ? runningCount : undefined,
+              },
+              {
+                value: "ended",
+                label: "已结束",
+                badge: endedCount > 0 ? endedCount : undefined,
+              },
+            ]}
+            ariaLabel="测验状态筛选"
           />
-        );
-      })}
-      {visible.length === 0 && <ListItem value="__empty" headline="暂无匹配的测验" disabled />}
-    </List>
+        </div>
+      )}
+      <List
+        aria-label="测验列表"
+        selection="single"
+        className="oj-contest-list"
+        /* 传空串而不是 undefined：后者会被 React 当作移除属性，元素收不到更新。 */
+        value={running?.id ?? ""}
+        onActivate={(event) => {
+          const contest = byId.get(event.detail.value);
+          if (contest) onOpen(contest);
+        }}
+      >
+        {visible.map((contest) => {
+          // Anchor each response's server clock instead of trusting the device timezone/clock.
+          const now = contest.now + Math.max(0, clock - sampledAt);
+          const state = phase(contest, now);
+          const active = state === "进行中";
+          const complete =
+            (progress[contest.id]?.value?.total ?? 0) > 0 &&
+            progress[contest.id].value?.accepted === progress[contest.id].value?.total;
+          return (
+            <ListItem
+              key={contest.id}
+              value={contest.id}
+              overline={complete ? "已完成" : undefined}
+              headline={contest.title}
+              supportingText={
+                active
+                  ? `${state} · 截止 ${new Date(contest.end).toLocaleString()}（剩余 ${formatRemaining(
+                      contest.end - now,
+                    )}）`
+                  : `${state} · ${new Date(contest.begin).toLocaleString()} — ${new Date(
+                      contest.end,
+                    ).toLocaleString()}`
+              }
+              trailingText={
+                state === "已结束" ? "查看测验" : state === "未开始" ? "未开始" : "进入测验"
+              }
+            />
+          );
+        })}
+        {visible.length === 0 && <ListItem value="__empty" headline="暂无匹配的测验" disabled />}
+      </List>
+    </div>
   );
 }

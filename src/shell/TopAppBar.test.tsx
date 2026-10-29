@@ -7,6 +7,7 @@ import { listen } from "@tauri-apps/api/event";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
 import { routeTree } from "../routeTree.gen";
 import { initialLogicalEntries } from "../logical-navigation";
+import { mockElementRects } from "../test-layout";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
@@ -22,6 +23,7 @@ function renderAt(path: string) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockElementRects({ "adaptive-tabs": 1400 });
   vi.mocked(listen).mockResolvedValue(() => undefined);
   vi.mocked(invoke).mockImplementation(async (command) => {
     if (command === "get_auth_state")
@@ -105,7 +107,6 @@ describe("顶栏块不被放进带 gap 的容器", () => {
     "/life",
     "/settings",
     "/study/class-timetable",
-    "/study/computing",
     "/study/oj",
     "/study/uooc",
     "/study/academic",

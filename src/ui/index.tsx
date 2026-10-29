@@ -16,3 +16,4 @@ export { Disclosure } from "./Disclosure";
 export { Table } from "./DataTable";
 export { toast, resetToasts, type ToastColor, type ToastOptions } from "./toast";
 export { Chip, type ChipColor, type ChipVariant } from "./Chip";
+export { AdaptiveTabs, type AdaptiveTabItem, type AdaptiveTabsProps } from "./AdaptiveTabs";

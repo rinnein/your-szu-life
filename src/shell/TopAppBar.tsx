@@ -1,8 +1,9 @@
 import { type ReactNode } from "react";
 import { TopAppBar as MaterialTopAppBar } from "material/react";
-import { LuArrowLeft, LuSearch } from "react-icons/lu";
+import { LuArrowLeft, LuMenu, LuSearch } from "react-icons/lu";
 import { useLogicalNavigation } from "../logical-navigation";
 import { openCommandPalette } from "../command-palette";
+import { usePageDrawer } from "./PageDrawerContext";
 
 /**
  * 页面顶部应用栏。
@@ -24,6 +25,8 @@ export function TopAppBar({
   showBack = true,
   backLabel = "返回上一页",
   actions,
+  drawerLabel = "打开功能目录",
+  showDrawer,
 }: {
   title: string;
   description?: string;
@@ -32,8 +35,12 @@ export function TopAppBar({
   showBack?: boolean;
   backLabel?: string;
   actions?: ReactNode;
+  drawerLabel?: string;
+  showDrawer?: boolean;
 }) {
   const navigation = useLogicalNavigation();
+  const drawer = usePageDrawer();
+  const hasDrawer = (showDrawer ?? (drawer && drawer.sections.length > 0)) && Boolean(drawer);
 
   return (
     <>
@@ -51,6 +58,16 @@ export function TopAppBar({
                   onClick={() => void navigation.back()}
                 >
                   <LuArrowLeft aria-hidden="true" size={20} />
+                </button>
+              )}
+              {hasDrawer && drawer && (
+                <button
+                  type="button"
+                  className="top-app-bar-icon-button top-app-bar-drawer"
+                  aria-label={drawerLabel}
+                  onClick={() => drawer.setOpen(true)}
+                >
+                  <LuMenu aria-hidden="true" size={20} />
                 </button>
               )}
               {leading}

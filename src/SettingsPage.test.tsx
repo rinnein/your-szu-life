@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 import { listen } from "@tauri-apps/api/event";
+import { mockElementRects } from "./test-layout";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -26,6 +27,7 @@ function renderRouterApp(initialEntry = "/settings") {
 describe("SettingsPage multi-tab and unified local model card", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockElementRects({ "adaptive-tabs": 1400 });
     vi.stubGlobal(
       "ResizeObserver",
       class {
@@ -276,5 +278,31 @@ describe("SettingsPage multi-tab and unified local model card", () => {
 
     expect(await screen.findByRole("tab", { name: /诊断日志/ })).toBeInTheDocument();
     expect(await screen.findByText("日志文件概览")).toBeInTheDocument();
+  });
+
+  it("移动端展示左上角抽屉按钮并可打开抽屉切换设置项，且不再存在旧版下拉菜单", async () => {
+    const { testRouter } = renderRouterApp("/settings");
+    await screen.findByRole("heading", { name: "设置" });
+
+    expect(document.querySelector(".settings-tabs-mobile")).toBeNull();
+    expect(document.querySelector(".settings-mobile-trigger")).toBeNull();
+
+    const menuButton = screen.getByRole("button", { name: "打开设置目录" });
+    expect(menuButton).toBeInTheDocument();
+
+    const drawer = document.querySelector<HTMLElement>("m-drawer");
+    expect(drawer).not.toBeNull();
+    expect(drawer?.hasAttribute("modal")).toBe(true);
+
+    fireEvent.click(menuButton);
+    expect(drawer?.hasAttribute("open")).toBe(true);
+
+    drawer?.dispatchEvent(
+      new CustomEvent("change", { detail: { value: "appearance" }, bubbles: true }),
+    );
+    await waitFor(() => {
+      expect(testRouter.state.location.search).toMatchObject({ tab: "appearance" });
+    });
+    expect(drawer?.hasAttribute("open")).toBe(false);
   });
 });

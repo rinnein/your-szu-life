@@ -5,7 +5,7 @@ const numericId = (value: unknown) => {
   return typeof text === "string" && /^\d+$/.test(text) ? text : undefined;
 };
 export const Route = createFileRoute("/study/oj")({
-  head: () => ({ meta: [{ title: "OJ · 计软合集" }] }),
+  head: () => ({ meta: [{ title: "OJ · 编程练习" }] }),
   validateSearch: (
     search: Record<string, unknown>,
   ): { site?: string; group?: string; contest?: string; problem?: string; tab: string } => ({

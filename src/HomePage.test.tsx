@@ -261,7 +261,7 @@ describe("frontend smoke tests", () => {
     expect(document.querySelectorAll(".feature-icon svg")).toHaveLength(6);
     for (const [label, description] of [
       ["上课时间表", "查看各节次上课时间"],
-      ["计软合集", "OJ等计软相关功能"],
+      ["OJ", "班级、测验与编程练习"],
       ["UOOC刷课", "优课在线视频任务"],
       ["选课", "查课、抢课与选课期间课表"],
       ["学业完成查询", "培养方案、学分与课程完成情况"],

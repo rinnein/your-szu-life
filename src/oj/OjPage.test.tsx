@@ -570,6 +570,69 @@ it("容器窄而窗口高时只出现横向题目切换，胶囊带判定", asyn
   ).toContain("--mtrl-sys-color-error");
 });
 
+it("题目 Tabs 在中屏横向展示且在题目切换时自动调用 scrollIntoView 平滑居中", async () => {
+  mockElementRects({ "oj-paper": 600 });
+  mockViewportHeight(900);
+  serveRecords(twoCodingProblems);
+  const originalScrollIntoView = Element.prototype.scrollIntoView;
+  const scrollIntoViewMock = vi.fn();
+  Element.prototype.scrollIntoView = scrollIntoViewMock;
+
+  try {
+    const view = render(
+      <OjPaper
+        site={site}
+        contestId="1"
+        tab="records"
+        desktop={false}
+        port={27121}
+        selected="0:1"
+      />,
+    );
+    await screen.findByText("#11");
+    const tabs = shadowOf(view.container, "m-tabs");
+    expect(tabs).not.toBeNull();
+
+    view.rerender(
+      <OjPaper
+        site={site}
+        contestId="1"
+        tab="records"
+        desktop={false}
+        port={27121}
+        selected="0:2"
+      />,
+    );
+    await screen.findByText("#12");
+    expect(scrollIntoViewMock).toHaveBeenCalledWith(
+      expect.objectContaining({ inline: "center", behavior: "smooth" }),
+    );
+
+    const strip = view.container.querySelector<HTMLDivElement>(".oj-switcher-strip")!;
+    expect(strip).not.toBeNull();
+    strip.scrollLeft = 0;
+    const prevented = !fireEvent.wheel(strip, { deltaY: 120, deltaX: 0 });
+    expect(prevented).toBe(true);
+    expect(strip.scrollLeft).toBe(120);
+
+    const lineWheel = new WheelEvent("wheel", {
+      deltaY: 2,
+      deltaX: 0,
+      deltaMode: 1,
+      cancelable: true,
+    });
+    strip.dispatchEvent(lineWheel);
+    expect(strip.scrollLeft).toBe(186);
+    expect(lineWheel.defaultPrevented).toBe(true);
+
+    const horizontalPrevented = !fireEvent.wheel(strip, { deltaY: 0, deltaX: 50 });
+    expect(horizontalPrevented).toBe(false);
+    expect(strip.scrollLeft).toBe(186);
+  } finally {
+    Element.prototype.scrollIntoView = originalScrollIntoView;
+  }
+});
+
 it("容器窄而窗口矮时用触发按钮加模态抽屉切换题目", async () => {
   mockElementRects({ "oj-paper": 600 });
   mockViewportHeight(500);

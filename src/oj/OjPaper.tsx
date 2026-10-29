@@ -1,7 +1,8 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { usePageDrawerActions, type AdaptiveTabItem } from "../shell/PageDrawerContext";
 import {
   Checkbox,
   Dialog,
@@ -11,15 +12,12 @@ import {
   Radios,
   Select,
   SelectOption,
-  Tab,
-  Tabs,
   TextField,
   Button,
 } from "material/react";
 import { useSelector } from "@tanstack/react-store";
 import { ojProgressCache, progressScope, progressScopeKey } from "./progress-store";
-import { Banner, Chip } from "../ui";
-import { nameTablist } from "../ui/tablist";
+import { Banner, Chip, AdaptiveTabs } from "../ui";
 import renderMathInElement from "katex/contrib/auto-render";
 import "katex/dist/katex.min.css";
 import { useLogicalNavigation } from "../logical-navigation";
@@ -418,6 +416,7 @@ export function OjPaper({
   };
   const p = paper?.problems.find((p) => problemKey(p) === selected) ?? paper?.problems[0];
   const pk = p ? problemKey(p) : "";
+
   const draft = drafts[pk];
   const submissions = useSubmissions(site.id, contestId, paper, p, site);
   const { records, result, refreshRecords } = submissions;
@@ -441,6 +440,34 @@ export function OjPaper({
         tab: updates.tab ?? tab,
       }),
     );
+
+  const drawerActions = usePageDrawerActions();
+  const drawerSectionId = useId();
+
+  const problemItems: AdaptiveTabItem[] = useMemo(
+    () =>
+      paper?.problems.map((problem) => {
+        const status = problemStatus(problem, submissions.verdict, submissions.emptyVerdict);
+        return {
+          value: problemKey(problem),
+          label: `${problem.displayLabel}. ${problem.title}`,
+          icon: statusPillHtml(status.tone, status.text),
+        };
+      }) ?? [],
+    [paper?.problems, submissions.verdict, submissions.emptyVerdict],
+  );
+
+  useEffect(() => {
+    // 当非 strip 模式（docked 侧栏或 sheet）时 AdaptiveTabs 未挂载，由本 effect 补充向 Drawer 注册
+    if (layout === "strip" || !drawerActions || problemItems.length === 0) return;
+    return drawerActions.registerSection({
+      id: drawerSectionId,
+      label: "题目列表",
+      items: problemItems,
+      value: pk,
+      onChange: (val) => void go({ problem: val }),
+    });
+  }, [layout, drawerActions, drawerSectionId, problemItems, pk, go]);
   const edit = (next: Partial<Draft>) => {
     if (!draft || !writable) return;
     const value = { ...draft, ...next, revision: Math.max(Date.now(), draft.revision + 1) };
@@ -779,9 +806,9 @@ export function OjPaper({
   return (
     <section className="oj-paper" ref={paperRef} data-oj-layout={layout}>
       <div className="oj-toolbar">
-        <div>
+        <div className="oj-paper-header-info">
           <h2>{paper.contest.title}</h2>
-          <p className="oj-muted">
+          <div className="oj-paper-header-meta">
             <ContestStatus
               contest={paper.contest}
               now={now}
@@ -797,7 +824,7 @@ export function OjPaper({
                 （剩余 {formatRemaining(paper.contest.end - now)}）
               </span>
             )}
-          </p>
+          </div>
         </div>
         <div className="oj-actions">
           <RankingTable siteId={site.id} paper={paper} />
@@ -831,31 +858,16 @@ export function OjPaper({
           </Button>
         </div>
       )}
-      {/* 题目选择器：三档只渲染一档，档位由纸张容器的实测宽度决定（见 layout.ts）。 */}
+      {/* 题目选择器：横向标签切换接入通用 AdaptiveTabs 组件。 */}
       {layout === "strip" && showSwitcher && (
-        <div className="oj-switcher-strip">
-          <Tabs
-            className="oj-problem-tabs"
-            ref={(host) => nameTablist(host, "测验题目切换")}
-            value={pk || undefined}
-            onChange={(event) => {
-              if (event.detail.value) void go({ problem: event.detail.value });
-            }}
-          >
-            {paper.problems.map((problem) => {
-              const status = problemStatus(problem, submissions.verdict, submissions.emptyVerdict);
-              return (
-                <Tab
-                  value={problemKey(problem)}
-                  key={problemKey(problem)}
-                  icon={statusPillHtml(status.tone, status.text)}
-                >
-                  {problem.displayLabel}. {problem.title}
-                </Tab>
-              );
-            })}
-          </Tabs>
-        </div>
+        <AdaptiveTabs
+          className="oj-problem-tabs"
+          label="题目列表"
+          items={problemItems}
+          value={pk}
+          onChange={(val) => void go({ problem: val })}
+          ariaLabel="测验题目切换"
+        />
       )}
       {layout === "sheet" && showSwitcher && (
         <div className="oj-switcher-compact">
@@ -893,7 +905,7 @@ export function OjPaper({
         <div className="oj-detail" ref={detailRef} data-oj-reading={reading ? "split" : "stacked"}>
           {p ? (
             <>
-              <div className="oj-toolbar">
+              <div className="oj-problem-header">
                 <h2>
                   {p.displayLabel}. {p.title}
                 </h2>
@@ -917,25 +929,40 @@ export function OjPaper({
                   )}
                 </div>
               </div>
-              <Tabs
-                ref={(host) => nameTablist(host, "题目内容")}
-                value={tab || undefined}
-                onChange={(event) => {
-                  if (event.detail.value) void go({ tab: event.detail.value });
-                }}
-              >
-                <Tab value="statement">题面</Tab>
-                <Tab value="answer">作答</Tab>
-                <Tab value="records">提交记录</Tab>
-              </Tabs>
-              {tab === "statement" && (
-                <div className="oj-reading">
-                  <Statement p={p} paper={paper} siteId={site.id} />
-                  <div className="oj-desktop-answer">{answerPanel}</div>
-                </div>
+              <AdaptiveTabs
+                className="oj-content-tabs mb-4"
+                variant="segmented"
+                size="sm"
+                label="题目内容"
+                value={tab || "statement"}
+                onChange={(nextTab) => void go({ tab: nextTab })}
+                items={[
+                  { value: "statement", label: "题面" },
+                  { value: "answer", label: "作答" },
+                  { value: "records", label: "提交记录" },
+                ]}
+                ariaLabel="题目内容"
+              />
+              {reading ? (
+                tab === "records" ? (
+                  recordPanel
+                ) : (
+                  <div className="oj-reading">
+                    <Statement p={p} paper={paper} siteId={site.id} />
+                    <div className="oj-desktop-answer">{answerPanel}</div>
+                  </div>
+                )
+              ) : (
+                <>
+                  {tab === "statement" && (
+                    <div className="oj-reading">
+                      <Statement p={p} paper={paper} siteId={site.id} />
+                    </div>
+                  )}
+                  {tab === "answer" && answerPanel}
+                  {tab === "records" && recordPanel}
+                </>
               )}
-              {tab === "answer" && answerPanel}
-              {tab === "records" && recordPanel}
               {result && tab !== "records" && (
                 <ResultAccordion
                   key={result.id}

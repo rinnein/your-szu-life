@@ -19,7 +19,6 @@ import { Route as LifeCampusPaymentsRouteRouteImport } from './routes/life/campu
 import { Route as StudyIndexRouteImport } from './routes/study/index'
 import { Route as StudyAcademicRouteImport } from './routes/study/academic'
 import { Route as StudyClassTimetableRouteImport } from './routes/study/class-timetable'
-import { Route as StudyComputingRouteImport } from './routes/study/computing'
 import { Route as StudyEnrollmentRouteImport } from './routes/study/enrollment'
 import { Route as StudyOjRouteImport } from './routes/study/oj'
 import { Route as StudyUoocRouteImport } from './routes/study/uooc'
@@ -83,11 +82,6 @@ const StudyAcademicRoute = StudyAcademicRouteImport.update({
 const StudyClassTimetableRoute = StudyClassTimetableRouteImport.update({
   id: '/class-timetable',
   path: '/class-timetable',
-  getParentRoute: () => StudyRouteRoute,
-} as any)
-const StudyComputingRoute = StudyComputingRouteImport.update({
-  id: '/computing',
-  path: '/computing',
   getParentRoute: () => StudyRouteRoute,
 } as any)
 const StudyEnrollmentRoute = StudyEnrollmentRouteImport.update({
@@ -174,7 +168,6 @@ export interface FileRoutesByFullPath {
   '/life/campus-network': typeof LifeCampusNetworkRoute
   '/study/academic': typeof StudyAcademicRoute
   '/study/class-timetable': typeof StudyClassTimetableRoute
-  '/study/computing': typeof StudyComputingRoute
   '/study/enrollment': typeof StudyEnrollmentRouteWithChildren
   '/study/oj': typeof StudyOjRoute
   '/study/uooc': typeof StudyUoocRoute
@@ -198,7 +191,6 @@ export interface FileRoutesByTo {
   '/life/campus-network': typeof LifeCampusNetworkRoute
   '/study/academic': typeof StudyAcademicRoute
   '/study/class-timetable': typeof StudyClassTimetableRoute
-  '/study/computing': typeof StudyComputingRoute
   '/study/oj': typeof StudyOjRoute
   '/study/uooc': typeof StudyUoocRoute
   '/life': typeof LifeIndexRoute
@@ -225,7 +217,6 @@ export interface FileRoutesById {
   '/life/campus-network': typeof LifeCampusNetworkRoute
   '/study/academic': typeof StudyAcademicRoute
   '/study/class-timetable': typeof StudyClassTimetableRoute
-  '/study/computing': typeof StudyComputingRoute
   '/study/enrollment': typeof StudyEnrollmentRouteWithChildren
   '/study/oj': typeof StudyOjRoute
   '/study/uooc': typeof StudyUoocRoute
@@ -254,7 +245,6 @@ export interface FileRouteTypes {
     | '/life/campus-network'
     | '/study/academic'
     | '/study/class-timetable'
-    | '/study/computing'
     | '/study/enrollment'
     | '/study/oj'
     | '/study/uooc'
@@ -278,7 +268,6 @@ export interface FileRouteTypes {
     | '/life/campus-network'
     | '/study/academic'
     | '/study/class-timetable'
-    | '/study/computing'
     | '/study/oj'
     | '/study/uooc'
     | '/life'
@@ -304,7 +293,6 @@ export interface FileRouteTypes {
     | '/life/campus-network'
     | '/study/academic'
     | '/study/class-timetable'
-    | '/study/computing'
     | '/study/enrollment'
     | '/study/oj'
     | '/study/uooc'
@@ -400,13 +388,6 @@ declare module '@tanstack/react-router' {
       path: '/class-timetable'
       fullPath: '/study/class-timetable'
       preLoaderRoute: typeof StudyClassTimetableRouteImport
-      parentRoute: typeof StudyRouteRoute
-    }
-    '/study/computing': {
-      id: '/study/computing'
-      path: '/computing'
-      fullPath: '/study/computing'
-      preLoaderRoute: typeof StudyComputingRouteImport
       parentRoute: typeof StudyRouteRoute
     }
     '/study/enrollment': {
@@ -573,7 +554,6 @@ const StudyEnrollmentRouteWithChildren = StudyEnrollmentRoute._addFileChildren(
 interface StudyRouteRouteChildren {
   StudyAcademicRoute: typeof StudyAcademicRoute
   StudyClassTimetableRoute: typeof StudyClassTimetableRoute
-  StudyComputingRoute: typeof StudyComputingRoute
   StudyEnrollmentRoute: typeof StudyEnrollmentRouteWithChildren
   StudyOjRoute: typeof StudyOjRoute
   StudyUoocRoute: typeof StudyUoocRoute
@@ -583,7 +563,6 @@ interface StudyRouteRouteChildren {
 const StudyRouteRouteChildren: StudyRouteRouteChildren = {
   StudyAcademicRoute: StudyAcademicRoute,
   StudyClassTimetableRoute: StudyClassTimetableRoute,
-  StudyComputingRoute: StudyComputingRoute,
   StudyEnrollmentRoute: StudyEnrollmentRouteWithChildren,
   StudyOjRoute: StudyOjRoute,
   StudyUoocRoute: StudyUoocRoute,

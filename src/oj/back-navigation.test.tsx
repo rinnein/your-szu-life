@@ -13,12 +13,19 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { LogicalNavigationProvider } from "../logical-navigation";
 import { AndroidBackNavigation } from "../AndroidBackNavigation";
 import type { AndroidBackBridge } from "../android-back";
-import ComputingCollectionPage from "../ComputingCollectionPage";
+import StudyPage from "../StudyPage";
 import OjPage from "./OjPage";
 const native = vi.hoisted(() => ({
   close: undefined as undefined | ((event: { preventDefault: () => void }) => void),
   destroy: vi.fn(),
 }));
+vi.mock("../auth", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../auth")>();
+  return {
+    ...actual,
+    useAuth: () => ({ state: { Authenticated: { studentId: "123456", name: "测试同学" } } }),
+  };
+});
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async () => ({ sites: [], notices: [], desktop: false, companionPort: 27121 })),
 }));
@@ -34,7 +41,7 @@ vi.mock("@tauri-apps/api/webviewWindow", () => ({
   }),
 }));
 const originalUrl = window.location.href;
-function mount(entries = ["/", "/study/computing", "/study/oj"]) {
+function mount(entries = ["/", "/study", "/study/oj"]) {
   const root = createRootRoute({
     component: () => (
       <LogicalNavigationProvider>
@@ -47,8 +54,8 @@ function mount(entries = ["/", "/study/computing", "/study/oj"]) {
     createRoute({ getParentRoute: () => root, path: "/", component: () => <h1>工作台</h1> }),
     createRoute({
       getParentRoute: () => root,
-      path: "/study/computing",
-      component: ComputingCollectionPage,
+      path: "/study",
+      component: StudyPage,
     }),
     createRoute({
       getParentRoute: () => root,
@@ -92,7 +99,7 @@ afterEach(() => {
   window.history.replaceState(null, "", originalUrl);
   vi.unstubAllGlobals();
 });
-it("uses standard icon controls to pop OJ, collection and workbench in order", async () => {
+it("uses standard icon controls to pop OJ to study", async () => {
   const history = mount();
   const back = await screen.findByRole("button", { name: "返回上一页" });
   // M3 顶栏的返回按钮是原生 button；data-webview-navigation 让 Android
@@ -100,13 +107,8 @@ it("uses standard icon controls to pop OJ, collection and workbench in order", a
   expect(back).toHaveAttribute("data-webview-navigation");
   expect(back.querySelector("svg")).toBeInTheDocument();
   fireEvent.click(back);
-  await screen.findByRole("heading", { name: "计软合集" });
-  expect(history.location.pathname).toBe("/study/computing");
-  const parent = screen.getByRole("button", { name: "返回上一页" });
-  expect(parent).toHaveAttribute("data-webview-navigation");
-  fireEvent.click(parent);
-  await screen.findByRole("heading", { name: "工作台" });
-  expect(history.canGoBack()).toBe(false);
+  await screen.findByRole("heading", { name: "学习" });
+  expect(history.location.pathname).toBe("/study");
 });
 it("uses the same stack for desktop window close", async () => {
   vi.stubGlobal("__TAURI_INTERNALS__", {});
@@ -115,7 +117,7 @@ it("uses the same stack for desktop window close", async () => {
   await waitFor(() => expect(native.close).toBeTypeOf("function"));
   const preventDefault = vi.fn();
   await act(async () => native.close!({ preventDefault }));
-  await waitFor(() => expect(history.location.pathname).toBe("/study/computing"));
+  await waitFor(() => expect(history.location.pathname).toBe("/study"));
   expect(preventDefault).toHaveBeenCalledOnce();
 });
 it("routes page presses through Android's bridge and hands off navigation after toolbar acknowledgement", async () => {
@@ -131,13 +133,10 @@ it("routes page presses through Android's bridge and hands off navigation after 
   await act(async () => bridge.onmessage?.({ data: "navigate-back" }));
   // 标题的可访问名称来自顶栏槽位里的标题文本，该节点带
   // data-webview-navigation：Android 原生工具栏挂载时隐藏它，避免重复标题。
-  expect(await screen.findByRole("heading", { name: "计软合集" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "学习" })).toBeInTheDocument();
   const title = document.querySelector(".top-app-bar-title");
   expect(title).toHaveAttribute("data-webview-navigation");
-  expect(title).toHaveTextContent("计软合集");
-  expect(screen.getByRole("button", { name: "返回上一页" })).toHaveAttribute(
-    "data-webview-navigation",
-  );
+  expect(title).toHaveTextContent("学习");
   expect(document.documentElement).not.toHaveAttribute("data-szu-native-toolbar");
   act(() => bridge.onmessage?.({ data: "native-toolbar-ready" }));
   expect(document.documentElement).toHaveAttribute("data-szu-native-toolbar", "true");

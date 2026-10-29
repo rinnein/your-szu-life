@@ -21,6 +21,7 @@ import {
   type UoocVideo,
   DEFAULT_QA_SERVER_URL,
 } from "./types";
+import { mockElementRects } from "../test-layout";
 
 vi.setConfig({ testTimeout: 15000 });
 vi.mock("@tauri-apps/api/core", () => ({
@@ -47,6 +48,7 @@ function mount(path = "/study/uooc") {
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  mockElementRects({ "adaptive-tabs": 1200 });
   resetUoocPageCaches();
   onState = undefined;
   vi.stubGlobal(
@@ -861,4 +863,37 @@ it("handles course in review mode (status 33): displays review chip, disables ta
   fireEvent.click(screen.getByRole("button", { name: "全选" }));
   expect(checkbox).not.toBeChecked();
   expect(screen.getByRole("button", { name: "开始所选 (2)" })).toBeInTheDocument();
+});
+
+it("移动端提供左上角功能目录抽屉并能切换 tab，移除原本的 Disclosure 折叠卡片", async () => {
+  snapshot.courses = [];
+  const router = mount("/study/uooc?tab=courses");
+  await screen.findByRole("heading", { name: /UOOC/ });
+
+  expect(document.querySelector(".disclosure")).toBeNull();
+
+  const menuButton = screen.getByRole("button", { name: "打开功能目录" });
+  expect(menuButton).toBeInTheDocument();
+
+  const drawer = document.querySelector<HTMLElement>("m-drawer");
+  expect(drawer).not.toBeNull();
+  expect(drawer?.hasAttribute("modal")).toBe(true);
+
+  fireEvent.click(menuButton);
+  expect(drawer?.hasAttribute("open")).toBe(true);
+
+  // 验证抽屉内项目
+  const qaItem = drawer?.querySelector('m-drawer-item[value$="qa"]');
+  expect(qaItem).not.toBeNull();
+
+  drawer?.dispatchEvent(
+    new CustomEvent("change", {
+      detail: { value: qaItem?.getAttribute("value") || "qa" },
+      bubbles: true,
+    }),
+  );
+  await waitFor(() => {
+    expect(router.state.location.search).toMatchObject({ tab: "qa" });
+  });
+  expect(drawer?.hasAttribute("open")).toBe(false);
 });

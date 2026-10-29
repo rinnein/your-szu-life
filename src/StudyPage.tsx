@@ -8,6 +8,7 @@ import {
   FaChartLine,
   FaCirclePlay,
   FaClipboardList,
+  FaCode,
   FaGraduationCap,
 } from "react-icons/fa6";
 
@@ -19,10 +20,10 @@ const STUDY_FEATURES: readonly Feature[] = [
     to: "/study/class-timetable",
   },
   {
-    label: "计软合集",
-    icon: FaGraduationCap,
-    description: "OJ等计软相关功能",
-    to: "/study/computing",
+    label: "OJ",
+    icon: FaCode,
+    description: "班级、测验与编程练习",
+    to: "/study/oj",
   },
   {
     label: "UOOC刷课",
@@ -49,7 +50,7 @@ export default function StudyPage() {
   return (
     <AuthGate>
       <PageSurface maxWidth="2xl">
-        <TopAppBar title="学习" description="课表、选课与计软相关功能" showBack={false} />
+        <TopAppBar title="学习" description="课表、选课与编程练习等功能" showBack={false} />
 
         <FeatureGrid
           features={STUDY_FEATURES}

@@ -1,5 +1,5 @@
 import { useLogicalNavigation } from "./logical-navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   LuArrowUpDown,
@@ -19,6 +19,7 @@ import { PageShell } from "./components";
 import { TopAppBar } from "./shell/TopAppBar";
 import { useDebugMode } from "./shell/use-debug-mode";
 import { useAuth } from "./auth";
+import { AdaptiveTabs } from "./ui";
 import AiConnectionSettings from "./AiConnectionSettings";
 import SettingsTransfer from "./SettingsTransfer";
 import { LocalModelsSettings } from "./LocalModelSettings";
@@ -57,7 +58,6 @@ export default function SettingsPage() {
   const navigation = useLogicalNavigation();
   const { enabled: debugEnabled } = useDebugMode();
   const { tab: queryTab, focus } = useSearch({ from: "/settings" });
-  const [mobileOpen, setMobileOpen] = useState(false);
 
   const tabs = SETTINGS_TABS.filter((item) => !item.debugOnly || debugEnabled);
   const requestedTab: SettingsTab = queryTab ?? (focus ? "models" : "profile");
@@ -65,7 +65,6 @@ export default function SettingsPage() {
     ? requestedTab
     : "profile";
   const currentTabMeta = tabs.find((t) => t.id === activeTab) ?? tabs[0];
-  const CurrentTabIcon = currentTabMeta.icon;
 
   const authenticated = "Authenticated" in state;
   // 关于 tab 是认证页页脚的入口，未认证时也要能打开。
@@ -87,10 +86,18 @@ export default function SettingsPage() {
   }, [activeTab, focus]);
 
   const handleTabChange = (key: string) => {
-    setMobileOpen(false);
     // 同一逻辑页面内的 tab 切换用 replace，不制造新的返回层级。
     void navigation.replace(`/settings?tab=${key}`);
   };
+
+  const adaptiveItems = useMemo(
+    () =>
+      tabs.map((t) => ({
+        value: t.id,
+        label: t.label,
+      })),
+    [tabs],
+  );
 
   if (!authenticated) {
     if (!aboutOnly) return null;
@@ -108,67 +115,21 @@ export default function SettingsPage() {
 
   return (
     <PageShell maxWidth="lg">
-      <TopAppBar title="设置" description="管理账户资料与应用配置" showBack={false} />
+      <TopAppBar
+        title="设置"
+        drawerLabel="打开设置目录"
+        description="管理账户资料与应用配置"
+        showBack={false}
+      />
       <div className="settings-page">
-        {/* 宽屏用横向 tab，窄屏用下拉。M3 的 tab 在窄屏下会挤成两行。 */}
-        <div className="settings-tabs-desktop" role="tablist" aria-label="设置导航">
-          {tabs.map((t) => {
-            const Icon = t.icon;
-            const selected = activeTab === t.id;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                role="tab"
-                className="settings-tab"
-                aria-selected={selected}
-                data-selected={selected || undefined}
-                onClick={() => handleTabChange(t.id)}
-              >
-                <Icon aria-hidden="true" className="settings-tab-icon" />
-                <span>{t.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="settings-tabs-mobile">
-          <button
-            type="button"
-            className="settings-mobile-trigger"
-            aria-expanded={mobileOpen}
-            aria-controls="settings-mobile-menu"
-            onClick={() => setMobileOpen((value) => !value)}
-          >
-            <CurrentTabIcon aria-hidden="true" className="settings-tab-icon" />
-            <span>当前设置：{currentTabMeta.label}</span>
-            <span className="settings-mobile-chevron" aria-hidden="true">
-              {mobileOpen ? "⌃" : "⌄"}
-            </span>
-          </button>
-          {mobileOpen && (
-            <div id="settings-mobile-menu" className="settings-mobile-menu" role="menu">
-              {tabs.map((t) => {
-                const Icon = t.icon;
-                const selected = activeTab === t.id;
-                return (
-                  <button
-                    key={t.id}
-                    type="button"
-                    role="menuitem"
-                    className="settings-mobile-item"
-                    data-selected={selected || undefined}
-                    onClick={() => handleTabChange(t.id)}
-                  >
-                    <Icon aria-hidden="true" className="settings-tab-icon" />
-                    <span>{t.label}</span>
-                    {selected && <span className="settings-mobile-current">当前</span>}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        <AdaptiveTabs
+          label="设置分类"
+          items={adaptiveItems}
+          value={activeTab}
+          onChange={handleTabChange}
+          ariaLabel="设置导航"
+          className="mb-4"
+        />
 
         <div className="settings-panel" role="tabpanel" aria-label={currentTabMeta.label}>
           {activeTab === "profile" && (

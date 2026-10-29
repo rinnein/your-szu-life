@@ -3,6 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { ContestTable, formatRemaining } from "./ContestTable";
+import { mockElementRects } from "../test-layout";
 import type { Contest } from "./types";
 const now = Date.parse("2026-10-04T12:00:00Z");
 const contest: Contest = {
@@ -79,4 +80,31 @@ it("formats long and expired durations without negative countdowns", () => {
   expect(formatRemaining(90061000)).toBe("1天 01:01:01");
   expect(formatRemaining(-1000)).toBe("00:00:00");
   expect(formatRemaining(1)).toBe("00:00:01");
+});
+
+it("supports filtering contests by status tabs", async () => {
+  mockElementRects({ "adaptive-tabs": 800 });
+  const endedContest = {
+    ...contest,
+    id: "2",
+    title: "已结束测验",
+    begin: now - 5000,
+    end: now - 1000,
+  };
+  const view = render(
+    <ContestTable contests={[contest, endedContest]} query="" onOpen={() => {}} />,
+  );
+
+  // 默认全部测验展示
+  expect(screen.getByText("全部")).toBeTruthy();
+  const endedTab = screen.getByRole("tab", { name: /已结束/ });
+  act(() => {
+    endedTab.click();
+  });
+  await flushList();
+
+  // 选中已结束后，进行中的测验被过滤掉
+  const host = view.container.querySelector("m-list");
+  expect(host?.shadowRoot?.textContent).not.toContain("测试测验");
+  expect(host?.shadowRoot?.textContent).toContain("已结束测验");
 });
