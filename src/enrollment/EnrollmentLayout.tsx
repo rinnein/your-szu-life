@@ -89,7 +89,7 @@ export default function EnrollmentLayout() {
     }
     const destination = cacheOnly ? cachePath(target) : target;
     if (path === "/study/enrollment") void nav.push(destination);
-    else void nav.replace(destination);
+    else void nav.replace(destination, { resetScroll: false });
   };
   if (login) return <Outlet />;
   const page = enrollmentPages.find((p) => p.path === path) ?? enrollmentPages[0];

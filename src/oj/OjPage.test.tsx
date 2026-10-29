@@ -570,13 +570,20 @@ it("容器窄而窗口高时只出现横向题目切换，胶囊带判定", asyn
   ).toContain("--mtrl-sys-color-error");
 });
 
-it("题目 Tabs 在中屏横向展示且在题目切换时自动调用 scrollIntoView 平滑居中", async () => {
-  mockElementRects({ "oj-paper": 600 });
+it("题目 Tabs 在中屏横向展示且在题目切换时自动平滑居中且不向上穿透调用 scrollIntoView", async () => {
+  mockElementRects({
+    "oj-paper": 600,
+    "adaptive-tabs-strip": 400,
+    "adaptive-tabs-segmented-btn": 80,
+  });
   mockViewportHeight(900);
   serveRecords(twoCodingProblems);
   const originalScrollIntoView = Element.prototype.scrollIntoView;
   const scrollIntoViewMock = vi.fn();
   Element.prototype.scrollIntoView = scrollIntoViewMock;
+  const originalScrollTo = Element.prototype.scrollTo;
+  const scrollToMock = vi.fn();
+  Element.prototype.scrollTo = scrollToMock;
 
   try {
     const view = render(
@@ -604,9 +611,8 @@ it("题目 Tabs 在中屏横向展示且在题目切换时自动调用 scrollInt
       />,
     );
     await screen.findByText("#12");
-    expect(scrollIntoViewMock).toHaveBeenCalledWith(
-      expect.objectContaining({ inline: "center", behavior: "smooth" }),
-    );
+    expect(scrollIntoViewMock).not.toHaveBeenCalled();
+    expect(scrollToMock).toHaveBeenCalledWith(expect.objectContaining({ behavior: "smooth" }));
 
     const strip = view.container.querySelector<HTMLDivElement>(".oj-switcher-strip")!;
     expect(strip).not.toBeNull();
@@ -630,6 +636,7 @@ it("题目 Tabs 在中屏横向展示且在题目切换时自动调用 scrollInt
     expect(strip.scrollLeft).toBe(186);
   } finally {
     Element.prototype.scrollIntoView = originalScrollIntoView;
+    Element.prototype.scrollTo = originalScrollTo;
   }
 });
 

@@ -199,7 +199,22 @@ export function AdaptiveTabs({
     const activeTab =
       el.querySelector<HTMLElement>(`m-tab[value="${value}"]`) ||
       el.querySelector<HTMLElement>(`[data-tab-value="${value}"]`);
-    activeTab?.scrollIntoView?.({ inline: "center", behavior: "smooth", block: "nearest" });
+    if (!activeTab) return;
+
+    // 仅在 tab 横向滚动容器内部计算平滑居中，直接操作容器自身的 scrollLeft / scrollTo，
+    // 严禁调用 Element.prototype.scrollIntoView：DOM 规范中该 API 会向上穿透滚动全局 window，
+    // 当页面滚动在下方时，会强行将整个页面滚回顶部。
+    const stripRect = el.getBoundingClientRect();
+    const tabRect = activeTab.getBoundingClientRect();
+    if (stripRect.width > 0 && tabRect.width > 0) {
+      const offset = el.scrollLeft + (tabRect.left - stripRect.left);
+      const targetLeft = Math.max(0, offset - (stripRect.width - tabRect.width) / 2);
+      if (typeof el.scrollTo === "function") {
+        el.scrollTo({ left: targetLeft, behavior: "smooth" });
+      } else {
+        el.scrollLeft = targetLeft;
+      }
+    }
   }, [value, isWide]);
 
   // 4. 窄模式浮层外部点击与 ESC 自动收起
@@ -221,7 +236,7 @@ export function AdaptiveTabs({
     const handleKeyDown = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Escape") {
         setMenuOpen(false);
-        triggerRef.current?.focus();
+        triggerRef.current?.focus({ preventScroll: true });
       }
     };
 
@@ -260,7 +275,7 @@ export function AdaptiveTabs({
       if (target && !target.disabled) {
         setMenuOpen(false);
         onChange(target.value);
-        triggerRef.current?.focus();
+        triggerRef.current?.focus({ preventScroll: true });
       }
     }
   };

@@ -21,6 +21,8 @@ export const router = createRouter({
     storage: navigationStorage(),
   }),
   defaultPreload: "intent",
+  // 滚动位置由 LogicalNavigationProvider 按应用级逻辑栈精准恢复；关闭 TanStack 默认的整页 reset
+  scrollRestoration: () => false,
 });
 
 // Reflect the logical location for native auth/portal validation, without ever

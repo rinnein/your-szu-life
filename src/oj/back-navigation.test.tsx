@@ -10,7 +10,11 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { LogicalNavigationProvider } from "../logical-navigation";
+import {
+  clearScrollCache,
+  LogicalNavigationProvider,
+  useLogicalNavigation,
+} from "../logical-navigation";
 import { AndroidBackNavigation } from "../AndroidBackNavigation";
 import type { AndroidBackBridge } from "../android-back";
 import StudyPage from "../StudyPage";
@@ -65,11 +69,12 @@ function mount(entries = ["/", "/study", "/study/oj"]) {
     }),
   ]);
   const history = createMemoryHistory({ initialEntries: entries });
-  const router = createRouter({ routeTree: tree, history });
+  const router = createRouter({ routeTree: tree, history, scrollRestoration: () => false });
   render(<RouterProvider router={router} />);
   return history;
 }
 beforeEach(() => {
+  clearScrollCache();
   native.close = undefined;
   native.destroy.mockReset();
   vi.stubGlobal(
@@ -150,4 +155,95 @@ it("leaves a child Activity's exit to the native bridge rather than WebView hist
   expect(bridge.postMessage).toHaveBeenCalledWith("back-request");
   expect(history.canGoBack()).toBe(false);
   expect(native.destroy).not.toHaveBeenCalled();
+});
+it("从逻辑页面返回时恢复上一级逻辑页面本来所在的页面滚动状态", async () => {
+  const scrollToSpy = vi.spyOn(window, "scrollTo").mockImplementation((...args: unknown[]) => {
+    const options = args[0];
+    if (
+      typeof options === "object" &&
+      options !== null &&
+      "top" in options &&
+      typeof options.top === "number"
+    ) {
+      window.scrollY = options.top;
+    } else if (typeof options === "number") {
+      window.scrollY = typeof args[1] === "number" ? args[1] : 0;
+    }
+  });
+
+  const history = mount(["/", "/study"]);
+  await screen.findByRole("heading", { name: "学习" });
+
+  // 模拟在 /study 页面向下滚动到 750px
+  window.scrollY = 750;
+
+  // 点击学习页的 OJ 功能卡片进入子页面 /study/oj
+  const ojCard = await screen.findByRole("button", { name: /OJ.*班级、测验与编程练习/ });
+  fireEvent.click(ojCard);
+
+  // 进入子逻辑页面后滚动应置顶为 0
+  await screen.findByRole("button", { name: "返回上一页" });
+  expect(history.location.pathname).toBe("/study/oj");
+  expect(scrollToSpy).toHaveBeenCalledWith(expect.objectContaining({ top: 0 }));
+
+  // 在子逻辑页面点击返回
+  const back = await screen.findByRole("button", { name: "返回上一页" });
+  fireEvent.click(back);
+
+  // 返回上一级 /study 时，成功恢复原先的 750px 滚动高度
+  await screen.findByRole("heading", { name: "学习" });
+  expect(history.location.pathname).toBe("/study");
+  expect(scrollToSpy).toHaveBeenCalledWith(expect.objectContaining({ top: 750 }));
+  expect(window.scrollY).toBe(750);
+});
+
+it("在同一逻辑页面内使用 replace 切换 tab 时保持页面整体滚动高度不变", async () => {
+  const scrollToSpy = vi.spyOn(window, "scrollTo").mockImplementation((...args: unknown[]) => {
+    const options = args[0];
+    if (
+      typeof options === "object" &&
+      options !== null &&
+      "top" in options &&
+      typeof options.top === "number"
+    ) {
+      window.scrollY = options.top;
+    } else if (typeof options === "number") {
+      window.scrollY = typeof args[1] === "number" ? args[1] : 0;
+    }
+  });
+
+  let nav!: ReturnType<typeof useLogicalNavigation>;
+  function TabPage() {
+    nav = useLogicalNavigation();
+    return <h1>Tab测试页</h1>;
+  }
+
+  const root = createRootRoute({
+    component: () => (
+      <LogicalNavigationProvider>
+        <Outlet />
+      </LogicalNavigationProvider>
+    ),
+  });
+  const tree = root.addChildren([
+    createRoute({ getParentRoute: () => root, path: "/test", component: TabPage }),
+  ]);
+  const history = createMemoryHistory({ initialEntries: ["/test?tab=a"] });
+  const router = createRouter({ routeTree: tree, history, scrollRestoration: () => false });
+  render(<RouterProvider router={router} />);
+
+  await screen.findByRole("heading", { name: "Tab测试页" });
+
+  // 模拟向下滚动到 500px
+  window.scrollY = 500;
+
+  // 切换 tab
+  await act(async () => {
+    await nav.replace("/test?tab=b");
+  });
+
+  // 断言未调用 scrollTo({ top: 0 })，且 window.scrollY 保持在 500
+  expect(history.location.search).toBe("?tab=b");
+  expect(scrollToSpy).not.toHaveBeenCalledWith(expect.objectContaining({ top: 0 }));
+  expect(window.scrollY).toBe(500);
 });

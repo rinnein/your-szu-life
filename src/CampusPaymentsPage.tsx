@@ -62,7 +62,8 @@ export default function CampusPaymentsPage() {
           ref={(host) => nameTablist(host, "校园服务分类")}
           value={active}
           onChange={(event) => {
-            if (event.detail.value) void navigation.replace(event.detail.value);
+            if (event.detail.value)
+              void navigation.replace(event.detail.value, { resetScroll: false });
           }}
         >
           {SERVICES.map((service) => (

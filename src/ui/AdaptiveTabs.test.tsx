@@ -267,4 +267,53 @@ describe("AdaptiveTabs Component & Drawer Auto-injection", () => {
     expect(handleChange).toHaveBeenCalledWith("item-3");
     expect(screen.queryByRole("listbox")).toBeNull();
   });
+
+  it("切换 Tab 时绝不调用 scrollIntoView，且保持页面原本的整体滚动位置", () => {
+    const scrollIntoViewMock = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoViewMock;
+    const handleChange = vi.fn();
+    window.scrollY = 600;
+
+    const { rerender } = render(
+      <PageDrawerProvider>
+        <AdaptiveTabs
+          items={sampleItems}
+          value="overview"
+          onChange={handleChange}
+          label="功能分类"
+        />
+      </PageDrawerProvider>,
+    );
+
+    rerender(
+      <PageDrawerProvider>
+        <AdaptiveTabs
+          items={sampleItems}
+          value="details"
+          onChange={handleChange}
+          label="功能分类"
+        />
+      </PageDrawerProvider>,
+    );
+
+    expect(scrollIntoViewMock).not.toHaveBeenCalled();
+    expect(window.scrollY).toBe(600);
+  });
+
+  it("窄屏浮层中回车或ESC时带 preventScroll: true 聚焦触发器，不向上穿透触发页面滚回顶部", () => {
+    const focusSpy = vi.spyOn(HTMLElement.prototype, "focus");
+    render(
+      <PageDrawerProvider>
+        <AdaptiveTabs items={sampleItems} value="overview" onChange={vi.fn()} label="功能分类" />
+      </PageDrawerProvider>,
+    );
+
+    const trigger = screen.getByRole("button", { name: /功能分类.*概览/ });
+    fireEvent.click(trigger);
+    const popover = screen.getByRole("listbox");
+
+    // ESC 关闭
+    fireEvent.keyDown(popover, { key: "Escape" });
+    expect(focusSpy).toHaveBeenCalledWith(expect.objectContaining({ preventScroll: true }));
+  });
 });
