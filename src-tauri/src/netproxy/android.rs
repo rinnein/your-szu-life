@@ -17,33 +17,42 @@ fn with_bridge<T>(
             .attach_current_thread()
             .map_err(|error| error.to_string())?;
 
-        let context_object = unsafe { jni::objects::JObject::from_raw(context.context().cast()) };
-        let class_loader = environment
-            .call_method(
-                &context_object,
-                "getClassLoader",
-                "()Ljava/lang/ClassLoader;",
-                &[],
-            )
-            .map_err(|error| error.to_string())?
-            .l()
-            .map_err(|error| error.to_string())?;
-        let class_name = environment
-            .new_string("in.rinne.your_szu_life.SystemProxyBridge")
-            .map_err(|error| error.to_string())?;
-        let class = environment
-            .call_method(
-                &class_loader,
-                "loadClass",
-                "(Ljava/lang/String;)Ljava/lang/Class;",
-                &[JValue::Object(&class_name)],
-            )
-            .map_err(|error| error.to_string())?
-            .l()
-            .map_err(|error| error.to_string())?;
-        let class = jni::objects::JClass::from(class);
-        let result = callback(&mut environment, class);
-        std::mem::forget(context_object);
+        let result = (|| -> Result<T, String> {
+            // The Android context is a borrowed global reference, not ours to delete.
+            let context_object = std::mem::ManuallyDrop::new(unsafe {
+                jni::objects::JObject::from_raw(context.context().cast())
+            });
+            let class_loader = environment
+                .call_method(
+                    &*context_object,
+                    "getClassLoader",
+                    "()Ljava/lang/ClassLoader;",
+                    &[],
+                )
+                .map_err(|error| error.to_string())?
+                .l()
+                .map_err(|error| error.to_string())?;
+            let class_name = environment
+                .new_string("in.rinne.your_szu_life.SystemProxyBridge")
+                .map_err(|error| error.to_string())?;
+            let class = environment
+                .call_method(
+                    &class_loader,
+                    "loadClass",
+                    "(Ljava/lang/String;)Ljava/lang/Class;",
+                    &[JValue::Object(&class_name)],
+                )
+                .map_err(|error| error.to_string())?
+                .l()
+                .map_err(|error| error.to_string())?;
+            let class = jni::objects::JClass::from(class);
+            callback(&mut environment, class)
+        })();
+        // A pending Java exception would otherwise surface as a fatal exception on
+        // this thread instead of becoming the fallback proxy decision.
+        if environment.exception_check().unwrap_or(false) {
+            let _ = environment.exception_clear();
+        }
         result
     }));
     match result {
