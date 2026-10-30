@@ -1,0 +1,26 @@
+# 手动触发的按钮，出现在「代码 → 分支详情页」。
+# 只有配上 .cnb.yml 中同名 event（web_trigger_pr_to_github）才会真的跑。
+branch:
+  - buttons:
+      - name: 推送到 GitHub 并创建 PR
+        description: 把 CNB 分支推送到 GitHub 的 cnb/ 分支并发起 PR
+        event: web_trigger_pr_to_github
+        groupName: GitHub 同步
+        permissions:
+          roles:
+            - owner
+            - master
+            - developer
+        inputs:
+          source_branch:
+            name: 源分支（CNB）
+            type: input
+            placeholder: 留空使用当前分支
+          base_branch:
+            name: 目标分支（GitHub）
+            type: input
+            default: main
+          pr_title:
+            name: PR 标题
+            type: input
+            placeholder: 留空自动生成

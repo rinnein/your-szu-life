@@ -1,0 +1,123 @@
+# CNB ↔ GitHub 同步
+#
+# 两个方向：
+#   1. GitHub → CNB（每天 06:00 Asia/Shanghai，定时任务）：
+#      用 tencentcom/git-sync 的 pull 模式把 GitHub 的 main 拉过来 rebase 到 CNB 的 main 上，
+#      因此 CNB 独有的 .cnb.yml / .ci 等提交会保留在被 rebase 到顶部；随后镜像 Release。
+#   2. CNB → GitHub（三种入口，最终都跑 .ci/push-to-github-pr.mjs）：
+#      - 页面按钮：.cnb/web_trigger.yml，事件 web_trigger_pr_to_github
+#      - NPC 角色「gh-pr」：见 .cnb/settings.yml，在 PR/Issue 里 @ 本仓库(gh-pr)
+#      - OpenAPI / cnb:trigger：事件 api_trigger_github_publish
+#      只推 GitHub 的 cnb/<分支>，再调 API 建 PR（main 受保护，不能直推）。
+#
+# 需要一份密钥仓库文件，提供下面两个变量（建议文件里同时写 allow_slugs/allow_events，
+# 否则只有密钥仓库管理员触发的流水线能引用；PR 评论属于不可信事件，必须先声明 allow_events）：
+#   GITHUB_SYNC_USERNAME: GitHub 用户名
+#   GITHUB_SYNC_TOKEN:    GitHub PAT（contents:rw + pull_requests:rw；经典 PAT 勾 repo）
+#   # allow_slugs: "rinnein/szu/your-szu-life"
+#   # allow_events:
+#   #   - crontab
+#   #   - "web_trigger*"      # 自定义事件名就叫 web_trigger_pr_to_github，写成 web_trigger.* 匹配不上
+#   #   - "api_trigger*"      # 覆盖 api_trigger_github_publish
+#   #   - "issue.comment@npc"
+#   #   - "pull_request.comment@npc"
+# 路径不对时改下面的 imports。
+main:
+  # cron 按系统时区（Asia/Shanghai）计算，0 6 * * * 即每天 UTC+8 06:00。
+  "crontab: 0 6 * * *":
+    - name: github-to-cnb
+      # 同一时刻只允许一条同步在跑，避免并发 force push 互相覆盖。
+      lock:
+        key: github-to-cnb
+        expires: 3600
+        wait: true
+        timeout: 600
+      imports:
+        - https://cnb.cool/rinnein/szu/secrets/-/blob/main/github-sync.yml
+      env:
+        GITHUB_REPO: rinnein/your-szu-life
+      stages:
+        - name: 拉取 GitHub 代码与 tag
+          image: tencentcom/git-sync
+          settings:
+            target_url: https://github.com/rinnein/your-szu-life.git
+            auth_type: https
+            username: ${GITHUB_SYNC_USERNAME}
+            password: ${GITHUB_SYNC_TOKEN}
+            sync_mode: pull
+            branch: main
+            push_tags: true
+            git_user: cnb-git-sync
+            git_email: git-sync@cnb.cool
+        - name: 同步 Release 与附件
+          image: node:lts
+          script: node .ci/sync-github-releases.mjs
+
+# 所有分支都挂上手动触发事件，按钮见 .cnb/web_trigger.yml。
+"**":
+  web_trigger_pr_to_github:
+    - name: cnb-to-github-pr
+      lock:
+        key: cnb-to-github-pr
+        expires: 1800
+        wait: true
+        timeout: 600
+      imports:
+        - https://cnb.cool/rinnein/szu/secrets/-/blob/main/github-sync.yml
+      env:
+        GITHUB_REPO: rinnein/your-szu-life
+      stages:
+        - name: 推送分支并创建 PR
+          image: node:lts
+          script: node .ci/push-to-github-pr.mjs
+
+  # 同一条发布动作的 API 版本：NPC 容器里没有 node 时用它兜底，
+  # 也可以用 OpenAPI / cnb:trigger 触发。
+  #   curl -X POST "$CNB_API_ENDPOINT/$CNB_REPO_SLUG/-/build/start" \
+  #     -H "Authorization: Bearer $CNB_TOKEN" -H "Content-Type: application/json" \
+  #     -d '{"event":"api_trigger_github_publish","branch":"<源分支>","env":{"base_branch":"main"}}'
+  api_trigger_github_publish:
+    - name: publish-pr-to-github
+      lock:
+        key: cnb-to-github-pr
+        expires: 1800
+        wait: true
+        timeout: 600
+      imports:
+        - https://cnb.cool/rinnein/szu/secrets/-/blob/main/github-sync.yml
+      env:
+        GITHUB_REPO: rinnein/your-szu-life
+      stages:
+        - name: 推送分支并创建 PR
+          image: node:lts
+          script: node .ci/push-to-github-pr.mjs
+
+# NPC 角色「gh-pr」：见 .cnb/settings.yml。
+# 在 CNB 的 PR/Issue 里 @ 本仓库(gh-pr) 让它把定稿的 PR 发到 GitHub。
+# 顶层 key 必须与 settings.yml 里 npc.roles[].name 完全一致。
+# 注意：这里 import 了密钥仓库文件，按平台规则该 NPC 不会出现在公开 NPC 榜单中。
+gh-pr:
+  issue.comment@npc:
+    default:
+      docker:
+        image: cnbcool/default-npc:latest
+      imports:
+        - https://cnb.cool/rinnein/szu/secrets/-/blob/main/github-sync.yml
+      env:
+        GITHUB_REPO: rinnein/your-szu-life
+      stages:
+        - name: npc go
+          type: npc:go
+
+  pull_request.comment@npc:
+    default:
+      docker:
+        image: cnbcool/default-npc:latest
+      imports:
+        - https://cnb.cool/rinnein/szu/secrets/-/blob/main/github-sync.yml
+      env:
+        GITHUB_REPO: rinnein/your-szu-life
+      stages:
+        - name: npc go
+          type: npc:go
+
