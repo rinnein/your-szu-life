@@ -368,7 +368,9 @@ jobs:
   # 跨仓库权限靠一个 GitHub App 换取临时的 installation token：
   #   - 变量 APP_CLIENT_ID：App 的 Client ID
   #   - secret APP_PRIVATE_KEY：App 的私钥
-  #   - 该 App 需要安装到 rinnein/auto-aur 上，并授予 Actions: write
+  #   - 该 App 需要安装到 rinnein/auto-aur 上，并授予 Contents: write
+  #     （repository_dispatch 归在 Contents 权限下；只给 Actions: write
+  #     会在调用 dispatches 时返回 403 Resource not accessible by integration）
   # token 只在本次 job 内有效（1 小时后过期，job 结束即被吊销），不再需要
   # 长期 PAT。任一凭据缺失时跳过派发，不影响 release 本身的发布。
   aur:
@@ -402,7 +404,9 @@ jobs:
           owner: ${{ github.repository_owner }}
           repositories: auto-aur
           # 只申请派发 workflow 所需的权限，token 才真正是最小权限。
-          permission-actions: write
+          # POST /repos/{owner}/{repo}/dispatches 校验的是 Contents: write，
+          # 不是 Actions: write——后者只能重跑/取消 workflow run。
+          permission-contents: write
 
       - name: Dispatch auto-aur for your-szu-life-bin
         if: steps.credentials.outputs.enabled == 'true'
@@ -415,6 +419,8 @@ jobs:
           # tasks 只放「这个 release 供哪些子包」的知识，别的一概不交给
           # payload；即使 payload 被改写，auto-aur 也只会接受 conf.json 里
           # 已启用的任务。
+          # --fail-with-body 让 4xx/5xx 仍然退出非零，但把 GitHub 的错误
+          # JSON 打进日志——只看 "curl: (22) 403" 无法判断是权限还是参数问题。
           tasks='["your-szu-life-bin"]'
           jq -n \
             --arg source "$SOURCE" \
@@ -423,7 +429,7 @@ jobs:
             '{event_type: "aur-release",
               client_payload: {source: $source, tag: $tag,
                                tasks: $tasks, force: false}}' \
-          | curl -sSf -X POST \
+          | curl -sS --fail-with-body -X POST \
               -H "Authorization: Bearer $GH_TOKEN" \
               -H "Accept: application/vnd.github+json" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
