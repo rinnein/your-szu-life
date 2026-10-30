@@ -240,6 +240,30 @@ fn mark(checks: &mut BTreeMap<String, Check>, input: &ElectricityQueryInput, now
         );
     }
 }
+fn merge_usage(
+    room: &mut Room,
+    chunk: &ElectricityQueryInput,
+    mut data: providers::ProviderData,
+    now: i64,
+) {
+    data.readings.sort_by_key(|r| reading_datetime(&r.date));
+    // Keep prior values if a temporarily incomplete response omits
+    // them; new rows replace the same day's previous snapshot.
+    for reading in data.readings {
+        if !providers::in_window(&reading.date, chunk) {
+            continue;
+        }
+        room.readings
+            .retain(|r| reading_date(&r.date) != reading_date(&reading.date));
+        room.readings.push(reading);
+    }
+    if let Some(balance) = data.current_remaining {
+        room.balance = Some(balance);
+        room.balance_date = Some(today_at(now).to_string());
+    }
+    mark(&mut room.usage_checks, chunk, now);
+    room.usage_updated_at = Some(now);
+}
 fn view(
     room: &Room,
     mut input: ElectricityQueryInput,
@@ -348,24 +372,8 @@ fn query_with(
     room.error = None;
     for chunk in required_windows(&input, &room, now, force, false) {
         match fetch(&chunk) {
-            Ok(mut data) => {
-                data.readings.sort_by_key(|r| reading_datetime(&r.date));
-                // Keep prior values if a temporarily incomplete response omits
-                // them; new rows replace the same day's previous snapshot.
-                for reading in data.readings {
-                    if !providers::in_window(&reading.date, &chunk) {
-                        continue;
-                    }
-                    room.readings
-                        .retain(|r| reading_date(&r.date) != reading_date(&reading.date));
-                    room.readings.push(reading);
-                }
-                if let Some(balance) = data.current_remaining {
-                    room.balance = Some(balance);
-                    room.balance_date = Some(today_at(clock()).to_string());
-                }
-                mark(&mut room.usage_checks, &chunk, clock());
-                room.usage_updated_at = Some(clock());
+            Ok(data) => {
+                merge_usage(&mut room, &chunk, data, clock());
                 fetched = true;
                 room.retry_after = 0;
             }
@@ -373,6 +381,29 @@ fn query_with(
                 room.error = Some(error);
                 room.retry_after = clock() + 60_000;
                 break;
+            }
+        }
+    }
+    // A missing estimated_days_left means the recent window lacks at least one
+    // day of data, yet the fresh marks above would keep serving this cache all
+    // day. Retry the recent days once with force semantics ("刷新最新数据")
+    // unless this round already fetched or the first pass failed (backoff).
+    if !force && !fetched && room.error.is_none() {
+        let probe = view(&room, input.clone(), purpose, now, true, None);
+        if probe.summary.estimated_days_left.is_none() {
+            for chunk in required_windows(&input, &room, now, true, false) {
+                match fetch(&chunk) {
+                    Ok(data) => {
+                        merge_usage(&mut room, &chunk, data, clock());
+                        fetched = true;
+                        room.retry_after = 0;
+                    }
+                    Err(error) => {
+                        room.error = Some(error);
+                        room.retry_after = clock() + 60_000;
+                        break;
+                    }
+                }
             }
         }
     }
@@ -600,6 +631,42 @@ mod tests {
             attempt_key(time("2026-10-07 12:00:00")),
             attempt_key(time("2026-10-07 23:59:00"))
         );
+    }
+    #[test]
+    fn missing_prediction_refreshes_recent_days_immediately() {
+        let store = ElectricityStore::default();
+        let now = time("2026-10-07 12:00:00");
+        // The provider only returns the latest cumulative row, so no
+        // consecutive pair exists: no daily usage and no prediction, yet the
+        // day is still marked fresh until midnight.
+        let view = query_with(
+            &store,
+            input(),
+            QueryPurpose::Monitor,
+            false,
+            || now,
+            |i| {
+                let mut data = sample(i, now);
+                if query_date(&i.end_date) == Some(today_at(now)) {
+                    data.readings.retain(|r| r.date == "2026-10-06");
+                }
+                Ok(data)
+            },
+            |_| Ok(vec![]),
+        )
+        .unwrap();
+        assert!(view.summary.estimated_days_left.is_none());
+        // A cached read cannot predict either, so the next non-force query
+        // immediately refetches the recent window with force semantics.
+        let (view, calls, _) = run(&store, now + 1000, false, QueryPurpose::Monitor);
+        assert_eq!(calls, vec![("2026-10-05".into(), "2026-10-07".into())]);
+        assert_eq!(view.summary.estimated_days_left, Some(10.0));
+        assert!(!view.cache.unwrap().from_cache);
+        // Once the prediction exists, repeated reads stay cached.
+        let (view, calls, _) = run(&store, now + 2000, false, QueryPurpose::Monitor);
+        assert!(calls.is_empty());
+        assert_eq!(view.summary.estimated_days_left, Some(10.0));
+        assert!(view.cache.unwrap().from_cache);
     }
     #[test]
     fn force_refresh_does_not_download_stable_history() {
