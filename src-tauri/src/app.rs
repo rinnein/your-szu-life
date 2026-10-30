@@ -266,6 +266,7 @@ pub(crate) fn run() {
             onboarding::commands::get_onboarding_state,
             onboarding::commands::complete_onboarding_step,
             onboarding::commands::skip_onboarding_step,
+            onboarding::commands::restart_onboarding,
             campus_payments::commands::open_network_fee_portal,
             campus_payments::commands::consume_network_fee_portal_notice,
             campus_payments::commands::get_electricity_options,

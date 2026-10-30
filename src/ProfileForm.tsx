@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, LoadingIndicator, TextField, Button } from "material/react";
 import { toast } from "./ui";
+import { useRegisterNextAction, type StepNextAction } from "./step-next-action";
 import type { Profile } from "./auth";
 
 export function ProfileForm({
@@ -9,11 +10,15 @@ export function ProfileForm({
   name,
   onlyCampusCard = false,
   onSaved,
+  onboarding = false,
+  registerNext,
 }: {
   initial?: Partial<Profile>;
   name?: string | null;
   onlyCampusCard?: boolean;
   onSaved: () => void | Promise<void>;
+  onboarding?: boolean;
+  registerNext?: (action: StepNextAction | null) => void;
 }) {
   const [studentId, setStudentId] = useState(initial?.studentId ?? "");
   const [campusCardNumber, setCampusCardNumber] = useState(initial?.campusCardNumber ?? "");
@@ -21,8 +26,7 @@ export function ProfileForm({
   const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const save = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const submit = async () => {
     if (!/^\d{10}$/.test(studentId)) {
       toast.danger("学号必须是 10 位数字");
       return;
@@ -53,6 +57,23 @@ export function ProfileForm({
     }
   };
 
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void submit();
+  };
+
+  useRegisterNextAction(
+    registerNext,
+    onboarding
+      ? {
+          label: "保存并进入工作台",
+          disabled: saving,
+          busy: saving,
+          run: submit,
+        }
+      : null,
+  );
+
   return (
     <Card className="profile-card" data-testid="profile-card" variant="outlined">
       <div slot="headline">
@@ -67,7 +88,7 @@ export function ProfileForm({
       </div>
       <div className="p-4">
         {/* material 的 TextField 自带 label 与 supportingText，不需要外部 Label/Input 组合。 */}
-        <form className="profile-form" onSubmit={save}>
+        <form className="profile-form" onSubmit={onSubmit}>
           {!onlyCampusCard && (
             <TextField
               name="name"
@@ -103,10 +124,12 @@ export function ProfileForm({
               onChange={(e: any) => setPassword(e.detail?.value ?? e.target?.value ?? "")}
             />
           )}
-          <Button className="w-full" type="submit" variant="filled" disabled={saving}>
-            {saving && <LoadingIndicator size={16} />}
-            {saving ? "保存中…" : "保存并进入工作台"}
-          </Button>
+          {!onboarding && (
+            <Button className="w-full" type="submit" variant="filled" disabled={saving}>
+              {saving && <LoadingIndicator size={16} />}
+              {saving ? "保存中…" : "保存并进入工作台"}
+            </Button>
+          )}
         </form>
       </div>
     </Card>

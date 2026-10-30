@@ -216,6 +216,21 @@ pub(crate) fn skip_step(id: &str) -> Result<OnboardingStateView, String> {
     state_view()
 }
 
+/// 重新开始初始化向导：把当前定义的全部步骤写回 pending。
+///
+/// 只重置步骤进度，不动任何已保存的设置；保留 `__baseline__`，避免升级时的
+/// 沿用逻辑在下一次启动把步骤又自动标记为已完成。
+pub(crate) fn restart() -> Result<OnboardingStateView, String> {
+    for definition in ONBOARDING_DEFINITION {
+        crate::preferences::save_onboarding_step(
+            definition.id,
+            OnboardingStatus::Pending.as_str(),
+            0,
+        )?;
+    }
+    state_view()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

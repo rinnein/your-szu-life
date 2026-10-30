@@ -73,6 +73,18 @@ export interface GeneratedSchemes {
   dark: SchemeRoles;
 }
 
+/** 从种子色生成单一模式的一套角色表；预览等只需要一侧的调用方使用。 */
+export function generateScheme(
+  seed: string,
+  variant: SchemeVariant,
+  dark: boolean,
+  contrast = 0,
+): SchemeRoles {
+  const Scheme = VARIANTS[variant] ?? SchemeTonalSpot;
+  const hct = Hct.fromInt(argbFromHex(seed));
+  return readRoles(new Scheme(hct, dark, contrast), dark ? STATUS_ROLES.dark : STATUS_ROLES.light);
+}
+
 /** 从种子色生成成对的 light/dark 角色表。种子非法时抛错，调用方需先归一化。 */
 export function generateSchemes(
   seed: string,

@@ -6,11 +6,14 @@ import { PageDrawerProvider } from "./PageDrawerContext";
 export function PageSurface({
   children,
   centered = false,
+  fullscreen = false,
   showAbout = false,
   maxWidth = "full",
 }: {
   children: ReactNode;
   centered?: boolean;
+  /** 独立全屏页面：隐藏底部导航栏，但仍按普通页面从上往下排布。 */
+  fullscreen?: boolean;
   showAbout?: boolean;
   maxWidth?: "sm" | "md" | "lg" | "xl" | "2xl" | "full";
 }) {
@@ -28,8 +31,8 @@ export function PageSurface({
     <PageDrawerProvider>
       <div
         className={centered ? "page-surface page-surface-centered" : "page-surface"}
-        // 居中的认证流程是全屏独立页面，不应显示底部导航栏。
-        data-fullscreen={centered || undefined}
+        // 居中的认证流程与初始化向导是全屏独立页面，不应显示底部导航栏。
+        data-fullscreen={centered || fullscreen || undefined}
       >
         <div className="page-surface-inner" style={{ maxInlineSize: width }}>
           {children}

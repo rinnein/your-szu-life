@@ -24,6 +24,16 @@ pub(crate) struct Appearance {
     pub variant: String,
     /// `wallpaper` | `user` | `default`
     pub seed_source: String,
+    /// 桌面端是否在启动时自动从当前壁纸提取种子色。Android 由系统桥驱动，不受此开关影响。
+    #[serde(default)]
+    pub auto_wallpaper: bool,
+    /// 桌面端壁纸检查间隔（分钟）；无法监听壁纸变更事件时使用。
+    #[serde(default = "default_wallpaper_poll_minutes")]
+    pub wallpaper_poll_minutes: u32,
+}
+
+fn default_wallpaper_poll_minutes() -> u32 {
+    15
 }
 
 impl Default for Appearance {
@@ -33,6 +43,8 @@ impl Default for Appearance {
             seed: crate::appearance::DEFAULT_SEED.into(),
             variant: crate::appearance::DEFAULT_VARIANT.into(),
             seed_source: "default".into(),
+            auto_wallpaper: false,
+            wallpaper_poll_minutes: default_wallpaper_poll_minutes(),
         }
     }
 }
@@ -77,6 +89,12 @@ impl Appearance {
         }
         if !SEED_SOURCES.contains(&self.seed_source.as_str()) {
             return Err(format!("未知的种子色来源：{}", self.seed_source));
+        }
+        if !(1..=1440).contains(&self.wallpaper_poll_minutes) {
+            return Err(format!(
+                "壁纸检查间隔必须是 1 到 1440 分钟：{}",
+                self.wallpaper_poll_minutes
+            ));
         }
         Ok(())
     }
@@ -191,10 +209,30 @@ mod tests {
             seed: "#123456".into(),
             variant: "expressive".into(),
             seed_source: "user".into(),
+            auto_wallpaper: true,
+            wallpaper_poll_minutes: 15,
         };
         let raw = serde_json::to_string(&value).unwrap();
         let back: Appearance = serde_json::from_str(&raw).unwrap();
         assert_eq!(value, back);
+    }
+
+    #[test]
+    fn legacy_appearance_defaults_auto_wallpaper_off() {
+        let raw = r##"{"mode":"system","seed":"#5d5fef","variant":"tonal-spot","seedSource":"default"}"##;
+        let value: Appearance = serde_json::from_str(raw).unwrap();
+        assert!(!value.auto_wallpaper);
+        assert_eq!(value.wallpaper_poll_minutes, 15);
+        assert!(value.validate().is_ok());
+    }
+
+    #[test]
+    fn rejects_wallpaper_poll_interval_out_of_range() {
+        for minutes in [0, 1441] {
+            let mut value = valid();
+            value.wallpaper_poll_minutes = minutes;
+            assert!(value.validate().is_err(), "should reject {minutes}");
+        }
     }
 
     #[test]

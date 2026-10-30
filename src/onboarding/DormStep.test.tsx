@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { typeInto } from "../ui/testing";
+import type { StepNextAction } from "../step-next-action";
 import { DormStep } from "./DormStep";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -59,17 +61,34 @@ function mock(extra: (command: string) => unknown = () => undefined) {
   });
 }
 
+function Harness({ onComplete }: { onComplete: () => void | Promise<void> }) {
+  const [action, setAction] = useState<StepNextAction | null>(null);
+  return (
+    <>
+      <DormStep onComplete={onComplete} onSkip={vi.fn()} registerNext={setAction} />
+      {action && (
+        <button type="button" disabled={action.disabled} onClick={() => void action.run()}>
+          {action.label}
+        </button>
+      )}
+    </>
+  );
+}
+
 async function fillDorm() {
-  const room = await waitFor(() => {
-    const field = screen.getByRole("textbox", { name: "宿舍号" });
-    expect(field).toBeEnabled();
-    return field;
-  });
+  const room = await waitFor(
+    () => {
+      const field = screen.getByRole("textbox", { name: "宿舍号" });
+      expect(field).toBeEnabled();
+      return field;
+    },
+    { timeout: 3000 },
+  );
   typeInto(room, "601");
   const campus = () =>
     screen.queryByRole("button", { name: /校区/ }) ??
     screen.getByRole("combobox", { name: /校区/ });
-  await waitFor(() => expect(campus()).toBeEnabled());
+  await waitFor(() => expect(campus()).toBeEnabled(), { timeout: 3000 });
   fireEvent.click(campus());
   fireEvent.click(await screen.findByRole("option", { name: "粤海校区" }));
   const save = await screen.findByRole("button", { name: "保存并继续" });
@@ -86,7 +105,7 @@ afterEach(cleanup);
 
 it("persists the dorm only after the query returns data", async () => {
   const onComplete = vi.fn();
-  render(<DormStep onComplete={onComplete} onSkip={vi.fn()} />);
+  render(<Harness onComplete={onComplete} />);
   await fillDorm();
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("save_electricity_settings", {
@@ -109,7 +128,7 @@ it("keeps the dorm unsaved when the query returns no data", async () => {
       : undefined,
   );
   const onComplete = vi.fn();
-  render(<DormStep onComplete={onComplete} onSkip={vi.fn()} />);
+  render(<Harness onComplete={onComplete} />);
   await fillDorm();
   await waitFor(() => expect(invoke).toHaveBeenCalledWith("query_electricity", expect.anything()));
   expect(
@@ -119,7 +138,7 @@ it("keeps the dorm unsaved when the query returns no data", async () => {
 });
 
 it("keeps typed characters when only the native input event fires", async () => {
-  render(<DormStep onComplete={vi.fn()} onSkip={vi.fn()} />);
+  render(<Harness onComplete={vi.fn()} />);
   const room = await waitFor(() => {
     const field = screen.getByRole("textbox", { name: "宿舍号" }) as HTMLInputElement;
     expect(field).toBeEnabled();

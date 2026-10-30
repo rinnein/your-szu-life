@@ -149,4 +149,16 @@ describe("debug log page", () => {
     });
     expect(navigate).not.toHaveBeenCalled();
   });
+
+  it("restarts onboarding without resetting settings", async () => {
+    render(<DebugLogPage />);
+    await screen.findByText("初始化设置");
+
+    fireEvent.click(screen.getByRole("button", { name: /重新开始初始化向导/ }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("restart_onboarding");
+    });
+    expect(navigate).not.toHaveBeenCalled();
+  });
 });

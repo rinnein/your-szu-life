@@ -23,7 +23,7 @@ pub struct SetThemeParams {
 impl UnifiedSzuMcpService {
     #[tool(
         name = "appearance_get_theme",
-        description = "获取your-szu-life当前外观主题设定：深浅色模式、种子色与 M3 配色变体。对应资源 your-szu-life://data/appearance/theme"
+        description = "获取your-szu-life当前外观主题设定：深浅色模式、种子色、M3 配色变体，以及桌面自动壁纸取色开关与检查间隔。对应资源 your-szu-life://data/appearance/theme"
     )]
     pub async fn appearance_get_theme(&self) -> Result<String, String> {
         let appearance = crate::appearance::load(&self.app);
@@ -32,18 +32,21 @@ impl UnifiedSzuMcpService {
 
     #[tool(
         name = "appearance_set_theme",
-        description = "设置your-szu-life外观主题。修改后客户端界面会立即换色。对应资源 your-szu-life://data/appearance/theme"
+        description = "设置your-szu-life外观主题。修改后客户端界面会立即换色；显式设置主题会停止桌面自动壁纸取色，避免壁纸色覆盖所选种子色。对应资源 your-szu-life://data/appearance/theme"
     )]
     pub async fn appearance_set_theme(
         &self,
         Parameters(params): Parameters<SetThemeParams>,
     ) -> Result<String, String> {
+        let current = crate::appearance::load(&self.app);
         let appearance = Appearance {
             mode: params.mode,
             seed: params.seed,
             variant: params.variant,
             // 经由 MCP 指定的一律视为用户显式选择，避免被壁纸色覆盖。
             seed_source: "user".into(),
+            auto_wallpaper: false,
+            wallpaper_poll_minutes: current.wallpaper_poll_minutes,
         };
         let saved = crate::appearance::save(&self.app, &appearance)?;
         serde_json::to_string_pretty(&saved).map_err(|e| format!("序列化失败: {e}"))

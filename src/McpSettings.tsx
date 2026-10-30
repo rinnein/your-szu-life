@@ -13,6 +13,7 @@ import {
   LuShieldCheck,
 } from "react-icons/lu";
 import { copyText } from "./clipboard";
+import { useRegisterNextAction, type StepNextAction } from "./step-next-action";
 
 export interface McpStatusView {
   running: boolean;
@@ -21,10 +22,19 @@ export interface McpStatusView {
   endpoint: string | null;
 }
 
-export default function McpSettings() {
+export default function McpSettings({
+  onboarding = false,
+  onComplete,
+  registerNext,
+}: {
+  onboarding?: boolean;
+  onComplete?: () => void | Promise<void>;
+  registerNext?: (action: StepNextAction | null) => void;
+}) {
   const [status, setStatus] = useState<McpStatusView | null>(null);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
+  const [loadError, setLoadError] = useState<string>();
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
@@ -34,8 +44,10 @@ export default function McpSettings() {
     try {
       const res = await invoke<McpStatusView>("get_mcp_server_status");
       setStatus(res);
-    } catch {
-      setStatus({ running: false, enabled: false, port: null, endpoint: null });
+      setLoadError(undefined);
+    } catch (error) {
+      setStatus(null);
+      setLoadError(typeof error === "string" ? error : "无法读取 MCP 服务状态");
     } finally {
       setLoading(false);
     }
@@ -57,6 +69,18 @@ export default function McpSettings() {
   useEffect(() => {
     void fetchStatus();
   }, []);
+
+  useRegisterNextAction(
+    registerNext,
+    onboarding && onComplete
+      ? {
+          label: "下一步",
+          disabled: loading || toggling || !status,
+          busy: toggling,
+          run: onComplete,
+        }
+      : null,
+  );
 
   const endpoint = status?.endpoint ?? `http://127.0.0.1:${status?.port ?? 53901}/mcp`;
 
@@ -161,6 +185,24 @@ export default function McpSettings() {
         </div>
 
         <div className="grid gap-4 w-full min-w-0 max-w-full p-4">
+          {loadError && (
+            <>
+              <Banner status="danger" className="w-full min-w-0 max-w-full">
+                <Banner.Title className="text-sm font-medium">MCP 服务状态读取失败</Banner.Title>
+                <Banner.Description className="text-xs leading-relaxed text-muted">
+                  {loadError}
+                </Banner.Description>
+              </Banner>
+              <Button
+                variant="outlined"
+                disabled={loading}
+                onClick={() => void fetchStatus()}
+                className="self-start"
+              >
+                重试读取状态
+              </Button>
+            </>
+          )}
           {/* 开关直接管理端口 */}
           <div className="rounded-lg border border-border/50 bg-surface/50 p-3.5 w-full min-w-0 max-w-full">
             <Switch
@@ -233,91 +275,95 @@ export default function McpSettings() {
         </div>
       </Card>
 
-      {/* 指导 Agent 安装的 Prompt 卡片 */}
-      <Card
-        aria-labelledby="mcp-prompt-title"
-        variant="outlined"
-        className="w-full min-w-0 max-w-full"
-      >
-        <div
-          slot="headline"
-          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0 w-full"
-        >
-          <div
-            id="mcp-prompt-title"
-            className="flex flex-wrap items-center gap-2 min-w-0 font-semibold text-base"
-          >
-            <LuBot aria-hidden="true" className="size-5 text-primary shrink-0" />
-            <span>指导 AI Agent 安装该 MCP 服务</span>
-          </div>
-          <Button
-            size="xs"
-            variant="filled"
-            onClick={() => void handleCopy(agentPrompt, "prompt")}
-            className="gap-1.5 shrink-0 self-start sm:self-auto"
-          >
-            {copiedPrompt ? (
-              <LuCheck aria-hidden="true" className="size-4 text-success" />
-            ) : (
-              <LuCopy aria-hidden="true" className="size-4" />
-            )}
-            <span>{copiedPrompt ? "已复制提示词" : "复制安装提示词"}</span>
-          </Button>
-        </div>
-        <div slot="subhead" className="mt-1.5 text-xs text-muted leading-relaxed">
-          复制下方提示词直接发送给 Claude Code、Cursor、Windsurf 或其他 AI 编程助手，即可一键完成
-          MCP 服务的自动识别与配置。
-        </div>
-
-        <div className="w-full min-w-0 max-w-full p-4 overflow-hidden">
-          <pre className="max-h-64 overflow-x-auto overflow-y-auto whitespace-pre-wrap break-all rounded-lg border border-border bg-background p-3.5 font-mono text-xs text-foreground leading-relaxed max-w-full">
-            {agentPrompt}
-          </pre>
-        </div>
-      </Card>
-
-      {/* 客户端 JSON 配置卡片 */}
-      <Card
-        aria-labelledby="mcp-json-title"
-        variant="outlined"
-        className="w-full min-w-0 max-w-full"
-      >
-        <div
-          slot="headline"
-          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0 w-full"
-        >
-          <div
-            id="mcp-json-title"
-            className="flex flex-wrap items-center gap-2 min-w-0 font-semibold text-base"
-          >
-            <LuFileCode aria-hidden="true" className="size-5 text-secondary shrink-0" />
-            <span className="break-all">配置文件片段 (Claude Desktop / Cursor)</span>
-          </div>
-          <Button
-            size="xs"
+      {!onboarding && (
+        <>
+          {/* 指导 Agent 安装的 Prompt 卡片 */}
+          <Card
+            aria-labelledby="mcp-prompt-title"
             variant="outlined"
-            onClick={() => void handleCopy(jsonConfig, "json")}
-            className="gap-1.5 shrink-0 self-start sm:self-auto"
+            className="w-full min-w-0 max-w-full"
           >
-            {copiedJson ? (
-              <LuCheck aria-hidden="true" className="size-3.5 text-success" />
-            ) : (
-              <LuCopy aria-hidden="true" className="size-3.5" />
-            )}
-            <span>{copiedJson ? "已复制配置" : "复制 JSON"}</span>
-          </Button>
-        </div>
-        <div slot="subhead" className="mt-1.5 text-xs text-muted leading-relaxed">
-          手动配置到 Claude Desktop 的 <code>claude_desktop_config.json</code> 或 Cursor 的 MCP
-          设置中。
-        </div>
+            <div
+              slot="headline"
+              className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0 w-full"
+            >
+              <div
+                id="mcp-prompt-title"
+                className="flex flex-wrap items-center gap-2 min-w-0 font-semibold text-base"
+              >
+                <LuBot aria-hidden="true" className="size-5 text-primary shrink-0" />
+                <span>指导 AI Agent 安装该 MCP 服务</span>
+              </div>
+              <Button
+                size="xs"
+                variant="filled"
+                onClick={() => void handleCopy(agentPrompt, "prompt")}
+                className="gap-1.5 shrink-0 self-start sm:self-auto"
+              >
+                {copiedPrompt ? (
+                  <LuCheck aria-hidden="true" className="size-4 text-success" />
+                ) : (
+                  <LuCopy aria-hidden="true" className="size-4" />
+                )}
+                <span>{copiedPrompt ? "已复制提示词" : "复制安装提示词"}</span>
+              </Button>
+            </div>
+            <div slot="subhead" className="mt-1.5 text-xs text-muted leading-relaxed">
+              复制下方提示词直接发送给 Claude Code、Cursor、Windsurf 或其他 AI
+              编程助手，即可一键完成 MCP 服务的自动识别与配置。
+            </div>
 
-        <div className="w-full min-w-0 max-w-full p-4 overflow-hidden">
-          <pre className="overflow-x-auto max-w-full rounded-lg border border-border bg-background p-3.5 font-mono text-xs text-foreground">
-            {jsonConfig}
-          </pre>
-        </div>
-      </Card>
+            <div className="w-full min-w-0 max-w-full p-4 overflow-hidden">
+              <pre className="max-h-64 overflow-x-auto overflow-y-auto whitespace-pre-wrap break-all rounded-lg border border-border bg-background p-3.5 font-mono text-xs text-foreground leading-relaxed max-w-full">
+                {agentPrompt}
+              </pre>
+            </div>
+          </Card>
+
+          {/* 客户端 JSON 配置卡片 */}
+          <Card
+            aria-labelledby="mcp-json-title"
+            variant="outlined"
+            className="w-full min-w-0 max-w-full"
+          >
+            <div
+              slot="headline"
+              className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0 w-full"
+            >
+              <div
+                id="mcp-json-title"
+                className="flex flex-wrap items-center gap-2 min-w-0 font-semibold text-base"
+              >
+                <LuFileCode aria-hidden="true" className="size-5 text-secondary shrink-0" />
+                <span className="break-all">配置文件片段 (Claude Desktop / Cursor)</span>
+              </div>
+              <Button
+                size="xs"
+                variant="outlined"
+                onClick={() => void handleCopy(jsonConfig, "json")}
+                className="gap-1.5 shrink-0 self-start sm:self-auto"
+              >
+                {copiedJson ? (
+                  <LuCheck aria-hidden="true" className="size-3.5 text-success" />
+                ) : (
+                  <LuCopy aria-hidden="true" className="size-3.5" />
+                )}
+                <span>{copiedJson ? "已复制配置" : "复制 JSON"}</span>
+              </Button>
+            </div>
+            <div slot="subhead" className="mt-1.5 text-xs text-muted leading-relaxed">
+              手动配置到 Claude Desktop 的 <code>claude_desktop_config.json</code> 或 Cursor 的 MCP
+              设置中。
+            </div>
+
+            <div className="w-full min-w-0 max-w-full p-4 overflow-hidden">
+              <pre className="overflow-x-auto max-w-full rounded-lg border border-border bg-background p-3.5 font-mono text-xs text-foreground">
+                {jsonConfig}
+              </pre>
+            </div>
+          </Card>
+        </>
+      )}
     </div>
   );
 }

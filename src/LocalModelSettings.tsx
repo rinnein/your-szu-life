@@ -11,6 +11,7 @@ import {
   type ModelDownloadChannelEvent,
 } from "./ModelDownloadProgress";
 import { createTaskChannel } from "./tauri-channel";
+import { useRegisterNextAction, type StepNextAction } from "./step-next-action";
 import ocrModelManifest from "../src-tauri/resources/ocr/ddddocr/model.json";
 import embeddingModelManifest from "../src-tauri/resources/embedding/bge-small-zh-v1.5/model.json";
 
@@ -362,14 +363,30 @@ export function LocalModelCard({
   );
 }
 
-export function LocalModelsSettings({ autoReturnKind }: { autoReturnKind?: "ocr" | "embedding" }) {
+export function LocalModelsSettings({
+  autoReturnKind,
+  onboarding = false,
+  onComplete,
+  registerNext,
+}: {
+  autoReturnKind?: "ocr" | "embedding";
+  onboarding?: boolean;
+  onComplete?: () => void | Promise<void>;
+  registerNext?: (action: StepNextAction | null) => void;
+}) {
+  useRegisterNextAction(
+    registerNext,
+    onboarding && onComplete ? { label: "下一步", run: onComplete } : null,
+  );
+
   return (
     <div className="grid gap-6 w-full min-w-0 max-w-full">
       <div className="flex flex-col gap-1 min-w-0">
         <h3 className="text-base font-medium text-foreground">本地离线模型</h3>
         <p className="text-sm text-muted break-words">
-          管理应用内置与离线运行的 AI /
-          机器学习模型。模型仅保存在本地设备，离线高速运行并保护隐私安全。
+          {onboarding
+            ? "OCR 用于选课系统与 OJ 验证码识别，Embedding 用于 UOOC 题库检索。模型只保存在本机；暂时不需要可以跳过，之后在设置 → 本地模型中下载。"
+            : "管理应用内置与离线运行的 AI / 机器学习模型。模型仅保存在本地设备，离线高速运行并保护隐私安全。"}
         </p>
       </div>
       <LocalModelCard

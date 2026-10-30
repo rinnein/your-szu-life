@@ -15,12 +15,6 @@ export type OnboardingState = {
   currentStep: string | null;
 };
 
-export type WallpaperImage = {
-  dataUrl: string;
-  width: number;
-  height: number;
-};
-
 export async function getOnboardingState(): Promise<OnboardingState> {
   return invoke<OnboardingState>("get_onboarding_state");
 }
@@ -50,8 +44,4 @@ export async function cancelAuthentication(): Promise<void> {
 
 export async function consumeAuthFailureNotice(): Promise<string | null> {
   return invoke<string | null>("consume_auth_failure_notice");
-}
-
-export async function getWallpaperImage(): Promise<WallpaperImage> {
-  return invoke<WallpaperImage>("get_wallpaper_image");
 }

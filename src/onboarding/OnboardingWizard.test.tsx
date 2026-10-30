@@ -18,24 +18,29 @@ const api = vi.hoisted(() => ({
 vi.mock("../auth", () => ({ useAuth: () => auth }));
 vi.mock("./api", () => api);
 
-vi.mock("./registry", () => ({
-  STEP_META: {
-    dormitory: {
-      label: "宿舍信息",
-      component: ({ onComplete, onSkip }: any) => (
-        <div>
-          <div>dormitory-step</div>
-          <button onClick={() => void onComplete()}>complete-dorm</button>
-          <button onClick={() => void onSkip()}>skip-dorm</button>
-        </div>
-      ),
+vi.mock("./registry", async () => {
+  const { useRegisterNextAction } = await import("../step-next-action");
+  return {
+    STEP_META: {
+      dormitory: {
+        label: "宿舍信息",
+        component: ({ onComplete, onSkip, registerNext }: any) => {
+          useRegisterNextAction(registerNext, { label: "下一步", run: onComplete });
+          return (
+            <div>
+              <div>dormitory-step</div>
+              <button onClick={() => void onSkip()}>skip-dorm</button>
+            </div>
+          );
+        },
+      },
+      appearance: {
+        label: "主题设置",
+        component: () => <div>appearance-step</div>,
+      },
     },
-    appearance: {
-      label: "主题设置",
-      component: () => <div>appearance-step</div>,
-    },
-  },
-}));
+  };
+});
 
 vi.mock("../shell/PageSurface", () => ({
   PageSurface: ({ children }: any) => <div>{children}</div>,
@@ -52,6 +57,7 @@ vi.mock("material/react", () => ({
     </button>
   ),
   Card: ({ children }: any) => <div>{children}</div>,
+  LoadingIndicator: () => <span data-testid="loading" />,
   Progress: () => <div data-testid="progress" />,
 }));
 
@@ -91,6 +97,28 @@ describe("OnboardingWizard", () => {
     expect(screen.getByRole("button", { name: "跳过" })).toBeInTheDocument();
   });
 
+  it("puts 上一步 on the left and 跳过/下一步 on the right", async () => {
+    render(
+      <OnboardingWizard
+        state={state}
+        canDismiss={false}
+        onDismiss={vi.fn()}
+        onFinished={vi.fn()}
+      />,
+    );
+
+    const back = screen.getByRole("button", { name: "上一步" });
+    const skip = screen.getByRole("button", { name: "跳过" });
+    const next = await screen.findByRole("button", { name: "下一步" });
+
+    const footer = document.querySelector(".onboarding-actions");
+    expect(footer).toBeInTheDocument();
+    const [left, right] = Array.from(footer!.querySelectorAll(".onboarding-actions-group"));
+    expect(left).toContainElement(back);
+    expect(right).toContainElement(skip);
+    expect(right).toContainElement(next);
+  });
+
   it("skips a skippable step and advances", async () => {
     render(
       <OnboardingWizard
@@ -115,7 +143,7 @@ describe("OnboardingWizard", () => {
         onFinished={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "complete-dorm" }));
+    fireEvent.click(await screen.findByRole("button", { name: "下一步" }));
     await screen.findByText("appearance-step");
     expect(api.completeOnboardingStep).toHaveBeenCalledWith("dormitory");
   });

@@ -12,7 +12,7 @@ export function registerDebugTap(taps: number[], now: number) {
 /**
  * 调试模式状态。
  *
- * 两个使用方：首页图标 5 连击（启用）与设置页的「诊断日志」tab（可见性）。
+ * 两个使用方：首页图标 5 连击（启用）与设置页的「调试」tab（可见性）。
  * 两者不会同时挂载，因此各自订阅一次即可。
  */
 export function useDebugMode() {

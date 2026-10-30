@@ -39,6 +39,7 @@ export default function DebugLogPage() {
   const [busy, setBusy] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [settingLevel, setSettingLevel] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const [isAndroid, setIsAndroid] = useState(false);
 
   const loadLogInfo = async () => {
@@ -143,6 +144,20 @@ export default function DebugLogPage() {
       toast.info("调试模式已关闭");
     } catch (cause) {
       toast.danger(`关闭调试模式失败: ${String(cause)}`);
+    }
+  };
+
+  const handleRestartOnboarding = async () => {
+    setRestarting(true);
+    try {
+      await invoke("restart_onboarding");
+      toast.success("已重新开始初始化设置", {
+        description: "已保存的账户、外观、通知、模型等设置不会被重置。",
+      });
+    } catch (cause) {
+      toast.danger(`重新开始初始化设置失败: ${String(cause)}`);
+    } finally {
+      setRestarting(false);
     }
   };
 
@@ -281,6 +296,23 @@ export default function DebugLogPage() {
               天时，系统会自动删除最旧的日志，保障磁盘空间不受占用。
             </Banner.Description>
           </Banner>
+
+          <Card variant="outlined">
+            <div slot="headline">初始化设置</div>
+            <div slot="subhead">
+              重新走一遍初始化向导。只重置步骤进度，不会清除账户、外观、通知、本地模型等已保存的设置。
+            </div>
+            <div className="p-4">
+              <Button
+                variant="outlined"
+                disabled={restarting}
+                onClick={() => void handleRestartOnboarding()}
+              >
+                {restarting ? <LoadingIndicator size={16} /> : <LuRefreshCw className="size-4" />}
+                重新开始初始化向导
+              </Button>
+            </div>
+          </Card>
 
           <div className="flex justify-end pt-2">
             <Button

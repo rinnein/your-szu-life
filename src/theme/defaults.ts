@@ -24,6 +24,10 @@ export interface Appearance {
   seed: string;
   variant: SchemeVariant;
   seedSource: SeedSource;
+  /** 桌面端是否在启动时自动从当前壁纸提取种子色。Android 由系统桥驱动。 */
+  autoWallpaper: boolean;
+  /** 无法监听壁纸变更事件时的检查间隔（分钟）。 */
+  wallpaperPollMinutes: number;
 }
 
 /** 品牌默认种子，沿用迁移前的 --szu-brand。 */
@@ -34,6 +38,8 @@ export const DEFAULT_APPEARANCE: Appearance = {
   seed: DEFAULT_SEED,
   variant: "tonal-spot",
   seedSource: "default",
+  autoWallpaper: false,
+  wallpaperPollMinutes: 15,
 };
 
 export interface SeedPreset {

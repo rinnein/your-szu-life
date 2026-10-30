@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, Checkbox, LoadingIndicator, TextField, Button } from "material/react";
 import { Banner, toast } from "./ui";
+import { useRegisterNextAction, type StepNextAction } from "./step-next-action";
 import type { AiConnections } from "./uooc/types";
 
 type ConnectionDraft = {
@@ -32,10 +33,14 @@ export function AiConnectionForm({
   showJev = true,
   submitLabel = "保存 AI 连接",
   onSaved,
+  onboarding = false,
+  registerNext,
 }: {
   showJev?: boolean;
   submitLabel?: string;
   onSaved?: (connections: AiConnections) => void | Promise<void>;
+  onboarding?: boolean;
+  registerNext?: (action: StepNextAction | null) => void;
 }) {
   const [draft, setDraft] = useState<ConnectionDraft>();
   const [busy, setBusy] = useState(false);
@@ -107,6 +112,11 @@ export function AiConnectionForm({
       setBusy(false);
     }
   };
+
+  useRegisterNextAction(
+    registerNext,
+    onboarding && draft ? { label: submitLabel, disabled: busy, busy, run: save } : null,
+  );
 
   if (!draft)
     return (
@@ -186,17 +196,60 @@ export function AiConnectionForm({
           </Checkbox>
         </section>
       ))}
-      <div>
-        <Button variant="filled" disabled={busy} onClick={() => void save()}>
-          {busy && <LoadingIndicator size={16} />}
-          {busy ? "保存中…" : submitLabel}
-        </Button>
-      </div>
+      {!onboarding && (
+        <div>
+          <Button variant="filled" disabled={busy} onClick={() => void save()}>
+            {busy && <LoadingIndicator size={16} />}
+            {busy ? "保存中…" : submitLabel}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
 
-export default function AiConnectionSettings() {
+export default function AiConnectionSettings({
+  onboarding = false,
+  onComplete,
+  registerNext,
+}: {
+  onboarding?: boolean;
+  onComplete?: () => void | Promise<void>;
+  registerNext?: (action: StepNextAction | null) => void;
+}) {
+  if (onboarding) {
+    return (
+      <div className="grid gap-4">
+        <Banner status="info">
+          <Banner.Title>未配置 AI 时无法使用 AI 功能</Banner.Title>
+          <Banner.Description>
+            例如 UOOC 的 AI 答题与解析。Jev 是可选的选择题复核模型，不配置也不影响基本 AI
+            功能；这里只需要填写主模型的地址和 Key。
+          </Banner.Description>
+        </Banner>
+        <Card variant="outlined">
+          <div slot="headline">AI 配置</div>
+          <div slot="subhead">只填写主模型即可；Jev 可以在设置 → AI 配置中按需开启。</div>
+          <div className="p-4">
+            <AiConnectionForm
+              onboarding
+              showJev={false}
+              submitLabel="保存并继续"
+              registerNext={registerNext}
+              onSaved={async (connections) => {
+                if (!connections.main.baseUrl || !connections.main.hasKey) {
+                  toast.info("主模型尚未配置完整；可以继续填写，或跳过此步骤");
+                  return;
+                }
+                await onComplete?.();
+              }}
+            />
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <Card variant="outlined">
       <div slot="headline">AI 连接</div>

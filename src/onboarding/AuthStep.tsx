@@ -3,6 +3,8 @@ import { listen } from "@tauri-apps/api/event";
 import { Button, Card, LoadingIndicator, TextField } from "material/react";
 import { Banner, toast } from "../ui";
 import { authFailureFor, beginAuthentication, useAuth, type AuthState } from "../auth";
+import { ProfileForm } from "../ProfileForm";
+import { useRegisterNextAction, type StepNextAction } from "../step-next-action";
 import type { StepProps } from "./step-types";
 import { beginSetupAuthentication, cancelAuthentication, consumeAuthFailureNotice } from "./api";
 
@@ -19,8 +21,8 @@ function isTerminalAuthFailure(state: AuthState): boolean {
   );
 }
 
-export function AuthStep({ onComplete, reauth }: StepProps) {
-  const { state, profile } = useAuth();
+export function AuthStep({ onComplete, registerNext, reauth }: StepProps) {
+  const { state, profile, userData } = useAuth();
   const [campusCard, setCampusCard] = useState(profile?.campusCardNumber ?? "");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -117,8 +119,7 @@ export function AuthStep({ onComplete, reauth }: StepProps) {
     };
   }, []);
 
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const submitCredentials = async () => {
     if (!/^\d{6}$/.test(campusCard.trim())) {
       toast.danger("校园卡号必须是 6 位数字");
       return;
@@ -139,6 +140,29 @@ export function AuthStep({ onComplete, reauth }: StepProps) {
     }
   };
 
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void submitCredentials();
+  };
+
+  const awaitingProfile = "AwaitingProfile" in state;
+  let nextAction: StepNextAction | null = null;
+  if ("Authenticated" in state) {
+    nextAction = { label: "继续", run: onComplete };
+  } else if (!awaitingProfile && !("Authenticating" in state)) {
+    if (!reauth || autoAttempt === "failed") {
+      nextAction = {
+        label: "登录并继续",
+        disabled: busy,
+        busy,
+        run: submitCredentials,
+      };
+    }
+  }
+
+  // AwaitingProfile 时把主操作让给 ProfileForm 的注册。
+  useRegisterNextAction(registerNext, nextAction, !awaitingProfile);
+
   if ("Authenticated" in state) {
     return (
       <Card variant="outlined">
@@ -152,9 +176,6 @@ export function AuthStep({ onComplete, reauth }: StepProps) {
             <span>学号：{profile?.studentId ?? "未获取"}</span>
             <span>校园卡号：{profile?.campusCardNumber ?? "未获取"}</span>
           </div>
-          <Button variant="filled" onClick={() => void onComplete()}>
-            继续
-          </Button>
         </div>
       </Card>
     );
@@ -195,6 +216,20 @@ export function AuthStep({ onComplete, reauth }: StepProps) {
     );
   }
 
+  if (awaitingProfile) {
+    const studentId = state.AwaitingProfile.studentId ?? userData?.studentId ?? "";
+    return (
+      <ProfileForm
+        onboarding
+        registerNext={registerNext}
+        onlyCampusCard
+        name={state.AwaitingProfile.name ?? userData?.name}
+        initial={{ studentId, hasPassword: true }}
+        onSaved={() => onComplete()}
+      />
+    );
+  }
+
   if (reauth && autoAttempt !== "failed") {
     return (
       <Card variant="outlined">
@@ -229,7 +264,7 @@ export function AuthStep({ onComplete, reauth }: StepProps) {
         输入校园卡号和登录密码后，将自动打开深圳大学统一认证并完成登录；学号会自动获取，无需手动填写。
       </div>
       <div className="p-4">
-        <form className="settings-form" onSubmit={submit}>
+        <form className="settings-form" onSubmit={onSubmit}>
           <TextField
             label="校园卡号"
             value={campusCard}
@@ -248,10 +283,6 @@ export function AuthStep({ onComplete, reauth }: StepProps) {
             autocomplete="current-password"
             onChange={(e: any) => setPassword(e.detail?.value ?? e.target?.value ?? "")}
           />
-          <Button type="submit" variant="filled" disabled={busy}>
-            {busy && <LoadingIndicator size={16} />}
-            {busy ? "正在打开认证…" : "登录并继续"}
-          </Button>
         </form>
       </div>
     </Card>

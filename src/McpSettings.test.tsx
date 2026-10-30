@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "./ui";
+import type { StepNextAction } from "./step-next-action";
 import McpSettings from "./McpSettings";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -137,5 +138,26 @@ describe("McpSettings component", () => {
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("get_mcp_server_status");
     });
+  });
+
+  it("registers 下一步 for the onboarding footer and hides prompt cards", async () => {
+    const onComplete = vi.fn();
+    const actions: Array<StepNextAction | null> = [];
+    render(
+      <McpSettings
+        onboarding
+        onComplete={onComplete}
+        registerNext={(action) => actions.push(action)}
+      />,
+    );
+
+    await screen.findByText("本地 MCP 服务状态");
+    expect(screen.queryByText("指导 AI Agent 安装该 MCP 服务")).not.toBeInTheDocument();
+    expect(screen.queryByText("配置文件片段 (Claude Desktop / Cursor)")).not.toBeInTheDocument();
+
+    await waitFor(() => expect(actions[actions.length - 1]?.label).toBe("下一步"));
+    expect(actions[actions.length - 1]?.disabled).toBe(false);
+    await actions[actions.length - 1]?.run();
+    expect(onComplete).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "./ui";
+import type { StepNextAction } from "./step-next-action";
 import { ProfileForm } from "./ProfileForm";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -78,5 +79,26 @@ describe("ProfileForm toast error notifications", () => {
       });
     });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("registers 保存并进入工作台 as the onboarding footer action", async () => {
+    const onSaved = vi.fn();
+    const actions: Array<StepNextAction | null> = [];
+    vi.mocked(invoke).mockResolvedValue(undefined);
+
+    render(
+      <ProfileForm
+        onboarding
+        initial={{ studentId: "1234567890", campusCardNumber: "123456", hasPassword: true }}
+        onSaved={onSaved}
+        registerNext={(action) => actions.push(action)}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "保存并进入工作台" })).not.toBeInTheDocument();
+    await waitFor(() => expect(actions[actions.length - 1]?.label).toBe("保存并进入工作台"));
+
+    await actions[actions.length - 1]?.run();
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
   });
 });

@@ -115,8 +115,8 @@ describe("SettingsPage multi-tab and unified local model card", () => {
     expect(screen.getByRole("tab", { name: /设置迁移/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /快捷键/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /关于/ })).toBeInTheDocument();
-    // 诊断日志是开发者 tab，只在调试模式启用后出现。
-    expect(screen.queryByRole("tab", { name: /诊断日志/ })).not.toBeInTheDocument();
+    // 调试是开发者 tab，只在调试模式启用后出现。
+    expect(screen.queryByRole("tab", { name: /调试/ })).not.toBeInTheDocument();
 
     // Default tab shows ProfileForm
     expect(screen.getByText("确认账户资料")).toBeInTheDocument();
@@ -276,7 +276,7 @@ describe("SettingsPage multi-tab and unified local model card", () => {
 
     renderRouterApp("/settings?tab=debug");
 
-    expect(await screen.findByRole("tab", { name: /诊断日志/ })).toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: /调试/ })).toBeInTheDocument();
     expect(await screen.findByText("日志文件概览")).toBeInTheDocument();
   });
 

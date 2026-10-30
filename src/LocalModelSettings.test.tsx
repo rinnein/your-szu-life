@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "./ui";
+import type { StepNextAction } from "./step-next-action";
 import {
   LocalModelCard,
   LocalModelsSettings,
@@ -215,4 +216,29 @@ it("renders error alert with 模型不可用 and handles long unbroken error str
 
   expect(await screen.findByText("模型不可用")).toBeInTheDocument();
   expect(screen.getByText(longError)).toBeInTheDocument();
+});
+
+it("registers 下一步 for the onboarding footer", async () => {
+  const onComplete = vi.fn();
+  const actions: Array<StepNextAction | null> = [];
+  vi.mocked(invoke).mockResolvedValue({
+    status: "ready",
+    revision: "",
+    sha256: "",
+    bytes: 0,
+  } satisfies LocalModelStatus);
+
+  render(
+    <LocalModelsSettings
+      onboarding
+      onComplete={onComplete}
+      registerNext={(action) => actions.push(action)}
+    />,
+  );
+
+  expect(await screen.findByText("本地离线模型")).toBeInTheDocument();
+  expect(screen.getByText(/暂时不需要可以跳过/)).toBeInTheDocument();
+  await waitFor(() => expect(actions[actions.length - 1]?.label).toBe("下一步"));
+  await actions[actions.length - 1]?.run();
+  expect(onComplete).toHaveBeenCalledTimes(1);
 });

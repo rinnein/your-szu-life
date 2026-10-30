@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import AiConnectionSettings from "./AiConnectionSettings";
 import { toast } from "./ui";
+import type { StepNextAction } from "./step-next-action";
 import type { AiConnections } from "./uooc/types";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -102,4 +103,55 @@ it("reports connection save failures through the snackbar", async () => {
       description: "连接配置保存失败",
     }),
   );
+});
+
+it("registers 保存并继续 for the onboarding footer and completes with a configured main model", async () => {
+  const onComplete = vi.fn();
+  const actions: Array<StepNextAction | null> = [];
+  render(
+    <AiConnectionSettings
+      onboarding
+      onComplete={onComplete}
+      registerNext={(action) => actions.push(action)}
+    />,
+  );
+
+  await screen.findByLabelText("主模型 API 地址");
+  expect(screen.queryByLabelText("Jev API Key")).not.toBeInTheDocument();
+  await waitFor(() => expect(actions[actions.length - 1]?.label).toBe("保存并继续"));
+
+  await actions[actions.length - 1]?.run();
+  await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
+});
+
+it("stays on the onboarding step when the main model is incomplete", async () => {
+  const onComplete = vi.fn();
+  const info = vi.spyOn(toast, "info").mockReturnValue("toast-id");
+  const actions: Array<StepNextAction | null> = [];
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "save_uooc_ai_connections") {
+      return {
+        main: { baseUrl: "", hasKey: false },
+        jev: { baseUrl: "https://api.typesafe.ai/v1", hasKey: false },
+      } satisfies AiConnections;
+    }
+    return connections;
+  });
+
+  render(
+    <AiConnectionSettings
+      onboarding
+      onComplete={onComplete}
+      registerNext={(action) => actions.push(action)}
+    />,
+  );
+
+  await screen.findByLabelText("主模型 API 地址");
+  await waitFor(() => expect(actions[actions.length - 1]?.label).toBe("保存并继续"));
+
+  await actions[actions.length - 1]?.run();
+  await waitFor(() =>
+    expect(info).toHaveBeenCalledWith("主模型尚未配置完整；可以继续填写，或跳过此步骤"),
+  );
+  expect(onComplete).not.toHaveBeenCalled();
 });

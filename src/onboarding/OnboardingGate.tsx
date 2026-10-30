@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { Card, LoadingIndicator } from "material/react";
 import { useAuth, type AuthState } from "../auth";
 import { PageSurface } from "../shell/PageSurface";
@@ -58,6 +59,32 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (authKey.startsWith("authenticated:")) void refresh();
   }, [authKey, refresh]);
+
+  // 调试页可以要求重新开始向导；后端把新状态随事件一起发回。
+  useEffect(() => {
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    void listen<OnboardingState>("onboarding-restarted", (event) => {
+      if (!active) return;
+      const next = event.payload;
+      if (next && Array.isArray(next.steps)) {
+        setDismissed(false);
+        setOnboarding(next);
+        setError(undefined);
+      } else {
+        void refresh();
+      }
+    })
+      .then((stop) => {
+        if (active) unlisten = stop;
+        else stop();
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, [refresh]);
 
   if (!onboarding || "Checking" in state) {
     if (error && !onboarding) return <>{children}</>;

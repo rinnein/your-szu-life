@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from "react";
-import { Button, Card, Progress } from "material/react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Button, Card, LoadingIndicator, Progress } from "material/react";
 import { toast } from "../ui";
 import { BrandMark } from "../components";
 import { PageSurface } from "../shell/PageSurface";
 import { useAuth } from "../auth";
+import type { StepNextAction } from "../step-next-action";
 import { completeOnboardingStep, skipOnboardingStep, type OnboardingState } from "./api";
 import { STEP_META } from "./registry";
 
@@ -39,8 +41,14 @@ export function OnboardingWizard({
   );
   const [index, setIndex] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [nextAction, setNextAction] = useState<StepNextAction | null>(null);
   const finished = useRef(false);
   const acting = useRef(false);
+
+  const registerNext = useCallback((action: StepNextAction | null) => {
+    setNextAction(action);
+  }, []);
 
   const finish = () => {
     if (finished.current) return;
@@ -102,6 +110,18 @@ export function OnboardingWizard({
     }
   };
 
+  const runNext = async () => {
+    if (!nextAction || running) return;
+    setRunning(true);
+    try {
+      await nextAction.run();
+    } catch (cause) {
+      console.error("初始化设置步骤执行失败", cause);
+    } finally {
+      setRunning(false);
+    }
+  };
+
   // 重新认证步骤不写设置状态：登录成功后直接进入下一步。
   useEffect(() => {
     if (!current?.reauth) return;
@@ -129,49 +149,75 @@ export function OnboardingWizard({
   }
 
   const Step = meta.component;
+  const footerBusy = busy || running || Boolean(nextAction?.busy);
+  const nextBusy = running || Boolean(nextAction?.busy);
 
   return (
-    <PageSurface centered maxWidth="md">
-      <div className="grid gap-4">
-        <header className="flex flex-col items-center text-center gap-2">
-          <BrandMark large />
-          <h1 className="text-xl font-bold text-foreground">初始化设置</h1>
-          <p className="text-sm text-muted">
-            第 {index + 1} / {plan.length} 步 · {meta.label}
-          </p>
-          <Progress
-            variant="linear"
-            value={index + 1}
-            max={plan.length}
-            aria-label="初始化设置进度"
-            className="w-full"
+    <>
+      <PageSurface fullscreen maxWidth="md">
+        <div className="onboarding-wizard">
+          <header className="flex flex-col items-center text-center gap-2">
+            <BrandMark large />
+            <h1 className="text-xl font-bold text-foreground">初始化设置</h1>
+            <p className="text-sm text-muted">
+              第 {index + 1} / {plan.length} 步 · {meta.label}
+            </p>
+            <Progress
+              variant="linear"
+              value={index + 1}
+              max={plan.length}
+              aria-label="初始化设置进度"
+              className="w-full"
+            />
+          </header>
+
+          <Step
+            key={current.id}
+            onComplete={complete}
+            onSkip={skip}
+            reauth={current.reauth}
+            registerNext={registerNext}
           />
-        </header>
+        </div>
+      </PageSurface>
 
-        <Step onComplete={complete} onSkip={skip} reauth={current.reauth} />
-
-        <footer className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="text"
-              disabled={busy || index === 0}
-              onClick={() => setIndex(Math.max(0, index - 1))}
-            >
-              上一步
-            </Button>
-            {definition?.skippable && (
-              <Button variant="text" disabled={busy} onClick={() => void skip()}>
-                跳过
+      {typeof document !== "undefined" &&
+        createPortal(
+          <div className="onboarding-actions">
+            <div className="onboarding-actions-group">
+              <Button
+                variant="text"
+                disabled={footerBusy || index === 0}
+                onClick={() => setIndex(Math.max(0, index - 1))}
+              >
+                上一步
               </Button>
-            )}
-          </div>
-          {canDismiss && (
-            <Button variant="text" onClick={onDismiss}>
-              稍后处理
-            </Button>
-          )}
-        </footer>
-      </div>
-    </PageSurface>
+              {canDismiss && (
+                <Button variant="text" disabled={footerBusy} onClick={onDismiss}>
+                  稍后处理
+                </Button>
+              )}
+            </div>
+            <div className="onboarding-actions-group">
+              {definition?.skippable && (
+                <Button variant="text" disabled={footerBusy} onClick={() => void skip()}>
+                  跳过
+                </Button>
+              )}
+              {nextAction && (
+                <Button
+                  variant="filled"
+                  disabled={footerBusy || nextAction.disabled}
+                  onClick={() => void runNext()}
+                >
+                  {nextBusy && <LoadingIndicator size={16} />}
+                  {nextAction.label}
+                </Button>
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }

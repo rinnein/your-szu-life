@@ -180,13 +180,13 @@ export const COMMAND_LIST: CommandItem[] = [
   },
   {
     id: "debug",
-    name: "诊断日志",
+    name: "调试",
     shortcuts: ["debug", "log"],
-    description: "查看网络与运行时诊断记录",
+    description: "查看日志与运行时诊断信息",
     category: "系统",
     target: "/settings?tab=debug",
     icon: FaBug,
-    keywords: ["rizhi", "zhenduan"],
+    keywords: ["rizhi", "zhenduan", "tiaoshi"],
   },
 ];
 

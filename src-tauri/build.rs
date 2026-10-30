@@ -380,6 +380,7 @@ fn main() {
             "get_onboarding_state",
             "complete_onboarding_step",
             "skip_onboarding_step",
+            "restart_onboarding",
             "open_network_fee_portal",
             "consume_network_fee_portal_notice",
             "get_electricity_options",

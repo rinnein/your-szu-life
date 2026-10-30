@@ -113,6 +113,7 @@ permissions = [
   "allow-get-onboarding-state",
   "allow-complete-onboarding-step",
   "allow-skip-onboarding-step",
+  "allow-restart-onboarding",
   "allow-open-network-fee-portal",
   "allow-consume-network-fee-portal-notice",
   "allow-get-electricity-options",

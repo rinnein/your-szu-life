@@ -15,6 +15,7 @@ import {
   isElectricitySelectionAvailable,
   useElectricityOptions,
 } from "../electricity-location";
+import { useRegisterNextAction } from "../step-next-action";
 import type { StepProps } from "./step-types";
 
 const EMPTY: ElectricitySettings = {
@@ -25,7 +26,7 @@ const EMPTY: ElectricitySettings = {
   roomName: "",
 };
 
-export function DormStep({ onComplete }: StepProps) {
+export function DormStep({ onComplete, registerNext }: StepProps) {
   const {
     campuses,
     loading: optionsLoading,
@@ -69,6 +70,13 @@ export function DormStep({ onComplete }: StepProps) {
     roomFloor !== null &&
     isElectricitySelectionAvailable(campuses, settings),
   );
+
+  useRegisterNextAction(registerNext, {
+    label: "保存并继续",
+    disabled: busy || loading || optionsLoading || !canSave,
+    busy,
+    run: () => setConfirmOpen(true),
+  });
 
   const save = async () => {
     if (!canSave) {
@@ -160,14 +168,6 @@ export function DormStep({ onComplete }: StepProps) {
             onChange={setSettings}
           />
         )}
-        <Button
-          variant="filled"
-          disabled={busy || loading || optionsLoading || !canSave}
-          onClick={() => setConfirmOpen(true)}
-        >
-          {busy && <LoadingIndicator size={16} />}
-          {busy ? "保存中…" : "保存并继续"}
-        </Button>
       </div>
       <ElectricityLocationConfirmDialog
         open={confirmOpen}

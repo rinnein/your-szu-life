@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { OnboardingGate } from "./OnboardingGate";
 
@@ -15,11 +15,20 @@ const api = vi.hoisted(() => ({
   skipOnboardingStep: vi.fn(),
 }));
 
+const listeners = vi.hoisted(() => new Map<string, (event: { payload: unknown }) => void>());
+
 vi.mock("../auth", () => ({
   useAuth: () => auth,
 }));
 
 vi.mock("./api", () => api);
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async (event: string, callback: (event: { payload: unknown }) => void) => {
+    listeners.set(event, callback);
+    return () => listeners.delete(event);
+  }),
+}));
 
 vi.mock("./registry", () => ({
   STEP_META: {
@@ -68,6 +77,7 @@ const completeState = {
 describe("OnboardingGate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    listeners.clear();
     auth.state = { Authenticated: { studentId: "1234567890", name: "测试" } };
   });
 
@@ -124,5 +134,33 @@ describe("OnboardingGate", () => {
     await screen.findByText("auth-step");
     fireEvent.click(screen.getByRole("button", { name: "稍后处理" }));
     await waitFor(() => expect(screen.getByText("app-content")).toBeInTheDocument());
+  });
+
+  it("reopens the wizard when the backend reports a restart", async () => {
+    api.getOnboardingState.mockResolvedValue(completeState);
+    render(
+      <OnboardingGate>
+        <div>app-content</div>
+      </OnboardingGate>,
+    );
+    expect(await screen.findByText("app-content")).toBeInTheDocument();
+
+    const listener = listeners.get("onboarding-restarted");
+    expect(listener).toBeDefined();
+    act(() =>
+      listener!({
+        payload: {
+          ...completeState,
+          needsSetup: true,
+          currentStep: "appearance",
+          steps: completeState.steps.map((item) =>
+            item.id === "appearance" ? { ...item, status: "pending" } : item,
+          ),
+        },
+      }),
+    );
+
+    expect(await screen.findByText("appearance-step")).toBeInTheDocument();
+    expect(screen.queryByText("app-content")).not.toBeInTheDocument();
   });
 });

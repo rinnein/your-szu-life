@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { DEFAULT_SEED, normalizeSeed, SEED_PRESETS } from "./defaults";
-import { generateSchemes } from "./scheme";
+import { generateScheme, generateSchemes } from "./scheme";
 import { buildThemeCss, THEME_NAME } from "./tokens";
 
 describe("normalizeSeed", () => {
@@ -46,6 +46,12 @@ describe("generateSchemes", () => {
       expect(scheme.warning).toMatch(/^#[0-9a-f]{6}$/);
       expect(scheme.info).toMatch(/^#[0-9a-f]{6}$/);
     }
+  });
+
+  it("generates a single mode identical to the paired helper", () => {
+    const pair = generateSchemes(DEFAULT_SEED, "tonal-spot");
+    expect(generateScheme(DEFAULT_SEED, "tonal-spot", false)).toEqual(pair.light);
+    expect(generateScheme(DEFAULT_SEED, "tonal-spot", true)).toEqual(pair.dark);
   });
 
   it("keeps the seed hue for tonal-spot", () => {

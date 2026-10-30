@@ -50,7 +50,7 @@ const SETTINGS_TABS: ReadonlyArray<{
   { id: "transfer", label: "设置迁移", icon: LuArrowUpDown },
   { id: "shortcuts", label: "快捷键", icon: LuKeyboard },
   { id: "about", label: "关于", icon: LuInfo },
-  { id: "debug", label: "诊断日志", icon: LuBug, debugOnly: true },
+  { id: "debug", label: "调试", icon: LuBug, debugOnly: true },
 ];
 
 export default function SettingsPage() {
