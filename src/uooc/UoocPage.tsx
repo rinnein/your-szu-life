@@ -14,7 +14,7 @@ import {
   TextField,
   Button,
 } from "material/react";
-import { AdaptiveTabs, Banner, Chip, Disclosure, NumberField, toast } from "../ui";
+import { AdaptiveTabs, Banner, Chip, Disclosure, NumberField, bindField, toast } from "../ui";
 import {
   LuCheck,
   LuCircleHelp,
@@ -1204,12 +1204,12 @@ export default function UoocPage() {
                       value={discussionContent}
                       maxlength={500}
                       disabled={busy || !snapshot || !discussionEnabled}
-                      onChange={(event: any) =>
+                      {...bindField((value) =>
                         editDraft((old) => ({
                           ...old,
-                          discussionContent: event.detail?.value ?? event.target?.value ?? "",
-                        }))
-                      }
+                          discussionContent: value,
+                        })),
+                      )}
                       className="w-full"
                     />
                     <span className="text-xs text-muted">

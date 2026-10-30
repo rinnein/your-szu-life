@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, TextField, Button } from "material/react";
-import { toast } from "./ui";
+import { bindField, toast } from "./ui";
 import { LuCheck, LuCopy, LuDownload, LuKeyRound, LuUpload } from "react-icons/lu";
 import { copyText } from "./clipboard";
 
@@ -133,7 +133,7 @@ export default function SettingsTransfer() {
               placeholder="至少 8 个字符"
               autocomplete="new-password"
               disabled={busy}
-              onChange={(e: any) => setExportPassword(e.detail?.value ?? e.target?.value ?? "")}
+              {...bindField(setExportPassword)}
             />
             <Button
               className="w-fit"
@@ -196,7 +196,7 @@ export default function SettingsTransfer() {
               value={text}
               placeholder="粘贴另一台设备生成的加密字符串"
               disabled={busy}
-              onChange={(e: any) => updateText(e.detail?.value ?? e.target?.value ?? "")}
+              {...bindField(updateText)}
             />
             <TextField
               type="password"
@@ -205,10 +205,10 @@ export default function SettingsTransfer() {
               placeholder="输入导出时设置的密码"
               autocomplete="new-password"
               disabled={busy}
-              onChange={(e: any) => {
-                setImportPassword(e.detail?.value ?? e.target?.value ?? "");
+              {...bindField((value) => {
+                setImportPassword(value);
                 setPreview(undefined);
-              }}
+              })}
             />
             {!preview ? (
               <Button

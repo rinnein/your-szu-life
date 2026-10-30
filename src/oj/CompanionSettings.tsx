@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, Switch, TextField, Button } from "material/react";
-import { Chip } from "../ui";
+import { Chip, bindField } from "../ui";
 import type { Snapshot } from "./types";
 export function CompanionSettings({
   snapshot,
@@ -52,7 +52,7 @@ export function CompanionSettings({
           <TextField
             label="本机接收端口"
             value={port}
-            onChange={(e: any) => setPort(e.detail?.value ?? e.target?.value ?? "")}
+            {...bindField(setPort)}
             placeholder="默认 27121，与 cph-ng 保持一致"
           />
           <Button

@@ -14,7 +14,7 @@ import {
   TextField,
   Button,
 } from "material/react";
-import { Banner, Chip, toast } from "../ui";
+import { Banner, Chip, bindField, toast } from "../ui";
 import { LuBot, LuCircleCheck, LuClock, LuDatabase, LuSparkles } from "react-icons/lu";
 import { DimmedHtmlText, useHtmlTagVisibility } from "./DimmedHtmlText";
 import type { AiSessionEntry, QuizAnswers, QuizQuestion, QuizState, UoocSnapshot } from "./types";
@@ -1267,14 +1267,14 @@ export function QuizPanel({
                           label={`第 ${i + 1} 题 · 第 ${blank + 1} 空`}
                           value={answers[q.id]?.[blank] ?? ""}
                           disabled={disabled || quiz.stage === "passed"}
-                          onChange={(event) => {
+                          {...bindField((value) => {
                             const values = Array.from(
                               { length: q.blanks },
                               (_, j) => answers[q.id]?.[j] ?? "",
                             );
-                            values[blank] = event.detail.value;
+                            values[blank] = value;
                             set(q.id, values);
-                          }}
+                          })}
                           className="w-full"
                         />
                       </div>
@@ -1312,9 +1312,7 @@ export function QuizPanel({
                       label={`第 ${i + 1} 题作答`}
                       value={answers[q.id]?.[0] ?? ""}
                       disabled={disabled || quiz.stage === "passed"}
-                      onChange={(event: any) =>
-                        set(q.id, [event.detail?.value ?? event.target?.value ?? ""])
-                      }
+                      {...bindField((value) => set(q.id, [value]))}
                       className="w-full"
                     />
                   </div>

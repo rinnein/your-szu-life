@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "./ui";
+import { waitForUpgrade } from "./ui/testing";
 import type { StepNextAction } from "./step-next-action";
 import { ProfileForm } from "./ProfileForm";
 
@@ -79,6 +80,45 @@ describe("ProfileForm toast error notifications", () => {
       });
     });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("keeps and saves a campus card typed with input events only", async () => {
+    vi.mocked(invoke).mockResolvedValue(undefined);
+    const onSaved = vi.fn();
+    render(
+      <ProfileForm initial={{ studentId: "1234567890", hasPassword: true }} onSaved={onSaved} />,
+    );
+
+    // 顺序：姓名、学号、校园卡号、密码。
+    const field = document.querySelectorAll("m-text-field")[2] as HTMLElement;
+    await waitForUpgrade(field);
+    const input = field.shadowRoot!.querySelector("input") as HTMLInputElement;
+    // 真实键盘只发 input；change 要到失焦/回车才出现。
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "123456",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    });
+    // 适配器会在 input 事件的微任务里按受控 value 回写，键入内容不能被清空。
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(input.value).toBe("123456");
+
+    fireEvent.click(screen.getByRole("button", { name: "保存并进入工作台" }));
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("confirm_profile", {
+        input: {
+          studentId: "1234567890",
+          campusCardNumber: "123456",
+          name: undefined,
+          password: undefined,
+        },
+      });
+    });
+    expect(onSaved).toHaveBeenCalledTimes(1);
   });
 
   it("registers 保存并进入工作台 as the onboarding footer action", async () => {

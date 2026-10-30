@@ -5,6 +5,7 @@ import { useEnrollment } from "./use-enrollment";
 import { OperationError } from "./shared";
 import { loadPreferences } from "./preferences";
 import { gears, type Course, type Gear } from "./model";
+import { bindField } from "../ui";
 export default function CourseActionDialog({
   selection,
   onClose,
@@ -52,21 +53,17 @@ export default function CourseActionDialog({
           <p>退课后名额可能被其他人选走。</p>
         ) : (
           <div className="grid gap-3">
-            <TextField
-              label="备选组（留空为独立目标）"
-              value={group}
-              onChange={(e: any) => setGroup(e.detail?.value ?? e.target?.value ?? "")}
-            />
+            <TextField label="备选组（留空为独立目标）" value={group} {...bindField(setGroup)} />
             <TextField
               label="执行优先级"
               value={priority}
-              onChange={(e: any) => setPriority(e.detail?.value ?? e.target?.value ?? "")}
+              {...bindField(setPriority)}
               type="number"
             />
             <TextField
               label="预约时间（留空立即）"
               value={start}
-              onChange={(e: any) => setStart(e.detail?.value ?? e.target?.value ?? "")}
+              {...bindField(setStart)}
               type="datetime-local"
             />
             <div className="flex flex-wrap gap-2">
@@ -100,7 +97,7 @@ export default function CourseActionDialog({
                 <TextField
                   label="新课余量触发阈值"
                   value={threshold}
-                  onChange={(e: any) => setThreshold(e.detail?.value ?? e.target?.value ?? "")}
+                  {...bindField(setThreshold)}
                   type="number"
                 />
                 <p>确认后授权循环退旧抢新；新课满员会以 ultra 回抢旧课，但不保证能恢复原名额。</p>

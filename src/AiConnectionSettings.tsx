@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, Checkbox, LoadingIndicator, TextField, Button } from "material/react";
-import { Banner, toast } from "./ui";
+import { Banner, bindField, toast } from "./ui";
 import { useRegisterNextAction, type StepNextAction } from "./step-next-action";
 import type { AiConnections } from "./uooc/types";
 
@@ -144,8 +144,7 @@ export function AiConnectionForm({
             value={draft.connections[id].baseUrl}
             placeholder={placeholder}
             disabled={busy}
-            onChange={(e: any) => {
-              const value = e.detail?.value ?? e.target?.value ?? "";
+            {...bindField((value) =>
               setDraft(
                 (current) =>
                   current && {
@@ -155,8 +154,8 @@ export function AiConnectionForm({
                       [id]: { ...current.connections[id], baseUrl: value },
                     },
                   },
-              );
-            }}
+              ),
+            )}
           />
           <TextField
             type="password"
@@ -165,16 +164,15 @@ export function AiConnectionForm({
             placeholder={draft.connections[id].hasKey ? "已保存；留空保持不变" : "填写密钥"}
             autocomplete="new-password"
             disabled={busy}
-            onChange={(e: any) => {
-              const value = e.detail?.value ?? e.target?.value ?? "";
+            {...bindField((value) =>
               setDraft(
                 (current) =>
                   current && {
                     ...current,
                     keys: { ...current.keys, [id]: value },
                   },
-              );
-            }}
+              ),
+            )}
           />
           <Checkbox
             checked={draft.clear[id]}

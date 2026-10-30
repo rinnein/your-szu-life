@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { LuCheck, LuImage, LuPalette, LuRotateCcw } from "react-icons/lu";
 import { Button, Card, LoadingIndicator, Radio, Radios, Switch, TextField } from "material/react";
-import { Banner, NumberField, toast } from "./ui";
+import { Banner, NumberField, bindField, toast } from "./ui";
 import { useTheme } from "./theme/ThemeProvider";
 import {
   MODE_LABELS,
@@ -200,7 +200,7 @@ export function AppearanceSettings({
               <TextField
                 label="自定义颜色"
                 value={displayedSeed}
-                onChange={(e: any) => setCustomSeed(e.detail?.value ?? e.target?.value ?? "")}
+                {...bindField(setCustomSeed)}
                 supportingText={
                   seedLocked ? "当前壁纸提取的实际颜色" : "六位十六进制，例如 #5d5fef"
                 }

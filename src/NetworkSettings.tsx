@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { LuCheck, LuGlobe, LuRotateCcw } from "react-icons/lu";
 import { Button, Card, Radio, Radios, Switch, TextField } from "material/react";
-import { Banner, toast } from "./ui";
+import { Banner, bindField, toast } from "./ui";
 
 /** 代理模式：关闭 / 自动（系统代理与环境变量）/ 手动。 */
 export type ProxyMode = "off" | "auto" | "manual";
@@ -206,7 +206,7 @@ export function NetworkSettings() {
                 label="服务器地址"
                 value={host}
                 disabled={loading}
-                onChange={(event: any) => setHost(event.detail?.value ?? event.target?.value ?? "")}
+                {...bindField(setHost)}
                 supportingText="主机名或 IP，不要带协议前缀"
               />
               <TextField
@@ -214,7 +214,7 @@ export function NetworkSettings() {
                 type="number"
                 value={port}
                 disabled={loading}
-                onChange={(event: any) => setPort(event.detail?.value ?? event.target?.value ?? "")}
+                {...bindField(setPort)}
                 supportingText="1 - 65535"
               />
             </div>
@@ -223,18 +223,14 @@ export function NetworkSettings() {
                 label="用户名（可选）"
                 value={username}
                 disabled={loading}
-                onChange={(event: any) =>
-                  setUsername(event.detail?.value ?? event.target?.value ?? "")
-                }
+                {...bindField(setUsername)}
               />
               <TextField
                 label="密码（可选）"
                 type="password"
                 value={password}
                 disabled={loading}
-                onChange={(event: any) =>
-                  setPassword(event.detail?.value ?? event.target?.value ?? "")
-                }
+                {...bindField(setPassword)}
                 supportingText={saved.hasPassword ? "留空表示沿用已保存的密码" : undefined}
               />
             </div>

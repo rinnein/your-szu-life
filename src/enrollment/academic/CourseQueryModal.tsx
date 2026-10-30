@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Dialog, TextField, Button } from "material/react";
-import { Chip, Table } from "../../ui";
+import { Chip, Table, bindField } from "../../ui";
 import { Choice } from "../shared";
 import { useLogicalNavigation } from "../../logical-navigation";
 import {
@@ -66,7 +66,7 @@ export default function CourseQueryModal({
           <TextField
             label="课程名称或代码"
             value={filters.query}
-            onChange={(e: any) => update({ query: e.detail?.value ?? e.target?.value ?? "" })}
+            {...bindField((value) => update({ query: value }))}
             placeholder="在此分支内检索"
           />
           <Button

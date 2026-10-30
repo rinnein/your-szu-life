@@ -17,7 +17,7 @@ import {
 } from "material/react";
 import { useSelector } from "@tanstack/react-store";
 import { ojProgressCache, progressScope, progressScopeKey } from "./progress-store";
-import { Banner, Chip, AdaptiveTabs } from "../ui";
+import { AdaptiveTabs, Banner, Chip, bindField } from "../ui";
 import renderMathInElement from "katex/contrib/auto-render";
 import "katex/dist/katex.min.css";
 import { useLogicalNavigation } from "../logical-navigation";
@@ -767,14 +767,13 @@ export function OjPaper({
               key={i}
               disabled={!writable}
               value={String(Array.isArray(draft.answer) ? (draft.answer[i] ?? "") : "")}
-              onChange={(e: any) => {
-                const value = e.detail?.value ?? e.target?.value ?? "";
+              {...bindField((value) => {
                 const values = Array.from({ length: p.blanks }, (_, j) =>
                   String(Array.isArray(draft.answer) ? (draft.answer[j] ?? "") : ""),
                 );
                 values[i] = value;
                 edit({ answer: values });
-              }}
+              })}
             />
           ))
         ) : (
@@ -785,7 +784,7 @@ export function OjPaper({
               label="问答题作答"
               disabled={!writable}
               value={typeof draft.answer === "string" ? draft.answer : ""}
-              onChange={(event) => edit({ answer: event.detail.value })}
+              {...bindField((value) => edit({ answer: value }))}
               placeholder="填写答案，草稿自动保存在本机"
               className="w-full"
             />

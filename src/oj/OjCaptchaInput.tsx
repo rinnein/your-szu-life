@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
 import { Card, LoadingIndicator, TextField, Button } from "material/react";
-import { toast } from "../ui";
+import { bindField, toast } from "../ui";
 import { LuLogIn, LuRefreshCw, LuSparkles } from "react-icons/lu";
 import { useOcrModelStatus } from "../OcrModelSettings";
 import type { Site } from "./types";
@@ -170,7 +170,7 @@ export default function OjCaptchaInput({
         <TextField
           label="验证码"
           value={answer}
-          onChange={(e: any) => setAnswer(e.detail?.value ?? e.target?.value ?? "")}
+          {...bindField(setAnswer)}
           disabled={locked}
           autocomplete="off"
           placeholder="输入图片中的验证码"

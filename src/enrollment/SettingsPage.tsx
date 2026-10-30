@@ -7,6 +7,7 @@ import AccessModes from "./AccessModes";
 import { Choice, OperationError } from "./shared";
 import { loadPreferences, savePreferences } from "./preferences";
 import { gears, type Gear } from "./model";
+import { bindField } from "../ui";
 type Options = {
   batches: { code: string; name: string; typeName: string }[];
   campuses: { code: string; name: string }[];
@@ -45,9 +46,7 @@ export default function SettingsPage() {
           <TextField
             label="默认预约时间"
             value={prefs.startAt}
-            onChange={(e: any) =>
-              setPrefs((p) => ({ ...p, startAt: e.detail?.value ?? e.target?.value ?? "" }))
-            }
+            {...bindField((value) => setPrefs((p) => ({ ...p, startAt: value })))}
             type="datetime-local"
           />
         </div>

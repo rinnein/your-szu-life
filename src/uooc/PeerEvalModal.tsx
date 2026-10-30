@@ -10,7 +10,7 @@ import {
   TextField,
   Button,
 } from "material/react";
-import { Banner, Chip, NumberField, toast } from "../ui";
+import { Banner, Chip, NumberField, bindField, toast } from "../ui";
 import { LuCheck, LuSend, LuSparkles, LuUsers } from "react-icons/lu";
 import type { PeerEvalTask, PeerSubmission, UoocCourse } from "./types";
 
@@ -294,13 +294,12 @@ export function PeerEvalModal({ isOpen, onClose, courses, defaultCid }: PeerEval
                                     type="multiline"
                                     label="互评评语"
                                     value={comments[sub.evalId] ?? ""}
-                                    onChange={(event: any) =>
+                                    {...bindField((value) =>
                                       setComments((prev) => ({
                                         ...prev,
-                                        [sub.evalId]:
-                                          event.detail?.value ?? event.target?.value ?? "",
-                                      }))
-                                    }
+                                        [sub.evalId]: value,
+                                      })),
+                                    )}
                                     disabled={sub.isEvaluated}
                                     placeholder="输入正面鼓励或建议评语…"
                                     className="w-full"

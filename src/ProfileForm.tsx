@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, LoadingIndicator, TextField, Button } from "material/react";
-import { toast } from "./ui";
+import { bindField, toast } from "./ui";
 import { useRegisterNextAction, type StepNextAction } from "./step-next-action";
 import type { Profile } from "./auth";
 
@@ -95,7 +95,7 @@ export function ProfileForm({
               label="姓名"
               value={displayName}
               placeholder="登录后自动获取"
-              onChange={(e: any) => setDisplayName(e.detail?.value ?? e.target?.value ?? "")}
+              {...bindField(setDisplayName)}
             />
           )}
           <TextField
@@ -104,14 +104,14 @@ export function ProfileForm({
             required
             value={studentId}
             disabled={onlyCampusCard}
-            onChange={(e: any) => setStudentId(e.detail?.value ?? e.target?.value ?? "")}
+            {...bindField(setStudentId)}
           />
           <TextField
             name="campusCardNumber"
             label="校园卡号"
             required
             value={campusCardNumber}
-            onChange={(e: any) => setCampusCardNumber(e.detail?.value ?? e.target?.value ?? "")}
+            {...bindField(setCampusCardNumber)}
           />
           {!onlyCampusCard && (
             <TextField
@@ -121,7 +121,7 @@ export function ProfileForm({
               required={!initial?.hasPassword}
               value={password}
               placeholder={initial?.hasPassword ? "已保存（输入新密码可覆盖）" : "请输入密码"}
-              onChange={(e: any) => setPassword(e.detail?.value ?? e.target?.value ?? "")}
+              {...bindField(setPassword)}
             />
           )}
           {!onboarding && (

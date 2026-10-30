@@ -5,7 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useChannelSubscription } from "../tauri-channel";
 import { listen } from "@tauri-apps/api/event";
 import { Card, Checkbox, Dialog, LoadingIndicator, TextField, Button } from "material/react";
-import { Chip, toast } from "../ui";
+import { Chip, bindField, toast } from "../ui";
 import { ModuleHeader, PageShell } from "../components";
 import { useLogicalNavigation } from "../logical-navigation";
 import { OjPaper } from "./OjPaper";
@@ -307,7 +307,7 @@ export default function OjPage() {
             <TextField
               label="查找 OJ"
               value={query}
-              onChange={(e: any) => setQuery(e.detail?.value ?? e.target?.value ?? "")}
+              {...bindField(setQuery)}
               placeholder="名称、地址或账号"
             />
             {[true, false].map((enabled) => (
@@ -360,7 +360,7 @@ export default function OjPage() {
             <TextField
               label={search.group ? "查找测验" : "查找班级"}
               value={query}
-              onChange={(e: any) => setQuery(e.detail?.value ?? e.target?.value ?? "")}
+              {...bindField(setQuery)}
               placeholder={search.group ? "输入测验名称" : "输入班级名称"}
             />
             {!search.group ? (
@@ -495,14 +495,14 @@ export function SiteEditor({
         <TextField
           label="名称"
           value={name}
-          onChange={(e: any) => setName(e.detail?.value ?? e.target?.value ?? "")}
+          {...bindField(setName)}
           required
           placeholder="例如：数据结构 OJ"
         />
         <TextField
           label="OJ 地址"
           value={url}
-          onChange={(e: any) => setUrl(e.detail?.value ?? e.target?.value ?? "")}
+          {...bindField(setUrl)}
           required
           type="url"
           placeholder="http://172.31.221.67/"
@@ -510,17 +510,17 @@ export function SiteEditor({
         <TextField
           label="账号"
           value={username}
-          onChange={(e: any) => {
+          {...bindField((value) => {
             usernameEdited.current = true;
-            setUsername(e.detail?.value ?? e.target?.value ?? "");
-          }}
+            setUsername(value);
+          })}
           autocomplete="username"
           placeholder="输入 OJ 账号，默认使用学号"
         />
         <TextField
           label={`密码${site?.enabled ? "（留空保留原密码）" : ""}`}
           value={password}
-          onChange={(e: any) => setPassword(e.detail?.value ?? e.target?.value ?? "")}
+          {...bindField(setPassword)}
           type="password"
           autocomplete="new-password"
           placeholder={site?.enabled ? "留空保留已保存的密码" : "输入 OJ 密码"}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, LoadingIndicator, TextField, Button } from "material/react";
-import { Banner, toast } from "./ui";
+import { Banner, bindField, toast } from "./ui";
 import { LuZap } from "react-icons/lu";
 import { copyText } from "./clipboard";
 import { ElectricityDetails } from "./ElectricityDetails";
@@ -163,8 +163,6 @@ export default function CampusPaymentsElectricityPage() {
     setError(undefined);
     setSettings(next);
   };
-  const changeImportText = (event: any) =>
-    setImportText(event.detail?.value ?? event.target?.value ?? "");
   const submit = async () => {
     if (!canQuery) {
       setConfirmOpen(false);
@@ -393,8 +391,7 @@ export default function CampusPaymentsElectricityPage() {
                 <TextField
                   label="宿舍配置码"
                   value={importText}
-                  onInput={changeImportText}
-                  onChange={changeImportText}
+                  {...bindField(setImportText)}
                   disabled={formDisabled}
                   placeholder="粘贴分享的宿舍配置码"
                 />

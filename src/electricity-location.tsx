@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { Button, Dialog, LoadingIndicator, Select, SelectOption, TextField } from "material/react";
 import { getElectricityRoomFloor, type ElectricitySettings } from "./electricity";
+import { bindField } from "./ui";
 
 export type ElectricityBuilding = { id: string; name: string };
 export type ElectricityArea = {
@@ -213,14 +214,12 @@ export function ElectricityLocationFields({
     update({ ...value, buildingId, buildingName: nextBuilding?.name ?? "" });
   };
 
-  // material 的 React 适配器会在原生 input 事件后按上一次受控 value 回写，
-  // 只监听 change 会让每次键入都被旧状态覆盖；onInput 负责键入，onChange 兜住
-  // 失焦/回车与测试里的直接 change 事件。键入时只更新文本，失焦后再清掉
-  // 已不可选的位置——避免中间态（如 120 被识别成 1 层）把已选楼栋丢掉。
-  const changeRoom = (event: any) =>
-    onChange({ ...value, roomName: event.detail?.value ?? event.target?.value ?? "" });
-  const commitRoom = (event: any) =>
-    update({ ...value, roomName: event.detail?.value ?? event.target?.value ?? "" });
+  // 键入只更新文本，失焦后才清掉已不可选的位置——避免中间态（如 120 被识别成
+  // 1 层）把已选楼栋丢掉；这两个回调的差异由 bindField 的 input/change 分别承接。
+  const roomNameField = bindField({
+    input: (roomName) => onChange({ ...value, roomName }),
+    change: (roomName) => update({ ...value, roomName }),
+  });
 
   return (
     <div className="electricity-fields">
@@ -238,8 +237,7 @@ export function ElectricityLocationFields({
         disabled={disabled}
         value={value.roomName}
         inputMode="numeric"
-        onInput={changeRoom}
-        onChange={commitRoom}
+        {...roomNameField}
         placeholder="如 601 或 1201"
       />
       <TextField

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { Card, TextField, Button } from "material/react";
-import { Chip } from "../ui";
+import { Chip, bindField } from "../ui";
 import { LuPin, LuSearch, LuRefreshCw } from "react-icons/lu";
 import { EmptyState } from "../components";
 import { useCacheMode, canSelect } from "./view-mode";
@@ -87,7 +87,7 @@ export default function CatalogPage() {
           <TextField
             label="搜索课程"
             value={keyword}
-            onChange={(e: any) => setKeyword(e.detail?.value ?? e.target?.value ?? "")}
+            {...bindField(setKeyword)}
             onKeyDown={(e: React.ChangeEvent<HTMLTextAreaElement> | any) =>
               e.key === "Enter" && refresh()
             }
@@ -113,13 +113,13 @@ export default function CatalogPage() {
             <TextField
               label="本页教师"
               value={teacher}
-              onChange={(e: any) => setTeacher(e.detail?.value ?? e.target?.value ?? "")}
+              {...bindField(setTeacher)}
               placeholder="不限教师"
             />
             <TextField
               label="本页上课时间"
               value={time}
-              onChange={(e: any) => setTime(e.detail?.value ?? e.target?.value ?? "")}
+              {...bindField(setTime)}
               placeholder="例如 星期一"
             />
           </div>

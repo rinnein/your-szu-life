@@ -12,7 +12,7 @@ import {
   Tab,
   Tabs,
 } from "material/react";
-import { Banner, toast } from "./ui";
+import { Banner, bindField, toast } from "./ui";
 import { nameTablist } from "./ui/tablist";
 import { ModuleHeader, PageShell } from "./components";
 import StaffNetworkPanel from "./StaffNetworkPanel";
@@ -477,7 +477,7 @@ export default function CampusNetworkPage() {
                       className="field"
                       name="dormCampusCard"
                       value={card}
-                      onChange={(e: any) => setCard(e.detail?.value ?? e.target?.value ?? "")}
+                      {...bindField(setCard)}
                       placeholder="6 位数字"
                     />
                     <TextField
@@ -487,7 +487,7 @@ export default function CampusNetworkPage() {
                       className="field"
                       name="dormPassword"
                       value={password}
-                      onChange={(e: any) => setPassword(e.detail?.value ?? e.target?.value ?? "")}
+                      {...bindField(setPassword)}
                       placeholder={
                         settings?.customConfigured ? "已保存（输入新密码可覆盖）" : "请输入密码"
                       }

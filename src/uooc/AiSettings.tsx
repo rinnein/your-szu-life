@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, Checkbox, LoadingIndicator, Select, SelectOption, Button } from "material/react";
-import { Banner, NumberField, toast } from "../ui";
+import { Banner, NumberField, bindField, toast } from "../ui";
 import type { AiConfig, QuizMode } from "./types";
 
 export const modeLabels: Record<QuizMode, string> = {
@@ -200,22 +200,11 @@ export function AiSettings({
             <div className="flex flex-wrap items-end gap-3">
               <div
                 className="min-w-0 flex-1 basis-64"
-                onInput={(e: any) => {
-                  const val = e.target?.value;
-                  if (typeof val === "string") {
-                    setConfig((old) =>
-                      old ? { ...old, [provider]: { ...old[provider], model: val } } : old,
-                    );
-                  }
-                }}
-                onChange={(e: any) => {
-                  const val = e.detail?.value ?? e.target?.value;
-                  if (typeof val === "string") {
-                    setConfig((old) =>
-                      old ? { ...old, [provider]: { ...old[provider], model: val } } : old,
-                    );
-                  }
-                }}
+                {...bindField((model) =>
+                  setConfig((old) =>
+                    old ? { ...old, [provider]: { ...old[provider], model } } : old,
+                  ),
+                )}
                 onClick={() => {
                   if (
                     models[provider].length === 0 &&

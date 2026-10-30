@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Button, Card, LoadingIndicator, TextField } from "material/react";
-import { Banner, toast } from "../ui";
+import { Banner, bindField, toast } from "../ui";
 import { authFailureFor, beginAuthentication, useAuth, type AuthState } from "../auth";
 import { ProfileForm } from "../ProfileForm";
 import { useRegisterNextAction, type StepNextAction } from "../step-next-action";
@@ -272,7 +272,7 @@ export function AuthStep({ onComplete, registerNext, reauth }: StepProps) {
             required
             disabled={busy}
             supportingText="6 位数字"
-            onChange={(e: any) => setCampusCard(e.detail?.value ?? e.target?.value ?? "")}
+            {...bindField(setCampusCard)}
           />
           <TextField
             label="登录密码"
@@ -281,7 +281,7 @@ export function AuthStep({ onComplete, registerNext, reauth }: StepProps) {
             required
             disabled={busy}
             autocomplete="current-password"
-            onChange={(e: any) => setPassword(e.detail?.value ?? e.target?.value ?? "")}
+            {...bindField(setPassword)}
           />
         </form>
       </div>

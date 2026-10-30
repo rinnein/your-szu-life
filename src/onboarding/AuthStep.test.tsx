@@ -1,11 +1,11 @@
 /** @vitest-environment jsdom */
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { toast } from "../ui";
-import { typeInto } from "../ui/testing";
+import { typeInto, waitForUpgrade } from "../ui/testing";
 import type { StepNextAction } from "../step-next-action";
 import { AuthStep } from "./AuthStep";
 
@@ -59,6 +59,21 @@ function fill(container: HTMLElement, campusCard: string, password: string) {
   typeInto(fields[1] as HTMLElement, password);
 }
 
+/**
+ * 只走真实键盘会发出的那一层事件：inner input 的 `input`。
+ *
+ * `typeInto` 会额外在宿主上派发 change，因此掩盖了「适配器按旧受控值回写」的问题；
+ * 用户键入时 change 要到失焦/回车才出现。这里保留最小事件序列，防止回归。
+ */
+function typeKeyboard(field: HTMLElement, value: string): HTMLInputElement {
+  const input = field.shadowRoot!.querySelector("input") as HTMLInputElement;
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+  });
+  return input;
+}
+
 describe("AuthStep", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -80,6 +95,27 @@ describe("AuthStep", () => {
 
     await vi.waitFor(() => {
       expect(api.beginSetupAuthentication).toHaveBeenCalledWith("123456", "<PASSWORD>");
+    });
+  });
+
+  it("keeps credentials typed with input events only and submits them", async () => {
+    const { container } = render(<Harness />);
+    const fields = container.querySelectorAll("m-text-field");
+    await waitForUpgrade(fields[0] as HTMLElement);
+    await waitForUpgrade(fields[1] as HTMLElement);
+
+    const card = typeKeyboard(fields[0] as HTMLElement, "123456");
+    const password = typeKeyboard(fields[1] as HTMLElement, "s3cret");
+    // 适配器会在 input 事件的微任务里按受控 value 回写，键入内容不能被清空。
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(card.value).toBe("123456");
+    expect(password.value).toBe("s3cret");
+
+    fireEvent.click(await screen.findByRole("button", { name: "登录并继续" }));
+    await vi.waitFor(() => {
+      expect(api.beginSetupAuthentication).toHaveBeenCalledWith("123456", "s3cret");
     });
   });
 

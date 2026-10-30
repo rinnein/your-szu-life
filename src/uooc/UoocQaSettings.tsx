@@ -14,7 +14,7 @@ import {
   TextField,
   Button,
 } from "material/react";
-import { Banner, Chip, Pagination, toast } from "../ui";
+import { Banner, Chip, Pagination, bindField, toast } from "../ui";
 import {
   LuCircleCheck,
   LuClock,
@@ -1069,9 +1069,7 @@ export function UoocQaSettings({
                   supportingText="修改题库共享平台的后端服务地址 (RFC 8628 设备认证与上传接口)"
                   value={qaServerUrl ?? DEFAULT_QA_SERVER_URL}
                   disabled={disabled}
-                  onChange={(e: any) =>
-                    onQaServerUrlChange?.(e.detail?.value ?? e.target?.value ?? "")
-                  }
+                  {...bindField((value) => onQaServerUrlChange?.(value))}
                 />
               </div>
               {onSaveSettings && (
@@ -1182,7 +1180,7 @@ export function UoocQaSettings({
                     aria-label="题库 API Key"
                     value={customApiKey}
                     disabled={disabled || savingKey}
-                    onChange={(e: any) => setCustomApiKey(e.detail?.value ?? e.target?.value ?? "")}
+                    {...bindField(setCustomApiKey)}
                   />
                 </div>
                 <Button
@@ -1442,10 +1440,10 @@ export function UoocQaSettings({
                     placeholder="搜索题干关键词、题号、题组 (tid) 或答案内容..."
                     aria-label="搜索题库内容"
                     value={bankSearchQuery}
-                    onChange={(e: any) => {
-                      setBankSearchQuery(e.detail?.value ?? e.target?.value ?? "");
+                    {...bindField((value) => {
+                      setBankSearchQuery(value);
                       setBankPage(1);
-                    }}
+                    })}
                   />
 
                   <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -1647,7 +1645,7 @@ export function UoocQaSettings({
                 aria-label="题目搜索"
                 value={searchQuery}
                 disabled={searching}
-                onChange={(e: any) => setSearchQuery(e.detail?.value ?? e.target?.value ?? "")}
+                {...bindField(setSearchQuery)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
