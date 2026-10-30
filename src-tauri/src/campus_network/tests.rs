@@ -608,7 +608,7 @@ fn result_policy_keeps_success_already_online_and_business_failure_distinct() {
             consecutive_failures: 7,
             ..Default::default()
         };
-        apply_login_status(&mut status, &result, 1000);
+        apply_login_status(&mut status, &result);
         assert_eq!(
             status.state,
             if expected_ok {
@@ -619,7 +619,7 @@ fn result_policy_keeps_success_already_online_and_business_failure_distinct() {
         );
         assert_eq!(status.last_result, Some(result));
         if expected_ok {
-            assert_eq!(status.next_probe_at_ms, Some(601000));
+            assert_eq!(status.next_probe_at_ms, None);
             assert_eq!(status.consecutive_failures, 0);
         }
     }

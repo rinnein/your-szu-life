@@ -56,6 +56,9 @@ fn transport_failure(
                 ..Default::default()
             },
         );
+        if failures.0 == 1 {
+            dorm_notify_failure(app, message);
+        }
     });
     message.into()
 }
@@ -117,23 +120,36 @@ fn perform_dorm_login(
         guard
             .commit(|| {
                 set_dorm_status(&app, |status| {
-                    apply_login_status(status, &view, now_ms());
-                    if !dorm_settings(&store).is_ok_and(|settings| settings.enabled) {
-                        status.next_probe_at_ms = None;
-                    }
+                    apply_login_status(status, &view);
                 })
             })
             .ok_or("登录已取消")?;
         return Ok(view);
     }
-    let context = observation
-        .dorm
-        .context
-        .ok_or("门户未提供有效终端 IP，未发送登录请求")?;
+    let context = match observation.dorm.context {
+        Some(context) => context,
+        None => {
+            return Err(transport_failure(
+                &app,
+                guard,
+                "门户未提供有效终端 IP，稍后重试",
+                overview.portal_reachable,
+                None,
+            ));
+        }
+    };
     // Credentials are read only AFTER the same classification used by the monitor approves dorm login.
     let settings = dorm_settings(&store)?;
     let (card, password) =
-        dormant_credentials(&app, &store, &settings).map_err(|_| "当前校园网凭据不可用")?;
+        dormant_credentials(&app, &store, &settings).map_err(|_| {
+            transport_failure(
+                &app,
+                guard,
+                "当前校园网凭据不可用，稍后自动重试",
+                overview.portal_reachable,
+                None,
+            )
+        })?;
     let callback = format!("dr{}", 1000 + now_ms() % 9000);
     let desktop = cfg!(target_os = "windows") || cfg!(target_os = "macos");
     let account = format!("{}{card}", if desktop { ",0," } else { ",1," });
@@ -211,10 +227,7 @@ fn perform_dorm_login(
     guard
         .commit(|| {
             set_dorm_status(&app, |status| {
-                apply_login_status(status, &view, now_ms());
-                if !dorm_settings(&store).is_ok_and(|settings| settings.enabled) {
-                    status.next_probe_at_ms = None;
-                }
+                apply_login_status(status, &view);
             });
             let message = if view.already_online {
                 "当前设备已在线"
@@ -315,17 +328,15 @@ pub(super) fn login_result_from_response(
     }
 }
 
-pub(super) fn apply_login_status(
-    status: &mut DormLoginStatusView,
-    view: &DormLoginResultView,
-    now: u64,
-) {
+pub(super) fn apply_login_status(status: &mut DormLoginStatusView, view: &DormLoginResultView) {
     status.portal_reachable = true;
     status.last_result = Some(view.clone());
     if view.ok {
         status.state = DormLoginState::Online;
         status.consecutive_failures = 0;
-        status.next_probe_at_ms = Some(now + 600_000);
+        // No probe cooldown: the next monitor tick either confirms Online or,
+        // seeing NotLoggedIn while Online, re-arms an immediate retry.
+        status.next_probe_at_ms = None;
     } else {
         status.state = DormLoginState::Paused;
         status.next_probe_at_ms = None;
