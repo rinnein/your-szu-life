@@ -53,6 +53,12 @@ export function getElectricityRoomFloor(roomName: string): number | null {
   if (!/^\d{3,4}$/.test(normalized)) return null;
   return Number(normalized.slice(0, -2));
 }
+/** 只有确实拿到读数或余额时才算查询成功，避免把无效宿舍落库。 */
+export function hasElectricityData(
+  result: Pick<ElectricityResult, "currentRemaining" | "readings">,
+): boolean {
+  return result.currentRemaining != null || result.readings.length > 0;
+}
 /** Backend-owned tariff; no duplicate frontend rate or silently assumed fallback. */
 let constantsRequest: Promise<ElectricityConstants> | undefined;
 export function getElectricityConstants() {

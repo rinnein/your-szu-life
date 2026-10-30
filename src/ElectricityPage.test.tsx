@@ -168,17 +168,22 @@ it.each([
       return undefined;
     });
     render(<CampusPaymentsElectricityPage />);
-    const campusTrigger = await waitFor(() => {
-      const trigger =
-        screen.queryByRole("button", { name: /校区/ }) ??
-        screen.getByRole("combobox", { name: /校区/ });
-      expect(trigger).toBeEnabled();
-      return trigger;
+    // 宿舍号先填，楼层识别完成后才会放开位置选择。
+    const room = await waitFor(() => {
+      const field = screen.getByRole("textbox", { name: "宿舍号" });
+      expect(field).toBeEnabled();
+      return field;
     });
-    fireEvent.click(campusTrigger);
+    const floor = screen.getByRole("textbox", { name: "所在楼层" });
+    const findCampus = () =>
+      screen.queryByRole("button", { name: /校区/ }) ??
+      screen.getByRole("combobox", { name: /校区/ });
+    // 宿舍号没填或格式不对时，位置选择保持禁用。
+    expect(findCampus()).toBeDisabled();
+    typeInto(room, "601");
+    await waitFor(() => expect(findCampus()).toBeEnabled());
+    fireEvent.click(findCampus());
     fireEvent.click(await screen.findByRole("option", { name: campusName }));
-    const room = screen.getByRole("textbox", { name: "宿舍号" });
-    const floor = screen.getByRole("textbox", { name: "楼层范围" });
     for (const [roomName, expected] of [
       ["601", "6 层"],
       ["1201", "12 层"],
@@ -198,6 +203,7 @@ it.each([
     );
     typeInto(room, "1201");
     fireEvent.click(screen.getByRole("button", { name: "查询电费" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认并查询" }));
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("query_electricity", {
         input: { campusId, areaId, buildingId: "b1", buildingName: "测试楼栋", roomName: "1201" },
@@ -205,6 +211,85 @@ it.each([
     );
   },
 );
+it("filters campuses and buildings by the inferred floor and auto-selects single children", async () => {
+  const lowRise = ["山茶斋", "1", "-", "5"].join("");
+  const highRise = ["文韬楼", "6", "-", "12"].join("");
+  const otherRise = ["云杉轩", "8", "-", "10"].join("");
+  const roomNumber = "601";
+  mock((command) => {
+    if (command === "get_electricity_settings") return null;
+    if (command === "get_electricity_options")
+      return [
+        {
+          id: "yuehai",
+          name: "粤海校区",
+          areas: [
+            {
+              id: "yuehai-main",
+              name: "粤海宿舍",
+              campusId: "yuehai",
+              provider: "sims",
+              buildings: [
+                { id: "b1", name: lowRise },
+                { id: "b2", name: highRise },
+              ],
+            },
+          ],
+        },
+        {
+          id: "xili",
+          name: "西丽校区",
+          areas: [
+            {
+              id: "xili-main",
+              name: "丽湖宿舍",
+              campusId: "xili",
+              provider: "sims",
+              buildings: [{ id: "b3", name: otherRise }],
+            },
+          ],
+        },
+      ];
+    return undefined;
+  });
+  render(<CampusPaymentsElectricityPage />);
+  const room = await waitFor(() => {
+    const field = screen.getByRole("textbox", { name: "宿舍号" });
+    expect(field).toBeEnabled();
+    return field;
+  });
+  typeInto(room, roomNumber);
+  const campus = () =>
+    screen.queryByRole("button", { name: /校区/ }) ??
+    screen.getByRole("combobox", { name: /校区/ });
+  await waitFor(() => expect(campus()).toBeEnabled());
+  fireEvent.click(campus());
+  expect(await screen.findByRole("option", { name: "粤海校区" })).toBeInTheDocument();
+  expect(screen.queryByRole("option", { name: "西丽校区" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("option", { name: "粤海校区" }));
+  // 区域只有唯一选项，已自动选中；楼栋有两个，保持未选中。
+  const building = () =>
+    screen.queryByRole("button", { name: /楼栋/ }) ??
+    screen.getByRole("combobox", { name: "楼栋" });
+  await waitFor(() => expect(building()).toBeEnabled());
+  fireEvent.click(building());
+  expect(await screen.findByRole("option", { name: highRise })).toBeInTheDocument();
+  expect(screen.queryByRole("option", { name: lowRise })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("option", { name: highRise }));
+  fireEvent.click(screen.getByRole("button", { name: "查询电费" }));
+  fireEvent.click(await screen.findByRole("button", { name: "确认并查询" }));
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("query_electricity", {
+      input: {
+        campusId: "yuehai",
+        areaId: "yuehai-main",
+        buildingId: "b2",
+        buildingName: highRise,
+        roomName: roomNumber,
+      },
+    }),
+  );
+});
 it("retries only recharge data while keeping usage details visible", async () => {
   mock((command) =>
     command === "query_electricity"
@@ -341,6 +426,7 @@ it("saves and queries a repaired legacy room in canonical form", async () => {
   await waitFor(() => expect(room).toBeEnabled());
   typeInto(room, " 1201 ");
   fireEvent.click(screen.getByRole("button", { name: "查询电费" }));
+  fireEvent.click(await screen.findByRole("button", { name: "确认并查询" }));
   const canonical = { ...saved, roomName: "1201" };
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("save_electricity_settings", { settings: canonical }),
@@ -349,4 +435,24 @@ it("saves and queries a repaired legacy room in canonical form", async () => {
     expect(invoke).toHaveBeenCalledWith("query_electricity", { input: canonical }),
   );
   expect(await screen.findByText("山茶斋 1201")).toBeInTheDocument();
+});
+
+it("keeps the dorm config unsaved when the query returns no data", async () => {
+  mock((command) => {
+    if (command === "get_electricity_settings") return { ...saved, roomName: "51" };
+    if (command === "query_electricity") return { ...result, currentRemaining: null, readings: [] };
+    return undefined;
+  });
+  render(<CampusPaymentsElectricityPage />);
+  const room = await screen.findByRole("textbox", { name: "宿舍号" });
+  await waitFor(() => expect(room).toBeEnabled());
+  typeInto(room, "1201");
+  fireEvent.click(screen.getByRole("button", { name: "查询电费" }));
+  fireEvent.click(await screen.findByRole("button", { name: "确认并查询" }));
+  expect(
+    await screen.findByText("未查询到该宿舍的电费信息，请检查宿舍信息后重试。配置尚未保存。"),
+  ).toBeInTheDocument();
+  expect(
+    vi.mocked(invoke).mock.calls.some(([command]) => command === "save_electricity_settings"),
+  ).toBe(false);
 });

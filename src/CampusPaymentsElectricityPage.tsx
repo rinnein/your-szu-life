@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Card, LoadingIndicator, Select, SelectOption, TextField, Button } from "material/react";
+import { Card, LoadingIndicator, TextField, Button } from "material/react";
 import { Banner, toast } from "./ui";
 import { LuZap } from "react-icons/lu";
 import { copyText } from "./clipboard";
@@ -9,42 +9,17 @@ import { Card as UiCard, SkeletonCard } from "./components";
 import {
   getElectricityConstants,
   getElectricityRoomFloor,
+  hasElectricityData,
   type ElectricitySettings as Settings,
   type ElectricityResult as Result,
   type ElectricityRecharge,
 } from "./electricity";
-
-type Building = { id: string; name: string };
-type Area = { id: string; name: string; campusId: string; provider: string; buildings: Building[] };
-type Campus = { id: string; name: string; areas: Area[] };
-function LocationSelect({
-  label,
-  value,
-  options,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: { id: string; name: string }[];
-  disabled?: boolean;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <Select
-      label={label}
-      value={value || ""}
-      disabled={disabled}
-      onChange={(e: any) => onChange(e.detail?.value ?? e.target?.value ?? "")}
-    >
-      {options.map((option) => (
-        <SelectOption key={option.id} value={option.id}>
-          {option.name}
-        </SelectOption>
-      ))}
-    </Select>
-  );
-}
+import {
+  ElectricityLocationConfirmDialog,
+  ElectricityLocationFields,
+  isElectricitySelectionAvailable,
+  type ElectricityCampus as Campus,
+} from "./electricity-location";
 
 export default function CampusPaymentsElectricityPage() {
   const [campuses, setCampuses] = useState<Campus[]>([]);
@@ -69,6 +44,7 @@ export default function CampusPaymentsElectricityPage() {
   const [exportText, setExportText] = useState("");
   const [sharing, setSharing] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const requestId = useRef(0);
   useEffect(() => {
     let active = true;
@@ -172,51 +148,65 @@ export default function CampusPaymentsElectricityPage() {
       active = false;
     };
   }, [loading, savedSettings, editing]);
-  const campus = campuses.find((x) => x.id === settings.campusId);
-  const area = campus?.areas.find((x) => x.id === settings.areaId);
-  const buildings = area?.buildings ?? [];
   const roomFloor = getElectricityRoomFloor(settings.roomName);
   const canQuery = Boolean(
     settings.campusId &&
     settings.areaId &&
     settings.buildingId &&
     settings.roomName.trim() &&
-    roomFloor !== null,
+    roomFloor !== null &&
+    isElectricitySelectionAvailable(campuses, settings),
   );
-  const chooseCampus = (campusId: string) => {
-    requestId.current += 1;
-    const next = campuses.find((x) => x.id === campusId);
-    const nextArea = next?.areas[0];
-    const nextBuilding = nextArea?.buildings[0];
-    setSettings((s) => ({
-      ...s,
-      campusId,
-      areaId: nextArea?.id ?? "",
-      buildingId: nextBuilding?.id ?? "",
-      buildingName: nextBuilding?.name ?? "",
-    }));
-    setResult(undefined);
-  };
-  const chooseArea = (areaId: string) => {
-    requestId.current += 1;
-    const next = campus?.areas.find((x) => x.id === areaId);
-    const nextBuilding = next?.buildings[0];
-    setSettings((s) => ({
-      ...s,
-      areaId,
-      buildingId: nextBuilding?.id ?? "",
-      buildingName: nextBuilding?.name ?? "",
-    }));
-    setResult(undefined);
-  };
-  const chooseBuilding = (buildingId: string) => {
+  const changeLocation = (next: Settings) => {
     requestId.current += 1;
     setResult(undefined);
-    const next = buildings.find((x) => x.id === buildingId);
-    setSettings((s) => ({ ...s, buildingId, buildingName: next?.name ?? "" }));
+    setError(undefined);
+    setSettings(next);
   };
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const changeImportText = (event: any) =>
+    setImportText(event.detail?.value ?? event.target?.value ?? "");
+  const submit = async () => {
+    if (!canQuery) {
+      setConfirmOpen(false);
+      return;
+    }
+    const id = ++requestId.current;
+    setBusy(true);
+    setError(undefined);
+    try {
+      const normalized = { ...settings, roomName: settings.roomName.trim() };
+      // 先确认能查到电费信息，再保存宿舍配置。
+      const next = await invoke<Result>("query_electricity", { input: normalized });
+      if (id !== requestId.current) return;
+      if (!hasElectricityData(next)) {
+        setError("未查询到该宿舍的电费信息，请检查宿舍信息后重试。配置尚未保存。");
+        toast.warning("未查询到该宿舍的电费信息", {
+          description: "配置尚未保存，请检查校区、楼栋和宿舍号后重试。",
+        });
+        return;
+      }
+      await invoke("save_electricity_settings", { settings: normalized });
+      if (id !== requestId.current) return;
+      setSettings(normalized);
+      setSavedSettings(normalized);
+      setResult(next);
+      setEditing(false);
+      setError(next.cache?.refreshError || undefined);
+      if (next.cache?.refreshError) {
+        toast.warning("电费刷新未完成", { description: next.cache.refreshError });
+      }
+    } catch (e) {
+      if (id === requestId.current) {
+        const msg = typeof e === "string" ? e : "电费查询失败，请检查宿舍信息和校园网连接。";
+        setError(msg);
+        toast.danger("查询未完成，配置尚未保存", { description: msg });
+      }
+    } finally {
+      if (id === requestId.current) setBusy(false);
+      setConfirmOpen(false);
+    }
+  };
+  const requestSubmit = () => {
     if (!canQuery) {
       const msg =
         settings.roomName.trim() && roomFloor === null
@@ -226,33 +216,12 @@ export default function CampusPaymentsElectricityPage() {
       toast.warning(msg);
       return;
     }
-    const id = ++requestId.current;
-    setBusy(true);
-    setError(undefined);
-    try {
-      const normalized = { ...settings, roomName: settings.roomName.trim() };
-      await invoke("save_electricity_settings", { settings: normalized });
-      if (id !== requestId.current) return;
-      setSettings(normalized);
-      setSavedSettings(normalized);
-      const next = await invoke<Result>("query_electricity", { input: normalized });
-      if (id === requestId.current) {
-        setResult(next);
-        setEditing(false);
-        setError(next.cache?.refreshError || undefined);
-        if (next.cache?.refreshError) {
-          toast.warning("电费刷新未完成", { description: next.cache.refreshError });
-        }
-      }
-    } catch (e) {
-      if (id === requestId.current) {
-        const msg = typeof e === "string" ? e : "电费查询失败，请检查宿舍信息和校园网连接。";
-        setError(msg);
-        toast.danger("查询未完成", { description: msg });
-      }
-    } finally {
-      if (id === requestId.current) setBusy(false);
+    // 已保存的配置直接刷新即可，只有正在填写/修改的范围需要再确认一次。
+    if (savedSettings && !editing) {
+      void submit();
+      return;
     }
+    setConfirmOpen(true);
   };
   const refreshLatest = async () => {
     if (!savedSettings || busy) return;
@@ -352,62 +321,16 @@ export default function CampusPaymentsElectricityPage() {
             className="electricity-form"
             onSubmit={(e) => {
               e.preventDefault();
-              void submit(e);
+              requestSubmit();
             }}
           >
             {(!savedSettings || editing) && (
-              <div className="electricity-fields">
-                <LocationSelect
-                  label="校区"
-                  value={settings.campusId}
-                  options={campuses}
-                  disabled={formDisabled}
-                  onChange={chooseCampus}
-                />
-                <LocationSelect
-                  label="宿舍区域"
-                  value={settings.areaId}
-                  options={campus?.areas ?? []}
-                  disabled={formDisabled || !campus}
-                  onChange={chooseArea}
-                />
-                <LocationSelect
-                  label="楼栋"
-                  value={settings.buildingId}
-                  options={buildings}
-                  disabled={formDisabled || !area}
-                  onChange={chooseBuilding}
-                />
-                <TextField
-                  label="宿舍号"
-                  name="roomName"
-                  required
-                  // 校验失败时用 supportingText 承载行内提示 —— material 的
-                  // TextField 没有独立的 FieldError 子组件。
-                  error={Boolean(settings.roomName.trim()) && roomFloor === null}
-                  supportingText="房间号应为一至两位楼层加两位房间号。"
-                  disabled={formDisabled}
-                  value={settings.roomName}
-                  inputMode="numeric"
-                  onChange={(e: any) => {
-                    const value = e.detail?.value ?? e.target?.value ?? "";
-                    requestId.current += 1;
-                    setResult(undefined);
-                    setError(undefined);
-                    setSettings((s) => ({ ...s, roomName: value }));
-                  }}
-                  placeholder="如 601 或 1201"
-                />
-                {area && (
-                  <TextField
-                    label="楼层范围"
-                    name="floorRange"
-                    value={roomFloor === null ? "" : `${roomFloor} 层`}
-                    readonly
-                    placeholder="输入宿舍号后自动识别"
-                  />
-                )}
-              </div>
+              <ElectricityLocationFields
+                campuses={campuses}
+                value={settings}
+                disabled={formDisabled}
+                onChange={changeLocation}
+              />
             )}
             {savedSettings && !editing && (
               <div className="electricity-location-summary">
@@ -470,7 +393,8 @@ export default function CampusPaymentsElectricityPage() {
                 <TextField
                   label="宿舍配置码"
                   value={importText}
-                  onChange={(e: any) => setImportText(e.detail?.value ?? e.target?.value ?? "")}
+                  onInput={changeImportText}
+                  onChange={changeImportText}
                   disabled={formDisabled}
                   placeholder="粘贴分享的宿舍配置码"
                 />
@@ -517,6 +441,17 @@ export default function CampusPaymentsElectricityPage() {
           </UiCard>
         </div>
       )}
+      <ElectricityLocationConfirmDialog
+        open={confirmOpen}
+        campuses={campuses}
+        value={settings}
+        busy={busy}
+        confirmLabel="确认并查询"
+        onClose={() => {
+          if (!busy) setConfirmOpen(false);
+        }}
+        onConfirm={() => void submit()}
+      />
     </div>
   );
 }

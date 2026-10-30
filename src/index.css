@@ -409,6 +409,11 @@ p {
   gap: 20px;
 }
 
+/* 宿舍号先填，和自动识别的楼层一起占第一行。 */
+.electricity-fields .electricity-room-name {
+  grid-column: span 2;
+}
+
 .electricity-actions {
   display: flex;
   flex-wrap: wrap;
@@ -519,6 +524,10 @@ p {
   .electricity-fields {
     grid-template-columns: minmax(0, 1fr);
     max-width: none;
+  }
+
+  .electricity-fields .electricity-room-name {
+    grid-column: auto;
   }
 
   .payments-wechat-content > button {

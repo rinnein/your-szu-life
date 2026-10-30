@@ -335,13 +335,15 @@ describe("campus payments route", () => {
     renderAt("/life/campus-payments/electricity");
     await screen.findByRole("heading", { name: "查电量" });
     await screen.findByText("北校区（粤海校区）");
+    const room = screen.getByRole("textbox", { name: "宿舍号" });
+    await waitFor(() => expect(room).toBeEnabled());
+    fireEvent.change(room, { target: { value: "601" } });
     const campusSelect = screen.getByRole("combobox", { name: "校区" });
     const select = (campusSelect.getRootNode() as ShadowRoot).host || campusSelect;
+    await waitFor(() => expect(select).not.toHaveAttribute("disabled"));
     fireEvent(select, new CustomEvent("change", { detail: { value: "yuehai" } }));
-    fireEvent.change(screen.getByRole("textbox", { name: "宿舍号" }), {
-      target: { value: "601" },
-    });
     fireEvent.click(screen.getByRole("button", { name: "查询电费" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认并查询" }));
 
     expect(await screen.findByRole("heading", { name: "用电记录" })).toBeInTheDocument();
     expect(screen.getByLabelText("当前电量")).toHaveTextContent("12.34 度");
