@@ -26,6 +26,8 @@ interface ThemeContextValue {
   setMode: (mode: ThemeMode) => void;
   setSeed: (seed: string) => void;
   setVariant: (variant: SchemeVariant) => void;
+  /** 重新读取系统壁纸颜色并恢复“跟随壁纸”。 */
+  followWallpaper: () => Promise<void>;
   /** 恢复默认外观（含跟随系统）。 */
   reset: () => void;
 }
@@ -181,11 +183,18 @@ export function ThemeProvider({
     [appearance, persist],
   );
 
+  const followWallpaper = useCallback(async () => {
+    const wallpaper = await invoke<{ seed: string | null }>("get_wallpaper_seed");
+    const seed = normalizeSeed(wallpaper?.seed);
+    if (!seed) throw new Error("当前平台无法读取壁纸颜色");
+    persist({ ...appearance, seed, seedSource: "wallpaper" });
+  }, [appearance, persist]);
+
   const reset = useCallback(() => persist({ ...DEFAULT_APPEARANCE }), [persist]);
 
   const value = useMemo(
-    () => ({ appearance, resolvedMode, setMode, setSeed, setVariant, reset }),
-    [appearance, resolvedMode, setMode, setSeed, setVariant, reset],
+    () => ({ appearance, resolvedMode, setMode, setSeed, setVariant, followWallpaper, reset }),
+    [appearance, resolvedMode, setMode, setSeed, setVariant, followWallpaper, reset],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

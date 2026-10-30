@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, Checkbox, LoadingIndicator, TextField, Button } from "material/react";
-import { Banner } from "./ui";
+import { Banner, toast } from "./ui";
 import type { AiConnections } from "./uooc/types";
 
 type ConnectionDraft = {
@@ -28,11 +28,18 @@ const PROVIDERS = [
   },
 ];
 
-export default function AiConnectionSettings() {
+export function AiConnectionForm({
+  showJev = true,
+  submitLabel = "保存 AI 连接",
+  onSaved,
+}: {
+  showJev?: boolean;
+  submitLabel?: string;
+  onSaved?: (connections: AiConnections) => void | Promise<void>;
+}) {
   const [draft, setDraft] = useState<ConnectionDraft>();
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -43,7 +50,7 @@ export default function AiConnectionSettings() {
       })
       .catch((cause) => {
         if (active)
-          setError(
+          setLoadError(
             typeof cause === "string"
               ? cause
               : cause instanceof Error
@@ -59,8 +66,6 @@ export default function AiConnectionSettings() {
   const save = async () => {
     if (!draft) return;
     setBusy(true);
-    setMessage("");
-    setError("");
     try {
       const connections = await invoke<AiConnections>("save_uooc_ai_connections", {
         connections: {
@@ -82,15 +87,22 @@ export default function AiConnectionSettings() {
         keys: { main: "", jev: "" },
         clear: { main: false, jev: false },
       });
-      setMessage("AI 连接配置已保存");
+      toast.success("AI 连接配置已保存");
+      try {
+        await onSaved?.(connections);
+      } catch (callbackError) {
+        // 配置已经保存成功；后续步骤失败由调用方展示，不要误报为保存失败。
+        console.error("AI 配置保存后的回调失败", callbackError);
+      }
     } catch (cause) {
-      setError(
-        typeof cause === "string"
-          ? cause
-          : cause instanceof Error
-            ? cause.message
-            : "保存失败，请检查配置",
-      );
+      toast.danger("保存 AI 连接失败", {
+        description:
+          typeof cause === "string"
+            ? cause
+            : cause instanceof Error
+              ? cause.message
+              : "保存失败，请检查配置",
+      });
     } finally {
       setBusy(false);
     }
@@ -98,104 +110,99 @@ export default function AiConnectionSettings() {
 
   if (!draft)
     return (
-      <Card variant="outlined">
-        <div slot="headline">AI 连接</div>
-        <div className="p-4">
-          {error ? (
-            <Banner status="danger">
-              <Banner.Title>无法读取 AI 连接配置</Banner.Title>
-              <Banner.Description>{error}</Banner.Description>
-            </Banner>
-          ) : (
-            <p role="status">正在读取 AI 连接配置…</p>
-          )}
-        </div>
-      </Card>
+      <div className="grid gap-3">
+        {loadError ? (
+          <Banner status="danger">
+            <Banner.Title>无法读取 AI 连接配置</Banner.Title>
+            <Banner.Description>{loadError}</Banner.Description>
+          </Banner>
+        ) : (
+          <p role="status">正在读取 AI 连接配置…</p>
+        )}
+      </div>
     );
 
+  const providers = PROVIDERS.filter((provider) => showJev || provider.id === "main");
+
+  return (
+    <div className="settings-form">
+      {providers.map(({ id, title, placeholder }) => (
+        <section key={id} className="settings-section">
+          <h3 className="settings-section-title">{title}</h3>
+          <TextField
+            label={id === "main" ? "主模型 API 地址" : "Jev API 地址"}
+            value={draft.connections[id].baseUrl}
+            placeholder={placeholder}
+            disabled={busy}
+            onChange={(e: any) => {
+              const value = e.detail?.value ?? e.target?.value ?? "";
+              setDraft(
+                (current) =>
+                  current && {
+                    ...current,
+                    connections: {
+                      ...current.connections,
+                      [id]: { ...current.connections[id], baseUrl: value },
+                    },
+                  },
+              );
+            }}
+          />
+          <TextField
+            type="password"
+            label={id === "main" ? "主模型 API Key" : "Jev API Key"}
+            value={draft.keys[id]}
+            placeholder={draft.connections[id].hasKey ? "已保存；留空保持不变" : "填写密钥"}
+            autocomplete="new-password"
+            disabled={busy}
+            onChange={(e: any) => {
+              const value = e.detail?.value ?? e.target?.value ?? "";
+              setDraft(
+                (current) =>
+                  current && {
+                    ...current,
+                    keys: { ...current.keys, [id]: value },
+                  },
+              );
+            }}
+          />
+          <Checkbox
+            checked={draft.clear[id]}
+            disabled={busy}
+            onChange={(event: any) =>
+              setDraft(
+                (current) =>
+                  current && {
+                    ...current,
+                    clear: {
+                      ...current.clear,
+                      [id]: Boolean(event.detail?.checked ?? event.target?.checked),
+                    },
+                  },
+              )
+            }
+          >
+            删除已保存的{id === "main" ? "主模型" : "Jev"}密钥
+          </Checkbox>
+        </section>
+      ))}
+      <div>
+        <Button variant="filled" disabled={busy} onClick={() => void save()}>
+          {busy && <LoadingIndicator size={16} />}
+          {busy ? "保存中…" : submitLabel}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export default function AiConnectionSettings() {
   return (
     <Card variant="outlined">
       <div slot="headline">AI 连接</div>
       <div slot="subhead">API Key 保存在系统凭据存储中，不会回显。</div>
       <div className="p-4">
-        <div className="settings-form">
-          {error && (
-            <Banner status="danger">
-              <Banner.Title>AI 连接配置出错</Banner.Title>
-              <Banner.Description>{error}</Banner.Description>
-            </Banner>
-          )}
-          {message && (
-            <Banner status="success">
-              <Banner.Title>{message}</Banner.Title>
-            </Banner>
-          )}
-          {PROVIDERS.map(({ id, title, placeholder }) => (
-            <section key={id} className="settings-section">
-              <h3 className="settings-section-title">{title}</h3>
-              <TextField
-                label={id === "main" ? "主模型 API 地址" : "Jev API 地址"}
-                value={draft.connections[id].baseUrl}
-                placeholder={placeholder}
-                disabled={busy}
-                onChange={(e: any) => {
-                  const value = e.detail?.value ?? e.target?.value ?? "";
-                  setDraft(
-                    (current) =>
-                      current && {
-                        ...current,
-                        connections: {
-                          ...current.connections,
-                          [id]: { ...current.connections[id], baseUrl: value },
-                        },
-                      },
-                  );
-                }}
-              />
-              <TextField
-                type="password"
-                label={id === "main" ? "主模型 API Key" : "Jev API Key"}
-                value={draft.keys[id]}
-                placeholder={draft.connections[id].hasKey ? "已保存；留空保持不变" : "填写密钥"}
-                autocomplete="new-password"
-                disabled={busy}
-                onChange={(e: any) => {
-                  const value = e.detail?.value ?? e.target?.value ?? "";
-                  setDraft(
-                    (current) =>
-                      current && {
-                        ...current,
-                        keys: { ...current.keys, [id]: value },
-                      },
-                  );
-                }}
-              />
-              <Checkbox
-                checked={draft.clear[id]}
-                disabled={busy}
-                onChange={(event: any) =>
-                  setDraft(
-                    (current) =>
-                      current && {
-                        ...current,
-                        clear: {
-                          ...current.clear,
-                          [id]: Boolean(event.detail?.checked ?? event.target?.checked),
-                        },
-                      },
-                  )
-                }
-              >
-                删除已保存的{id === "main" ? "主模型" : "Jev"}密钥
-              </Checkbox>
-            </section>
-          ))}
-          <div>
-            <Button variant="filled" disabled={busy} onClick={() => void save()}>
-              {busy && <LoadingIndicator size={16} />}保存 AI 连接
-            </Button>
-          </div>
-        </div>
+        <AiConnectionForm />
       </div>
     </Card>
   );

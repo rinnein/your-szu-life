@@ -234,7 +234,7 @@ pub(super) fn start_recovery_deadline(app: &tauri::AppHandle, store: &AuthStore)
         };
         if expired {
             if let Some(window) = app.get_webview_window("main") {
-                let _ = window.eval(format!("if (window.__SZU_AUTH_LOGIN__?.generation === {:?}) window.__SZU_AUTH_LOGIN__.stop('自动登录等待超时，请在官方页面手动继续。');", generation.to_string()));
+                let _ = window.eval(format!("if (window.__SZU_AUTH_LOGIN__?.generation === {:?}) window.__SZU_AUTH_LOGIN__.fail('自动登录等待超时，请在官方页面手动继续。');", generation.to_string()));
             }
             return;
         }

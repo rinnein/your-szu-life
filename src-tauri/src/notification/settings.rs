@@ -1,8 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::fs;
-use tauri::{Emitter, Manager, Runtime};
-
-const NOTIFICATIONS_FILE: &str = "notifications.json";
+use tauri::{Emitter, Runtime};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -59,34 +56,18 @@ impl NotificationSettings {
     }
 }
 
-fn path<R: Runtime>(app: &tauri::AppHandle<R>) -> Result<std::path::PathBuf, String> {
-    Ok(app
-        .path()
-        .app_config_dir()
-        .map_err(|error| error.to_string())?
-        .join(NOTIFICATIONS_FILE))
-}
-
-pub(crate) fn load<R: Runtime>(app: &tauri::AppHandle<R>) -> NotificationSettings {
-    let Ok(path) = path(app) else {
-        return NotificationSettings::default();
-    };
-    let Ok(raw) = fs::read_to_string(path) else {
-        return NotificationSettings::default();
-    };
-    serde_json::from_str::<NotificationSettings>(&raw).unwrap_or_default()
+pub(crate) fn load<R: Runtime>(_app: &tauri::AppHandle<R>) -> NotificationSettings {
+    crate::preferences::load::<NotificationSettings>(crate::preferences::NOTIFICATIONS)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
 }
 
 pub(crate) fn save<R: Runtime>(
     app: &tauri::AppHandle<R>,
     value: &NotificationSettings,
 ) -> Result<NotificationSettings, String> {
-    let path = path(app)?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    let raw = serde_json::to_string_pretty(value).map_err(|error| error.to_string())?;
-    fs::write(path, raw).map_err(|error| error.to_string())?;
+    crate::preferences::save(crate::preferences::NOTIFICATIONS, value)?;
     let _ = app.emit("notification-settings-changed", value);
     Ok(value.clone())
 }

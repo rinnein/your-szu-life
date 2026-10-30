@@ -20,6 +20,7 @@ impl UnifiedSzuMcpService {
             + Self::appearance_tools()
             + Self::notification_tools()
             + Self::netproxy_tools()
+            + Self::onboarding_tools()
             + Self::ui_tools()
     }
 }

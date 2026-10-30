@@ -20,6 +20,8 @@ mod notification;
 pub(crate) mod logging;
 mod ocr;
 mod oj;
+mod onboarding;
+mod preferences;
 #[cfg(target_os = "android")]
 mod platform_tls;
 mod settings;

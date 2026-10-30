@@ -27,3 +27,18 @@ pub(crate) fn get_wallpaper_seed() -> Result<WallpaperSeed, String> {
         })
     }
 }
+
+/// 读取桌面端当前壁纸并返回缩略图，供前端提取种子色。
+#[tauri::command]
+pub(crate) async fn get_wallpaper_image() -> Result<super::WallpaperImage, String> {
+    #[cfg(desktop)]
+    {
+        tauri::async_runtime::spawn_blocking(super::wallpaper::current_wallpaper_image)
+            .await
+            .map_err(|_| "读取当前壁纸任务失败".to_string())?
+    }
+    #[cfg(not(desktop))]
+    {
+        Err("当前平台不支持读取当前壁纸图片，请使用系统动态取色。".into())
+    }
+}

@@ -1,5 +1,5 @@
 use crate::{
-    app_content, auth, campus_network, campus_payments, netproxy, oj, settings,
+    app_content, auth, campus_network, campus_payments, netproxy, oj, onboarding, settings,
     storage::{PlatformCredentialStore, SharedCredentialStore},
     uooc,
 };
@@ -81,6 +81,10 @@ pub(crate) fn run() {
         )
         .plugin(tauri_plugin_clipboard_manager::init())
         .setup(move |app| {
+            // 日志级别本身也存于 settings.sqlite，必须先打开设置库再初始化日志。
+            if let Err(error) = crate::preferences::initialize(app.handle()) {
+                eprintln!("设置数据库初始化失败，本次使用默认设置: {error}");
+            }
             crate::logging::initialize(app.handle());
             if let Err(error) = crate::storage::initialize(app.handle()) {
                 log::error!("凭据存储初始化失败: {error}");
@@ -94,6 +98,9 @@ pub(crate) fn run() {
             }
             if let Err(error) = crate::embedding_model::initialize(app.handle()) {
                 log::error!("Embedding 模型服务初始化失败: {error}");
+            }
+            if let Err(error) = crate::onboarding::initialize(app.handle()) {
+                log::warn!("初始化设置状态迁移失败，将在下次启动重试: {error}");
             }
             auth::webview::setup_login_injection(app.handle())?;
             crate::enrollment::initialize(app.handle(), academic_credentials.clone())?;
@@ -181,6 +188,7 @@ pub(crate) fn run() {
             crate::appearance::commands::get_appearance,
             crate::appearance::commands::save_appearance,
             crate::appearance::commands::get_wallpaper_seed,
+            crate::appearance::commands::get_wallpaper_image,
             crate::notification::commands::get_notification_settings,
             crate::notification::commands::save_notification_settings,
             crate::notification::commands::set_application_focus,
@@ -251,7 +259,13 @@ pub(crate) fn run() {
             auth::commands::get_user_data,
             auth::commands::confirm_profile,
             auth::commands::begin_authentication,
+            auth::commands::begin_setup_authentication,
+            auth::commands::cancel_authentication,
+            auth::commands::consume_auth_failure_notice,
             auth::commands::logout,
+            onboarding::commands::get_onboarding_state,
+            onboarding::commands::complete_onboarding_step,
+            onboarding::commands::skip_onboarding_step,
             campus_payments::commands::open_network_fee_portal,
             campus_payments::commands::consume_network_fee_portal_notice,
             campus_payments::commands::get_electricity_options,

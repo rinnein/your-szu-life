@@ -18,6 +18,7 @@ pub struct AuthStore {
     pub(super) captured: Mutex<Option<CapturedCredentials>>,
     pub(super) submitted_password: Mutex<Option<CapturedCredentials>>,
     pub(super) login_prefill: Mutex<Option<LoginFormPrefill>>,
+    pub(super) last_failure: Mutex<Option<String>>,
     pub(super) resume_url: Mutex<Option<tauri::Url>>,
     pub(super) resume_window: Mutex<Option<String>>,
     pub(super) recovery: Mutex<super::recovery::Recovery>,
@@ -41,6 +42,7 @@ impl AuthStore {
             captured: Mutex::new(None),
             submitted_password: Mutex::new(None),
             login_prefill: Mutex::new(None),
+            last_failure: Mutex::new(None),
             resume_url: Mutex::new(None),
             resume_window: Mutex::new(None),
             recovery: Mutex::new(super::recovery::Recovery::default()),
@@ -57,6 +59,9 @@ impl AuthStore {
     pub(super) fn reset_auth_flow_guards(&self) {
         if let Ok(mut recovery) = self.recovery.lock() {
             recovery.invalidate();
+        }
+        if let Ok(mut failure) = self.last_failure.lock() {
+            *failure = None;
         }
         self.auth_probe_generation.fetch_add(1, Ordering::AcqRel);
         self.auth_probe_running.store(false, Ordering::Release);
@@ -164,6 +169,20 @@ impl AuthStore {
         }
         self.auth_probe_running.store(false, Ordering::Release);
         self.auth_completion_claimed.store(false, Ordering::Release);
+    }
+
+    /// 记录本次自动登录失败的原因，供初始化设置凭据页展示。
+    pub(super) fn set_failure_notice(&self, message: impl Into<String>) {
+        if let Ok(mut notice) = self.last_failure.lock() {
+            *notice = Some(message.into());
+        }
+    }
+
+    pub(crate) fn take_failure_notice(&self) -> Option<String> {
+        self.last_failure
+            .lock()
+            .ok()
+            .and_then(|mut notice| notice.take())
     }
 
     /// A narrow, password-free account snapshot for authenticated service flows.

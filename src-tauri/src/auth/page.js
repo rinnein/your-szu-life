@@ -67,16 +67,28 @@ export default function authLoginPage(options) {
     }
     if (element.textContent !== message) element.textContent = message;
   };
+  const report = (operation) => {
+    if (operation === "loginFailed") {
+      if (reportedFailure) return;
+      reportedFailure = true;
+    } else {
+      if (reportedManual || reportedFailure) return;
+      reportedManual = true;
+    }
+    void control(operation).catch(() => undefined);
+  };
   const stop = (
     message = "自动登录已停止，请在官方页面手动完成登录。",
     preserveSubmission = false,
+    failed = false,
   ) => {
+    if (disposed) return;
     manual = true;
     stopVersion += 1;
     if (preserveSubmission && officialForm) officialForm.version = stopVersion;
     savedCredentials = null;
     clearTimeout(deadline);
-    void control("stop").catch(() => undefined);
+    report(failed ? "loginFailed" : "manualRequired");
     notice(message);
   };
   const dispose = () => {
@@ -95,11 +107,19 @@ export default function authLoginPage(options) {
     if (HTMLFormElement.prototype.submit === wrappedFormSubmit)
       HTMLFormElement.prototype.submit = originalFormSubmit;
   };
-  window.__SZU_AUTH_LOGIN__ = { generation, documentId, stop, dispose };
+  window.__SZU_AUTH_LOGIN__ = {
+    generation,
+    documentId,
+    stop,
+    fail: (message) => stop(message, false, true),
+    dispose,
+  };
   window.__SZU_LOGIN_CAPTURE_READY__ = false;
   let submitting = false;
   let allowOfficialSubmit = false;
   let candidateCapture = null;
+  let reportedManual = false;
+  let reportedFailure = false;
 
   // The official page retains hidden templates with duplicated IDs. Only the
   // form copied into .login-main is live, so never fall back to global fields.
@@ -261,7 +281,7 @@ export default function authLoginPage(options) {
           originalFormSubmit.call(form);
         }
       } catch {
-        stop("未能保存登录提交状态，请手动重试。");
+        stop("未能保存登录提交状态，请手动重试。", false, true);
       } finally {
         forwardingForm = false;
         if (officialForm === authorization) officialForm = null;
@@ -330,7 +350,7 @@ export default function authLoginPage(options) {
         savedCredentials = null;
         clearTimeout(deadline);
         deadline = setTimeout(
-          () => stop("登录等待超时，请检查官方页面并手动继续。"),
+          () => stop("登录等待超时，请检查官方页面并手动继续。", false, true),
           permission.remainingMs,
         );
         notice("正在恢复统一认证，请稍候…");
@@ -339,7 +359,7 @@ export default function authLoginPage(options) {
     } catch {
       submitting = false;
       button.removeAttribute("aria-disabled");
-      if (auto) stop("自动登录未完成，请在官方页面手动继续。");
+      if (auto) stop("自动登录未完成，请在官方页面手动继续。", false, true);
       else setCaptureError("未能保存本次登录凭据，请刷新后重新输入");
     } finally {
       submitting = false;
@@ -425,7 +445,7 @@ export default function authLoginPage(options) {
           visible(element) && (element.id !== "sliderCaptchaDiv" || element.children.length),
       )
     ) {
-      stop("需要完成验证码，请在官方页面手动登录。", true);
+      stop("需要完成验证码，请在官方页面手动登录。", true, true);
       return true;
     }
     if (
@@ -436,7 +456,7 @@ export default function authLoginPage(options) {
       ].some((element) => visible(element) && element.textContent.trim())
     ) {
       discardPassword();
-      stop("官方页面提示登录异常，请检查后手动继续。");
+      stop("官方页面提示登录异常，请检查后手动继续。", false, true);
       return true;
     }
     return false;
@@ -444,7 +464,11 @@ export default function authLoginPage(options) {
   const checkCaptcha = () => {
     if (checking || captchaChecked) return;
     const jq = window.jQuery;
-    if (typeof window.checkNeedCaptcha !== "function" || typeof jq !== "function") return;
+    if (typeof window.checkNeedCaptcha !== "function" || typeof jq !== "function") {
+      // authserver 没有验证码组件：直接视为无需验证码，继续自动提交。
+      captchaChecked = true;
+      return;
+    }
     checking = true;
     jq(document).on("ajaxComplete.szuAuthRecovery", (_event, xhr, settings) => {
       let path;
@@ -458,17 +482,17 @@ export default function authLoginPage(options) {
       checking = false;
       if (disposed || manual) return;
       if (xhr.status < 200 || xhr.status >= 300 || typeof xhr.responseJSON?.isNeed !== "boolean") {
-        stop("验证码检查未完成，请在官方页面手动登录。");
+        stop("验证码检查未完成，请在官方页面手动登录。", false, true);
         return;
       }
       captchaChecked = true;
-      if (xhr.responseJSON.isNeed) stop("需要完成验证码，请在官方页面手动登录。", true);
+      if (xhr.responseJSON.isNeed) stop("需要完成验证码，请在官方页面手动登录。", true, true);
       else void refreshLoginForm();
     });
     try {
       window.checkNeedCaptcha();
     } catch {
-      stop("验证码检查未完成，请手动登录。");
+      stop("验证码检查未完成，请手动登录。", false, true);
     }
     blocked();
   };
@@ -493,14 +517,7 @@ export default function authLoginPage(options) {
         return;
       applySavedCredentials();
       if (options.automatic && blocked()) return;
-      if (
-        !visible(button) ||
-        button.disabled ||
-        typeof window.startLogin !== "function" ||
-        (automatic &&
-          !formReady &&
-          (typeof window.checkNeedCaptcha !== "function" || typeof window.jQuery !== "function"))
-      )
+      if (!visible(button) || button.disabled || typeof window.startLogin !== "function")
         return;
       if (automatic && !formReady) {
         const status = await control("formReady");
@@ -512,7 +529,7 @@ export default function authLoginPage(options) {
         formReady = true;
         clearTimeout(deadline);
         deadline = setTimeout(
-          () => stop("验证码检查或提交准备超时，请手动继续。"),
+          () => stop("验证码检查或提交准备超时，请手动继续。", false, true),
           status.remainingMs,
         );
       }
@@ -525,7 +542,7 @@ export default function authLoginPage(options) {
       automatic = false;
       await bridgeSubmit(true);
     } catch {
-      stop("认证准备未完成，请手动继续。");
+      stop("认证准备未完成，请手动继续。", false, true);
     } finally {
       ticking = false;
     }
@@ -641,7 +658,7 @@ export default function authLoginPage(options) {
       }
       if (automatic)
         deadline = setTimeout(
-          () => stop("登录页面加载或准备超时，请手动继续。"),
+          () => stop("登录页面加载或准备超时，请手动继续。", false, true),
           status.remainingMs,
         );
       initialized = true;

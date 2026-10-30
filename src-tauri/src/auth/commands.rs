@@ -97,6 +97,47 @@ pub(crate) async fn begin_authentication(
     .map_err(|_| "认证任务执行失败".to_string())?
 }
 
+/// 初始化设置初次登录：使用上一步输入的校园卡号与密码自动登录。
+#[tauri::command]
+pub(crate) async fn begin_setup_authentication(
+    app: tauri::AppHandle,
+    campus_card_number: String,
+    password: String,
+    user_agent: Option<String>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        service::begin_setup_authentication(
+            app,
+            campus_card_number,
+            password,
+            user_agent.as_deref(),
+        )
+    })
+    .await
+    .map_err(|_| "认证任务执行失败".to_string())?
+}
+
+#[tauri::command]
+pub(crate) async fn cancel_authentication(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = app.state::<AuthStore>();
+        service::cancel_authentication(app.clone(), &store)
+    })
+    .await
+    .map_err(|_| "取消认证任务失败".to_string())?
+}
+
+#[tauri::command]
+pub(crate) async fn consume_auth_failure_notice(
+    app: tauri::AppHandle,
+) -> Result<Option<String>, String> {
+    use tauri::Manager;
+    tauri::async_runtime::spawn_blocking(move || Ok(app.state::<AuthStore>().take_failure_notice()))
+        .await
+        .map_err(|_| "读取认证失败提示失败".to_string())?
+}
+
 #[tauri::command]
 pub(crate) async fn logout(app: tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;

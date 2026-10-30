@@ -327,7 +327,21 @@ pub(super) fn control_auth_recovery(
         }
         _ => {}
     }
-    flow.control(operation, Instant::now())
+    let status = flow.control(operation, Instant::now())?;
+    match operation {
+        super::recovery::RecoveryOperation::LoginFailed => {
+            let app = window.app_handle().clone();
+            let _ = app.emit("auth-login-failed", ());
+            // 释放 flow 与 session_operations 后，由后台线程自动退回本地凭据页。
+            drop(flow);
+            thread::spawn(move || auto_abort_authentication(app));
+        }
+        super::recovery::RecoveryOperation::ManualRequired => {
+            let _ = window.app_handle().emit("auth-manual-required", ());
+        }
+        _ => {}
+    }
+    Ok(status)
 }
 
 pub(crate) fn get_auth_state(
@@ -375,9 +389,11 @@ pub(crate) fn get_auth_state(
                 } else {
                     AuthState::SessionCaptureFailed
                 };
-                store.finish_attempt(state.clone());
-                emit_state(&app, state.clone());
-                return Ok(state);
+                store.finish_attempt(state);
+                // 启动时静默优先：损坏/无法安装的会话快照或账号不一致，
+                // 都可以用已保存密码重新登录一次；没有凭据时才落到手动流程。
+                recover_expired_session(&app, store);
+                return Ok(store.state.lock().map_err(|_| "状态锁失败")?.clone());
             }
         };
         // Restore the native jar before any HTTP validation or page uses it.
@@ -385,8 +401,10 @@ pub(crate) fn get_auth_state(
         if let Some(session) = &session {
             if install_auth_session_cookies(&app, session).is_err() {
                 store.finish_attempt(AuthState::SessionCaptureFailed);
-                emit_state(&app, AuthState::SessionCaptureFailed);
-                return Ok(AuthState::SessionCaptureFailed);
+                // 静默优先：重新认证会尝试重新安装会话；能力缺失时
+                // navigate_to_authentication_locked 仍会给出明确的终态。
+                recover_expired_session(&app, store);
+                return Ok(store.state.lock().map_err(|_| "状态锁失败")?.clone());
             }
         }
         let next = AuthState::Authenticated {
@@ -472,7 +490,8 @@ fn start_session_refresh(
                 if store.credentials.save_session(&session).is_ok() {
                     if install_auth_session_cookies(&worker_app, &session).is_err() {
                         store.finish_attempt(AuthState::SessionCaptureFailed);
-                        emit_state(&worker_app, AuthState::SessionCaptureFailed);
+                        // 静默优先：用已保存密码重新认证；能力缺失时会落到明确终态。
+                        recover_expired_session(&worker_app, &store);
                     }
                 }
             }
@@ -484,7 +503,8 @@ fn start_session_refresh(
             RefreshOutcome::Mismatch => {
                 let _ = store.credentials.delete_session();
                 store.finish_attempt(AuthState::AccountMismatch);
-                emit_state(&worker_app, AuthState::AccountMismatch);
+                // 静默优先：用已保存的账户资料重新登录一次。
+                recover_expired_session(&worker_app, &store);
             }
             RefreshOutcome::Unavailable => {}
         }
@@ -571,6 +591,7 @@ pub(super) fn confirm_profile(
 pub(super) fn navigate_to_authentication(
     app: tauri::AppHandle,
     user_agent: Option<&str>,
+    setup: Option<LoginFormPrefill>,
 ) -> Result<(), String> {
     let store = app.try_state::<AuthStore>().ok_or("认证状态不可用")?;
     let _operation = store
@@ -581,9 +602,13 @@ pub(super) fn navigate_to_authentication(
         *store.state.lock().map_err(|_| "状态锁失败")?,
         AuthState::Authenticating
     ) {
-        return Ok(());
+        return if setup.is_some() {
+            Err("认证正在进行中".into())
+        } else {
+            Ok(())
+        };
     }
-    let result = navigate_to_authentication_locked(&app, &store, user_agent);
+    let result = navigate_to_authentication_locked(&app, &store, user_agent, setup);
     if result.is_err() {
         set_terminal_state(&app, &store, AuthState::SessionExpired);
     }
@@ -599,10 +624,13 @@ fn recover_expired_session(app: &tauri::AppHandle, store: &AuthStore) {
         .and_then(|profile| profile.clone())
         .is_some_and(|profile| is_student_id(&profile.student_id) && !profile.password.is_empty());
     if !can_recover {
+        if let Ok(mut state) = store.state.lock() {
+            *state = AuthState::SessionExpired;
+        }
         emit_state(app, AuthState::SessionExpired);
         return;
     }
-    if navigate_to_authentication_locked(app, store, None).is_err() {
+    if navigate_to_authentication_locked(app, store, None, None).is_err() {
         set_terminal_state(app, store, AuthState::SessionExpired);
     }
 }
@@ -611,6 +639,7 @@ fn navigate_to_authentication_locked(
     app: &tauri::AppHandle,
     store: &AuthStore,
     user_agent: Option<&str>,
+    setup: Option<LoginFormPrefill>,
 ) -> Result<(), String> {
     let window = app.get_webview_window("main").ok_or("主窗口不存在")?;
     store.cancel_session_refresh();
@@ -646,11 +675,20 @@ fn navigate_to_authentication_locked(
             || manual_login_credentials(store, store.credentials.load_pending()),
             |pending| Ok(Some(pending)),
         )?;
+    // 初始化设置是一次完整的“校园卡号+密码”登录。旧的待补校园卡号记录会
+    // 抢先生效，使新输入的密码不被采用；setup 流程中直接丢弃它。
+    let pending = if setup.is_some() {
+        let _ = store.credentials.delete_pending();
+        None
+    } else {
+        pending
+    };
     store.reset_auth_flow_guards();
-    let prefill = login_form_prefill(profile.as_ref(), pending.as_ref());
-    let automatic = profile
-        .as_ref()
-        .is_some_and(|profile| !profile.password.is_empty());
+    let automatic = setup.is_some()
+        || profile
+            .as_ref()
+            .is_some_and(|profile| !profile.password.is_empty());
+    let prefill = setup.or_else(|| login_form_prefill(profile.as_ref(), pending.as_ref()));
     let attempt = match profile.as_ref() {
         Some(profile) => AuthAttempt::ReauthenticateExisting {
             student_id: profile.student_id.clone(),
@@ -699,7 +737,114 @@ pub(super) fn begin_authentication(
     app: tauri::AppHandle,
     user_agent: Option<&str>,
 ) -> Result<(), String> {
-    navigate_to_authentication(app, user_agent)
+    navigate_to_authentication(app, user_agent, None)
+}
+
+/// 初始化设置的初次登录：把上一步输入的校园卡号与密码作为本次自动登录的凭据。
+pub(super) fn begin_setup_authentication(
+    app: tauri::AppHandle,
+    campus_card_number: String,
+    password: String,
+    user_agent: Option<&str>,
+) -> Result<(), String> {
+    let setup = setup_login_prefill(&campus_card_number, &password)?;
+    navigate_to_authentication(app, user_agent, Some(setup))
+}
+
+/// 校验初始化设置的校园卡号 + 密码，并构造注入官方页面的预填凭据。
+pub(super) fn setup_login_prefill(
+    campus_card_number: &str,
+    password: &str,
+) -> Result<LoginFormPrefill, String> {
+    let identifier = campus_card_number.trim();
+    if !is_campus_card_number(identifier) {
+        return Err("校园卡号必须是 6 位数字".into());
+    }
+    if password.is_empty() {
+        return Err("密码不能为空".into());
+    }
+    Ok(LoginFormPrefill {
+        identifier: identifier.to_owned(),
+        password: password.to_owned(),
+    })
+}
+
+/// 显式中止当前自动登录（用户在初始化设置里点“取消并重试”）。
+pub(super) fn cancel_authentication(
+    app: tauri::AppHandle,
+    store: &AuthStore,
+) -> Result<(), String> {
+    let _operation = store
+        .session_operations
+        .lock()
+        .map_err(|_| "会话操作锁失败")?;
+    abort_authentication_locked(&app, store, None)
+}
+
+/// 官方页面明确失败后由后台线程调用，自动退回本地凭据页。
+fn auto_abort_authentication(app: tauri::AppHandle) {
+    let Some(store) = app.try_state::<AuthStore>() else {
+        return;
+    };
+    let Ok(_operation) = store.session_operations.lock() else {
+        return;
+    };
+    let _ = abort_authentication_locked(
+        &app,
+        &store,
+        Some("统一认证未完成，请检查校园卡号和密码后重试。"),
+    );
+}
+
+/// 必须持有 `session_operations` 锁。仅在仍处于 `Authenticating` 时生效，
+/// 避免在登录已经成功之后误清成功状态。
+fn abort_authentication_locked(
+    app: &tauri::AppHandle,
+    store: &AuthStore,
+    failure: Option<&str>,
+) -> Result<(), String> {
+    let authenticating = store
+        .state
+        .lock()
+        .map_err(|_| "状态锁失败")?
+        .clone();
+    if !matches!(authenticating, AuthState::Authenticating) {
+        return Ok(());
+    }
+    if let Ok(mut recovery) = store.recovery.lock() {
+        recovery.invalidate();
+    }
+    store
+        .auth_probe_generation
+        .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+    store
+        .auth_probe_running
+        .store(false, std::sync::atomic::Ordering::Release);
+    store
+        .auth_completion_claimed
+        .store(false, std::sync::atomic::Ordering::Release);
+    store.cancel_session_refresh();
+    let _ = clear_webview_session(app);
+    let _ = store.credentials.delete_session();
+    let has_profile = store
+        .profile
+        .lock()
+        .ok()
+        .and_then(|profile| profile.clone())
+        .is_some()
+        || store.credentials.load_profile().ok().flatten().is_some();
+    if let Some(message) = failure {
+        store.set_failure_notice(message);
+    }
+    let state = if has_profile {
+        AuthState::SessionExpired
+    } else {
+        AuthState::Unauthenticated
+    };
+    store.finish_attempt(state.clone());
+    emit_state(app, state);
+    resume_application_window(app, store);
+    Ok(())
 }
 
 pub(super) fn logout(app: tauri::AppHandle, store: &AuthStore) -> Result<(), String> {

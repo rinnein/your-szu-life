@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import AiConnectionSettings from "./AiConnectionSettings";
+import { toast } from "./ui";
 import type { AiConnections } from "./uooc/types";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -32,10 +33,12 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
 it("updates both providers without sending or exposing saved keys", async () => {
+  const success = vi.spyOn(toast, "success").mockReturnValue("toast-id");
   render(<AiConnectionSettings />);
   const mainUrl = await screen.findByLabelText("主模型 API 地址");
   expect(screen.getByLabelText("主模型 API Key")).toHaveValue("");
@@ -61,7 +64,7 @@ it("updates both providers without sending or exposing saved keys", async () => 
       },
     }),
   );
-  expect(await screen.findByRole("status")).toHaveTextContent("AI 连接配置已保存");
+  await vi.waitFor(() => expect(success).toHaveBeenCalledWith("AI 连接配置已保存"));
 });
 
 it("supports explicit key removal", async () => {
@@ -88,12 +91,15 @@ it("shows connection load failures in a visible alert", async () => {
   expect(alert).toHaveTextContent("连接配置读取失败");
 });
 
-it("shows connection save failures in a visible alert above the fields", async () => {
+it("reports connection save failures through the snackbar", async () => {
+  const danger = vi.spyOn(toast, "danger").mockReturnValue("toast-id");
   render(<AiConnectionSettings />);
-  const key = await screen.findByLabelText("主模型 API Key");
+  await screen.findByLabelText("主模型 API Key");
   vi.mocked(invoke).mockRejectedValueOnce("连接配置保存失败");
   fireEvent.click(screen.getByRole("button", { name: "保存 AI 连接" }));
-  const alert = await screen.findByRole("alert");
-  expect(alert).toHaveTextContent("连接配置保存失败");
-  expect(alert.compareDocumentPosition(key) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  await vi.waitFor(() =>
+    expect(danger).toHaveBeenCalledWith("保存 AI 连接失败", {
+      description: "连接配置保存失败",
+    }),
+  );
 });

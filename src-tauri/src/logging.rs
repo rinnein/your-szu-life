@@ -16,7 +16,6 @@ pub(crate) const APP_LOG_PREFIX: &str = "your-szu-life";
 const MAX_STARTUP_BUFFER_BYTES: usize = 256 * 1024;
 const MAX_LOG_SIZE_BYTES: u64 = 10 * 1024 * 1024; // 10MB
 const MAX_RETENTION_DAYS: i64 = 7;
-const CONFIG_FILE_NAME: &str = "log-settings.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,14 +37,8 @@ pub(crate) struct LogInfo {
     pub(crate) files: Vec<LogFileInfo>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct LogConfig {
-    level: String,
-}
-
 pub(crate) struct LogState {
     pub(crate) log_dir: OnceLock<PathBuf>,
-    pub(crate) config_dir: OnceLock<PathBuf>,
     inner: Mutex<WriterInner>,
     active_level: AtomicU8,
 }
@@ -129,7 +122,6 @@ pub(crate) fn get_log_state() -> Arc<LogState> {
         .get_or_init(|| {
             Arc::new(LogState {
                 log_dir: OnceLock::new(),
-                config_dir: OnceLock::new(),
                 inner: Mutex::new(WriterInner {
                     current_date: None,
                     current_file: None,
@@ -199,18 +191,14 @@ pub(crate) fn initialize(app: &AppHandle) {
         let _ = auto_cleanup(&dir);
     }
 
-    if let Ok(config_dir) = app.path().app_config_dir() {
-        let _ = state.config_dir.set(config_dir.clone());
-        let config_file = config_dir.join(CONFIG_FILE_NAME);
-        if let Ok(content) = fs::read_to_string(&config_file) {
-            if let Ok(config) = serde_json::from_str::<LogConfig>(&content) {
-                if let Some(level) = parse_level(&config.level) {
-                    state
-                        .active_level
-                        .store(level as usize as u8, Ordering::Release);
-                }
-            }
-        }
+    if let Some(level) = crate::preferences::load::<String>(crate::preferences::LOG_LEVEL)
+        .ok()
+        .flatten()
+        .and_then(|level| parse_level(&level))
+    {
+        state
+            .active_level
+            .store(level as usize as u8, Ordering::Release);
     }
 }
 
@@ -233,7 +221,7 @@ fn level_from_u8(val: u8) -> log::LevelFilter {
     }
 }
 
-fn parse_level(str_level: &str) -> Option<log::LevelFilter> {
+pub(crate) fn parse_level(str_level: &str) -> Option<log::LevelFilter> {
     match str_level.to_uppercase().as_str() {
         "ERROR" => Some(log::LevelFilter::Error),
         "WARN" | "WARNING" => Some(log::LevelFilter::Warn),
@@ -244,7 +232,7 @@ fn parse_level(str_level: &str) -> Option<log::LevelFilter> {
     }
 }
 
-fn level_to_str(filter: log::LevelFilter) -> &'static str {
+pub(crate) fn level_to_str(filter: log::LevelFilter) -> &'static str {
     match filter {
         log::LevelFilter::Error => "ERROR",
         log::LevelFilter::Warn => "WARN",
@@ -264,19 +252,13 @@ pub(crate) fn set_log_level(level_str: &str) -> Result<String, String> {
         .active_level
         .store(filter as usize as u8, Ordering::Release);
 
-    if let Some(config_dir) = state.config_dir.get() {
-        let _ = fs::create_dir_all(config_dir);
-        let config_file = config_dir.join(CONFIG_FILE_NAME);
-        let config = LogConfig {
-            level: level_to_str(filter).to_string(),
-        };
-        if let Ok(raw) = serde_json::to_string_pretty(&config) {
-            let _ = fs::write(config_file, raw);
-        }
+    let normalized = level_to_str(filter).to_string();
+    if let Err(error) = crate::preferences::save(crate::preferences::LOG_LEVEL, &normalized) {
+        log::warn!("保存日志级别失败，本次仅在本进程生效: {error}");
     }
 
-    log::info!("日志文件保留级别已设置为: {}", level_to_str(filter));
-    Ok(level_to_str(filter).to_string())
+    log::info!("日志文件保留级别已设置为: {}", normalized);
+    Ok(normalized)
 }
 
 pub(crate) fn get_log_info(app: &AppHandle) -> Result<LogInfo, String> {

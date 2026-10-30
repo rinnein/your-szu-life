@@ -27,7 +27,7 @@ function native(automatic = true) {
         phase = "submitted";
         deadline = Date.now() + 90000;
       }
-      if (operation === "stop") phase = "manual";
+      if (["stop", "manualRequired", "loginFailed"].includes(operation)) phase = "manual";
       return { phase, remainingMs: Math.max(0, deadline - Date.now()) };
     },
   };
@@ -157,19 +157,28 @@ afterEach(() => {
 });
 
 describe("official auth automatic recovery", () => {
-  it("fills before captcha helpers finish loading and repairs fields cleared by page setup", async () => {
+  it("auto-submits without waiting for captcha helpers when the page has none", async () => {
     vi.useFakeTimers();
     const p = page();
-    const check = p.window.checkNeedCaptcha;
     delete p.window.checkNeedCaptcha;
+    p.evaluate();
+    await flush();
+    expect(p.field("password").value).toBe(CREDENTIALS.password);
+    expect(p.official).toHaveBeenCalledTimes(1);
+    expect(
+      p.invoke.mock.calls.some(([command]) => command === "capture_auth_credentials"),
+    ).toBe(true);
+  });
+
+  it("repairs fields cleared by page setup before submitting", async () => {
+    vi.useFakeTimers();
+    const p = page();
     p.evaluate();
     await flush();
     expect(p.field("password").value).toBe(CREDENTIALS.password);
     p.field("password").value = "";
     await vi.advanceTimersByTimeAsync(500);
     expect(p.field("password").value).toBe(CREDENTIALS.password);
-    p.window.checkNeedCaptcha = check;
-    await vi.advanceTimersByTimeAsync(500);
     p.captcha();
     await flush();
     expect(p.official).toHaveBeenCalledTimes(1);
@@ -303,7 +312,11 @@ describe("official auth automatic recovery", () => {
     p.captcha();
     await flush();
     expect(p.official).toHaveBeenCalledTimes(1);
-    expect(p.invoke.mock.calls.some(([, args]) => args.operation === "stop")).toBe(false);
+    expect(
+      p.invoke.mock.calls.some(
+        ([, args]) => args.operation === "manualRequired" || args.operation === "loginFailed",
+      ),
+    ).toBe(false);
   });
   it.each([20, 90, 119])("keeps a %s-second render within its own budget", async (seconds) => {
     vi.useFakeTimers();

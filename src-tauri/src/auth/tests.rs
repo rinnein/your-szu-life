@@ -589,3 +589,24 @@ fn payments_account_snapshot_requires_verified_matching_complete_profile_and_is_
         assert!(store.authenticated_campus_card_number().is_err());
     }
 }
+
+#[test]
+fn initial_setup_blocks_qr_login_while_reauth_allows_it() {
+    assert!(!AuthAttempt::InitialSetup.allows_qr_login());
+    assert!(!AuthAttempt::None.allows_qr_login());
+    assert!(AuthAttempt::ReauthenticateExisting {
+        student_id: "1234567890".into()
+    }
+    .allows_qr_login());
+}
+
+#[test]
+fn setup_login_prefill_requires_campus_card_and_non_empty_password() {
+    let prefill = super::service::setup_login_prefill(" 001234 ", "test-only").unwrap();
+    assert_eq!(prefill.identifier, "001234");
+    assert_eq!(prefill.password, "test-only");
+
+    assert!(super::service::setup_login_prefill("1234567890", "test-only").is_err());
+    assert!(super::service::setup_login_prefill("00123", "test-only").is_err());
+    assert!(super::service::setup_login_prefill("001234", "").is_err());
+}

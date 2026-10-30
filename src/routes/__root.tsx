@@ -14,6 +14,7 @@ import { InAppNotificationBridge } from "../InAppNotificationBridge";
 import { CommandPalette } from "../command-palette";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { AppChrome } from "../shell/AppChrome";
+import { OnboardingGate } from "../onboarding/OnboardingGate";
 import { WebvpnAuthProvider } from "../enrollment/webvpn-gate";
 
 if (typeof window !== "undefined") {
@@ -57,7 +58,9 @@ export const Route = createRootRoute({
               <CommandPalette />
               <WebvpnAuthProvider>
                 <AppChrome>
-                  <Outlet />
+                  <OnboardingGate>
+                    <Outlet />
+                  </OnboardingGate>
                 </AppChrome>
               </WebvpnAuthProvider>
               <UpdateNotice />

@@ -131,35 +131,16 @@ pub fn start_mcp_server(app: &AppHandle) -> Result<u16, String> {
     Ok(bound_port)
 }
 
-use std::path::PathBuf;
-use tauri::Manager;
-
-fn config_path(app: &AppHandle) -> Option<PathBuf> {
-    app.path()
-        .app_data_dir()
+fn is_persisted_enabled() -> bool {
+    crate::preferences::load::<bool>(crate::preferences::MCP_ENABLED)
         .ok()
-        .map(|dir| dir.join("mcp-config.json"))
+        .flatten()
+        .unwrap_or(false)
 }
 
-fn is_persisted_enabled(app: &AppHandle) -> bool {
-    let Some(path) = config_path(app) else {
-        return false;
-    };
-    if let Ok(content) = std::fs::read_to_string(path) {
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-            return json.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
-        }
-    }
-    false
-}
-
-fn save_persisted_enabled(app: &AppHandle, enabled: bool) {
-    if let Some(path) = config_path(app) {
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        let json = serde_json::json!({ "enabled": enabled });
-        let _ = std::fs::write(path, json.to_string());
+fn save_persisted_enabled(enabled: bool) {
+    if let Err(error) = crate::preferences::save(crate::preferences::MCP_ENABLED, &enabled) {
+        eprintln!("保存 MCP 开关失败: {error}");
     }
 }
 
@@ -174,7 +155,7 @@ pub fn stop_mcp_server() -> Result<(), String> {
 
 /// 初始化 MCP 服务。默认保持关闭，仅当用户先前主动开启过时才自动恢复
 pub fn initialize(app: &AppHandle) -> Result<(), String> {
-    if is_persisted_enabled(app) {
+    if is_persisted_enabled() {
         let _ = start_mcp_server(app)?;
     }
     Ok(())
@@ -183,7 +164,7 @@ pub fn initialize(app: &AppHandle) -> Result<(), String> {
 /// 开关直接控制该端口是否开启与关闭
 #[tauri::command]
 pub fn set_mcp_server_enabled(app: AppHandle, enabled: bool) -> Result<McpStatusView, String> {
-    save_persisted_enabled(&app, enabled);
+    save_persisted_enabled(enabled);
     if enabled {
         start_mcp_server(&app)?;
     } else {

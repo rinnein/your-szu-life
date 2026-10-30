@@ -1,18 +1,17 @@
 //! 外观偏好：深浅色模式、种子色与配色变体。
 //!
-//! 与调试模式、日志设置一致，存为 `app_config_dir()/appearance.json`，
+//! 与通知、日志、调试开关一致，存于非机密设置库 `settings.sqlite`，
 //! 不进入加密 vault —— 这些不是凭据，也不需要随设置包导出。
 
 use serde::{Deserialize, Serialize};
-use std::fs;
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 
 #[cfg(target_os = "android")]
 pub(crate) mod android;
 pub(crate) mod commands;
 pub(crate) mod mcp;
-
-const APPEARANCE_FILE: &str = "appearance.json";
+#[cfg(desktop)]
+mod wallpaper;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -83,38 +82,29 @@ impl Appearance {
     }
 }
 
-fn path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
-    Ok(app
-        .path()
-        .app_config_dir()
-        .map_err(|error| error.to_string())?
-        .join(APPEARANCE_FILE))
-}
-
-pub(crate) fn load(app: &tauri::AppHandle) -> Appearance {
-    let Ok(path) = path(app) else {
-        return Appearance::default();
-    };
-    let Ok(raw) = fs::read_to_string(path) else {
-        return Appearance::default();
-    };
-    match serde_json::from_str::<Appearance>(&raw) {
-        Ok(value) if value.validate().is_ok() => value,
-        // 文件损坏或字段非法时退回默认值，而不是让应用启动失败。
+pub(crate) fn load(_app: &tauri::AppHandle) -> Appearance {
+    match crate::preferences::load::<Appearance>(crate::preferences::APPEARANCE) {
+        Ok(Some(value)) if value.validate().is_ok() => value,
+        // 存储损坏或字段非法时退回默认值，而不是让应用启动失败。
         _ => Appearance::default(),
     }
 }
 
 pub(crate) fn save(app: &tauri::AppHandle, value: &Appearance) -> Result<Appearance, String> {
     value.validate()?;
-    let path = path(app)?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    let raw = serde_json::to_string_pretty(value).map_err(|error| error.to_string())?;
-    fs::write(path, raw).map_err(|error| error.to_string())?;
+    crate::preferences::save(crate::preferences::APPEARANCE, value)?;
     let _ = app.emit("appearance-changed", value);
     Ok(value.clone())
+}
+
+/// 桌面端当前壁纸的缩略图，用于前端提取种子色。
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WallpaperImage {
+    /// `data:image/png;base64,...`
+    pub data_url: String,
+    pub width: u32,
+    pub height: u32,
 }
 
 /// Kotlin 传来的壁纸取色结果。

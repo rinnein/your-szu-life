@@ -5,31 +5,16 @@ use super::{
     now_ms, CampusNetworkStore,
 };
 use reqwest::Url;
-use std::{
-    fs,
-    sync::atomic::Ordering,
-    time::Instant,
-};
-use tauri::{Emitter, Manager};
+use std::sync::atomic::Ordering;
+use std::time::Instant;
+use tauri::Emitter;
 
-const DEBUG_MODE_FILE: &str = "campus-network-debug.json";
-
-pub(crate) fn initialize(app: &tauri::AppHandle, store: &CampusNetworkStore) {
-    if let Ok(path) = debug_mode_path(app) {
-        if let Ok(value) = fs::read_to_string(path) {
-            if let Ok(enabled) = serde_json::from_str::<bool>(&value) {
-                store.debug_enabled.store(enabled, Ordering::Release);
-            }
-        }
+pub(crate) fn initialize(_app: &tauri::AppHandle, store: &CampusNetworkStore) {
+    if let Ok(Some(enabled)) =
+        crate::preferences::load::<bool>(crate::preferences::DEBUG_ENABLED)
+    {
+        store.debug_enabled.store(enabled, Ordering::Release);
     }
-}
-
-fn debug_mode_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
-    Ok(app
-        .path()
-        .app_config_dir()
-        .map_err(|error| error.to_string())?
-        .join(DEBUG_MODE_FILE))
 }
 
 pub(super) fn mode_view(store: &CampusNetworkStore) -> DebugModeView {
@@ -44,12 +29,7 @@ pub(super) fn set_mode(
     store: &CampusNetworkStore,
     enabled: bool,
 ) -> Result<DebugModeView, String> {
-    let path = debug_mode_path(app)?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    let raw = serde_json::to_string(&enabled).map_err(|error| error.to_string())?;
-    fs::write(path, raw).map_err(|error| error.to_string())?;
+    crate::preferences::save(crate::preferences::DEBUG_ENABLED, &enabled)?;
     store.debug_enabled.store(enabled, Ordering::Release);
     let view = mode_view(store);
     let _ = app.emit("debug-mode-changed", &view);

@@ -23,6 +23,10 @@ pub(crate) enum RecoveryOperation {
     Stop,
     PasswordSubmitted,
     DiscardPassword,
+    /// 官方页面明确返回登录失败：初始化设置需要自动退回凭据页。
+    LoginFailed,
+    /// 自动登录已切换为手动，但仍然允许用户在官方页面完成。
+    ManualRequired,
 }
 
 #[derive(Serialize)]
@@ -108,6 +112,9 @@ impl Recovery {
         match operation {
             RecoveryOperation::Status => {}
             RecoveryOperation::PasswordSubmitted | RecoveryOperation::DiscardPassword => {}
+            RecoveryOperation::LoginFailed | RecoveryOperation::ManualRequired => {
+                self.phase = RecoveryPhase::Manual;
+            }
             RecoveryOperation::FormReady => {
                 if self.phase == RecoveryPhase::Loading {
                     self.phase = RecoveryPhase::Ready;

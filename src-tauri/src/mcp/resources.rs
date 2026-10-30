@@ -55,6 +55,13 @@ pub fn list_available_resources() -> Vec<Resource> {
         .with_title("客户端全局配置快照")
         .with_description("返回your-szu-life当前非敏感配置项集合")
         .with_mime_type("application/json"),
+        Resource::new(
+            "your-szu-life://data/onboarding/status",
+            "onboarding_status",
+        )
+        .with_title("初始化设置进度")
+        .with_description("返回初始化设置的步骤顺序、完成/跳过状态与下一步")
+        .with_mime_type("application/json"),
     ]
 }
 
@@ -146,6 +153,12 @@ pub async fn read_resource_by_uri(
                 "{}".to_string()
             }
         }
+        "your-szu-life://data/onboarding/status" => match crate::onboarding::state_view() {
+            Ok(state) => {
+                serde_json::to_string_pretty(&state).unwrap_or_else(|_| "{}".to_string())
+            }
+            Err(_) => "{}".to_string(),
+        },
         _ => {
             return Err(rmcp::ErrorData::new(
                 rmcp::model::ErrorCode::INVALID_REQUEST,

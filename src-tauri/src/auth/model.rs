@@ -155,7 +155,7 @@ pub(super) fn login_form_prefill(
         })
 }
 
-pub(super) fn is_student_id(value: &str) -> bool {
+pub(crate) fn is_student_id(value: &str) -> bool {
     value.len() == 10 && value.chars().all(|character| character.is_ascii_digit())
 }
 
