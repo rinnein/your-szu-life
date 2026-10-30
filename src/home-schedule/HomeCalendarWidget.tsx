@@ -38,7 +38,7 @@ function getCategoryDotClass(category: ScheduleCategory): string {
     case "oj-quiz":
       return "bg-primary";
     case "electricity-outage":
-      return "bg-error";
+      return "bg-danger";
     case "uooc-exam":
       return "bg-warning";
     case "uooc-homework":
@@ -262,7 +262,7 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
               <span>OJ 测验</span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-error" aria-hidden="true" />
+              <span className="w-2 h-2 rounded-full bg-danger" aria-hidden="true" />
               <span>电量预警</span>
             </span>
             <span className="flex items-center gap-1">

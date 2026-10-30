@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { createElement, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Button, Dialog, LoadingIndicator, Menu, MenuItem } from "material/react";
+import { Button, Dialog, LoadingIndicator, MenuItem } from "material/react";
+import "material/elements/css/menu";
+import { defineMenu } from "material/elements";
 import { useAuth, beginAuthentication } from "./auth";
 import { BrandMark } from "./components";
 import { PageSurface } from "./shell/PageSurface";
@@ -11,6 +13,9 @@ import { useLogicalNavigation } from "./logical-navigation";
 import { AnnouncementBoard } from "./app-content/AnnouncementBoard";
 import { HomeCalendarWidget } from "./home-schedule/HomeCalendarWidget";
 import { ElectricityMonitorProvider } from "./electricity-monitor";
+
+// AccountMenu 直接渲染 <m-menu>，因此由页面自己注册菜单元素与样式。
+defineMenu();
 
 /**
  * 首页。
@@ -59,38 +64,27 @@ export default function HomePage() {
           actions={
             <div className="account-menu">
               <Button
+                id="account-trigger"
                 variant="text"
                 className="account-trigger"
                 aria-label="打开账户菜单"
                 aria-haspopup="menu"
                 aria-expanded={accountMenuOpen}
                 disabled={authBusy}
-                onClick={() => setAccountMenuOpen((value) => !value)}
               >
                 {auth.studentId}
               </Button>
-              <Menu
-                aria-label="账户操作"
+              <AccountMenu
                 open={accountMenuOpen}
-                onClose={() => setAccountMenuOpen(false)}
-                onSelect={(event) => {
-                  const key = event.detail.value;
-                  setAccountMenuOpen(false);
+                onOpenChange={setAccountMenuOpen}
+                onSelect={(key) => {
                   if (key === "settings") void navigation.push("/settings");
                   if (key === "reauth") void reauthenticate();
                   if (key === "logout") setLogoutOpen(true);
                 }}
-              >
-                <MenuItem value="identity" disabled>
-                  {auth.name ?? "未设置姓名"}
-                </MenuItem>
-                <MenuItem value="card" disabled>
-                  校园卡号：{profile?.campusCardNumber ?? "未设置"}
-                </MenuItem>
-                <MenuItem value="settings">设置</MenuItem>
-                <MenuItem value="reauth">重新认证</MenuItem>
-                <MenuItem value="logout">注销</MenuItem>
-              </Menu>
+                identity={auth.name ?? "未设置姓名"}
+                campusCardNumber={profile?.campusCardNumber ?? "未设置"}
+              />
             </div>
           }
         />
@@ -120,6 +114,70 @@ export default function HomePage() {
         />
       </PageSurface>
     </AuthGate>
+  );
+}
+
+/**
+ * 账户菜单。
+ *
+ * 这里直接渲染 `<m-menu>`，不用 material 的 React `Menu` 包装：包装组件把
+ * `anchor` 作为属性在挂载后的 effect 里写入，而 material 3.2.4 的定位只认
+ * 创建菜单时的 opener，弹层因此会退回屏幕左上角。直接渲染宿主元素并让 React
+ * 在连接前写入 `anchor`，首次挂载与重新挂载都能锚定到账户按钮。
+ */
+function AccountMenu({
+  open,
+  onOpenChange,
+  onSelect,
+  identity,
+  campusCardNumber,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSelect: (key: string) => void;
+  identity: string;
+  campusCardNumber: string;
+}) {
+  const menuRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const menu = menuRef.current;
+    if (!menu) return;
+    const handleOpen = () => onOpenChange(true);
+    const handleClose = () => onOpenChange(false);
+    const handleSelect = (event: Event) => {
+      onOpenChange(false);
+      const key = (event as CustomEvent<{ value?: string }>).detail?.value;
+      if (key) onSelect(key);
+    };
+    menu.addEventListener("open", handleOpen);
+    menu.addEventListener("close", handleClose);
+    menu.addEventListener("select", handleSelect);
+    return () => {
+      menu.removeEventListener("open", handleOpen);
+      menu.removeEventListener("close", handleClose);
+      menu.removeEventListener("select", handleSelect);
+    };
+  }, [onOpenChange, onSelect]);
+
+  return createElement(
+    "m-menu",
+    {
+      ref: menuRef,
+      "aria-label": "账户操作",
+      anchor: "account-trigger",
+      position: "bottom-end",
+      open: open ? "" : undefined,
+    },
+    createElement(MenuItem, { key: "identity", value: "identity", disabled: true }, identity),
+    createElement(
+      MenuItem,
+      { key: "card", value: "card", disabled: true },
+      `校园卡号：${campusCardNumber}`,
+    ),
+    createElement(MenuItem, { key: "settings", value: "settings" }, "设置"),
+    createElement(MenuItem, { key: "reauth", value: "reauth" }, "重新认证"),
+    createElement(MenuItem, { key: "logout", value: "logout" }, "注销"),
   );
 }
 

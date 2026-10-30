@@ -115,6 +115,11 @@ describe("HomeCalendarWidget", () => {
     expect(screen.getByText("UOOC 考试")).toBeInTheDocument();
     expect(screen.getByText("UOOC 作业")).toBeInTheDocument();
     expect(screen.getByText("UOOC 结课")).toBeInTheDocument();
+
+    // 电量预警必须落到主题里真实存在的 danger 色，而不是未定义的 bg-error。
+    const day31 = screen.getByRole("button", { name: "2026年10月31日" });
+    expect(day31.querySelector(".bg-danger")).not.toBeNull();
+    expect(screen.getByText("电量预警").previousElementSibling).toHaveClass("bg-danger");
   });
 
   it("filters todo list when clicking on a date with events and clears filter on click again", () => {

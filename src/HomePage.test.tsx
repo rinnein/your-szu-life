@@ -222,6 +222,36 @@ describe("frontend smoke tests", () => {
     expect(await screen.findByRole("heading", { name: "确认注销？" })).toBeInTheDocument();
   });
 
+  it("anchors the account menu to the account trigger", async () => {
+    mockSignedIn();
+
+    renderRouterApp();
+    await screen.findByRole("button", { name: "打开账户菜单" });
+
+    const trigger = document.querySelector("m-button.account-trigger");
+    const menu = document.querySelector("m-menu") as
+      | (HTMLElement & { anchor?: Element | null })
+      | null;
+
+    expect(trigger).not.toBeNull();
+    expect(menu).not.toBeNull();
+    expect(menu!.anchor).toBe(trigger);
+  });
+
+  it("toggles the account menu from the trigger on repeated clicks", async () => {
+    mockSignedIn();
+
+    renderRouterApp();
+    const trigger = await screen.findByRole("button", { name: "打开账户菜单" });
+    const menu = document.querySelector("m-menu");
+
+    fireEvent.click(trigger);
+    await waitFor(() => expect(menu).toHaveAttribute("open"));
+
+    fireEvent.click(trigger);
+    await waitFor(() => expect(menu).not.toHaveAttribute("open"));
+  });
+
   it("renders the home announcement board", async () => {
     mockSignedIn();
 
