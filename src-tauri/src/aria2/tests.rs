@@ -1,8 +1,8 @@
 use super::{
     binary::find_aria2c_binary,
     client::Aria2WebSocketClient,
-    downloader::{verify_file_hash_and_size, PROGRESS_POLL_INTERVAL_MS},
-    process::{base_args, proxy_injection, Aria2Lease},
+    downloader::{PROGRESS_POLL_INTERVAL_MS, verify_file_hash_and_size},
+    process::{Aria2Lease, base_args, proxy_injection},
 };
 use crate::netproxy::Aria2Proxy;
 use std::io::Write;
@@ -189,4 +189,24 @@ fn test_verify_file_hash_and_size() {
         Some(11),
         Some("wrong_hash")
     ));
+}
+
+#[test]
+fn create_metalink_xml_generates_rfc5854_format_with_priorities() {
+    use super::downloader::create_metalink_xml;
+
+    let uris = vec![
+        (1, "https://cnb.cool/rinnein/szu/your-szu-life/-/releases/download/v1.0.0/app.msi".to_string()),
+        (2, "https://gh-proxy.com/https://github.com/rinnein/your-szu-life/releases/download/v1.0.0/app.msi".to_string()),
+        (3, "https://github.com/rinnein/your-szu-life/releases/download/v1.0.0/app.msi".to_string()),
+    ];
+
+    let xml = create_metalink_xml("app.msi", &uris, Some(1024), Some("abc123hash"));
+    assert!(xml.contains("<metalink xmlns=\"urn:ietf:params:xml:ns:metalink\">"));
+    assert!(xml.contains("<file name=\"app.msi\">"));
+    assert!(xml.contains("<size>1024</size>"));
+    assert!(xml.contains("<hash type=\"sha-256\">abc123hash</hash>"));
+    assert!(xml.contains("<url priority=\"1\">https://cnb.cool/rinnein/szu/your-szu-life/-/releases/download/v1.0.0/app.msi</url>"));
+    assert!(xml.contains("<url priority=\"2\">https://gh-proxy.com/https://github.com/rinnein/your-szu-life/releases/download/v1.0.0/app.msi</url>"));
+    assert!(xml.contains("<url priority=\"3\">https://github.com/rinnein/your-szu-life/releases/download/v1.0.0/app.msi</url>"));
 }

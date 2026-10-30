@@ -1,3 +1,4 @@
+use reqwest::Url;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -8,10 +9,10 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tauri::Emitter;
-use reqwest::Url;
 
 pub(crate) const GITHUB_ACCELERATORS: &str = include_str!("../../github-accelerator.json");
-pub(crate) const HUGGINGFACE_ACCELERATORS: &str = include_str!("../../huggingface-accelerator.json");
+pub(crate) const HUGGINGFACE_ACCELERATORS: &str =
+    include_str!("../../huggingface-accelerator.json");
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,14 +27,12 @@ impl Manifest {
     pub(crate) fn load(json_str: &str, model_label: &str) -> Result<Self, String> {
         let manifest: Self = serde_json::from_str(json_str)
             .map_err(|e| format!("{model_label} 模型配置格式错误：{e}"))?;
-        if manifest.revision.trim().is_empty()
-            || manifest.sha256.len() != 64
-            || manifest.bytes == 0
+        if manifest.revision.trim().is_empty() || manifest.sha256.len() != 64 || manifest.bytes == 0
         {
             return Err(format!("{model_label} 模型配置未通过校验"));
         }
-        let url = Url::parse(&manifest.url)
-            .map_err(|_| format!("{model_label} 模型下载地址无效"))?;
+        let url =
+            Url::parse(&manifest.url).map_err(|_| format!("{model_label} 模型下载地址无效"))?;
         if url.scheme() != "https"
             || !url.username().is_empty()
             || url.password().is_some()
@@ -247,7 +246,10 @@ impl LocalModelStore {
 
         if force {
             let _ = fs::remove_file(&temporary);
-            let _ = fs::remove_file(self.cache.join(format!("{}.download.aria2", self.manifest.sha256)));
+            let _ = fs::remove_file(
+                self.cache
+                    .join(format!("{}.download.aria2", self.manifest.sha256)),
+            );
         }
 
         // 1. 尝试使用 aria2c 多源并发下载
@@ -258,6 +260,7 @@ impl LocalModelStore {
 
         let aria_options = crate::aria2::DownloadJobOptions {
             uris,
+            prioritized_uris: Vec::new(),
             dest_dir: self.cache.clone(),
             filename: format!("{}.download", self.manifest.sha256),
             expected_sha256: Some(self.manifest.sha256.clone()),
@@ -327,7 +330,9 @@ impl LocalModelStore {
         downloading_status.total_bytes = Some(downloading_status.bytes);
         downloading_status.speed_bytes_per_sec = Some(0);
         if let Some(ref ch) = channel {
-            let _ = ch.send(ModelDownloadChannelEvent::Status(downloading_status.clone()));
+            let _ = ch.send(ModelDownloadChannelEvent::Status(
+                downloading_status.clone(),
+            ));
         }
         let _ = app.emit(self.status_event, downloading_status);
 
@@ -358,7 +363,9 @@ mod tests {
 
     #[test]
     fn test_mirror_candidates_for_huggingface() {
-        let candidates = mirror_candidates("https://huggingface.co/Xenova/bge-small-zh-v1.5/resolve/main/onnx/model_quantized.onnx");
+        let candidates = mirror_candidates(
+            "https://huggingface.co/Xenova/bge-small-zh-v1.5/resolve/main/onnx/model_quantized.onnx",
+        );
         assert!(!candidates.is_empty());
         for (name, url) in &candidates {
             assert_eq!(name, "huggingface-accelerator");
@@ -368,7 +375,9 @@ mod tests {
 
     #[test]
     fn test_mirror_candidates_for_github() {
-        let candidates = mirror_candidates("https://raw.githubusercontent.com/sml2h3/ddddocr/master/ddddocr/common.onnx");
+        let candidates = mirror_candidates(
+            "https://raw.githubusercontent.com/sml2h3/ddddocr/master/ddddocr/common.onnx",
+        );
         assert!(!candidates.is_empty());
         for (name, url) in &candidates {
             assert_eq!(name, "github-accelerator");
@@ -378,7 +387,9 @@ mod tests {
 
     #[test]
     fn test_mirror_random_selection_exhaustion() {
-        let mut available = mirror_candidates("https://huggingface.co/Xenova/bge-small-zh-v1.5/resolve/main/onnx/model_quantized.onnx");
+        let mut available = mirror_candidates(
+            "https://huggingface.co/Xenova/bge-small-zh-v1.5/resolve/main/onnx/model_quantized.onnx",
+        );
         let initial_count = available.len();
         let mut selected = Vec::new();
 

@@ -22,6 +22,7 @@ pub const PROGRESS_POLL_INTERVAL_MS: u64 = 150;
 #[derive(Clone, Debug)]
 pub struct DownloadJobOptions {
     pub uris: Vec<String>,
+    pub prioritized_uris: Vec<(u32, String)>,
     pub dest_dir: PathBuf,
     pub filename: String,
     pub expected_sha256: Option<String>,
@@ -42,6 +43,47 @@ pub struct ProgressUpdate {
     pub is_resumed: bool,
     pub resumed_bytes: u64,
     pub total_active_tasks: u32,
+}
+
+pub fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+pub fn create_metalink_xml(
+    filename: &str,
+    prioritized_uris: &[(u32, String)],
+    expected_size: Option<u64>,
+    expected_sha256: Option<&str>,
+) -> String {
+    let mut xml = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    xml.push_str("<metalink xmlns=\"urn:ietf:params:xml:ns:metalink\">\n");
+    xml.push_str(&format!("  <file name=\"{}\">\n", xml_escape(filename)));
+
+    if let Some(size) = expected_size {
+        xml.push_str(&format!("    <size>{size}</size>\n"));
+    }
+
+    if let Some(hash) = expected_sha256 {
+        xml.push_str(&format!(
+            "    <hash type=\"sha-256\">{}</hash>\n",
+            xml_escape(hash)
+        ));
+    }
+
+    for (priority, uri) in prioritized_uris {
+        xml.push_str(&format!(
+            "    <url priority=\"{priority}\">{}</url>\n",
+            xml_escape(uri)
+        ));
+    }
+
+    xml.push_str("  </file>\n");
+    xml.push_str("</metalink>");
+    xml
 }
 
 pub fn verify_file_hash_and_size(
@@ -89,7 +131,7 @@ pub async fn download_with_aria2<F>(
 where
     F: Fn(ProgressUpdate) + Send + Sync + 'static,
 {
-    if options.uris.is_empty() {
+    if options.uris.is_empty() && options.prioritized_uris.is_empty() {
         return Err("下载地址列表为空".to_string());
     }
 
@@ -102,9 +144,21 @@ where
     let lease = Aria2Lease::acquire(app).await?;
 
     let mut client = Aria2WebSocketClient::connect(&lease.ws_url, &lease.secret).await?;
-    let gid = client
-        .add_uri(&options.uris, &options.dest_dir, &options.filename)
-        .await?;
+    let gid = if !options.prioritized_uris.is_empty() {
+        use base64::Engine;
+        let metalink_xml = create_metalink_xml(
+            &options.filename,
+            &options.prioritized_uris,
+            options.expected_size,
+            options.expected_sha256.as_deref(),
+        );
+        let b64 = base64::engine::general_purpose::STANDARD.encode(metalink_xml.as_bytes());
+        client.add_metalink(&b64, &options.dest_dir).await?
+    } else {
+        client
+            .add_uri(&options.uris, &options.dest_dir, &options.filename)
+            .await?
+    };
 
     let mut last_num_pieces;
     let mut last_piece_length;

@@ -1,6 +1,6 @@
 use reqwest::Url;
 use semver::Version;
-use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 
 pub(super) const DAY_MS: u64 = 24 * 60 * 60 * 1000;
 pub(super) const JSON_LIMIT: usize = 1024 * 1024;
@@ -179,6 +179,43 @@ pub(crate) enum Source {
     Primary,
     Fallback,
     Github,
+    Cnb,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct CnbAsset {
+    pub name: String,
+    #[serde(default)]
+    pub browser_download_url: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct CnbRelease {
+    #[serde(default)]
+    pub tag_ref: String,
+    pub title: Option<String>,
+    pub body: Option<String>,
+    #[serde(default)]
+    pub assets: Vec<CnbAsset>,
+}
+
+impl CnbRelease {
+    pub fn tag_name(&self) -> &str {
+        self.tag_ref
+            .strip_prefix("refs/tags/")
+            .unwrap_or(&self.tag_ref)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct CnbTagReleaseResponse {
+    pub release: Option<CnbRelease>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct CnbReleasesResponse {
+    #[serde(default)]
+    pub releases: Vec<CnbRelease>,
 }
 
 #[derive(Clone, Debug, Serialize)]

@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 use tokio::net::TcpStream;
-use tokio_tungstenite::{connect_async, tungstenite::Message, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message};
 
 static REQUEST_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -179,6 +179,28 @@ impl Aria2WebSocketClient {
             .as_str()
             .map(|s| s.to_string())
             .ok_or_else(|| "addUri 返回值中未包含有效的 GID".to_string())?;
+
+        Ok(gid)
+    }
+
+    pub async fn add_metalink(
+        &mut self,
+        metalink_base64: &str,
+        dir: &Path,
+    ) -> Result<String, String> {
+        let mut options = HashMap::new();
+        options.insert("dir".to_string(), dir.to_string_lossy().to_string());
+        options.insert("continue".to_string(), "true".to_string());
+
+        let params = (self.token.clone(), metalink_base64, options);
+        let result = self.call_raw("aria2.addMetalink", params).await?;
+
+        let gid = result
+            .as_array()
+            .and_then(|arr| arr.first())
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .ok_or_else(|| "addMetalink 返回值中未包含有效的 GID".to_string())?;
 
         Ok(gid)
     }

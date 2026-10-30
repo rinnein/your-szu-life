@@ -70,21 +70,7 @@ pub(crate) fn start_update(
 
     let direct_url = update.latest_ver_url;
     let is_gzip = direct_url.ends_with(".gz");
-
-    let clean_direct = if let Some(idx) = direct_url.find("https://github.com/") {
-        &direct_url[idx..]
-    } else if let Some(idx) = direct_url.find("http://github.com/") {
-        &direct_url[idx..]
-    } else {
-        &direct_url
-    };
-
-    let mut candidate_urls = Vec::new();
-    for accelerator in store.accelerators() {
-        let prefix = accelerator.as_str();
-        candidate_urls.push(format!("{prefix}{clean_direct}"));
-    }
-    candidate_urls.push(clean_direct.to_string());
+    let candidates = store.build_download_candidates(&direct_url);
 
     std::thread::spawn(move || {
         let context = ndk_context::android_context();
@@ -96,8 +82,9 @@ pub(crate) fn start_update(
             emit_error("无法连接 Android 服务");
             return;
         };
-        let context_obj =
-            std::mem::ManuallyDrop::new(unsafe { jni::objects::JObject::from_raw(context.context().cast()) });
+        let context_obj = std::mem::ManuallyDrop::new(unsafe {
+            jni::objects::JObject::from_raw(context.context().cast())
+        });
 
         let cache_dir = match (|| -> Result<PathBuf, jni::errors::Error> {
             let cache_file = env
@@ -141,7 +128,8 @@ pub(crate) fn start_update(
         });
 
         let aria_options = crate::aria2::DownloadJobOptions {
-            uris: candidate_urls,
+            uris: Vec::new(),
+            prioritized_uris: candidates,
             dest_dir: cache_dir.clone(),
             filename: download_filename,
             expected_sha256: None,
@@ -198,7 +186,9 @@ pub(crate) fn start_update(
             downloaded_path
         };
 
-        let file_len = std::fs::metadata(&final_apk_path).map(|m| m.len()).unwrap_or(0);
+        let file_len = std::fs::metadata(&final_apk_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
         emit_progress(UpdateProgressPayload {
             status: "installing".to_string(),
             progress: 100,
@@ -239,11 +229,9 @@ fn decompress_gzip(src: &std::path::Path, dst: &std::path::Path) -> Result<(), S
         let _ = std::fs::remove_file(dst);
     }
 
-    let gz_file = std::fs::File::open(src)
-        .map_err(|e| format!("打开压缩包失败: {e}"))?;
+    let gz_file = std::fs::File::open(src).map_err(|e| format!("打开压缩包失败: {e}"))?;
     let mut decoder = GzDecoder::new(gz_file);
-    let mut out_file = std::fs::File::create(dst)
-        .map_err(|e| format!("创建目标 APK 失败: {e}"))?;
+    let mut out_file = std::fs::File::create(dst).map_err(|e| format!("创建目标 APK 失败: {e}"))?;
     let mut buffer = [0u8; 64 * 1024];
     loop {
         let n = decoder
@@ -269,7 +257,10 @@ fn clean_temporary_apks(cache_dir: &std::path::Path) {
             let path = entry.path();
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 let lower = name.to_ascii_lowercase();
-                if lower.ends_with(".apk") || lower.ends_with(".apk.gz") || lower.starts_with("update.") {
+                if lower.ends_with(".apk")
+                    || lower.ends_with(".apk.gz")
+                    || lower.starts_with("update.")
+                {
                     let _ = std::fs::remove_file(&path);
                 }
             }

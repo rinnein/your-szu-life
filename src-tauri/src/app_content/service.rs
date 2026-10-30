@@ -66,6 +66,7 @@ impl ContentService {
         if config.uses_github_releases() {
             if let Some(repository) = &config.repository {
                 let key = format!("github:{}", repository.full_name);
+                snapshot.announcements = load_feed(&cache, &key, "announcements.json", now);
                 snapshot.update = load_feed(&cache, &key, "latest-release.json", now);
                 snapshot.update_available = snapshot
                     .update
@@ -178,8 +179,12 @@ impl ContentService {
                 );
             }
             self.mutate(|snapshot| {
-                if let Some(announcements) = announcements {
-                    apply_result(&mut snapshot.announcements, announcements, completed_at);
+                if let Some(announcements) = announcements.as_ref() {
+                    apply_result(
+                        &mut snapshot.announcements,
+                        announcements.clone(),
+                        completed_at,
+                    );
                 }
                 apply_result(&mut snapshot.update, update, completed_at);
                 snapshot.refreshing = false;
@@ -189,12 +194,14 @@ impl ContentService {
                     .as_ref()
                     .is_some_and(|update| is_newer(&snapshot.version, &update.latest_ver));
             });
-            let allowed = self.allowed_images();
-            self.image_flights
-                .lock()
-                .unwrap()
-                .retain(|url, _| allowed.contains(url));
-            self.cache.prune_images(&cache_scope, &allowed);
+            if let Some(Ok(_)) = &announcements {
+                let allowed = self.allowed_images();
+                self.image_flights
+                    .lock()
+                    .unwrap()
+                    .retain(|url, _| allowed.contains(url));
+                self.cache.prune_images(&cache_scope, &allowed);
+            }
             self.snapshot()
         })
     }
@@ -257,9 +264,23 @@ impl ContentService {
             Ok((data, Source::Github))
         });
         let update = (|| -> Result<(UpdateInfo, Source), ContentError> {
-            let releases = get_releases("releases?per_page=10")
-                .or_else(|_| get_release("releases/latest").map(|r| vec![r]))
-                .or_else(|_| get_release("releases/tags/canary").map(|r| vec![r]))?;
+            let releases = match get_releases("releases?per_page=10") {
+                Ok(r) => r,
+                Err(err) => {
+                    if err.kind == ErrorKind::RateLimited {
+                        return Err(err);
+                    }
+                    match get_release("releases/latest") {
+                        Ok(r) => vec![r],
+                        Err(err) => {
+                            if err.kind == ErrorKind::RateLimited {
+                                return Err(err);
+                            }
+                            get_release("releases/tags/canary").map(|r| vec![r])?
+                        }
+                    }
+                }
+            };
 
             struct Candidate<'a> {
                 release: &'a Release,
@@ -343,7 +364,203 @@ impl ContentService {
             update.validate()?;
             Ok((update, Source::Github))
         })();
+        let announcement = announcement.or_else(|github_err| {
+            log::info!("GitHub 公告获取失败 ({github_err:?})，尝试从 CNB 镜像获取");
+            self.fetch_cnb_announcements()
+        });
+        let update = update.or_else(|github_err| {
+            log::info!("GitHub 更新检查失败 ({github_err:?})，尝试从 CNB 镜像获取");
+            self.fetch_cnb_releases()
+        });
         (announcement, update)
+    }
+
+    fn fetch_cnb_announcements(&self) -> Result<(Announcements, Source), ContentError> {
+        let url = Url::parse(&format!(
+            "https://cnb.cool/{}/-/releases/tags/announcement",
+            self.config.cnb_repository
+        ))
+        .map_err(|_| ContentError::invalid("CNB 公告地址无效"))?;
+        let response = self
+            .http
+            .get(&url, RequestKind::CnbWeb, JSON_LIMIT)?
+            .successful(RequestKind::CnbWeb)?;
+        let data: CnbTagReleaseResponse = serde_json::from_slice(&response.body)
+            .map_err(|_| ContentError::invalid("CNB 公告响应不是有效 JSON"))?;
+        let release = data
+            .release
+            .ok_or_else(|| ContentError::invalid("CNB 未找到 announcement Release"))?;
+        let body = release.body.unwrap_or_default();
+        let announcements: Announcements = serde_json::from_str(&body).map_err(|_| {
+            ContentError::invalid("CNB announcement Release 的 body 不是有效公告 JSON")
+        })?;
+        announcements.validate()?;
+        Ok((announcements, Source::Cnb))
+    }
+
+    fn fetch_cnb_releases(&self) -> Result<(UpdateInfo, Source), ContentError> {
+        let url = Url::parse(&format!(
+            "https://cnb.cool/{}/-/releases",
+            self.config.cnb_repository
+        ))
+        .map_err(|_| ContentError::invalid("CNB 仓库地址无效"))?;
+        let response = self
+            .http
+            .get(&url, RequestKind::CnbWeb, JSON_LIMIT)?
+            .successful(RequestKind::CnbWeb)?;
+        let data: CnbReleasesResponse = serde_json::from_slice(&response.body)
+            .map_err(|_| ContentError::invalid("CNB Release 列表响应无效"))?;
+
+        struct Candidate<'a> {
+            release: &'a CnbRelease,
+            asset: Option<&'a CnbAsset>,
+            version: String,
+        }
+
+        let mut candidates: Vec<Candidate> = Vec::new();
+        for release in &data.releases {
+            let asset_names: Vec<&str> = release.assets.iter().map(|a| a.name.as_str()).collect();
+            if let Some(asset_idx) = find_platform_asset_index(&asset_names) {
+                let asset = &release.assets[asset_idx];
+                if let Some(ver) = extract_release_version(
+                    release.tag_name(),
+                    release.title.as_deref(),
+                    &asset.name,
+                ) {
+                    candidates.push(Candidate {
+                        release,
+                        asset: Some(asset),
+                        version: ver,
+                    });
+                }
+            } else {
+                #[cfg(target_os = "linux")]
+                {
+                    if let Some(ver) =
+                        extract_release_version(release.tag_name(), release.title.as_deref(), "")
+                    {
+                        candidates.push(Candidate {
+                            release,
+                            asset: None,
+                            version: ver,
+                        });
+                    }
+                }
+            }
+        }
+
+        if candidates.is_empty() {
+            return Err(ContentError::new(
+                ErrorKind::Unavailable,
+                "CNB Release 未包含当前平台的安装包",
+            ));
+        }
+
+        let newer_candidate = candidates
+            .iter()
+            .find(|c| is_newer(&self.config.version, &c.version));
+        let selected = newer_candidate.unwrap_or(&candidates[0]);
+
+        let release_url = format!(
+            "https://cnb.cool/{}/-/releases/tag/{}",
+            self.config.cnb_repository,
+            selected.release.tag_name()
+        );
+
+        let direct_url = if let Some(asset) = selected.asset {
+            if !asset.browser_download_url.is_empty() {
+                asset.browser_download_url.clone()
+            } else {
+                format!(
+                    "https://cnb.cool/{}/-/releases/download/{}/{}",
+                    self.config.cnb_repository,
+                    selected.release.tag_name(),
+                    asset.name
+                )
+            }
+        } else {
+            release_url.clone()
+        };
+
+        let update = UpdateInfo {
+            latest_ver: selected.version.clone(),
+            latest_ver_url: direct_url,
+            changelog: selected.release.body.clone().unwrap_or_default(),
+            release_url: Some(release_url),
+        };
+        update.validate()?;
+        Ok((update, Source::Cnb))
+    }
+
+    #[cfg(any(target_os = "android", target_os = "windows", test))]
+    pub fn check_cnb_sync(&self, tag: &str, asset_name: &str) -> Option<String> {
+        let url = Url::parse(&format!(
+            "https://cnb.cool/{}/-/releases/tags/{}",
+            self.config.cnb_repository, tag
+        ))
+        .ok()?;
+        let response = self
+            .http
+            .get(&url, RequestKind::CnbWeb, JSON_LIMIT)
+            .ok()?
+            .successful(RequestKind::CnbWeb)
+            .ok()?;
+        let data: CnbTagReleaseResponse = serde_json::from_slice(&response.body).ok()?;
+        let release = data.release?;
+        let asset = release.assets.iter().find(|a| a.name == asset_name)?;
+        if !asset.browser_download_url.is_empty() {
+            Some(asset.browser_download_url.clone())
+        } else {
+            Some(format!(
+                "https://cnb.cool/{}/-/releases/download/{}/{}",
+                self.config.cnb_repository, tag, asset_name
+            ))
+        }
+    }
+
+    #[cfg(any(target_os = "android", target_os = "windows", test))]
+    pub fn build_download_candidates(&self, direct_url: &str) -> Vec<(u32, String)> {
+        let mut candidates = Vec::new();
+        let github_repo = self
+            .config
+            .repository
+            .as_ref()
+            .map(|r| r.full_name.as_str())
+            .unwrap_or("rinnein/your-szu-life");
+
+        if let Some((tag, filename)) = extract_release_tag_and_filename(direct_url) {
+            let is_from_cnb = direct_url.contains("cnb.cool");
+            let cnb_url = if is_from_cnb {
+                Some(direct_url.to_string())
+            } else {
+                self.check_cnb_sync(tag, filename)
+            };
+
+            let github_direct =
+                format!("https://github.com/{github_repo}/releases/download/{tag}/{filename}");
+
+            if let Some(cnb) = cnb_url {
+                candidates.push((1, cnb));
+                for accelerator in &self.config.github_accelerators {
+                    let prefix = accelerator.as_str();
+                    candidates.push((2, format!("{prefix}{github_direct}")));
+                }
+                candidates.push((3, github_direct));
+            } else {
+                for accelerator in &self.config.github_accelerators {
+                    let prefix = accelerator.as_str();
+                    candidates.push((1, format!("{prefix}{github_direct}")));
+                }
+                candidates.push((2, github_direct));
+            }
+        } else {
+            let urls = collect_candidate_urls(direct_url, &self.config.github_accelerators);
+            for (idx, url) in urls.into_iter().enumerate() {
+                candidates.push((idx as u32 + 1, url));
+            }
+        }
+
+        candidates
     }
 
     fn fetch<T: Document>(
@@ -607,7 +824,20 @@ impl ContentService {
     }
 }
 
-#[cfg(any(target_os = "windows", test))]
+#[cfg(any(target_os = "android", target_os = "windows", test))]
+pub(crate) fn extract_release_tag_and_filename(url: &str) -> Option<(&str, &str)> {
+    if let Some(idx) = url.find("releases/download/") {
+        let rest = &url[idx + "releases/download/".len()..];
+        let (tag, filename) = rest.split_once('/')?;
+        let filename = filename.split(['?', '#']).next().unwrap_or(filename);
+        if !tag.is_empty() && !filename.is_empty() {
+            return Some((tag, filename));
+        }
+    }
+    None
+}
+
+#[cfg(any(target_os = "android", target_os = "windows", test))]
 pub(crate) fn collect_candidate_urls(
     direct_url: &str,
     accelerators: &[reqwest::Url],
@@ -634,7 +864,7 @@ pub(super) fn is_platform_asset(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     #[cfg(target_os = "android")]
     {
-        name.ends_with(".apk.gz") || name.ends_with(".apk")
+        name.ends_with(".apk.gz")
     }
     #[cfg(target_os = "windows")]
     {
@@ -666,8 +896,8 @@ pub(super) fn is_platform_asset(name: &str) -> bool {
 /// 这样 [`is_platform_asset`] 在所有平台上都是真正参与运行时判断的代码。
 pub(super) fn find_platform_asset_index(names: &[&str]) -> Option<usize> {
     let preferred: &[&str] = if cfg!(target_os = "android") {
-        // Android 优先选择压缩后的 .apk.gz，再回退到 .apk。
-        &[".apk.gz", ".apk"]
+        // Android 应用内更新仅下载 .apk.gz
+        &[".apk.gz"]
     } else {
         &[]
     };

@@ -42,11 +42,19 @@ export function updateStatus(
   if (snapshot.configuration.status === "unconfigured" && !snapshot.repository)
     return "未配置内容源";
   if (snapshot.configuration.status === "invalid") return "内容源配置无效";
+  if (snapshot.update.data) {
+    if (snapshot.updateAvailable) {
+      return (
+        "发现新版本 " +
+        snapshot.update.data.latest_ver +
+        (snapshot.update.fromCache ? "（缓存）" : "")
+      );
+    }
+    if (snapshot.update.fromCache) return "上次检查未发现新版本（缓存）";
+    return "当前已是最新版本";
+  }
   if (snapshot.update.error) return "本次更新检查失败";
-  if (!snapshot.update.data) return "尚未完成更新检查";
-  if (snapshot.updateAvailable) return "发现新版本 " + snapshot.update.data.latest_ver;
-  if (snapshot.update.fromCache) return "上次检查未发现新版本（缓存）";
-  return "当前已是最新版本";
+  return "尚未完成更新检查";
 }
 
 function Contributors() {
@@ -321,7 +329,9 @@ export default function AboutPage() {
                   ? " · 备用源"
                   : update?.source === "github"
                     ? " · GitHub"
-                    : ""}
+                    : update?.source === "cnb"
+                      ? " · CNB 镜像"
+                      : ""}
               </dd>
             </div>
             <div>
@@ -332,7 +342,9 @@ export default function AboutPage() {
                   ? " · 备用源"
                   : announcements?.source === "github"
                     ? " · GitHub"
-                    : ""}
+                    : announcements?.source === "cnb"
+                      ? " · CNB 镜像"
+                      : ""}
               </dd>
             </div>
             {snapshot?.nextAutomaticCheckAt != null && (
@@ -348,7 +360,7 @@ export default function AboutPage() {
               {announcements.fromCache && " 已保留上次成功的公告。"}
             </p>
           )}
-          {hasUpdateSource && !refreshing && announcements?.data && !announcements.error && (
+          {hasUpdateSource && !refreshing && announcements?.data && (
             <p className="content-muted">
               {announcements.fromCache ? "公告缓存" : "公告已刷新"} ·{" "}
               {announcements.data.announcements.length} 条

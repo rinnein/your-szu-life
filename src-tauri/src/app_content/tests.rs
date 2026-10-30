@@ -1,6 +1,6 @@
 use super::{
-    config::{parse_repository, ContentConfig},
-    model::{is_newer, parse_document, web_url, Announcements, Document, UpdateInfo},
+    config::{ContentConfig, parse_repository},
+    model::{Announcements, Document, UpdateInfo, is_newer, parse_document, web_url},
     runtime::{AutomaticSchedule, SingleFlight},
     service::{
         extract_release_version, extract_version_from_asset_name, find_platform_asset_index,
@@ -10,8 +10,8 @@ use super::{
 use serde_json::json;
 use std::{
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
     thread,
     time::Duration,
@@ -202,14 +202,14 @@ fn platform_asset_matcher_handles_expected_extensions() {
         assert!(is_platform_asset(
             "your-szu-life_android_arm64_0.9.0-release.apk.gz"
         ));
-        assert!(is_platform_asset(
+        assert!(!is_platform_asset(
             "your-szu-life_android_arm64_0.9.0-release.apk"
         ));
         let names = [
             "your-szu-life_android_arm64_0.9.0-release.apk",
             "your-szu-life_android_arm64_0.9.0-release.apk.gz",
         ];
-        // Prefers compressed .apk.gz
+        // Only matches .apk.gz
         assert_eq!(find_platform_asset_index(&names), Some(1));
     }
 }
@@ -290,4 +290,385 @@ fn test_collect_candidate_urls() {
         "https://ghfast.top/https://github.com/rinnein/your-szu-life/releases/download/v1.0.0/setup.msi"
     );
     assert_eq!(urls[2], direct);
+}
+
+#[test]
+fn github_content_service_loads_cache_and_preserves_on_request_failure() {
+    use super::{
+        cache::Cache,
+        http::{HttpResponse, PublicHttp, RequestKind},
+        model::{Announcement, Announcements, ContentError, ErrorKind, Source, UpdateInfo},
+        runtime::Clock,
+        service::ContentService,
+    };
+
+    struct RateLimitedHttp;
+    impl PublicHttp for RateLimitedHttp {
+        fn get(
+            &self,
+            _url: &reqwest::Url,
+            _kind: RequestKind,
+            _limit: usize,
+        ) -> Result<HttpResponse, ContentError> {
+            Err(ContentError::new(
+                ErrorKind::RateLimited,
+                "GitHub 请求受限，请稍后再试。",
+            ))
+        }
+    }
+
+    struct TestClock(u64);
+    impl Clock for TestClock {
+        fn now_ms(&self) -> u64 {
+            self.0
+        }
+    }
+
+    let temp_dir = std::env::temp_dir().join(format!("test-cache-{}", uuid::Uuid::new_v4()));
+    let config = ContentConfig::new(
+        "0.1.0".into(),
+        None,
+        None,
+        Some(&json!({"type": "git", "url": "https://github.com/rinnein/your-szu-life.git"})),
+    );
+    assert!(config.uses_github_releases());
+
+    let scope = format!("github:{}", config.repository.as_ref().unwrap().full_name);
+    let cache = Cache::new(Some(temp_dir.clone()));
+    let announcements = Announcements {
+        announcements: vec![Announcement {
+            title: "测试公告".into(),
+            desc: Some("公告内容".into()),
+            goto: None,
+            pic: None,
+        }],
+    };
+    let update = UpdateInfo {
+        latest_ver: "0.2.0".into(),
+        latest_ver_url: "https://example.com/app.msi".into(),
+        changelog: "修复问题".into(),
+        release_url: None,
+    };
+    cache.save(
+        &scope,
+        "announcements.json",
+        &announcements,
+        Source::Github,
+        1000,
+    );
+    cache.save(&scope, "latest-release.json", &update, Source::Github, 1000);
+
+    let service = ContentService::new(
+        config,
+        Arc::new(RateLimitedHttp),
+        Arc::new(TestClock(2000)),
+        Some(temp_dir.clone()),
+        |_| {},
+    );
+
+    let snapshot = service.snapshot();
+    assert!(
+        snapshot.announcements.data.is_some(),
+        "announcements must be loaded from cache in new()"
+    );
+    assert!(snapshot.announcements.from_cache);
+    assert_eq!(
+        snapshot.announcements.data.as_ref().unwrap().announcements[0].title,
+        "测试公告"
+    );
+    assert!(snapshot.update.data.is_some());
+    assert!(snapshot.update.from_cache);
+    assert!(snapshot.update_available);
+
+    // Now trigger refresh when request fails (rate limited). The cache must not expire!
+    let refreshed = service.refresh();
+    assert!(
+        refreshed.announcements.data.is_some(),
+        "announcements cache must not expire on failure"
+    );
+    assert!(refreshed.announcements.from_cache);
+    assert!(refreshed.announcements.error.is_some());
+    assert_eq!(
+        refreshed.announcements.data.as_ref().unwrap().announcements[0].title,
+        "测试公告"
+    );
+
+    assert!(
+        refreshed.update.data.is_some(),
+        "update cache must not expire on failure"
+    );
+    assert!(refreshed.update.from_cache);
+    assert!(refreshed.update.error.is_some());
+    assert!(
+        refreshed.update_available,
+        "update_available must be preserved from cache"
+    );
+
+    let _ = std::fs::remove_dir_all(temp_dir);
+}
+
+#[test]
+fn test_extract_release_tag_and_filename() {
+    use super::service::extract_release_tag_and_filename;
+
+    let gh = "https://github.com/rinnein/your-szu-life/releases/download/v0.9.1/app.msi";
+    assert_eq!(
+        extract_release_tag_and_filename(gh),
+        Some(("v0.9.1", "app.msi"))
+    );
+
+    let gh_acc = "https://ghfast.top/https://github.com/rinnein/your-szu-life/releases/download/canary/app.apk.gz";
+    assert_eq!(
+        extract_release_tag_and_filename(gh_acc),
+        Some(("canary", "app.apk.gz"))
+    );
+
+    let cnb = "https://cnb.cool/rinnein/szu/your-szu-life/-/releases/download/v0.9.1/app.msi";
+    assert_eq!(
+        extract_release_tag_and_filename(cnb),
+        Some(("v0.9.1", "app.msi"))
+    );
+
+    let cnb_query =
+        "https://cnb.cool/rinnein/szu/your-szu-life/-/releases/download/v0.9.1/app.msi?share=true";
+    assert_eq!(
+        extract_release_tag_and_filename(cnb_query),
+        Some(("v0.9.1", "app.msi"))
+    );
+
+    assert_eq!(
+        extract_release_tag_and_filename("https://example.com/other"),
+        None
+    );
+}
+
+#[test]
+fn test_cnb_fallback_when_github_fails() {
+    use super::{
+        http::{HttpResponse, PublicHttp, RequestKind},
+        model::{ContentError, ErrorKind, Source},
+        runtime::Clock,
+        service::ContentService,
+    };
+
+    struct CnbFallbackHttp;
+    impl PublicHttp for CnbFallbackHttp {
+        fn get(
+            &self,
+            url: &reqwest::Url,
+            kind: RequestKind,
+            _limit: usize,
+        ) -> Result<HttpResponse, ContentError> {
+            if url.host_str() == Some("api.github.com") {
+                return Err(ContentError::new(
+                    ErrorKind::RateLimited,
+                    "GitHub 请求受限，请稍后再试。",
+                ));
+            }
+            if url.host_str() == Some("cnb.cool") {
+                assert_eq!(kind, RequestKind::CnbWeb);
+                if url.path().ends_with("/releases/tags/announcement") {
+                    let body = json!({
+                        "release": {
+                            "body": "{\"announcements\":[{\"title\":\"CNB公告\",\"desc\":\"正文\"}]}"
+                        }
+                    });
+                    return Ok(HttpResponse {
+                        status: 200,
+                        body: serde_json::to_vec(&body).unwrap(),
+                        content_type: Some("application/vnd.cnb.web+json".into()),
+                        has_next_page: false,
+                        retry_at: None,
+                    });
+                }
+                if url.path().ends_with("/releases") {
+                    let body = json!({
+                        "releases": [
+                            {
+                                "tag_ref": "refs/tags/v0.9.5",
+                                "title": "v0.9.5",
+                                "body": "CNB更新日志",
+                                "assets": [
+                                    {
+                                        "name": "your-szu-life_windows_x64_0.9.5-release.msi",
+                                        "browser_download_url": "https://cnb.cool/rinnein/szu/your-szu-life/-/releases/download/v0.9.5/your-szu-life_windows_x64_0.9.5-release.msi"
+                                    },
+                                    {
+                                        "name": "your-szu-life_android_arm64_0.9.5-release.apk.gz",
+                                        "browser_download_url": "https://cnb.cool/rinnein/szu/your-szu-life/-/releases/download/v0.9.5/your-szu-life_android_arm64_0.9.5-release.apk.gz"
+                                    }
+                                ]
+                            }
+                        ]
+                    });
+                    return Ok(HttpResponse {
+                        status: 200,
+                        body: serde_json::to_vec(&body).unwrap(),
+                        content_type: Some("application/vnd.cnb.web+json".into()),
+                        has_next_page: false,
+                        retry_at: None,
+                    });
+                }
+            }
+            Err(ContentError::new(ErrorKind::Http, "404 Not Found"))
+        }
+    }
+
+    struct TestClock;
+    impl Clock for TestClock {
+        fn now_ms(&self) -> u64 {
+            10000
+        }
+    }
+
+    let config = ContentConfig::new(
+        "0.1.0".into(),
+        None,
+        None,
+        Some(&json!({"type": "git", "url": "https://github.com/rinnein/your-szu-life.git"})),
+    );
+
+    let service = ContentService::new(
+        config,
+        Arc::new(CnbFallbackHttp),
+        Arc::new(TestClock),
+        None,
+        |_| {},
+    );
+
+    let snapshot = service.refresh();
+    assert_eq!(snapshot.announcements.source, Some(Source::Cnb));
+    assert!(snapshot.announcements.data.is_some());
+    assert_eq!(
+        snapshot.announcements.data.unwrap().announcements[0].title,
+        "CNB公告"
+    );
+
+    #[cfg(any(target_os = "windows", target_os = "android"))]
+    {
+        assert_eq!(snapshot.update.source, Some(Source::Cnb));
+        assert!(snapshot.update.data.is_some());
+        assert_eq!(snapshot.update.data.unwrap().latest_ver, "0.9.5");
+        assert!(snapshot.update_available);
+    }
+}
+
+#[test]
+fn test_build_download_candidates_with_cnb() {
+    use super::{
+        http::{HttpResponse, PublicHttp, RequestKind},
+        model::{ContentError, ErrorKind},
+        runtime::Clock,
+        service::ContentService,
+    };
+
+    struct SyncCheckHttp;
+    impl PublicHttp for SyncCheckHttp {
+        fn get(
+            &self,
+            url: &reqwest::Url,
+            _kind: RequestKind,
+            _limit: usize,
+        ) -> Result<HttpResponse, ContentError> {
+            if url.path().contains("/releases/tags/v0.9.5") {
+                let body = json!({
+                    "release": {
+                        "assets": [
+                            {
+                                "name": "app.msi",
+                                "browser_download_url": "https://cnb.cool/rinnein/szu/your-szu-life/-/releases/download/v0.9.5/app.msi"
+                            }
+                        ]
+                    }
+                });
+                return Ok(HttpResponse {
+                    status: 200,
+                    body: serde_json::to_vec(&body).unwrap(),
+                    content_type: Some("application/vnd.cnb.web+json".into()),
+                    has_next_page: false,
+                    retry_at: None,
+                });
+            }
+            Err(ContentError::new(ErrorKind::Http, "404 Not Found"))
+        }
+    }
+
+    struct TestClock;
+    impl Clock for TestClock {
+        fn now_ms(&self) -> u64 {
+            1000
+        }
+    }
+
+    let mut config = ContentConfig::new(
+        "0.1.0".into(),
+        None,
+        None,
+        Some(&json!({"type": "git", "url": "https://github.com/rinnein/your-szu-life.git"})),
+    );
+    config.github_accelerators = vec![reqwest::Url::parse("https://gh-proxy.com/").unwrap()];
+
+    let service = ContentService::new(
+        config,
+        Arc::new(SyncCheckHttp),
+        Arc::new(TestClock),
+        None,
+        |_| {},
+    );
+
+    // Case 1: GitHub URL where CNB is synced
+    let gh_url = "https://github.com/rinnein/your-szu-life/releases/download/v0.9.5/app.msi";
+    let candidates = service.build_download_candidates(gh_url);
+    assert_eq!(candidates.len(), 3);
+    assert_eq!(candidates[0].0, 1);
+    assert_eq!(
+        candidates[0].1,
+        "https://cnb.cool/rinnein/szu/your-szu-life/-/releases/download/v0.9.5/app.msi"
+    );
+    assert_eq!(candidates[1].0, 2);
+    assert_eq!(
+        candidates[1].1,
+        "https://gh-proxy.com/https://github.com/rinnein/your-szu-life/releases/download/v0.9.5/app.msi"
+    );
+    assert_eq!(candidates[2].0, 3);
+    assert_eq!(
+        candidates[2].1,
+        "https://github.com/rinnein/your-szu-life/releases/download/v0.9.5/app.msi"
+    );
+
+    // Case 2: Direct CNB URL (checked via CNB, back-derived GitHub mirrors)
+    let cnb_url = "https://cnb.cool/rinnein/szu/your-szu-life/-/releases/download/v0.9.5/app.msi";
+    let candidates = service.build_download_candidates(cnb_url);
+    assert_eq!(candidates.len(), 3);
+    assert_eq!(candidates[0].0, 1);
+    assert_eq!(
+        candidates[0].1,
+        "https://cnb.cool/rinnein/szu/your-szu-life/-/releases/download/v0.9.5/app.msi"
+    );
+    assert_eq!(candidates[1].0, 2);
+    assert_eq!(
+        candidates[1].1,
+        "https://gh-proxy.com/https://github.com/rinnein/your-szu-life/releases/download/v0.9.5/app.msi"
+    );
+    assert_eq!(candidates[2].0, 3);
+    assert_eq!(
+        candidates[2].1,
+        "https://github.com/rinnein/your-szu-life/releases/download/v0.9.5/app.msi"
+    );
+
+    // Case 3: GitHub URL where CNB is NOT synced (e.g. tag v0.9.6)
+    let not_synced_url =
+        "https://github.com/rinnein/your-szu-life/releases/download/v0.9.6/app.msi";
+    let candidates = service.build_download_candidates(not_synced_url);
+    assert_eq!(candidates.len(), 2);
+    assert_eq!(candidates[0].0, 1);
+    assert_eq!(
+        candidates[0].1,
+        "https://gh-proxy.com/https://github.com/rinnein/your-szu-life/releases/download/v0.9.6/app.msi"
+    );
+    assert_eq!(candidates[1].0, 2);
+    assert_eq!(
+        candidates[1].1,
+        "https://github.com/rinnein/your-szu-life/releases/download/v0.9.6/app.msi"
+    );
 }

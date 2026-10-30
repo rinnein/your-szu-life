@@ -1,11 +1,12 @@
 use super::model::*;
-use reqwest::{blocking::Client, Url};
+use reqwest::{Url, blocking::Client};
 use std::{io::Read, time::Duration};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum RequestKind {
     Json,
     Github,
+    CnbWeb,
     Image,
 }
 
@@ -26,6 +27,8 @@ impl HttpResponse {
             ContentError::new(ErrorKind::RateLimited, "GitHub 请求受限，请稍后再试。")
         } else if kind == RequestKind::Github && self.status == 404 {
             ContentError::new(ErrorKind::Http, "GitHub 仓库不存在或不是公开仓库。")
+        } else if kind == RequestKind::CnbWeb && self.status == 404 {
+            ContentError::new(ErrorKind::Http, "CNB 仓库或资源不存在。")
         } else {
             ContentError::new(ErrorKind::Http, format!("服务器返回 HTTP {}", self.status))
         };
@@ -36,7 +39,7 @@ impl HttpResponse {
 
 pub(super) trait PublicHttp: Send + Sync {
     fn get(&self, url: &Url, kind: RequestKind, limit: usize)
-        -> Result<HttpResponse, ContentError>;
+    -> Result<HttpResponse, ContentError>;
 }
 
 pub(super) struct PublicClient {
@@ -80,6 +83,7 @@ impl PublicHttp for PublicClient {
         let accept = match kind {
             RequestKind::Json => "application/json",
             RequestKind::Github => "application/vnd.github+json",
+            RequestKind::CnbWeb => "application/vnd.cnb.web+json",
             RequestKind::Image => "image/png,image/jpeg,image/gif,image/webp",
         };
         let response = self

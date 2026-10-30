@@ -22,7 +22,7 @@ export type FeedSnapshot<T> = {
   data: T | null;
   lastAttemptAt: number | null;
   lastSuccessAt: number | null;
-  source: "primary" | "fallback" | "github" | null;
+  source: "primary" | "fallback" | "github" | "cnb" | null;
   fromCache: boolean;
   error: ContentError | null;
 };

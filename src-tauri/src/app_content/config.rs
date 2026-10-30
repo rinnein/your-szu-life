@@ -18,12 +18,15 @@ impl Sources {
     }
 }
 
+pub(super) const DEFAULT_CNB_REPOSITORY: &str = "rinnein/szu/your-szu-life";
+
 pub(super) struct ContentConfig {
     pub version: String,
     pub sources: Option<Sources>,
     pub view: ConfigurationView,
     pub repository: Option<Repository>,
     pub repository_message: Option<String>,
+    pub cnb_repository: String,
     pub github_accelerators: Vec<Url>,
 }
 
@@ -72,7 +75,9 @@ impl ContentConfig {
                 None,
                 ConfigurationView {
                     status: ConfigurationStatus::Unconfigured,
-                    message: Some("本构建未配置独立内容源；公告与更新信息将从 GitHub Release 获取。".into()),
+                    message: Some(
+                        "本构建未配置独立内容源；公告与更新信息将从 GitHub Release 获取。".into(),
+                    ),
                 },
             ),
             Some(primary) => match directory_url(primary).and_then(|primary| {
@@ -116,6 +121,11 @@ impl ContentConfig {
             view,
             repository,
             repository_message,
+            cnb_repository: option_env!("SZU_LIFE_CNB_REPO")
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .unwrap_or(DEFAULT_CNB_REPOSITORY)
+                .to_string(),
             github_accelerators: serde_json::from_str::<Vec<String>>(include_str!(
                 "../../../github-accelerator.json"
             ))

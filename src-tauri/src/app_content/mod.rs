@@ -1,3 +1,5 @@
+#[cfg(target_os = "android")]
+pub(crate) mod android_update;
 mod cache;
 pub(crate) mod commands;
 mod config;
@@ -7,8 +9,6 @@ pub(crate) mod mcp;
 mod model;
 mod runtime;
 mod service;
-#[cfg(target_os = "android")]
-pub(crate) mod android_update;
 #[cfg(target_os = "windows")]
 pub(crate) mod windows_update;
 
@@ -25,6 +25,11 @@ impl AppContentStore {
 
     pub(crate) fn get_contributors(&self) -> model::ContributorsSnapshot {
         self.0.get_contributors()
+    }
+
+    #[cfg(any(target_os = "android", target_os = "windows"))]
+    pub(crate) fn build_download_candidates(&self, direct_url: &str) -> Vec<(u32, String)> {
+        self.0.build_download_candidates(direct_url)
     }
 
     #[cfg(any(target_os = "android", target_os = "windows"))]
@@ -55,18 +60,20 @@ pub(crate) fn initialize(app: &tauri::AppHandle) -> std::io::Result<()> {
         // Exactly one native worker per process. It is independent of every WebView lifecycle.
         std::thread::Builder::new()
             .name("app-content".into())
-            .spawn(move || loop {
-                service.automatic_tick();
-                // Wall-clock deadlines include suspend time. Check at most 15s after resume;
-                // missed days coalesce into one refresh instead of a burst of catch-up requests.
-                let now = runtime::Clock::now_ms(&runtime::SystemClock);
-                let delay = service
-                    .snapshot()
-                    .next_automatic_check_at
-                    .unwrap_or(now + 15_000)
-                    .saturating_sub(now)
-                    .clamp(1, 15_000);
-                std::thread::sleep(Duration::from_millis(delay));
+            .spawn(move || {
+                loop {
+                    service.automatic_tick();
+                    // Wall-clock deadlines include suspend time. Check at most 15s after resume;
+                    // missed days coalesce into one refresh instead of a burst of catch-up requests.
+                    let now = runtime::Clock::now_ms(&runtime::SystemClock);
+                    let delay = service
+                        .snapshot()
+                        .next_automatic_check_at
+                        .unwrap_or(now + 15_000)
+                        .saturating_sub(now)
+                        .clamp(1, 15_000);
+                    std::thread::sleep(Duration::from_millis(delay));
+                }
             })?;
     }
     Ok(())

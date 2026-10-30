@@ -1,6 +1,6 @@
 use super::{
-    model::{AppContentSnapshot, ContentError, ContributorsSnapshot, ErrorKind},
     AppContentStore,
+    model::{AppContentSnapshot, ContentError, ContributorsSnapshot, ErrorKind},
 };
 use tauri::State;
 

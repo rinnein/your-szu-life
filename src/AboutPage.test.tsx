@@ -99,6 +99,33 @@ describe("AboutPage update logic", () => {
 
     const cachedUpToDate = makeSnapshot(false, "0.9.0", true);
     expect(updateStatus(cachedUpToDate, false)).toBe("上次检查未发现新版本（缓存）");
+
+    const cachedWithNewVersion = makeSnapshot(true, "0.9.1", true);
+    expect(updateStatus(cachedWithNewVersion, false)).toBe("发现新版本 0.9.1（缓存）");
+
+    const cachedWithError = makeSnapshot(true, "0.9.1", true);
+    cachedWithError.update.error = {
+      kind: "rateLimited" as never,
+      message: "GitHub 请求受限，请稍后再试。",
+      retryAt: null,
+    };
+    expect(updateStatus(cachedWithError, false)).toBe("发现新版本 0.9.1（缓存）");
+
+    const cachedUpToDateWithError = makeSnapshot(false, "0.9.0", true);
+    cachedUpToDateWithError.update.error = {
+      kind: "rateLimited" as never,
+      message: "GitHub 请求受限，请稍后再试。",
+      retryAt: null,
+    };
+    expect(updateStatus(cachedUpToDateWithError, false)).toBe("上次检查未发现新版本（缓存）");
+
+    const errorWithoutData = makeSnapshot(false, undefined, false);
+    errorWithoutData.update.error = {
+      kind: "rateLimited" as never,
+      message: "GitHub 请求受限，请稍后再试。",
+      retryAt: null,
+    };
+    expect(updateStatus(errorWithoutData, false)).toBe("本次更新检查失败");
   });
 
   it("renders generic download button on generic desktop", async () => {
@@ -161,5 +188,24 @@ describe("AboutPage update logic", () => {
     render(<AboutPage />);
 
     expect(await screen.findByText(/前往发布页面 0.9.1/i)).toBeInTheDocument();
+  });
+
+  it("renders CNB source indicator when source is cnb", async () => {
+    const snapshot = makeSnapshot(true, "0.9.1");
+    snapshot.update.source = "cnb";
+    snapshot.update.lastSuccessAt = 1700000000000;
+    snapshot.announcements.source = "cnb";
+    snapshot.announcements.lastSuccessAt = 1700000000000;
+    vi.mocked(useAppContent).mockReturnValue({
+      snapshot,
+      error: undefined,
+      refreshing: false,
+      refresh: vi.fn(),
+    });
+
+    render(<AboutPage />);
+
+    const cnbBadges = await screen.findAllByText(/CNB 镜像/i);
+    expect(cnbBadges.length).toBeGreaterThanOrEqual(1);
   });
 });
