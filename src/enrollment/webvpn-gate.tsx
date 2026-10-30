@@ -11,16 +11,20 @@ type EnsureWebvpn = (reason: string) => Promise<boolean>;
 
 const GateContext = createContext<EnsureWebvpn | null>(null);
 
+/** 没有挂 Provider 时直接放行：需要 2FA 的场景由后端在真正操作时报错。 */
+const allowWithoutGate: EnsureWebvpn = async () => true;
+
 /**
  * WebVPN 认证闸门。
  *
  * WebVPN 不再有独立页面与入口按钮：需要校外访问的功能在发起操作前先探测，
  * 只有探测到「需要 2FA」时才弹出这个 Dialog 询问是否立即认证。
+ *
+ * Provider 只挂在选课模块内部，其它临时启用的功能若要使用同一个 Dialog，
+ * 自行用 `<WebvpnAuthProvider>` 包一层即可；缺失时闸门退化为放行。
  */
 export function useWebvpnGate(): EnsureWebvpn {
-  const gate = useContext(GateContext);
-  if (!gate) throw new Error("WebvpnAuthProvider is required");
-  return gate;
+  return useContext(GateContext) ?? allowWithoutGate;
 }
 
 /** 探测当前 WebVPN 会话是否还需要 2FA。探测失败时不打扰用户，交给后端在操作时报错。 */

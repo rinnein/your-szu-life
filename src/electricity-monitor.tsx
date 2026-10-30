@@ -1,8 +1,6 @@
-import { useLogicalNavigation } from "./logical-navigation";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { PluginListener } from "@tauri-apps/api/core";
 
 export type ElectricityStatus = {
   remaining: number | null;
@@ -28,8 +26,13 @@ function isStatus(value: unknown): value is ElectricityStatus {
   return Boolean(value && typeof value === "object" && "low" in value && "expired" in value);
 }
 
+/**
+ * 电费状态订阅。
+ *
+ * 只有首页日历待办需要这份数据，因此挂在 `HomeCalendarWidget` 外层而不是应用根节点；
+ * 前台/可见性上报与通知点击跳转已移到 `AppLifecycleBridge` / `NotificationCenter`。
+ */
 export function ElectricityMonitorProvider({ children }: { children: ReactNode }) {
-  const navigation = useLogicalNavigation();
   const [status, setStatus] = useState<ElectricityStatus>(EMPTY_ELECTRICITY_STATUS);
 
   useEffect(() => {
@@ -51,44 +54,6 @@ export function ElectricityMonitorProvider({ children }: { children: ReactNode }
       stop?.();
     };
   }, []);
-
-  useEffect(() => {
-    const reportVisibility = () => {
-      void invoke("set_application_visibility", {
-        visible: document.visibilityState === "visible",
-      }).catch(() => undefined);
-    };
-    reportVisibility();
-    document.addEventListener("visibilitychange", reportVisibility);
-    return () => document.removeEventListener("visibilitychange", reportVisibility);
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    let stop: PluginListener | undefined;
-    void import("@tauri-apps/plugin-notification")
-      .then(async ({ onAction }) => {
-        const listener = await onAction((event) => {
-          const extra = event.notification?.extra as { route?: string } | undefined;
-          if (
-            active &&
-            (extra?.route === "/life/campus-payments/recharge" ||
-              event.notification?.actionTypeId === "electricity-low" ||
-              event.actionId === "open-recharge" ||
-              event.actionId === "electricity-low")
-          ) {
-            void navigation.push("/life/campus-payments/recharge");
-          }
-        });
-        if (active) stop = listener;
-        else await listener.unregister();
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-      void stop?.unregister();
-    };
-  }, [navigation]);
 
   return <Context.Provider value={status}>{children}</Context.Provider>;
 }

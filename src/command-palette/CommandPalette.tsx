@@ -4,6 +4,7 @@ import { BottomSheet, Dialog } from "material/react";
 import { Chip, Kbd } from "../ui";
 import { LuArrowRight, LuClock, LuFlame, LuSearch } from "react-icons/lu";
 import { useLogicalNavigation } from "../logical-navigation";
+import { useAuth } from "../auth";
 import { COMMAND_LIST, filterCommands } from "./commands";
 import { getFrequentCommands, getRecentCommands, recordCommandUsage } from "./history";
 import type { CommandItem } from "./types";
@@ -16,6 +17,9 @@ export function openCommandPalette() {
 
 export function CommandPalette() {
   const navigation = useLogicalNavigation();
+  const { state } = useAuth();
+  // 认证页与初始化向导不属于可导航的应用内容，快捷搜索在这些页面不生效。
+  const enabled = "Authenticated" in state;
   const [isOpen, setIsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [query, setQuery] = useState("");
@@ -33,6 +37,8 @@ export function CommandPalette() {
 
   // Listen for global shortcut Ctrl+Shift+P (or Cmd+Shift+P) and custom event
   useEffect(() => {
+    if (!enabled) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "p") {
         e.preventDefault();
@@ -51,7 +57,11 @@ export function CommandPalette() {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("open-command-palette", handleOpenEvent);
     };
-  }, []);
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!enabled) setIsOpen(false);
+  }, [enabled]);
 
   // Reset state when opening/closing
   useEffect(() => {
@@ -145,7 +155,7 @@ export function CommandPalette() {
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !enabled) return null;
 
   const content = (
     <div className="overflow-hidden p-0 w-full">

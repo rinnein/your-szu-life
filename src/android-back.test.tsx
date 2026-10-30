@@ -11,6 +11,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { AndroidBackNavigation } from "./AndroidBackNavigation";
+import { LogicalNavigationProvider } from "./logical-navigation";
 import { Dialog, Button } from "material/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { activeOverlay, installAndroidBack, type AndroidBackBridge } from "./android-back";
@@ -178,10 +179,10 @@ describe("Android committed back", () => {
 it("connects real TanStack route resolution and survives StrictMode setup/cleanup", async () => {
   const root = createRootRoute({
     component: () => (
-      <>
+      <LogicalNavigationProvider>
         <AndroidBackNavigation />
         <Outlet />
-      </>
+      </LogicalNavigationProvider>
     ),
   });
   const index = createRoute({

@@ -1,16 +1,9 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import {
-  LuBell,
-  LuBookOpen,
-  LuCode,
-  LuGraduationCap,
-  LuShieldAlert,
-  LuWifi,
-  LuZap,
-} from "react-icons/lu";
+import { LuBell, LuShieldAlert } from "react-icons/lu";
 import { Button, Card, Switch } from "material/react";
 import { Banner, toast } from "./ui";
+import { NOTIFICATION_CATEGORIES } from "./notifications/categories";
 
 export interface NotificationConfig {
   enabled: boolean;
@@ -104,38 +97,7 @@ export function NotificationSettings() {
     });
   };
 
-  const categories = [
-    {
-      key: "campusNetwork" as const,
-      title: "宿舍校园网",
-      description: "自动登录失败或断线重连异常时发送通知",
-      icon: LuWifi,
-    },
-    {
-      key: "electricity" as const,
-      title: "宿舍电费预警",
-      description: "宿舍电量偏低或预计可用天数不足时发送充值预警",
-      icon: LuZap,
-    },
-    {
-      key: "enrollment" as const,
-      title: "选课助手",
-      description: "抢课任务完成、暂停或需要 2FA 二次验证时发送通知",
-      icon: LuGraduationCap,
-    },
-    {
-      key: "oj" as const,
-      title: "在线评测 (OJ)",
-      description: "新测验发布及测验临近截止（1小时前）提醒",
-      icon: LuCode,
-    },
-    {
-      key: "uooc" as const,
-      title: "优课联盟 (UOOC)",
-      description: "课程测验、作业待处理或临近截止时发送提醒",
-      icon: LuBookOpen,
-    },
-  ];
+  const categories = NOTIFICATION_CATEGORIES;
 
   return (
     <div className="notification-settings space-y-6 max-w-3xl">
@@ -195,11 +157,11 @@ export function NotificationSettings() {
         <div className="divide-y divide-border/40">
           {categories.map((cat) => {
             const Icon = cat.icon;
-            const isChecked = config[cat.key];
+            const isChecked = config[cat.configKey];
             const isDisabled = loading || !config.enabled;
             return (
               <div
-                key={cat.key}
+                key={cat.configKey}
                 className="flex items-center justify-between gap-4 py-3.5 first:pt-1 last:pb-1"
               >
                 <div className="flex items-start gap-3">
@@ -216,7 +178,7 @@ export function NotificationSettings() {
                   disabled={isDisabled}
                   onChange={(e: any) => {
                     const checked = Boolean(e.detail?.checked ?? e.target?.checked);
-                    updateConfig((prev) => ({ ...prev, [cat.key]: checked }));
+                    updateConfig((prev) => ({ ...prev, [cat.configKey]: checked }));
                   }}
                   aria-label={`开关${cat.title}通知`}
                 />

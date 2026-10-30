@@ -16,13 +16,22 @@ const { nav } = vi.hoisted(() => ({
   nav: { push: vi.fn(), replace: vi.fn(), back: vi.fn() },
 }));
 
+const { authState } = vi.hoisted(() => ({
+  authState: { current: { Authenticated: { studentId: "test" } } as Record<string, unknown> },
+}));
+
 vi.mock("../logical-navigation", () => ({
   useLogicalNavigation: () => nav,
+}));
+
+vi.mock("../auth", () => ({
+  useAuth: () => ({ state: authState.current }),
 }));
 
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  authState.current = { Authenticated: { studentId: "test" } };
 });
 
 afterEach(() => {
@@ -194,5 +203,15 @@ describe("CommandPalette UI & interaction", () => {
     await waitFor(() => {
       expect(screen.queryByLabelText("命令面板搜索框")).not.toBeInTheDocument();
     });
+  });
+
+  it("stays closed while authentication is pending", () => {
+    authState.current = { Unauthenticated: null };
+    render(<CommandPalette />);
+
+    fireEvent.keyDown(window, { key: "P", shiftKey: true, metaKey: true });
+    openCommandPalette();
+
+    expect(screen.queryByLabelText("命令面板搜索框")).not.toBeInTheDocument();
   });
 });

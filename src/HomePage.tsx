@@ -10,6 +10,7 @@ import { useDebugMode } from "./shell/use-debug-mode";
 import { useLogicalNavigation } from "./logical-navigation";
 import { AnnouncementBoard } from "./app-content/AnnouncementBoard";
 import { HomeCalendarWidget } from "./home-schedule/HomeCalendarWidget";
+import { ElectricityMonitorProvider } from "./electricity-monitor";
 
 /**
  * 首页。
@@ -96,7 +97,9 @@ export default function HomePage() {
 
         <div className="grid gap-12">
           <AnnouncementBoard />
-          <HomeCalendarWidget />
+          <ElectricityMonitorProvider>
+            <HomeCalendarWidget />
+          </ElectricityMonitorProvider>
         </div>
 
         <LogoutDialog
