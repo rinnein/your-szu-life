@@ -2,6 +2,7 @@ pub mod db;
 pub mod electricity;
 pub mod enrollment;
 pub mod keyring;
+pub mod lms;
 pub mod oj;
 pub mod onboarding;
 pub mod preferences;

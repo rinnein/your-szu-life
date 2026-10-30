@@ -112,7 +112,7 @@ pub(crate) fn validate_value(key: &str, value: Value) -> Result<(), String> {
         AUTH_SESSION => {
             serde_json::from_value::<AuthSessionSecret>(value).map_err(|_| "登录会话格式无效")?;
         }
-        UOOC_AI | UOOC_SESSION | ACADEMIC_SESSIONS => {
+        UOOC_AI | UOOC_SESSION | ACADEMIC_SESSIONS | LMS_SESSION => {
             serde_json::from_value::<String>(value).map_err(|_| "设置格式无效")?;
         }
         OJ_ACCOUNTS => {
@@ -167,6 +167,8 @@ pub(crate) const PENDING_AUTH: &str = "runtime.account.pending";
 pub(crate) const AUTH_SESSION: &str = "runtime.auth.session";
 pub(crate) const UOOC_AI: &str = "fixed.uooc.ai";
 pub(crate) const UOOC_SESSION: &str = "runtime.uooc.session";
+/// 畅课（lms.szu.edu.cn）会话 jar。仅由 authserver CAS 会话派生，可随时重建。
+pub(crate) const LMS_SESSION: &str = "runtime.lms.session";
 pub(crate) const OJ_ACCOUNTS: &str = "fixed.oj.accounts";
 pub(crate) const OJ_SESSIONS: &str = "runtime.oj.sessions";
 pub(crate) const ACADEMIC_SESSIONS: &str = "runtime.academic.sessions";
@@ -180,12 +182,13 @@ pub(crate) const ELECTRICITY_MONITOR: &str = "runtime.electricity.monitor";
 pub(crate) const PROXY_SETTINGS: &str = "fixed.network.proxy";
 
 /// 设置导出与本地凭据文档共享的完整键集合。
-pub(crate) const ALL_KEYS: [&str; 15] = [
+pub(crate) const ALL_KEYS: [&str; 16] = [
     PROFILE,
     PENDING_AUTH,
     AUTH_SESSION,
     UOOC_AI,
     UOOC_SESSION,
+    LMS_SESSION,
     OJ_ACCOUNTS,
     OJ_SESSIONS,
     ACADEMIC_SESSIONS,
@@ -327,6 +330,7 @@ pub(crate) fn read_entry(store: &dyn CredentialStore, key: &str) -> Result<Optio
         AUTH_SESSION => value!(store.load_session()),
         UOOC_AI => value!(store.load_uooc_ai()),
         UOOC_SESSION => value!(store.load_uooc_session()),
+        LMS_SESSION => value!(store.load_lms_session()),
         ACADEMIC_SESSIONS => value!(store.load_academic_sessions()),
         DORM_SETTINGS => value!(store.load_dorm_settings()),
         DORM_CREDENTIALS => value!(store.load_dorm_credentials()),

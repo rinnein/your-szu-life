@@ -28,6 +28,20 @@
   --color-warning: var(--mtrl-sys-color-warning);
   --color-danger: var(--mtrl-sys-color-error);
   --color-info: var(--mtrl-sys-color-info);
+  --color-tertiary: var(--mtrl-sys-color-tertiary);
+  /* 分类色板 accent-01…12：由种子色相环均分生成，见 src/theme/scheme.ts。 */
+  --color-accent-1: var(--mtrl-sys-color-accent-01);
+  --color-accent-2: var(--mtrl-sys-color-accent-02);
+  --color-accent-3: var(--mtrl-sys-color-accent-03);
+  --color-accent-4: var(--mtrl-sys-color-accent-04);
+  --color-accent-5: var(--mtrl-sys-color-accent-05);
+  --color-accent-6: var(--mtrl-sys-color-accent-06);
+  --color-accent-7: var(--mtrl-sys-color-accent-07);
+  --color-accent-8: var(--mtrl-sys-color-accent-08);
+  --color-accent-9: var(--mtrl-sys-color-accent-09);
+  --color-accent-10: var(--mtrl-sys-color-accent-10);
+  --color-accent-11: var(--mtrl-sys-color-accent-11);
+  --color-accent-12: var(--mtrl-sys-color-accent-12);
   --color-separator: var(--mtrl-sys-color-outline-variant);
   --color-border: var(--mtrl-sys-color-outline-variant);
   --color-focus: var(--mtrl-sys-color-primary);
@@ -1955,6 +1969,66 @@ m-top-app-bar::part(trailing) {
 .md-chip[data-color="info"] {
   background: color-mix(in srgb, var(--mtrl-sys-color-info) 18%, var(--mtrl-sys-color-surface));
   color: var(--mtrl-sys-color-info);
+}
+
+.md-chip[data-color="tertiary"] {
+  background: color-mix(in srgb, var(--mtrl-sys-color-tertiary) 20%, var(--mtrl-sys-color-surface));
+  color: var(--mtrl-sys-color-tertiary);
+}
+
+/* 分类色板的 Chip 变体：按需补档，与 bg-accent-N 对应。 */
+.md-chip[data-color="accent-1"] {
+  background: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-accent-01) 20%,
+    var(--mtrl-sys-color-surface)
+  );
+  color: var(--mtrl-sys-color-accent-01);
+}
+
+.md-chip[data-color="accent-2"] {
+  background: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-accent-02) 20%,
+    var(--mtrl-sys-color-surface)
+  );
+  color: var(--mtrl-sys-color-accent-02);
+}
+
+.md-chip[data-color="accent-3"] {
+  background: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-accent-03) 20%,
+    var(--mtrl-sys-color-surface)
+  );
+  color: var(--mtrl-sys-color-accent-03);
+}
+
+.md-chip[data-color="accent-4"] {
+  background: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-accent-04) 20%,
+    var(--mtrl-sys-color-surface)
+  );
+  color: var(--mtrl-sys-color-accent-04);
+}
+
+.md-chip[data-color="accent-5"] {
+  background: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-accent-05) 20%,
+    var(--mtrl-sys-color-surface)
+  );
+  color: var(--mtrl-sys-color-accent-05);
+}
+
+.md-chip[data-color="accent-6"] {
+  background: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-accent-06) 20%,
+    var(--mtrl-sys-color-surface)
+  );
+  color: var(--mtrl-sys-color-accent-06);
 }
 
 /* variant="primary" 语义着色（AC/WA/TLE/Judging 等以实心显色，不被设置页主题主色覆盖） */

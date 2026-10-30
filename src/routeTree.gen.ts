@@ -20,6 +20,7 @@ import { Route as StudyIndexRouteImport } from './routes/study/index'
 import { Route as StudyAcademicRouteImport } from './routes/study/academic'
 import { Route as StudyClassTimetableRouteImport } from './routes/study/class-timetable'
 import { Route as StudyEnrollmentRouteImport } from './routes/study/enrollment'
+import { Route as StudyLmsRouteImport } from './routes/study/lms'
 import { Route as StudyOjRouteImport } from './routes/study/oj'
 import { Route as StudyUoocRouteImport } from './routes/study/uooc'
 import { Route as LifeCampusPaymentsIndexRouteImport } from './routes/life/campus-payments/index'
@@ -87,6 +88,11 @@ const StudyClassTimetableRoute = StudyClassTimetableRouteImport.update({
 const StudyEnrollmentRoute = StudyEnrollmentRouteImport.update({
   id: '/enrollment',
   path: '/enrollment',
+  getParentRoute: () => StudyRouteRoute,
+} as any)
+const StudyLmsRoute = StudyLmsRouteImport.update({
+  id: '/lms',
+  path: '/lms',
   getParentRoute: () => StudyRouteRoute,
 } as any)
 const StudyOjRoute = StudyOjRouteImport.update({
@@ -169,6 +175,7 @@ export interface FileRoutesByFullPath {
   '/study/academic': typeof StudyAcademicRoute
   '/study/class-timetable': typeof StudyClassTimetableRoute
   '/study/enrollment': typeof StudyEnrollmentRouteWithChildren
+  '/study/lms': typeof StudyLmsRoute
   '/study/oj': typeof StudyOjRoute
   '/study/uooc': typeof StudyUoocRoute
   '/life/': typeof LifeIndexRoute
@@ -191,6 +198,7 @@ export interface FileRoutesByTo {
   '/life/campus-network': typeof LifeCampusNetworkRoute
   '/study/academic': typeof StudyAcademicRoute
   '/study/class-timetable': typeof StudyClassTimetableRoute
+  '/study/lms': typeof StudyLmsRoute
   '/study/oj': typeof StudyOjRoute
   '/study/uooc': typeof StudyUoocRoute
   '/life': typeof LifeIndexRoute
@@ -218,6 +226,7 @@ export interface FileRoutesById {
   '/study/academic': typeof StudyAcademicRoute
   '/study/class-timetable': typeof StudyClassTimetableRoute
   '/study/enrollment': typeof StudyEnrollmentRouteWithChildren
+  '/study/lms': typeof StudyLmsRoute
   '/study/oj': typeof StudyOjRoute
   '/study/uooc': typeof StudyUoocRoute
   '/life/': typeof LifeIndexRoute
@@ -246,6 +255,7 @@ export interface FileRouteTypes {
     | '/study/academic'
     | '/study/class-timetable'
     | '/study/enrollment'
+    | '/study/lms'
     | '/study/oj'
     | '/study/uooc'
     | '/life/'
@@ -268,6 +278,7 @@ export interface FileRouteTypes {
     | '/life/campus-network'
     | '/study/academic'
     | '/study/class-timetable'
+    | '/study/lms'
     | '/study/oj'
     | '/study/uooc'
     | '/life'
@@ -294,6 +305,7 @@ export interface FileRouteTypes {
     | '/study/academic'
     | '/study/class-timetable'
     | '/study/enrollment'
+    | '/study/lms'
     | '/study/oj'
     | '/study/uooc'
     | '/life/'
@@ -395,6 +407,13 @@ declare module '@tanstack/react-router' {
       path: '/enrollment'
       fullPath: '/study/enrollment'
       preLoaderRoute: typeof StudyEnrollmentRouteImport
+      parentRoute: typeof StudyRouteRoute
+    }
+    '/study/lms': {
+      id: '/study/lms'
+      path: '/lms'
+      fullPath: '/study/lms'
+      preLoaderRoute: typeof StudyLmsRouteImport
       parentRoute: typeof StudyRouteRoute
     }
     '/study/oj': {
@@ -555,6 +574,7 @@ interface StudyRouteRouteChildren {
   StudyAcademicRoute: typeof StudyAcademicRoute
   StudyClassTimetableRoute: typeof StudyClassTimetableRoute
   StudyEnrollmentRoute: typeof StudyEnrollmentRouteWithChildren
+  StudyLmsRoute: typeof StudyLmsRoute
   StudyOjRoute: typeof StudyOjRoute
   StudyUoocRoute: typeof StudyUoocRoute
   StudyIndexRoute: typeof StudyIndexRoute
@@ -564,6 +584,7 @@ const StudyRouteRouteChildren: StudyRouteRouteChildren = {
   StudyAcademicRoute: StudyAcademicRoute,
   StudyClassTimetableRoute: StudyClassTimetableRoute,
   StudyEnrollmentRoute: StudyEnrollmentRouteWithChildren,
+  StudyLmsRoute: StudyLmsRoute,
   StudyOjRoute: StudyOjRoute,
   StudyUoocRoute: StudyUoocRoute,
   StudyIndexRoute: StudyIndexRoute,

@@ -4,6 +4,7 @@ import { PageSurface } from "./shell/PageSurface";
 import { TopAppBar } from "./shell/TopAppBar";
 import { AuthGate } from "./shell/AuthGate";
 import {
+  FaBookOpen,
   FaCalendarDays,
   FaChartLine,
   FaCirclePlay,
@@ -30,6 +31,12 @@ const STUDY_FEATURES: readonly Feature[] = [
     icon: FaCirclePlay,
     description: "优课在线视频任务",
     to: "/study/uooc",
+  },
+  {
+    label: "畅课 lms",
+    icon: FaBookOpen,
+    description: "课程待办与站内通知",
+    to: "/study/lms",
   },
   {
     label: "选课",

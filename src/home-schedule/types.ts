@@ -3,7 +3,8 @@ export type ScheduleCategory =
   | "electricity-outage"
   | "uooc-exam"
   | "uooc-homework"
-  | "uooc-course-end";
+  | "uooc-course-end"
+  | "lms-homework";
 
 export interface ScheduleItem {
   id: string;
@@ -13,6 +14,8 @@ export interface ScheduleItem {
   targetDate: Date;
   dateKey: string; // "YYYY-MM-DD"
   actionUrl: string;
+  /** 外部链接（如畅课任务页）：桌面端点击直接在浏览器打开，Android 弹链接模态框。 */
+  externalUrl?: string;
   urgent?: boolean;
 }
 

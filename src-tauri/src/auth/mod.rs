@@ -43,5 +43,29 @@ pub(crate) fn authenticated_campus_card_number(app: &tauri::AppHandle) -> Result
         .authenticated_campus_card_number()
 }
 
+/// 只读导出可复用的 authserver 会话 cookie（Set-Cookie 字符串），供依赖 CAS SSO
+/// 的模块（如畅课）建立下级服务会话。不含任何密码；调用方必须把它们加到
+/// authserver 域的请求 URL 上使用。
+pub(crate) fn reusable_sso_cookies(app: &tauri::AppHandle) -> Result<Vec<String>, String> {
+    use tauri::Manager;
+    let store = app
+        .try_state::<AuthStore>()
+        .ok_or("认证状态不可用")?
+        .credentials
+        .load_session()?
+        .ok_or("请先完成应用统一认证")?;
+    Ok(session_cookies_as_strings(&store))
+}
+
+fn session_cookies_as_strings(
+    session: &session::AuthSessionSecret,
+) -> Vec<String> {
+    session
+        .cookies
+        .iter()
+        .filter_map(|cookie| cookie.to_webview_cookie().ok().map(|c| c.to_string()))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests;

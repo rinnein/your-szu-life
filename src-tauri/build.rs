@@ -275,6 +275,8 @@ fn main() {
             "submit_oj_companion",
             "get_oj_snapshot",
             "subscribe_oj_state",
+            "get_lms_snapshot",
+            "refresh_lms",
             "save_oj_site",
             "remove_oj_site",
             "login_oj",

@@ -29,6 +29,8 @@ permissions = [
   "allow-submit-oj-companion",
   "allow-get-oj-snapshot",
   "allow-save-oj-site",
+  "allow-get-lms-snapshot",
+  "allow-refresh-lms",
   "allow-remove-oj-site",
   "allow-login-oj",
   "allow-get-oj-captcha",

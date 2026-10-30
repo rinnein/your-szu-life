@@ -13,6 +13,7 @@ mod embedding_model;
 mod enrollment;
 pub(crate) mod ipc_channel;
 pub(crate) mod local_model;
+mod lms;
 pub mod mcp;
 pub(crate) mod migrations;
 pub(crate) mod netproxy;

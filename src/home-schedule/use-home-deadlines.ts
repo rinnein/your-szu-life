@@ -7,6 +7,8 @@ import { useElectricityMonitor } from "../electricity-monitor";
 import { ojProgressCache, progressScope } from "../oj/progress-store";
 import type { Contest, Group, Snapshot as OjSnapshot } from "../oj/types";
 import type { ExamTask, HomeworkTask, UoocSnapshot } from "../uooc/types";
+import type { LmsSnapshot, LmsTodo } from "../lms/types";
+import { lmsTodoUrl } from "../lms/link";
 
 function parseDateSafely(raw: string | undefined): Date | null {
   if (!raw) return null;
@@ -16,10 +18,25 @@ function parseDateSafely(raw: string | undefined): Date | null {
   return isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function lmsItem(todo: LmsTodo, endDate: Date, now: number): ScheduleItem {
+  return {
+    id: `lms:homework:${todo.id}`,
+    category: "lms-homework",
+    title: todo.title,
+    subtitle: `畅课 · ${todo.course_name}`,
+    targetDate: endDate,
+    dateKey: formatDateKey(endDate),
+    actionUrl: "/study/lms",
+    externalUrl: lmsTodoUrl(todo),
+    urgent: endDate.getTime() - now < 86_400_000,
+  };
+}
+
 export function useHomeDeadlines() {
   const electricity = useElectricityMonitor();
   const [ojItems, setOjItems] = useState<ScheduleItem[]>([]);
   const [uoocItems, setUoocItems] = useState<ScheduleItem[]>([]);
+  const [lmsItems, setLmsItems] = useState<ScheduleItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchOjDeadlines = useCallback(async () => {
@@ -188,11 +205,31 @@ export function useHomeDeadlines() {
     }
   }, []);
 
+  const fetchLmsDeadlines = useCallback(async () => {
+    try {
+      const snapshot = await invoke<LmsSnapshot>("get_lms_snapshot");
+      if (!snapshot || snapshot.session !== "ready") return;
+
+      const items: ScheduleItem[] = [];
+      const now = Date.now();
+
+      for (const todo of snapshot.todos || []) {
+        const endDate = new Date(todo.end_time);
+        if (isNaN(endDate.getTime()) || endDate.getTime() <= now) continue;
+        items.push(lmsItem(todo, endDate, now));
+      }
+
+      setLmsItems(items);
+    } catch {
+      // Ignore LMS snapshot error
+    }
+  }, []);
+
   const refreshAll = useCallback(async () => {
     setLoading(true);
-    await Promise.allSettled([fetchOjDeadlines(), fetchUoocDeadlines()]);
+    await Promise.allSettled([fetchOjDeadlines(), fetchUoocDeadlines(), fetchLmsDeadlines()]);
     setLoading(false);
-  }, [fetchOjDeadlines, fetchUoocDeadlines]);
+  }, [fetchOjDeadlines, fetchUoocDeadlines, fetchLmsDeadlines]);
 
   useEffect(() => {
     let active = true;
@@ -265,10 +302,10 @@ export function useHomeDeadlines() {
 
   // 合并全部事项并排序
   const items = useMemo(() => {
-    return [...ojItems, ...uoocItems, ...electricityItems].sort(
+    return [...ojItems, ...uoocItems, ...lmsItems, ...electricityItems].sort(
       (a, b) => a.targetDate.getTime() - b.targetDate.getTime(),
     );
-  }, [ojItems, uoocItems, electricityItems]);
+  }, [ojItems, uoocItems, lmsItems, electricityItems]);
 
   // 构建日期到类别的快速索引 Map
   const categoryMap = useMemo(() => {

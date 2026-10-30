@@ -1,5 +1,5 @@
 import { schemeToTokens } from "material/core/theme";
-import { generateSchemes } from "./scheme";
+import { generateAccents, generateSchemes } from "./scheme";
 import type { SchemeVariant } from "./defaults";
 
 export const THEME_NAME = "szu";
@@ -33,6 +33,15 @@ function withStatus(
   return merged;
 }
 
+/** 把分类色板写成 `--mtrl-sys-color-accent-01…12` 变量。 */
+function withAccents(tokens: Record<string, string>, accents: string[]): Record<string, string> {
+  const merged = { ...tokens };
+  accents.forEach((value, index) => {
+    merged[`--mtrl-sys-color-accent-${String(index + 1).padStart(2, "0")}`] = value;
+  });
+  return merged;
+}
+
 /** 两套模式下的系统底色（供读取/测试，不再由主题推给原生）。 */
 export type ThemeSurface = { light: string; dark: string };
 
@@ -40,8 +49,14 @@ export type ThemeSurface = { light: string; dark: string };
 function buildTheme(seed: string, variant: SchemeVariant): { css: string; surface: ThemeSurface } {
   const schemes = generateSchemes(seed, variant);
   const tokens = schemeToTokens({ light: schemes.light, dark: schemes.dark });
-  const light = withStatus(tokens.light, schemes.light as unknown as Record<string, string>);
-  const dark = withStatus(tokens.dark, schemes.dark as unknown as Record<string, string>);
+  const light = withAccents(
+    withStatus(tokens.light, schemes.light as unknown as Record<string, string>),
+    generateAccents(seed, false),
+  );
+  const dark = withAccents(
+    withStatus(tokens.dark, schemes.dark as unknown as Record<string, string>),
+    generateAccents(seed, true),
+  );
   return {
     css:
       `[data-theme="${THEME_NAME}"]{${block(light)}}` +

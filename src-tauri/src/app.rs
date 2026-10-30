@@ -1,5 +1,5 @@
 use crate::{
-    app_content, auth, campus_network, campus_payments, netproxy, oj, onboarding, settings,
+    app_content, auth, campus_network, campus_payments, lms, netproxy, oj, onboarding, settings,
     storage::{PlatformCredentialStore, SharedCredentialStore},
     uooc,
 };
@@ -31,6 +31,7 @@ pub(crate) fn run() {
         .manage(auth::AuthStore::new(credentials.clone()))
         .manage(uooc::UoocStore::new(credentials.clone()))
         .manage(oj::OjStore::new(credentials.clone()))
+        .manage(lms::LmsStore::new(credentials.clone()))
         .manage(campus_network::CampusNetworkStore::new(credentials))
         .manage(campus_payments::CampusPaymentsStore::new(
             electricity_credentials,
@@ -109,6 +110,9 @@ pub(crate) fn run() {
             }
             if let Err(error) = uooc::initialize(app.handle()) {
                 log::error!("UOOC 服务初始化失败: {error}");
+            }
+            if let Err(error) = lms::initialize(app.handle()) {
+                log::error!("畅课服务初始化失败: {error}");
             }
             #[cfg(mobile)]
             {
@@ -263,6 +267,8 @@ pub(crate) fn run() {
             auth::commands::cancel_authentication,
             auth::commands::consume_auth_failure_notice,
             auth::commands::logout,
+            lms::commands::get_lms_snapshot,
+            lms::commands::refresh_lms,
             onboarding::commands::get_onboarding_state,
             onboarding::commands::complete_onboarding_step,
             onboarding::commands::skip_onboarding_step,

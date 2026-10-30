@@ -35,6 +35,19 @@ pub fn list_available_resources() -> Vec<Resource> {
             .with_title("SZU OJ 比赛与作业快照")
             .with_description("返回当前配置绑定的各 OJ 站点及关联实验比赛概览")
             .with_mime_type("application/json"),
+        Resource::new("your-szu-life://data/lms/todos", "lms_todos")
+            .with_title("畅课课程待办列表")
+            .with_description(
+                "返回畅课（lms.szu.edu.cn）当前课程待办（作业等）及其截止时间",
+            )
+            .with_mime_type("application/json"),
+        Resource::new(
+            "your-szu-life://data/lms/notifications",
+            "lms_notifications",
+        )
+        .with_title("畅课站内通知")
+        .with_description("返回畅课最近站内通知（作业截止提醒、资料发布等）与未读数")
+        .with_mime_type("application/json"),
         Resource::new(
             "your-szu-life://data/app/announcements",
             "app_announcements",
@@ -125,6 +138,34 @@ pub async fn read_resource_by_uri(
             if let Ok(service) = crate::oj::service(app) {
                 let snapshot = service.snapshot();
                 serde_json::to_string_pretty(&snapshot).unwrap_or_else(|_| "{}".to_string())
+            } else {
+                "{}".to_string()
+            }
+        }
+        "your-szu-life://data/lms/todos" => {
+            if let Ok(service) = crate::lms::service(app) {
+                service.ensure(false).await;
+                let snapshot = service.snapshot();
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "session": snapshot.session,
+                    "profile": snapshot.profile,
+                    "todos": snapshot.todos,
+                }))
+                .unwrap_or_else(|_| "{}".to_string())
+            } else {
+                "{}".to_string()
+            }
+        }
+        "your-szu-life://data/lms/notifications" => {
+            if let Ok(service) = crate::lms::service(app) {
+                service.ensure(false).await;
+                let snapshot = service.snapshot();
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "session": snapshot.session,
+                    "unread_count": snapshot.unread_count,
+                    "notifications": snapshot.notifications,
+                }))
+                .unwrap_or_else(|_| "{}".to_string())
             } else {
                 "{}".to_string()
             }

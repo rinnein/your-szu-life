@@ -288,11 +288,12 @@ describe("frontend smoke tests", () => {
 
     renderRouterApp("/study");
     expect(await screen.findByRole("heading", { name: "学习" })).toBeInTheDocument();
-    expect(document.querySelectorAll(".feature-icon svg")).toHaveLength(6);
+    expect(document.querySelectorAll(".feature-icon svg")).toHaveLength(7);
     for (const [label, description] of [
       ["上课时间表", "查看各节次上课时间"],
       ["OJ", "班级、测验与编程练习"],
       ["UOOC刷课", "优课在线视频任务"],
+      ["畅课 lms", "课程待办与站内通知"],
       ["选课", "查课、抢课与选课期间课表"],
       ["学业完成查询", "培养方案、学分与课程完成情况"],
       ["成绩查询", "暂未实现 · 即将支持"],

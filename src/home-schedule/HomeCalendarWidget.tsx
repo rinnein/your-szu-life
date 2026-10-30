@@ -12,7 +12,9 @@ import {
 import { generateCalendarGrid, formatDateKey } from "./calendar-math";
 import { useHomeDeadlines } from "./use-home-deadlines";
 import { useLogicalNavigation } from "../logical-navigation";
-import type { ScheduleCategory } from "./types";
+import { isAndroidPlatform } from "../os-info";
+import { openLmsExternalUrl, LmsTodoLinkDialog, type LmsTodoLink } from "../lms/link";
+import type { ScheduleCategory, ScheduleItem } from "./types";
 
 const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
 
@@ -33,18 +35,22 @@ function formatDeadlineText(date: Date, now: Date = new Date()): string {
   return `${timeStr} (剩余 ${daysLeft} 天)`;
 }
 
+// 全部待办类别统一使用种子色生成的分类色板（accent-01…12），
+// 按类别声明顺序取前六档，保证彼此可区分且随主题变化。
 function getCategoryDotClass(category: ScheduleCategory): string {
   switch (category) {
     case "oj-quiz":
-      return "bg-primary";
+      return "bg-accent-1";
     case "electricity-outage":
-      return "bg-danger";
+      return "bg-accent-2";
     case "uooc-exam":
-      return "bg-warning";
+      return "bg-accent-3";
     case "uooc-homework":
-      return "bg-success";
+      return "bg-accent-4";
     case "uooc-course-end":
-      return "bg-info";
+      return "bg-accent-5";
+    case "lms-homework":
+      return "bg-accent-6";
   }
 }
 
@@ -52,32 +58,38 @@ function renderCategoryChip(category: ScheduleCategory) {
   switch (category) {
     case "oj-quiz":
       return (
-        <Chip size="sm" color="accent" variant="soft">
+        <Chip size="sm" color="accent-1" variant="soft">
           OJ测验
         </Chip>
       );
     case "electricity-outage":
       return (
-        <Chip size="sm" color="danger" variant="soft">
+        <Chip size="sm" color="accent-2" variant="soft">
           电量
         </Chip>
       );
     case "uooc-exam":
       return (
-        <Chip size="sm" color="warning" variant="soft">
+        <Chip size="sm" color="accent-3" variant="soft">
           UOOC考试
         </Chip>
       );
     case "uooc-homework":
       return (
-        <Chip size="sm" color="success" variant="soft">
+        <Chip size="sm" color="accent-4" variant="soft">
           UOOC作业
         </Chip>
       );
     case "uooc-course-end":
       return (
-        <Chip size="sm" color="info" variant="soft">
+        <Chip size="sm" color="accent-5" variant="soft">
           UOOC结课
+        </Chip>
+      );
+    case "lms-homework":
+      return (
+        <Chip size="sm" color="accent-6" variant="soft">
+          畅课作业
         </Chip>
       );
   }
@@ -95,6 +107,8 @@ function getCategoryAriaLabel(category: ScheduleCategory): string {
       return "UOOC作业";
     case "uooc-course-end":
       return "UOOC结课";
+    case "lms-homework":
+      return "畅课作业";
   }
 }
 
@@ -104,6 +118,21 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
 
   const [currentViewDate, setCurrentViewDate] = useState<Date>(() => initialDate ?? new Date());
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
+  const [linkTodo, setLinkTodo] = useState<LmsTodoLink | null>(null);
+
+  // 有外部链接的待办（畅课任务）：桌面端直接在浏览器打开，
+  // Android 端弹链接模态框（复制 / 浏览器打开）。
+  const handleItemClick = async (item: ScheduleItem) => {
+    if (item.externalUrl) {
+      if (await isAndroidPlatform()) {
+        setLinkTodo({ title: item.title, url: item.externalUrl });
+        return;
+      }
+      await openLmsExternalUrl(item.externalUrl);
+      return;
+    }
+    void navigation.push(item.actionUrl);
+  };
 
   const viewYear = currentViewDate.getFullYear();
   const viewMonth = currentViewDate.getMonth();
@@ -258,24 +287,28 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
           {/* 图例说明 */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-3 px-1 text-xs text-muted">
             <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-primary" aria-hidden="true" />
+              <span className="w-2 h-2 rounded-full bg-accent-1" aria-hidden="true" />
               <span>OJ 测验</span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-danger" aria-hidden="true" />
+              <span className="w-2 h-2 rounded-full bg-accent-2" aria-hidden="true" />
               <span>电量预警</span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-warning" aria-hidden="true" />
+              <span className="w-2 h-2 rounded-full bg-accent-3" aria-hidden="true" />
               <span>UOOC 考试</span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-success" aria-hidden="true" />
+              <span className="w-2 h-2 rounded-full bg-accent-4" aria-hidden="true" />
               <span>UOOC 作业</span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-info" aria-hidden="true" />
+              <span className="w-2 h-2 rounded-full bg-accent-5" aria-hidden="true" />
               <span>UOOC 结课</span>
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-accent-6" aria-hidden="true" />
+              <span>畅课作业</span>
             </span>
           </div>
         </div>
@@ -313,7 +346,7 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => void navigation.push(item.actionUrl)}
+                  onClick={() => void handleItemClick(item)}
                   className="w-full text-left p-3 rounded-lg border border-outline-variant/60 hover:border-primary hover:bg-surface-container-low transition-colors flex items-start justify-between gap-3 group"
                   aria-label={`${getCategoryAriaLabel(item.category)}：${item.title}`}
                 >
@@ -325,7 +358,7 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
                     <div className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">
                       {item.title}
                     </div>
-                    <div className="text-xs text-muted flex items-center gap-1 mt-1">
+                    <div className="text-xs text-foreground flex items-center gap-1 mt-1">
                       <LuClock aria-hidden="true" />
                       <span>{formatDeadlineText(item.targetDate)}</span>
                     </div>
@@ -340,6 +373,8 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
           </div>
         </div>
       </div>
+
+      <LmsTodoLinkDialog link={linkTodo} onClose={() => setLinkTodo(null)} />
     </Card>
   );
 }

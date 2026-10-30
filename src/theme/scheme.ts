@@ -73,6 +73,31 @@ export interface GeneratedSchemes {
   dark: SchemeRoles;
 }
 
+/**
+ * 分类色板（accent）数量。与 primary/secondary/tertiary/error 等语义角色无关，
+ * 专门供「同一页面需要大量互相区分的颜色」的场景使用（如月历待办分类点）。
+ */
+export const ACCENT_COUNT = 12;
+
+/**
+ * 分类色的固定 HCT 彩度与明度。彩度取 M3 主色同级的 48；明度对齐 M3
+ * 浅色 tone 40~50 / 深色 tone 80 的习惯，保证在各自模式的表面上可读。
+ * 色相从种子色相偏移半个步长开始均分整圈，因此没有任何一档落在种子
+ * 色相（primary）上；即使 scheme 变体是 monochrome，分类标记也保持
+ * 有彩度——它们必须彼此可区分，不承担品牌语义。
+ */
+function accentColor(baseHue: number, index: number, dark: boolean): string {
+  const hue = (baseHue + 360 / ACCENT_COUNT / 2 + (index * 360) / ACCENT_COUNT) % 360;
+  const hct = Hct.from(hue, 48, dark ? 80 : 45);
+  return hexFromArgb(hct.toInt());
+}
+
+/** 从种子色生成当前模式的分类色板（accent-01…accent-12 的十六进制值）。 */
+export function generateAccents(seed: string, dark: boolean): string[] {
+  const baseHue = Hct.fromInt(argbFromHex(seed)).hue;
+  return Array.from({ length: ACCENT_COUNT }, (_, index) => accentColor(baseHue, index, dark));
+}
+
 /** 从种子色生成单一模式的一套角色表；预览等只需要一侧的调用方使用。 */
 export function generateScheme(
   seed: string,
