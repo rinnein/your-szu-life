@@ -1,0 +1,25 @@
+name: Build PR packages
+
+# PR 只有「reviewer approve」这一个构建入口：这里不订阅 pull_request，
+# 所以开 PR、往 PR 推新提交都不会产生 run。
+# 本文件里没有任何发布 job，PR 构建不可能动 release、tag 或 AUR。
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-packages-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  packages:
+    # submitted 覆盖 approve / changes_requested / comment 三种提交，只放行 approve。
+    if: github.event.review.state == 'approved'
+    # 同一个构建定义；这里不传 secrets，PR 构建拿不到正式签名密钥
+    # （构建内固定签名那一步本来也只在 refs/heads/main 下才启用）。
+    permissions:
+      contents: read
+    uses: ./.github/workflows/build-packages.yml
