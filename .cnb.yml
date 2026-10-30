@@ -1,7 +1,10 @@
 # CNB ↔ GitHub 同步
 #
 # 两个方向：
-#   1. GitHub → CNB（每天 06:00 Asia/Shanghai，定时任务）：
+#   1. GitHub → CNB（三种入口，跑的是同一段 pipeline）：
+#      - 定时：每天 06:00 Asia/Shanghai（crontab: 0 6 * * *）
+#      - 手动：分支详情页按钮（web_trigger_sync_from_github，仅 main）
+#      - GitHub Actions 构建/发布完成后回调（api_trigger_github_sync）
 #      用 tencentcom/git-sync 的 pull 模式把 GitHub 的 main 拉过来 rebase 到 CNB 的 main 上，
 #      因此 CNB 独有的 .cnb.yml / .ci 等提交会保留在被 rebase 到顶部；随后镜像 Release。
 #   2. CNB → GitHub（三种入口，最终都跑 .ci/push-to-github-pr.mjs）：
@@ -25,7 +28,8 @@
 # 路径不对时改下面的 imports。
 main:
   # cron 按系统时区（Asia/Shanghai）计算，0 6 * * * 即每天 UTC+8 06:00。
-  "crontab: 0 6 * * *":
+  # 这个 pipeline 同时被下面的 web_trigger / api_trigger 复用（YAML 锚点 **github-to-cnb）。
+  "crontab: 0 6 * * *": &github-to-cnb
     - name: github-to-cnb
       # 同一时刻只允许一条同步在跑，避免并发 force push 互相覆盖。
       lock:
@@ -53,6 +57,17 @@ main:
         - name: 同步 Release 与附件
           image: node:lts
           script: node .ci/sync-github-releases.mjs
+
+  # 手动触发：分支详情页的按钮（见 .cnb/web_trigger.yml），只挂在 main 上。
+  web_trigger_sync_from_github: *github-to-cnb
+
+  # GitHub Actions 在 main 的构建/发布结束后主动拉一次，见
+  # .github/workflows/build.yml 的 sync-cnb job：
+  #   curl -X POST "$CNB_API_ENDPOINT/$CNB_REPO_SLUG/-/build/start" \
+  #     -H "Authorization: Bearer $CNB_TOKEN" \
+  #     -H "Accept: application/vnd.cnb.api+json" -H "Content-Type: application/json" \
+  #     -d '{"event":"api_trigger_github_sync","branch":"main"}'
+  api_trigger_github_sync: *github-to-cnb
 
 # 所有分支都挂上手动触发事件，按钮见 .cnb/web_trigger.yml。
 "**":

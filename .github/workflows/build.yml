@@ -1,6 +1,6 @@
 name: Build and publish packages
 
-# 完整流程（构建 + canary release + AUR）只有两个入口：
+# 完整流程（构建 + canary release + AUR + 回调 CNB 同步）只有两个入口：
 #   - push 到 main
 #   - 手动 workflow_dispatch（可在任意分支上手动指定）
 # PR 的构建在 pr-build.yml 里，那个 workflow 没有任何发布 job。
@@ -205,3 +205,30 @@ jobs:
               -d @- \
               "https://api.github.com/repos/rinnein/auto-aur/dispatches"
           echo "dispatched AUR publish for $SOURCE@$TAG ($tasks)"
+
+  # 构建 + canary 发布结束后，主动让 CNB 拉一次（CNB 侧事件 api_trigger_github_sync，
+  # 定义在 .cnb.yml，跑的是和每日定时任务同一段 pipeline：拉代码/tag + 镜像 Release）。
+  # 这样不用等第二天 06:00 的定时任务；失败不影响已经发出去的 release。
+  sync-cnb:
+    name: Trigger CNB sync
+    needs: [ canary ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger CNB github-to-cnb pipeline
+        env:
+          CNB_TOKEN: ${{ secrets.CNB_SYNC_TOKEN }}
+          CNB_REPO: rinnein/szu/your-szu-life
+        run: |
+          set -euo pipefail
+          if [ -z "$CNB_TOKEN" ]; then
+            echo "::notice::未配置 CNB_SYNC_TOKEN，跳过 CNB 同步"
+            exit 0
+          fi
+          # sync 不开：CNB 那边自己有 1 小时的 lock，异步拉取即可，不占本 job 时间。
+          curl -sS --fail-with-body -X POST \
+            -H "Authorization: Bearer $CNB_TOKEN" \
+            -H "Accept: application/vnd.cnb.api+json" \
+            -H "Content-Type: application/json" \
+            -d '{"event":"api_trigger_github_sync","branch":"main"}' \
+            "https://api.cnb.cool/$CNB_REPO/-/build/start"
+          echo
