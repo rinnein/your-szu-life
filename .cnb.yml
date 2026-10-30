@@ -8,7 +8,8 @@
 #      - 页面按钮：.cnb/web_trigger.yml，事件 web_trigger_pr_to_github
 #      - NPC 角色「gh-pr」：见 .cnb/settings.yml，在 PR/Issue 里 @ 本仓库(gh-pr)
 #      - OpenAPI / cnb:trigger：事件 api_trigger_github_publish
-#      只推 GitHub 的 cnb/<分支>，再调 API 建 PR（main 受保护，不能直推）。
+#      只推 GitHub 的 cnb/<分支>：没有 PR 就建，已存在就更新它
+#      （main 受保护不能直推；同一个分支重复推送不会产生第二个 PR）。
 #
 # 需要一份密钥仓库文件，提供下面两个变量（建议文件里同时写 allow_slugs/allow_events，
 # 否则只有密钥仓库管理员触发的流水线能引用；PR 评论属于不可信事件，必须先声明 allow_events）：

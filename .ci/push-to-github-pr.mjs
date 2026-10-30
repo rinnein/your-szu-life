@@ -1,5 +1,6 @@
-// 手动触发：把 CNB 侧某个分支推送到 GitHub 的同源分支（cnb/<branch>）并创建 PR。
-// GitHub 的受保护分支（main）不接受直接推送，因此这里只推 cnb/* 分支，再用 API 建 PR。
+// 手动触发：把 CNB 侧某个分支推送到 GitHub 的同源分支（cnb/<branch>），
+// 需要时创建 PR，PR 已存在则更新它（分支内容 + 标题/描述）。
+// GitHub 的受保护分支（main）不接受直接推送，因此这里只推 cnb/* 分支，再用 API 建/改 PR。
 //
 // 需要的环境变量：
 //   GITHUB_REPO         GitHub 仓库，默认 rinnein/your-szu-life
@@ -9,7 +10,7 @@
 //   source_branch       CNB 侧源分支，默认取当前分支（CNB_BRANCH）
 //   base_branch         GitHub 侧目标分支，默认 main
 //   pr_title            自定义 PR 标题
-//   DRY_RUN=true        只打印计划，不推送也不创建 PR
+//   DRY_RUN=true        只打印计划，不推送也不创建/更新 PR
 import { execFileSync } from "node:child_process";
 import { rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -22,6 +23,9 @@ const SOURCE_BRANCH = (process.env.source_branch || process.env.CNB_BRANCH || ""
 const BASE_BRANCH = (process.env.base_branch || "main").trim();
 const PR_TITLE = (process.env.pr_title || "").trim();
 const DRY_RUN = process.argv.includes("--dry-run") || /^(1|true|yes)$/i.test(process.env.DRY_RUN || "");
+
+// 自动生成的标题前缀：用来判断现有 PR 的标题是否被人工改过。
+const AUTO_TITLE_PREFIX = "chore: sync ";
 
 const log = (...args) => console.log("[push-pr]", ...args);
 
@@ -70,6 +74,10 @@ function withCredentialHelper(fn) {
   }
 }
 
+function autoTitle() {
+  return `${AUTO_TITLE_PREFIX}${SOURCE_BRANCH} from CNB`;
+}
+
 function buildBody(commitLines, ahead, headBranch) {
   const buildUrl = process.env.CNB_BUILD_WEB_URL || "";
   const lines = [
@@ -86,12 +94,35 @@ function buildBody(commitLines, ahead, headBranch) {
   return lines.join("\n");
 }
 
+// 同一个 head/base 理论上只有一个 PR，但历史上可能关掉又重开过，所以查 state=all。
+async function findPull(headBranch) {
+  const [owner] = GH_REPO.split("/");
+  const head = encodeURIComponent(`${owner}:${headBranch}`);
+  const response = await ghJson(
+    `/repos/${GH_REPO}/pulls?state=all&head=${head}&base=${BASE_BRANCH}&sort=created&direction=desc`,
+  );
+  if (!response.ok) throw new Error(`查询 PR 失败（head=${headBranch}）: ${JSON.stringify(response.data)}`);
+  const pulls = Array.isArray(response.data) ? response.data : [];
+  if (pulls.length === 0) return null;
+  const open = pulls.filter((pull) => pull.state === "open");
+  if (open.length > 1) log(`注意：${headBranch} 上有 ${open.length} 个未关闭 PR，只更新最新的 #${open[0].number}`);
+  return open[0] ?? pulls[0];
+}
+
+async function patchPull(number, { title, body }) {
+  const response = await ghJson(`/repos/${GH_REPO}/pulls/${number}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title, body }),
+  });
+  if (!response.ok) throw new Error(`更新 PR #${number} 失败: ${JSON.stringify(response.data)}`);
+  return response.data;
+}
+
 async function main() {
   if (!SOURCE_BRANCH) throw new Error("无法确定源分支：请在手动触发时填写 source_branch");
 
   const headBranch = `cnb/${SOURCE_BRANCH.replace(/[^\w.-]+/g, "-")}`;
   const remoteUrl = `https://github.com/${GH_REPO}.git`;
-  const [owner] = GH_REPO.split("/");
 
   log(`源分支 ${SOURCE_BRANCH} → GitHub ${headBranch} → PR 到 ${BASE_BRANCH}`);
 
@@ -115,7 +146,7 @@ async function main() {
   const ahead = Number(git(["rev-list", "--count", `refs/remotes/github/${BASE_BRANCH}..${sha}`]));
   log(`相对 github/${BASE_BRANCH} 有 ${ahead} 个提交`);
   if (ahead === 0) {
-    log("没有需要同步的提交，跳过推送与 PR 创建");
+    log("没有需要同步的提交，跳过推送与 PR 更新");
     return;
   }
 
@@ -123,8 +154,12 @@ async function main() {
     .split("\n")
     .filter(Boolean);
 
+  const existing = GH_TOKEN ? await findPull(headBranch) : null;
+  const reuseExisting = existing?.state === "open";
+  if (reuseExisting) log(`检测到已存在 PR #${existing.number}（${existing.html_url}），本次将更新它`);
+
   if (DRY_RUN) {
-    log(`dry-run：将推送 ${sha} 到 ${headBranch} 并创建 PR`);
+    log(`dry-run：将 force push ${sha} → ${headBranch}，然后${reuseExisting ? "更新" : "创建"} PR`);
     log(commitLines.join("\n"));
     return;
   }
@@ -136,22 +171,23 @@ async function main() {
   });
   log(`已推送 ${sha} → ${headBranch}`);
 
-  const title = PR_TITLE || `chore: sync ${SOURCE_BRANCH} from CNB`;
+  // 人工改过的标题不要被自动标题覆盖；描述是我们自己的（含提交列表与构建链接），每次重建。
+  const keepEditedTitle = reuseExisting && Boolean(existing.title) && !existing.title.startsWith(AUTO_TITLE_PREFIX);
+  const title = PR_TITLE || (keepEditedTitle ? existing.title : autoTitle());
   const body = buildBody(commitLines, ahead, headBranch);
 
-  const existing = await ghJson(
-    `/repos/${GH_REPO}/pulls?state=open&head=${encodeURIComponent(`${owner}:${headBranch}`)}&base=${BASE_BRANCH}`,
-  );
-  if (existing.ok && Array.isArray(existing.data) && existing.data.length > 0) {
-    const number = existing.data[0].number;
-    const updated = await ghJson(`/repos/${GH_REPO}/pulls/${number}`, {
-      method: "PATCH",
-      body: JSON.stringify({ title, body }),
-    });
-    if (!updated.ok) throw new Error(`更新 PR #${number} 失败: ${JSON.stringify(updated.data)}`);
-    log(`已更新已有 PR #${number}: ${updated.data.html_url}`);
-    console.log(`##[set-output pr_url=${updated.data.html_url}]`);
+  if (reuseExisting) {
+    // 标题/描述每次重建：正文里带本次提交列表和本次构建链接，重复运行是有意义的刷新。
+    const previousSha = (existing.head?.sha || "").slice(0, 8);
+    log(`更新 PR #${existing.number} 的标题/描述${previousSha ? `（分支 ${previousSha} → ${sha.slice(0, 8)}）` : ""}`);
+    const updated = await patchPull(existing.number, { title, body });
+    log(`已更新 PR #${existing.number}: ${updated.html_url}`);
+    console.log(`##[set-output pr_url=${updated.html_url}]`);
     return;
+  }
+
+  if (existing) {
+    log(`原 PR #${existing.number} 已${existing.merged_at ? "合并" : "关闭"}，改为新建 PR`);
   }
 
   const created = await ghJson(`/repos/${GH_REPO}/pulls`, {
@@ -159,6 +195,16 @@ async function main() {
     body: JSON.stringify({ title, body, head: headBranch, base: BASE_BRANCH, maintainer_can_modify: true }),
   });
   if (!created.ok) {
+    // 422 "A pull request already exists"：并发的另一次运行刚好建好了，回查后改成更新。
+    if (created.status === 422) {
+      const raced = await findPull(headBranch);
+      if (raced?.state === "open") {
+        const updated = await patchPull(raced.number, { title, body });
+        log(`PR #${raced.number} 已存在（并发创建），改为更新: ${updated.html_url}`);
+        console.log(`##[set-output pr_url=${updated.html_url}]`);
+        return;
+      }
+    }
     throw new Error(
       `创建 PR 失败: ${JSON.stringify(created.data)}` +
         `（请确认 PAT 有 pull_requests:rw，且 ${headBranch} 与 ${BASE_BRANCH} 都存在）`,
