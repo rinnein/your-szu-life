@@ -31,7 +31,16 @@
     </script>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/icon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      兜底防线，不是 Android 的主修复：Chrome/WebView 从无障碍角度会忽略这里的
+      user-scalable=no，安卓侧靠 MobileViewport.kt 的 setSupportZoom(false) 关手势。
+      这条 meta 负责 iOS WKWebView 与桌面触控板缩放，并向这些环境声明本应用不希望缩放。
+      viewport-fit=cover 与边到边沉浸式一致，不影响已有的 insets 逻辑。
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
   </head>
 
   <body>
