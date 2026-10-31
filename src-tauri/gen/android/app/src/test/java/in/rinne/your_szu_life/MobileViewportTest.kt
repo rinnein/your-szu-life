@@ -7,8 +7,14 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Pure-policy tests; writing `WebSettings` needs a real WebView, so that half stays out. */
+/**
+ * Pure-policy tests; 写入 `WebSettings` 那半边要真 WebView，仍留在手工验收里。
+ * 去重判定是纯函数，用任意对象代表「WebView 实例」就能测。
+ */
 class MobileViewportTest {
+  /** 只要能区分「同一个实例 / 不同实例」即可，判定只做 `===`。 */
+  private fun webView(): Any = Any()
+
   @Test
   fun internalPagesLockEveryZoomSwitch() {
     val zoom = zoomSettings(localDocument = true)
@@ -56,5 +62,37 @@ class MobileViewportTest {
     // 每次导航都会重放进外部页/回本地页，策略必须是同一个常量，不能每次新建。
     assertTrue(zoomSettings(true) === zoomSettings(true))
     assertTrue(zoomSettings(false) === zoomSettings(false))
+  }
+
+  @Test
+  fun aFreshWebViewAlwaysGetsItsFirstWrite() {
+    // 首次挂载：无论类别如何都必须写，否则默认的 supportZoom = true 会漏过去。
+    assertTrue(shouldWrite(null, null, webView(), localDocument = true))
+    assertTrue(shouldWrite(null, null, webView(), localDocument = false))
+  }
+
+  @Test
+  fun repeatedNoticesOnTheSameDocumentAreDeduped() {
+    // 同一个 WebView、同一类别：不重写，保住用户自己捏合出来的缩放。
+    val view = webView()
+    assertFalse(shouldWrite(view, true, view, localDocument = true))
+    assertFalse(shouldWrite(view, false, view, localDocument = false))
+  }
+
+  @Test
+  fun flippingTheDocumentCategoryRewrites() {
+    val view = webView()
+    assertTrue(shouldWrite(view, true, view, localDocument = false))
+    assertTrue(shouldWrite(view, false, view, localDocument = true))
+  }
+
+  @Test
+  fun aRebuiltWebViewIsNeverTreatedAsAlreadyApplied() {
+    // 门户窗口每次都是新 WebView：上一个实例记为「内部页已锁」时，
+    // 新实例的首帧锁死仍必须发生。
+    val previous = webView()
+    assertTrue(shouldWrite(previous, true, webView(), localDocument = true))
+    // 反过来也一样：上一个实例停在外部页，新实例要重新判定。
+    assertTrue(shouldWrite(previous, false, webView(), localDocument = false))
   }
 }

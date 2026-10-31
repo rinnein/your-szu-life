@@ -59,13 +59,34 @@ internal fun applyZoomSettings(settings: WebSettings, zoom: ZoomSettings) {
  *
  * 只在文档真的换了类别时才写入：外部页面的文本缩放属于用户系统字号，
  * 每次 document 通知都重写会把用户自己捏合出来的缩放一并抹掉。
+ *
+ * 去重状态按 WebView 实例记：`FeatureActivity` 每次开门户窗口都是新 WebView，
+ * 若沿用上一个实例的判定，`setContentView` 的首次锁死会被跳过，
+ * 默认的 `supportZoom = true` 就生效了——正是要消掉的那个「首帧可放大」窗口。
  */
 internal class MobileViewport {
-  private var applied: Boolean? = null
+  private var appliedTo: WebView? = null
+  private var appliedLocalDocument: Boolean? = null
 
   fun apply(webView: WebView, localDocument: Boolean) {
-    if (applied == localDocument) return
-    applied = localDocument
-    applyZoomSettings(webView.settings, zoomSettings(localDocument))
+    if (shouldWrite(appliedTo, appliedLocalDocument, webView, localDocument)) {
+      applyZoomSettings(webView.settings, zoomSettings(localDocument))
+    }
+    appliedTo = webView
+    appliedLocalDocument = localDocument
+  }
+
+  /** Activity 销毁时断开引用：它是 Activity 作用域的，不该把一个死掉的 WebView 留活。 */
+  fun release() {
+    appliedTo = null
+    appliedLocalDocument = null
   }
 }
+
+/** 换了 WebView 实例，或同一个实例换了文档类别，才需要重写。 */
+internal fun shouldWrite(
+  appliedTo: Any?,
+  appliedLocalDocument: Boolean?,
+  webView: Any,
+  localDocument: Boolean,
+): Boolean = appliedTo !== webView || appliedLocalDocument != localDocument
