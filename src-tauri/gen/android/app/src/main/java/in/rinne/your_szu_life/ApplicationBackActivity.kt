@@ -214,6 +214,7 @@ abstract class ApplicationBackActivity : TauriActivity(), app.tauri.AppBackNavig
     chrome = null
     applicationBack?.dispose()
     applicationBack = null
+    mobileViewport.release()
     super.onDestroy()
   }
 }
