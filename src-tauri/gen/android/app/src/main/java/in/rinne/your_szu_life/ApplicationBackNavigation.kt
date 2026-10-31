@@ -58,6 +58,7 @@ class ApplicationBackNavigation(
         policy.document(url)
         callback.isEnabled = policy.enabled
         activity.updateBrowserToolbar(policy.localDocument)
+        activity.applyMobileViewport(webView, policy.localDocument)
         activity.updateToolbarBack(policy.hasLogicalParent)
       }
       // No WebView history fallback: unknown state belongs to the system.
@@ -106,6 +107,7 @@ class ApplicationBackNavigation(
               policy.document(sourceOrigin.toString())
               callback.isEnabled = policy.enabled
               activity.updateBrowserToolbar(policy.localDocument)
+              activity.applyMobileViewport(webView, policy.localDocument)
               activity.updateToolbarBack(policy.hasLogicalParent)
             }
             "route", "overlay", "loading", "system" -> if (policy.localState(

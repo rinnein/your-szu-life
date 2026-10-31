@@ -22,6 +22,8 @@ abstract class ApplicationBackActivity : TauriActivity(), app.tauri.AppBackNavig
   /** Web 端最近推来的系统栏颜色，跨 WebView 重建保留。 */
   private var pushedStatusBarColor: Int? = null
   private var pushedNavigationBarColor: Int? = null
+  /** 缩放策略按文档归属重放，只在真的换了类别时写入。 */
+  private val mobileViewport = MobileViewport()
   internal val authenticationContent: View? get() = chrome?.root
 
   internal fun setAuthenticationPresented(value: Boolean) {
@@ -66,6 +68,17 @@ abstract class ApplicationBackActivity : TauriActivity(), app.tauri.AppBackNavig
   internal fun updateBrowserToolbar(localDocument: Boolean) {
     val chrome = chrome ?: return
     chrome.setBrowserToolbarVisible(shouldShowBrowserToolbar(localDocument))
+  }
+
+  /**
+   * 缩放策略的接线点：原生栏与缩放共用同一个「本地/外部页面」判定，
+   * 进外部页放开双指缩放，回本地页重新锁死。
+   *
+   * 传 null 表示还没有 WebView（首帧之前），等 WebView 挂上再应用。
+   */
+  internal fun applyMobileViewport(webView: WebView?, localDocument: Boolean) {
+    val target = webView ?: return
+    mobileViewport.apply(target, localDocument)
   }
 
   /**
@@ -150,6 +163,8 @@ abstract class ApplicationBackActivity : TauriActivity(), app.tauri.AppBackNavig
       super.setContentView(view)
       return
     }
+    // 最靠前的时机：WebView 刚挂上就按「本地页面」锁一次，首帧不会先被放大再收回。
+    applyMobileViewport(view, localDocument = true)
     chrome?.dispose()
     val next = NativeWebViewChrome(this, view)
     chrome = next
@@ -199,6 +214,7 @@ abstract class ApplicationBackActivity : TauriActivity(), app.tauri.AppBackNavig
     chrome = null
     applicationBack?.dispose()
     applicationBack = null
+    mobileViewport.release()
     super.onDestroy()
   }
 }
