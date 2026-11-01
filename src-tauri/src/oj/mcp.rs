@@ -81,13 +81,13 @@ impl UnifiedSzuMcpService {
         Parameters(params): Parameters<SiteParam>,
     ) -> Result<String, String> {
         let service = service(&self.app)?;
-        let groups = service.groups(&params.site_id).await?;
+        let groups = service.groups(&params.site_id, false).await?;
         let contests = if let Some(gid) = params.group_id {
-            service.contests(&params.site_id, &gid).await?
+            service.contests(&params.site_id, &gid, false).await?
         } else {
             let mut all = Vec::new();
             for g in &groups {
-                if let Ok(c) = service.contests(&params.site_id, &g.id).await {
+                if let Ok(c) = service.contests(&params.site_id, &g.id, false).await {
                     all.extend(c);
                 }
             }

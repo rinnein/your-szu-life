@@ -128,9 +128,12 @@ pub(crate) async fn get_oj_groups(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     site_id: String,
+    force: Option<bool>,
 ) -> Result<Vec<Group>, String> {
     local(&window)?;
-    service(&app)?.groups(&site_id).await
+    service(&app)?
+        .groups(&site_id, force.unwrap_or(false))
+        .await
 }
 #[tauri::command]
 pub(crate) async fn get_oj_contests(
@@ -138,9 +141,12 @@ pub(crate) async fn get_oj_contests(
     app: tauri::AppHandle,
     site_id: String,
     group_id: String,
+    force: Option<bool>,
 ) -> Result<Vec<Contest>, String> {
     local(&window)?;
-    service(&app)?.contests(&site_id, &group_id).await
+    service(&app)?
+        .contests(&site_id, &group_id, force.unwrap_or(false))
+        .await
 }
 #[tauri::command]
 pub(crate) async fn get_oj_progress(

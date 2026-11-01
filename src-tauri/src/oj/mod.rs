@@ -17,9 +17,9 @@ use model::*;
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     path::PathBuf,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock, Weak},
     time::Instant,
 };
 use tauri::{Emitter, Manager};
@@ -69,6 +69,12 @@ pub(crate) struct Service {
     path: PathBuf,
     runtime: Mutex<Runtime>,
     pub(crate) state_subscribers: crate::ipc_channel::SubscriberPool<OjDeltaEvent>,
+    /// 后台重验证去重（键：groups:/contests:/progress:）。
+    revalidating: Mutex<HashSet<String>>,
+    /// 自引用，用于派生后台任务。
+    self_weak: Mutex<Weak<Service>>,
+    /// 上次广播的快照签名，避免 15 秒扫描重复推送。
+    last_published: Mutex<Option<String>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -109,6 +115,33 @@ impl Service {
                 );
             }
         }
+        // 进度缓存单独持久化：重启后首页待办月历仍能立即判断测验是否完成。
+        let progress_rows = match persistence::read_progress(&path) {
+            Ok(rows) => rows,
+            Err(error) => {
+                log::warn!("读取 OJ 进度缓存失败: {error}");
+                Vec::new()
+            }
+        };
+        for row in progress_rows {
+            let Some(entry) = entries.get(&row.site_id) else {
+                continue;
+            };
+            if entry.username != row.account {
+                continue;
+            }
+            entry.state.lock().unwrap().progress.insert(
+                row.contest_id,
+                (
+                    row.updated_at_ms,
+                    json!({
+                        "accepted": row.accepted,
+                        "total": row.total,
+                        "updatedAt": row.updated_at_ms,
+                    }),
+                ),
+            );
+        }
         Ok(Arc::new(Self {
             app,
             credentials,
@@ -122,6 +155,9 @@ impl Service {
                 companion_requests: BTreeMap::new(),
             }),
             state_subscribers: crate::ipc_channel::SubscriberPool::new(),
+            revalidating: Mutex::new(HashSet::new()),
+            self_weak: Mutex::new(Weak::new()),
+            last_published: Mutex::new(None),
         }))
     }
     fn entry(&self, id: &str) -> Result<Arc<Entry>, String> {
@@ -144,6 +180,14 @@ impl Service {
     }
     fn publish(&self) {
         let snapshot = self.snapshot();
+        let signature = serde_json::to_string(&snapshot).unwrap_or_default();
+        {
+            let mut last = self.last_published.lock().unwrap();
+            if last.as_deref() == Some(signature.as_str()) {
+                return;
+            }
+            *last = Some(signature);
+        }
         self.state_subscribers.broadcast(&OjDeltaEvent::Snapshot(Box::new(snapshot.clone())));
         if let Some(app) = &self.app {
             let _ = app.emit("oj-state-changed", snapshot);
@@ -166,6 +210,7 @@ impl Service {
                     session: s.as_ref().map(|s| s.session).unwrap_or(Session::Disabled),
                     message: s.as_ref().map(|s| s.message.clone()).unwrap_or_default(),
                     last_sync: s.as_ref().and_then(|s| s.last_sync),
+                    has_cache: r.data.groups.contains_key(&site.id),
                 }
             })
             .collect();
@@ -271,6 +316,7 @@ impl Service {
         let changed = old.is_some_and(|s| s.url != url);
         let mut secrets = r.secrets.clone();
         let previous = secrets.get(&id);
+        let identity_changed = changed || previous.is_some_and(|s| s.username != username);
         let password = input
             .password
             .filter(|s| !s.is_empty())
@@ -308,6 +354,10 @@ impl Service {
         let mut data = r.data.clone();
         if changed {
             data.preferences.remove(&id);
+            // 换了实例地址：旧实例的班级/测验缓存必须丢弃，避免缓存先行展示错站数据。
+            data.groups.remove(&id);
+            let prefix = format!("{id}:");
+            data.contests.retain(|key, _| !key.starts_with(&prefix));
         }
         let site = Site {
             id: id.clone(),
@@ -344,6 +394,11 @@ impl Service {
         r.secrets = secrets;
         r.data = data;
         drop(r);
+        if identity_changed {
+            if let Err(error) = persistence::delete_progress_for_site(&self.path, &id) {
+                log::warn!("删除 OJ 进度缓存失败: {error}");
+            }
+        }
         self.cancel_notifications(&id);
         self.publish();
         Ok(id)
@@ -375,6 +430,9 @@ impl Service {
         r.data.contests.retain(|key, _| !key.starts_with(&prefix));
         self.persist(&r)?;
         drop(r);
+        if let Err(error) = persistence::delete_progress_for_site(&self.path, id) {
+            log::warn!("删除 OJ 进度缓存失败: {error}");
+        }
         self.cancel_notifications(id);
         self.publish();
         Ok(())
@@ -675,61 +733,106 @@ impl Service {
             Err(error) => Err(error.display()),
         }
     }
-    async fn groups(&self, id: &str) -> Result<Vec<Group>, String> {
-        let stored = self.stored_groups(id);
-        if let Some((groups, updated_at)) = &stored {
-            if !list_cache_expired(*updated_at) {
-                return Ok(groups.clone());
+    /// 班级列表：命中缓存立即返回（无论多旧），过期条目后台重验证。
+    /// `force` 用于页面“刷新”按钮，跳过缓存并阻塞拉取。
+    async fn groups(&self, id: &str, force: bool) -> Result<Vec<Group>, String> {
+        if !force {
+            if let Some((groups, updated_at)) = self.stored_groups(id) {
+                self.maybe_revalidate(format!("groups:{id}"), updated_at);
+                return Ok(groups);
             }
         }
-        let result = async {
-            let e = self.entry(id)?;
-            let _guard = e.gate.lock().await;
-            self.ensure(id, &e).await?;
-            self.list(id, &e, "groups/", &[])
-                .await?
-                .iter()
-                .map(protocol::group)
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| e.message)
-        }
-        .await;
-        match result {
-            Ok(groups) => {
-                self.store_groups(id, &groups);
-                Ok(groups)
-            }
-            // 网络失败时回退到上一次成功结果，避免页面看起来像“班级丢了”。
-            Err(error) => stored.map(|(groups, _)| groups).ok_or(error),
-        }
+        let groups = self.network_groups(id).await?;
+        self.store_groups(id, &groups);
+        self.emit_cache_changed(&format!("groups:{id}"));
+        Ok(groups)
     }
-    async fn contests(&self, id: &str, group: &str) -> Result<Vec<Contest>, String> {
+    /// 测验列表：与班级列表同样的缓存先行语义。
+    async fn contests(&self, id: &str, group: &str, force: bool) -> Result<Vec<Contest>, String> {
         protocol::id(&json!(group)).map_err(|e| e.message)?;
         let key = format!("{id}:{group}");
-        let stored = self.stored_contests(&key);
-        if let Some((contests, updated_at)) = &stored {
-            if !list_cache_expired(*updated_at) {
-                return Ok(contests.clone());
+        if !force {
+            if let Some((contests, updated_at)) = self.stored_contests(&key) {
+                self.maybe_revalidate(format!("contests:{key}"), updated_at);
+                return Ok(contests);
             }
         }
-        let result = async {
-            let e = self.entry(id)?;
-            let _guard = e.gate.lock().await;
-            self.ensure(id, &e).await?;
-            self.list(id, &e, "contests/", &[("group", group.into())])
-                .await?
-                .iter()
-                .map(protocol::contest)
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| e.message)
+        let contests = self.network_contests(id, group).await?;
+        self.store_contests(&key, &contests);
+        self.emit_cache_changed(&format!("contests:{key}"));
+        Ok(contests)
+    }
+    async fn network_groups(&self, id: &str) -> Result<Vec<Group>, String> {
+        let e = self.entry(id)?;
+        let _guard = e.gate.lock().await;
+        self.ensure(id, &e).await?;
+        self.list(id, &e, "groups/", &[])
+            .await?
+            .iter()
+            .map(protocol::group)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.message)
+    }
+    async fn network_contests(&self, id: &str, group: &str) -> Result<Vec<Contest>, String> {
+        protocol::id(&json!(group)).map_err(|e| e.message)?;
+        let e = self.entry(id)?;
+        let _guard = e.gate.lock().await;
+        self.ensure(id, &e).await?;
+        self.list(id, &e, "contests/", &[("group", group.into())])
+            .await?
+            .iter()
+            .map(protocol::contest)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.message)
+    }
+    /// 过期条目派发后台重验证（去重，不阻塞调用方）。
+    fn maybe_revalidate(&self, key: String, updated_at: i64) {
+        if self.app.is_none() || !list_cache_expired(updated_at) {
+            return;
         }
-        .await;
-        match result {
-            Ok(contests) => {
-                self.store_contests(&key, &contests);
-                Ok(contests)
+        if !self.revalidating.lock().unwrap().insert(key.clone()) {
+            return;
+        }
+        let Some(this) = self.self_weak.lock().unwrap().upgrade() else {
+            self.revalidating.lock().unwrap().remove(&key);
+            return;
+        };
+        tauri::async_runtime::spawn(async move {
+            let result = this.revalidate_cache_entry(&key).await;
+            this.revalidating.lock().unwrap().remove(&key);
+            match result {
+                Ok(()) => this.emit_cache_changed(&key),
+                Err(error) => log::warn!("[oj] 缓存重验证失败 {key}: {error}"),
             }
-            Err(error) => stored.map(|(contests, _)| contests).ok_or(error),
+        });
+    }
+    async fn revalidate_cache_entry(&self, key: &str) -> Result<(), String> {
+        if let Some(site) = key.strip_prefix("groups:") {
+            let groups = self.network_groups(site).await?;
+            self.store_groups(site, &groups);
+            return Ok(());
+        }
+        if let Some(rest) = key.strip_prefix("contests:") {
+            let (site, group) = rest.split_once(':').ok_or("缓存键无效")?;
+            let contests = self.network_contests(site, group).await?;
+            self.store_contests(&format!("{site}:{group}"), &contests);
+            return Ok(());
+        }
+        if let Some(rest) = key.strip_prefix("progress:") {
+            let (site, rest) = rest.split_once(':').ok_or("缓存键无效")?;
+            let (account, contest) = rest.split_once(':').ok_or("缓存键无效")?;
+            let e = self.entry(site)?;
+            if e.username != account {
+                return Ok(());
+            }
+            self.compute_progress(site, &e, contest).await?;
+            return Ok(());
+        }
+        Err("缓存键无效".into())
+    }
+    fn emit_cache_changed(&self, key: &str) {
+        if let Some(app) = &self.app {
+            let _ = app.emit("oj-cache-changed", key.to_string());
         }
     }
     fn stored_groups(&self, id: &str) -> Option<(Vec<Group>, i64)> {
@@ -778,6 +881,33 @@ impl Service {
             log::warn!("保存 OJ 测验缓存失败: {error}");
         }
     }
+    /// 后台扫描一次写回整个站点的班级与测验列表，避免每个分组各写一次整份状态。
+    fn store_lists(&self, id: &str, groups: &[Group], contests: &[(String, Vec<Contest>)]) {
+        let snapshot = {
+            let mut r = self.runtime.lock().unwrap();
+            let now = chrono::Utc::now().timestamp_millis();
+            r.data.groups.insert(
+                id.to_string(),
+                GroupCache {
+                    groups: groups.to_vec(),
+                    updated_at: now,
+                },
+            );
+            for (group_id, rows) in contests {
+                r.data.contests.insert(
+                    format!("{id}:{group_id}"),
+                    ContestCache {
+                        contests: rows.clone(),
+                        updated_at: now,
+                    },
+                );
+            }
+            r.data.clone()
+        };
+        if let Err(error) = persistence::write(&self.path, &snapshot) {
+            log::warn!("保存 OJ 列表缓存失败: {error}");
+        }
+    }
 }
 
 /// 班级/测验列表的本地缓存有效期。页面再次打开时先用缓存渲染，
@@ -797,6 +927,7 @@ pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
             .map_err(|_| "OJ 数据目录不可用")?
             .join("oj/state.sqlite"),
     )?;
+    *service.self_weak.lock().unwrap() = Arc::downgrade(&service);
     store
         .service
         .set(service.clone())

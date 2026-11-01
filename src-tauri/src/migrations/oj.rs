@@ -42,6 +42,22 @@ pub static OJ_MIGRATIONS: MigrationSet = MigrationSet::new(&[
 -- #[toasty::breakpoint]
     ALTER TABLE oj_state_records ADD COLUMN contests_json TEXT NOT NULL DEFAULT '{}';",
     ),
+    // 测验完成度缓存：重启后仍能立即渲染首页待办月历，不再只存在内存里。
+    MigrationFile::new(
+        3,
+        "0003_oj_progress_cache.sql",
+        "CREATE TABLE IF NOT EXISTS oj_progress_records (
+        id TEXT PRIMARY KEY,
+        site_id TEXT NOT NULL,
+        account TEXT NOT NULL,
+        contest_id TEXT NOT NULL,
+        accepted INTEGER NOT NULL,
+        total INTEGER NOT NULL,
+        updated_at_ms INTEGER NOT NULL
+    );
+-- #[toasty::breakpoint]
+    CREATE INDEX IF NOT EXISTS idx_oj_progress_site ON oj_progress_records(site_id);",
+    ),
 ]);
 
 /// 检查并迁移遗留的 OJ JSON 状态文件 (state.json -> oj.sqlite)

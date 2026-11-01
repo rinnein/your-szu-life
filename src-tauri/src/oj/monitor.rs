@@ -82,19 +82,28 @@ impl Service {
                     }
                     error.message
                 })?;
+                let mut groups = Vec::new();
+                let mut group_contests: Vec<(String, Vec<Contest>)> = Vec::new();
                 let mut contests = BTreeMap::new();
                 for g in rows {
-                    let gid = protocol::id(&g["id"]).map_err(|e| e.message)?;
+                    let group = protocol::group(&g).map_err(|e| e.message)?;
+                    let gid = group.id.clone();
                     let list = e
                         .client
-                        .list("contests/", &[("group", gid)])
+                        .list("contests/", &[("group", gid.clone())])
                         .await
                         .map_err(|e| e.message)?;
+                    let mut rows = Vec::new();
                     for v in list {
                         let c = protocol::contest(&v).map_err(|e| e.message)?;
-                        contests.insert(c.id.clone(), c);
+                        contests.insert(c.id.clone(), c.clone());
+                        rows.push(c);
                     }
+                    group_contests.push((gid, rows));
+                    groups.push(group);
                 }
+                // 后台扫描同时刷新列表缓存，首页月历无需打开 OJ 页面也能拿到最新数据。
+                self.store_lists(&site.id, &groups, &group_contests);
                 Ok::<_, String>(contests.into_values().collect::<Vec<_>>())
             }
             .await;
@@ -114,6 +123,7 @@ impl Service {
                     self.process_contests(&site, &e, &contests, now + offset);
                     self.schedule_deadlines(&site, &e, &contests, offset);
                     let _ = self.save_cookies(&site.id, &e);
+                    self.emit_cache_changed("all");
                 }
                 Err(message) => {
                     let mut s = e.state.lock().unwrap();

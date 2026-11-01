@@ -49,7 +49,8 @@ export function useHomeDeadlines() {
       const now = Date.now();
 
       for (const site of snapshot.sites) {
-        if (!site.enabled || site.session !== "ready") continue;
+        // 会话未建立时仍可展示已有缓存；没有缓存的站点才跳过，避免冷启动触发登录。
+        if (!site.enabled || (site.session !== "ready" && !site.hasCache)) continue;
 
         let groups: Group[] = [];
         try {
@@ -77,16 +78,18 @@ export function useHomeDeadlines() {
             // 截止时间必须在未来
             if (contestNow >= contest.end) continue;
 
-            // 检查是否已经全部 AC
+            // 检查是否已经全部 AC。会话未就绪时只展示缓存，不触发网络。
             let isCompleted = false;
-            try {
-              const scope = progressScope(site);
-              const progress = await ojProgressCache.ensure(scope, contest.id);
-              if (progress && progress.total > 0 && progress.accepted === progress.total) {
-                isCompleted = true;
+            if (site.session === "ready") {
+              try {
+                const scope = progressScope(site);
+                const progress = await ojProgressCache.ensure(scope, contest.id);
+                if (progress && progress.total > 0 && progress.accepted === progress.total) {
+                  isCompleted = true;
+                }
+              } catch {
+                // Ignore progress error
               }
-            } catch {
-              // Ignore progress error
             }
 
             if (!isCompleted) {
@@ -244,6 +247,12 @@ export function useHomeDeadlines() {
     const unlistenUooc = listen("uooc-state-changed", () => {
       if (active) void fetchUoocDeadlines();
     });
+    const unlistenOjCache = listen("oj-cache-changed", () => {
+      if (active) void fetchOjDeadlines();
+    });
+    const unlistenLms = listen("lms-state-changed", () => {
+      if (active) void fetchLmsDeadlines();
+    });
     const unlistenNotification = listen<{ category?: string }>(
       "app://in-app-notification",
       (event) => {
@@ -264,9 +273,11 @@ export function useHomeDeadlines() {
       void unlistenState.then((fn) => fn());
       void unlistenProgress.then((fn) => fn());
       void unlistenUooc.then((fn) => fn());
+      void unlistenOjCache.then((fn) => fn());
+      void unlistenLms.then((fn) => fn());
       void unlistenNotification.then((fn) => fn());
     };
-  }, [fetchOjDeadlines, fetchUoocDeadlines, refreshAll]);
+  }, [fetchOjDeadlines, fetchUoocDeadlines, fetchLmsDeadlines, refreshAll]);
 
   // 计算电量预估断电事项
   const electricityItems = useMemo<ScheduleItem[]>(() => {

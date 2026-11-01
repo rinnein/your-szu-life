@@ -35,7 +35,7 @@ vi.mock("@tauri-apps/api/core", () => ({
     onmessage = null;
   },
 }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 vi.mock("@tauri-apps/plugin-notification", () => ({
   isPermissionGranted: vi.fn().mockResolvedValue(true),
   requestPermission: vi.fn().mockResolvedValue("granted"),
@@ -108,9 +108,16 @@ const paper: Paper = {
   ],
   drafts: { "1:1": { code: "", language: "", answer: [], revision: 0, options: null } },
 };
+type Listener = (event: { payload: unknown }) => void;
+const listeners = new Map<string, Listener>();
 beforeEach(() => {
   ojProgressCache.clear();
   clearListCache();
+  listeners.clear();
+  vi.mocked(listen).mockImplementation((async (event: string, handler: Listener) => {
+    listeners.set(event, handler);
+    return () => listeners.delete(event);
+  }) as unknown as typeof listen);
   window.matchMedia = vi.fn().mockImplementation((media) => ({
     media,
     matches: false,
@@ -201,6 +208,27 @@ it("reuses the cached class list when the page is reopened", async () => {
   render(<OjPage />);
   expect(await screen.findByText("一班")).toBeTruthy();
   expect(groupCalls()).toBe(1);
+});
+it("silently reloads classes when the native cache changes", async () => {
+  search.site = "test";
+  let groups = [{ id: "2", name: "旧班级" }];
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "get_oj_snapshot")
+      return { sites: [site], notices: [], desktop: true, companionPort: 27121 };
+    if (command === "get_oj_groups") return groups;
+    return null;
+  });
+  render(<OjPage />);
+  expect(await screen.findByText("旧班级")).toBeTruthy();
+  await waitFor(() => expect(listeners.has("oj-cache-changed")).toBe(true));
+
+  groups = [{ id: "2", name: "新班级" }];
+  await act(async () => {
+    listeners.get("oj-cache-changed")?.({ payload: "groups:test" });
+  });
+
+  expect(await screen.findByText("新班级")).toBeTruthy();
+  expect(screen.queryByText("旧班级")).toBeNull();
 });
 it("mobile omits Competitive Companion", async () => {
   render(<OjPaper site={site} contestId="1" tab="answer" desktop={false} port={27121} />);

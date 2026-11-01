@@ -51,3 +51,48 @@ pub(super) fn write(path: &Path, data: &Data) -> Result<(), String> {
         db.save_data(data).await
     })
 }
+
+fn progress_db_path(path: &Path) -> std::path::PathBuf {
+    if path.extension().is_some_and(|ext| ext == "sqlite") {
+        path.to_path_buf()
+    } else {
+        path.with_extension("sqlite")
+    }
+}
+
+pub(super) fn read_progress(path: &Path) -> Result<Vec<super::db::ProgressRow>, String> {
+    let db_path = progress_db_path(path);
+    crate::migrations::db::run_sync(async {
+        let db = super::db::OjDatabase::open(&db_path).await?;
+        db.load_progress().await
+    })
+}
+
+pub(super) fn write_progress(
+    path: &Path,
+    row: &super::db::ProgressRow,
+) -> Result<(), String> {
+    let db_path = progress_db_path(path);
+    crate::migrations::db::run_sync(async {
+        let db = super::db::OjDatabase::open(&db_path).await?;
+        db.save_progress(row).await
+    })
+}
+
+pub(super) fn delete_progress(path: &Path, id: &str) -> Result<(), String> {
+    let db_path = progress_db_path(path);
+    let id = id.to_string();
+    crate::migrations::db::run_sync(async move {
+        let db = super::db::OjDatabase::open(&db_path).await?;
+        db.delete_progress(&id).await
+    })
+}
+
+pub(super) fn delete_progress_for_site(path: &Path, site_id: &str) -> Result<(), String> {
+    let db_path = progress_db_path(path);
+    let site_id = site_id.to_string();
+    crate::migrations::db::run_sync(async move {
+        let db = super::db::OjDatabase::open(&db_path).await?;
+        db.delete_progress_for_site(&site_id).await
+    })
+}

@@ -5,7 +5,8 @@ fn local(window: &tauri::WebviewWindow) -> Result<(), String> {
     }
     Ok(())
 }
-/// 获取畅课快照（会话状态、待办与通知）。缓存过期时会自动拉取最新数据。
+/// 获取畅课快照（会话状态、待办与通知）。有本地缓存时立即返回，
+/// 过期数据在后台刷新并通过 `lms-state-changed` 事件回填。
 #[tauri::command]
 pub(crate) async fn get_lms_snapshot(
     window: tauri::WebviewWindow,

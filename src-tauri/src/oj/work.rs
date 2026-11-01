@@ -1,4 +1,6 @@
 use super::*;
+/// 测验完成度的缓存有效期；超过后在后台重验证。
+const PROGRESS_TTL_MS: i64 = 3_600_000;
 impl Service {
     pub(super) async fn progress(
         &self,
@@ -13,35 +15,47 @@ impl Service {
         if account.is_some_and(|a| a != e.username) || generation.is_some_and(|g| g != e.epoch) {
             return Err("OJ 账号配置已变化，请重新加载".into());
         }
-        let cached = || {
-            let now = chrono::Utc::now().timestamp_millis();
-            e.state
-                .lock()
-                .unwrap()
-                .progress
-                .get(cid)
-                .filter(|(time, _)| !force && (0..3_600_000).contains(&(now - time)))
-                .map(|(_, value)| value.clone())
-        };
         if !self.current(id, &e) {
             return Err("OJ 账号配置已变化，请重新加载".into());
         }
-        if let Some(value) = cached() {
-            return Ok(value);
+        // 缓存先行：命中即回（无论多旧），超过 TTL 在后台重验证。
+        if !force {
+            let cached = e.state.lock().unwrap().progress.get(cid).cloned();
+            if let Some((updated_at, value)) = cached {
+                if chrono::Utc::now().timestamp_millis() - updated_at > PROGRESS_TTL_MS {
+                    self.maybe_revalidate_progress(id, &e, cid);
+                }
+                return Ok(value);
+            }
         }
         let _guard = e.gate.lock().await;
         if !self.current(id, &e) {
             return Err("OJ 账号配置已变化，请重新加载".into());
         }
-        // Another WebView may have completed the same request while we waited.
-        if let Some(value) = cached() {
-            return Ok(value);
+        // 等锁期间其它 WebView 可能已完成同一次请求；强制刷新除外。
+        if !force {
+            if let Some((_, value)) = e.state.lock().unwrap().progress.get(cid).cloned() {
+                return Ok(value);
+            }
         }
-        self.ensure(id, &e).await?;
-        let raw = self.read(id, &e, &format!("contests/{cid}/"), &[]).await?;
+        self.compute_progress(id, &e, cid).await
+    }
+
+    /// 走网络计算测验完成度，写回内存与 SQLite，并推送事件。
+    pub(super) async fn compute_progress(
+        &self,
+        id: &str,
+        e: &Entry,
+        cid: &str,
+    ) -> Result<Value, String> {
+        if !self.current(id, e) {
+            return Err("OJ 账号配置已变化，请重新加载".into());
+        }
+        self.ensure(id, e).await?;
+        let raw = self.read(id, e, &format!("contests/{cid}/"), &[]).await?;
         let problems = protocol::problems(&raw).map_err(|e| e.message)?;
         let rank = self
-            .read(id, &e, &format!("contests/{cid}/self_rank/"), &[])
+            .read(id, e, &format!("contests/{cid}/self_rank/"), &[])
             .await?;
         let mut accepted = problems
             .iter()
@@ -54,7 +68,7 @@ impl Service {
             let rows = self
                 .list(
                     id,
-                    &e,
+                    e,
                     "code-fill-submission/my_submissions/",
                     &[("contest", cid.into())],
                 )
@@ -72,16 +86,89 @@ impl Service {
         }
         let now = chrono::Utc::now().timestamp_millis();
         let value = json!({"accepted":accepted,"total":problems.len(),"updatedAt":now});
+        if !self.current(id, e) {
+            return Err("OJ 账号配置已变化，请重新加载".into());
+        }
         e.state
             .lock()
             .unwrap()
             .progress
             .insert(cid.into(), (now, value.clone()));
+        let accepted = accepted as i64;
+        let total = problems.len() as i64;
+        self.store_progress(id, e, cid, accepted, total, now);
+        self.emit_progress(id, e, cid, accepted, total, now);
         Ok(value)
+    }
+
+    fn maybe_revalidate_progress(&self, id: &str, e: &Arc<Entry>, cid: &str) {
+        if self.app.is_none() {
+            return;
+        }
+        let key = format!("progress:{id}:{}:{cid}", e.username);
+        if !self.revalidating.lock().unwrap().insert(key.clone()) {
+            return;
+        }
+        let Some(this) = self.self_weak.lock().unwrap().upgrade() else {
+            self.revalidating.lock().unwrap().remove(&key);
+            return;
+        };
+        let id = id.to_string();
+        let cid = cid.to_string();
+        let e = e.clone();
+        tauri::async_runtime::spawn(async move {
+            // 与班级/测验重验证共用站点 gate，避免并发登录或重复请求。
+            let _guard = e.gate.lock().await;
+            let result = this.compute_progress(&id, &e, &cid).await;
+            this.revalidating.lock().unwrap().remove(&key);
+            if let Err(error) = result {
+                log::warn!("[oj] 进度缓存重验证失败 {id}:{cid}: {error}");
+            }
+        });
+    }
+
+    fn store_progress(&self, id: &str, e: &Entry, cid: &str, accepted: i64, total: i64, now: i64) {
+        let row = super::db::ProgressRow {
+            id: format!("{id}:{}:{cid}", e.username),
+            site_id: id.to_string(),
+            account: e.username.clone(),
+            contest_id: cid.to_string(),
+            accepted,
+            total,
+            updated_at_ms: now,
+        };
+        if let Err(error) = persistence::write_progress(&self.path, &row) {
+            log::warn!("保存 OJ 进度缓存失败: {error}");
+        }
+    }
+
+    fn delete_progress(&self, id: &str, e: &Entry, cid: &str) {
+        let key = format!("{id}:{}:{cid}", e.username);
+        if let Err(error) = persistence::delete_progress(&self.path, &key) {
+            log::warn!("删除 OJ 进度缓存失败: {error}");
+        }
+    }
+
+    fn emit_progress(&self, id: &str, e: &Entry, cid: &str, accepted: i64, total: i64, now: i64) {
+        if let Some(app) = &self.app {
+            let _ = app.emit(
+                "oj-progress-updated",
+                json!({
+                    "siteId": id,
+                    "account": e.username,
+                    "sessionGeneration": e.epoch,
+                    "contestId": cid,
+                    "accepted": accepted,
+                    "total": total,
+                    "updatedAt": now,
+                }),
+            );
+        }
     }
 
     fn invalidate_progress(&self, id: &str, e: &Entry, cid: &str) {
         e.state.lock().unwrap().progress.remove(cid);
+        self.delete_progress(id, e, cid);
         if let Some(app) = &self.app {
             let _ = app.emit("oj-progress-invalidated", json!({"siteId":id,"account":e.username,"sessionGeneration":e.epoch,"contestId":cid}));
         }

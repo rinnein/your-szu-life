@@ -21,6 +21,7 @@ export function OjProgressBridge() {
       }
     };
     void subscribe("oj-progress-invalidated", ojProgressCache.invalidateNative);
+    void subscribe("oj-progress-updated", ojProgressCache.applyNative);
     void subscribe<Snapshot>("oj-state-changed", (snapshot) =>
       ojProgressCache.reconcile(snapshot.sites),
     );

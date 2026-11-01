@@ -98,6 +98,38 @@ it("cannot let old requests overwrite a newer result derived from the paper", as
   await pending;
   expect(cache.store.get()[progressScopeKey(scope)].entries["1"].value).toEqual(complete);
 });
+it("applies native progress pushes only to the matching scope", async () => {
+  const cache = createProgressCache(vi.fn().mockResolvedValue(complete), () => 1000);
+  await cache.ensure(scope, "1");
+  const other = { ...scope, account: "other" };
+  await cache.ensure(other, "1");
+  cache.applyNative({
+    siteId: scope.siteId,
+    account: scope.account,
+    sessionGeneration: 1,
+    contestId: "1",
+    accepted: 1,
+    total: 3,
+  });
+  expect(cache.store.get()[progressScopeKey(scope)].entries["1"].value).toEqual({
+    accepted: 1,
+    total: 3,
+  });
+  expect(cache.store.get()[progressScopeKey(other)].entries["1"].value).toEqual(complete);
+  // 非法数据（accepted > total）必须被忽略。
+  cache.applyNative({
+    siteId: scope.siteId,
+    account: scope.account,
+    sessionGeneration: 1,
+    contestId: "1",
+    accepted: 4,
+    total: 3,
+  });
+  expect(cache.store.get()[progressScopeKey(scope)].entries["1"].value).toEqual({
+    accepted: 1,
+    total: 3,
+  });
+});
 it("isolates sites, URLs, accounts and credential generations", async () => {
   const fetch = vi.fn().mockResolvedValue(complete);
   const cache = createProgressCache(fetch, () => 1000);

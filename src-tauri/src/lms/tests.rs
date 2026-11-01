@@ -379,6 +379,26 @@ async fn service_refresh_persists_cache_and_session() {
 }
 
 #[tokio::test]
+async fn cache_hit_is_served_without_a_blocking_refresh() {
+    let (client, _lms, _auth) = make_client(true).await;
+    let credentials = test_store();
+    let path = temp_db_path("cache-first");
+    let service = super::Service::new(None, credentials.clone(), path.clone()).unwrap();
+    // 冷启动没有缓存：必须允许阻塞首拉。
+    assert!(!service.has_cache());
+    assert!(service.needs_refresh());
+    service.refresh_with_client(&client).await;
+    // 拉取成功后，ensure(false) 的快速路径不会再判断为需要刷新。
+    assert!(service.has_cache());
+    assert!(!service.needs_refresh());
+    // 重开服务模拟冷启动：缓存立即恢复，且不需要前台刷新。
+    let reopened = super::Service::new(None, credentials, path).unwrap();
+    assert!(reopened.has_cache());
+    assert!(!reopened.needs_refresh());
+    assert_eq!(reopened.snapshot().todos.len(), 1);
+}
+
+#[tokio::test]
 async fn service_without_cas_marks_needs_auth_and_keeps_cache() {
     let (client, _lms, _auth) = make_client(false).await;
     let credentials = test_store();

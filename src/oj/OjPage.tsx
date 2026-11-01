@@ -154,6 +154,49 @@ export default function OjPage() {
       active = false;
     };
   }, [site?.id, site?.username, site?.enabled, search.group, search.contest, refresh]);
+  // 后台重验证完成后静默刷新当前列表，不显示 busy。
+  useEffect(() => {
+    if (!site?.enabled || search.contest) return;
+    let active = true;
+    let stop: (() => void) | undefined;
+    const siteId = site.id;
+    const groupId = search.group;
+    void listen<string>("oj-cache-changed", ({ payload }) => {
+      if (!active) return;
+      const matches = groupId
+        ? payload === "all" || payload === `contests:${siteId}:${groupId}`
+        : payload === "all" || payload === `groups:${siteId}`;
+      if (!matches) return;
+      const request = groupId
+        ? invoke<Contest[]>("get_oj_contests", { siteId, groupId })
+        : invoke<Group[]>("get_oj_groups", { siteId });
+      void request
+        .then((rows) => {
+          if (!active) return;
+          if (groupId) {
+            setContests(rows as Contest[]);
+            writeContests(siteId, groupId, rows as Contest[]);
+          } else {
+            setGroups(rows as Group[]);
+            writeGroups(siteId, rows as Group[]);
+          }
+        })
+        .catch(() => {
+          /* 缓存重验证失败时保留当前列表 */
+        });
+    })
+      .then((off) => {
+        if (active) stop = off;
+        else off();
+      })
+      .catch(() => {
+        /* 事件订阅失败时仍可通过手动刷新恢复 */
+      });
+    return () => {
+      active = false;
+      stop?.();
+    };
+  }, [site?.enabled, site?.id, search.group, search.contest]);
   useEffect(() => {
     if (ocrStatus?.status === "ready") setOcrRequired(false);
   }, [ocrStatus?.status]);
@@ -180,9 +223,22 @@ export default function OjPage() {
         token: null,
         value: null,
       });
-      if (search.group)
-        setContests(await invoke("get_oj_contests", { siteId: site!.id, groupId: search.group }));
-      else setGroups(await invoke("get_oj_groups", { siteId: site!.id }));
+      if (search.group) {
+        const rows = await invoke<Contest[]>("get_oj_contests", {
+          siteId: site!.id,
+          groupId: search.group,
+          force: true,
+        });
+        setContests(rows);
+        writeContests(site!.id, search.group, rows);
+      } else {
+        const rows = await invoke<Group[]>("get_oj_groups", {
+          siteId: site!.id,
+          force: true,
+        });
+        setGroups(rows);
+        writeGroups(site!.id, rows);
+      }
     });
   const items =
     snapshot?.sites.filter((s) =>
@@ -214,6 +270,7 @@ export default function OjPage() {
                       const rows = await invoke<Contest[]>("get_oj_contests", {
                         siteId: site.id,
                         groupId: search.group,
+                        force: true,
                       });
                       ojProgressCache.invalidate(
                         progressScope(site),
@@ -221,7 +278,15 @@ export default function OjPage() {
                         true,
                       );
                       setContests(rows);
-                    } else setGroups(await invoke("get_oj_groups", { siteId: site.id }));
+                      writeContests(site.id, search.group, rows);
+                    } else {
+                      const rows = await invoke<Group[]>("get_oj_groups", {
+                        siteId: site.id,
+                        force: true,
+                      });
+                      setGroups(rows);
+                      writeGroups(site.id, rows);
+                    }
                   }
                 })
               }
@@ -289,11 +354,20 @@ export default function OjPage() {
             onAuthenticated={async () => {
               await refresh();
               if (search.group) {
-                setContests(
-                  await invoke("get_oj_contests", { siteId: site.id, groupId: search.group }),
-                );
+                const rows = await invoke<Contest[]>("get_oj_contests", {
+                  siteId: site.id,
+                  groupId: search.group,
+                  force: true,
+                });
+                setContests(rows);
+                writeContests(site.id, search.group, rows);
               } else {
-                setGroups(await invoke("get_oj_groups", { siteId: site.id }));
+                const rows = await invoke<Group[]>("get_oj_groups", {
+                  siteId: site.id,
+                  force: true,
+                });
+                setGroups(rows);
+                writeGroups(site.id, rows);
               }
             }}
             onModelRequired={() => {

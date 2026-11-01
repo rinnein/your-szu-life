@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Button, Card, LoadingIndicator } from "material/react";
 import { LuBell, LuCalendarClock, LuExternalLink, LuListTodo, LuRotateCw } from "react-icons/lu";
 import { Banner, Chip, toast } from "../ui";
@@ -71,6 +72,26 @@ export default function LmsPage() {
   useEffect(() => {
     void load(false);
   }, [load]);
+
+  // 后台重验证完成后静默替换快照，不闪加载态。
+  useEffect(() => {
+    let active = true;
+    let stop: (() => void) | undefined;
+    void listen<LmsSnapshot>("lms-state-changed", ({ payload }) => {
+      if (active) setSnapshot(payload);
+    })
+      .then((off) => {
+        if (active) stop = off;
+        else off();
+      })
+      .catch(() => {
+        /* 事件订阅失败时仍可通过手动刷新恢复 */
+      });
+    return () => {
+      active = false;
+      stop?.();
+    };
+  }, []);
 
   const todos = [...(snapshot?.todos ?? [])].sort(
     (a, b) => new Date(a.end_time).getTime() - new Date(b.end_time).getTime(),

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -11,6 +11,15 @@ import { ojProgressCache } from "../oj/progress-store";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 
+type Listener = (event: { payload: unknown }) => void;
+const listeners = new Map<string, Listener>();
+
+async function emit(event: string, payload?: unknown) {
+  await act(async () => {
+    listeners.get(event)?.({ payload });
+  });
+}
+
 describe("useHomeDeadlines", () => {
   afterEach(() => {
     cleanup();
@@ -18,7 +27,11 @@ describe("useHomeDeadlines", () => {
   });
 
   beforeEach(() => {
-    vi.mocked(listen).mockResolvedValue(() => undefined);
+    listeners.clear();
+    vi.mocked(listen).mockImplementation((async (event: string, handler: Listener) => {
+      listeners.set(event, handler);
+      return () => listeners.delete(event);
+    }) as unknown as typeof listen);
     vi.spyOn(ojProgressCache, "ensure").mockResolvedValue({ accepted: 1, total: 3 });
   });
 
@@ -235,5 +248,156 @@ describe("useHomeDeadlines", () => {
     const { result } = renderHook(() => useHomeDeadlines());
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.items).toHaveLength(0);
+  });
+
+  it("shows cached OJ contests before the session becomes ready", async () => {
+    const now = Date.now();
+    vi.spyOn(electricityModule, "useElectricityMonitor").mockReturnValue({
+      remaining: null,
+      observedDate: null,
+      expiresAtMs: null,
+      expired: true,
+      low: false,
+    });
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_oj_snapshot") {
+        return {
+          sites: [
+            {
+              id: "site1",
+              name: "OJ",
+              enabled: true,
+              session: "disabled",
+              hasCache: true,
+              url: "http://oj",
+              username: "student",
+            },
+          ],
+        };
+      }
+      if (command === "get_oj_groups") return [{ id: "g1", name: "G1" }];
+      if (command === "get_oj_contests") {
+        return [
+          {
+            id: "c1",
+            groupId: "g1",
+            title: "缓存测验",
+            begin: now - 1000,
+            end: now + 100000,
+            now,
+            isExam: false,
+          },
+        ];
+      }
+      if (command === "get_uooc_snapshot") return { session: "ready", courses: [] };
+      if (command === "list_uooc_exams" || command === "list_uooc_homeworks") return [];
+      if (command === "get_lms_snapshot") return { session: "ready", todos: [] };
+      return undefined;
+    });
+
+    const { result } = renderHook(() => useHomeDeadlines());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.items.find((item) => item.category === "oj-quiz")?.title).toBe(
+      "缓存测验",
+    );
+  });
+
+  it("refreshes LMS deadlines when the lms cache changes", async () => {
+    const now = Date.now();
+    vi.spyOn(electricityModule, "useElectricityMonitor").mockReturnValue({
+      remaining: null,
+      observedDate: null,
+      expiresAtMs: null,
+      expired: true,
+      low: false,
+    });
+    let todos: Record<string, unknown>[] = [];
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_oj_snapshot") return { sites: [] };
+      if (command === "get_uooc_snapshot") return { session: "ready", courses: [] };
+      if (command === "list_uooc_exams" || command === "list_uooc_homeworks") return [];
+      if (command === "get_lms_snapshot") return { session: "ready", todos };
+      return undefined;
+    });
+
+    const { result } = renderHook(() => useHomeDeadlines());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.items).toHaveLength(0);
+
+    todos = [
+      {
+        id: 1,
+        course_id: 9,
+        course_name: "数据库",
+        title: "第五次作业",
+        end_time: new Date(now + 86_400_000).toISOString(),
+      },
+    ];
+    await emit("lms-state-changed", { session: "ready", todos });
+    await waitFor(() =>
+      expect(result.current.items.find((item) => item.category === "lms-homework")?.title).toBe(
+        "第五次作业",
+      ),
+    );
+  });
+
+  it("refreshes OJ deadlines when the oj cache changes", async () => {
+    const now = Date.now();
+    vi.spyOn(electricityModule, "useElectricityMonitor").mockReturnValue({
+      remaining: null,
+      observedDate: null,
+      expiresAtMs: null,
+      expired: true,
+      low: false,
+    });
+    let contests: Record<string, unknown>[] = [];
+    let groupCalls = 0;
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_oj_snapshot") {
+        return {
+          sites: [
+            {
+              id: "site1",
+              name: "OJ",
+              enabled: true,
+              session: "ready",
+              url: "http://oj",
+              username: "student",
+            },
+          ],
+        };
+      }
+      if (command === "get_oj_groups") {
+        groupCalls += 1;
+        return [{ id: "g1", name: "G1" }];
+      }
+      if (command === "get_oj_contests") return contests;
+      if (command === "get_uooc_snapshot") return { session: "ready", courses: [] };
+      if (command === "list_uooc_exams" || command === "list_uooc_homeworks") return [];
+      if (command === "get_lms_snapshot") return { session: "ready", todos: [] };
+      return undefined;
+    });
+
+    const { result } = renderHook(() => useHomeDeadlines());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const before = groupCalls;
+    contests = [
+      {
+        id: "c1",
+        groupId: "g1",
+        title: "新测验",
+        begin: now - 1000,
+        end: now + 100000,
+        now,
+        isExam: false,
+      },
+    ];
+    await emit("oj-cache-changed", "all");
+    await waitFor(() =>
+      expect(result.current.items.find((item) => item.category === "oj-quiz")?.title).toBe(
+        "新测验",
+      ),
+    );
+    expect(groupCalls).toBeGreaterThan(before);
   });
 });

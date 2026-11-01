@@ -159,12 +159,17 @@ label during refresh; failures keep that label and back off for 30 seconds. The
 manual OJ refresh invalidates the displayed contest IDs and forces a server read.
 Complete submission lists already read by the problem page directly seed the store.
 
-Each native account session also caches progress for five minutes, so independent
+Each native account session also caches progress for one hour, so independent
 Android/WebView pages reuse the same network result. The account gate coalesces
-concurrent reads across windows. Credential replacement/deletion discards that
-session's cache. `get_oj_progress` accepts `force`, `account`, `sessionGeneration`
-and returns `updatedAt` alongside accepted/total counts. Submissions and changed
-terminal verdicts emit `oj-progress-invalidated` for just the affected contest;
-the root bridge updates every WebView store. Late replies cannot overwrite a
-newer locally derived result or recreate a removed account's cache. This is an
-application-lifetime cache, not credential or restart persistence.
+concurrent reads across windows, and `oj_progress_records` in `oj/state.sqlite`
+persists the result keyed by site/account/contest, so the homepage calendar can
+render completion immediately after a restart. Expired entries are served from
+cache while a background revalidation runs; successful revalidations emit
+`oj-progress-updated` for just the affected contest, and the root bridge seeds
+every WebView store. Credential replacement/deletion discards that session's
+cache and its persisted rows. `get_oj_progress` accepts `force`, `account`,
+`sessionGeneration` and returns `updatedAt` alongside accepted/total counts.
+Submissions and changed terminal verdicts emit `oj-progress-invalidated` for
+just the affected contest; the root bridge updates every WebView store. Late
+replies cannot overwrite a newer locally derived result or recreate a removed
+account's cache.

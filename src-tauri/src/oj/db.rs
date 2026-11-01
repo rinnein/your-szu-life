@@ -34,6 +34,31 @@ pub struct OjStateRecord {
     pub contests_json: String,
 }
 
+#[derive(Debug, toasty::Model)]
+pub struct OjProgressRecord {
+    #[key]
+    pub id: String,
+    #[index]
+    pub site_id: String,
+    pub account: String,
+    pub contest_id: String,
+    pub accepted: i64,
+    pub total: i64,
+    pub updated_at_ms: i64,
+}
+
+/// 持久化层与内存层之间的进度传输类型。
+#[derive(Clone, Debug)]
+pub(crate) struct ProgressRow {
+    pub id: String,
+    pub site_id: String,
+    pub account: String,
+    pub contest_id: String,
+    pub accepted: i64,
+    pub total: i64,
+    pub updated_at_ms: i64,
+}
+
 #[derive(Clone)]
 pub struct OjDatabase {
     pub(crate) db: toasty::Db,
@@ -43,7 +68,7 @@ impl OjDatabase {
     pub async fn open(db_path: &Path) -> Result<Self, String> {
         let db = crate::migrations::db::open_sqlite_db(
             db_path,
-            toasty::models!(OjNoticeRecord, OjStateRecord),
+            toasty::models!(OjNoticeRecord, OjStateRecord, OjProgressRecord),
             Some(&crate::migrations::oj::OJ_MIGRATIONS),
         )
         .await?;
@@ -220,6 +245,95 @@ impl OjDatabase {
             }
         }
 
+        Ok(())
+    }
+
+    pub(crate) async fn load_progress(&self) -> Result<Vec<ProgressRow>, String> {
+        let mut db = self.db.clone();
+        let rows = OjProgressRecord::all()
+            .exec(&mut db)
+            .await
+            .map_err(|error| {
+                log::warn!("读取 OJ 进度缓存失败: {error}");
+                "读取 OJ 进度缓存失败".to_string()
+            })?;
+        Ok(rows
+            .into_iter()
+            .map(|row| ProgressRow {
+                id: row.id,
+                site_id: row.site_id,
+                account: row.account,
+                contest_id: row.contest_id,
+                accepted: row.accepted,
+                total: row.total,
+                updated_at_ms: row.updated_at_ms,
+            })
+            .collect())
+    }
+
+    pub(crate) async fn save_progress(&self, row: &ProgressRow) -> Result<(), String> {
+        let mut db = self.db.clone();
+        match OjProgressRecord::get_by_id(&mut db, &row.id).await {
+            Ok(mut existing) => {
+                toasty::update!(existing {
+                    accepted: row.accepted,
+                    total: row.total,
+                    updated_at_ms: row.updated_at_ms,
+                })
+                .exec(&mut db)
+                .await
+                .map_err(|e| format!("更新 OJ 进度缓存失败: {e}"))?;
+            }
+            Err(error) if error.is_record_not_found() => {
+                toasty::create!(OjProgressRecord {
+                    id: row.id.clone(),
+                    site_id: row.site_id.clone(),
+                    account: row.account.clone(),
+                    contest_id: row.contest_id.clone(),
+                    accepted: row.accepted,
+                    total: row.total,
+                    updated_at_ms: row.updated_at_ms,
+                })
+                .exec(&mut db)
+                .await
+                .map_err(|e| format!("创建 OJ 进度缓存失败: {e}"))?;
+            }
+            Err(error) => {
+                return Err(format!("读取 OJ 进度缓存失败，本次未写入: {error}"));
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn delete_progress(&self, id: &str) -> Result<(), String> {
+        let mut db = self.db.clone();
+        match OjProgressRecord::get_by_id(&mut db, id).await {
+            Ok(row) => {
+                row.delete()
+                    .exec(&mut db)
+                    .await
+                    .map_err(|e| format!("删除 OJ 进度缓存失败: {e}"))?;
+            }
+            Err(error) if error.is_record_not_found() => {}
+            Err(error) => {
+                return Err(format!("读取 OJ 进度缓存失败，本次未删除: {error}"));
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn delete_progress_for_site(&self, site_id: &str) -> Result<(), String> {
+        let mut db = self.db.clone();
+        let rows = OjProgressRecord::all()
+            .exec(&mut db)
+            .await
+            .map_err(|e| format!("读取 OJ 进度缓存失败: {e}"))?;
+        for row in rows.into_iter().filter(|row| row.site_id == site_id) {
+            row.delete()
+                .exec(&mut db)
+                .await
+                .map_err(|e| format!("删除 OJ 进度缓存失败: {e}"))?;
+        }
         Ok(())
     }
 }

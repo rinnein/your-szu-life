@@ -1135,13 +1135,8 @@ async fn terminal_judging_invalidates_only_its_contest_and_only_when_status_chan
     assert_eq!(handle.join().unwrap().len(), 6);
 }
 #[tokio::test]
-async fn expired_progress_refreshes_and_account_replacement_discards_the_cache() {
-    let mut raw = fixture();
-    raw["problem_json"] = json!({"0":raw["problem_json"]["0"].clone()});
-    let (url, handle) = server(vec![
-        (200, raw),
-        (200, json!({"data":{"submission_info":{}}})),
-    ]);
+async fn expired_progress_is_served_from_cache_and_account_replacement_discards_it() {
+    let (url, handle) = server(vec![]);
     let (_dir, s) = setup();
     let id = s.save_site(input(&url)).unwrap();
     let e = s.entry(&id).unwrap();
@@ -1153,9 +1148,10 @@ async fn expired_progress_refreshes_and_account_replacement_discards_the_cache()
             json!({"accepted":1,"total":1}),
         ),
     );
+    // 缓存先行：过期也立即返回，前台不触发网络。
     assert_eq!(
         s.progress(&id, "12", false, None, None).await.unwrap()["accepted"],
-        0
+        1
     );
     let mut changed = input(&url);
     changed.id = Some(id.clone());
@@ -1169,5 +1165,105 @@ async fn expired_progress_refreshes_and_account_replacement_discards_the_cache()
         .unwrap()
         .progress
         .is_empty());
+    assert!(handle.join().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn snapshot_reports_cached_lists() {
+    let (_dir, s) = setup();
+    let id = s.save_site(input("http://127.0.0.1:1/")).unwrap();
+    let cached = |s: &Service, id: &str| {
+        s.snapshot()
+            .sites
+            .iter()
+            .find(|site| site.site.id == id)
+            .unwrap()
+            .has_cache
+    };
+    assert!(!cached(&s, &id));
+    s.store_groups(
+        &id,
+        &[Group {
+            id: "1".into(),
+            name: "班级".into(),
+        }],
+    );
+    assert!(cached(&s, &id));
+}
+
+#[tokio::test]
+async fn stale_lists_are_returned_without_network() {
+    let (url, handle) = server(vec![]);
+    let (_dir, s) = setup();
+    let id = s.save_site(input(&url)).unwrap();
+    s.store_groups(
+        &id,
+        &[Group {
+            id: "1".into(),
+            name: "班级".into(),
+        }],
+    );
+    s.store_contests(&format!("{id}:1"), &[contest("12", 0, 0, 0)]);
+    {
+        let mut r = s.runtime.lock().unwrap();
+        let stale = chrono::Utc::now().timestamp_millis() - 3_600_000;
+        r.data.groups.get_mut(&id).unwrap().updated_at = stale;
+        r.data.contests.get_mut(&format!("{id}:1")).unwrap().updated_at = stale;
+    }
+    assert_eq!(s.groups(&id, false).await.unwrap().len(), 1);
+    assert_eq!(s.contests(&id, "1", false).await.unwrap().len(), 1);
+    assert!(handle.join().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn force_refresh_bypasses_cached_groups() {
+    let (url, handle) = server(vec![(200, json!([{"id": 7, "name": "强制"}]))]);
+    let (_dir, s) = setup();
+    let id = s.save_site(input(&url)).unwrap();
+    let e = s.entry(&id).unwrap();
+    e.state.lock().unwrap().session = Session::Ready;
+    s.store_groups(
+        &id,
+        &[Group {
+            id: "1".into(),
+            name: "旧".into(),
+        }],
+    );
+    let groups = s.groups(&id, true).await.unwrap();
+    assert_eq!(groups[0].name, "强制");
+    assert_eq!(handle.join().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn progress_cache_survives_service_restart() {
+    let mut raw = fixture();
+    raw["problem_json"] = json!({"0":raw["problem_json"]["0"].clone()});
+    let (url, handle) = server(vec![
+        (200, raw),
+        (
+            200,
+            json!({"data":{"submission_info":{"1":{"accepted":true}}}}),
+        ),
+    ]);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    let credentials = Arc::new(MemoryCredentialStore::default());
+    let s = Service::new(None, credentials.clone(), path.clone()).unwrap();
+    let id = s.save_site(input(&url)).unwrap();
+    let e = s.entry(&id).unwrap();
+    e.state.lock().unwrap().session = Session::Ready;
+    assert_eq!(
+        s.progress(&id, "12", false, None, None).await.unwrap()["accepted"],
+        1
+    );
     assert_eq!(handle.join().unwrap().len(), 2);
+    // 重开服务：进度从 SQLite 回填，命中缓存不再触网（原 mock 已关闭）。
+    let reopened = Service::new(None, credentials, path).unwrap();
+    assert_eq!(
+        reopened
+            .progress(&id, "12", false, None, None)
+            .await
+            .unwrap()["accepted"],
+        1
+    );
 }

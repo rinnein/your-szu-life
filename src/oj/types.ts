@@ -18,6 +18,8 @@ export interface Site {
   session: Session;
   message: string;
   lastSync?: number;
+  /** 本地已有该站点的班级/测验缓存（会话尚未建立时也可展示）。 */
+  hasCache?: boolean;
 }
 export interface Notice {
   id: string;

@@ -82,7 +82,9 @@ export function createProgressCache(
             ...s.entries,
             [id]: {
               value: { accepted: value.accepted, total: value.total },
-              updatedAt: value.updatedAt ?? now(),
+              // 后端可能返回较旧的持久化值；前端按本次读取时间缓存，
+              // 真正的新鲜度由后端的后台重验证 + oj-progress-updated 事件保证。
+              updatedAt: now(),
               retryAfter: 0,
               force: false,
               loading: false,
@@ -137,6 +139,39 @@ export function createProgressCache(
           [id]: { value, updatedAt: now(), retryAfter: 0, force: false, loading: false },
         },
       }));
+    },
+    applyNative(event: {
+      siteId: string;
+      account: string;
+      sessionGeneration: number;
+      contestId: string;
+      accepted: number;
+      total: number;
+      updatedAt?: number;
+    }) {
+      if (!valid(event)) return;
+      for (const { scope } of Object.values(store.get())) {
+        if (
+          scope.siteId === event.siteId &&
+          scope.account === event.account &&
+          scope.generation === event.sessionGeneration
+        ) {
+          requests.delete(requestKey(scope, event.contestId));
+          update(scope, (s) => ({
+            ...s,
+            entries: {
+              ...s.entries,
+              [event.contestId]: {
+                value: { accepted: event.accepted, total: event.total },
+                updatedAt: now(),
+                retryAfter: 0,
+                force: false,
+                loading: false,
+              },
+            },
+          }));
+        }
+      }
     },
     invalidateNative(event: {
       siteId: string;

@@ -68,6 +68,8 @@ pub(crate) struct SiteView {
     pub session: Session,
     pub message: String,
     pub last_sync: Option<i64>,
+    /// 本地是否已有该站点的班级/测验缓存（会话尚未建立时也可展示）。
+    pub has_cache: bool,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
