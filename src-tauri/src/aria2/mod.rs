@@ -6,4 +6,6 @@ pub(crate) mod process;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use downloader::{download_with_aria2, DownloadJobOptions};
+pub(crate) use downloader::{
+    download_with_aria2, download_with_aria2_controlled, DownloadControl, DownloadJobOptions,
+};

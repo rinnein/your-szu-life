@@ -166,11 +166,19 @@ impl Aria2WebSocketClient {
         uris: &[String],
         dir: &Path,
         filename: &str,
+        headers: &[(String, String)],
     ) -> Result<String, String> {
-        let mut options = HashMap::new();
-        options.insert("dir".to_string(), dir.to_string_lossy().to_string());
-        options.insert("out".to_string(), filename.to_string());
-        options.insert("continue".to_string(), "true".to_string());
+        let mut options: HashMap<String, serde_json::Value> = HashMap::new();
+        options.insert("dir".to_string(), dir.to_string_lossy().to_string().into());
+        options.insert("out".to_string(), filename.to_string().into());
+        options.insert("continue".to_string(), "true".into());
+        if !headers.is_empty() {
+            let header_list: Vec<serde_json::Value> = headers
+                .iter()
+                .map(|(name, value)| format!("{name}: {value}").into())
+                .collect();
+            options.insert("header".to_string(), header_list.into());
+        }
 
         let params = (self.token.clone(), uris, options);
         let result = self.call_raw("aria2.addUri", params).await?;
@@ -227,6 +235,28 @@ impl Aria2WebSocketClient {
     pub async fn remove(&mut self, gid: &str) -> Result<(), String> {
         let params = (self.token.clone(), gid);
         let _ = self.call_raw("aria2.remove", params).await;
+        Ok(())
+    }
+
+    /// 暂停下载（aria2.forcePause：立即暂停，不等连接优雅关闭——
+    /// 普通 pause 对活跃 HTTP 下载可能长时间不生效）。
+    pub async fn pause(&mut self, gid: &str) -> Result<(), String> {
+        let params = (self.token.clone(), gid);
+        self.call_raw("aria2.forcePause", params).await?;
+        Ok(())
+    }
+
+    /// 强制移除下载（aria2.forceRemove：立即移除，不等优雅关闭）。
+    pub async fn force_remove(&mut self, gid: &str) -> Result<(), String> {
+        let params = (self.token.clone(), gid);
+        let _ = self.call_raw("aria2.forceRemove", params).await;
+        Ok(())
+    }
+
+    /// 恢复已暂停的下载（aria2.unpause）。
+    pub async fn unpause(&mut self, gid: &str) -> Result<(), String> {
+        let params = (self.token.clone(), gid);
+        self.call_raw("aria2.unpause", params).await?;
         Ok(())
     }
 }

@@ -27,6 +27,8 @@ pub struct DownloadJobOptions {
     pub filename: String,
     pub expected_sha256: Option<String>,
     pub expected_size: Option<u64>,
+    /// 附加的 HTTP 请求头（部分站点要求 Referer 等才可下载）。
+    pub headers: Vec<(String, String)>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -123,9 +125,59 @@ pub fn verify_file_hash_and_size(
     true
 }
 
+/// 下载任务的运行时控制句柄：暂停/继续/取消由外部在轮询间隙下发。
+/// 命令以下一轮 `tellStatus` 轮询（≤150ms）生效。
+#[derive(Default)]
+pub struct DownloadControl {
+    /// 0=无操作 1=暂停 2=继续 3=取消
+    command: std::sync::atomic::AtomicU8,
+}
+
+impl DownloadControl {
+    const PAUSE: u8 = 1;
+    const RESUME: u8 = 2;
+    const CANCEL: u8 = 3;
+
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn pause(&self) {
+        self.command
+            .store(Self::PAUSE, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn resume(&self) {
+        self.command
+            .store(Self::RESUME, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn cancel(&self) {
+        self.command
+            .store(Self::CANCEL, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn take(&self) -> u8 {
+        self.command.swap(0, std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
 pub async fn download_with_aria2<F>(
     app: Option<&tauri::AppHandle>,
     options: DownloadJobOptions,
+    on_progress: F,
+) -> Result<PathBuf, String>
+where
+    F: Fn(ProgressUpdate) + Send + Sync + 'static,
+{
+    download_with_aria2_controlled(app, options, &DownloadControl::new(), on_progress).await
+}
+
+/// 带 [`DownloadControl`] 的下载：jxxk 录像等多任务管理场景使用。
+pub async fn download_with_aria2_controlled<F>(
+    app: Option<&tauri::AppHandle>,
+    options: DownloadJobOptions,
+    control: &DownloadControl,
     on_progress: F,
 ) -> Result<PathBuf, String>
 where
@@ -156,7 +208,7 @@ where
         client.add_metalink(&b64, &options.dest_dir).await?
     } else {
         client
-            .add_uri(&options.uris, &options.dest_dir, &options.filename)
+            .add_uri(&options.uris, &options.dest_dir, &options.filename, &options.headers)
             .await?
     };
 
@@ -165,12 +217,35 @@ where
     let mut last_bitfield: Option<String> = None;
     let mut initial_resumed_bytes: Option<u64> = None;
     let mut is_resumed = false;
+    let mut poll_count: u64 = 0;
 
     loop {
         tokio::time::sleep(Duration::from_millis(PROGRESS_POLL_INTERVAL_MS)).await;
 
         if let Err(e) = lease.check_alive().await {
             return Err(e);
+        }
+
+        match control.take() {
+            DownloadControl::PAUSE => {
+                // forcePause 立即生效；失败仅记录，不中断轮询。
+                if let Err(e) = client.pause(&gid).await {
+                    log::warn!("[aria2] forcePause {gid} 失败: {e}");
+                }
+            }
+            DownloadControl::RESUME => {
+                if let Err(e) = client.unpause(&gid).await {
+                    log::warn!("[aria2] unpause {gid} 失败: {e}");
+                }
+            }
+            DownloadControl::CANCEL => {
+                // forceRemove 立即移除（普通 remove 对活跃下载同样可能延迟生效）。
+                if let Err(e) = client.force_remove(&gid).await {
+                    log::warn!("[aria2] forceRemove {gid} 失败: {e}");
+                }
+                return Err("aria2c 下载任务已被取消".to_string());
+            }
+            _ => {}
         }
 
         let status = match client.tell_status(&gid).await {
@@ -195,6 +270,18 @@ where
         if status.bitfield.is_some() {
             last_bitfield = status.bitfield.clone();
         }
+
+        // 心跳日志（约 3s 一次）：诊断「进度冻结」「RPC 无响应」类问题的现场。
+        if poll_count % 20 == 0 {
+            log::info!(
+                "[aria2] poll {poll_count}: gid={gid} status={} downloaded={} speed={} conn={}",
+                status.status,
+                status.completed_bytes(),
+                status.speed_bytes_per_sec(),
+                status.connections()
+            );
+        }
+        poll_count += 1;
 
         // 循环周期本身即节流粒度（PROGRESS_POLL_INTERVAL_MS），无需二次判断。
         let total = if status.total_bytes() > 0 {

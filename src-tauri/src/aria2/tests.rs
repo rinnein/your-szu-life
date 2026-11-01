@@ -107,6 +107,7 @@ async fn test_aria2_lease_lifecycle_rpc_and_reuse() {
             &["https://example.com/sample2.txt".to_string()],
             std::path::Path::new("/tmp"),
             "sample2.txt",
+            &[],
         )
         .await
         .expect("add_uri should return GID");

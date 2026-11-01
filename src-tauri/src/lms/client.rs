@@ -89,21 +89,14 @@ impl Client {
         })
     }
 
-    /// 保存 jar 中属于畅课域的 cookie（不含 authserver 会话，避免重复保存主凭据）。
+    /// 保存 jar 中适用于畅课请求的 cookie（不含 authserver 会话，避免重复
+    /// 保存主凭据）。用 `matches` 而非域名精确比较：服务端会话 cookie 可能
+    /// 带父域，按 host 精确过滤会把会话丢掉（重启后每次重新登录）。
     pub(super) fn cookies(&self) -> Result<String, String> {
-        use cookie_store::CookieDomain;
         let jar = self.jar.lock().map_err(|_| "畅课会话不可用".to_string())?;
-        let lms_host = self.lms.host_str().unwrap_or_default().to_owned();
-        let in_lms_scope = |domain: &CookieDomain| match domain {
-            CookieDomain::HostOnly(host) => host == &lms_host,
-            CookieDomain::Suffix(suffix) => {
-                suffix.trim_start_matches('.').trim_end_matches('.') == lms_host
-            }
-            _ => false,
-        };
         let mut filtered = cookie_store::CookieStore::default();
         for cookie in jar.iter_any() {
-            if in_lms_scope(&cookie.domain) && !cookie.is_expired() {
+            if !cookie.is_expired() && cookie.matches(&self.lms) {
                 let _ = filtered.insert_raw(&cookie.clone().into(), &self.lms);
             }
         }

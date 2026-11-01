@@ -22,6 +22,7 @@ import { Route as StudyClassTimetableRouteImport } from './routes/study/class-ti
 import { Route as StudyEnrollmentRouteImport } from './routes/study/enrollment'
 import { Route as StudyLmsRouteImport } from './routes/study/lms'
 import { Route as StudyOjRouteImport } from './routes/study/oj'
+import { Route as StudyPatrolRouteImport } from './routes/study/patrol'
 import { Route as StudyUoocRouteImport } from './routes/study/uooc'
 import { Route as LifeCampusPaymentsIndexRouteImport } from './routes/life/campus-payments/index'
 import { Route as LifeCampusPaymentsCardRouteImport } from './routes/life/campus-payments/card'
@@ -34,6 +35,9 @@ import { Route as StudyEnrollmentSelectedRouteImport } from './routes/study/enro
 import { Route as StudyEnrollmentSettingsRouteImport } from './routes/study/enrollment.settings'
 import { Route as StudyEnrollmentTasksRouteImport } from './routes/study/enrollment.tasks'
 import { Route as StudyEnrollmentTimetableRouteImport } from './routes/study/enrollment.timetable'
+import { Route as StudyPatrolCourseRouteImport } from './routes/study/patrol_.course'
+import { Route as StudyPatrolDownloadsRouteImport } from './routes/study/patrol_.downloads'
+import { Route as StudyPatrolWatchRouteImport } from './routes/study/patrol_.watch'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -100,6 +104,11 @@ const StudyOjRoute = StudyOjRouteImport.update({
   path: '/oj',
   getParentRoute: () => StudyRouteRoute,
 } as any)
+const StudyPatrolRoute = StudyPatrolRouteImport.update({
+  id: '/patrol',
+  path: '/patrol',
+  getParentRoute: () => StudyRouteRoute,
+} as any)
 const StudyUoocRoute = StudyUoocRouteImport.update({
   id: '/uooc',
   path: '/uooc',
@@ -164,6 +173,21 @@ const StudyEnrollmentTimetableRoute =
     path: '/timetable',
     getParentRoute: () => StudyEnrollmentRoute,
   } as any)
+const StudyPatrolCourseRoute = StudyPatrolCourseRouteImport.update({
+  id: '/patrol_/course',
+  path: '/patrol/course',
+  getParentRoute: () => StudyRouteRoute,
+} as any)
+const StudyPatrolDownloadsRoute = StudyPatrolDownloadsRouteImport.update({
+  id: '/patrol_/downloads',
+  path: '/patrol/downloads',
+  getParentRoute: () => StudyRouteRoute,
+} as any)
+const StudyPatrolWatchRoute = StudyPatrolWatchRouteImport.update({
+  id: '/patrol_/watch',
+  path: '/patrol/watch',
+  getParentRoute: () => StudyRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -177,6 +201,7 @@ export interface FileRoutesByFullPath {
   '/study/enrollment': typeof StudyEnrollmentRouteWithChildren
   '/study/lms': typeof StudyLmsRoute
   '/study/oj': typeof StudyOjRoute
+  '/study/patrol': typeof StudyPatrolRoute
   '/study/uooc': typeof StudyUoocRoute
   '/life/': typeof LifeIndexRoute
   '/study/': typeof StudyIndexRoute
@@ -189,6 +214,9 @@ export interface FileRoutesByFullPath {
   '/study/enrollment/settings': typeof StudyEnrollmentSettingsRoute
   '/study/enrollment/tasks': typeof StudyEnrollmentTasksRoute
   '/study/enrollment/timetable': typeof StudyEnrollmentTimetableRoute
+  '/study/patrol/course': typeof StudyPatrolCourseRoute
+  '/study/patrol/downloads': typeof StudyPatrolDownloadsRoute
+  '/study/patrol/watch': typeof StudyPatrolWatchRoute
   '/life/campus-payments/': typeof LifeCampusPaymentsIndexRoute
   '/study/enrollment/': typeof StudyEnrollmentIndexRoute
 }
@@ -200,6 +228,7 @@ export interface FileRoutesByTo {
   '/study/class-timetable': typeof StudyClassTimetableRoute
   '/study/lms': typeof StudyLmsRoute
   '/study/oj': typeof StudyOjRoute
+  '/study/patrol': typeof StudyPatrolRoute
   '/study/uooc': typeof StudyUoocRoute
   '/life': typeof LifeIndexRoute
   '/study': typeof StudyIndexRoute
@@ -212,6 +241,9 @@ export interface FileRoutesByTo {
   '/study/enrollment/settings': typeof StudyEnrollmentSettingsRoute
   '/study/enrollment/tasks': typeof StudyEnrollmentTasksRoute
   '/study/enrollment/timetable': typeof StudyEnrollmentTimetableRoute
+  '/study/patrol/course': typeof StudyPatrolCourseRoute
+  '/study/patrol/downloads': typeof StudyPatrolDownloadsRoute
+  '/study/patrol/watch': typeof StudyPatrolWatchRoute
   '/life/campus-payments': typeof LifeCampusPaymentsIndexRoute
   '/study/enrollment': typeof StudyEnrollmentIndexRoute
 }
@@ -228,6 +260,7 @@ export interface FileRoutesById {
   '/study/enrollment': typeof StudyEnrollmentRouteWithChildren
   '/study/lms': typeof StudyLmsRoute
   '/study/oj': typeof StudyOjRoute
+  '/study/patrol': typeof StudyPatrolRoute
   '/study/uooc': typeof StudyUoocRoute
   '/life/': typeof LifeIndexRoute
   '/study/': typeof StudyIndexRoute
@@ -240,6 +273,9 @@ export interface FileRoutesById {
   '/study/enrollment/settings': typeof StudyEnrollmentSettingsRoute
   '/study/enrollment/tasks': typeof StudyEnrollmentTasksRoute
   '/study/enrollment/timetable': typeof StudyEnrollmentTimetableRoute
+  '/study/patrol_/course': typeof StudyPatrolCourseRoute
+  '/study/patrol_/downloads': typeof StudyPatrolDownloadsRoute
+  '/study/patrol_/watch': typeof StudyPatrolWatchRoute
   '/life/campus-payments/': typeof LifeCampusPaymentsIndexRoute
   '/study/enrollment/': typeof StudyEnrollmentIndexRoute
 }
@@ -257,6 +293,7 @@ export interface FileRouteTypes {
     | '/study/enrollment'
     | '/study/lms'
     | '/study/oj'
+    | '/study/patrol'
     | '/study/uooc'
     | '/life/'
     | '/study/'
@@ -269,6 +306,9 @@ export interface FileRouteTypes {
     | '/study/enrollment/settings'
     | '/study/enrollment/tasks'
     | '/study/enrollment/timetable'
+    | '/study/patrol/course'
+    | '/study/patrol/downloads'
+    | '/study/patrol/watch'
     | '/life/campus-payments/'
     | '/study/enrollment/'
   fileRoutesByTo: FileRoutesByTo
@@ -280,6 +320,7 @@ export interface FileRouteTypes {
     | '/study/class-timetable'
     | '/study/lms'
     | '/study/oj'
+    | '/study/patrol'
     | '/study/uooc'
     | '/life'
     | '/study'
@@ -292,6 +333,9 @@ export interface FileRouteTypes {
     | '/study/enrollment/settings'
     | '/study/enrollment/tasks'
     | '/study/enrollment/timetable'
+    | '/study/patrol/course'
+    | '/study/patrol/downloads'
+    | '/study/patrol/watch'
     | '/life/campus-payments'
     | '/study/enrollment'
   id:
@@ -307,6 +351,7 @@ export interface FileRouteTypes {
     | '/study/enrollment'
     | '/study/lms'
     | '/study/oj'
+    | '/study/patrol'
     | '/study/uooc'
     | '/life/'
     | '/study/'
@@ -319,6 +364,9 @@ export interface FileRouteTypes {
     | '/study/enrollment/settings'
     | '/study/enrollment/tasks'
     | '/study/enrollment/timetable'
+    | '/study/patrol_/course'
+    | '/study/patrol_/downloads'
+    | '/study/patrol_/watch'
     | '/life/campus-payments/'
     | '/study/enrollment/'
   fileRoutesById: FileRoutesById
@@ -423,6 +471,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StudyOjRouteImport
       parentRoute: typeof StudyRouteRoute
     }
+    '/study/patrol': {
+      id: '/study/patrol'
+      path: '/patrol'
+      fullPath: '/study/patrol'
+      preLoaderRoute: typeof StudyPatrolRouteImport
+      parentRoute: typeof StudyRouteRoute
+    }
     '/study/uooc': {
       id: '/study/uooc'
       path: '/uooc'
@@ -507,6 +562,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StudyEnrollmentTimetableRouteImport
       parentRoute: typeof StudyEnrollmentRoute
     }
+    '/study/patrol_/course': {
+      id: '/study/patrol_/course'
+      path: '/patrol/course'
+      fullPath: '/study/patrol/course'
+      preLoaderRoute: typeof StudyPatrolCourseRouteImport
+      parentRoute: typeof StudyRouteRoute
+    }
+    '/study/patrol_/downloads': {
+      id: '/study/patrol_/downloads'
+      path: '/patrol/downloads'
+      fullPath: '/study/patrol/downloads'
+      preLoaderRoute: typeof StudyPatrolDownloadsRouteImport
+      parentRoute: typeof StudyRouteRoute
+    }
+    '/study/patrol_/watch': {
+      id: '/study/patrol_/watch'
+      path: '/patrol/watch'
+      fullPath: '/study/patrol/watch'
+      preLoaderRoute: typeof StudyPatrolWatchRouteImport
+      parentRoute: typeof StudyRouteRoute
+    }
   }
 }
 
@@ -576,8 +652,12 @@ interface StudyRouteRouteChildren {
   StudyEnrollmentRoute: typeof StudyEnrollmentRouteWithChildren
   StudyLmsRoute: typeof StudyLmsRoute
   StudyOjRoute: typeof StudyOjRoute
+  StudyPatrolRoute: typeof StudyPatrolRoute
   StudyUoocRoute: typeof StudyUoocRoute
   StudyIndexRoute: typeof StudyIndexRoute
+  StudyPatrolCourseRoute: typeof StudyPatrolCourseRoute
+  StudyPatrolDownloadsRoute: typeof StudyPatrolDownloadsRoute
+  StudyPatrolWatchRoute: typeof StudyPatrolWatchRoute
 }
 
 const StudyRouteRouteChildren: StudyRouteRouteChildren = {
@@ -586,8 +666,12 @@ const StudyRouteRouteChildren: StudyRouteRouteChildren = {
   StudyEnrollmentRoute: StudyEnrollmentRouteWithChildren,
   StudyLmsRoute: StudyLmsRoute,
   StudyOjRoute: StudyOjRoute,
+  StudyPatrolRoute: StudyPatrolRoute,
   StudyUoocRoute: StudyUoocRoute,
   StudyIndexRoute: StudyIndexRoute,
+  StudyPatrolCourseRoute: StudyPatrolCourseRoute,
+  StudyPatrolDownloadsRoute: StudyPatrolDownloadsRoute,
+  StudyPatrolWatchRoute: StudyPatrolWatchRoute,
 }
 
 const StudyRouteRouteWithChildren = StudyRouteRoute._addFileChildren(

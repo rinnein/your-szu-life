@@ -112,6 +112,7 @@ pub(crate) fn download_and_install(
         filename: filename.clone(),
         expected_sha256: None,
         expected_size: None,
+        headers: Vec::new(),
     };
 
     let aria_res = tauri::async_runtime::block_on(crate::aria2::download_with_aria2(

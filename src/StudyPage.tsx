@@ -11,6 +11,7 @@ import {
   FaClipboardList,
   FaCode,
   FaGraduationCap,
+  FaVideo,
 } from "react-icons/fa6";
 
 const STUDY_FEATURES: readonly Feature[] = [
@@ -37,6 +38,12 @@ const STUDY_FEATURES: readonly Feature[] = [
     icon: FaBookOpen,
     description: "课程待办与站内通知",
     to: "/study/lms",
+  },
+  {
+    label: "监察巡课",
+    icon: FaVideo,
+    description: "课程直播与录播回放",
+    to: "/study/patrol",
   },
   {
     label: "选课",

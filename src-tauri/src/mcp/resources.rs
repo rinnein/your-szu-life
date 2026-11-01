@@ -42,6 +42,15 @@ pub fn list_available_resources() -> Vec<Resource> {
             )
             .with_mime_type("application/json"),
         Resource::new(
+            "your-szu-life://data/jxxk/semesters",
+            "jxxk_semesters",
+        )
+        .with_title("督导巡课学期与课程概览")
+        .with_description(
+            "返回督导巡课平台（jxxk.szu.edu.cn）的学年学期列表与会话状态",
+        )
+        .with_mime_type("application/json"),
+        Resource::new(
             "your-szu-life://data/lms/notifications",
             "lms_notifications",
         )
@@ -164,6 +173,20 @@ pub async fn read_resource_by_uri(
                     "session": snapshot.session,
                     "unread_count": snapshot.unread_count,
                     "notifications": snapshot.notifications,
+                }))
+                .unwrap_or_else(|_| "{}".to_string())
+            } else {
+                "{}".to_string()
+            }
+        }
+        "your-szu-life://data/jxxk/semesters" => {
+            if let Ok(service) = crate::jxxk::service(app) {
+                service.ensure(false).await;
+                let snapshot = service.snapshot();
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "session": snapshot.session,
+                    "message": snapshot.message,
+                    "semesters": snapshot.semesters,
                 }))
                 .unwrap_or_else(|_| "{}".to_string())
             } else {

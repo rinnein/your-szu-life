@@ -78,6 +78,7 @@ impl CredentialStore for MemoryCredentialStore {
     stored_value!(load_uooc_ai, save_uooc_ai, String, UoocAi);
     stored_value!(load_uooc_session, save_uooc_session, String, UoocSession);
     stored_value!(load_lms_session, save_lms_session, String, LmsSession);
+    stored_value!(load_jxxk_session, save_jxxk_session, String, JxxkSession);
     fn delete_uooc_session(&self) -> Result<(), String> {
         self.delete(SecretKey::UoocSession)
     }

@@ -265,6 +265,7 @@ impl LocalModelStore {
             filename: format!("{}.download", self.manifest.sha256),
             expected_sha256: Some(self.manifest.sha256.clone()),
             expected_size: Some(self.manifest.bytes),
+            headers: Vec::new(),
         };
 
         let progress_event = self.progress_event;

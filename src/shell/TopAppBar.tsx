@@ -24,6 +24,7 @@ export function TopAppBar({
   leading,
   showBack = true,
   backLabel = "返回上一页",
+  onBack,
   actions,
   drawerLabel = "打开功能目录",
   showDrawer,
@@ -34,6 +35,8 @@ export function TopAppBar({
   leading?: ReactNode;
   showBack?: boolean;
   backLabel?: string;
+  /** 覆盖返回默认的逻辑导航（页内覆盖层等非路由场景）。 */
+  onBack?: () => void;
   actions?: ReactNode;
   drawerLabel?: string;
   showDrawer?: boolean;
@@ -55,7 +58,7 @@ export function TopAppBar({
                   data-webview-navigation
                   className="top-app-bar-icon-button top-app-bar-back"
                   aria-label={backLabel}
-                  onClick={() => void navigation.back()}
+                  onClick={() => (onBack ? onBack() : void navigation.back())}
                 >
                   <LuArrowLeft aria-hidden="true" size={20} />
                 </button>
@@ -75,6 +78,7 @@ export function TopAppBar({
           }
           trailing={
             <span className="top-app-bar-actions">
+              {actions}
               <button
                 type="button"
                 className="top-app-bar-icon-button top-app-bar-search"
@@ -84,7 +88,6 @@ export function TopAppBar({
               >
                 <LuSearch aria-hidden="true" size={20} />
               </button>
-              {actions}
             </span>
           }
         >

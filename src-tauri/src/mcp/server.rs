@@ -14,6 +14,7 @@ impl UnifiedSzuMcpService {
             + Self::uooc_tools()
             + Self::oj_tools()
             + Self::lms_tools()
+            + Self::jxxk_tools()
             + Self::ocr_tools()
             + Self::embedding_tools()
             + Self::app_content_tools()
@@ -37,7 +38,7 @@ impl ServerHandler for UnifiedSzuMcpService {
         )
         .with_server_info(Implementation::new("your-szu-life", env!("CARGO_PKG_VERSION")))
         .with_instructions(
-            "深圳大学生活助手（your-szu-life）本地公开 MCP 服务。提供深大统一认证、校园网认证、宿舍电费、选课与教务成绩、UOOC慕课答题、SZU OJ 在线评测、畅课待办与通知、OCR 识别与页面直达能力。",
+            "深圳大学生活助手（your-szu-life）本地公开 MCP 服务。提供深大统一认证、校园网认证、宿舍电费、选课与教务成绩、UOOC慕课答题、SZU OJ 在线评测、畅课待办与通知、督导巡课（课程直播/录播）、OCR 识别与页面直达能力。",
         )
     }
 

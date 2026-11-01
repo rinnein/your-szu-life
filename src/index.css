@@ -2455,3 +2455,8 @@ m-card {
   flex-shrink: 0;
   font-size: 1rem;
 }
+
+/* 巡课播放：同步小窗隐藏控制条，只保留画面与标签。 */
+.patrol-tile .art-bottom {
+  display: none;
+}

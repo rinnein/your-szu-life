@@ -1,5 +1,6 @@
 pub mod db;
 pub mod electricity;
+pub mod jxxk;
 pub mod enrollment;
 pub mod keyring;
 pub mod lms;

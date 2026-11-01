@@ -27,6 +27,7 @@ pub(crate) enum SecretKey {
     AuthSession,
     UoocSession,
     LmsSession,
+    JxxkSession,
     UoocAi,
     OjAccounts,
     AcademicSessions,
@@ -48,6 +49,7 @@ impl SecretKey {
             Self::AuthSession => entries::AUTH_SESSION,
             Self::UoocSession => entries::UOOC_SESSION,
             Self::LmsSession => entries::LMS_SESSION,
+            Self::JxxkSession => entries::JXXK_SESSION,
             Self::UoocAi => entries::UOOC_AI,
             Self::OjAccounts => entries::OJ_ACCOUNTS,
             Self::AcademicSessions => entries::ACADEMIC_SESSIONS,
@@ -70,6 +72,7 @@ impl SecretKey {
             Self::AuthSession => "auth-session",
             Self::UoocSession => "uooc-session",
             Self::LmsSession => "lms-session",
+            Self::JxxkSession => "jxxk-session",
             Self::UoocAi => "uooc-ai",
             Self::OjAccounts => "oj-accounts",
             Self::AcademicSessions => "academic-sessions",
@@ -92,6 +95,7 @@ impl SecretKey {
             "uooc-ai" => Self::UoocAi,
             "uooc-session" => Self::UoocSession,
             "lms-session" => Self::LmsSession,
+            "jxxk-session" => Self::JxxkSession,
             "oj-accounts" => Self::OjAccounts,
             "academic-sessions" => Self::AcademicSessions,
             "dorm-network-settings" => Self::DormNetworkSettings,
@@ -120,6 +124,8 @@ pub(crate) trait CredentialStore: Send + Sync {
     fn delete_uooc_session(&self) -> Result<(), String>;
     fn load_lms_session(&self) -> Result<Option<String>, String>;
     fn save_lms_session(&self, session: &String) -> Result<(), String>;
+    fn load_jxxk_session(&self) -> Result<Option<String>, String>;
+    fn save_jxxk_session(&self, session: &String) -> Result<(), String>;
     fn load_profile(&self) -> Result<Option<StoredAccountProfile>, String>;
     fn save_profile(&self, profile: &StoredAccountProfile) -> Result<(), String>;
     fn delete_profile(&self) -> Result<(), String>;
@@ -255,6 +261,7 @@ impl CredentialStore for PlatformCredentialStore {
     stored_value!(load_uooc_ai, save_uooc_ai, String, UoocAi);
     stored_value!(load_uooc_session, save_uooc_session, String, UoocSession);
     stored_value!(load_lms_session, save_lms_session, String, LmsSession);
+    stored_value!(load_jxxk_session, save_jxxk_session, String, JxxkSession);
     stored_value!(load_profile, save_profile, StoredAccountProfile, Profile);
     stored_value!(
         load_pending,
