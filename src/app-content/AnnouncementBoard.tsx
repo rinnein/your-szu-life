@@ -33,6 +33,23 @@ export function resolveAnnouncementLink(link: string): AnnouncementLinkTarget {
   return { kind: "external", url: trimmed };
 }
 
+export function imageMimeType(bytes: ArrayBuffer): string | undefined {
+  if (bytes.byteLength < 12) return undefined;
+  const head = new Uint8Array(bytes, 0, 12);
+  const startsWith = (...signature: number[]) =>
+    signature.every((value, index) => head[index] === value);
+  if (startsWith(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return "image/png";
+  if (startsWith(0xff, 0xd8, 0xff)) return "image/jpeg";
+  if (startsWith(0x47, 0x49, 0x46, 0x38)) return "image/gif";
+  const isWebp =
+    startsWith(0x52, 0x49, 0x46, 0x46) &&
+    head[8] === 0x57 &&
+    head[9] === 0x45 &&
+    head[10] === 0x42 &&
+    head[11] === 0x50;
+  return isWebp ? "image/webp" : undefined;
+}
+
 export function AnnouncementImage({
   url: sourceUrl,
   title,
@@ -42,25 +59,28 @@ export function AnnouncementImage({
 }) {
   const url = sourceUrl?.trim();
   const [image, setImage] = useState<{ url: string; src?: string; failed?: boolean }>();
-  const request = useRef<{ url: string; promise: Promise<string> } | undefined>(undefined);
+  const request = useRef<{ url: string; promise: Promise<ArrayBuffer> } | undefined>(undefined);
   useEffect(() => {
     if (!url) return;
     let active = true;
+    let objectUrl: string | undefined;
     if (request.current?.url !== url) {
-      request.current = { url, promise: invoke<string>("load_announcement_image", { url }) };
+      request.current = { url, promise: invoke<ArrayBuffer>("load_announcement_image", { url }) };
     }
     void request.current.promise
-      .then((src) => {
-        if (!/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(src)) {
-          throw new Error("Invalid native image response");
-        }
-        if (active) setImage({ url, src });
+      .then((bytes) => {
+        if (!active || !(bytes instanceof ArrayBuffer)) return;
+        const type = imageMimeType(bytes);
+        if (!type) throw new Error("Invalid native image response");
+        objectUrl = URL.createObjectURL(new Blob([bytes], { type }));
+        setImage({ url, src: objectUrl });
       })
       .catch(() => {
         if (active) setImage({ url, failed: true });
       });
     return () => {
       active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [url]);
 

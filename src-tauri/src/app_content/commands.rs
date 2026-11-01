@@ -33,11 +33,14 @@ pub(crate) async fn get_contributors(
 pub(crate) async fn load_announcement_image(
     store: State<'_, AppContentStore>,
     url: String,
-) -> Result<String, ContentError> {
+) -> Result<tauri::ipc::Response, ContentError> {
     let service = store.0.clone();
-    tauri::async_runtime::spawn_blocking(move || service.load_image(&url))
+    let bytes = tauri::async_runtime::spawn_blocking(move || service.load_image(&url))
         .await
-        .map_err(|_| ContentError::new(ErrorKind::Unavailable, "头图加载任务未能完成"))?
+        .map_err(|_| ContentError::new(ErrorKind::Unavailable, "头图加载任务未能完成"))??;
+    // Raw bytes reach the frontend as an ArrayBuffer, so it can build a Blob URL
+    // without a base64 round trip.
+    Ok(tauri::ipc::Response::new(bytes))
 }
 
 #[tauri::command]

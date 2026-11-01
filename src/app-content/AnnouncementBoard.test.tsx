@@ -36,6 +36,11 @@ const announcements: Announcement[] = [
   { title: "公告三", pic: "https://example.com/three.png", goto: "https://example.com/three" },
 ];
 
+const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])
+  .buffer;
+let createObjectURL: ReturnType<typeof vi.fn>;
+let revokeObjectURL: ReturnType<typeof vi.fn>;
+
 function makeSnapshot(
   units: Announcement[] | undefined,
   feedError: ContentError | null = null,
@@ -79,7 +84,19 @@ function mockContent(snapshot: AppContentSnapshot, error?: string) {
 
 describe("AnnouncementBoard compact bar & modal", () => {
   beforeEach(() => {
-    vi.mocked(invoke).mockResolvedValue("data:image/png;base64,AA==");
+    createObjectURL = vi.fn(() => "blob:announcement");
+    revokeObjectURL = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", {
+      value: createObjectURL,
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      value: revokeObjectURL,
+      configurable: true,
+      writable: true,
+    });
+    vi.mocked(invoke).mockResolvedValue(pngBytes);
   });
 
   afterEach(() => {
@@ -109,6 +126,23 @@ describe("AnnouncementBoard compact bar & modal", () => {
     expect(screen.getByRole("img", { name: "无图公告暂无头图" })).toBeInTheDocument();
     expect(screen.queryByRole("img", { name: "有图公告头图" })).not.toBeInTheDocument();
     expect(invoke).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:announcement");
+  });
+
+  it("renders the picture through a typed blob URL and revokes it on unmount", async () => {
+    const { unmount } = render(
+      <AnnouncementImage url="https://example.com/one.png" title="有图公告" />,
+    );
+
+    expect(await screen.findByRole("img", { name: "有图公告头图" })).toHaveAttribute(
+      "src",
+      "blob:announcement",
+    );
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect((createObjectURL.mock.calls[0][0] as Blob).type).toBe("image/png");
+
+    unmount();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:announcement");
   });
 
   it("renders compact announcement bar with title and counter", () => {

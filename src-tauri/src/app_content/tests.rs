@@ -554,6 +554,69 @@ fn test_cnb_fallback_when_github_fails() {
 }
 
 #[test]
+fn image_redirects_stop_at_the_hop_limit_and_reject_unsafe_targets() {
+    use super::http::check_image_redirect;
+
+    let image = reqwest::Url::parse("https://tc.lolicc.cc/pic/a.png").unwrap();
+    assert!(check_image_redirect(0, &image).is_ok());
+    assert!(check_image_redirect(4, &image).is_ok());
+    assert!(check_image_redirect(5, &image).is_err());
+
+    for target in [
+        "javascript:alert(1)",
+        "file:///etc/passwd",
+        "http://user:pass@example.com/a.png",
+    ] {
+        assert!(
+            check_image_redirect(0, &reqwest::Url::parse(target).unwrap()).is_err(),
+            "expected redirect target to be rejected: {target}"
+        );
+    }
+}
+
+#[test]
+fn announcement_images_are_downscaled_before_reaching_the_webview() {
+    use super::{images::normalize_image, model::IMAGE_LIMIT};
+    use image::{DynamicImage, ImageFormat, ImageReader, RgbImage, RgbaImage};
+    use std::io::Cursor;
+
+    fn encode(image: DynamicImage) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        image
+            .write_to(&mut Cursor::new(&mut bytes), ImageFormat::Png)
+            .unwrap();
+        bytes
+    }
+
+    let opaque = encode(DynamicImage::ImageRgb8(RgbImage::from_fn(
+        2000,
+        1000,
+        |x, y| image::Rgb([(x % 256) as u8, (y % 256) as u8, 64]),
+    )));
+    let (bytes, mime) = normalize_image(&opaque, Some("image/png")).unwrap();
+    assert_eq!(mime, "image/jpeg");
+    assert!(bytes.len() <= IMAGE_LIMIT);
+    let (width, height) = ImageReader::new(Cursor::new(&bytes))
+        .with_guessed_format()
+        .unwrap()
+        .into_dimensions()
+        .unwrap();
+    assert!(width <= 1600 && height <= 1600);
+
+    // A small picture keeps its original bytes, including transparency and animation.
+    let small = encode(DynamicImage::ImageRgba8(RgbaImage::from_fn(
+        32,
+        32,
+        |x, y| image::Rgba([(x % 256) as u8, (y % 256) as u8, 128, 200]),
+    )));
+    let (bytes, mime) = normalize_image(&small, Some("image/png")).unwrap();
+    assert_eq!(mime, "image/png");
+    assert_eq!(bytes, small);
+
+    assert!(normalize_image(&small, Some("image/jpeg")).is_err());
+}
+
+#[test]
 fn test_build_download_candidates_with_cnb() {
     use super::{
         http::{HttpResponse, PublicHttp, RequestKind},

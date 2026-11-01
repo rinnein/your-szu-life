@@ -2,7 +2,7 @@ use super::{
     cache::Cache,
     config::{ContentConfig, Sources},
     http::{PublicHttp, RequestKind},
-    images::image_data_url,
+    images::normalize_image,
     model::*,
     runtime::{AutomaticSchedule, Clock, ImageSlots, SingleFlight},
 };
@@ -14,7 +14,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-type ImageFlight = Arc<SingleFlight<Result<String, ContentError>>>;
+type ImageFlight = Arc<SingleFlight<Result<Vec<u8>, ContentError>>>;
 
 pub(super) struct ContentService {
     pub config: ContentConfig,
@@ -774,7 +774,7 @@ impl ContentService {
         }
     }
 
-    pub fn load_image(&self, value: &str) -> Result<String, ContentError> {
+    pub fn load_image(&self, value: &str) -> Result<Vec<u8>, ContentError> {
         let url = web_url(value)?;
         self.require_image(url.as_str())?;
         let scope = self
@@ -802,24 +802,25 @@ impl ContentService {
             let _slot = self.image_slots.acquire();
             self.require_image(url.as_str())?;
             if let Some(bytes) = self.cache.load_image(&scope, url.as_str()) {
-                if let Ok(data) = image_data_url(&bytes, None) {
+                if let Ok((bytes, _)) = normalize_image(&bytes, None) {
                     self.require_image(url.as_str())?;
-                    return Ok(data);
+                    return Ok(bytes);
                 }
             }
             let response = self
                 .http
-                .get(&url, RequestKind::Image, IMAGE_LIMIT)?
+                .get(&url, RequestKind::Image, IMAGE_DOWNLOAD_LIMIT)?
                 .successful(RequestKind::Image)?;
             // No HTML, SVG, missing Content-Type, or mismatched magic bytes can enter the WebView.
             let content_type = response
                 .content_type
                 .as_deref()
                 .ok_or_else(|| ContentError::invalid("头图缺少图片类型"))?;
-            let data = image_data_url(&response.body, Some(content_type))?;
+            let (bytes, _) = normalize_image(&response.body, Some(content_type))?;
             self.require_image(url.as_str())?;
-            self.cache.save_image(&scope, url.as_str(), &response.body);
-            Ok(data)
+            // The cache keeps the normalized copy, so cached reads skip decoding and resizing.
+            self.cache.save_image(&scope, url.as_str(), &bytes);
+            Ok(bytes)
         })
     }
 }

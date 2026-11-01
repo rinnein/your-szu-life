@@ -4,7 +4,11 @@ use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 
 pub(super) const DAY_MS: u64 = 24 * 60 * 60 * 1000;
 pub(super) const JSON_LIMIT: usize = 1024 * 1024;
+/// Final image size handed to the WebView (and stored in the cache).
 pub(super) const IMAGE_LIMIT: usize = 4 * 1024 * 1024;
+/// Raw image responses may be much larger: they are decoded, downscaled and re-encoded
+/// before they reach the WebView, so the download cap is independent of `IMAGE_LIMIT`.
+pub(super) const IMAGE_DOWNLOAD_LIMIT: usize = 16 * 1024 * 1024;
 pub(super) const MAX_ANNOUNCEMENTS: usize = 100;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
