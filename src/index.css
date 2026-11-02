@@ -105,10 +105,15 @@ svg {
   box-sizing: border-box;
 }
 
+html {
+  overflow-x: clip;
+}
+
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  overflow-x: clip;
   background: var(--mtrl-sys-color-surface);
   color: var(--mtrl-sys-color-on-surface);
 }
@@ -651,6 +656,16 @@ p {
 .announcement-bar-nav-btn {
   width: 32px !important;
   min-width: 32px !important;
+  height: 32px !important;
+  padding: 0 !important;
+  border-radius: 50% !important;
+  overflow: hidden;
+}
+
+.announcement-bar-nav-btn::part(button) {
+  min-width: 0 !important;
+  min-inline-size: 0 !important;
+  width: 32px !important;
   height: 32px !important;
   padding: 0 !important;
   border-radius: 50% !important;

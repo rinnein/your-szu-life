@@ -45,4 +45,16 @@ describe("material component narrow screen layout contract", () => {
     expect(styles).toMatch(/\.disclosure\s*\{[^}]*min-inline-size:\s*0/);
     expect(styles).toMatch(/\.data-table-scroll\s*\{[^}]*min-inline-size:\s*0/);
   });
+
+  it("prevents viewport horizontal overflow via clip on root documents", () => {
+    expect(styles).toMatch(/html\s*\{[^}]*overflow-x:\s*clip/);
+    expect(styles).toMatch(/body\s*\{[^}]*overflow-x:\s*clip/);
+  });
+
+  it("constrains announcement nav button shadow DOM internals to host bounds", () => {
+    expect(styles).toMatch(/\.announcement-bar-nav-btn\s*\{[^}]*overflow:\s*hidden/);
+    expect(styles).toMatch(
+      /\.announcement-bar-nav-btn::part\(button\)[\s\S]*?min-width:\s*0\s*!important/,
+    );
+  });
 });
