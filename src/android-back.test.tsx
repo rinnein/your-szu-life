@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { StrictMode, useState } from "react";
 import {
   createMemoryHistory,
@@ -12,7 +12,7 @@ import {
 } from "@tanstack/react-router";
 import { AndroidBackNavigation } from "./AndroidBackNavigation";
 import { LogicalNavigationProvider } from "./logical-navigation";
-import { Dialog, Button } from "material/react";
+import { BottomSheet, Button, Dialog, Drawer } from "material/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { activeOverlay, installAndroidBack, type AndroidBackBridge } from "./android-back";
 
@@ -153,12 +153,12 @@ describe("Android committed back", () => {
     expect(goHome).not.toHaveBeenCalled();
     expect(bridge.postMessage).toHaveBeenLastCalledWith("overlay");
   });
-  it("closes a real modal using its existing Escape behavior", async () => {
+  it("closes a real material dialog without navigating", async () => {
     function Example() {
       const [open, setOpen] = useState(true);
       if (!open) return null;
       return (
-        <Dialog open={open} headline="测试对话框" role="dialog" onClose={() => setOpen(false)}>
+        <Dialog open={open} headline="测试对话框" onClose={() => setOpen(false)}>
           <div>
             <Button>Confirm</Button>
           </div>
@@ -170,8 +170,94 @@ describe("Android committed back", () => {
     expect(activeOverlay()).toBeDefined();
     expect(bridge.postMessage).toHaveBeenLastCalledWith("overlay");
     await back();
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(activeOverlay()).toBeUndefined());
     await waitFor(() => expect(bridge.postMessage).toHaveBeenLastCalledWith("system"));
+    expect(goHome).not.toHaveBeenCalled();
+  });
+  it("republishes overlay state when an already mounted dialog opens", async () => {
+    function Example() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            注销
+          </button>
+          <Dialog open={open} headline="确认注销？" onClose={() => setOpen(false)}>
+            <p>正文</p>
+          </Dialog>
+        </>
+      );
+    }
+    render(<Example />);
+    install();
+    expect(bridge.postMessage).toHaveBeenLastCalledWith("system");
+    fireEvent.click(screen.getByRole("button", { name: "注销" }));
+    await waitFor(() => expect(bridge.postMessage).toHaveBeenLastCalledWith("overlay"));
+    expect(activeOverlay()).toBeDefined();
+    await back();
+    await waitFor(() => expect(activeOverlay()).toBeUndefined());
+    expect(goHome).not.toHaveBeenCalled();
+    await waitFor(() => expect(bridge.postMessage).toHaveBeenLastCalledWith("system"));
+  });
+  it("closes a modal drawer instead of navigating", async () => {
+    function Example() {
+      const [open, setOpen] = useState(true);
+      return (
+        <Drawer modal open={open} headline="页面导航" onClose={() => setOpen(false)}>
+          <span>条件</span>
+        </Drawer>
+      );
+    }
+    render(<Example />);
+    install();
+    expect(activeOverlay()).toBeDefined();
+    expect(bridge.postMessage).toHaveBeenLastCalledWith("overlay");
+    await back();
+    await waitFor(() => expect(activeOverlay()).toBeUndefined());
+    expect(goHome).not.toHaveBeenCalled();
+  });
+  it("does not treat a docked drawer as a modal overlay", async () => {
+    render(
+      <Drawer open headline="题目">
+        <span>题目列表</span>
+      </Drawer>,
+    );
+    install();
+    expect(activeOverlay()).toBeUndefined();
+    expect(bridge.postMessage).toHaveBeenLastCalledWith("system");
+    path = "/settings";
+    update();
+    await back();
+    expect(goHome).toHaveBeenCalledOnce();
+  });
+  it("closes a modal bottom sheet instead of navigating", async () => {
+    function Example() {
+      const [open, setOpen] = useState(true);
+      return (
+        <BottomSheet modal open={open} headline="快捷搜索" onClose={() => setOpen(false)}>
+          <span>内容</span>
+        </BottomSheet>
+      );
+    }
+    render(<Example />);
+    install();
+    expect(activeOverlay()).toBeDefined();
+    await back();
+    await waitFor(() => expect(activeOverlay()).toBeUndefined());
+    expect(goHome).not.toHaveBeenCalled();
+  });
+  it("closes only the topmost modal", async () => {
+    const outer = document.createElement("m-dialog");
+    outer.setAttribute("open", "");
+    const inner = document.createElement("m-dialog");
+    inner.setAttribute("open", "");
+    outer.appendChild(inner);
+    document.body.appendChild(outer);
+    install();
+    expect(activeOverlay()).toBe(inner);
+    await back();
+    expect(inner.hasAttribute("open")).toBe(false);
+    expect(outer.hasAttribute("open")).toBe(true);
     expect(goHome).not.toHaveBeenCalled();
   });
 });

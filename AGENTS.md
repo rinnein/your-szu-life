@@ -137,6 +137,7 @@ release. Add a tool name to select part of the graph. For example, run
 - 桌面窗口关闭、Android 系统返回键、应用内页面返回按钮必须调用同一套逻辑返回桥接，保持行为一致。
 - 返回按钮应绑定 HeroUI 等现有组件的标准事件（例如 `onPress`），并确认事件链路最终到达原生关闭/返回实现；不要只验证函数被调用。
 - 当逻辑栈没有可返回页面时，才执行 root 页面或当前原生窗口的默认退出行为。
+- Android 上，系统返回键、原生栏返回与页面返回按钮（经 `back-request`）在有模态框打开时都只关闭最上层模态框（`m-dialog`、模态 `m-drawer`、`m-bottom-sheet`、`m-side-sheet`），不触发逻辑栈返回；非模态浮层（如 OJ 的 docked `Drawer`）不算。识别与关闭逻辑在 `src/android-back.ts` 的 `activeOverlay()` / `dismissOverlay()`，新增模态控件时同步扩展选择器。
 - 不要把“调用了 `back()`”等同于“Activity 已关闭”；Android 必须验证桥接、Activity/窗口状态和前台页面。
 
 ### 修改与验收清单

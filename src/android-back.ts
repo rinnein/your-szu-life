@@ -28,19 +28,63 @@ export function postNativeMessage(message: string): boolean {
   return true;
 }
 
-// material 把模态对话框与浮层各自放进独立的顶层容器：
-// m-dialog / m-bottom-sheet 有 open 属性，下拉菜单走 popover，行内列表框不算浮层。
+// material 的模态浮层都在 light DOM 宿主上反映 open 属性：dialog 恒为模态，
+// 抽屉与 sheet 只有带 modal 时才算模态浮层（OJ 的 docked 侧栏就是非模态 Drawer）。
+const MODAL_OVERLAYS = [
+  "m-dialog[open]",
+  "m-drawer[modal][open]",
+  "m-bottom-sheet[modal][open]",
+  "m-side-sheet[modal][open]",
+  '[role="dialog"]',
+  '[role="alertdialog"]',
+  "[data-trigger][data-placement]",
+  '[data-slot="select-popover"]',
+].join(",");
+const MATERIAL_OVERLAYS = "m-dialog, m-drawer, m-bottom-sheet, m-side-sheet";
+
+function isModalOverlay(element: HTMLElement): boolean {
+  switch (element.localName) {
+    case "m-dialog":
+    case "m-bottom-sheet":
+    case "m-side-sheet":
+      return element.hasAttribute("open");
+    case "m-drawer":
+      return element.hasAttribute("open") && element.hasAttribute("modal");
+    default:
+      return true;
+  }
+}
+
+// 文档序最后一个是当前最上层：portal 按挂载顺序追加，嵌套 dialog 的内层在文档序更靠后。
+// 只看 light DOM：material 的 dialog 会把 role="alertdialog" 放进 shadow root 内部，
+// 那不是浮层宿主（生产环境的 document.querySelectorAll 本来也看不到它）。
 export function activeOverlay(): HTMLElement | undefined {
-  const mDialog = Array.from(document.querySelectorAll<HTMLElement>("m-dialog[open]")).pop();
-  if (mDialog) return mDialog;
-  const mSheet = Array.from(document.querySelectorAll<HTMLElement>("m-bottom-sheet[open]")).pop();
-  if (mSheet) return mSheet;
-  const overlays = Array.from(
-    document.querySelectorAll<HTMLElement>(
-      '[role="dialog"], [role="alertdialog"], [data-trigger][data-placement], [data-slot="select-popover"]',
-    ),
-  ).filter((element) => !element.closest('[aria-hidden="true"], [hidden], [data-exiting]'));
-  return overlays[overlays.length - 1];
+  return Array.from(document.querySelectorAll<HTMLElement>(MODAL_OVERLAYS))
+    .filter(
+      (element) =>
+        element.getRootNode() === document &&
+        isModalOverlay(element) &&
+        !element.closest('[aria-hidden="true"], [hidden], [data-exiting]'),
+    )
+    .pop();
+}
+
+function materialOverlayHost(overlay: HTMLElement): HTMLElement | undefined {
+  if (overlay.localName.startsWith("m-")) return overlay;
+  return overlay.querySelector<HTMLElement>(MATERIAL_OVERLAYS) ?? undefined;
+}
+
+/** 关闭 material 浮层；返回 false 表示不是 material 浮层，由调用方兜底。 */
+function dismissOverlay(overlay: HTMLElement): boolean {
+  const host = materialOverlayHost(overlay);
+  if (!host) return false;
+  if (host.localName === "m-drawer") {
+    // drawer 宿主没有暴露 close()，移除 open 会走 attributeChangedCallback → close()。
+    host.removeAttribute("open");
+  } else {
+    (host as { close?: () => void }).close?.();
+  }
+  return true;
 }
 
 export function installAndroidBack(options: {
@@ -72,43 +116,28 @@ export function installAndroidBack(options: {
     if ((data !== "dismiss-overlay" && data !== "navigate-back") || pending || disposed) return;
     const overlay = activeOverlay();
     if (overlay) {
-      const root = overlay.getRootNode() as ShadowRoot | Document;
-      const host = (root instanceof ShadowRoot ? root.host : null) ?? overlay;
-      if (
-        host instanceof HTMLElement &&
-        (host.tagName.toLowerCase() === "m-dialog" ||
-          host.tagName.toLowerCase() === "m-bottom-sheet")
-      ) {
-        (host as { close?: () => void }).close?.();
-        host.dispatchEvent(new CustomEvent("close", { bubbles: true, composed: true }));
-      } else {
-        const custom = overlay.querySelector<HTMLElement>("m-dialog, m-bottom-sheet");
-        if (custom) {
-          (custom as { close?: () => void }).close?.();
-          custom.dispatchEvent(new CustomEvent("close", { bubbles: true, composed: true }));
-        }
+      if (!dismissOverlay(overlay)) {
+        // 非 material 的自绘浮层沿用它的 Escape 处理，绝不点击确认/危险按钮。
+        const focused = document.activeElement;
+        const target =
+          focused instanceof HTMLElement && overlay.contains(focused) ? focused : overlay;
+        target.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "Escape",
+            code: "Escape",
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "Escape",
+            code: "Escape",
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
       }
-      const focused = document.activeElement;
-      const target =
-        focused instanceof HTMLElement && overlay.contains(focused) ? focused : overlay;
-      // Use React Aria's existing Escape handling, including non-dismissable
-      // dialogs. Never click a confirm/destructive button to close a dialog.
-      target.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "Escape",
-          code: "Escape",
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-      window.dispatchEvent(
-        new KeyboardEvent("keydown", {
-          key: "Escape",
-          code: "Escape",
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
       publish();
       return;
     }
@@ -134,7 +163,7 @@ export function installAndroidBack(options: {
     subtree: true,
     childList: true,
     attributes: true,
-    attributeFilter: ["aria-hidden", "hidden", "data-exiting", "role"],
+    attributeFilter: ["aria-hidden", "hidden", "data-exiting", "role", "open", "modal"],
   });
   const unsubscribe = options.subscribe(publish);
   bridge.postMessage("toolbar-query");
