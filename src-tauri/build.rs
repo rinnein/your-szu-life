@@ -441,6 +441,7 @@ fn main() {
             "set_debug_mode",
             "clear_debug_logs",
             "get_log_info",
+            "open_log_file",
             "set_log_level",
             "get_staff_network_settings",
             "save_staff_network_settings",

@@ -93,6 +93,8 @@ pub(crate) fn run() {
             if let Err(error) = crate::preferences::initialize(app.handle()) {
                 eprintln!("设置数据库初始化失败，本次使用默认设置: {error}");
             }
+            // 旧的内部存储日志/模型要先搬到新位置，再初始化日志与模型服务。
+            crate::migrations::storage::migrate_legacy_storage(app.handle());
             crate::logging::initialize(app.handle());
             // 端口分配器的通知需要在任意调用点推送到前端，先把句柄存下来。
             crate::ports::initialize(app.handle());
@@ -346,6 +348,7 @@ pub(crate) fn run() {
             campus_network::commands::set_debug_mode,
             campus_network::commands::clear_debug_logs,
             campus_network::commands::get_log_info,
+            campus_network::commands::open_log_file,
             campus_network::commands::set_log_level,
             campus_network::commands::get_staff_network_settings,
             campus_network::commands::save_staff_network_settings,

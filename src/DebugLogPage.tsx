@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Card, LoadingIndicator, Button } from "material/react";
 import { Banner, Chip, toast } from "./ui";
 import { LuFileText, LuFolderOpen, LuPower, LuRefreshCw, LuTrash2 } from "react-icons/lu";
@@ -92,7 +92,7 @@ export default function DebugLogPage() {
       return;
     }
     try {
-      await openPath(logInfo.todayLogPath);
+      await invoke("open_log_file", { path: logInfo.todayLogPath });
     } catch (e) {
       toast.danger(`打开日志文件失败: ${String(e)}`);
     }
@@ -101,11 +101,7 @@ export default function DebugLogPage() {
   const handleRevealLogDir = async () => {
     if (!logInfo) return;
     try {
-      if (isAndroid) {
-        await openPath(logInfo.logDir);
-      } else {
-        await revealItemInDir(logInfo.todayLogPath);
-      }
+      await revealItemInDir(logInfo.todayLogPath);
     } catch (e) {
       toast.danger(`定位日志文件失败: ${String(e)}`);
     }
@@ -184,7 +180,9 @@ export default function DebugLogPage() {
         <>
           <Card variant="outlined">
             <div slot="headline">日志文件概览</div>
-            <div slot="subhead">日志按天独立存储，可通过系统关联程序直接打开</div>
+            <div slot="subhead">
+              日志按天独立存储；Android 保存在应用专属外部目录，卸载时由系统清理。
+            </div>
             <div className="grid gap-4 p-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div className="flex flex-col gap-1 p-3 rounded-lg bg-default-100/60 border border-default-200">

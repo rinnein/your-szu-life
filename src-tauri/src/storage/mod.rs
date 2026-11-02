@@ -343,7 +343,7 @@ pub(crate) mod testing;
 
 /// 只读诊断入口：调用方必须先通过环境变量显式授权。
 /// 不参与生产代码路径。
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 pub(crate) fn read_saved_session_for_diagnostic() -> Option<AuthSessionSecret> {
     vault::vault()?.load(entries::AUTH_SESSION).ok().flatten()
 }

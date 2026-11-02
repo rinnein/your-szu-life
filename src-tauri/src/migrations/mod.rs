@@ -7,6 +7,7 @@ pub mod lms;
 pub mod oj;
 pub mod onboarding;
 pub mod preferences;
+pub mod storage;
 pub mod todos;
 pub mod uooc;
 

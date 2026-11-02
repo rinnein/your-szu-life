@@ -99,6 +99,9 @@ pub(crate) fn is_foreground_focused<R: Runtime>(app: &AppHandle<R>) -> bool {
             }
         }
     }
+    // 移动端没有可查询的桌面窗口焦点，前台状态完全由前端事件维护。
+    #[cfg(not(desktop))]
+    let _ = app;
     true
 }
 

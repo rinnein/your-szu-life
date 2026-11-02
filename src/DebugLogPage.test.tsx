@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import DebugLogPage from "./DebugLogPage";
 
 const navigate = vi.fn();
@@ -19,7 +19,6 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 vi.mock("@tauri-apps/plugin-opener", () => ({
-  openPath: vi.fn().mockResolvedValue(undefined),
   revealItemInDir: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -88,7 +87,7 @@ describe("debug log page", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  it("loads log overview and enables quick opening via opener plugin", async () => {
+  it("loads log overview and opens today log through the backend command", async () => {
     render(<DebugLogPage />);
 
     expect(await screen.findByText("日志文件概览")).toBeInTheDocument();
@@ -100,7 +99,9 @@ describe("debug log page", () => {
     // Click "打开今日日志"
     fireEvent.click(screen.getByRole("button", { name: /打开今日日志/ }));
     await waitFor(() => {
-      expect(openPath).toHaveBeenCalledWith("/tmp/app_logs/your-szu-life_2026-10-25.log");
+      expect(invoke).toHaveBeenCalledWith("open_log_file", {
+        path: "/tmp/app_logs/your-szu-life_2026-10-25.log",
+      });
     });
 
     // Click "在文件管理器中显示"

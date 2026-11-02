@@ -35,6 +35,11 @@ pub(crate) fn get_log_info(app: tauri::AppHandle) -> Result<crate::logging::LogI
 }
 
 #[tauri::command]
+pub(crate) fn open_log_file(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    crate::logging::open_log_file(&app, &path)
+}
+
+#[tauri::command]
 pub(crate) fn set_log_level(level: String) -> Result<String, String> {
     crate::logging::set_log_level(&level)
 }

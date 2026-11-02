@@ -31,11 +31,6 @@ impl AppContentStore {
     pub(crate) fn build_download_candidates(&self, direct_url: &str) -> Vec<(u32, String)> {
         self.0.build_download_candidates(direct_url)
     }
-
-    #[cfg(any(target_os = "android", target_os = "windows"))]
-    pub(crate) fn accelerators(&self) -> &[reqwest::Url] {
-        &self.0.config.github_accelerators
-    }
 }
 
 pub(crate) fn initialize(app: &tauri::AppHandle) -> std::io::Result<()> {

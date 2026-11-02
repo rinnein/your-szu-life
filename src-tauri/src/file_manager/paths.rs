@@ -46,7 +46,7 @@ pub(crate) fn join_display(root: &str, segment: &str) -> String {
 }
 
 /// 拼接多个展示路径片段。
-#[cfg(any(target_os = "android", test))]
+#[cfg(target_os = "android")]
 pub(crate) fn join_display_segments(root: &str, segments: &[&str]) -> String {
     segments
         .iter()

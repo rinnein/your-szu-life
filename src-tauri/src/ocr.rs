@@ -5,7 +5,7 @@ use std::{
     fs,
     sync::{Arc, Mutex, OnceLock},
 };
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 
 const MANIFEST: &str = include_str!("../resources/ocr/ddddocr/model.json");
 const MAX_IMAGE_BYTES: usize = 1024 * 1024;
@@ -24,10 +24,7 @@ pub(crate) mod mcp;
 
 pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     let manifest = Manifest::load(MANIFEST, "OCR")?;
-    let cache = app
-        .path()
-        .app_data_dir()
-        .map_err(|_| "无法确定应用数据目录")?
+    let cache = crate::app_paths::local_model_dir(app)?
         .join("ocr")
         .join("ddddocr");
     fs::create_dir_all(&cache).map_err(|e| format!("无法创建 OCR 模型目录：{e}"))?;

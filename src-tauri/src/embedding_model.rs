@@ -3,7 +3,7 @@ use std::{
     fs,
     sync::{Arc, OnceLock},
 };
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 
 const MANIFEST: &str = include_str!("../resources/embedding/bge-small-zh-v1.5/model.json");
 
@@ -16,10 +16,7 @@ pub(crate) mod mcp;
 
 pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     let manifest = Manifest::load(MANIFEST, "Embedding")?;
-    let cache = app
-        .path()
-        .app_data_dir()
-        .map_err(|_| "无法确定应用数据目录")?
+    let cache = crate::app_paths::local_model_dir(app)?
         .join("embedding")
         .join("bge-small-zh-v1.5");
     fs::create_dir_all(&cache).map_err(|e| format!("无法创建 Embedding 模型目录：{e}"))?;

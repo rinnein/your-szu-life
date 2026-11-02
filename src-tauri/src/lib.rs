@@ -3,6 +3,7 @@
 mod app;
 pub(crate) mod activity;
 mod app_content;
+pub(crate) mod app_paths;
 pub(crate) mod appearance;
 pub(crate) mod aria2;
 mod auth;

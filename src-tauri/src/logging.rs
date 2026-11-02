@@ -10,7 +10,10 @@ use std::{
     },
     time::SystemTime,
 };
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
+
+#[cfg(target_os = "android")]
+mod android;
 
 pub(crate) const APP_LOG_PREFIX: &str = "your-szu-life";
 const MAX_STARTUP_BUFFER_BYTES: usize = 256 * 1024;
@@ -166,9 +169,10 @@ pub(crate) fn create_daily_writer() -> (
 pub(crate) fn initialize(app: &AppHandle) {
     let state = get_log_state();
 
-    if let Ok(dir) = app.path().app_log_dir() {
+    if let Ok(dir) = crate::app_paths::log_dir(app) {
         let _ = fs::create_dir_all(&dir);
         let _ = state.log_dir.set(dir.clone());
+        log::info!("日志目录: {}", dir.display());
 
         // Drain any startup buffer into today's log file
         if let Ok(mut inner) = state.inner.lock() {
@@ -261,12 +265,47 @@ pub(crate) fn set_log_level(level_str: &str) -> Result<String, String> {
     Ok(normalized)
 }
 
+fn configured_log_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    if let Some(dir) = get_log_state().log_dir.get() {
+        return Ok(dir.clone());
+    }
+    crate::app_paths::log_dir(app)
+}
+
+/// 打开日志目录内的文件。
+///
+/// Android 不走 tauri-plugin-opener：它的移动端实现把路径当裸字符串转发，与
+/// Kotlin 侧 `OpenArgs` 的对象契约不符（Jackson 反序列化直接失败）；私有目录
+/// 也拿不到带读取授权的 URI。桌面仍交给 opener。
+pub(crate) fn open_log_file(app: &AppHandle, requested: &str) -> Result<(), String> {
+    let log_dir = configured_log_dir(app)?;
+    let log_dir = log_dir
+        .canonicalize()
+        .map_err(|_| "日志目录不可用".to_string())?;
+    let path = Path::new(requested)
+        .canonicalize()
+        .map_err(|_| "日志文件不存在".to_string())?;
+    if !path.starts_with(&log_dir) {
+        return Err("只能打开日志目录内的文件".to_string());
+    }
+
+    #[cfg(target_os = "android")]
+    {
+        android::open_log_file(&path)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        use tauri_plugin_opener::OpenerExt;
+
+        app.opener()
+            .open_path(path.to_string_lossy().into_owned(), None::<String>)
+            .map_err(|error| error.to_string())
+    }
+}
+
 pub(crate) fn get_log_info(app: &AppHandle) -> Result<LogInfo, String> {
     let state = get_log_state();
-    let log_dir = match state.log_dir.get() {
-        Some(dir) => dir.clone(),
-        None => app.path().app_log_dir().map_err(|e| e.to_string())?,
-    };
+    let log_dir = configured_log_dir(app)?;
 
     let today = today_date_str();
     let today_log_path = log_dir.join(format!("{APP_LOG_PREFIX}_{today}.log"));
@@ -326,10 +365,7 @@ pub(crate) fn get_log_info(app: &AppHandle) -> Result<LogInfo, String> {
 
 pub(crate) fn clear_logs(app: &AppHandle) -> Result<LogInfo, String> {
     let state = get_log_state();
-    let log_dir = match state.log_dir.get() {
-        Some(dir) => dir.clone(),
-        None => app.path().app_log_dir().map_err(|e| e.to_string())?,
-    };
+    let log_dir = configured_log_dir(app)?;
 
     if let Ok(mut inner) = state.inner.lock() {
         inner.current_file = None;

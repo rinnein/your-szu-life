@@ -164,6 +164,7 @@ permissions = [
   "allow-set-debug-mode",
   "allow-clear-debug-logs",
   "allow-get-log-info",
+  "allow-open-log-file",
   "allow-set-log-level",
   "allow-get-staff-network-settings",
   "allow-save-staff-network-settings",
