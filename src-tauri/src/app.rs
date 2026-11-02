@@ -119,6 +119,9 @@ pub(crate) fn run() {
             if let Err(error) = lms::initialize(app.handle()) {
                 log::error!("畅课服务初始化失败: {error}");
             }
+            if let Err(error) = crate::todos::initialize(app.handle()) {
+                log::error!("待办服务初始化失败: {error}");
+            }
             if let Err(error) = jxxk::initialize(app.handle()) {
                 log::error!("巡课服务初始化失败: {error}");
             }
@@ -212,6 +215,8 @@ pub(crate) fn run() {
             crate::notification::commands::get_notification_settings,
             crate::notification::commands::save_notification_settings,
             crate::notification::commands::set_application_focus,
+            crate::todos::commands::subscribe_todos,
+            crate::todos::commands::refresh_todos,
             crate::netproxy::commands::get_proxy_settings,
             crate::netproxy::commands::save_proxy_settings,
             crate::netproxy::commands::test_proxy_settings,

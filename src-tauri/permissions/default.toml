@@ -189,6 +189,8 @@ permissions = [
   "allow-get-notification-settings",
   "allow-save-notification-settings",
   "allow-set-application-focus",
+  "allow-subscribe-todos",
+  "allow-refresh-todos",
   "allow-get-proxy-settings",
   "allow-save-proxy-settings",
   "allow-test-proxy-settings",

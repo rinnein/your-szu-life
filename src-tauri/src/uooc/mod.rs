@@ -215,10 +215,10 @@ impl Service {
             }),
         }))
     }
-    pub(super) fn snapshot(&self) -> Snapshot {
+    pub(crate) fn snapshot(&self) -> Snapshot {
         Self::visible_snapshot(&self.runtime.lock().unwrap())
     }
-    pub(super) fn assessments(&self) -> Assessments {
+    pub(crate) fn assessments(&self) -> Assessments {
         self.assessments.lock().unwrap().clone()
     }
     fn publish_assessments(&self, next: Assessments) {
@@ -232,7 +232,7 @@ impl Service {
         self.assessment_subscribers
             .broadcast(&UoocAssessmentsEvent::Snapshot(Box::new(next)));
     }
-    pub(super) async fn refresh_assessments(&self) -> Result<(), String> {
+    pub(crate) async fn refresh_assessments(&self) -> Result<(), String> {
         // 同一时刻只允许一个刷新在跑，避免首页与考试/作业面板同时触发重复请求。
         let _guard = self.assessments_lock.lock().await;
         if self.snapshot().session != SessionStatus::Ready {

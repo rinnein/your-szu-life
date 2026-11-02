@@ -57,6 +57,26 @@ pub fn list_available_resources() -> Vec<Resource> {
         .with_title("畅课站内通知")
         .with_description("返回畅课最近站内通知（作业截止提醒、资料发布等）与未读数")
         .with_mime_type("application/json"),
+        Resource::new("your-szu-life://data/todos", "todos")
+            .with_title("首页待办聚合")
+            .with_description(
+                "返回首页日历聚合后的全部待办：OJ 测验、UOOC 考试/作业/结课、畅课作业、电费预估断电",
+            )
+            .with_mime_type("application/json"),
+        Resource::new(
+            "your-szu-life://data/todos/notification-settings",
+            "todos_notification_settings",
+        )
+        .with_title("待办提醒配置")
+        .with_description("返回待办提醒六个注册项开关与提前量列表（分钟）")
+        .with_mime_type("application/json"),
+        Resource::new(
+            "your-szu-life://data/notification/settings",
+            "notification_settings",
+        )
+        .with_title("通知设置")
+        .with_description("返回全局通知总开关、各业务分类开关与待办提醒配置")
+        .with_mime_type("application/json"),
         Resource::new(
             "your-szu-life://data/app/announcements",
             "app_announcements",
@@ -178,6 +198,18 @@ pub async fn read_resource_by_uri(
             } else {
                 "{}".to_string()
             }
+        }
+        "your-szu-life://data/todos" => {
+            let items = crate::todos::aggregate::aggregate(app);
+            serde_json::to_string_pretty(&items).unwrap_or_else(|_| "[]".to_string())
+        }
+        "your-szu-life://data/todos/notification-settings" => {
+            let settings = crate::notification::settings::load(app);
+            serde_json::to_string_pretty(&settings.todo).unwrap_or_else(|_| "{}".to_string())
+        }
+        "your-szu-life://data/notification/settings" => {
+            let settings = crate::notification::settings::load(app);
+            serde_json::to_string_pretty(&settings).unwrap_or_else(|_| "{}".to_string())
         }
         "your-szu-life://data/jxxk/semesters" => {
             if let Ok(service) = crate::jxxk::service(app) {

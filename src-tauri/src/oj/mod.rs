@@ -1141,6 +1141,7 @@ pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
         .service
         .set(service.clone())
         .map_err(|_| "OJ 已初始化")?;
+    service.cancel_legacy_scheduled();
     monitor::start(service);
     Ok(())
 }

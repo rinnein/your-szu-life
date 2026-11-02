@@ -16,11 +16,7 @@ pub(super) fn changes(
         } else {
             None
         };
-        let due = phase == 1 && c.end - now <= 3_600_000;
-        for (event, label) in event
-            .into_iter()
-            .chain(due.then(|| (format!("due:{}", c.end), "测验将在 1 小时内截止")))
-        {
+        if let Some((event, label)) = event {
             let key = format!("{}:{event}", c.id);
             if !known.events.contains_key(&key) {
                 known.events.insert(key, now);
@@ -82,7 +78,7 @@ pub(super) fn start(service: Arc<Service>) {
     });
 }
 impl Service {
-    pub(super) async fn scan(&self, force: bool) {
+    pub(crate) async fn scan(&self, force: bool) {
         let entries: Vec<_> = {
             let r = self.runtime.lock().unwrap();
             r.data
@@ -163,7 +159,6 @@ impl Service {
                         s.offset = offset;
                     }
                     self.process_contests(&site, &e, &contests, now + offset);
-                    self.schedule_deadlines(&site, &e, &contests, offset);
                     let _ = self.save_cookies(&site.id, &e);
                     self.emit_cache_changed("all");
                 }
@@ -243,23 +238,6 @@ impl Service {
                 read: false,
             })
             .collect();
-        #[cfg(mobile)]
-        let already_scheduled: std::collections::BTreeSet<String> = notices
-            .iter()
-            .filter(|notice| {
-                notice.id.contains(":due:")
-                    && contests
-                        .iter()
-                        .find(|c| c.id == notice.contest_id)
-                        .is_some_and(|c| {
-                            next.scheduled.contains_key(&format!(
-                                "{}:{}:{}:{}",
-                                site.id, e.username, c.id, c.end
-                            ))
-                        })
-            })
-            .map(|n| n.id.clone())
-            .collect();
         next.notices.extend(notices.clone());
         if next.notices.len() > 500 {
             next.notices.drain(..next.notices.len() - 500);
@@ -270,10 +248,6 @@ impl Service {
         r.data = next;
         drop(r);
         for notice in notices {
-            #[cfg(mobile)]
-            if already_scheduled.contains(&notice.id) {
-                continue;
-            }
             self.notify(&notice);
         }
     }
@@ -310,87 +284,22 @@ impl Service {
         r.data.scheduled.retain(|k, _| !k.starts_with(&prefix));
         let _ = self.persist(&r);
     }
-    fn schedule_deadlines(&self, site: &Site, e: &Entry, contests: &[Contest], offset: i64) {
-        #[cfg(mobile)]
-        {
-            use sha2::{Digest, Sha256};
-            use tauri_plugin_notification::{NotificationExt, Schedule};
-            let Some(app) = &self.app else { return };
-            let notification_settings = crate::notification::settings::load(app);
-            if !notification_settings
-                .is_category_enabled(crate::notification::NotificationCategory::Oj)
-            {
-                return;
-            }
-            let now = chrono::Utc::now().timestamp_millis();
-            let mut desired = BTreeMap::new();
-            for c in contests {
-                let at = c.end - 3_600_000 - offset;
-                if at <= now {
-                    continue;
-                }
-                let key = format!("{}:{}:{}:{}", site.id, e.username, c.id, c.end);
-                let hash = Sha256::digest(key.as_bytes());
-                let id = i32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]]) & 0x3fff_ffff;
-                desired.insert(key.clone(), id);
-                if self
-                    .runtime
-                    .lock()
-                    .unwrap()
-                    .data
-                    .scheduled
-                    .contains_key(&key)
-                {
-                    continue;
-                }
-                let Ok(date) =
-                    time::OffsetDateTime::from_unix_timestamp_nanos(at as i128 * 1_000_000)
-                else {
-                    continue;
-                };
-                let notice = Notice {
-                    id: key.clone(),
-                    site_id: site.id.clone(),
-                    account: e.username.clone(),
-                    contest_id: c.id.clone(),
-                    title: c.title.clone(),
-                    message: "测验将在 1 小时后截止".into(),
-                    timestamp: at,
-                    read: false,
-                };
-                if app
-                    .notification()
-                    .builder()
-                    .id(id)
-                    .title(&c.title)
-                    .body(&notice.message)
-                    .extra("ojNotice", &notice)
-                    .schedule(Schedule::At {
-                        date,
-                        repeating: false,
-                        allow_while_idle: true,
-                    })
-                    .show()
-                    .is_err()
-                {
-                    desired.remove(&key);
-                }
-            }
-            let mut r = self.runtime.lock().unwrap();
-            let prefix = format!("{}:", site.id);
-            let stale: Vec<_> = r
-                .data
-                .scheduled
-                .iter()
-                .filter(|(k, _)| k.starts_with(&prefix) && !desired.contains_key(*k))
-                .map(|(_, v)| *v)
-                .collect();
-            let _ = app.notification().cancel(stale);
-            r.data.scheduled.retain(|k, _| !k.starts_with(&prefix));
-            r.data.scheduled.extend(desired);
-            let _ = self.persist(&r);
+
+    /// 1 小时截止提醒已移入 todos 模块；清理旧版本留下的原生排程，避免升级后重复通知。
+    pub(super) fn cancel_legacy_scheduled(&self) {
+        let mut r = self.runtime.lock().unwrap();
+        if r.data.scheduled.is_empty() {
+            return;
         }
-        #[cfg(not(mobile))]
-        let _ = (site, e, contests, offset);
+        let ids: Vec<i32> = r.data.scheduled.values().copied().collect();
+        #[cfg(mobile)]
+        if let Some(app) = &self.app {
+            use tauri_plugin_notification::NotificationExt;
+            let _ = app.notification().cancel(ids.clone());
+            let _ = app.notification().remove_active(ids);
+        }
+        let _ = ids;
+        r.data.scheduled.clear();
+        let _ = self.persist(&r);
     }
 }

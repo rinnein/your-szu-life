@@ -12,7 +12,6 @@ import { useDebugMode } from "./shell/use-debug-mode";
 import { useLogicalNavigation } from "./logical-navigation";
 import { AnnouncementBoard } from "./app-content/AnnouncementBoard";
 import { HomeCalendarWidget } from "./home-schedule/HomeCalendarWidget";
-import { ElectricityMonitorProvider } from "./electricity-monitor";
 
 // AccountMenu 直接渲染 <m-menu>，因此由页面自己注册菜单元素与样式。
 defineMenu();
@@ -91,9 +90,7 @@ export default function HomePage() {
 
         <div className="grid gap-12">
           <AnnouncementBoard />
-          <ElectricityMonitorProvider>
-            <HomeCalendarWidget />
-          </ElectricityMonitorProvider>
+          <HomeCalendarWidget />
         </div>
 
         <LogoutDialog

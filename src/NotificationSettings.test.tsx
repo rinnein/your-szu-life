@@ -22,6 +22,16 @@ const DEFAULT_TEST_SETTINGS: NotificationConfig = {
   enrollment: true,
   oj: true,
   uooc: true,
+  todo: {
+    enabled: true,
+    ojQuiz: true,
+    uoocExam: true,
+    uoocHomework: true,
+    uoocCourseEnd: true,
+    lmsHomework: true,
+    electricityOutage: true,
+    leadMinutes: [10080, 4320, 1440, 120],
+  },
 };
 
 describe("NotificationSettings component", () => {
@@ -107,5 +117,87 @@ describe("NotificationSettings component", () => {
     await waitFor(() => {
       expect(requestPermission).toHaveBeenCalled();
     });
+  });
+
+  it("renders all lead-time presets with the documented defaults selected", async () => {
+    render(<NotificationSettings />);
+
+    for (const name of [
+      "开关OJ 测验提醒",
+      "开关UOOC 考试提醒",
+      "开关UOOC 作业提醒",
+      "开关UOOC 结课提醒",
+      "开关畅课作业提醒",
+      "开关电费预估断电提醒",
+    ]) {
+      expect(await screen.findByRole("switch", { name })).toBeChecked();
+    }
+
+    for (const name of ["7 天前", "3 天前", "1 天前", "2 小时前"]) {
+      expect(screen.getByRole("checkbox", { name })).toBeChecked();
+    }
+    for (const name of ["2 天前", "1 小时前", "30 分钟前", "15 分钟前", "5 分钟前"]) {
+      expect(screen.getByRole("checkbox", { name })).not.toBeChecked();
+    }
+  });
+
+  it("saves per-item todo switches", async () => {
+    render(<NotificationSettings />);
+
+    const examSwitch = await screen.findByRole("switch", { name: "开关UOOC 考试提醒" });
+    fireEvent.change(examSwitch, { target: { checked: false } });
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("save_notification_settings", {
+        settings: expect.objectContaining({
+          todo: expect.objectContaining({ enabled: true, uoocExam: false }),
+        }),
+      });
+    });
+  });
+
+  it("saves selected lead times as a deduplicated descending list", async () => {
+    render(<NotificationSettings />);
+
+    const twoHours = await screen.findByRole("checkbox", { name: "2 小时前" });
+    fireEvent.change(twoHours, { target: { checked: false } });
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("save_notification_settings", {
+        settings: expect.objectContaining({
+          todo: expect.objectContaining({
+            leadMinutes: [10080, 4320, 1440],
+          }),
+        }),
+      });
+    });
+  });
+
+  it("warns when no lead time is selected", async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string, args?: any) => {
+      if (cmd === "get_notification_settings") {
+        return {
+          ...DEFAULT_TEST_SETTINGS,
+          todo: { ...DEFAULT_TEST_SETTINGS.todo, leadMinutes: [] },
+        };
+      }
+      if (cmd === "save_notification_settings") return args?.settings;
+      return undefined;
+    });
+
+    render(<NotificationSettings />);
+    expect(await screen.findByText(/待办不会发送截止提醒/)).toBeInTheDocument();
+  });
+
+  it("disables todo controls when the todo master switch is off", async () => {
+    render(<NotificationSettings />);
+
+    const todoMaster = await screen.findByRole("switch", { name: "启用待办提醒" });
+    fireEvent.change(todoMaster, { target: { checked: false } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("switch", { name: "开关OJ 测验提醒" })).toBeDisabled();
+    });
+    expect(screen.getByRole("checkbox", { name: "7 天前" })).toBeDisabled();
   });
 });

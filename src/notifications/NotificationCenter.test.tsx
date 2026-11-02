@@ -115,6 +115,32 @@ describe("NotificationCenter", () => {
     expect(toast.info).not.toHaveBeenCalled();
   });
 
+  it("shows todo deadline reminders and navigates to the todo item", async () => {
+    await renderCenter();
+
+    eventCallback!({
+      payload: {
+        category: "todo",
+        title: "算法测验",
+        body: "实验OJ · 距离截止还有 1 小时",
+        route: "/study/oj?site=s1&contest=42",
+        actionLabel: "查看",
+      },
+    });
+
+    expect(toast.info).toHaveBeenCalledWith(
+      "算法测验",
+      expect.objectContaining({
+        description: "实验OJ · 距离截止还有 1 小时",
+        actionLabel: "查看",
+        onAction: expect.any(Function),
+      }),
+    );
+    const options = vi.mocked(toast.info).mock.calls[0][1] as { onAction: () => void };
+    options.onAction();
+    expect(nav.push).toHaveBeenCalledWith("/study/oj?site=s1&contest=42");
+  });
+
   it("routes notification taps through the payload route", async () => {
     await renderCenter();
 

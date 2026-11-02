@@ -395,6 +395,8 @@ fn main() {
             "get_notification_settings",
             "save_notification_settings",
             "set_application_focus",
+            "subscribe_todos",
+            "refresh_todos",
             "get_proxy_settings",
             "save_proxy_settings",
             "test_proxy_settings",

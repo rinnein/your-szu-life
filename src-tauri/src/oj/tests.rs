@@ -278,7 +278,7 @@ fn initial_baseline_does_not_notify_old_contests() {
     assert!(known.initialized);
 }
 #[test]
-fn new_start_due_are_deduplicated_and_deadline_changes_reschedule() {
+fn new_start_events_are_deduplicated() {
     let mut known = Known::default();
     monitor::changes(&mut known, &[contest("1", 100, 4_000_000, 0)], 0);
     assert_eq!(
@@ -286,30 +286,24 @@ fn new_start_due_are_deduplicated_and_deadline_changes_reschedule() {
         1
     );
     assert!(monitor::changes(&mut known, &[contest("1", 100, 4_000_000, 200)], 200).is_empty());
-    assert_eq!(
-        monitor::changes(
-            &mut known,
-            &[contest("1", 100, 4_000_000, 500_000)],
-            500_000
-        )
-        .len(),
-        1
-    );
+    assert!(monitor::changes(
+        &mut known,
+        &[contest("1", 100, 4_000_000, 500_000)],
+        500_000
+    )
+    .is_empty());
     assert!(monitor::changes(
         &mut known,
         &[contest("1", 100, 4_000_000, 600_000)],
         600_000
     )
     .is_empty());
-    assert_eq!(
-        monitor::changes(
-            &mut known,
-            &[contest("1", 100, 4_100_000, 600_000)],
-            600_000
-        )
-        .len(),
-        1
-    );
+    assert!(monitor::changes(
+        &mut known,
+        &[contest("1", 100, 4_100_000, 600_000)],
+        600_000
+    )
+    .is_empty());
 }
 #[test]
 fn identifiers_are_scoped_by_site_and_account() {
@@ -322,7 +316,15 @@ fn persistence_keeps_reminder_state() {
     {
         let mut r = s.runtime.lock().unwrap();
         let k = r.data.known.entry(scope("szu-67", "student")).or_default();
-        monitor::changes(k, &[contest("1", 0, 2000, 1000)], 1000);
+        monitor::changes(k, &[contest("base", 0, 2000, 1000)], 1000);
+        monitor::changes(
+            k,
+            &[
+                contest("base", 0, 2000, 1000),
+                contest("new", 0, 2000, 1000),
+            ],
+            1000,
+        );
         s.persist(&r).unwrap();
     }
     let data = persistence::read(&s.path).unwrap();

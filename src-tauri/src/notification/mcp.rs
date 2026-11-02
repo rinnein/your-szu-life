@@ -19,13 +19,15 @@ pub struct SetNotificationSettingsParams {
     pub oj: Option<bool>,
     /// UOOC 测验需要处理提醒
     pub uooc: Option<bool>,
+    /// 待办类通知（六个注册项开关与提前量）
+    pub todo: Option<crate::todos::mcp::TodoSettingsUpdate>,
 }
 
 #[tool_router(router = notification_tools, vis = "pub(crate)")]
 impl UnifiedSzuMcpService {
     #[tool(
         name = "notification_get_settings",
-        description = "获取应用通知配置（总开关及校园网、电费、选课、OJ、UOOC 分类开关）。对应资源 your-szu-life://data/notification/settings"
+        description = "获取应用通知配置（总开关、校园网、电费、选课、OJ、UOOC 分类开关与待办提醒配置）。对应资源 your-szu-life://data/notification/settings"
     )]
     pub async fn notification_get_settings(&self) -> Result<String, String> {
         let settings = crate::notification::settings::load(&self.app);
@@ -58,6 +60,9 @@ impl UnifiedSzuMcpService {
         }
         if let Some(v) = params.uooc {
             current.uooc = v;
+        }
+        if let Some(todo) = params.todo {
+            todo.apply(&mut current.todo);
         }
         let saved = crate::notification::settings::save(&self.app, &current)?;
         serde_json::to_string_pretty(&saved).map_err(|e| format!("序列化失败: {e}"))

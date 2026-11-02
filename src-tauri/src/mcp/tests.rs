@@ -29,6 +29,9 @@ fn test_resources_uris_and_metadata() {
     assert!(uris.contains(&"your-szu-life://data/enrollment/timetable"));
     assert!(uris.contains(&"your-szu-life://data/uooc/courses"));
     assert!(uris.contains(&"your-szu-life://data/oj/contests"));
+    assert!(uris.contains(&"your-szu-life://data/todos"));
+    assert!(uris.contains(&"your-szu-life://data/todos/notification-settings"));
+    assert!(uris.contains(&"your-szu-life://data/notification/settings"));
     assert!(uris.contains(&"your-szu-life://data/app/announcements"));
     assert!(uris.contains(&"your-szu-life://data/network/proxy"));
     assert!(uris.contains(&"your-szu-life://data/settings/snapshot"));
@@ -108,6 +111,11 @@ fn test_all_tools_registered() {
 
     // 13. 初始化设置进度
     assert!(tool_names.contains(&"onboarding_get_status"));
+
+    // 14. 待办聚合与截止提醒
+    assert!(tool_names.contains(&"todos_list"));
+    assert!(tool_names.contains(&"todos_get_settings"));
+    assert!(tool_names.contains(&"todos_set_settings"));
 
     // 验证每个工具都有描述且参数 schema 合法
     for tool in &tools {

@@ -1,9 +1,26 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { LuBell, LuShieldAlert } from "react-icons/lu";
-import { Button, Card, Switch } from "material/react";
+import { Button, Card, Checkbox, Switch } from "material/react";
 import { Banner, toast } from "./ui";
-import { NOTIFICATION_CATEGORIES } from "./notifications/categories";
+import {
+  DEFAULT_TODO_LEAD_MINUTES,
+  NOTIFICATION_CATEGORIES,
+  TODO_LEAD_PRESETS,
+  TODO_NOTIFICATION_ITEMS,
+  type TodoConfigKey,
+} from "./notifications/categories";
+
+export interface TodoNotificationConfig {
+  enabled: boolean;
+  ojQuiz: boolean;
+  uoocExam: boolean;
+  uoocHomework: boolean;
+  uoocCourseEnd: boolean;
+  lmsHomework: boolean;
+  electricityOutage: boolean;
+  leadMinutes: number[];
+}
 
 export interface NotificationConfig {
   enabled: boolean;
@@ -12,7 +29,19 @@ export interface NotificationConfig {
   enrollment: boolean;
   oj: boolean;
   uooc: boolean;
+  todo: TodoNotificationConfig;
 }
+
+const DEFAULT_TODO_CONFIG: TodoNotificationConfig = {
+  enabled: true,
+  ojQuiz: true,
+  uoocExam: true,
+  uoocHomework: true,
+  uoocCourseEnd: true,
+  lmsHomework: true,
+  electricityOutage: true,
+  leadMinutes: Array.from(DEFAULT_TODO_LEAD_MINUTES),
+};
 
 const DEFAULT_CONFIG: NotificationConfig = {
   enabled: true,
@@ -21,7 +50,20 @@ const DEFAULT_CONFIG: NotificationConfig = {
   enrollment: true,
   oj: true,
   uooc: true,
+  todo: DEFAULT_TODO_CONFIG,
 };
+
+function normalizeConfig(saved?: Partial<NotificationConfig> | null): NotificationConfig {
+  return {
+    ...DEFAULT_CONFIG,
+    ...saved,
+    todo: {
+      ...DEFAULT_TODO_CONFIG,
+      ...saved?.todo,
+      leadMinutes: saved?.todo?.leadMinutes ?? DEFAULT_TODO_CONFIG.leadMinutes,
+    },
+  };
+}
 
 export function NotificationSettings() {
   const [config, setConfig] = useState<NotificationConfig>(DEFAULT_CONFIG);
@@ -33,7 +75,7 @@ export function NotificationSettings() {
     let active = true;
     void invoke<NotificationConfig>("get_notification_settings")
       .then((saved) => {
-        if (active && saved) setConfig(saved);
+        if (active && saved) setConfig(normalizeConfig(saved));
       })
       .catch(() => {
         // 使用默认值
@@ -97,7 +139,25 @@ export function NotificationSettings() {
     });
   };
 
+  const updateTodo = (updater: (prev: TodoNotificationConfig) => TodoNotificationConfig) => {
+    updateConfig((prev) => ({ ...prev, todo: updater(prev.todo) }));
+  };
+
+  const toggleTodoKind = (key: TodoConfigKey, checked: boolean) => {
+    updateTodo((prev) => ({ ...prev, [key]: checked }));
+  };
+
+  const toggleLeadMinutes = (minutes: number, checked: boolean) => {
+    updateTodo((prev) => {
+      const next = checked
+        ? [...prev.leadMinutes, minutes]
+        : prev.leadMinutes.filter((value) => value !== minutes);
+      return { ...prev, leadMinutes: Array.from(new Set(next)).sort((a, b) => b - a) };
+    });
+  };
+
   const categories = NOTIFICATION_CATEGORIES;
+  const todoDisabled = loading || !config.enabled || !config.todo.enabled;
 
   return (
     <div className="notification-settings space-y-6 max-w-3xl">
@@ -185,6 +245,100 @@ export function NotificationSettings() {
               </div>
             );
           })}
+        </div>
+      </Card>
+
+      {/* 待办提醒：唯一入口 */}
+      <Card variant="outlined" className="p-4 space-y-5">
+        <div slot="headline" className="font-medium text-base text-foreground">
+          待办提醒
+        </div>
+        <p className="text-sm text-muted-foreground">
+          统一管理首页日历中全部待办事项的截止提醒。系统通知在应用后台运行时发送，前台聚焦时以
+          Snackbar 展示。
+        </p>
+
+        <div className="flex items-center justify-between gap-4 rounded-xl bg-surface-container/60 p-3">
+          <div className="space-y-0.5">
+            <div className="font-medium text-sm text-foreground">启用待办提醒</div>
+            <p className="text-xs text-muted-foreground">
+              关闭后，所有待办都不再按截止时间发送通知。
+            </p>
+          </div>
+          <Switch
+            checked={config.todo.enabled}
+            disabled={loading || !config.enabled}
+            onChange={(e: any) => {
+              const checked = Boolean(e.detail?.checked ?? e.target?.checked);
+              updateTodo((prev) => ({ ...prev, enabled: checked }));
+            }}
+            aria-label="启用待办提醒"
+          />
+        </div>
+
+        <div className="space-y-1">
+          <div className="font-medium text-sm text-foreground">提醒的待办类型</div>
+          <div className="divide-y divide-border/40">
+            {TODO_NOTIFICATION_ITEMS.map((item) => {
+              const Icon = item.icon;
+              return (
+                <div
+                  key={item.key}
+                  className="flex items-center justify-between gap-4 py-3 first:pt-1 last:pb-1"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 rounded-lg bg-surface-container text-primary shrink-0 mt-0.5">
+                      <Icon className="size-5" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className="font-medium text-sm text-foreground">{item.title}</div>
+                      <p className="text-xs text-muted-foreground">{item.description}</p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={config.todo[item.key]}
+                    disabled={todoDisabled}
+                    onChange={(e: any) => {
+                      const checked = Boolean(e.detail?.checked ?? e.target?.checked);
+                      toggleTodoKind(item.key, checked);
+                    }}
+                    aria-label={`开关${item.title}提醒`}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 font-medium text-sm text-foreground">
+              <span>提前提醒时间</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              同一待办在每个已勾选的时间点各提醒一次；应用离线期间错过的多个时间点只补发最接近截止的一档。
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
+            {TODO_LEAD_PRESETS.map((preset) => (
+              <Checkbox
+                key={preset.minutes}
+                checked={config.todo.leadMinutes.includes(preset.minutes)}
+                disabled={todoDisabled}
+                onChange={(e: any) => {
+                  const checked = Boolean(e.detail?.checked ?? e.target?.checked);
+                  toggleLeadMinutes(preset.minutes, checked);
+                }}
+              >
+                {preset.label}
+              </Checkbox>
+            ))}
+          </div>
+          {!loading && config.todo.enabled && config.todo.leadMinutes.length === 0 && (
+            <Banner status="warning">
+              <span>未选择任何提醒时间，待办不会发送截止提醒。</span>
+            </Banner>
+          )}
         </div>
       </Card>
     </div>
