@@ -3,6 +3,7 @@ import { createRootRoute, HeadContent, Outlet } from "@tanstack/react-router";
 import { AuthProvider } from "../auth";
 import { AppBridges } from "../AppBridges";
 import { AppContentProvider } from "../app-content/context";
+import { AnnouncementPopupBridge } from "../app-content/AnnouncementPopupBridge";
 import { UpdateNotice } from "../app-content/UpdateNotice";
 import { CommandPalette } from "../command-palette";
 import { ThemeProvider } from "../theme/ThemeProvider";
@@ -53,6 +54,7 @@ export const Route = createRootRoute({
               <OnboardingGate>
                 <CommandPalette />
                 <UpdateNotice />
+                <AnnouncementPopupBridge />
                 <Outlet />
               </OnboardingGate>
             </AuthProvider>

@@ -8,7 +8,7 @@ use tauri::Manager;
 impl UnifiedSzuMcpService {
     #[tool(
         name = "app_get_announcements",
-        description = "获取软件公告、电费/OJ提醒"
+        description = "获取软件公告、电费/OJ提醒。每条公告可携带 id、mode（silent 静默展示 / popup 弹窗一次 / alert 每次启动弹出）与 conditions.ver 版本限定（如 \">=0.11.0, <0.12.0\"）；conditions 或 ver 缺省表示全局公告。返回结果已按当前应用版本过滤并完成降级规范化。"
     )]
     pub async fn app_get_announcements(&self) -> Result<String, String> {
         let store = self

@@ -1,6 +1,9 @@
 use super::{
-    config::{ContentConfig, parse_repository},
-    model::{Announcements, Document, UpdateInfo, is_newer, parse_document, web_url},
+    config::{parse_repository, ContentConfig},
+    model::{
+        applicable_announcements, is_newer, parse_document, web_url, AnnouncementMode,
+        Announcements, Document, UpdateInfo,
+    },
     runtime::{AutomaticSchedule, SingleFlight},
     service::{
         extract_release_version, extract_version_from_asset_name, find_platform_asset_index,
@@ -10,8 +13,8 @@ use super::{
 use serde_json::json;
 use std::{
     sync::{
-        Arc,
         atomic::{AtomicUsize, Ordering},
+        Arc,
     },
     thread,
     time::Duration,
@@ -297,7 +300,10 @@ fn github_content_service_loads_cache_and_preserves_on_request_failure() {
     use super::{
         cache::Cache,
         http::{HttpResponse, PublicHttp, RequestKind},
-        model::{Announcement, Announcements, ContentError, ErrorKind, Source, UpdateInfo},
+        model::{
+            Announcement, AnnouncementConditions, AnnouncementMode, Announcements, ContentError,
+            ErrorKind, Source, UpdateInfo,
+        },
         runtime::Clock,
         service::ContentService,
     };
@@ -336,12 +342,29 @@ fn github_content_service_loads_cache_and_preserves_on_request_failure() {
     let scope = format!("github:{}", config.repository.as_ref().unwrap().full_name);
     let cache = Cache::new(Some(temp_dir.clone()));
     let announcements = Announcements {
-        announcements: vec![Announcement {
-            title: "测试公告".into(),
-            desc: Some("公告内容".into()),
-            goto: None,
-            pic: None,
-        }],
+        announcements: vec![
+            Announcement {
+                title: "测试公告".into(),
+                id: None,
+                mode: AnnouncementMode::Silent,
+                conditions: None,
+                desc: Some("公告内容".into()),
+                goto: None,
+                pic: None,
+            },
+            // 定向公告只对 >=9.0.0 生效，当前版本 0.1.0 的快照里不应出现
+            Announcement {
+                title: "未来版本公告".into(),
+                id: Some("future-only".into()),
+                mode: AnnouncementMode::Popup,
+                conditions: Some(AnnouncementConditions {
+                    ver: Some(">=9.0.0".into()),
+                }),
+                desc: Some("公告内容".into()),
+                goto: None,
+                pic: None,
+            },
+        ],
     };
     let update = UpdateInfo {
         latest_ver: "0.2.0".into(),
@@ -379,6 +402,28 @@ fn github_content_service_loads_cache_and_preserves_on_request_failure() {
     assert!(snapshot.update.data.is_some());
     assert!(snapshot.update.from_cache);
     assert!(snapshot.update_available);
+    // 快照按当前版本过滤，磁盘缓存保留未过滤的原始数据
+    assert_eq!(
+        snapshot
+            .announcements
+            .data
+            .as_ref()
+            .unwrap()
+            .announcements
+            .len(),
+        1,
+        "version-targeted announcements must stay out of the snapshot"
+    );
+    assert_eq!(
+        cache
+            .load::<Announcements>(&scope, "announcements.json", 2000)
+            .expect("raw cache entry")
+            .data
+            .announcements
+            .len(),
+        2,
+        "cache must keep the raw publisher data"
+    );
 
     // Now trigger refresh when request fails (rate limited). The cache must not expire!
     let refreshed = service.refresh();
@@ -735,3 +780,139 @@ fn test_build_download_candidates_with_cnb() {
         "https://github.com/rinnein/your-szu-life/releases/download/v0.9.6/app.msi"
     );
 }
+
+#[test]
+fn legacy_announcements_without_new_fields_stay_silent_and_unconditional() {
+    let bytes = serde_json::to_vec(&json!({
+        "announcements": [{"title": "旧格式", "desc": "正文"}]
+    }))
+    .unwrap();
+    let parsed: Announcements = parse_document(&bytes).unwrap();
+    assert_eq!(parsed.announcements[0].mode, AnnouncementMode::Silent);
+    assert_eq!(parsed.announcements[0].id, None);
+    assert_eq!(parsed.announcements[0].conditions, None);
+    // 缺省的新字段不参与序列化，旧格式往返逐字节等价
+    let serialized = serde_json::to_string(&parsed).unwrap();
+    assert_eq!(
+        serialized,
+        r#"{"announcements":[{"title":"旧格式","desc":"正文"}]}"#
+    );
+}
+
+#[test]
+fn announcements_tolerate_fields_from_newer_publishers() {
+    // 旧版二进制依靠 serde 忽略未知字段读取新版发布的公告，这里固化该向前兼容保证
+    let bytes = serde_json::to_vec(&json!({
+        "announcements": [{"title": "未来字段", "desc": "正文", "futureField": 123}]
+    }))
+    .unwrap();
+    let parsed: Announcements = parse_document(&bytes).unwrap();
+    assert_eq!(parsed.announcements[0].title, "未来字段");
+}
+
+#[test]
+fn version_conditions_follow_comparator_semantics() {
+    use super::model::VersionCondition;
+    use semver::Version;
+
+    let current = Version::parse("0.11.2").unwrap();
+    for (ver, expected) in [
+        (">=0.11.0", true),
+        ("<0.12.0", true),
+        (">0.11.2", false),
+        ("<=0.11.2", true),
+        ("0.11.2", true),
+        ("0.11.1", false),
+        (">=0.10.0, <0.12.0", true),
+        (">=0.11.3, <0.12.0", false),
+        (">=v0.11.0", true),
+        (">= 0.11.0", true),
+        (">=0.11.2+build.7", true),
+    ] {
+        let condition = VersionCondition::parse(ver).unwrap_or_else(|| panic!("解析失败: {ver}"));
+        assert_eq!(condition.matches(&current), expected, "ver: {ver}");
+    }
+    assert_eq!(VersionCondition::parse("not-semver"), None);
+    assert_eq!(VersionCondition::parse(""), None);
+}
+
+#[test]
+fn applicable_announcements_filters_by_version_and_degrades_bad_popup_ids() {
+    let doc: Announcements = parse_document(
+        &serde_json::to_vec(&json!({
+            "announcements": [
+                {"title": "全局", "desc": "x"},
+                {"title": "命中", "id": "hit", "mode": "popup", "conditions": {"ver": ">=0.11.0, <0.12.0"}, "desc": "x"},
+                {"title": "未命中", "id": "miss", "mode": "popup", "conditions": {"ver": ">=1.0.0"}, "desc": "x"},
+                {"title": "缺id", "mode": "popup", "desc": "x"},
+                {"title": "坏id", "id": "  ", "mode": "popup", "desc": "x"},
+                {"title": "提醒", "mode": "alert", "desc": "x"},
+                {"title": "坏ver", "conditions": {"ver": "not-semver"}, "desc": "x"},
+                {"title": "空conditions", "mode": "alert", "conditions": {}, "desc": "x"}
+            ]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let filtered = applicable_announcements(doc, "0.11.2");
+    let titles: Vec<&str> = filtered
+        .announcements
+        .iter()
+        .map(|unit| unit.title.as_str())
+        .collect();
+    assert_eq!(
+        titles,
+        vec!["全局", "命中", "缺id", "坏id", "提醒", "空conditions"]
+    );
+
+    let by_title = |title: &str| {
+        filtered
+            .announcements
+            .iter()
+            .find(|unit| unit.title == title)
+            .unwrap()
+    };
+    assert_eq!(by_title("命中").mode, AnnouncementMode::Popup);
+    assert_eq!(by_title("缺id").mode, AnnouncementMode::Silent);
+    assert_eq!(by_title("坏id").mode, AnnouncementMode::Silent);
+    assert_eq!(by_title("提醒").mode, AnnouncementMode::Alert);
+    assert_eq!(by_title("空conditions").mode, AnnouncementMode::Alert);
+}
+
+#[test]
+fn applicable_announcements_keeps_everything_when_current_version_is_unparseable() {
+    let doc: Announcements = parse_document(
+        &serde_json::to_vec(&json!({
+            "announcements": [
+                {"title": "命中", "id": "a", "mode": "popup", "conditions": {"ver": ">=0.1.0"}, "desc": "x"},
+                {"title": "未命中", "id": "b", "mode": "popup", "conditions": {"ver": ">=9.0.0"}, "desc": "x"}
+            ]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    // 宁可多显示：版本号本身解析失败时不过滤
+    let filtered = applicable_announcements(doc, "not-semver");
+    assert_eq!(filtered.announcements.len(), 2);
+}
+
+#[test]
+fn invalid_mode_values_degrade_to_silent_without_rejecting_the_document() {
+    let bytes = serde_json::to_vec(&json!({
+        "announcements": [
+            {"title": "拼错mode", "mode": "modal", "desc": "x"},
+            {"title": "null mode", "mode": null, "desc": "x"},
+            {"title": "正常alert", "mode": "alert", "desc": "x"}
+        ]
+    }))
+    .unwrap();
+    let parsed: Announcements = parse_document(&bytes)
+        .expect("新字段语义错误不得整体拒绝文档");
+    assert_eq!(parsed.announcements[0].mode, AnnouncementMode::Silent);
+    assert_eq!(parsed.announcements[1].mode, AnnouncementMode::Silent);
+    assert_eq!(parsed.announcements[2].mode, AnnouncementMode::Alert);
+}
+
+

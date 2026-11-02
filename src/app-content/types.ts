@@ -4,8 +4,13 @@ export type ContentError = {
   retryAt: number | null;
 };
 
+export type AnnouncementMode = "silent" | "popup" | "alert";
+
 export type Announcement = {
   title: string;
+  id?: string;
+  mode?: AnnouncementMode;
+  conditions?: { ver?: string } | null;
   pic?: string | null;
   desc?: string;
   goto?: string;

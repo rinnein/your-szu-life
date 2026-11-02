@@ -1,6 +1,7 @@
 use reqwest::Url;
 use semver::Version;
-use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
+use std::cmp::Ordering;
 
 pub(super) const DAY_MS: u64 = 24 * 60 * 60 * 1000;
 pub(super) const JSON_LIMIT: usize = 1024 * 1024;
@@ -89,9 +90,75 @@ fn present_string<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<S
     String::deserialize(deserializer).map(Some)
 }
 
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum AnnouncementMode {
+    #[default]
+    Silent,
+    Popup,
+    Alert,
+}
+
+impl AnnouncementMode {
+    fn is_silent(mode: &Self) -> bool {
+        *mode == Self::Silent
+    }
+}
+
+/// 未知或 null 的 mode 只降级该条公告为 silent，不整体拒绝文档。
+///
+/// 不能简单地对 `AnnouncementMode::deserialize(...).unwrap_or(Silent)` 兜底：
+/// 自描述格式里反序列化失败时值可能只被消费了一半（例如 null 在
+/// `deserialize_enum` 的 peek 阶段就报错），后续 JSON 流会错位。这里用
+/// `deserialize_any` 的 visitor 恰好消费一次值且永不报错。
+fn lenient_mode<'de, D: Deserializer<'de>>(deserializer: D) -> Result<AnnouncementMode, D::Error> {
+    struct LenientModeVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for LenientModeVisitor {
+        type Value = AnnouncementMode;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("公告模式（silent / popup / alert）")
+        }
+
+        fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<AnnouncementMode, E> {
+            Ok(match value {
+                "popup" => AnnouncementMode::Popup,
+                "alert" => AnnouncementMode::Alert,
+                _ => AnnouncementMode::Silent,
+            })
+        }
+
+        fn visit_unit<E>(self) -> Result<AnnouncementMode, E> {
+            Ok(AnnouncementMode::Silent)
+        }
+
+        fn visit_none<E>(self) -> Result<AnnouncementMode, E> {
+            Ok(AnnouncementMode::Silent)
+        }
+    }
+
+    deserializer.deserialize_any(LenientModeVisitor)
+}
+
+/// popup 公告的弹出去重依赖稳定 id；缺失、空白或携带控制字符的 id 无法承担该职责。
+fn is_usable_announcement_id(id: &str) -> bool {
+    !id.trim().is_empty() && id.len() <= 128 && !id.chars().any(char::is_control)
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub(crate) struct Announcement {
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "lenient_mode",
+        skip_serializing_if = "AnnouncementMode::is_silent"
+    )]
+    pub mode: AnnouncementMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conditions: Option<AnnouncementConditions>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pic: Option<String>,
     #[serde(
@@ -106,6 +173,112 @@ pub(crate) struct Announcement {
         skip_serializing_if = "Option::is_none"
     )]
     pub goto: Option<String>,
+}
+
+/// 版本限定条件。`conditions` / `conditions.ver` 缺省 = 全局公告，对所有版本生效。
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct AnnouncementConditions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ver: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum VersionOp {
+    Exact,
+    AtLeast,
+    AtMost,
+    Greater,
+    Less,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct VersionComparator {
+    op: VersionOp,
+    target: Version,
+}
+
+impl VersionComparator {
+    /// 每段条件为「可选比较符 + SemVer」，比较符仅支持 >= <= > <，省略表示精确匹配。
+    fn parse(part: &str) -> Option<Self> {
+        let part = part.trim();
+        let (op, rest) = if let Some(rest) = part.strip_prefix(">=") {
+            (VersionOp::AtLeast, rest)
+        } else if let Some(rest) = part.strip_prefix("<=") {
+            (VersionOp::AtMost, rest)
+        } else if let Some(rest) = part.strip_prefix('>') {
+            (VersionOp::Greater, rest)
+        } else if let Some(rest) = part.strip_prefix('<') {
+            (VersionOp::Less, rest)
+        } else {
+            (VersionOp::Exact, part)
+        };
+        Some(Self {
+            op,
+            target: version(rest.trim()).ok()?,
+        })
+    }
+
+    fn matches(&self, current: &Version) -> bool {
+        let ordering = self.target.cmp_precedence(current);
+        match self.op {
+            VersionOp::Exact => ordering == Ordering::Equal,
+            VersionOp::AtLeast => ordering != Ordering::Greater,
+            VersionOp::AtMost => ordering != Ordering::Less,
+            VersionOp::Greater => ordering == Ordering::Less,
+            VersionOp::Less => ordering == Ordering::Greater,
+        }
+    }
+}
+
+/// 逗号分隔的条件组，全部满足（AND）才算命中。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct VersionCondition {
+    comparators: Vec<VersionComparator>,
+}
+
+impl VersionCondition {
+    pub(super) fn parse(value: &str) -> Option<Self> {
+        let mut comparators = Vec::new();
+        for part in value.split(',') {
+            comparators.push(VersionComparator::parse(part)?);
+        }
+        (!comparators.is_empty()).then_some(Self { comparators })
+    }
+
+    pub(super) fn matches(&self, current: &Version) -> bool {
+        self.comparators.iter().all(|c| c.matches(current))
+    }
+}
+
+/// 暴露给前端前做规范化与版本过滤；磁盘缓存始终保持发布端原始数据。
+///
+/// 新字段的语义问题只降级或跳过单条，绝不整体拒绝文档：
+/// - 无 `conditions` / `ver`：全局公告，直接保留；
+/// - `ver` 解析失败：丢弃该条（定向公告错误地展示给全部版本比不展示更危险）；
+/// - popup 缺失或携带不可用 id：降级为 silent，照常展示；
+/// - 当前版本号解析失败：全部保留（宁可多显示）。
+pub(crate) fn applicable_announcements(data: Announcements, current: &str) -> Announcements {
+    let Ok(current) = version(current) else {
+        return data;
+    };
+    let announcements = data
+        .announcements
+        .into_iter()
+        .filter_map(|mut unit| {
+            if let Some(ver) = unit.conditions.as_ref().and_then(|c| c.ver.as_deref()) {
+                if !VersionCondition::parse(ver).is_some_and(|c| c.matches(&current)) {
+                    return None;
+                }
+            }
+            if unit.mode == AnnouncementMode::Popup
+                && !unit.id.as_deref().is_some_and(is_usable_announcement_id)
+            {
+                unit.mode = AnnouncementMode::Silent;
+            }
+            Some(unit)
+        })
+        .collect();
+    Announcements { announcements }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]

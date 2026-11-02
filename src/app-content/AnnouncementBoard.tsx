@@ -1,20 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
-import { Card, Dialog, LoadingIndicator, Button } from "material/react";
+import { Card, LoadingIndicator, Button } from "material/react";
 import { Banner } from "../ui";
-import {
-  LuArrowLeft,
-  LuArrowRight,
-  LuArrowUpRight,
-  LuChevronRight,
-  LuImage,
-  LuMegaphone,
-} from "react-icons/lu";
+import { LuArrowLeft, LuArrowRight, LuChevronRight, LuImage, LuMegaphone } from "react-icons/lu";
 import { useAppContent } from "./context";
-import { contentTime, openPublicUrl } from "./external";
-import { useLogicalNavigation } from "../logical-navigation";
+import { contentTime } from "./external";
 import { parseDeepLinkUrl } from "../deep-link";
+import { AnnouncementModal } from "./AnnouncementModal";
 import type { Announcement } from "./types";
 
 export type AnnouncementLinkTarget =
@@ -119,7 +111,6 @@ export function AnnouncementImage({
 }
 
 export function AnnouncementBoard() {
-  const navigation = useLogicalNavigation();
   const { snapshot, error, refreshing } = useAppContent();
   const feed = snapshot?.announcements;
   const units = feed?.data?.announcements;
@@ -132,7 +123,6 @@ export function AnnouncementBoard() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [carouselPaused, setCarouselPaused] = useState(false);
   const [activeModal, setActiveModal] = useState<Announcement | null>(null);
-  const [openError, setOpenError] = useState<string>();
 
   const announcementCount = displayUnits.length;
   const hasMultipleAnnouncements = announcementCount > 1;
@@ -159,7 +149,6 @@ export function AnnouncementBoard() {
   };
 
   const currentAnnouncement = displayUnits[currentIndex];
-  const linkTarget = activeModal?.goto ? resolveAnnouncementLink(activeModal.goto) : null;
 
   return (
     <section
@@ -273,80 +262,9 @@ export function AnnouncementBoard() {
       )}
 
       {/* 点击弹出的公告详情模态框 */}
-      {activeModal &&
-        createPortal(
-          <Dialog
-            open={!!activeModal}
-            headline={activeModal.title}
-            role="dialog"
-            aria-label={activeModal.title}
-            className="announcement-modal max-w-lg w-full"
-            onClose={() => {
-              setActiveModal(null);
-              setOpenError(undefined);
-            }}
-            actions={
-              <>
-                <Button
-                  variant="text"
-                  onClick={() => {
-                    setActiveModal(null);
-                    setOpenError(undefined);
-                  }}
-                >
-                  关闭
-                </Button>
-                {linkTarget && (
-                  <Button
-                    variant="filled"
-                    onClick={() => {
-                      if (linkTarget.kind === "internal") {
-                        setActiveModal(null);
-                        setOpenError(undefined);
-                        void navigation.push(linkTarget.route);
-                      } else {
-                        setOpenError(undefined);
-                        void openPublicUrl(linkTarget.url).catch(() =>
-                          setOpenError("无法打开系统浏览器，请稍后重试。"),
-                        );
-                      }
-                    }}
-                  >
-                    {linkTarget.kind === "internal" ? "在软件内打开" : "在浏览器打开"}
-                    {linkTarget.kind === "internal" ? (
-                      <LuArrowRight className="ml-1" aria-hidden="true" />
-                    ) : (
-                      <LuArrowUpRight className="ml-1" aria-hidden="true" />
-                    )}
-                  </Button>
-                )}
-              </>
-            }
-          >
-            <div className="flex flex-col gap-4 max-h-[70vh] overflow-y-auto pr-1">
-              {/* 图片区域（可选） */}
-              {activeModal.pic && (
-                <div className="rounded-lg overflow-hidden border border-outline-variant/60 w-full aspect-[16/9] bg-surface-container-high">
-                  <AnnouncementImage url={activeModal.pic} title={activeModal.title} />
-                </div>
-              )}
-
-              {/* 描述文本（可选） */}
-              {activeModal.desc && (
-                <div className="announcement-modal-desc text-sm text-foreground leading-relaxed whitespace-pre-wrap">
-                  {activeModal.desc}
-                </div>
-              )}
-
-              {openError && (
-                <p className="announcement-open-error text-error text-xs" role="alert">
-                  {openError}
-                </p>
-              )}
-            </div>
-          </Dialog>,
-          document.body,
-        )}
+      {activeModal && (
+        <AnnouncementModal announcement={activeModal} onClose={() => setActiveModal(null)} />
+      )}
     </section>
   );
 }

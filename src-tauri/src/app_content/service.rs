@@ -55,7 +55,8 @@ impl ContentService {
             update_available: false,
         };
         if let Some(sources) = &config.sources {
-            snapshot.announcements = load_feed(&cache, &sources.key(), "announcements.json", now);
+            snapshot.announcements =
+                load_announcements_feed(&cache, &sources.key(), now, &config.version);
             snapshot.update = load_feed(&cache, &sources.key(), "update.json", now);
             snapshot.update_available = snapshot
                 .update
@@ -66,7 +67,8 @@ impl ContentService {
         if config.uses_github_releases() {
             if let Some(repository) = &config.repository {
                 let key = format!("github:{}", repository.full_name);
-                snapshot.announcements = load_feed(&cache, &key, "announcements.json", now);
+                snapshot.announcements =
+                    load_announcements_feed(&cache, &key, now, &config.version);
                 snapshot.update = load_feed(&cache, &key, "latest-release.json", now);
                 snapshot.update_available = snapshot
                     .update
@@ -180,11 +182,11 @@ impl ContentService {
             }
             self.mutate(|snapshot| {
                 if let Some(announcements) = announcements.as_ref() {
-                    apply_result(
-                        &mut snapshot.announcements,
-                        announcements.clone(),
-                        completed_at,
-                    );
+                    // 快照侧按当前版本过滤，缓存侧已在上方保存原始数据。
+                    let filtered = announcements.clone().map(|(data, source)| {
+                        (applicable_announcements(data, &snapshot.version), source)
+                    });
+                    apply_result(&mut snapshot.announcements, filtered, completed_at);
                 }
                 apply_result(&mut snapshot.update, update, completed_at);
                 snapshot.refreshing = false;
@@ -965,6 +967,20 @@ fn load_feed<T: Document>(cache: &Cache, scope: &str, name: &str, now: u64) -> F
         },
         None => FeedSnapshot::default(),
     }
+}
+
+/// 快照中的公告按当前版本过滤；磁盘缓存中的原始数据保持不变。
+fn load_announcements_feed(
+    cache: &Cache,
+    scope: &str,
+    now: u64,
+    current_version: &str,
+) -> FeedSnapshot<Announcements> {
+    let mut feed = load_feed(cache, scope, "announcements.json", now);
+    feed.data = feed
+        .data
+        .map(|data| applicable_announcements(data, current_version));
+    feed
 }
 
 fn apply_result<T>(
