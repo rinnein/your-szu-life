@@ -5,6 +5,7 @@ import { ModuleActivityBridge } from "./ModuleActivityBridge";
 import { NotificationCenter } from "./notifications/NotificationCenter";
 import { OjCompanionBridge } from "./oj/OjCompanionBridge";
 import { OjProgressBridge } from "./oj/OjProgressBridge";
+import { PortNoticeBridge } from "./PortNoticeBridge";
 
 /**
  * 根级无界面桥接集合。
@@ -14,6 +15,7 @@ import { OjProgressBridge } from "./oj/OjProgressBridge";
  * - ModuleActivityBridge：把当前功能页面上报给后端，用于动态轮询档位；
  * - AndroidBackNavigation / DeepLinkNavigation：系统返回键与深链接入口；
  * - NotificationCenter：应用内通知展示与通知点击跳转的唯一出口；
+ * - PortNoticeBridge：本地服务端口切换/耗尽的模态框出口；
  * - OjProgressBridge：每个 WebView 都要同步原生共享的 OJ 进度缓存；
  * - OjCompanionBridge：CPH 伴侣通道只在主文档建立，但不能依赖用户停在 OJ 页。
  *
@@ -27,6 +29,7 @@ export function AppBridges() {
       <AndroidBackNavigation />
       <DeepLinkNavigation />
       <NotificationCenter />
+      <PortNoticeBridge />
       <OjProgressBridge />
       <OjCompanionBridge />
     </>

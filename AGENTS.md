@@ -88,7 +88,7 @@ release. Add a tool name to select part of the graph. For example, run
 ### 2. 实现与技术选型约定
 
 - **协议框架**：统一使用 `rmcp` 宏体系（`#[rmcp::tool]` 与 `#[rmcp::tool_router]`），参数统一封装于 `rmcp::handler::server::wrapper::Parameters<T>`。
-- **端口与安全限制**：MCP 本地公开服务必须使用**高位端口**（默认 `53901`，动态端口范围），且**仅监听本地回环地址 `127.0.0.1` / `localhost`**，绝对禁止对外网或局域网广播。
+- **端口与安全限制**：所有需要监听本机回环端口的本地服务统一由 `src-tauri/src/ports` 分配，端口段互不重叠：MCP `53901..=54000`、aria2 RPC `54001..=54100`、JXXK 录像下载入口 `54101..=54200`。MCP 优先使用设置中持久化的端口（`mcp.port`），被占用时切换到段内其它端口、永久保存新端口并通过 `app://port-notice` 弹模态框告知；任一端口段耗尽时记录 `log::error!` 并同样弹模态框。所有服务**仅监听本地回环地址 `127.0.0.1` / `localhost`**，绝对禁止对外网或局域网广播。
 - **协议 URI Scheme 规范**：所有通过协议暴露的端点统一注册为 `your-szu-life://`，并严格区分两大 route 空间：
   - `your-szu-life://page/...`：用于控制客户端打开/激活特定前端页面（如 `page/workbench`, `page/auth`, `page/electricity` 等）。
   - `your-szu-life://data/...`：用于传递与订阅结构化数据/MCP Resources 资源（如 `data/auth/profile`, `data/electricity/status` 等）。

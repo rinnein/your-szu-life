@@ -19,6 +19,7 @@ export interface McpStatusView {
   running: boolean;
   enabled: boolean;
   port: number | null;
+  preferredPort: number;
   endpoint: string | null;
 }
 
@@ -82,7 +83,7 @@ export default function McpSettings({
       : null,
   );
 
-  const endpoint = status?.endpoint ?? `http://127.0.0.1:${status?.port ?? 53901}/mcp`;
+  const endpoint = status?.endpoint ?? `http://127.0.0.1:${status?.preferredPort ?? 53901}/mcp`;
 
   const agentPrompt = `请帮我连接并配置泥深（your-szu-life）的本地公开 MCP 服务：
 - 服务端点 URL: ${endpoint}
@@ -157,7 +158,7 @@ export default function McpSettings({
               <LoadingIndicator size={16} />
             ) : status?.running ? (
               <Chip size="sm" variant="soft" color="success">
-                端口已开启 ({status?.port ?? 53901})
+                端口已开启 ({status?.port ?? status?.preferredPort ?? 53901})
               </Chip>
             ) : (
               <Chip size="sm" variant="soft" color="danger">
@@ -251,7 +252,7 @@ export default function McpSettings({
                 </span>
                 <span className="flex items-center gap-1">
                   <LuNetwork aria-hidden="true" className="size-3.5 shrink-0" />
-                  独立高位端口: {status?.port ?? 53901}
+                  独立高位端口: {status?.port ?? status?.preferredPort ?? 53901}
                 </span>
               </div>
             </div>

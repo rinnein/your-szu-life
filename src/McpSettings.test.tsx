@@ -20,6 +20,7 @@ describe("McpSettings component", () => {
           running: true,
           enabled: true,
           port: 53901,
+          preferredPort: 53901,
           endpoint: "http://127.0.0.1:53901/mcp",
         };
       }
@@ -100,6 +101,7 @@ describe("McpSettings component", () => {
           running: true,
           enabled: true,
           port: 53901,
+          preferredPort: 53901,
           endpoint: "http://127.0.0.1:53901/mcp",
         };
       }
@@ -109,6 +111,7 @@ describe("McpSettings component", () => {
           running: enabled,
           enabled,
           port: enabled ? 53901 : null,
+          preferredPort: 53901,
           endpoint: enabled ? "http://127.0.0.1:53901/mcp" : null,
         };
       }

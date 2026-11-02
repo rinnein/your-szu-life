@@ -90,6 +90,8 @@ pub(crate) fn run() {
                 eprintln!("设置数据库初始化失败，本次使用默认设置: {error}");
             }
             crate::logging::initialize(app.handle());
+            // 端口分配器的通知需要在任意调用点推送到前端，先把句柄存下来。
+            crate::ports::initialize(app.handle());
             if let Err(error) = crate::storage::initialize(app.handle()) {
                 log::error!("凭据存储初始化失败: {error}");
             }
@@ -153,6 +155,7 @@ pub(crate) fn run() {
         .invoke_handler(tauri::generate_handler![
             crate::mcp::get_mcp_server_status,
             crate::mcp::set_mcp_server_enabled,
+            crate::ports::commands::take_port_notices,
             crate::enrollment::commands::enrollment_command,
             crate::enrollment::commands::open_academic_portal,
             crate::enrollment::commands::open_enrollment_official,

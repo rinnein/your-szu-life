@@ -12,6 +12,7 @@ pub(crate) mod db;
 pub(crate) const APPEARANCE: &str = "appearance";
 pub(crate) const NOTIFICATIONS: &str = "notifications";
 pub(crate) const MCP_ENABLED: &str = "mcp.enabled";
+pub(crate) const MCP_PORT: &str = "mcp.port";
 pub(crate) const LOG_LEVEL: &str = "logging.level";
 pub(crate) const DEBUG_ENABLED: &str = "debug.enabled";
 

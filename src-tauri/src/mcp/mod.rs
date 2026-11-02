@@ -7,6 +7,7 @@ pub mod tools;
 #[cfg(test)]
 mod tests;
 
+use crate::ports::{self, PortService};
 use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
 };
@@ -16,8 +17,8 @@ use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
 use tokio_util::sync::CancellationToken;
 
-pub const DEFAULT_MCP_PORT: u16 = 53901;
-pub const MAX_PORT_SCAN: u16 = 54000;
+/// MCP 服务的默认首选端口；实际端口优先取设置中保存的值。
+pub const DEFAULT_MCP_PORT: u16 = ports::MCP_PORT_RANGE.0;
 
 struct RunningServer {
     port: u16,
@@ -32,6 +33,8 @@ pub struct McpStatusView {
     pub running: bool,
     pub enabled: bool,
     pub port: Option<u16>,
+    /// 服务当前期望使用的端口：已保存的端口优先，否则为默认端口。
+    pub preferred_port: u16,
     pub endpoint: Option<String>,
 }
 
@@ -39,11 +42,13 @@ pub struct McpStatusView {
 #[tauri::command]
 pub fn get_mcp_server_status() -> McpStatusView {
     let guard = SERVER_STATE.lock().unwrap();
+    let preferred_port = preferred_port();
     if let Some(server) = guard.as_ref() {
         McpStatusView {
             running: true,
             enabled: true,
             port: Some(server.port),
+            preferred_port,
             endpoint: Some(format!("http://127.0.0.1:{}/mcp", server.port)),
         }
     } else {
@@ -51,9 +56,21 @@ pub fn get_mcp_server_status() -> McpStatusView {
             running: false,
             enabled: false,
             port: None,
+            preferred_port,
             endpoint: None,
         }
     }
+}
+
+fn persisted_port() -> Option<u16> {
+    crate::preferences::load::<u16>(crate::preferences::MCP_PORT)
+        .ok()
+        .flatten()
+        .filter(|port| (ports::MCP_PORT_RANGE.0..=ports::MCP_PORT_RANGE.1).contains(port))
+}
+
+fn preferred_port() -> u16 {
+    persisted_port().unwrap_or(DEFAULT_MCP_PORT)
 }
 
 /// 启动 MCP 本地公开服务并绑定高位端口（支持桌面与安卓端）
@@ -66,27 +83,22 @@ pub fn start_mcp_server(app: &AppHandle) -> Result<u16, String> {
     let app_handle = app.clone();
     let service = UnifiedSzuMcpService::new(app_handle);
 
-    // 扫描高位端口并尝试绑定
-    let mut chosen_listener = None;
-    let mut bound_port = 0;
+    // 优先使用上次保存的端口；从未保存过时把默认端口当作首选，
+    // 这样默认端口被占也能触发「端口已切换」提示。
+    let saved_port = persisted_port();
+    let (std_listener, allocation) =
+        ports::bind_loopback(PortService::Mcp, Some(saved_port.unwrap_or(DEFAULT_MCP_PORT)))
+            .map_err(|error| error.to_string())?;
+    let bound_port = allocation.port;
 
-    for port in DEFAULT_MCP_PORT..=MAX_PORT_SCAN {
-        let addr = format!("127.0.0.1:{port}");
-        match std::net::TcpListener::bind(&addr) {
-            Ok(std_listener) => {
-                std_listener
-                    .set_nonblocking(true)
-                    .map_err(|e| e.to_string())?;
-                chosen_listener = Some(std_listener);
-                bound_port = port;
-                break;
-            }
-            Err(_) => continue,
+    if saved_port != Some(bound_port) {
+        if let Err(error) = crate::preferences::save(crate::preferences::MCP_PORT, &bound_port) {
+            log::error!("保存 MCP 端口失败: {error}");
         }
     }
-
-    let std_listener = chosen_listener
-        .ok_or_else(|| format!("无法在端口范围 {DEFAULT_MCP_PORT}..={MAX_PORT_SCAN} 找到可用端口"))?;
+    if let Some(previous) = allocation.switched_from {
+        ports::notify_mcp_port_changed(previous, bound_port);
+    }
 
     let cancel = CancellationToken::new();
 
@@ -164,11 +176,12 @@ pub fn initialize(app: &AppHandle) -> Result<(), String> {
 /// 开关直接控制该端口是否开启与关闭
 #[tauri::command]
 pub fn set_mcp_server_enabled(app: AppHandle, enabled: bool) -> Result<McpStatusView, String> {
-    save_persisted_enabled(enabled);
     if enabled {
         start_mcp_server(&app)?;
+        save_persisted_enabled(true);
     } else {
         stop_mcp_server()?;
+        save_persisted_enabled(false);
     }
     Ok(get_mcp_server_status())
 }

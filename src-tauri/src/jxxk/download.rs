@@ -433,13 +433,12 @@ async fn ensure_download_server(app: &AppHandle) -> Result<u16, String> {
             }
         }),
     );
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .map_err(|e| format!("绑定下载入口端口失败: {e}"))?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| format!("读取下载入口端口失败: {e}"))?
-        .port();
+    let (std_listener, allocation) =
+        crate::ports::bind_loopback(crate::ports::PortService::JxxkDownload, None)
+            .map_err(|error| error.to_string())?;
+    let port = allocation.port;
+    let listener = tokio::net::TcpListener::from_std(std_listener)
+        .map_err(|e| format!("初始化下载入口监听器失败: {e}"))?;
     let _ = DOWNLOAD_SERVER_PORT.set(port);
     log::info!("[jxxk] 下载入口服务器已启动: 127.0.0.1:{port}");
     tauri::async_runtime::spawn(async move {

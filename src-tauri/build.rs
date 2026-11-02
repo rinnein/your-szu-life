@@ -257,6 +257,7 @@ fn main() {
         tauri_build::AppManifest::new().commands(&[
             "get_mcp_server_status",
             "set_mcp_server_enabled",
+            "take_port_notices",
             "enrollment_command",
             "open_academic_portal",
             "open_enrollment_official",

@@ -1,6 +1,5 @@
 use std::{
     fs,
-    net::TcpListener,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::OnceLock,
@@ -8,21 +7,7 @@ use std::{
 };
 use tokio::sync::Mutex;
 
-pub const DEFAULT_ARIA2_PORT: u16 = 54001;
-pub const MAX_ARIA2_PORT_SCAN: u16 = 54100;
-
-fn find_available_aria2_port() -> Result<u16, String> {
-    for port in DEFAULT_ARIA2_PORT..=MAX_ARIA2_PORT_SCAN {
-        let addr = format!("127.0.0.1:{port}");
-        if let Ok(listener) = TcpListener::bind(&addr) {
-            drop(listener);
-            return Ok(port);
-        }
-    }
-    Err(format!(
-        "无法在高位端口范围 {DEFAULT_ARIA2_PORT}..={MAX_ARIA2_PORT_SCAN} 找到可用端口"
-    ))
-}
+use crate::ports::{self, PortService};
 
 pub struct Aria2Process {
     pub port: u16,
@@ -98,7 +83,9 @@ pub(super) fn proxy_injection(proxy: &crate::netproxy::Aria2Proxy) -> ProxyInjec
 
 impl Aria2Process {
     pub fn spawn(binary_path: &Path) -> Result<Self, String> {
-        let port = find_available_aria2_port()?;
+        let allocation = ports::reserve_loopback(PortService::Aria2, None)
+            .map_err(|error| error.to_string())?;
+        let port = allocation.port;
         let secret = uuid::Uuid::new_v4().to_string();
         let log_path = std::env::temp_dir().join(format!("aria2c-{port}.log"));
 

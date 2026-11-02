@@ -85,7 +85,10 @@ async fn test_aria2_lease_lifecycle_rpc_and_reuse() {
     let ws_url1 = lease1.ws_url.clone();
     let secret1 = lease1.secret.clone();
     let port1 = lease1.port;
-    assert!(port1 >= crate::aria2::process::DEFAULT_ARIA2_PORT);
+    assert!(
+        (crate::ports::ARIA2_PORT_RANGE.0..=crate::ports::ARIA2_PORT_RANGE.1).contains(&port1),
+        "aria2 RPC 端口必须落在统一分配器划定的端口段内: {port1}"
+    );
 
     let mut client = Aria2WebSocketClient::connect(&lease1.ws_url, &lease1.secret)
         .await

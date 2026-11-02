@@ -21,6 +21,7 @@ fn command_names_match_handlers_manifest_and_local_permissions() {
         include_str!("embedding_model/commands.rs"),
         include_str!("notification/commands.rs"),
         include_str!("netproxy/commands.rs"),
+        include_str!("ports/commands.rs"),
     ]
     .into_iter()
     .flat_map(|source| source.lines())

@@ -90,6 +90,7 @@ describe("SettingsPage multi-tab and unified local model card", () => {
         return {
           running: true,
           port: 53901,
+          preferredPort: 53901,
           endpoint: "http://127.0.0.1:53901/mcp",
         };
       }
