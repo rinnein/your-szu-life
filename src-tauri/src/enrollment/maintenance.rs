@@ -5,17 +5,24 @@ pub struct Cadence {
     next: Instant,
 }
 impl Cadence {
-    pub fn new(now: Instant) -> Self {
+    pub fn new(now: Instant, interval: Duration) -> Self {
         Self {
-            next: now + Duration::from_secs(60),
+            next: now + interval,
         }
     }
-    pub fn due(&mut self, now: Instant) -> bool {
+    pub fn due(&mut self, now: Instant, interval: Duration) -> bool {
         if now < self.next {
             return false;
         }
-        self.next = now + Duration::from_secs(60);
+        self.next = now + interval;
         true
+    }
+    /// 档位变快时提前下一次保活，不推迟已经排队的保活。
+    pub fn clamp(&mut self, now: Instant, interval: Duration) {
+        let deadline = now + interval;
+        if deadline < self.next {
+            self.next = deadline;
+        }
     }
 }
 pub fn selected_probe(s: &Snapshot, random: u8) -> bool {
@@ -44,12 +51,21 @@ mod tests {
     #[test]
     fn skips_missed_ticks_instead_of_replaying_them() {
         let now = Instant::now();
-        let mut c = Cadence::new(now);
-        assert!(!c.due(now + Duration::from_secs(59)));
-        assert!(c.due(now + Duration::from_secs(60)));
-        assert!(!c.due(now + Duration::from_secs(60)));
-        assert!(c.due(now + Duration::from_secs(600)));
-        assert!(!c.due(now + Duration::from_secs(601)));
+        let interval = Duration::from_secs(60);
+        let mut c = Cadence::new(now, interval);
+        assert!(!c.due(now + Duration::from_secs(59), interval));
+        assert!(c.due(now + Duration::from_secs(60), interval));
+        assert!(!c.due(now + Duration::from_secs(60), interval));
+        assert!(c.due(now + Duration::from_secs(600), interval));
+        assert!(!c.due(now + Duration::from_secs(601), interval));
+    }
+    #[test]
+    fn a_faster_tier_shortens_the_pending_deadline() {
+        let now = Instant::now();
+        let mut c = Cadence::new(now, Duration::from_secs(1800));
+        c.clamp(now + Duration::from_secs(1), Duration::from_secs(60));
+        assert!(!c.due(now + Duration::from_secs(60), Duration::from_secs(60)));
+        assert!(c.due(now + Duration::from_secs(61), Duration::from_secs(60)));
     }
     #[test]
     fn random_choice_only_uses_selected_list_when_admitted() {

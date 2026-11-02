@@ -145,6 +145,11 @@ impl CampusNetworkStore {
         self.probe_pending.store(false, Ordering::Release);
     }
 
+    /// 手动探测/登录流程进行中时，监控应按 Active 档位运行。
+    pub(super) fn probing(&self) -> bool {
+        self.probe_pending.load(Ordering::Acquire)
+    }
+
     pub(super) fn change_dorm_status(
         &self,
         update: impl FnOnce(&mut DormLoginStatusView),

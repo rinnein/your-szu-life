@@ -385,6 +385,7 @@ fn main() {
             "export_settings",
             "preview_import_settings",
             "import_settings",
+            "set_active_module",
             "get_appearance",
             "save_appearance",
             "get_wallpaper_seed",

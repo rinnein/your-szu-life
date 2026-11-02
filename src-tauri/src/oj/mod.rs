@@ -369,6 +369,17 @@ impl Service {
                 .collect(),
         }
     }
+    /// 档位变快时把每个站点的下次同步时间提前，避免刚打开 OJ 页仍等 1 小时。
+    pub(super) fn clamp_next_sync(&self, interval_ms: i64) {
+        let deadline = chrono::Utc::now().timestamp_millis() + interval_ms;
+        let r = self.runtime.lock().unwrap();
+        for entry in r.entries.values() {
+            let mut state = entry.state.lock().unwrap();
+            if state.next_sync > deadline {
+                state.next_sync = deadline;
+            }
+        }
+    }
     pub(crate) fn publish_lists(&self) {
         if self.list_subscribers.is_empty() {
             return;

@@ -895,8 +895,22 @@ pub(crate) fn initialize(app: AppHandle, store: ElectricityStore) {
     }
     thread::spawn(move || {
         automatic_query(&app, &store, false);
+        let mut last_query = std::time::Instant::now();
         loop {
-            thread::sleep(Duration::from_secs(30));
+            let interval = crate::activity::interval(
+                Some("electricity"),
+                Duration::from_secs(30),
+                Duration::from_secs(300),
+                Duration::from_secs(1800),
+            );
+            thread::sleep(crate::activity::sleep_chunk(
+                interval,
+                Duration::from_secs(30),
+            ));
+            if last_query.elapsed() < interval {
+                continue;
+            }
+            last_query = std::time::Instant::now();
             let background = store
                 .runtime
                 .lock()

@@ -1,6 +1,7 @@
 #![recursion_limit = "512"]
 
 mod app;
+pub(crate) mod activity;
 mod app_content;
 pub(crate) mod appearance;
 pub(crate) mod aria2;

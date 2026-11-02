@@ -93,6 +93,7 @@ pub(crate) fn set_application_visibility(
     app: AppHandle,
     store: State<'_, CampusPaymentsStore>,
 ) {
+    crate::activity::set_foreground(visible);
     electricity::set_background(app, store.electricity.clone(), !visible);
 }
 

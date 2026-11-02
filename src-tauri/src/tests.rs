@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 #[test]
 fn command_names_match_handlers_manifest_and_local_permissions() {
     let commands: BTreeSet<_> = [
+        include_str!("activity/commands.rs"),
         include_str!("app_content/commands.rs"),
         include_str!("appearance/commands.rs"),
         include_str!("auth/commands.rs"),

@@ -63,15 +63,23 @@ pub(crate) fn initialize(app: &tauri::AppHandle) -> std::io::Result<()> {
             .spawn(move || {
                 loop {
                     service.automatic_tick();
-                    // Wall-clock deadlines include suspend time. Check at most 15s after resume;
-                    // missed days coalesce into one refresh instead of a burst of catch-up requests.
+                    // Wall-clock deadlines include suspend time. Check at most the current
+                    // activity-tier delay after resume; missed days coalesce into one refresh
+                    // instead of a burst of catch-up requests.
                     let now = runtime::Clock::now_ms(&runtime::SystemClock);
+                    let max_delay = crate::activity::interval(
+                        Some("app-content"),
+                        Duration::from_secs(15),
+                        Duration::from_secs(60),
+                        Duration::from_secs(600),
+                    )
+                    .as_millis() as u64;
                     let delay = service
                         .snapshot()
                         .next_automatic_check_at
-                        .unwrap_or(now + 15_000)
+                        .unwrap_or(now + max_delay)
                         .saturating_sub(now)
-                        .clamp(1, 15_000);
+                        .clamp(1, max_delay);
                     std::thread::sleep(Duration::from_millis(delay));
                 }
             })?;

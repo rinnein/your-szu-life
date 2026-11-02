@@ -200,6 +200,7 @@ pub(crate) fn run() {
             settings::commands::export_settings,
             settings::commands::preview_import_settings,
             settings::commands::import_settings,
+            crate::activity::commands::set_active_module,
             crate::appearance::commands::get_appearance,
             crate::appearance::commands::save_appearance,
             crate::appearance::commands::get_wallpaper_seed,

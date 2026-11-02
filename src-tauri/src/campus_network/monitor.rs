@@ -18,12 +18,54 @@ use std::{
 use tauri::Manager;
 
 const DORM_MONITOR_TICK: Duration = Duration::from_secs(10);
+const DORM_FOREGROUND_TICK: Duration = Duration::from_secs(30);
+const DORM_BACKGROUND_TICK: Duration = Duration::from_secs(300);
 // Android needs a lightweight snapshot poll to notice Wi-Fi/IP transitions,
 // but portal requests must not follow that one-second cadence.  Portal
 // sessions are refreshed at a deliberately slower cadence and can still be
 // refreshed immediately through ProbeNow (page entry/manual refresh).
 const ANDROID_SNAPSHOT_TICK: Duration = Duration::from_secs(1);
+const ANDROID_FOREGROUND_TICK: Duration = Duration::from_secs(10);
+const ANDROID_BACKGROUND_TICK: Duration = Duration::from_secs(60);
 const ANDROID_PORTAL_PROBE_TICK: Duration = Duration::from_secs(60);
+const PORTAL_FOREGROUND_PROBE: Duration = Duration::from_secs(300);
+const PORTAL_BACKGROUND_PROBE: Duration = Duration::from_secs(900);
+
+/// 校园网监测的两档间隔：本地快照 tick 与门户探测间隔。
+fn monitor_intervals(tier: crate::activity::ActivityTier) -> (Duration, Duration) {
+    use crate::activity::ActivityTier;
+    let poll_tick = if cfg!(target_os = "android") {
+        match tier {
+            ActivityTier::Active => ANDROID_SNAPSHOT_TICK,
+            ActivityTier::Foreground => ANDROID_FOREGROUND_TICK,
+            ActivityTier::Background => ANDROID_BACKGROUND_TICK,
+        }
+    } else {
+        match tier {
+            ActivityTier::Active => DORM_MONITOR_TICK,
+            ActivityTier::Foreground => DORM_FOREGROUND_TICK,
+            ActivityTier::Background => DORM_BACKGROUND_TICK,
+        }
+    };
+    let probe = match tier {
+        ActivityTier::Active => ANDROID_PORTAL_PROBE_TICK,
+        ActivityTier::Foreground => PORTAL_FOREGROUND_PROBE,
+        ActivityTier::Background => PORTAL_BACKGROUND_PROBE,
+    };
+    (poll_tick, probe)
+}
+
+/// 手动探测/登录流程进行中时强制 Active。
+fn current_tier(app: &tauri::AppHandle) -> crate::activity::ActivityTier {
+    if app
+        .try_state::<CampusNetworkStore>()
+        .is_some_and(|store| store.probing())
+    {
+        crate::activity::ActivityTier::Active
+    } else {
+        crate::activity::tier(Some("campus-network"))
+    }
+}
 pub(crate) enum MonitorCommand {
     ProbeNow,
 }
@@ -329,22 +371,26 @@ pub(super) fn monitor_dorm_network(
     receiver: mpsc::Receiver<MonitorCommand>,
     client: PortalClient,
 ) {
-    let poll_tick = if cfg!(target_os = "android") {
-        ANDROID_SNAPSHOT_TICK
-    } else {
-        DORM_MONITOR_TICK
-    };
-    let regular_probe_interval = if cfg!(target_os = "android") {
-        ANDROID_PORTAL_PROBE_TICK
-    } else {
-        DORM_MONITOR_TICK
-    };
+    let (mut poll_tick, mut regular_probe_interval) = monitor_intervals(current_tier(&app));
+    let mut last_tier = current_tier(&app);
     let mut next_regular_probe = Instant::now();
     let mut last_fast_fingerprint: Option<String> = None;
     let mut first_probe = true;
     let mut snapshot_backoff = poll_tick;
     let mut probe_backoff = Duration::from_secs(5);
     loop {
+        // 档位变化时只缩短下一次探测的等待，不推迟已经排队的探测。
+        let tier = current_tier(&app);
+        if tier != last_tier {
+            last_tier = tier;
+            let (next_tick, next_probe) = monitor_intervals(tier);
+            poll_tick = next_tick;
+            regular_probe_interval = next_probe;
+            let deadline = Instant::now() + regular_probe_interval;
+            if deadline < next_regular_probe {
+                next_regular_probe = deadline;
+            }
+        }
         if !first_probe {
             let wait = next_regular_probe
                 .saturating_duration_since(Instant::now())

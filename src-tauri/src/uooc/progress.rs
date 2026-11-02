@@ -452,50 +452,84 @@ impl Service {
 }
 
 pub(super) fn start_updates(service: &Arc<Service>) {
+    use crate::activity::ActivityTier;
+    use std::time::{Duration, Instant};
+
     let weak = Arc::downgrade(service);
     tauri::async_runtime::spawn(async move {
-        let mut last_assessments_refresh = std::time::Instant::now();
-        let mut last_idle_progress = std::time::Instant::now();
+        let mut last_progress = Instant::now();
+        let mut last_assessments_refresh = Instant::now();
+        let mut first_progress = true;
         loop {
-            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
             let Some(service) = weak.upgrade() else {
                 break;
             };
-            // This timer belongs to the native service, not the UOOC page or video queue.
-            // On wake/resume it catches up to today's Beijing date without replaying missed days.
-            let _ = service.refresh_session(Some(today())).await;
-            let (ids, active) = {
+            let active_work = {
                 let runtime = service.runtime.lock().unwrap();
-                let active = !runtime.workers.is_empty();
-                let ids = if active || runtime.snapshot.settings.discussion_enabled {
-                    runtime
-                        .snapshot
-                        .courses
-                        .iter()
-                        .map(|course| course.id.clone())
-                        .collect()
-                } else {
-                    runtime.workers.keys().cloned().collect()
-                };
-                (ids, active)
+                !runtime.workers.is_empty()
+                    || !runtime.checkins.queue.is_empty()
+                    || runtime
+                        .checkins
+                        .active
+                        .as_ref()
+                        .is_some_and(|job| !job.cancel.is_cancelled())
             };
-            // 无任务且无前端订阅时把全量进度刷新降到 5 分钟一次，避免空转请求。
-            let idle = !active && service.state_subscribers.is_empty();
-            if !idle {
-                last_idle_progress = std::time::Instant::now();
+            // 任务/签到在跑时强制 Active；否则按页面是否打开、应用是否在前台分档。
+            let tier = if active_work {
+                ActivityTier::Active
+            } else if crate::activity::tier(Some("uooc")) == ActivityTier::Active {
+                ActivityTier::Active
+            } else {
+                crate::activity::tier(None)
+            };
+            let progress_interval = match tier {
+                ActivityTier::Active => Duration::from_secs(30),
+                ActivityTier::Foreground => Duration::from_secs(120),
+                ActivityTier::Background => Duration::from_secs(900),
+            };
+            let assessment_interval = match tier {
+                ActivityTier::Active => Duration::from_secs(300),
+                ActivityTier::Foreground => Duration::from_secs(900),
+                ActivityTier::Background => Duration::from_secs(3600),
+            };
+
+            if first_progress || last_progress.elapsed() >= progress_interval {
+                first_progress = false;
+                // This timer belongs to the native service, not the UOOC page or video queue.
+                // On wake/resume it catches up to today's Beijing date without replaying missed days.
+                let _ = service.refresh_session(Some(today())).await;
+                let ids = {
+                    let runtime = service.runtime.lock().unwrap();
+                    if active_work || runtime.snapshot.settings.discussion_enabled {
+                        runtime
+                            .snapshot
+                            .courses
+                            .iter()
+                            .map(|course| course.id.clone())
+                            .collect()
+                    } else {
+                        runtime.workers.keys().cloned().collect()
+                    }
+                };
                 service.refresh_progress(ids, true).await;
-            } else if last_idle_progress.elapsed() >= std::time::Duration::from_secs(300) {
-                last_idle_progress = std::time::Instant::now();
-                service.refresh_progress(ids, true).await;
+                service.run_discussions().await;
+                last_progress = Instant::now();
             }
-            service.run_discussions().await;
+
             // 只在有前端订阅时刷新考试/作业，避免无人查看时产生无意义的远端请求。
             if !service.assessment_subscribers.is_empty()
-                && last_assessments_refresh.elapsed() >= std::time::Duration::from_secs(300)
+                && last_assessments_refresh.elapsed() >= assessment_interval
             {
-                last_assessments_refresh = std::time::Instant::now();
+                last_assessments_refresh = Instant::now();
                 let _ = service.refresh_assessments().await;
             }
+
+            // 分块睡眠让打开 UOOC 页/回到前台时最多一个块后就能提速。
+            tokio::time::sleep(crate::activity::sleep_chunk(
+                progress_interval,
+                Duration::from_secs(15),
+            ))
+            .await;
         }
     });
 }

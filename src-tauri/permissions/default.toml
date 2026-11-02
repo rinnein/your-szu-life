@@ -179,6 +179,7 @@ permissions = [
   "allow-subscribe-uooc-state",
   "allow-subscribe-uooc-assessments",
   "allow-refresh-uooc-assessments",
+  "allow-set-active-module",
   "allow-get-appearance",
   "allow-save-appearance",
   "allow-get-wallpaper-seed",

@@ -40,10 +40,44 @@ pub(super) fn changes(
     notices
 }
 pub(super) fn start(service: Arc<Service>) {
+    use crate::activity::ActivityTier;
     tauri::async_runtime::spawn(async move {
+        let mut last_tier = crate::activity::tier(Some("oj"));
+        // 启动时先扫一次，后续按当前档位节奏执行。
+        service.scan(false).await;
+        let mut last_scan = std::time::Instant::now();
         loop {
-            service.scan(false).await;
-            tokio::time::sleep(Duration::from_secs(15)).await;
+            let interval = crate::activity::interval(
+                Some("oj"),
+                Duration::from_secs(15),
+                Duration::from_secs(60),
+                Duration::from_secs(300),
+            );
+            let tier = crate::activity::tier(Some("oj"));
+            if tier != last_tier {
+                last_tier = tier;
+                if tier != ActivityTier::Background {
+                    // 打开 OJ 页或回到前台时，把原本排到 1 小时后的同步提前。
+                    let sync_ms = crate::activity::interval(
+                        Some("oj"),
+                        Duration::from_secs(300),
+                        Duration::from_secs(900),
+                        Duration::from_secs(3600),
+                    )
+                    .as_millis() as i64;
+                    service.clamp_next_sync(sync_ms);
+                }
+            }
+            if last_scan.elapsed() >= interval {
+                service.scan(false).await;
+                last_scan = std::time::Instant::now();
+            }
+            // 分块睡眠让「打开 OJ 页」或「回到前台」最多一个块后就能提速。
+            tokio::time::sleep(crate::activity::sleep_chunk(
+                interval,
+                Duration::from_secs(15),
+            ))
+            .await;
         }
     });
 }
@@ -116,7 +150,15 @@ impl Service {
                     {
                         let mut s = e.state.lock().unwrap();
                         s.last_sync = Some(now);
-                        s.next_sync = now + 300_000;
+                        // 打开 OJ 页时 5 分钟一拉；前台 15 分钟；后台 1 小时。
+                        s.next_sync = now
+                            + crate::activity::interval(
+                                Some("oj"),
+                                Duration::from_secs(300),
+                                Duration::from_secs(900),
+                                Duration::from_secs(3600),
+                            )
+                            .as_millis() as i64;
                         s.failures = 0;
                         s.offset = offset;
                     }

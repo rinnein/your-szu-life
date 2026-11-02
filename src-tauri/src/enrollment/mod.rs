@@ -129,13 +129,34 @@ pub(crate) fn initialize(
     });
     let weak = Arc::downgrade(&service);
     std::thread::spawn(move || {
-        let mut cadence = maintenance::Cadence::new(std::time::Instant::now());
+        let mut cadence = maintenance::Cadence::new(
+            std::time::Instant::now(),
+            crate::activity::interval(
+                Some("enrollment"),
+                Duration::from_secs(60),
+                Duration::from_secs(300),
+                Duration::from_secs(1800),
+            ),
+        );
         loop {
             std::thread::sleep(Duration::from_secs(1));
             let Some(s) = weak.upgrade() else {
                 break;
             };
-            if cadence.due(std::time::Instant::now()) {
+            // 选课任务运行时保持 60 秒保活；否则按页面/前后台分档。
+            let interval = if s.state.lock().unwrap().running {
+                Duration::from_secs(60)
+            } else {
+                crate::activity::interval(
+                    Some("enrollment"),
+                    Duration::from_secs(60),
+                    Duration::from_secs(300),
+                    Duration::from_secs(1800),
+                )
+            };
+            let now = std::time::Instant::now();
+            cadence.clamp(now, interval);
+            if cadence.due(now, interval) {
                 s.keepalive();
             }
         }
