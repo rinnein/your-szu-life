@@ -247,16 +247,30 @@ impl AddressSet {
     }
 }
 
+/// 针对特定域名的特殊解析规则。
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DnsOverrideRule {
+    /// 匹配的目标域名（如 `jxxk.szu.edu.cn`）。
+    pub host: String,
+    /// 处于校内网络状态时解析到的目标（IP 或域名）。
+    pub on_campus: String,
+    /// 其它时候（校外/非校园网）解析到的目标（IP 或域名）。
+    pub fallback: String,
+}
+
 /// 项目根目录的 `campus-network.json`。
 ///
 /// 三类内容：`alwaysDirect` 永不走代理（校内门户只在校园网内可达，代理到不了），
 /// `cidrs` + `hosts` 是校内网名单，是否走代理由设置里的 `campus_through_proxy`
-/// 开关决定，`dns` 是校内域名专用的主 DNS。
+/// 开关决定，`dns` 是校内域名专用的主 DNS，`dns_overrides` 是针对特定域名的特殊解析规则。
 struct CampusNetwork {
     always_direct: AddressSet,
     campus: AddressSet,
     /// 校内域名专用的 DNS 服务器。空列表表示不做覆盖，全部交给系统解析器。
     dns: Vec<std::net::IpAddr>,
+    /// 特殊域名的解析重写规则（最高优先级）。
+    dns_overrides: Vec<DnsOverrideRule>,
 }
 
 impl Default for CampusNetwork {
@@ -265,6 +279,7 @@ impl Default for CampusNetwork {
             always_direct: AddressSet::default(),
             campus: AddressSet::default(),
             dns: Vec::new(),
+            dns_overrides: Vec::new(),
         }
     }
 }
@@ -284,6 +299,9 @@ struct CampusNetworkSource {
     /// 校内域名要先问的 DNS 服务器地址。
     #[serde(default)]
     dns: Vec<String>,
+    /// 针对特定域名的特殊解析规则。
+    #[serde(default)]
+    dns_overrides: Vec<DnsOverrideRule>,
 }
 
 fn compile_set(entries: &[String]) -> AddressSet {
@@ -323,6 +341,7 @@ impl From<CampusNetworkSource> for CampusNetwork {
                     parsed.ok()
                 })
                 .collect(),
+            dns_overrides: source.dns_overrides,
         }
     }
 }
@@ -330,6 +349,15 @@ impl From<CampusNetworkSource> for CampusNetwork {
 /// 校内域名专用的 DNS 服务器。空列表表示不做覆盖，全部交给系统解析器。
 pub(crate) fn campus_dns_servers() -> &'static [std::net::IpAddr] {
     &campus_network().dns
+}
+
+/// 查找特定域名是否配置了特殊解析规则。
+pub(crate) fn find_dns_override(host: &str) -> Option<&'static DnsOverrideRule> {
+    let host = normalize_host(host);
+    campus_network()
+        .dns_overrides
+        .iter()
+        .find(|rule| normalize_host(&rule.host) == host)
 }
 
 /// 该域名是否属于校内域名 —— 这些域名要先问校内 DNS。
@@ -624,6 +652,11 @@ mod tests {
             assert!(campus.always_direct.matches(host), "{host} 应强制直连");
         }
         assert!(!campus.always_direct.matches("github.com"));
+
+        // 特殊解析规则：jxxk.szu.edu.cn
+        let override_rule = find_dns_override("jxxk.szu.edu.cn").expect("jxxk.szu.edu.cn 应有特殊解析规则");
+        assert_eq!(override_rule.on_campus, "172.31.63.8");
+        assert_eq!(override_rule.fallback, "c46.szu.edu.cn");
     }
 
     #[test]

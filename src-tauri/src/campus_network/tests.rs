@@ -503,6 +503,49 @@ fn snapshot_connection_is_published_before_portal_probe_finishes() {
 }
 
 #[test]
+fn syncs_campus_network_status_to_netproxy_dns() {
+    use super::state::NetworkEvents;
+    use super::testing::{dorm_html, snapshot, TEST_IP};
+    use super::CampusNetworkStore;
+    use crate::storage::testing::MemoryCredentialStore;
+    use std::sync::Arc;
+
+    #[derive(Default)]
+    struct Capture;
+    impl NetworkEvents for Capture {}
+
+    let store = CampusNetworkStore::new(Arc::new(MemoryCredentialStore::default()));
+    let events = Capture;
+
+    // 非校园网（如蜂窝移动网络）
+    store.apply_snapshot_connection(
+        &NetworkSnapshot {
+            connected: true,
+            transport: Some("cellular".into()),
+            ssid: Some("移动数据".into()),
+            wifi_connected: false,
+            ..Default::default()
+        },
+        &events,
+    );
+    assert!(!crate::netproxy::is_in_campus_network());
+
+    // 校园网环境（如宿舍区）
+    let observation = NetworkObservation {
+        snapshot: snapshot(),
+        dorm: dorm_probe_from_responses(&dorm_html(TEST_IP, true), None),
+        staff: super::staff::StaffPortalProbe::default(),
+    };
+    let guard = store.begin_login().unwrap();
+    store.apply_observation(
+        guard.token(),
+        &observation,
+        &events,
+    );
+    assert!(crate::netproxy::is_in_campus_network());
+}
+
+#[test]
 fn probe_network_overview_skips_http_when_cellular() {
     struct PanicHttp;
     impl super::http::PortalHttp for PanicHttp {

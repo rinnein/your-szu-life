@@ -146,6 +146,11 @@ pub(crate) fn run() {
             }
             if let Some(store) = app.try_state::<campus_network::CampusNetworkStore>() {
                 campus_network::diagnostics::initialize(app.handle(), &store);
+                if let Ok(overview) = campus_network::service::get_network_overview(&store) {
+                    netproxy::set_in_campus_network(
+                        overview.region != campus_network::model::NetworkRegion::None,
+                    );
+                }
             }
             if let Some(store) = app.try_state::<campus_payments::CampusPaymentsStore>() {
                 campus_payments::electricity::initialize(

@@ -11,7 +11,10 @@ use crate::netproxy::model;
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs, UdpSocket},
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
     time::{Duration, Instant},
 };
 
@@ -28,6 +31,19 @@ const DOWN_TTL: Duration = Duration::from_secs(60);
 const QTYPE_A: u16 = 1;
 const QTYPE_AAAA: u16 = 28;
 
+/// 校园网登录模块检测到的「是否处于校内网络环境」。
+static IN_CAMPUS_NETWORK: AtomicBool = AtomicBool::new(false);
+
+/// 供校园网登录模块同步当前的校园网检测状态。
+pub(crate) fn set_in_campus_network(in_campus: bool) {
+    IN_CAMPUS_NETWORK.store(in_campus, Ordering::Release);
+}
+
+/// 当前是否处于校内网络环境。
+pub(crate) fn is_in_campus_network() -> bool {
+    IN_CAMPUS_NETWORK.load(Ordering::Acquire)
+}
+
 /// 校内 DNS 是否「刚刚不可用」。它是整条链路的状态，不按域名区分，
 /// 否则离线时每个校内域名都要先白等一次超时。
 static CAMPUS_DNS_DOWN: Mutex<Option<Instant>> = Mutex::new(None);
@@ -38,6 +54,21 @@ impl Resolve for CampusResolver {
     fn resolve(&self, name: Name) -> Resolving {
         let host = name.as_str().to_owned();
         Box::pin(async move {
+            // 1. 最高优先级：针对特定域名的特殊解析规则（如 jxxk.szu.edu.cn）
+            if let Some(rule) = model::find_dns_override(&host) {
+                let target = if is_in_campus_network() {
+                    &rule.on_campus
+                } else {
+                    &rule.fallback
+                };
+                if let Ok(addrs) = resolve_target(target).await {
+                    if !addrs.is_empty() {
+                        return Ok(Box::new(addrs.into_iter().map(socket_addr)) as Addrs);
+                    }
+                }
+            }
+
+            // 2. 校内域名判定与校内 DNS 优先查询
             if model::is_campus_domain(&host) {
                 if let Ok(addrs) = campus_lookup(&host).await {
                     if !addrs.is_empty() {
@@ -45,9 +76,27 @@ impl Resolve for CampusResolver {
                     }
                 }
             }
+
+            // 3. 兜底系统解析
             system_lookup(&host).await
         })
     }
+}
+
+/// 解析特殊重写规则指定的目标（支持直接填写 IP，或填写跳转域名如 c46.szu.edu.cn）。
+async fn resolve_target(target: &str) -> Result<Vec<IpAddr>, BoxError> {
+    if let Ok(ip) = target.trim().parse::<IpAddr>() {
+        return Ok(vec![ip]);
+    }
+    let target = target.to_owned();
+    let addrs = tokio::task::spawn_blocking(move || {
+        (target.as_str(), 0)
+            .to_socket_addrs()
+            .map(|addrs| addrs.map(|s| s.ip()).collect::<Vec<_>>())
+    })
+    .await
+    .map_err(|error| -> BoxError { Box::new(error) })??;
+    Ok(addrs)
 }
 
 /// 系统解析器（getaddrinfo）。与覆盖前的行为一致。
@@ -481,6 +530,37 @@ mod tests {
         assert!(
             addrs.iter().any(|addr| addr.ip().is_loopback()),
             "localhost 应解析到回环地址，实际：{addrs:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn dns_override_resolves_jxxk_on_and_off_campus() {
+        // 1. 处于校内网络时，解析到 172.31.63.8
+        set_in_campus_network(true);
+        let name_on = "jxxk.szu.edu.cn".parse::<Name>().unwrap();
+        let addrs_on = CampusResolver
+            .resolve(name_on)
+            .await
+            .unwrap()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            addrs_on.iter().map(|s| s.ip()).collect::<Vec<_>>(),
+            vec!["172.31.63.8".parse::<IpAddr>().unwrap()]
+        );
+
+        // 2. 处于非校内网络时，解析到 c46.szu.edu.cn 对应的 IP（210.39.4.1）
+        set_in_campus_network(false);
+        let name_off = "jxxk.szu.edu.cn".parse::<Name>().unwrap();
+        let addrs_off = CampusResolver
+            .resolve(name_off)
+            .await
+            .unwrap()
+            .collect::<Vec<_>>();
+        assert!(
+            addrs_off
+                .iter()
+                .any(|s| s.ip() == "210.39.4.1".parse::<IpAddr>().unwrap()),
+            "校外解析 jxxk.szu.edu.cn 应解析到 c46.szu.edu.cn（210.39.4.1），实际：{addrs_off:?}"
         );
     }
 }

@@ -216,6 +216,7 @@ impl CampusNetworkStore {
             changed = true;
         }
         if changed {
+            crate::netproxy::set_in_campus_network(current.region != NetworkRegion::None);
             let next = current.clone();
             drop(current);
             events.overview_changed(&next);
@@ -238,6 +239,7 @@ impl CampusNetworkStore {
                 *current = overview.clone();
                 drop(current);
                 if changed {
+                    crate::netproxy::set_in_campus_network(overview.region != NetworkRegion::None);
                     events.overview_changed(&overview);
                 }
                 Some(overview)
@@ -276,6 +278,7 @@ impl NetworkEvents for AppNetworkEvents<'_> {
         let _ = self.0.emit("dorm-login-status-changed", status);
     }
     fn overview_changed(&self, overview: &NetworkOverviewView) {
+        crate::netproxy::set_in_campus_network(overview.region != NetworkRegion::None);
         let _ = self.0.emit("network-overview-changed", overview);
     }
     fn settings_changed(&self, settings: &DormNetworkSettings) {

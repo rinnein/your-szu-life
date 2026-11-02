@@ -30,6 +30,9 @@ pub(crate) mod mcp;
 pub(crate) mod model;
 mod system;
 
+#[cfg(test)]
+pub(crate) use dns::is_in_campus_network;
+pub(crate) use dns::set_in_campus_network;
 pub(crate) use model::{ProxyProbeView, ProxySettings, ProxySettingsInput, ProxySettingsView};
 
 use crate::storage::{CredentialStore, SharedCredentialStore};
