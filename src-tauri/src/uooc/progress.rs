@@ -290,6 +290,22 @@ impl Service {
         cid: &str,
         cancel: &CancellationToken,
     ) -> Result<CourseProgress, Error> {
+        self.fetch_progress_with(cid, cancel, false).await
+    }
+    /// 后台轮询不切换 `refreshing`，避免每 30 秒把整份快照推给前端。
+    pub(super) async fn fetch_progress_background(
+        self: &Arc<Self>,
+        cid: &str,
+        cancel: &CancellationToken,
+    ) -> Result<CourseProgress, Error> {
+        self.fetch_progress_with(cid, cancel, true).await
+    }
+    async fn fetch_progress_with(
+        self: &Arc<Self>,
+        cid: &str,
+        cancel: &CancellationToken,
+        background: bool,
+    ) -> Result<CourseProgress, Error> {
         let requested = Instant::now();
         let (epoch, account, session_cancel) = {
             let runtime = self.runtime.lock().unwrap();
@@ -331,13 +347,15 @@ impl Service {
             {
                 return Err(Error::Cancelled);
             }
-            runtime
-                .snapshot
-                .progress
-                .entry(cid.into())
-                .or_default()
-                .refreshing = true;
-            self.publish(&mut runtime);
+            if !background {
+                runtime
+                    .snapshot
+                    .progress
+                    .entry(cid.into())
+                    .or_default()
+                    .refreshing = true;
+                self.publish(&mut runtime);
+            }
         }
         let mut refresh_guard = RefreshGuard {
             service: self.clone(),
@@ -360,8 +378,11 @@ impl Service {
         entry.refreshing = false;
         match &result {
             Ok(data) => {
-                entry.data = Some(data.clone());
-                entry.updated_at_ms = Some(Utc::now().timestamp_millis());
+                // 数据没变时保留旧的 updated_at_ms，避免每 30 秒都产生一次“新”快照。
+                if entry.data.as_ref() != Some(data) {
+                    entry.data = Some(data.clone());
+                    entry.updated_at_ms = Some(Utc::now().timestamp_millis());
+                }
                 entry.error = None;
             }
             Err(error) if *error != Error::Cancelled => entry.error = Some(error.message()),
@@ -383,14 +404,17 @@ impl Service {
         };
         result
     }
-    pub(super) async fn refresh_progress(self: &Arc<Self>, ids: Vec<String>) {
+    pub(super) async fn refresh_progress(self: &Arc<Self>, ids: Vec<String>, background: bool) {
         let mut pending = tokio::task::JoinSet::new();
         for cid in ids {
             let service = self.clone();
             pending.spawn(async move {
-                let _ = service
-                    .fetch_progress(&cid, &CancellationToken::new())
-                    .await;
+                let cancel = CancellationToken::new();
+                let _ = if background {
+                    service.fetch_progress_background(&cid, &cancel).await
+                } else {
+                    service.fetch_progress(&cid, &cancel).await
+                };
             });
         }
         while pending.join_next().await.is_some() {}
@@ -417,15 +441,21 @@ impl Service {
                 .map(|course| course.id.clone())
                 .collect()
         };
-        self.refresh_progress(ids).await;
+        self.refresh_progress(ids, false).await;
         self.enqueue_automatic_checkins();
         self.run_discussions().await;
+        // 只有首页/考试面板正在订阅时才补拉考试与作业，避免无人查看时的额外请求。
+        if !self.assessment_subscribers.is_empty() {
+            let _ = self.refresh_assessments().await;
+        }
     }
 }
 
 pub(super) fn start_updates(service: &Arc<Service>) {
     let weak = Arc::downgrade(service);
     tauri::async_runtime::spawn(async move {
+        let mut last_assessments_refresh = std::time::Instant::now();
+        let mut last_idle_progress = std::time::Instant::now();
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
             let Some(service) = weak.upgrade() else {
@@ -434,9 +464,10 @@ pub(super) fn start_updates(service: &Arc<Service>) {
             // This timer belongs to the native service, not the UOOC page or video queue.
             // On wake/resume it catches up to today's Beijing date without replaying missed days.
             let _ = service.refresh_session(Some(today())).await;
-            let ids = {
+            let (ids, active) = {
                 let runtime = service.runtime.lock().unwrap();
-                if runtime.snapshot.settings.discussion_enabled {
+                let active = !runtime.workers.is_empty();
+                let ids = if active || runtime.snapshot.settings.discussion_enabled {
                     runtime
                         .snapshot
                         .courses
@@ -445,10 +476,26 @@ pub(super) fn start_updates(service: &Arc<Service>) {
                         .collect()
                 } else {
                     runtime.workers.keys().cloned().collect()
-                }
+                };
+                (ids, active)
             };
-            service.refresh_progress(ids).await;
+            // 无任务且无前端订阅时把全量进度刷新降到 5 分钟一次，避免空转请求。
+            let idle = !active && service.state_subscribers.is_empty();
+            if !idle {
+                last_idle_progress = std::time::Instant::now();
+                service.refresh_progress(ids, true).await;
+            } else if last_idle_progress.elapsed() >= std::time::Duration::from_secs(300) {
+                last_idle_progress = std::time::Instant::now();
+                service.refresh_progress(ids, true).await;
+            }
             service.run_discussions().await;
+            // 只在有前端订阅时刷新考试/作业，避免无人查看时产生无意义的远端请求。
+            if !service.assessment_subscribers.is_empty()
+                && last_assessments_refresh.elapsed() >= std::time::Duration::from_secs(300)
+            {
+                last_assessments_refresh = std::time::Instant::now();
+                let _ = service.refresh_assessments().await;
+            }
         }
     });
 }

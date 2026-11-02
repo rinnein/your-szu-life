@@ -9,6 +9,7 @@ mod tests;
 use crate::storage::SharedCredentialStore;
 use client::Client;
 use model::*;
+use serde::Serialize;
 use std::{
     path::PathBuf,
     sync::{
@@ -23,9 +24,15 @@ use tauri::{Emitter, Manager};
 /// 过期后由后台重验证刷新；网络失败则继续使用旧缓存。
 const LIST_CACHE_TTL_MS: i64 = 10 * 60 * 1000;
 
-/// 后台重验证失败后的冷却时间。首页每 60 秒轮询一次，
-/// 没有冷却会让失效会话反复触发 CAS 登录并消耗票据。
+/// 后台重验证失败后的冷却时间。没有冷却会让失效会话反复触发 CAS 登录并消耗票据。
 const REVALIDATE_COOLDOWN_MS: u128 = 60_000;
+
+#[derive(Clone, Serialize)]
+#[serde(tag = "type", content = "data", rename_all = "camelCase")]
+pub(crate) enum LmsDeltaEvent {
+    Initial(Box<Snapshot>),
+    Snapshot(Box<Snapshot>),
+}
 
 pub(crate) struct LmsStore {
     credentials: SharedCredentialStore,
@@ -59,6 +66,8 @@ pub(crate) struct Service {
     last_attempt: Mutex<Option<Instant>>,
     /// 自引用，用于派生后台任务。
     self_weak: Mutex<Weak<Service>>,
+    pub(crate) state_subscribers: crate::ipc_channel::SubscriberPool<LmsDeltaEvent>,
+    last_published: Mutex<Option<String>>,
 }
 
 impl Service {
@@ -90,6 +99,8 @@ impl Service {
             revalidating: AtomicBool::new(false),
             last_attempt: Mutex::new(None),
             self_weak: Mutex::new(Weak::new()),
+            state_subscribers: crate::ipc_channel::SubscriberPool::new(),
+            last_published: Mutex::new(None),
         }))
     }
 
@@ -181,10 +192,21 @@ impl Service {
         self.emit();
     }
 
-    /// 缓存或会话状态变化后通知页面（首页月历也订阅该事件）。
+    /// 缓存或会话状态变化后通知页面（Channel 与全局事件同时推送）。
     fn emit(&self) {
+        let snapshot = self.snapshot();
+        let signature = serde_json::to_string(&snapshot).unwrap_or_default();
+        {
+            let mut last = self.last_published.lock().unwrap();
+            if last.as_deref() == Some(signature.as_str()) {
+                return;
+            }
+            *last = Some(signature);
+        }
+        self.state_subscribers
+            .broadcast(&LmsDeltaEvent::Snapshot(Box::new(snapshot.clone())));
         if let Some(app) = &self.app {
-            let _ = app.emit("lms-state-changed", self.snapshot());
+            let _ = app.emit("lms-state-changed", snapshot);
         }
     }
 

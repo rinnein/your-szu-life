@@ -75,6 +75,12 @@ pub(crate) struct Service {
     self_weak: Mutex<Weak<Service>>,
     /// 上次广播的快照签名，避免 15 秒扫描重复推送。
     last_published: Mutex<Option<String>>,
+    pub(crate) deadline_subscribers: crate::ipc_channel::SubscriberPool<OjDeadlinesEvent>,
+    last_deadlines: Mutex<Option<String>>,
+    /// 首页待办触发的进度补算去重。
+    deadline_progress: Mutex<HashSet<String>>,
+    pub(crate) list_subscribers: crate::ipc_channel::SubscriberPool<OjListsEvent>,
+    last_lists: Mutex<Option<String>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -82,6 +88,46 @@ pub(crate) struct Service {
 pub(crate) enum OjDeltaEvent {
     Initial(Box<Snapshot>),
     Snapshot(Box<Snapshot>),
+}
+
+/// 首页待办只需要的扁平截止项，避免把整份站点快照推给日历。
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct OjDeadline {
+    pub site_id: String,
+    pub site_name: String,
+    pub group_id: String,
+    pub id: String,
+    pub title: String,
+    pub begin: i64,
+    pub end: i64,
+    pub now: i64,
+    pub is_exam: bool,
+    pub accepted: i64,
+    pub total: i64,
+    pub has_progress: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(tag = "type", content = "data", rename_all = "camelCase")]
+pub(crate) enum OjDeadlinesEvent {
+    Initial(Box<Vec<OjDeadline>>),
+    Snapshot(Box<Vec<OjDeadline>>),
+}
+
+/// OJ 页面需要的班级/测验缓存。键为站点 ID 或 `site:group`。
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct OjLists {
+    pub groups: BTreeMap<String, Vec<Group>>,
+    pub contests: BTreeMap<String, Vec<Contest>>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(tag = "type", content = "data", rename_all = "camelCase")]
+pub(crate) enum OjListsEvent {
+    Initial(Box<OjLists>),
+    Snapshot(Box<OjLists>),
 }
 impl Service {
     fn new(
@@ -158,6 +204,11 @@ impl Service {
             revalidating: Mutex::new(HashSet::new()),
             self_weak: Mutex::new(Weak::new()),
             last_published: Mutex::new(None),
+            deadline_subscribers: crate::ipc_channel::SubscriberPool::new(),
+            last_deadlines: Mutex::new(None),
+            deadline_progress: Mutex::new(HashSet::new()),
+            list_subscribers: crate::ipc_channel::SubscriberPool::new(),
+            last_lists: Mutex::new(None),
         }))
     }
     fn entry(&self, id: &str) -> Result<Arc<Entry>, String> {
@@ -179,6 +230,7 @@ impl Service {
             && !entry.client.cancel.is_cancelled()
     }
     fn publish(&self) {
+        self.publish_deadlines();
         let snapshot = self.snapshot();
         let signature = serde_json::to_string(&snapshot).unwrap_or_default();
         {
@@ -192,6 +244,146 @@ impl Service {
         if let Some(app) = &self.app {
             let _ = app.emit("oj-state-changed", snapshot);
         }
+    }
+    pub(crate) fn deadlines(&self) -> Vec<OjDeadline> {
+        let mut missing = Vec::new();
+        let rows = {
+            let r = self.runtime.lock().unwrap();
+            let mut rows = Vec::new();
+            for site in &r.data.sites {
+                let Some(entry) = r.entries.get(&site.id) else {
+                    continue;
+                };
+                let (session, progress) = {
+                    let state = entry.state.lock().unwrap();
+                    (state.session, state.progress.clone())
+                };
+                let has_cache = r.data.groups.contains_key(&site.id);
+                // 会话未建立但已有本地缓存时仍展示；完全没有缓存才跳过。
+                if session != Session::Ready && !has_cache {
+                    continue;
+                }
+                let Some(groups) = r.data.groups.get(&site.id) else {
+                    continue;
+                };
+                for group in &groups.groups {
+                    let Some(contests) = r
+                        .data
+                        .contests
+                        .get(&format!("{}:{}", site.id, group.id))
+                    else {
+                        continue;
+                    };
+                    for contest in &contests.contests {
+                        let parsed = progress.get(&contest.id).and_then(|(_, value)| {
+                            Some((value["accepted"].as_i64()?, value["total"].as_i64()?))
+                        });
+                        let (accepted, total, has_progress) = match parsed {
+                            Some((accepted, total)) => (accepted, total, true),
+                            None => {
+                                if session == Session::Ready {
+                                    missing.push((
+                                        site.id.clone(),
+                                        contest.id.clone(),
+                                        entry.username.clone(),
+                                        entry.epoch,
+                                    ));
+                                }
+                                (0, 0, false)
+                            }
+                        };
+                        rows.push(OjDeadline {
+                            site_id: site.id.clone(),
+                            site_name: site.name.clone(),
+                            group_id: group.id.clone(),
+                            id: contest.id.clone(),
+                            title: contest.title.clone(),
+                            begin: contest.begin,
+                            end: contest.end,
+                            now: contest.now,
+                            is_exam: contest.is_exam,
+                            accepted,
+                            total,
+                            has_progress,
+                        });
+                    }
+                }
+            }
+            rows
+        };
+        // 首页日历不再自己请求进度：缺进度时在后台补算，算完由 emit_progress 再推一次。
+        self.kick_missing_progress(missing);
+        rows
+    }
+    fn kick_missing_progress(&self, requests: Vec<(String, String, String, u64)>) {
+        if requests.is_empty() {
+            return;
+        }
+        let Some(service) = self.self_weak.lock().unwrap().upgrade() else {
+            return;
+        };
+        for (site_id, contest_id, account, epoch) in requests {
+            let key = format!("{site_id}:{account}:{contest_id}");
+            if !self.deadline_progress.lock().unwrap().insert(key.clone()) {
+                continue;
+            }
+            let service = service.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = service
+                    .progress(&site_id, &contest_id, false, Some(&account), Some(epoch))
+                    .await;
+                service.deadline_progress.lock().unwrap().remove(&key);
+            });
+        }
+    }
+    pub(crate) fn publish_deadlines(&self) {
+        if self.deadline_subscribers.is_empty() {
+            return;
+        }
+        let rows = self.deadlines();
+        let signature = serde_json::to_string(&rows).unwrap_or_default();
+        {
+            let mut last = self.last_deadlines.lock().unwrap();
+            if last.as_deref() == Some(signature.as_str()) {
+                return;
+            }
+            *last = Some(signature);
+        }
+        self.deadline_subscribers
+            .broadcast(&OjDeadlinesEvent::Snapshot(Box::new(rows)));
+    }
+    pub(crate) fn lists(&self) -> OjLists {
+        let r = self.runtime.lock().unwrap();
+        OjLists {
+            groups: r
+                .data
+                .groups
+                .iter()
+                .map(|(key, cache)| (key.clone(), cache.groups.clone()))
+                .collect(),
+            contests: r
+                .data
+                .contests
+                .iter()
+                .map(|(key, cache)| (key.clone(), cache.contests.clone()))
+                .collect(),
+        }
+    }
+    pub(crate) fn publish_lists(&self) {
+        if self.list_subscribers.is_empty() {
+            return;
+        }
+        let lists = self.lists();
+        let signature = serde_json::to_string(&lists).unwrap_or_default();
+        {
+            let mut last = self.last_lists.lock().unwrap();
+            if last.as_deref() == Some(signature.as_str()) {
+                return;
+            }
+            *last = Some(signature);
+        }
+        self.list_subscribers
+            .broadcast(&OjListsEvent::Snapshot(Box::new(lists)));
     }
     pub(crate) fn snapshot(&self) -> Snapshot {
         let r = self.runtime.lock().unwrap();
@@ -864,6 +1056,8 @@ impl Service {
         if let Err(error) = persistence::write(&self.path, &snapshot) {
             log::warn!("保存 OJ 班级缓存失败: {error}");
         }
+        self.publish_deadlines();
+        self.publish_lists();
     }
     fn store_contests(&self, key: &str, contests: &[Contest]) {
         let snapshot = {
@@ -880,6 +1074,8 @@ impl Service {
         if let Err(error) = persistence::write(&self.path, &snapshot) {
             log::warn!("保存 OJ 测验缓存失败: {error}");
         }
+        self.publish_deadlines();
+        self.publish_lists();
     }
     /// 后台扫描一次写回整个站点的班级与测验列表，避免每个分组各写一次整份状态。
     fn store_lists(&self, id: &str, groups: &[Group], contests: &[(String, Vec<Contest>)]) {
@@ -907,6 +1103,8 @@ impl Service {
         if let Err(error) = persistence::write(&self.path, &snapshot) {
             log::warn!("保存 OJ 列表缓存失败: {error}");
         }
+        self.publish_deadlines();
+        self.publish_lists();
     }
 }
 

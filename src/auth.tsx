@@ -220,24 +220,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => unlisten?.();
   }, []);
 
-  useEffect(() => {
-    if (!("Authenticated" in state)) return;
-    const requestRefresh = () => {
-      void invoke("refresh_auth_session").catch(() => undefined);
-    };
-    requestRefresh();
-    const onFocus = () => requestRefresh();
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") requestRefresh();
-    };
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => {
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
-  }, [state]);
-
   const value = useMemo(
     () => ({ state, profile, userData, refresh, setState, setProfile }),
     [state, profile, userData],

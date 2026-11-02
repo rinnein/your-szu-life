@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearch } from "@tanstack/react-router";
-import { listen } from "@tauri-apps/api/event";
 import { Button, Card, LoadingIndicator, TextField } from "material/react";
 import { LuChevronRight, LuRotateCw, LuVideo } from "react-icons/lu";
 import { Banner, bindField, Chip, toast } from "../ui";
+import { useChannelSubscription } from "../tauri-channel";
 import { PageSurface } from "../shell/PageSurface";
 import { TopAppBar } from "../shell/TopAppBar";
 import { AuthGate } from "../shell/AuthGate";
@@ -20,6 +20,7 @@ import {
   type JxxkCourse,
   type JxxkLesson,
   type JxxkSnapshot,
+  type JxxkState,
 } from "./api";
 
 /** 与某门课程匹配的课次摘要。 */
@@ -171,27 +172,37 @@ export default function PatrolPage() {
     },
     [navigation, buildUrl, semester],
   );
-  const loadRef = useRef(load);
-  loadRef.current = load;
-
-  // 后台重验证完成后（乐观缓存）静默刷新：不清 entries、不闪 loading。
-  useEffect(() => {
-    let active = true;
-    let unlisten: (() => void) | undefined;
-    void listen("jxxk-cache-changed", (event) => {
-      const key = event.payload as string | undefined;
-      // streams 变更只影响播放页，巡课列表不响应。
-      if (!active || !key || key.startsWith("streams:")) return;
-      void loadRef.current(false, activeSemesterRef.current, true);
-    }).then((fn) => {
-      if (active) unlisten = fn;
-      else fn();
+  // 后台重验证完成后由 Channel 推送缓存；直接更新对应列表，不再全量重拉。
+  const applyState = useCallback((state: JxxkState) => {
+    setSnapshot(state.snapshot);
+    const semesterId = activeSemesterRef.current || defaultSemesterId(state.snapshot.semesters);
+    if (!semesterId) return;
+    if (activeSemesterRef.current !== semesterId) {
+      activeSemesterRef.current = semesterId;
+      setActiveSemester(semesterId);
+    }
+    const page = state.courses[semesterId];
+    if (!page) return;
+    setEntries((old) => {
+      const previous = new Map(old.map((entry) => [entry.course.id, entry.lessons]));
+      const grouped: CourseEntry[] = [];
+      for (const course of page.content) {
+        const lessons = (state.lessons[course.id]?.content ?? previous.get(course.id) ?? []).filter(
+          (lesson) => lesson.liveState !== 1,
+        );
+        if (lessons.length === 0) continue;
+        grouped.push({ course, lessons });
+      }
+      return grouped;
     });
-    return () => {
-      active = false;
-      unlisten?.();
-    };
   }, []);
+
+  useChannelSubscription<{ type: "initial" | "snapshot"; data: JxxkState }>(
+    "subscribe_jxxk_state",
+    (event) => {
+      if (event?.data) applyState(event.data);
+    },
+  );
 
   useEffect(() => {
     void load(false);

@@ -9,7 +9,7 @@ import CourseQueryModal from "./academic/CourseQueryModal";
 import { buildTree, creditSummary, number } from "./academic/tree";
 import { getViewState, saveViewState, migrateViewState } from "./academic/view-state";
 export default function AcademicPage() {
-  const { snapshot: s, run, portal, pending, errors } = useEnrollment();
+  const { snapshot: s, run, recalculateAcademic, portal, pending, errors } = useEnrollment();
   const [calculating, setCalculating] = useState(false);
   const [progress, setProgress] = useState("");
   const viewKey = `${s?.context.student ?? "pending"}:${s?.academic?.summary[0]?.PYFADM ?? "plan"}`;
@@ -43,38 +43,12 @@ export default function AcademicPage() {
     setSelected(undefined);
     saveViewState(viewKey, { selected: undefined });
   };
-  useEffect(() => {
-    if (!calculating) return;
-    let live = true;
-    let timer: ReturnType<typeof setTimeout>;
-    const deadline = Date.now() + 180000;
-    const poll = async () => {
-      const v = await run<{ datas?: { byscjd?: { rows?: { ZS: number; YWCS: number }[] } } }>({
-        type: "academicProgress",
-      });
-      if (!live) return;
-      const row = v?.datas?.byscjd?.rows?.[0];
-      if (row) {
-        setProgress(`${row.YWCS}/${row.ZS}`);
-        if (Number(row.ZS) > 0 && Number(row.YWCS) >= Number(row.ZS)) {
-          setCalculating(false);
-          void run({ type: "academic", recalculate: false });
-          return;
-        }
-      }
-      if (Date.now() > deadline) {
-        setCalculating(false);
-        setProgress("计算仍未完成，请稍后查询进度");
-        return;
-      }
-      timer = setTimeout(() => void poll(), 2000);
-    };
-    void poll();
-    return () => {
-      live = false;
-      clearTimeout(timer);
-    };
-  }, [calculating, run]);
+  const startRecalculate = useCallback(async () => {
+    setCalculating(true);
+    setProgress("");
+    await recalculateAcademic((done, total) => setProgress(`${done}/${total}`));
+    setCalculating(false);
+  }, [recalculateAcademic]);
   return (
     <PageShell>
       <ModuleHeader
@@ -103,11 +77,7 @@ export default function AcademicPage() {
               size="xs"
               variant="text"
               disabled={calculating || !!pending.academic}
-              onClick={() =>
-                void run({ type: "academic", recalculate: true }).then(
-                  (v) => v && setCalculating(true),
-                )
-              }
+              onClick={() => void startRecalculate()}
             >
               重新计算
             </Button>

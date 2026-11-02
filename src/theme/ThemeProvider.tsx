@@ -9,6 +9,7 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { useChannelSubscription } from "../tauri-channel";
 import {
   DEFAULT_APPEARANCE,
   normalizeSeed,
@@ -176,59 +177,34 @@ export function ThemeProvider({
     };
   }, []);
 
-  // 桌面端可选：启动时自动读取当前壁纸并提取种子色，提供类似 Android 的动态色彩。
-  useEffect(() => {
-    if (!isTauri() || !platform || platform === "android") return;
-    if (!appearance.autoWallpaper) {
-      setWallpaperAvailable(false);
-      return;
-    }
-    let active = true;
-    void (async () => {
+  // 桌面端壁纸由后端按用户设定的分钟间隔轮询并推送，前端只负责提取种子色。
+  const watchWallpaper =
+    isTauri() && !!platform && platform !== "android" && appearance.autoWallpaper;
+  useChannelSubscription<{ dataUrl: string }>(
+    "watch_wallpaper_image",
+    async (image) => {
       try {
-        const image = await getWallpaperImage();
         const seed = normalizeSeed(await seedFromDataUrl(image.dataUrl));
-        if (!active || !seed) return;
+        if (!seed) return;
         setWallpaperAvailable(true);
-        setAppearance((current) =>
-          current.seedSource === "user" ? current : { ...current, seed, seedSource: "wallpaper" },
-        );
+        setAppearance((current) => {
+          if (current.seedSource === "user" || current.seed === seed) return current;
+          return { ...current, seed, seedSource: "wallpaper" };
+        });
       } catch {
-        // Wayland 等无法读取壁纸的环境：保持现有配色，隐藏动态色彩按钮。
-        if (active) setWallpaperAvailable(false);
+        // 壁纸解码失败时保留上次成功的配色。
       }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [platform, appearance.autoWallpaper]);
-
-  // 桌面端壁纸管理器通常没有变更事件；按用户设定的分钟间隔轮询。
+    },
+    { minutes: appearance.wallpaperPollMinutes },
+    {
+      key: `${platform}:${appearance.wallpaperPollMinutes}`,
+      enabled: watchWallpaper,
+      onError: () => setWallpaperAvailable(false),
+    },
+  );
   useEffect(() => {
-    if (!isTauri() || !platform || platform === "android" || !appearance.autoWallpaper) return;
-    let active = true;
-    const minutes = Math.min(1440, Math.max(1, appearance.wallpaperPollMinutes));
-    const timer = window.setInterval(() => {
-      void (async () => {
-        try {
-          const image = await getWallpaperImage();
-          const seed = normalizeSeed(await seedFromDataUrl(image.dataUrl));
-          if (!active || !seed) return;
-          setWallpaperAvailable(true);
-          setAppearance((current) => {
-            if (current.seedSource === "user" || current.seed === seed) return current;
-            return { ...current, seed, seedSource: "wallpaper" };
-          });
-        } catch {
-          // 轮询失败时保留上次成功的配色。
-        }
-      })();
-    }, minutes * 60_000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, [platform, appearance.autoWallpaper, appearance.wallpaperPollMinutes]);
+    if (!watchWallpaper) setWallpaperAvailable(false);
+  }, [watchWallpaper]);
 
   // 设置可能从另一个窗口或 MCP 工具改动。
   useEffect(() => {

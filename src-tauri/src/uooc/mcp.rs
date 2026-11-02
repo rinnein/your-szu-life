@@ -63,7 +63,7 @@ impl UnifiedSzuMcpService {
                 .map(|c| c.id)
                 .collect()
         };
-        service.refresh_progress(ids).await;
+        service.refresh_progress(ids, false).await;
         Ok("已刷新课程进度".to_string())
     }
 

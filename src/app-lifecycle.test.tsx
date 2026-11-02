@@ -41,7 +41,7 @@ describe("AppLifecycleBridge", () => {
     expect(invoke).toHaveBeenCalledWith("set_application_visibility", { visible: true });
   });
 
-  it("refreshes OJ monitoring when the app becomes visible again", () => {
+  it("does not refresh OJ from the renderer when the app becomes visible again", () => {
     render(<AppLifecycleBridge />);
     vi.mocked(invoke).mockClear();
 
@@ -51,6 +51,6 @@ describe("AppLifecycleBridge", () => {
 
     setVisibility("visible");
     document.dispatchEvent(new Event("visibilitychange"));
-    expect(invoke).toHaveBeenCalledWith("refresh_oj");
+    expect(invoke).not.toHaveBeenCalledWith("refresh_oj");
   });
 });

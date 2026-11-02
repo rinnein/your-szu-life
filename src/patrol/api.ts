@@ -57,6 +57,13 @@ export interface JxxkLessonPage {
   content: JxxkLesson[];
 }
 
+/** 巡课页面的缓存快照：学期 + 课程 + 课次。 */
+export interface JxxkState {
+  snapshot: JxxkSnapshot;
+  courses: Record<string, JxxkCoursePage>;
+  lessons: Record<string, JxxkLessonPage>;
+}
+
 export interface JxxkVideoStream {
   id: number;
   name: string;

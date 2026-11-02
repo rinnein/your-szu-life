@@ -88,13 +88,13 @@ pub(crate) struct Captcha {
     pub token: String,
     pub image: String,
 }
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Group {
     pub id: String,
     pub name: String,
 }
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Contest {
     pub id: String,

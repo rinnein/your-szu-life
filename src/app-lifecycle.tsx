@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { isChildDocument } from "./logical-navigation";
 
 /**
  * 应用生命周期信号桥。
@@ -8,8 +7,9 @@ import { isChildDocument } from "./logical-navigation";
  * 这些状态原先散落在通知桥与电费监控 Provider 里，导致它们的挂载层级被
  * 业务范围绑架。集中到根节点后：
  * - `set_application_focus`：后端据此决定发应用内 Snackbar 还是系统通知；
- * - `set_application_visibility`：电费后台轮询据此区分前台/后台尝试；
- * - `refresh_oj`：回到前台时刷新一次 OJ 监测数据。
+ * - `set_application_visibility`：电费后台轮询据此区分前台/后台尝试。
+ *
+ * OJ 的前台刷新由后端在焦点事件里完成并推送 Channel，前端不再重复 invoke。
  */
 export function AppLifecycleBridge() {
   useEffect(() => {
@@ -32,17 +32,6 @@ export function AppLifecycleBridge() {
       window.removeEventListener("blur", report);
       document.removeEventListener("visibilitychange", report);
     };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || isChildDocument()) return;
-    if (!("__TAURI_INTERNALS__" in window)) return;
-
-    const refresh = () => {
-      if (document.visibilityState === "visible") void invoke("refresh_oj").catch(() => undefined);
-    };
-    document.addEventListener("visibilitychange", refresh);
-    return () => document.removeEventListener("visibilitychange", refresh);
   }, []);
 
   return null;

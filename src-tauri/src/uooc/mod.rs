@@ -82,6 +82,12 @@ pub(super) struct Service {
     bank_channel: Mutex<Option<tauri::ipc::Channel<model::BankRebuildProgress>>>,
     ai_channel: Mutex<Option<tauri::ipc::Channel<quiz::model::AiSessionEntry>>>,
     pub(super) state_subscribers: crate::ipc_channel::SubscriberPool<UoocDeltaEvent>,
+    /// 上次广播的状态签名（不含 revision），避免无变化时反复推整份快照。
+    last_broadcast: Mutex<Option<String>>,
+    assessments: Mutex<Assessments>,
+    assessments_lock: tokio::sync::Mutex<()>,
+    pub(super) assessment_subscribers: crate::ipc_channel::SubscriberPool<UoocAssessmentsEvent>,
+    exam_heartbeats: Mutex<HashMap<String, CancellationToken>>,
 }
 
 #[derive(Clone, Serialize)]
@@ -89,6 +95,22 @@ pub(super) struct Service {
 pub(crate) enum UoocDeltaEvent {
     Initial(Box<model::Snapshot>),
     Snapshot(Box<model::Snapshot>),
+}
+
+/// 考试与作业列表来自远端课程接口。前端不再轮询这些接口，
+/// 由后端缓存后经 Channel 推送变更。
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct Assessments {
+    pub exams: Vec<ExamTask>,
+    pub homeworks: Vec<HomeworkTask>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(tag = "type", content = "data", rename_all = "camelCase")]
+pub(crate) enum UoocAssessmentsEvent {
+    Initial(Box<Assessments>),
+    Snapshot(Box<Assessments>),
 }
 impl Service {
     fn new(
@@ -156,6 +178,11 @@ impl Service {
             bank_channel: Mutex::new(None),
             ai_channel: Mutex::new(None),
             state_subscribers: crate::ipc_channel::SubscriberPool::new(),
+            last_broadcast: Mutex::new(None),
+            assessments: Mutex::new(Assessments::default()),
+            assessments_lock: tokio::sync::Mutex::new(()),
+            assessment_subscribers: crate::ipc_channel::SubscriberPool::new(),
+            exam_heartbeats: Mutex::new(HashMap::new()),
             permits: RwLock::new(Arc::new(Semaphore::new(saved.settings.concurrency))),
             client: RwLock::new(Arc::new(Client::new(jar)?)),
             refresh_lock: tokio::sync::Mutex::new(()),
@@ -191,6 +218,31 @@ impl Service {
     pub(super) fn snapshot(&self) -> Snapshot {
         Self::visible_snapshot(&self.runtime.lock().unwrap())
     }
+    pub(super) fn assessments(&self) -> Assessments {
+        self.assessments.lock().unwrap().clone()
+    }
+    fn publish_assessments(&self, next: Assessments) {
+        {
+            let mut current = self.assessments.lock().unwrap();
+            if *current == next {
+                return;
+            }
+            *current = next.clone();
+        }
+        self.assessment_subscribers
+            .broadcast(&UoocAssessmentsEvent::Snapshot(Box::new(next)));
+    }
+    pub(super) async fn refresh_assessments(&self) -> Result<(), String> {
+        // 同一时刻只允许一个刷新在跑，避免首页与考试/作业面板同时触发重复请求。
+        let _guard = self.assessments_lock.lock().await;
+        if self.snapshot().session != SessionStatus::Ready {
+            return Ok(());
+        }
+        let exams = self.list_exams(None).await?;
+        let homeworks = self.list_homeworks(None).await?;
+        self.publish_assessments(Assessments { exams, homeworks });
+        Ok(())
+    }
     fn visible_snapshot(runtime: &Runtime) -> Snapshot {
         let mut snapshot = runtime.snapshot.clone();
         // 启动时 user 还没恢复，不能因此把已经持久化的测验状态全部过滤掉；
@@ -206,7 +258,6 @@ impl Service {
         snapshot
     }
     fn publish(&self, runtime: &mut Runtime) {
-        runtime.snapshot.revision = runtime.snapshot.revision.saturating_add(1);
         if runtime.snapshot.logs.len() > 200 {
             runtime
                 .snapshot
@@ -262,6 +313,20 @@ impl Service {
                     }
                 });
             }
+        }
+        // 内容没变时不递增 revision、不推整份快照；后台进度轮询是主要受益者。
+        let mut probe = Self::visible_snapshot(runtime);
+        probe.revision = 0;
+        let signature = serde_json::to_string(&probe).unwrap_or_default();
+        {
+            let mut last = self.last_broadcast.lock().unwrap();
+            if last.as_deref() == Some(signature.as_str()) {
+                return;
+            }
+            *last = Some(signature);
+        }
+        runtime.snapshot.revision = runtime.snapshot.revision.saturating_add(1);
+        if let Some(app) = &self.app {
             let snapshot = Self::visible_snapshot(runtime);
             self.state_subscribers.broadcast(&UoocDeltaEvent::Snapshot(Box::new(snapshot.clone())));
             let _ = app.emit("uooc-state-changed", snapshot);
@@ -409,6 +474,7 @@ impl Service {
                         runtime.snapshot.progress.clear();
                         runtime.snapshot.checkins.clear();
                         runtime.discussion = DiscussionStoreState::default();
+                        self.publish_assessments(Assessments::default());
                     }
                     runtime.snapshot.update_courses(user, courses);
                     runtime.snapshot.session = SessionStatus::Ready;
@@ -1312,6 +1378,11 @@ impl Service {
 
         // 提交后触发单个题单解析与题库自动构建
         let _ = quiz::build_single_task_group(self, cid, clean_tid, Some(true), quiz::BankSyncMode::Active).await;
+
+        // 交卷会改变考试状态；有订阅者时立即刷新并推送考试/作业列表。
+        if !self.assessment_subscribers.is_empty() {
+            let _ = self.refresh_assessments().await;
+        }
 
         let msg = text(&val["msg"]);
         Ok(if msg.is_empty() { "试卷已成功提交".into() } else { msg })

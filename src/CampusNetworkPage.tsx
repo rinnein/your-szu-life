@@ -255,7 +255,6 @@ export default function CampusNetworkPage() {
     mounted.current = true;
     let active = true;
     const disposers: (() => void)[] = [];
-    const delayedRefreshes: number[] = [];
     const subscribe = async <T,>(event: string, callback: (payload: T) => void) => {
       try {
         const dispose = await listen<T>(event, ({ payload }) => {
@@ -307,19 +306,11 @@ export default function CampusNetworkPage() {
       // Queue the portal probe independently from the initial metadata load. The command only
       // enqueues background work, so a slow portal must never delay the rest of the page.
       void refreshConnection(false);
-      [700, 1800].forEach((delay) => {
-        delayedRefreshes.push(
-          window.setTimeout(() => {
-            if (active) void refreshConnection(false);
-          }, delay),
-        );
-      });
     })();
 
     return () => {
       active = false;
       mounted.current = false;
-      delayedRefreshes.forEach(window.clearTimeout);
       for (const dispose of disposers) dispose();
     };
   }, []);

@@ -19,6 +19,25 @@ pub(crate) fn subscribe_uooc_state(
 }
 
 #[tauri::command]
+pub(crate) async fn subscribe_uooc_assessments(
+    app: tauri::AppHandle,
+    channel: tauri::ipc::Channel<super::UoocAssessmentsEvent>,
+) -> Result<(), String> {
+    let service = service(&app)?;
+    let _ = channel.send(super::UoocAssessmentsEvent::Initial(Box::new(
+        service.assessments(),
+    )));
+    service.assessment_subscribers.subscribe(channel);
+    // 挂载时补一次远端数据；后续更新由后端刷新后经 Channel 推送。
+    service.refresh_assessments().await
+}
+
+#[tauri::command]
+pub(crate) async fn refresh_uooc_assessments(app: tauri::AppHandle) -> Result<(), String> {
+    service(&app)?.refresh_assessments().await
+}
+
+#[tauri::command]
 pub(crate) fn get_uooc_ai_config(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
@@ -203,7 +222,7 @@ pub(crate) async fn refresh_uooc_progress(
         .filter(|c| course_ids.is_empty() || course_ids.contains(&c.id))
         .map(|c| c.id)
         .collect();
-    service.refresh_progress(ids).await;
+    service.refresh_progress(ids, false).await;
     Ok(service.snapshot())
 }
 #[tauri::command]
@@ -340,6 +359,57 @@ pub(crate) async fn heartbeat_uooc_exam(
     service.heartbeat_exam(&cid, &task_id).await
 }
 
+/// 考试心跳由后端持有，前端打开试卷时 start、关闭/提交时 stop。
+#[tauri::command]
+pub(crate) fn start_uooc_exam_heartbeat(
+    app: tauri::AppHandle,
+    cid: String,
+    task_id: String,
+) -> Result<(), String> {
+    let service = service(&app)?;
+    let key = format!("{cid}:{task_id}");
+    let token = tokio_util::sync::CancellationToken::new();
+    {
+        let mut map = service.exam_heartbeats.lock().unwrap();
+        if let Some(old) = map.insert(key.clone(), token.clone()) {
+            old.cancel();
+        }
+    }
+    let task = token.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            if task.is_cancelled() {
+                break;
+            }
+            let _ = service.heartbeat_exam(&cid, &task_id).await;
+            tokio::select! {
+                _ = task.cancelled() => break,
+                _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {}
+            }
+        }
+        service.exam_heartbeats.lock().unwrap().remove(&key);
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) fn stop_uooc_exam_heartbeat(
+    app: tauri::AppHandle,
+    cid: String,
+    task_id: String,
+) -> Result<(), String> {
+    let service = service(&app)?;
+    if let Some(token) = service
+        .exam_heartbeats
+        .lock()
+        .unwrap()
+        .remove(&format!("{cid}:{task_id}"))
+    {
+        token.cancel();
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub(crate) async fn sync_uooc_qa_bank(
     app: tauri::AppHandle,
@@ -417,6 +487,35 @@ pub(crate) async fn poll_uooc_qa_device_auth(
         }
     }
     Ok(res)
+}
+
+/// 设备码授权由后端按服务端 interval 轮询，前端只收 Channel。
+#[tauri::command]
+pub(crate) async fn watch_uooc_qa_device_auth(
+    app: tauri::AppHandle,
+    device_code: String,
+    interval: Option<u64>,
+    server_url: Option<String>,
+    on_event: tauri::ipc::Channel<super::quiz::qa::QaDeviceTokenPollResult>,
+) -> Result<(), String> {
+    let service = service(&app)?;
+    let url = server_url
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
+    let delay = std::time::Duration::from_secs(interval.unwrap_or(5).max(1));
+    loop {
+        tokio::time::sleep(delay).await;
+        let res = super::quiz::qa::poll_device_token(&url, &device_code).await?;
+        let done = res.status != "pending";
+        if res.status == "success" {
+            if let Some(key) = &res.api_key {
+                let _ = service.save_qa_api_key(key.clone());
+            }
+        }
+        if on_event.send(res).is_err() || done {
+            return Ok(());
+        }
+    }
 }
 
 #[tauri::command]

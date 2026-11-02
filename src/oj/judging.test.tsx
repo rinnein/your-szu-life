@@ -231,75 +231,99 @@ it("isolates current-problem history and ignores late responses after switching"
     problemId: "2",
   });
 });
-it("resumes a pending result, polls sequentially until AC, then stops without a POST", async () => {
-  vi.useFakeTimers();
-  let resultCalls = 0;
-  vi.mocked(invoke).mockImplementation(async (command) => {
-    if (command === "get_oj_result")
-      return ++resultCalls === 1 ? { ...pending, status: 7 } : finished;
+it("resumes a pending result and stops when the backend channel reports a final verdict", async () => {
+  let channel: { onmessage: ((message: unknown) => void) | null } | undefined;
+  let watchCalls = 0;
+  let resolveWatch!: () => void;
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "watch_oj_result") {
+      watchCalls++;
+      channel = (args as { onResult?: typeof channel })?.onResult;
+      return new Promise<void>((resolve) => {
+        resolveWatch = resolve;
+      });
+    }
     return { records: [pending], uncertain: [] };
   });
   const hook = renderHook(() => useSubmissions("site", "12", paper, p));
   await act(async () => {});
-  expect(resultCalls).toBe(1);
+  await waitFor(() => expect(watchCalls).toBe(1));
   expect(hook.result.current.polling).toBe(true);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(2000);
-  });
+
+  await act(async () => channel?.onmessage?.({ ...pending, status: 7 }));
+  expect(hook.result.current.polling).toBe(true);
+
+  await act(async () => channel?.onmessage?.(finished));
   expect(hook.result.current.result?.status).toBe(0);
   expect(hook.result.current.verdict(p)).toBe(0);
   expect(hook.result.current.polling).toBe(false);
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(10000);
-  });
-  expect(resultCalls).toBe(2);
-  expect(vi.mocked(invoke).mock.calls.every(([command]) => command.startsWith("get_"))).toBe(true);
+  await act(async () => resolveWatch());
+  expect(invoke).not.toHaveBeenCalledWith("submit_oj", expect.anything());
 });
-it("cancels polling on a problem change and on unmount", async () => {
-  vi.useFakeTimers();
-  vi.mocked(invoke).mockImplementation(async (command) =>
-    command === "get_oj_result" ? pending : { records: [], uncertain: [] },
-  );
+it("cancels the backend watch when the problem changes", async () => {
+  let channel: { onmessage: ((message: unknown) => void) | null } | undefined;
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "watch_oj_result") {
+      channel = (args as { onResult?: typeof channel })?.onResult;
+      return new Promise<void>(() => {});
+    }
+    return { records: [], uncertain: [] };
+  });
   const hook = renderHook(({ problem }) => useSubmissions("site", "12", paper, problem), {
     initialProps: { problem: p },
   });
   await act(async () => {});
   await act(async () => hook.result.current.show(pending));
+  await waitFor(() => expect(channel).toBeDefined());
   hook.rerender({ problem: second });
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(10000);
-  });
+  await act(async () => channel?.onmessage?.(finished));
   expect(hook.result.current.result).toBeUndefined();
-  const calls = vi.mocked(invoke).mock.calls.length;
   hook.unmount();
-  await vi.advanceTimersByTimeAsync(10000);
-  expect(invoke).toHaveBeenCalledTimes(calls);
 });
-it("pauses after three read failures and allows an explicit retry", async () => {
-  vi.useFakeTimers();
-  vi.mocked(invoke).mockImplementation(async (command) => {
-    if (command === "get_oj_result") throw new Error("network");
+it("surfaces backend read failures and allows an explicit retry", async () => {
+  let watchCalls = 0;
+  let rejectFirst!: (error: unknown) => void;
+  let secondChannel: { onmessage: ((message: unknown) => void) | null } | undefined;
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "watch_oj_result") {
+      watchCalls++;
+      if (watchCalls === 1) {
+        return new Promise<void>((_, reject) => {
+          rejectFirst = reject;
+        });
+      }
+      secondChannel = (args as { onResult?: typeof secondChannel })?.onResult;
+      return undefined;
+    }
     return { records: [], uncertain: [] };
   });
   const hook = renderHook(() => useSubmissions("site", "12", paper, p));
   await act(async () => {});
   await act(async () => hook.result.current.show(pending));
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(12000);
-  });
+  await waitFor(() => expect(watchCalls).toBe(1));
+  await act(async () => rejectFirst("获取判题结果失败：network；不会重新提交代码。"));
   expect(hook.result.current.polling).toBe(false);
-  expect(hook.result.current.pollError).toContain("请手动刷新");
-  vi.mocked(invoke).mockResolvedValue(finished);
+  expect(hook.result.current.pollError).toContain("不会重新提交代码");
+
   await act(async () => hook.result.current.show(pending));
+  await waitFor(() => expect(secondChannel).toBeDefined());
+  await act(async () => secondChannel?.onmessage?.(finished));
   expect(hook.result.current.result?.status).toBe(0);
 });
 it("receives CPH results only for the current account generation", async () => {
+  let channel: { onmessage: ((message: unknown) => void) | null } | undefined;
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "watch_oj_result") {
+      channel = (args as { onResult?: typeof channel })?.onResult;
+      return new Promise<void>(() => {});
+    }
+    return { records: [], uncertain: [] };
+  });
   const hook = renderHook(() => useSubmissions("site", "12", paper, p));
   await act(async () => {});
   const callback = vi
     .mocked(listen)
     .mock.calls.find(([event]) => event === "oj-companion-result")![1];
-  vi.mocked(invoke).mockResolvedValue(finished);
   const payload = {
     siteId: "site",
     contestId: "12",
@@ -313,6 +337,8 @@ it("receives CPH results only for the current account generation", async () => {
   );
   expect(hook.result.current.result).toBeUndefined();
   await act(async () => callback({ event: "oj-companion-result", id: 1, payload }));
+  await waitFor(() => expect(channel).toBeDefined());
+  await act(async () => channel?.onmessage?.(finished));
   expect(hook.result.current.result?.status).toBe(0);
 });
 

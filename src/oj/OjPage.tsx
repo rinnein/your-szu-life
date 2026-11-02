@@ -3,13 +3,20 @@ import { createPortal } from "react-dom";
 import { useSearch } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { useChannelSubscription } from "../tauri-channel";
-import { listen } from "@tauri-apps/api/event";
 import { Card, Checkbox, Dialog, LoadingIndicator, TextField, Button } from "material/react";
 import { Chip, bindField, toast } from "../ui";
 import { ModuleHeader, PageShell } from "../components";
 import { useLogicalNavigation } from "../logical-navigation";
 import { OjPaper } from "./OjPaper";
-import { type Site, type Snapshot, type Group, type Contest, route, sessionName } from "./types";
+import {
+  type Site,
+  type Snapshot,
+  type Group,
+  type Contest,
+  type OjLists,
+  route,
+  sessionName,
+} from "./types";
 import "./oj.css";
 import { ContestTable } from "./ContestTable";
 import { CompanionSettings } from "./CompanionSettings";
@@ -42,6 +49,7 @@ export default function OjPage() {
   const [query, setQuery] = useState("");
   const [groups, setGroups] = useState<Group[]>([]);
   const [contests, setContests] = useState<Contest[]>([]);
+  const [lists, setLists] = useState<OjLists>({ groups: {}, contests: {} });
   const [ocrRequired, setOcrRequired] = useState(false);
   const [ocrDismissed, setOcrDismissed] = useState(false);
   const ocrStatus = useOcrModelStatus();
@@ -81,29 +89,44 @@ export default function OjPage() {
   useChannelSubscription<{ type: "initial" | "snapshot"; data: Snapshot }>(
     "subscribe_oj_state",
     (event) => {
-      setSnapshot(event.data);
+      if (event?.data) setSnapshot(event.data);
+    },
+    {},
+    { onError: () => setError("请在泥深原生应用中使用 OJ") },
+  );
+  useChannelSubscription<{ type: "initial" | "snapshot"; data: OjLists }>(
+    "subscribe_oj_lists",
+    (event) => {
+      if (event?.data) setLists(event.data);
     },
   );
+  // 挂载时拉一次全量快照作为冷启动兜底；后续更新只走 Channel。
   useEffect(() => {
     let active = true;
-    let stop: (() => void) | undefined;
-    void listen<Snapshot>("oj-state-changed", (event) => {
-      if (active) setSnapshot(event.payload);
-    })
-      .then(async (off) => {
-        if (!active) {
-          off();
-          return;
-        }
-        stop = off;
-        await refresh();
-      })
-      .catch(() => setError("请在泥深原生应用中使用 OJ"));
+    void refresh().catch(() => {
+      if (active) setError("请在泥深原生应用中使用 OJ");
+    });
     return () => {
       active = false;
-      stop?.();
     };
   }, [refresh]);
+  // 后端缓存刷新后直接更新当前列表，不再为每个 oj-cache-changed 重新 invoke。
+  useEffect(() => {
+    if (!site?.enabled || search.contest) return;
+    if (search.group) {
+      const rows = lists.contests[`${site.id}:${search.group}`];
+      if (rows) {
+        setContests(rows);
+        writeContests(site.id, search.group, rows);
+      }
+    } else {
+      const rows = lists.groups[site.id];
+      if (rows) {
+        setGroups(rows);
+        writeGroups(site.id, rows);
+      }
+    }
+  }, [lists, site?.id, site?.enabled, search.group, search.contest]);
   useEffect(() => {
     let active = true;
     if (!site?.enabled || search.contest) {
@@ -154,49 +177,6 @@ export default function OjPage() {
       active = false;
     };
   }, [site?.id, site?.username, site?.enabled, search.group, search.contest, refresh]);
-  // 后台重验证完成后静默刷新当前列表，不显示 busy。
-  useEffect(() => {
-    if (!site?.enabled || search.contest) return;
-    let active = true;
-    let stop: (() => void) | undefined;
-    const siteId = site.id;
-    const groupId = search.group;
-    void listen<string>("oj-cache-changed", ({ payload }) => {
-      if (!active) return;
-      const matches = groupId
-        ? payload === "all" || payload === `contests:${siteId}:${groupId}`
-        : payload === "all" || payload === `groups:${siteId}`;
-      if (!matches) return;
-      const request = groupId
-        ? invoke<Contest[]>("get_oj_contests", { siteId, groupId })
-        : invoke<Group[]>("get_oj_groups", { siteId });
-      void request
-        .then((rows) => {
-          if (!active) return;
-          if (groupId) {
-            setContests(rows as Contest[]);
-            writeContests(siteId, groupId, rows as Contest[]);
-          } else {
-            setGroups(rows as Group[]);
-            writeGroups(siteId, rows as Group[]);
-          }
-        })
-        .catch(() => {
-          /* 缓存重验证失败时保留当前列表 */
-        });
-    })
-      .then((off) => {
-        if (active) stop = off;
-        else off();
-      })
-      .catch(() => {
-        /* 事件订阅失败时仍可通过手动刷新恢复 */
-      });
-    return () => {
-      active = false;
-      stop?.();
-    };
-  }, [site?.enabled, site?.id, search.group, search.contest]);
   useEffect(() => {
     if (ocrStatus?.status === "ready") setOcrRequired(false);
   }, [ocrStatus?.status]);

@@ -17,6 +17,19 @@ pub(crate) async fn get_lms_snapshot(
     service.ensure(false).await;
     Ok(service.snapshot())
 }
+/// 订阅畅课状态（Initial + 后续变更），供首页月历等长期消费者使用。
+#[tauri::command]
+pub(crate) fn subscribe_lms_state(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    channel: tauri::ipc::Channel<LmsDeltaEvent>,
+) -> Result<(), String> {
+    local(&window)?;
+    let service = service(&app)?;
+    let _ = channel.send(LmsDeltaEvent::Initial(Box::new(service.snapshot())));
+    service.state_subscribers.subscribe(channel);
+    Ok(())
+}
 /// 强制刷新畅课数据（重新建立会话并拉取）。
 #[tauri::command]
 pub(crate) async fn refresh_lms(

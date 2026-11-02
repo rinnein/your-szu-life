@@ -53,6 +53,26 @@ export interface Contest {
   now: number;
   isExam: boolean;
 }
+/** 首页待办日历使用的扁平截止项。 */
+export interface OjDeadline {
+  siteId: string;
+  siteName: string;
+  groupId: string;
+  id: string;
+  title: string;
+  begin: number;
+  end: number;
+  now: number;
+  isExam: boolean;
+  accepted: number;
+  total: number;
+  hasProgress: boolean;
+}
+/** OJ 班级/测验缓存，键为站点 ID 或 `site:group`。 */
+export interface OjLists {
+  groups: Record<string, Group[]>;
+  contests: Record<string, Contest[]>;
+}
 export interface Problem {
   id: string;
   displayLabel: string;

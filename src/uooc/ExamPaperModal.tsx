@@ -63,13 +63,19 @@ export function ExamPaperModal({
     void loadPaper();
   }, [isOpen, exam?.cid, exam?.taskId]);
 
-  // 防作弊 30 秒心跳保持
+  // 防作弊心跳由后端持有 30 秒定时器，组件只负责 start/stop。
   useEffect(() => {
     if (!isOpen || !exam || !paper || paper.isSubmitted) return;
-    const timer = setInterval(() => {
-      void invoke("heartbeat_uooc_exam", { cid: exam.cid, taskId: exam.taskId }).catch(() => {});
-    }, 30000);
-    return () => clearInterval(timer);
+    void invoke("start_uooc_exam_heartbeat", {
+      cid: exam.cid,
+      taskId: exam.taskId,
+    }).catch(() => {});
+    return () => {
+      void invoke("stop_uooc_exam_heartbeat", {
+        cid: exam.cid,
+        taskId: exam.taskId,
+      }).catch(() => {});
+    };
   }, [isOpen, exam?.cid, exam?.taskId, paper?.isSubmitted]);
 
   // 将 ExamPaper 转为 QuizState 适配 QuizPanel

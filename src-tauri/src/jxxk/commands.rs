@@ -31,6 +31,20 @@ pub(crate) async fn refresh_jxxk(
     Ok(service.snapshot())
 }
 
+/// 订阅巡课缓存（学期/课程/课次），供巡课页与首页按需更新。
+#[tauri::command]
+pub(crate) fn subscribe_jxxk_state(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    channel: tauri::ipc::Channel<JxxkStateEvent>,
+) -> Result<(), String> {
+    local(&window)?;
+    let service = service(&app)?;
+    let _ = channel.send(JxxkStateEvent::Initial(Box::new(service.state())));
+    service.state_subscribers.subscribe(channel);
+    Ok(())
+}
+
 /// 拉取课程列表。`year_semester_id` 传空表示全部学期。
 #[tauri::command]
 pub(crate) async fn jxxk_list_courses(

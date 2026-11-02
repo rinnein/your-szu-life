@@ -34,7 +34,7 @@ import {
   LuUser,
 } from "react-icons/lu";
 import { openPublicUrl } from "../app-content/external";
-import { getQaAuthClient, normalizeQaBaseUrl } from "./qaAuthClient";
+import { normalizeQaBaseUrl } from "./qaAuthClient";
 import type { LocalBankQuestion, QuizState, UoocCourse } from "./types";
 import { BankRebuildModal } from "./BankRebuildModal";
 import { DimmedHtmlText, useHtmlTagVisibility } from "./DimmedHtmlText";
@@ -674,31 +674,26 @@ export function UoocQaSettings({
   const handleStartDeviceAuth = async () => {
     setDeviceAuthPolling(true);
     try {
-      const client = getQaAuthClient(qaServerUrl);
-      const res = await client.device.code({
-        client_id: "your-szu-life",
-      });
+      const res = await invoke<{
+        device_code: string;
+        user_code: string;
+        verification_uri: string;
+        verification_uri_complete: string;
+        expires_in: number;
+        interval: number;
+      }>("start_uooc_qa_device_auth", { serverUrl: qaServerUrl });
 
-      if (res.error || !res.data) {
-        const errorDesc =
-          res.error?.error_description ||
-          res.error?.error ||
-          "申请设备码失败，请确认题库服务正常运行";
-        throw new Error(errorDesc);
-      }
-
-      const rawComplete =
-        res.data.verification_uri_complete || res.data.verification_uri || "/device";
+      const rawComplete = res.verification_uri_complete || res.verification_uri || "/device";
       const normalizedBase = normalizeQaBaseUrl(qaServerUrl);
       const fullCompleteUrl = rawComplete.startsWith("http")
         ? rawComplete
         : `${normalizedBase}${rawComplete.startsWith("/") ? "" : "/"}${rawComplete}`;
 
       setDeviceAuthInfo({
-        userCode: res.data.user_code,
+        userCode: res.user_code,
         verificationUriComplete: fullCompleteUrl,
-        deviceCode: res.data.device_code,
-        interval: res.data.interval || 5,
+        deviceCode: res.device_code,
+        interval: res.interval || 5,
       });
       void openPublicUrl(fullCompleteUrl);
     } catch (e: unknown) {
@@ -720,71 +715,37 @@ export function UoocQaSettings({
   useEffect(() => {
     if (!deviceAuthInfo) return;
     let active = true;
-
-    const poll = async () => {
-      try {
-        const client = getQaAuthClient(qaServerUrl);
-        const tokenRes = await client.device.token({
-          grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-          device_code: deviceAuthInfo.deviceCode,
-          client_id: "your-szu-life",
-        });
-
-        if (!active) return;
-
-        if (tokenRes.error) {
-          const errCode = tokenRes.error.error;
-          if (errCode === "authorization_pending" || errCode === "slow_down") {
-            return;
-          }
-          setDeviceAuthInfo(null);
-          setDeviceAuthPolling(false);
-          const desc = tokenRes.error.error_description || `授权失败: ${errCode}`;
-          toast.danger("设备授权未完成", { description: desc });
-          return;
-        }
-
-        const accessToken = tokenRes.data?.access_token;
-        if (!accessToken) {
-          return;
-        }
-
-        const authedClient = getQaAuthClient(qaServerUrl, accessToken);
-        const keyRes = await authedClient.apiKey.create({
-          name: "your-szu-life",
-          prefix: "uooc_",
-          expiresIn: 60 * 60 * 24 * 365,
-        });
-
-        const apiKey = keyRes.data?.key || (keyRes.data as { apiKey?: string } | undefined)?.apiKey;
-        if (!apiKey) {
-          throw new Error(keyRes.error?.message || "设备已批准，但创建专属 API Key 失败");
-        }
-
-        await invoke("save_uooc_qa_api_key", { apiKey });
-        setDeviceAuthInfo(null);
-        setDeviceAuthPolling(false);
-        setCustomApiKey(apiKey);
+    const channel = createTaskChannel<{
+      status: string;
+      apiKey?: string;
+      error?: string;
+    }>((res) => {
+      if (!active || res.status === "pending") return;
+      setDeviceAuthInfo(null);
+      setDeviceAuthPolling(false);
+      if (res.status === "success") {
+        if (res.apiKey) setCustomApiKey(res.apiKey);
         toast.success("设备码授权登录成功！已自动获取并绑定专属 API Key");
-        await refreshStatus();
-      } catch (e: unknown) {
-        if (!active) return;
-        const err = e as { message?: string } | string;
-        const msg = typeof err === "string" ? err : err?.message || "轮询设备授权失败";
-        setDeviceAuthInfo(null);
-        setDeviceAuthPolling(false);
-        toast.danger("轮询设备授权失败", { description: msg });
+        void refreshStatus();
+      } else {
+        toast.danger("设备授权未完成", { description: res.error || "授权失败" });
       }
-    };
-
-    const intervalMs = (deviceAuthInfo.interval || 5) * 1000;
-    const timer = setInterval(() => {
-      void poll();
-    }, intervalMs);
-
+    });
+    void invoke("watch_uooc_qa_device_auth", {
+      deviceCode: deviceAuthInfo.deviceCode,
+      interval: deviceAuthInfo.interval,
+      serverUrl: qaServerUrl,
+      onEvent: channel,
+    }).catch((e: unknown) => {
+      if (!active) return;
+      const err = e as { message?: string } | string;
+      const msg = typeof err === "string" ? err : err?.message || "轮询设备授权失败";
+      setDeviceAuthInfo(null);
+      setDeviceAuthPolling(false);
+      toast.danger("轮询设备授权失败", { description: msg });
+    });
     return () => {
       active = false;
-      clearInterval(timer);
     };
   }, [deviceAuthInfo, qaServerUrl]);
 

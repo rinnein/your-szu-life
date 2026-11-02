@@ -164,6 +164,7 @@ impl Service {
                 }),
             );
         }
+        self.publish_deadlines();
     }
 
     fn invalidate_progress(&self, id: &str, e: &Entry, cid: &str) {
@@ -172,6 +173,7 @@ impl Service {
         if let Some(app) = &self.app {
             let _ = app.emit("oj-progress-invalidated", json!({"siteId":id,"account":e.username,"sessionGeneration":e.epoch,"contestId":cid}));
         }
+        self.publish_deadlines();
     }
 
     pub(super) async fn ranking(&self, id: &str, cid: &str, offset: u32) -> Result<Value, String> {

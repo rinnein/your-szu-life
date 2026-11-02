@@ -11,7 +11,6 @@ import {
   type EmbeddingVectorStatus,
   type QaAccountStatus,
 } from "./UoocQaSettings";
-import { getQaAuthClient } from "./qaAuthClient";
 import { openPublicUrl } from "../app-content/external";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -22,13 +21,6 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
 vi.mock("../app-content/external", () => ({ openPublicUrl: vi.fn() }));
-vi.mock("./qaAuthClient", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./qaAuthClient")>();
-  return {
-    ...actual,
-    getQaAuthClient: vi.fn(),
-  };
-});
 
 const initialStatus: EmbeddingVectorStatus = {
   status: "empty",
@@ -168,41 +160,32 @@ it("searches questions using local embedding calculation", async () => {
   expect(screen.getByText(/标准答案：/)).toBeInTheDocument();
 });
 
-it("initiates device authorization and polls until completion", async () => {
-  let pollAttempts = 0;
-  const mockCode = vi.fn().mockResolvedValue({
-    data: {
-      device_code: "dev_code_123",
-      user_code: "EFGH-5678",
-      verification_uri: `${DEFAULT_QA_SERVER_URL}/device`,
-      verification_uri_complete: `${DEFAULT_QA_SERVER_URL}/device?user_code=EFGH-5678`,
-      interval: 0.05,
-    },
-    error: null,
-  });
-  const mockToken = vi.fn().mockImplementation(async () => {
-    pollAttempts++;
-    if (pollAttempts === 1) {
-      return { data: null, error: { error: "authorization_pending" } };
-    }
-    return { data: { access_token: "mock_tok_888" }, error: null };
-  });
-  const mockApiKeyCreate = vi.fn().mockResolvedValue({
-    data: { key: "uooc_device_obtained_key" },
-    error: null,
-  });
-
-  vi.mocked(getQaAuthClient).mockReturnValue({
-    device: {
-      code: mockCode,
-      token: mockToken,
-    },
-    apiKey: {
-      create: mockApiKeyCreate,
-    },
-  } as unknown as ReturnType<typeof getQaAuthClient>);
-
+it("initiates device authorization and completes through the backend channel", async () => {
   const successSpy = vi.spyOn(toast, "success");
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "get_uooc_embedding_status") return initialStatus;
+    if (command === "get_uooc_qa_account_status") return anonAccount;
+    if (command === "start_uooc_qa_device_auth")
+      return {
+        device_code: "dev_code_123",
+        user_code: "EFGH-5678",
+        verification_uri: `${DEFAULT_QA_SERVER_URL}/device`,
+        verification_uri_complete: `${DEFAULT_QA_SERVER_URL}/device?user_code=EFGH-5678`,
+        interval: 5,
+        expires_in: 600,
+      };
+    if (command === "watch_uooc_qa_device_auth") {
+      const channel = (args as { onEvent?: { onmessage: ((message: unknown) => void) | null } })
+        ?.onEvent;
+      setTimeout(
+        () => channel?.onmessage?.({ status: "success", apiKey: "uooc_device_obtained_key" }),
+        0,
+      );
+      return undefined;
+    }
+    return undefined;
+  });
+
   render(<UoocQaSettings />);
   const deviceAuthBtn = await screen.findByRole("button", { name: /通过设备码登录/ });
   fireEvent.click(deviceAuthBtn);
@@ -216,9 +199,14 @@ it("initiates device authorization and polls until completion", async () => {
     },
     { timeout: 3000 },
   );
-  expect(invoke).toHaveBeenCalledWith("save_uooc_qa_api_key", {
-    apiKey: "uooc_device_obtained_key",
-  });
+  expect(invoke).toHaveBeenCalledWith(
+    "watch_uooc_qa_device_auth",
+    expect.objectContaining({
+      deviceCode: "dev_code_123",
+      interval: 5,
+      onEvent: expect.any(Object),
+    }),
+  );
 });
 
 it("performs manual full questions upload", async () => {

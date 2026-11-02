@@ -128,23 +128,16 @@ describe("frontend smoke tests", () => {
     expect(await screen.findByRole("heading", { name: "关于" })).toBeInTheDocument();
   });
 
-  it("enters the home page immediately and refreshes the session in the background", async () => {
+  it("enters the home page immediately without frontend session polling", async () => {
     mockSignedIn();
 
     renderRouterApp();
     expect(await screen.findByRole("heading", { name: "首页" })).toBeInTheDocument();
-    await waitFor(() => expect(invoke).toHaveBeenCalledWith("refresh_auth_session"));
+    expect(invoke).not.toHaveBeenCalledWith("refresh_auth_session");
 
-    const initialCalls = vi
-      .mocked(invoke)
-      .mock.calls.filter(([command]) => command === "refresh_auth_session").length;
     fireEvent(window, new Event("focus"));
-    await waitFor(() =>
-      expect(
-        vi.mocked(invoke).mock.calls.filter(([command]) => command === "refresh_auth_session")
-          .length,
-      ).toBeGreaterThan(initialCalls),
-    );
+    await act(async () => {});
+    expect(invoke).not.toHaveBeenCalledWith("refresh_auth_session");
   });
 
   it("does not overwrite automatic recovery with a late initial state response", async () => {

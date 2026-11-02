@@ -10,9 +10,9 @@ mod tests;
 use crate::storage::SharedCredentialStore;
 use client::Client;
 use model::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     future::Future,
     pin::Pin,
     sync::{Arc, Mutex, OnceLock, Weak},
@@ -77,6 +77,15 @@ pub(crate) struct Service {
     revalidating: Mutex<HashSet<String>>,
     /// 自引用，用于派生后台任务。
     self_weak: Mutex<Weak<Service>>,
+    pub(crate) state_subscribers: crate::ipc_channel::SubscriberPool<JxxkStateEvent>,
+    last_state: Mutex<Option<String>>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(tag = "type", content = "data", rename_all = "camelCase")]
+pub(crate) enum JxxkStateEvent {
+    Initial(Box<JxxkState>),
+    Snapshot(Box<JxxkState>),
 }
 
 /// 条目键 → 重验证间隔。
@@ -177,6 +186,8 @@ impl Service {
             db,
             revalidating: Mutex::new(HashSet::new()),
             self_weak: Mutex::new(Weak::new()),
+            state_subscribers: crate::ipc_channel::SubscriberPool::new(),
+            last_state: Mutex::new(None),
         });
 
         // 恢复上次会话的下载任务记录：已完成照原样；中断的标记为待续传。
@@ -217,10 +228,61 @@ impl Service {
         }
     }
 
+    pub(crate) fn state(&self) -> JxxkState {
+        let r = self.runtime.lock().unwrap();
+        let mut courses = BTreeMap::new();
+        let mut lessons = BTreeMap::new();
+        for (key, (_, value)) in &r.lists {
+            if let Some(semester) = key.strip_prefix("courses:") {
+                if let CachedList::Courses(page) = value {
+                    courses.insert(semester.to_string(), page.clone());
+                }
+            } else if let Some(course) = key.strip_prefix("lessons:") {
+                if let CachedList::Lessons(page) = value {
+                    lessons.insert(course.to_string(), page.clone());
+                }
+            }
+        }
+        JxxkState {
+            snapshot: Snapshot {
+                session: r.session,
+                message: r.message.clone(),
+                semesters: r
+                    .semesters
+                    .as_ref()
+                    .map(|(_, semesters)| semesters.clone())
+                    .unwrap_or_default(),
+                fetched_at: r.semesters.as_ref().map(|(at, _)| *at),
+            },
+            courses,
+            lessons,
+        }
+    }
+
+    pub(crate) fn publish_state(&self) {
+        if self.state_subscribers.is_empty() {
+            return;
+        }
+        let state = self.state();
+        let signature = serde_json::to_string(&state).unwrap_or_default();
+        {
+            let mut last = self.last_state.lock().unwrap();
+            if last.as_deref() == Some(signature.as_str()) {
+                return;
+            }
+            *last = Some(signature);
+        }
+        self.state_subscribers
+            .broadcast(&JxxkStateEvent::Snapshot(Box::new(state)));
+    }
+
     fn update(&self, session: SessionState, message: &str) {
-        let mut r = self.runtime.lock().unwrap();
-        r.session = session;
-        r.message = message.to_owned();
+        {
+            let mut r = self.runtime.lock().unwrap();
+            r.session = session;
+            r.message = message.to_owned();
+        }
+        self.publish_state();
     }
 
     /// 取或构建 HTTP 客户端。vault 中保存的巡课 cookie 会被恢复；
@@ -363,12 +425,15 @@ impl Service {
         let semesters = client.get_semesters().await?;
         let now = chrono::Utc::now().timestamp_millis();
         self.persist_semesters(now, &semesters).await;
-        let mut r = self.runtime.lock().unwrap();
-        r.semesters = Some((now, semesters));
-        if r.session != SessionState::Ready {
-            r.session = SessionState::Ready;
-            r.message = String::new();
+        {
+            let mut r = self.runtime.lock().unwrap();
+            r.semesters = Some((now, semesters));
+            if r.session != SessionState::Ready {
+                r.session = SessionState::Ready;
+                r.message = String::new();
+            }
         }
+        self.publish_state();
         Ok(())
     }
 
@@ -409,6 +474,7 @@ impl Service {
                 r.message = String::new();
             }
         }
+        self.publish_state();
         let db = self.db.clone();
         let key = key.to_owned();
         tauri::async_runtime::spawn(async move {

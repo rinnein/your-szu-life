@@ -109,11 +109,14 @@ const paper: Paper = {
   drafts: { "1:1": { code: "", language: "", answer: [], revision: 0, options: null } },
 };
 type Listener = (event: { payload: unknown }) => void;
+type ChannelMock = { onmessage: ((message: unknown) => void) | null };
 const listeners = new Map<string, Listener>();
+const channels = new Map<string, ChannelMock>();
 beforeEach(() => {
   ojProgressCache.clear();
   clearListCache();
   listeners.clear();
+  channels.clear();
   vi.mocked(listen).mockImplementation((async (event: string, handler: Listener) => {
     listeners.set(event, handler);
     return () => listeners.delete(event);
@@ -143,7 +146,12 @@ beforeEach(() => {
   search.contest = undefined;
   search.problem = undefined;
   auth.state.Authenticated.studentId = "20260001";
-  vi.mocked(invoke).mockImplementation(async (command) => {
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command.startsWith("subscribe_")) {
+      const channel = (args as { channel?: ChannelMock } | undefined)?.channel;
+      if (channel) channels.set(command, channel);
+      return null;
+    }
     if (command === "get_oj_snapshot")
       return {
         sites: [
@@ -212,7 +220,12 @@ it("reuses the cached class list when the page is reopened", async () => {
 it("silently reloads classes when the native cache changes", async () => {
   search.site = "test";
   let groups = [{ id: "2", name: "旧班级" }];
-  vi.mocked(invoke).mockImplementation(async (command) => {
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command.startsWith("subscribe_")) {
+      const channel = (args as { channel?: ChannelMock } | undefined)?.channel;
+      if (channel) channels.set(command, channel);
+      return null;
+    }
     if (command === "get_oj_snapshot")
       return { sites: [site], notices: [], desktop: true, companionPort: 27121 };
     if (command === "get_oj_groups") return groups;
@@ -220,11 +233,14 @@ it("silently reloads classes when the native cache changes", async () => {
   });
   render(<OjPage />);
   expect(await screen.findByText("旧班级")).toBeTruthy();
-  await waitFor(() => expect(listeners.has("oj-cache-changed")).toBe(true));
+  await waitFor(() => expect(channels.has("subscribe_oj_lists")).toBe(true));
 
   groups = [{ id: "2", name: "新班级" }];
   await act(async () => {
-    listeners.get("oj-cache-changed")?.({ payload: "groups:test" });
+    channels.get("subscribe_oj_lists")?.onmessage?.({
+      type: "snapshot",
+      data: { groups: { test: groups }, contests: {} },
+    });
   });
 
   expect(await screen.findByText("新班级")).toBeTruthy();

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// 会话状态。与畅课模块语义一致：Ready 可用、NeedsAuth 需先统一认证、
 /// Unavailable 网络/接口临时故障。
@@ -20,6 +21,16 @@ pub(crate) struct Snapshot {
     pub semesters: Vec<Semester>,
     /// 学期列表拉取时间（Unix 毫秒；未拉取过为空）。
     pub fetched_at: Option<i64>,
+}
+
+/// 巡课页面需要的缓存快照：学期列表 + 课程页 + 课次页。
+/// `courses` 的键是学期 ID，`lessons` 的键是课程 ID。
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct JxxkState {
+    pub snapshot: Snapshot,
+    pub courses: BTreeMap<String, CoursePage>,
+    pub lessons: BTreeMap<String, LessonPage>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

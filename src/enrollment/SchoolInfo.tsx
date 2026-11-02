@@ -1,7 +1,9 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Button } from "material/react";
+import { useChannelSubscription } from "../tauri-channel";
 import type { Mode } from "./model";
+
 type Batch = {
   code?: string;
   name?: string;
@@ -13,7 +15,6 @@ type Batch = {
 };
 type Info = {
   batches?: Batch[];
-  online?: number;
   updatedAt?: number;
   error?: string;
   pending?: boolean;
@@ -23,28 +24,18 @@ const inflight = new Map<string, Promise<void>>();
 const listeners = new Set<() => void>();
 const empty: Info = {};
 const emit = () => listeners.forEach((fn) => fn());
-async function fetchInfo(key: string, type: "batchInfo" | "onlineUsers", mode: Mode) {
+
+async function fetchInfo(key: string, mode: Mode) {
   if (inflight.has(key)) return inflight.get(key);
   entries.set(key, { ...entries.get(key), pending: true });
   emit();
   const request = (async () => {
     try {
-      const raw = await invoke<{
-        dataList?: Batch[];
-        data?: { onlineUsers?: number };
-        onlineUsers?: number;
-      }>("enrollment_command", { action: { type, mode } });
-      const value =
-        type === "batchInfo"
-          ? { batches: raw.dataList }
-          : { online: raw.data?.onlineUsers ?? raw.onlineUsers };
-      if (
-        type === "batchInfo"
-          ? !Array.isArray(value.batches)
-          : !Number.isFinite(Number(value.online)) || value.online == null
-      )
-        throw Error("学校信息格式暂不可用");
-      entries.set(key, { ...value, updatedAt: Date.now() });
+      const raw = await invoke<{ dataList?: Batch[] }>("enrollment_command", {
+        action: { type: "batchInfo", mode },
+      });
+      if (!Array.isArray(raw.dataList)) throw Error("学校信息格式暂不可用");
+      entries.set(key, { batches: raw.dataList, updatedAt: Date.now() });
     } catch (e) {
       entries.set(key, { ...entries.get(key), error: String(e), pending: false });
     } finally {
@@ -55,46 +46,9 @@ async function fetchInfo(key: string, type: "batchInfo" | "onlineUsers", mode: M
   inflight.set(key, request);
   return request;
 }
-const observers = new Map<string, { count: number; stop: () => void }>();
-function observe(key: string, mode: Mode) {
-  const old = observers.get(key);
-  if (old) old.count++;
-  else {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let live = true;
-    let polling = false;
-    const poll = async () => {
-      if (!live || document.hidden || polling) return;
-      polling = true;
-      await fetchInfo(key, "onlineUsers", mode);
-      polling = false;
-      if (live && !document.hidden) timer = setTimeout(poll, 60000);
-    };
-    const visibility = () => {
-      clearTimeout(timer);
-      if (!document.hidden) void poll();
-    };
-    document.addEventListener("visibilitychange", visibility);
-    void poll();
-    observers.set(key, {
-      count: 1,
-      stop: () => {
-        live = false;
-        clearTimeout(timer);
-        document.removeEventListener("visibilitychange", visibility);
-      },
-    });
-  }
-  return () => {
-    const item = observers.get(key);
-    if (item && --item.count === 0) {
-      item.stop();
-      observers.delete(key);
-    }
-  };
-}
-function useInfo(account: string, mode: Mode, kind: "batchInfo" | "onlineUsers") {
-  const key = `${account}:${mode}:${kind}`;
+
+function useInfo(account: string, mode: Mode) {
+  const key = `${account}:${mode}:batchInfo`;
   const value = useSyncExternalStore(
     (fn) => {
       listeners.add(fn);
@@ -106,9 +60,24 @@ function useInfo(account: string, mode: Mode, kind: "batchInfo" | "onlineUsers")
   );
   return { key, value };
 }
+
+type OnlineUsersEvent = {
+  online?: number | null;
+  updatedAt?: number | null;
+  error?: string | null;
+};
+
 export function OnlineUsers({ account, mode }: { account: string; mode: Mode }) {
-  const { key, value } = useInfo(account, mode, "onlineUsers");
-  useEffect(() => observe(key, mode), [key, mode]);
+  const [value, setValue] = useState<OnlineUsersEvent>({});
+  // 在线人数由后端轮询并推送，组件只负责展示。
+  useChannelSubscription<OnlineUsersEvent>(
+    "watch_enrollment_online_users",
+    (event) => {
+      if (event) setValue(event);
+    },
+    { mode },
+    { key: `${account}:${mode}` },
+  );
   return (
     <span className="text-xs text-muted">
       在线人数：{value.online ?? "暂不可用"}
@@ -117,8 +86,9 @@ export function OnlineUsers({ account, mode }: { account: string; mode: Mode }) 
     </span>
   );
 }
+
 export function BatchInfo({ account, mode }: { account: string; mode: Mode }) {
-  const { key, value } = useInfo(account, mode, "batchInfo");
+  const { key, value } = useInfo(account, mode);
   const [visible, setVisible] = useState(!document.hidden);
   useEffect(() => {
     const fn = () => setVisible(!document.hidden);
@@ -126,7 +96,7 @@ export function BatchInfo({ account, mode }: { account: string; mode: Mode }) {
     return () => document.removeEventListener("visibilitychange", fn);
   }, []);
   useEffect(() => {
-    if (visible) void fetchInfo(key, "batchInfo", mode);
+    if (visible) void fetchInfo(key, mode);
   }, [key, mode, visible]);
   const rows = value.batches ?? [];
   return (
@@ -137,7 +107,7 @@ export function BatchInfo({ account, mode }: { account: string; mode: Mode }) {
           size="xs"
           variant="text"
           disabled={!!value.pending}
-          onClick={() => void fetchInfo(key, "batchInfo", mode)}
+          onClick={() => void fetchInfo(key, mode)}
         >
           刷新批次
         </Button>

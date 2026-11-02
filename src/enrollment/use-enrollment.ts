@@ -30,6 +30,10 @@ function isSnapshot(value: unknown): value is Snapshot {
 }
 let connections = 0;
 let stops: Promise<() => void>[] = [];
+type AcademicProgressValue = {
+  datas?: { byscjd?: { rows?: { ZS?: number | string; YWCS?: number | string }[] } };
+};
+
 export function useEnrollment(cacheOnly = false) {
   const state = useSyncExternalStore(subscribe, () => snapshot);
   const channels = useRef<Record<string, number>>({});
@@ -91,6 +95,36 @@ export function useEnrollment(cacheOnly = false) {
     },
     [clearError, cacheOnly],
   );
+  const recalculateAcademic = useCallback(
+    async (onProgress: (done: number, total: number) => void) => {
+      const channel = createTaskChannel<AcademicProgressValue>((value) => {
+        const row = value?.datas?.byscjd?.rows?.[0];
+        if (!row) return;
+        const total = Number(row.ZS);
+        const done = Number(row.YWCS);
+        if (Number.isFinite(total) && Number.isFinite(done)) onProgress(done, total);
+      });
+      setPending((p) => ({ ...p, academic: (p.academic ?? 0) + 1 }));
+      clearError("academicProgress");
+      try {
+        const value = await invoke<Snapshot>("recalculate_academic", { onProgress: channel });
+        if (isSnapshot(value) && accepts(value)) {
+          lastApplied = ++sequence;
+          apply(value);
+        }
+        return value;
+      } catch (e) {
+        setErrors((p) => ({
+          ...p,
+          academicProgress: typeof e === "string" ? e : "操作未完成，请重试",
+        }));
+        return undefined;
+      } finally {
+        setPending((p) => ({ ...p, academic: Math.max(0, (p.academic ?? 1) - 1) }));
+      }
+    },
+    [clearError],
+  );
   useEffect(() => {
     if (connections++ === 0) {
       const channel = createTaskChannel<{ type: string; data: Snapshot }>((e) => {
@@ -102,12 +136,6 @@ export function useEnrollment(cacheOnly = false) {
       void invoke("subscribe_enrollment_state", { channel }).catch(() => {});
 
       stops = [
-        listen<Snapshot>("enrollment-update", (e) => {
-          if (isSnapshot(e.payload) && accepts(e.payload)) {
-            lastApplied = ++sequence;
-            apply(e.payload);
-          }
-        }),
         listen("auth-state-changed", async () => {
           const epoch = ++accountEpoch;
           identityPending = true;
@@ -172,6 +200,7 @@ export function useEnrollment(cacheOnly = false) {
     pending,
     clearError,
     run,
+    recalculateAcademic,
     portal,
     official,
     busy: Object.values(pending).some(Boolean),

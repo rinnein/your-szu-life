@@ -27,6 +27,32 @@ pub(crate) fn subscribe_oj_state(
     Ok(())
 }
 #[tauri::command]
+pub(crate) fn subscribe_oj_deadlines(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    channel: tauri::ipc::Channel<super::OjDeadlinesEvent>,
+) -> Result<(), String> {
+    local(&window)?;
+    let service = service(&app)?;
+    let deadlines = service.deadlines();
+    let _ = channel.send(super::OjDeadlinesEvent::Initial(Box::new(deadlines)));
+    service.deadline_subscribers.subscribe(channel);
+    Ok(())
+}
+#[tauri::command]
+pub(crate) fn subscribe_oj_lists(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    channel: tauri::ipc::Channel<super::OjListsEvent>,
+) -> Result<(), String> {
+    local(&window)?;
+    let service = service(&app)?;
+    let lists = service.lists();
+    let _ = channel.send(super::OjListsEvent::Initial(Box::new(lists)));
+    service.list_subscribers.subscribe(channel);
+    Ok(())
+}
+#[tauri::command]
 pub(crate) fn save_oj_site(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
@@ -247,6 +273,53 @@ pub(crate) async fn get_oj_result(
     service(&app)?
         .result(&site_id, &submission_id, kind, problem_id.as_deref())
         .await
+}
+/// 由后端负责判题轮询，前端只收 Channel；终态、通道关闭或重试耗尽时结束。
+#[tauri::command]
+pub(crate) async fn watch_oj_result(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    site_id: String,
+    submission_id: String,
+    kind: u8,
+    problem_id: Option<String>,
+    on_result: tauri::ipc::Channel<Value>,
+) -> Result<(), String> {
+    local(&window)?;
+    let service = service(&app)?;
+    let mut failures = 0u32;
+    for _ in 0..90 {
+        match service
+            .result(&site_id, &submission_id, kind, problem_id.as_deref())
+            .await
+        {
+            Ok(value) => {
+                failures = 0;
+                let pending = matches!(kind, 0 | 4)
+                    && value["status"]
+                        .as_i64()
+                        .map(|status| status == 6 || status == 7)
+                        .unwrap_or(true);
+                if on_result.send(value).is_err() {
+                    return Ok(());
+                }
+                if !pending {
+                    return Ok(());
+                }
+            }
+            Err(error) => {
+                failures += 1;
+                if failures >= 3 {
+                    return Err(format!("获取判题结果失败：{error}"));
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(
+            2 * (1u64 << failures.min(4)),
+        ))
+        .await;
+    }
+    Err("判题仍未结束，请稍后刷新判题；不会重新提交代码。".into())
 }
 #[tauri::command]
 pub(crate) fn acknowledge_oj_submission(

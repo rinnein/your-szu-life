@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { createTaskChannel } from "../tauri-channel";
 import { isPending, newestFirst, problemVerdict, submissionProblem } from "./judging";
 import {
   problemKey,
@@ -181,56 +182,46 @@ export function useSubmissions(
       setPolling(false);
       return;
     }
+    // 非代码题或已出结果时不需要后端继续轮询。
+    if (![0, 4].includes(problem.kind) || !isPending(watch.submission)) {
+      setPolling(false);
+      return;
+    }
     let active = true;
-    let timer: ReturnType<typeof setTimeout>;
-    let attempts = 0;
-    let failures = 0;
-    let latest = watch.submission;
     setPolling(true);
-    const run = async () => {
+    setPollError(undefined);
+    const channel = createTaskChannel<Submission>((next) => {
       if (!active) return;
-      attempts++;
-      try {
-        const next = await invoke<Submission>("get_oj_result", {
-          siteId,
-          submissionId: String(watch.submission.id),
-          kind: problem.kind,
-          problemId: problem.id,
-        });
-        if (!active) return;
-        latest = { ...latest, ...next };
-        setView({ current, submission: latest });
-        setDetails((old) => ({
-          current,
-          rows: { ...(old?.current === current ? old.rows : {}), [String(latest.id)]: latest },
-        }));
-        upsert(latest, problem.kind, key);
-        failures = 0;
-        setPollError(undefined);
-        if (![0, 4].includes(problem.kind) || !isPending(latest)) {
-          setPolling(false);
-          observing.current = false;
-          return;
-        }
-      } catch (e) {
-        if (!active) return;
-        failures++;
-        setPollError(
-          `获取判题结果失败：${String(e)}${failures < 3 ? "，稍后自动重试。" : "，请手动刷新判题；不会重新提交代码。"}`,
-        );
-      }
-      if (failures >= 3 || attempts >= 90) {
-        if (attempts >= 90) setPollError("判题仍未结束，请稍后刷新判题；不会重新提交代码。");
-        observing.current = false;
+      const latest = { ...watch.submission, ...next };
+      setView({ current, submission: latest });
+      setDetails((old) => ({
+        current,
+        rows: { ...(old?.current === current ? old.rows : {}), [String(latest.id)]: latest },
+      }));
+      upsert(latest, problem.kind, key);
+      if (!isPending(latest)) {
         setPolling(false);
-        return;
+        observing.current = false;
       }
-      timer = setTimeout(() => void run(), failures ? 2000 * 2 ** failures : 2000);
-    };
-    void run();
+    });
+    // 判题轮询由 Rust 负责，组件卸载后通道关闭，后端在下一次推送时自行退出。
+    void invoke("watch_oj_result", {
+      siteId,
+      submissionId: String(watch.submission.id),
+      kind: problem.kind,
+      problemId: problem.id,
+      onResult: channel,
+    })
+      .catch((error) => {
+        if (active) {
+          setPollError(`获取判题结果失败：${String(error)}；不会重新提交代码。`);
+        }
+      })
+      .finally(() => {
+        if (active) setPolling(false);
+      });
     return () => {
       active = false;
-      clearTimeout(timer);
     };
   }, [watch, current, siteId, problem?.id, problem?.kind, key, upsert]);
 

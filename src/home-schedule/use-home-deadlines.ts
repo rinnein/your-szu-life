@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { useChannelSubscription } from "../tauri-channel";
 import { formatDateKey } from "./calendar-math";
 import type { ScheduleCategory, ScheduleItem } from "./types";
 import { useElectricityMonitor } from "../electricity-monitor";
-import { ojProgressCache, progressScope } from "../oj/progress-store";
-import type { Contest, Group, Snapshot as OjSnapshot } from "../oj/types";
-import type { ExamTask, HomeworkTask, UoocSnapshot } from "../uooc/types";
+import type { OjDeadline } from "../oj/types";
+import type { UoocSnapshot } from "../uooc/types";
+import { useUoocAssessments } from "../uooc/use-assessments";
 import type { LmsSnapshot, LmsTodo } from "../lms/types";
 import { lmsTodoUrl } from "../lms/link";
 
@@ -32,252 +32,168 @@ function lmsItem(todo: LmsTodo, endDate: Date, now: number): ScheduleItem {
   };
 }
 
+type ChannelEvent<T> = { type: "initial" | "snapshot"; data: T };
+
 export function useHomeDeadlines() {
   const electricity = useElectricityMonitor();
-  const [ojItems, setOjItems] = useState<ScheduleItem[]>([]);
-  const [uoocItems, setUoocItems] = useState<ScheduleItem[]>([]);
-  const [lmsItems, setLmsItems] = useState<ScheduleItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [ojDeadlines, setOjDeadlines] = useState<OjDeadline[]>([]);
+  const [uoocSnapshot, setUoocSnapshot] = useState<UoocSnapshot>();
+  const [lmsSnapshot, setLmsSnapshot] = useState<LmsSnapshot>();
+  const assessments = useUoocAssessments();
+  const [ready, setReady] = useState({ oj: false, uooc: false, lms: false });
+  const [refreshing, setRefreshing] = useState(false);
 
-  const fetchOjDeadlines = useCallback(async () => {
-    try {
-      const snapshot = await invoke<OjSnapshot>("get_oj_snapshot");
-      if (!snapshot?.sites) return;
+  // 首页待办全部由后端 Channel 推送，不再按定时器或事件重拉快照/列表。
+  useChannelSubscription<ChannelEvent<OjDeadline[]>>(
+    "subscribe_oj_deadlines",
+    (event) => {
+      if (!Array.isArray(event?.data)) return;
+      setOjDeadlines(event.data);
+      setReady((old) => (old.oj ? old : { ...old, oj: true }));
+    },
+    {},
+    { onError: () => setReady((old) => (old.oj ? old : { ...old, oj: true })) },
+  );
 
-      const items: ScheduleItem[] = [];
-      const seen = new Set<string>();
-      const now = Date.now();
+  useChannelSubscription<ChannelEvent<UoocSnapshot>>(
+    "subscribe_uooc_state",
+    (event) => {
+      if (!event?.data) return;
+      setUoocSnapshot(event.data);
+      setReady((old) => (old.uooc ? old : { ...old, uooc: true }));
+    },
+    {},
+    { onError: () => setReady((old) => (old.uooc ? old : { ...old, uooc: true })) },
+  );
 
-      for (const site of snapshot.sites) {
-        // 会话未建立时仍可展示已有缓存；没有缓存的站点才跳过，避免冷启动触发登录。
-        if (!site.enabled || (site.session !== "ready" && !site.hasCache)) continue;
+  useChannelSubscription<ChannelEvent<LmsSnapshot>>(
+    "subscribe_lms_state",
+    (event) => {
+      if (!event?.data) return;
+      setLmsSnapshot(event.data);
+      setReady((old) => (old.lms ? old : { ...old, lms: true }));
+    },
+    {},
+    { onError: () => setReady((old) => (old.lms ? old : { ...old, lms: true })) },
+  );
 
-        let groups: Group[] = [];
-        try {
-          groups = await invoke<Group[]>("get_oj_groups", { siteId: site.id });
-        } catch {
-          continue;
-        }
+  // 用户主动刷新时才触发一次后端刷新；日常更新由 Channel 推送。
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    await Promise.allSettled([invoke("refresh_oj"), invoke("refresh_lms"), assessments.refresh()]);
+    setRefreshing(false);
+  }, [assessments.refresh]);
 
-        for (const group of groups) {
-          let contests: Contest[] = [];
-          try {
-            contests = await invoke<Contest[]>("get_oj_contests", {
-              siteId: site.id,
-              groupId: group.id,
-            });
-          } catch {
-            continue;
-          }
-
-          for (const contest of contests) {
-            const contestKey = `${site.id}:${contest.id}`;
-            if (seen.has(contestKey)) continue;
-
-            const contestNow = contest.now || now;
-            // 截止时间必须在未来
-            if (contestNow >= contest.end) continue;
-
-            // 检查是否已经全部 AC。会话未就绪时只展示缓存，不触发网络。
-            let isCompleted = false;
-            if (site.session === "ready") {
-              try {
-                const scope = progressScope(site);
-                const progress = await ojProgressCache.ensure(scope, contest.id);
-                if (progress && progress.total > 0 && progress.accepted === progress.total) {
-                  isCompleted = true;
-                }
-              } catch {
-                // Ignore progress error
-              }
-            }
-
-            if (!isCompleted) {
-              seen.add(contestKey);
-              const targetDate = new Date(contest.end);
-              items.push({
-                id: `oj:${site.id}:${contest.id}`,
-                category: "oj-quiz",
-                title: contest.title,
-                subtitle: `${site.name} · ${contest.isExam ? "考试" : "测验"}`,
-                targetDate,
-                dateKey: formatDateKey(targetDate),
-                actionUrl: `/study/oj?site=${encodeURIComponent(site.id)}&contest=${encodeURIComponent(contest.id)}`,
-                urgent: contest.end - now < 86_400_000,
-              });
-            }
-          }
-        }
-      }
-
-      setOjItems(items);
-    } catch {
-      // Ignore network errors
+  const ojItems = useMemo<ScheduleItem[]>(() => {
+    const now = Date.now();
+    const items: ScheduleItem[] = [];
+    for (const contest of ojDeadlines) {
+      if (contest.end <= now) continue;
+      if (contest.hasProgress && contest.total > 0 && contest.accepted >= contest.total) continue;
+      const targetDate = new Date(contest.end);
+      items.push({
+        id: `oj:${contest.siteId}:${contest.id}`,
+        category: "oj-quiz",
+        title: contest.title,
+        subtitle: `${contest.siteName} · ${contest.isExam ? "考试" : "测验"}`,
+        targetDate,
+        dateKey: formatDateKey(targetDate),
+        actionUrl: `/study/oj?site=${encodeURIComponent(contest.siteId)}&contest=${encodeURIComponent(contest.id)}`,
+        urgent: contest.end - now < 86_400_000,
+      });
     }
-  }, []);
+    return items;
+  }, [ojDeadlines]);
 
-  const fetchUoocDeadlines = useCallback(async () => {
-    try {
-      const snapshot = await invoke<UoocSnapshot>("get_uooc_snapshot");
-      if (!snapshot || snapshot.session !== "ready") return;
+  // UOOC 的课程结课、考试与作业都来自后端 Channel 推送，这里只做派生。
+  const uoocItems = useMemo<ScheduleItem[]>(() => {
+    if (!uoocSnapshot || uoocSnapshot.session !== "ready") return [];
 
-      const items: ScheduleItem[] = [];
-      const now = Date.now();
+    const items: ScheduleItem[] = [];
+    const now = Date.now();
 
-      // 1. UOOC 课程结课时间
-      for (const course of snapshot.courses || []) {
-        if (!course.endDate) continue;
-        const endDate = parseDateSafely(course.endDate);
-        if (endDate && endDate.getTime() > now) {
-          items.push({
-            id: `uooc:course:${course.id}`,
-            category: "uooc-course-end",
-            title: `${course.title} 课程结课`,
-            subtitle: "UOOC · 课程结课",
-            targetDate: endDate,
-            dateKey: formatDateKey(endDate),
-            actionUrl: "/study/uooc?tab=courses",
-            urgent: endDate.getTime() - now < 86_400_000 * 3,
-          });
-        }
+    // 1. UOOC 课程结课时间
+    for (const course of uoocSnapshot.courses || []) {
+      if (!course.endDate) continue;
+      const endDate = parseDateSafely(course.endDate);
+      if (endDate && endDate.getTime() > now) {
+        items.push({
+          id: `uooc:course:${course.id}`,
+          category: "uooc-course-end",
+          title: `${course.title} 课程结课`,
+          subtitle: "UOOC · 课程结课",
+          targetDate: endDate,
+          dateKey: formatDateKey(endDate),
+          actionUrl: "/study/uooc?tab=courses",
+          urgent: endDate.getTime() - now < 86_400_000 * 3,
+        });
       }
-
-      // 2. UOOC 考试截止时间
-      try {
-        const exams = await invoke<ExamTask[]>("list_uooc_exams", { cid: null });
-        for (const exam of exams || []) {
-          const isCompleted =
-            exam.canView ||
-            (exam.statusCode !== undefined && exam.statusCode >= 20) ||
-            exam.statusText === "已批改" ||
-            (exam.score !== null && exam.score !== undefined) ||
-            (exam.chance > 0 && exam.submitCount >= exam.chance);
-
-          if (isCompleted || !exam.endTime) continue;
-          const endDate = parseDateSafely(exam.endTime);
-          if (endDate && endDate.getTime() > now) {
-            items.push({
-              id: `uooc:exam:${exam.id}`,
-              category: "uooc-exam",
-              title: exam.title,
-              subtitle: `${exam.courseName} · 考试`,
-              targetDate: endDate,
-              dateKey: formatDateKey(endDate),
-              actionUrl: "/study/uooc?tab=exams&subtab=exam",
-              urgent: endDate.getTime() - now < 86_400_000,
-            });
-          }
-        }
-      } catch {
-        // Ignore exam fetch error
-      }
-
-      // 3. UOOC 作业截止时间
-      try {
-        const homeworks = await invoke<HomeworkTask[]>("list_uooc_homeworks", { cid: null });
-        for (const hw of homeworks || []) {
-          const isCompleted =
-            hw.canView ||
-            (hw.statusCode !== undefined && hw.statusCode >= 20) ||
-            hw.statusText === "已批改" ||
-            (hw.score !== null && hw.score !== undefined) ||
-            (hw.chance > 0 && hw.submitCount >= hw.chance);
-
-          if (isCompleted || !hw.endTime) continue;
-          const endDate = parseDateSafely(hw.endTime);
-          if (endDate && endDate.getTime() > now) {
-            items.push({
-              id: `uooc:homework:${hw.id}`,
-              category: "uooc-homework",
-              title: hw.title,
-              subtitle: `${hw.courseName} · 作业`,
-              targetDate: endDate,
-              dateKey: formatDateKey(endDate),
-              actionUrl: "/study/uooc?tab=exams&subtab=homework",
-              urgent: endDate.getTime() - now < 86_400_000,
-            });
-          }
-        }
-      } catch {
-        // Ignore homework fetch error
-      }
-
-      setUoocItems(items);
-    } catch {
-      // Ignore UOOC snapshot error
     }
-  }, []);
 
-  const fetchLmsDeadlines = useCallback(async () => {
-    try {
-      const snapshot = await invoke<LmsSnapshot>("get_lms_snapshot");
-      if (!snapshot || snapshot.session !== "ready") return;
+    // 2. UOOC 考试截止时间
+    for (const exam of assessments.exams) {
+      const isCompleted =
+        exam.canView ||
+        (exam.statusCode !== undefined && exam.statusCode >= 20) ||
+        exam.statusText === "已批改" ||
+        (exam.score !== null && exam.score !== undefined) ||
+        (exam.chance > 0 && exam.submitCount >= exam.chance);
 
-      const items: ScheduleItem[] = [];
-      const now = Date.now();
-
-      for (const todo of snapshot.todos || []) {
-        const endDate = new Date(todo.end_time);
-        if (isNaN(endDate.getTime()) || endDate.getTime() <= now) continue;
-        items.push(lmsItem(todo, endDate, now));
+      if (isCompleted || !exam.endTime) continue;
+      const endDate = parseDateSafely(exam.endTime);
+      if (endDate && endDate.getTime() > now) {
+        items.push({
+          id: `uooc:exam:${exam.id}`,
+          category: "uooc-exam",
+          title: exam.title,
+          subtitle: `${exam.courseName} · 考试`,
+          targetDate: endDate,
+          dateKey: formatDateKey(endDate),
+          actionUrl: "/study/uooc?tab=exams&subtab=exam",
+          urgent: endDate.getTime() - now < 86_400_000,
+        });
       }
-
-      setLmsItems(items);
-    } catch {
-      // Ignore LMS snapshot error
     }
-  }, []);
 
-  const refreshAll = useCallback(async () => {
-    setLoading(true);
-    await Promise.allSettled([fetchOjDeadlines(), fetchUoocDeadlines(), fetchLmsDeadlines()]);
-    setLoading(false);
-  }, [fetchOjDeadlines, fetchUoocDeadlines, fetchLmsDeadlines]);
+    // 3. UOOC 作业截止时间
+    for (const hw of assessments.homeworks) {
+      const isCompleted =
+        hw.canView ||
+        (hw.statusCode !== undefined && hw.statusCode >= 20) ||
+        hw.statusText === "已批改" ||
+        (hw.score !== null && hw.score !== undefined) ||
+        (hw.chance > 0 && hw.submitCount >= hw.chance);
 
-  useEffect(() => {
-    let active = true;
-    void refreshAll();
+      if (isCompleted || !hw.endTime) continue;
+      const endDate = parseDateSafely(hw.endTime);
+      if (endDate && endDate.getTime() > now) {
+        items.push({
+          id: `uooc:homework:${hw.id}`,
+          category: "uooc-homework",
+          title: hw.title,
+          subtitle: `${hw.courseName} · 作业`,
+          targetDate: endDate,
+          dateKey: formatDateKey(endDate),
+          actionUrl: "/study/uooc?tab=exams&subtab=homework",
+          urgent: endDate.getTime() - now < 86_400_000,
+        });
+      }
+    }
 
-    const unlistenState = listen("oj-state-changed", () => {
-      if (active) void fetchOjDeadlines();
-    });
-    const unlistenProgress = listen("oj-progress-invalidated", () => {
-      if (active) void fetchOjDeadlines();
-    });
-    const unlistenUooc = listen("uooc-state-changed", () => {
-      if (active) void fetchUoocDeadlines();
-    });
-    const unlistenOjCache = listen("oj-cache-changed", () => {
-      if (active) void fetchOjDeadlines();
-    });
-    const unlistenLms = listen("lms-state-changed", () => {
-      if (active) void fetchLmsDeadlines();
-    });
-    const unlistenNotification = listen<{ category?: string }>(
-      "app://in-app-notification",
-      (event) => {
-        if (!active) return;
-        const cat = event.payload?.category;
-        if (cat === "uooc") void fetchUoocDeadlines();
-        else if (cat === "oj") void fetchOjDeadlines();
-      },
-    );
+    return items;
+  }, [uoocSnapshot, assessments.exams, assessments.homeworks]);
 
-    const interval = setInterval(() => {
-      if (active) void refreshAll();
-    }, 60_000);
-
-    return () => {
-      active = false;
-      clearInterval(interval);
-      void unlistenState.then((fn) => fn());
-      void unlistenProgress.then((fn) => fn());
-      void unlistenUooc.then((fn) => fn());
-      void unlistenOjCache.then((fn) => fn());
-      void unlistenLms.then((fn) => fn());
-      void unlistenNotification.then((fn) => fn());
-    };
-  }, [fetchOjDeadlines, fetchUoocDeadlines, fetchLmsDeadlines, refreshAll]);
+  const lmsItems = useMemo<ScheduleItem[]>(() => {
+    if (!lmsSnapshot || lmsSnapshot.session !== "ready") return [];
+    const now = Date.now();
+    const items: ScheduleItem[] = [];
+    for (const todo of lmsSnapshot.todos || []) {
+      const endDate = new Date(todo.end_time);
+      if (isNaN(endDate.getTime()) || endDate.getTime() <= now) continue;
+      items.push(lmsItem(todo, endDate, now));
+    }
+    return items;
+  }, [lmsSnapshot]);
 
   // 计算电量预估断电事项
   const electricityItems = useMemo<ScheduleItem[]>(() => {
@@ -334,7 +250,7 @@ export function useHomeDeadlines() {
   return {
     items,
     categoryMap,
-    loading,
-    refresh: refreshAll,
+    loading: refreshing || !ready.oj || !ready.uooc || !ready.lms,
+    refresh,
   };
 }

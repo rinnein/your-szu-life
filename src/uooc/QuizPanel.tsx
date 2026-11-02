@@ -295,19 +295,10 @@ export function QuizPanel({
       });
     }, 1000);
 
-    let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
-    if (isExam && quiz.taskId) {
-      void invoke("heartbeat_uooc_exam", { taskId: quiz.taskId }).catch(() => {});
-      heartbeatTimer = setInterval(() => {
-        void invoke("heartbeat_uooc_exam", { taskId: quiz.taskId }).catch(() => {});
-      }, 30000);
-    }
-
     return () => {
       clearInterval(timer);
-      if (heartbeatTimer) clearInterval(heartbeatTimer);
     };
-  }, [quiz.stage, limitTime, isExam, quiz.taskId]);
+  }, [quiz.stage, limitTime]);
 
   useEffect(() => {
     setPortalAction("open");
