@@ -180,6 +180,41 @@ it("renders breakpoint resumed badge and total active tasks count", () => {
   expect(screen.getByText("RPC :54001")).toBeInTheDocument();
 });
 
+it("shows the saving phase and elapsed time from the unified download layer", () => {
+  render(
+    <DownloadSession
+      title="教师画面"
+      session={{
+        downloadedBytes: 1000,
+        totalBytes: 1000,
+        numPieces: 4,
+        pieceLength: 250,
+        bitfield: "f0",
+        savingSince: Date.now() - 3000,
+      }}
+    />,
+  );
+
+  // 复制阶段由统一下载组件呈现，调用方不再自己绘制。
+  expect(screen.getByText("正在保存到目标目录")).toBeInTheDocument();
+  expect(screen.getByText("保存中")).toBeInTheDocument();
+  expect(screen.getByText("aria2 已完成")).toBeInTheDocument();
+  expect(screen.getByText(/已用 [3-4] 秒/)).toBeInTheDocument();
+  expect(screen.queryByText("分片数: 4")).not.toBeInTheDocument();
+});
+
+it("keeps the caller title while not saving", () => {
+  render(
+    <DownloadSession
+      title="教师画面"
+      session={{ downloadedBytes: 500, totalBytes: 1000, savingSince: null }}
+    />,
+  );
+
+  expect(screen.getByText("教师画面")).toBeInTheDocument();
+  expect(screen.queryByText("正在保存到目标目录")).not.toBeInTheDocument();
+});
+
 it("distinguishes started (light green) and not-yet-started (white) pieces", () => {
   const { rerender } = render(
     <DownloadSession

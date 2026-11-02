@@ -1,6 +1,6 @@
 use crate::{
-    app_content, auth, campus_network, campus_payments, jxxk, lms, netproxy, oj, onboarding,
-    settings,
+    app_content, auth, campus_network, campus_payments, file_manager, jxxk, lms, netproxy, oj,
+    onboarding, settings,
     storage::{PlatformCredentialStore, SharedCredentialStore},
     uooc,
 };
@@ -48,6 +48,10 @@ pub(crate) fn run() {
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
         crate::desktop::focus_main_window(app);
     }));
+
+    // 桌面端文件夹选择器。Android 由 SAF 桥负责，不注册该插件。
+    #[cfg(not(target_os = "android"))]
+    let builder = builder.plugin(tauri_plugin_dialog::init());
 
     let builder = builder
         .plugin(tauri_plugin_opener::init())
@@ -317,6 +321,11 @@ pub(crate) fn run() {
             onboarding::commands::complete_onboarding_step,
             onboarding::commands::skip_onboarding_step,
             onboarding::commands::restart_onboarding,
+            file_manager::commands::get_file_manager_state,
+            file_manager::commands::pick_file_manager_directory,
+            file_manager::commands::use_default_file_manager_directory,
+            file_manager::commands::save_file_manager_directory,
+            file_manager::commands::release_file_manager_pick,
             campus_payments::commands::open_network_fee_portal,
             campus_payments::commands::consume_network_fee_portal_notice,
             campus_payments::commands::get_electricity_options,

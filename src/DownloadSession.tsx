@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Progress } from "material/react";
 import { Chip } from "./ui";
 import { LuChevronDown, LuChevronUp, LuLayers } from "react-icons/lu";
@@ -17,6 +17,11 @@ export interface DownloadSessionData {
   bitfield?: string | null;
   isResumed?: boolean;
   resumedBytes?: number;
+  /**
+   * 进入「保存到目标目录」阶段的时间（Unix 毫秒）。由统一下载层给出，
+   * 非空时统一显示保存阶段与耗时 —— 各业务模块不要自己绘制这段提示。
+   */
+  savingSince?: number | null;
 }
 
 export function formatDownloadSpeed(bytesPerSec?: number): string {
@@ -75,6 +80,20 @@ export function DownloadSession({
 }: DownloadSessionProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
+  // 统一在这里展示「保存到目标目录」阶段与耗时，调用方只透传 savingSince。
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (session.savingSince == null) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [session.savingSince]);
+  const savingSeconds =
+    session.savingSince != null
+      ? Math.max(0, Math.round((now - session.savingSince) / 1000))
+      : null;
+  const displayTitle = savingSeconds != null ? "正在保存到目标目录" : title;
+
   const percent =
     session.totalBytes > 0
       ? Math.min(100, Math.max(0, Math.round((session.downloadedBytes / session.totalBytes) * 100)))
@@ -109,8 +128,8 @@ export function DownloadSession({
           <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-primary shrink-0">
             aria2
           </span>
-          <span className="truncate text-xs text-muted" title={title}>
-            {title}
+          <span className="truncate text-xs text-muted" title={displayTitle}>
+            {displayTitle}
           </span>
         </div>
 
@@ -161,19 +180,28 @@ export function DownloadSession({
         </div>
         <Progress
           variant="linear"
-          aria-label={title}
+          aria-label={displayTitle}
           value={percent}
           max={100}
           className="w-full"
         />
         <div className="flex items-center justify-between font-mono text-xs text-muted gap-2 min-w-0">
           <span className="text-[11px]">
-            {session.numPieces ? `分片数: ${session.numPieces}` : "准备中"}
+            {savingSeconds != null
+              ? "aria2 已完成"
+              : session.numPieces
+                ? `分片数: ${session.numPieces}`
+                : "准备中"}
           </span>
           <span className="font-medium text-foreground shrink-0">
-            {formatDownloadSpeed(session.speedBytesPerSec)}
+            {savingSeconds != null ? "保存中" : formatDownloadSpeed(session.speedBytesPerSec)}
           </span>
         </div>
+        {savingSeconds != null && (
+          <div className="text-xs text-muted" role="status">
+            正在保存到目标目录 · 已用 {savingSeconds} 秒
+          </div>
+        )}
       </div>
 
       {/* 分片下载进度折叠展开模块 */}

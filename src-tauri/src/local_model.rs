@@ -261,7 +261,10 @@ impl LocalModelStore {
         let aria_options = crate::aria2::DownloadJobOptions {
             uris,
             prioritized_uris: Vec::new(),
-            dest_dir: self.cache.clone(),
+            target: crate::aria2::DownloadTarget::local(
+                self.cache.clone(),
+                self.cache.to_string_lossy().into_owned(),
+            ),
             filename: format!("{}.download", self.manifest.sha256),
             expected_sha256: Some(self.manifest.sha256.clone()),
             expected_size: Some(self.manifest.bytes),

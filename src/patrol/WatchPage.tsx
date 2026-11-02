@@ -25,6 +25,7 @@ import {
   LuVideo,
 } from "react-icons/lu";
 import { Banner, toast } from "../ui";
+import { useFileManagerState } from "../file-manager/useFileManagerState";
 import { PageSurface } from "../shell/PageSurface";
 import { AuthGate } from "../shell/AuthGate";
 import Artplayer from "artplayer";
@@ -212,6 +213,8 @@ export default function WatchPage() {
   const [visible, setVisible] = useState<string[]>([]);
   const [subtitleUrl, setSubtitleUrl] = useState<string | null>(null);
   const { tasks: downloads } = useJxxkDownloads();
+  const { state: fileManagerState } = useFileManagerState();
+  const downloadDir = fileManagerState?.modules.find((module) => module.id === "jxxk")?.path;
   const [confirmStream, setConfirmStream] = useState<{
     name: string;
     streamNo: string | null;
@@ -560,6 +563,7 @@ export default function WatchPage() {
                     const busy = task
                       ? task.status === "downloading" ||
                         task.status === "preparing" ||
+                        task.status === "saving" ||
                         task.status === "paused"
                       : false;
                     return (
@@ -593,7 +597,8 @@ export default function WatchPage() {
                         {task &&
                           (task.status === "downloading" ||
                             task.status === "paused" ||
-                            task.status === "preparing") && (
+                            task.status === "preparing" ||
+                            task.status === "saving") && (
                             <div className="mt-2 flex items-center gap-2">
                               <Progress
                                 variant="linear"
@@ -652,7 +657,7 @@ export default function WatchPage() {
                 {formatBytes(
                   streams?.streams.find((s) => s.name === confirmStream.name)?.fileSize ?? 0,
                 )}
-                ），将通过 aria2 后台下载到系统「下载/jxxk」目录，支持断点续传。
+                ），将通过 aria2 后台下载到 {downloadDir ?? "应用保存目录"}，支持断点续传。
               </p>
             </Dialog>,
             document.body,

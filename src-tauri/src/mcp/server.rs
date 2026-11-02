@@ -24,6 +24,7 @@ impl UnifiedSzuMcpService {
             + Self::todos_tools()
             + Self::netproxy_tools()
             + Self::onboarding_tools()
+            + Self::file_manager_tools()
             + Self::ui_tools()
     }
 }

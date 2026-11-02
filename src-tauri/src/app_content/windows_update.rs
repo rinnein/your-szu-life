@@ -108,7 +108,10 @@ pub(crate) fn download_and_install(
     let aria_options = crate::aria2::DownloadJobOptions {
         uris: Vec::new(),
         prioritized_uris: candidates,
-        dest_dir: dest_dir.clone(),
+        target: crate::aria2::DownloadTarget::local(
+            dest_dir.clone(),
+            dest_dir.to_string_lossy().into_owned(),
+        ),
         filename: filename.clone(),
         expected_sha256: None,
         expected_size: None,

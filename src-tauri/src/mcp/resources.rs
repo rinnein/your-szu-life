@@ -104,6 +104,15 @@ pub fn list_available_resources() -> Vec<Resource> {
         .with_title("初始化设置进度")
         .with_description("返回初始化设置的步骤顺序、完成/跳过状态与下一步")
         .with_mime_type("application/json"),
+        Resource::new(
+            "your-szu-life://data/file-manager/state",
+            "file_manager_state",
+        )
+        .with_title("统一文件保存目录")
+        .with_description(
+            "返回平台默认目录、用户已选目录、各业务模块（如 jxxk 录像）的最终落盘路径与 Android 文件夹授权状态",
+        )
+        .with_mime_type("application/json"),
     ]
 }
 
@@ -255,6 +264,14 @@ pub async fn read_resource_by_uri(
             }
             Err(_) => "{}".to_string(),
         },
+        "your-szu-life://data/file-manager/state" => {
+            match crate::file_manager::state(app) {
+                Ok(state) => {
+                    serde_json::to_string_pretty(&state).unwrap_or_else(|_| "{}".to_string())
+                }
+                Err(_) => "{}".to_string(),
+            }
+        }
         _ => {
             return Err(rmcp::ErrorData::new(
                 rmcp::model::ErrorCode::INVALID_REQUEST,

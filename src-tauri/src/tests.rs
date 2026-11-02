@@ -17,6 +17,7 @@ fn command_names_match_handlers_manifest_and_local_permissions() {
         include_str!("lms/commands.rs"),
         include_str!("jxxk/commands.rs"),
         include_str!("enrollment/commands.rs"),
+        include_str!("file_manager/commands.rs"),
         include_str!("ocr/commands.rs"),
         include_str!("embedding_model/commands.rs"),
         include_str!("notification/commands.rs"),

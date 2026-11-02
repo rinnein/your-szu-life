@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use std::time::{Duration, Instant};
 use axum::response::IntoResponse as _;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,6 +19,8 @@ pub(crate) enum TaskStatus {
     /// 已登记，aria2 任务尚未建立。
     Preparing,
     Downloading,
+    /// aria2 已完成，正在把暂存文件发布到用户选择的目录（Android SAF）。
+    Saving,
     Paused,
     Completed,
     Failed,
@@ -41,6 +43,8 @@ pub(crate) struct TaskState {
     pub is_resumed: bool,
     pub resumed_bytes: u64,
     pub total_active_tasks: u32,
+    /// 进入「保存中」的时间（Unix 毫秒），供共享下载组件显示耗时。
+    pub saving_since: Option<i64>,
 }
 
 /// 单个下载任务的共享核心。后台任务与命令通过它交互。
@@ -58,7 +62,8 @@ pub(crate) struct TaskCore {
     pub lesson_name: String,
     pub stream_name: String,
     pub file_name: String,
-    pub dest_dir: PathBuf,
+    /// 下载落点。由 `file_manager` 构造，是否中转由 aria2 下载层自行处理。
+    pub target: crate::aria2::DownloadTarget,
     pub file_url: String,
     pub expected_size: Option<u64>,
     pub control: crate::aria2::DownloadControl,
@@ -89,6 +94,7 @@ impl TaskCore {
             lesson_name: self.lesson_name.clone(),
             stream_name: self.stream_name.clone(),
             file_name: self.file_name.clone(),
+            dest_dir: self.target.display_dir.clone(),
             status: state.status,
             downloaded: state.downloaded,
             total: state.total,
@@ -103,6 +109,7 @@ impl TaskCore {
             is_resumed: state.is_resumed,
             resumed_bytes: state.resumed_bytes,
             total_active_tasks: state.total_active_tasks,
+            saving_since: state.saving_since,
         }
     }
 
@@ -111,9 +118,17 @@ impl TaskCore {
             let mut state = self.state.lock().unwrap();
             state.status = status;
             state.error = error;
+            if status == TaskStatus::Saving {
+                if state.saving_since.is_none() {
+                    state.saving_since = Some(chrono::Utc::now().timestamp_millis());
+                }
+            } else {
+                state.saving_since = None;
+            }
             if matches!(
                 status,
-                TaskStatus::Paused
+                TaskStatus::Saving
+                    | TaskStatus::Paused
                     | TaskStatus::Completed
                     | TaskStatus::Failed
                     | TaskStatus::Cancelled
@@ -167,6 +182,8 @@ pub(crate) struct TaskView {
     pub lesson_name: String,
     pub stream_name: String,
     pub file_name: String,
+    /// 最终保存目录（展示用）。旧任务直接是本地绝对路径。
+    pub dest_dir: String,
     pub status: TaskStatus,
     pub downloaded: u64,
     pub total: u64,
@@ -181,6 +198,8 @@ pub(crate) struct TaskView {
     pub is_resumed: bool,
     pub resumed_bytes: u64,
     pub total_active_tasks: u32,
+    /// 进入「保存中」的时间（Unix 毫秒）；不在保存阶段时为 null。
+    pub saving_since: Option<i64>,
 }
 
 #[derive(Default)]
@@ -237,15 +256,7 @@ impl DownloadRegistry {
 }
 
 pub(crate) fn sanitize_filename(raw: &str) -> String {
-    raw.chars()
-        .map(|c| match c {
-            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
-            _ => c,
-        })
-        .collect::<String>()
-        .trim()
-        .trim_matches('.')
-        .to_string()
+    crate::file_manager::paths::sanitize_segment(raw)
 }
 
 /// 跨重启持久化的任务记录（存于 jxxk/state.sqlite，键 `task:<id>`）。
@@ -261,7 +272,11 @@ pub(crate) struct PersistedTask {
     pub stream_no: Option<String>,
     pub media_video_id: String,
     pub file_name: String,
+    /// 旧记录只存 aria2 写入目录；新记录同时保存完整落点。
     pub dest_dir: String,
+    /// 下载落点（含是否需要 SAF 复制）；旧记录为 `None`。
+    #[serde(default)]
+    pub target: Option<crate::aria2::DownloadTarget>,
     pub file_url: String,
     pub expected_size: Option<u64>,
     pub status: TaskStatus,
@@ -280,7 +295,8 @@ fn persisted_from_core(core: &TaskCore) -> PersistedTask {
         stream_no: core.stream_no.clone(),
         media_video_id: core.media_video_id.clone(),
         file_name: core.file_name.clone(),
-        dest_dir: core.dest_dir.to_string_lossy().into_owned(),
+        dest_dir: core.target.work_dir.to_string_lossy().into_owned(),
+        target: Some(core.target.clone()),
         file_url: core.file_url.clone(),
         expected_size: core.expected_size,
         status: state.status,
@@ -337,7 +353,12 @@ pub(crate) fn task_core_from_record(
         lesson_name: record.lesson_name,
         stream_name: record.stream_name,
         file_name: record.file_name,
-        dest_dir: PathBuf::from(&record.dest_dir),
+        target: record.target.unwrap_or_else(|| {
+            crate::aria2::DownloadTarget::local(
+                PathBuf::from(&record.dest_dir),
+                record.dest_dir.clone(),
+            )
+        }),
         file_url: record.file_url.clone(),
         expected_size: record.expected_size,
         control: crate::aria2::DownloadControl::new(),
@@ -359,6 +380,7 @@ pub(crate) fn task_core_from_record(
             is_resumed: false,
             resumed_bytes: 0,
             total_active_tasks: 0,
+            saving_since: None,
         }),
         last_emit: Mutex::new(Instant::now() - Duration::from_millis(600)),
     })
@@ -484,12 +506,11 @@ pub(crate) async fn start_download(
     }
     let lesson = sanitize_filename(&params.lesson_name);
 
-    // 目录规整：下载/jxxk/<学期>-<课程>(<老师>)/<选集>/
-    let mut dest_dir = app
-        .path()
-        .download_dir()
-        .map_err(|_| "无法确定下载目录".to_string())?;
-    dest_dir.push("jxxk");
+    // 目录规整：<统一文件目录>/jxxk/<学期>-<课程>(<老师>)/<选集>/
+    // Android 上统一目录是 SAF 文档树，aria2 只能写暂存目录，完成后由
+    // file_manager 发布到最终目录；桌面端暂存目录就是最终目录。
+    let module = crate::file_manager::model::ManagedModule::Jxxk;
+    let id = uuid::Uuid::new_v4().to_string();
     let mut group = params.semester_name.clone();
     if !group.is_empty() {
         group.push('-');
@@ -499,18 +520,19 @@ pub(crate) async fn start_download(
         group.push_str(&format!("({})", params.teacher_name));
     }
     let group = sanitize_filename(&group);
-    if !group.is_empty() {
-        dest_dir.push(group);
-    }
-    if !lesson.is_empty() {
-        dest_dir.push(lesson.clone());
-    }
+    // 落点（含是否需要 SAF 中转）由 file_manager 决定，交给 aria2 下载层自行处理。
+    let target = crate::file_manager::download_target(
+        app,
+        module,
+        &id,
+        &[group.as_str(), lesson.as_str()],
+    )?;
     // 字幕随选集目录一并落盘（直接写文件，不过 aria2、不进任务列表）。
     if let Some(vtt) = &params.subtitle_vtt {
         if !lesson.is_empty() && vtt.starts_with("WEBVTT") {
-            std::fs::create_dir_all(&dest_dir)
+            std::fs::create_dir_all(&target.work_dir)
                 .map_err(|e| format!("创建下载目标目录失败: {e}"))?;
-            let vtt_path = dest_dir.join(format!("{lesson}.vtt"));
+            let vtt_path = target.work_dir.join(format!("{lesson}.vtt"));
             if let Err(error) = std::fs::write(&vtt_path, vtt) {
                 log::warn!("[jxxk] 字幕落盘失败 {}: {error}", vtt_path.display());
             }
@@ -518,7 +540,6 @@ pub(crate) async fn start_download(
     }
 
     let service = super::service(app)?;
-    let id = uuid::Uuid::new_v4().to_string();
     let core = Arc::new(TaskCore {
         app: Some(app.clone()),
         registry: Arc::downgrade(&service.downloads),
@@ -531,7 +552,7 @@ pub(crate) async fn start_download(
         lesson_name: params.lesson_name,
         stream_name: params.stream_name,
         file_name: safe_name.clone(),
-        dest_dir: dest_dir.clone(),
+        target,
         file_url: params.file_url.clone(),
         expected_size: params.expected_size,
         control: crate::aria2::DownloadControl::new(),
@@ -553,6 +574,7 @@ pub(crate) async fn start_download(
             is_resumed: false,
             resumed_bytes: 0,
             total_active_tasks: 0,
+            saving_since: None,
         }),
         last_emit: Mutex::new(Instant::now() - Duration::from_millis(600)),
     });
@@ -582,7 +604,7 @@ async fn run_download(app: AppHandle, core: Arc<TaskCore>) {
     let options = crate::aria2::DownloadJobOptions {
         uris: vec![entry_url],
         prioritized_uris: Vec::new(),
-        dest_dir: core.dest_dir.clone(),
+        target: core.target.clone(),
         filename: core.file_name.clone(),
         expected_sha256: None,
         expected_size: core.expected_size,
@@ -608,7 +630,18 @@ async fn run_download(app: AppHandle, core: Arc<TaskCore>) {
                     progress_core.broadcast_change();
                     return;
                 }
-                state.status = TaskStatus::Downloading;
+                state.status = if update.phase == crate::aria2::DownloadPhase::Saving {
+                    TaskStatus::Saving
+                } else {
+                    TaskStatus::Downloading
+                };
+                if update.phase == crate::aria2::DownloadPhase::Saving {
+                    if state.saving_since.is_none() {
+                        state.saving_since = Some(chrono::Utc::now().timestamp_millis());
+                    }
+                } else {
+                    state.saving_since = None;
+                }
                 state.downloaded = update.downloaded_bytes;
                 state.total = update.total_bytes;
                 state.speed = update.speed_bytes_per_sec;
@@ -629,7 +662,12 @@ async fn run_download(app: AppHandle, core: Arc<TaskCore>) {
     match result {
         Ok(path) => {
             core.set_status(TaskStatus::Completed, None);
-            log::info!("[jxxk] 下载完成: {} ({})", core.file_name, path.display());
+            log::info!(
+                "[jxxk] 下载完成: {} ({})",
+                core.file_name,
+                core.target.display_dir
+            );
+            let _ = path;
         }
         Err(error) => {
             let cancelled = error.contains("已被取消");
@@ -704,7 +742,10 @@ pub(crate) async fn remove_task(
     let status = core.state.lock().unwrap().status;
     let was_active = matches!(
         status,
-        TaskStatus::Downloading | TaskStatus::Preparing | TaskStatus::Paused
+        TaskStatus::Downloading
+            | TaskStatus::Preparing
+            | TaskStatus::Paused
+            | TaskStatus::Saving
     );
     if was_active {
         core.control.cancel();
@@ -723,11 +764,14 @@ pub(crate) async fn remove_task(
         }
     });
     if delete_file {
-        let target = core.dest_dir.join(&core.file_name);
-        let meta = core.dest_dir.join(format!("{}.aria2", core.file_name));
-        let _ = std::fs::remove_file(&target);
-        let _ = std::fs::remove_file(&meta);
-        log::info!("[jxxk] 已删除任务与未完成文件: {}", target.display());
+        // 是否在 SAF 还是本地由 file_manager 统一处理。
+        let lesson = sanitize_filename(&core.lesson_name);
+        let mut files = vec![core.file_name.clone()];
+        if !lesson.is_empty() {
+            files.push(format!("{lesson}.vtt"));
+        }
+        crate::file_manager::delete_saved_files(&core.target, &files);
+        log::info!("[jxxk] 已删除任务与文件: {}", core.target.display_dir);
     }
     Ok(())
 }
@@ -749,7 +793,10 @@ pub(crate) fn test_task_core(
         lesson_name: "第1节".to_string(),
         stream_name: "教师画面".to_string(),
         file_name: "教师画面.mp4".to_string(),
-        dest_dir: std::env::temp_dir(),
+        target: crate::aria2::DownloadTarget::local(
+            std::env::temp_dir(),
+            std::env::temp_dir().to_string_lossy(),
+        ),
         file_url: "https://jxxk.szu.edu.cn/test.mp4".to_string(),
         expected_size: Some(1024),
         control: crate::aria2::DownloadControl::new(),
@@ -774,6 +821,7 @@ pub(crate) fn test_task_core(
             is_resumed: false,
             resumed_bytes: 0,
             total_active_tasks: 0,
+            saving_since: None,
         }),
         last_emit: Mutex::new(Instant::now() - Duration::from_millis(600)),
     })

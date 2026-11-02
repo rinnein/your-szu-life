@@ -15,6 +15,8 @@ pub(crate) const MCP_ENABLED: &str = "mcp.enabled";
 pub(crate) const MCP_PORT: &str = "mcp.port";
 pub(crate) const LOG_LEVEL: &str = "logging.level";
 pub(crate) const DEBUG_ENABLED: &str = "debug.enabled";
+/// 用户可直接获取/管理的文件统一目录。设备相关，不随设置包导出。
+pub(crate) const FILE_DIRECTORY: &str = "file.directory";
 
 static DATABASE: OnceLock<db::SettingsDatabase> = OnceLock::new();
 

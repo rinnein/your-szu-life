@@ -108,6 +108,8 @@ keyring = { version = "3", features = [
   "windows-native",
 ] }
 ssid = "0.1"
+# 桌面端文件夹选择器走系统原生实现（Linux 使用 xdg-desktop-portal）；Android 由 SAF 桥负责。
+tauri-plugin-dialog = "2"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-native-keyring-store = "1.0.0"

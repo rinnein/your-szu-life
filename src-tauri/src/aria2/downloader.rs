@@ -19,16 +19,64 @@ use std::{
 /// 控制在每秒个位数。调低更顺滑但 RPC 更频繁，调高更省电但动画变顿。
 pub const PROGRESS_POLL_INTERVAL_MS: u64 = 150;
 
+/// 下载落点。
+///
+/// 调用方只描述「下到哪个位置」；是否需要先写应用私有暂存目录再复制，由下载层
+/// 根据 [`DownloadTarget::publish`] 自行处理，对调用方完全透明。
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadTarget {
+    /// aria2 实际写入目录。桌面端就是最终目录；需要 SAF 复制时是暂存目录。
+    pub work_dir: PathBuf,
+    /// 最终目录的展示路径。
+    pub display_dir: String,
+    /// 需要在下载完成后复制到系统文档树时给出（Android SAF）。
+    #[serde(default)]
+    pub publish: Option<PublishTarget>,
+}
+
+/// 下载完成后把文件复制到 Android SAF 文档树的目标。
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishTarget {
+    /// SAF 文档树 URI。
+    pub tree_uri: String,
+    /// 树内相对目录，始终用 `/` 分隔。
+    pub relative_dir: String,
+    /// 该任务的暂存根目录；复制成功并校验后整体清理。
+    pub staging_root: PathBuf,
+}
+
+impl DownloadTarget {
+    /// 直接写入最终目录，不需要复制。
+    pub fn local(dir: PathBuf, display: impl Into<String>) -> Self {
+        Self {
+            work_dir: dir,
+            display_dir: display.into(),
+            publish: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct DownloadJobOptions {
     pub uris: Vec<String>,
     pub prioritized_uris: Vec<(u32, String)>,
-    pub dest_dir: PathBuf,
+    pub target: DownloadTarget,
     pub filename: String,
     pub expected_sha256: Option<String>,
     pub expected_size: Option<u64>,
     /// 附加的 HTTP 请求头（部分站点要求 Referer 等才可下载）。
     pub headers: Vec<(String, String)>,
+}
+
+/// 下载阶段。复制到最终目录属于一次下载的一部分，前端据此显示「保存中」。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DownloadPhase {
+    #[default]
+    Downloading,
+    Saving,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -45,6 +93,9 @@ pub struct ProgressUpdate {
     pub is_resumed: bool,
     pub resumed_bytes: u64,
     pub total_active_tasks: u32,
+    /// 当前阶段；`Saving` 表示 aria2 已结束、正在复制到最终目录。
+    #[serde(default)]
+    pub phase: DownloadPhase,
 }
 
 pub fn xml_escape(s: &str) -> String {
@@ -187,10 +238,23 @@ where
         return Err("下载地址列表为空".to_string());
     }
 
-    fs::create_dir_all(&options.dest_dir).map_err(|e| format!("创建下载目标目录失败: {e}"))?;
+    let dest_dir = options.target.work_dir.clone();
+    fs::create_dir_all(&dest_dir).map_err(|e| format!("创建下载目标目录失败: {e}"))?;
 
-    let target_file = options.dest_dir.join(&options.filename);
-    let aria2_meta_path = options.dest_dir.join(format!("{}.aria2", options.filename));
+    // 需要 SAF 复制时，先把最终目录里已有的同名文件取回暂存目录，
+    // aria2 才能从它断点续传，而不是从零重下。
+    if let Some(publish) = &options.target.publish {
+        let publish = publish.clone();
+        let staging_file = dest_dir.join(&options.filename);
+        tokio::task::spawn_blocking(move || {
+            crate::file_manager::seed_staging(&publish, &staging_file)
+        })
+        .await
+        .map_err(|error| format!("准备续传文件失败: {error}"))??;
+    }
+
+    let target_file = dest_dir.join(&options.filename);
+    let aria2_meta_path = dest_dir.join(format!("{}.aria2", options.filename));
     let had_partial_cache = target_file.is_file() || aria2_meta_path.is_file();
 
     let lease = Aria2Lease::acquire(app).await?;
@@ -205,10 +269,10 @@ where
             options.expected_sha256.as_deref(),
         );
         let b64 = base64::engine::general_purpose::STANDARD.encode(metalink_xml.as_bytes());
-        client.add_metalink(&b64, &options.dest_dir).await?
+        client.add_metalink(&b64, &dest_dir).await?
     } else {
         client
-            .add_uri(&options.uris, &options.dest_dir, &options.filename, &options.headers)
+            .add_uri(&options.uris, &dest_dir, &options.filename, &options.headers)
             .await?
     };
 
@@ -302,6 +366,7 @@ where
             is_resumed,
             resumed_bytes: initial_resumed_bytes.unwrap_or(0),
             total_active_tasks,
+            phase: DownloadPhase::Downloading,
         });
 
         match status.status.as_str() {
@@ -320,22 +385,24 @@ where
     }
 
     // Final progress report
-    if let Ok(metadata) = fs::metadata(&target_file) {
-        let total_active_tasks = Aria2Lease::active_leases_count().await;
-        on_progress(ProgressUpdate {
-            downloaded_bytes: metadata.len(),
-            total_bytes: metadata.len(),
-            speed_bytes_per_sec: 0,
-            port: lease.port,
-            num_pieces: last_num_pieces,
-            piece_length: last_piece_length,
-            bitfield: last_bitfield,
-            connections: 0,
-            is_resumed,
-            resumed_bytes: initial_resumed_bytes.unwrap_or(0),
-            total_active_tasks,
-        });
-    }
+    let final_bytes = fs::metadata(&target_file)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0);
+    let total_active_tasks = Aria2Lease::active_leases_count().await;
+    on_progress(ProgressUpdate {
+        downloaded_bytes: final_bytes,
+        total_bytes: final_bytes,
+        speed_bytes_per_sec: 0,
+        port: lease.port,
+        num_pieces: last_num_pieces,
+        piece_length: last_piece_length,
+        bitfield: last_bitfield.clone(),
+        connections: 0,
+        is_resumed,
+        resumed_bytes: initial_resumed_bytes.unwrap_or(0),
+        total_active_tasks,
+        phase: DownloadPhase::Downloading,
+    });
 
     if !verify_file_hash_and_size(
         &target_file,
@@ -343,12 +410,46 @@ where
         options.expected_sha256.as_deref(),
     ) {
         let _ = fs::remove_file(&target_file);
-        let aria2_meta_path = options.dest_dir.join(format!("{}.aria2", options.filename));
+        let aria2_meta_path = dest_dir.join(format!("{}.aria2", options.filename));
         let _ = fs::remove_file(&aria2_meta_path);
         return Err("文件完整性校验失败（大小或哈希不匹配）".to_string());
     }
 
+    let port = lease.port;
     lease.release().await;
+
+    if let Some(publish) = &options.target.publish {
+        // aria2 已结束，接下来由下载层负责复制到最终目录；调用方只看 phase。
+        on_progress(ProgressUpdate {
+            downloaded_bytes: final_bytes,
+            total_bytes: final_bytes,
+            speed_bytes_per_sec: 0,
+            port,
+            num_pieces: last_num_pieces,
+            piece_length: last_piece_length,
+            bitfield: last_bitfield,
+            connections: 0,
+            is_resumed,
+            resumed_bytes: initial_resumed_bytes.unwrap_or(0),
+            total_active_tasks: Aria2Lease::active_leases_count().await,
+            phase: DownloadPhase::Saving,
+        });
+        let publish_task = publish.clone();
+        let publish_dir = dest_dir.clone();
+        let publish_name = options.filename.clone();
+        let expected_size = options.expected_size;
+        tokio::task::spawn_blocking(move || {
+            crate::file_manager::publish_staging(
+                &publish_task,
+                &publish_dir,
+                &publish_name,
+                expected_size,
+            )
+        })
+        .await
+        .map_err(|error| format!("保存文件任务失败: {error}"))??;
+        crate::file_manager::clear_staging(publish);
+    }
 
     Ok(target_file)
 }

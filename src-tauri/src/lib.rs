@@ -12,6 +12,7 @@ mod campus_payments;
 mod desktop;
 mod embedding_model;
 mod enrollment;
+pub(crate) mod file_manager;
 pub(crate) mod ipc_channel;
 pub(crate) mod local_model;
 mod jxxk;

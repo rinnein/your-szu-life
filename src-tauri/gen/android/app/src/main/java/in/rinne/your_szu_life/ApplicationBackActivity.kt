@@ -1,6 +1,7 @@
 package `in`.rinne.your_szu_life
 
 import android.os.Bundle
+import android.content.Intent
 import android.content.res.Configuration
 import android.view.View
 import android.view.Window
@@ -126,6 +127,8 @@ abstract class ApplicationBackActivity : TauriActivity(), app.tauri.AppBackNavig
     super.onCreate(savedInstanceState)
     AuthWindowBridge.created(this)
     WallpaperColorBridge.bindActivity(this)
+    // SAF 目录选择器需要 Activity 与它自己的 onActivityResult。
+    StorageDirectoryBridge.bindActivity(this)
     // 边到边绘制是 Android 15 的强制行为：系统栏不会自己上色，由应用把这条带状区域
     // 画成与 WebView 相同的底色（Web 端推送 chrome-surface 后即换成页面真实底色）。
     applySystemBars()
@@ -190,9 +193,16 @@ abstract class ApplicationBackActivity : TauriActivity(), app.tauri.AppBackNavig
     applySystemBars()
   }
 
+  /** SAF 文件夹选择器的结果；其它请求交回框架默认处理。 */
+  override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    if (StorageDirectoryBridge.onActivityResult(requestCode, resultCode, data)) return
+    super.onActivityResult(requestCode, resultCode, data)
+  }
+
   override fun onDestroy() {
     AuthWindowBridge.destroyed(this)
     WallpaperColorBridge.unbindActivity()
+    StorageDirectoryBridge.unbindActivity(this)
     authWebView = null
     authBack.remove()
     chrome?.dispose()

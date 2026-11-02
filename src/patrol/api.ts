@@ -109,6 +109,8 @@ export interface JxxkLiveStreamSource {
 export type JxxkDownloadTaskStatus =
   | "preparing"
   | "downloading"
+  /** aria2 已完成，正在把暂存文件保存到所选目录（Android SAF）。 */
+  | "saving"
   | "paused"
   | "completed"
   | "failed"
@@ -120,6 +122,8 @@ export interface JxxkDownloadTask {
   lessonName: string;
   streamName: string;
   fileName: string;
+  /** 最终保存目录（旧任务为本地绝对路径）。 */
+  destDir: string;
   status: JxxkDownloadTaskStatus;
   downloaded: number;
   total: number;
@@ -135,6 +139,8 @@ export interface JxxkDownloadTask {
   isResumed?: boolean;
   resumedBytes?: number;
   totalActiveTasks?: number;
+  /** 进入「保存到目标目录」阶段的时间；由统一下载层给出。 */
+  savingSince?: number | null;
 }
 
 export async function getSnapshot(): Promise<JxxkSnapshot> {

@@ -16,6 +16,7 @@ const STATUS_META: Record<
 > = {
   preparing: { label: "准备中", color: "warning" },
   downloading: { label: "下载中", color: "danger" },
+  saving: { label: "保存中", color: "warning" },
   paused: { label: "已暂停", color: "warning" },
   completed: { label: "已完成", color: "success" },
   failed: { label: "失败", color: "danger" },
@@ -80,7 +81,10 @@ export function DownloadManagerView() {
             <div className="flex flex-col gap-2.5">
               {group.tasks.map((task) => {
                 const meta = STATUS_META[task.status];
-                const active = task.status === "downloading" || task.status === "preparing";
+                const active =
+                  task.status === "downloading" ||
+                  task.status === "preparing" ||
+                  task.status === "saving";
                 return (
                   <Card key={task.id} variant="outlined" className="p-3">
                     <div className="flex items-start justify-between gap-3">
@@ -149,14 +153,15 @@ export function DownloadManagerView() {
                             bitfield: task.bitfield,
                             isResumed: task.isResumed,
                             resumedBytes: task.resumedBytes,
+                            savingSince: task.savingSince,
                           }}
                           defaultExpanded={false}
                         />
                       </div>
                     )}
                     {task.status === "completed" && (
-                      <div className="text-xs text-muted mt-1">
-                        已保存到系统「下载/jxxk/{task.courseName}/{task.lessonName}」目录
+                      <div className="text-xs text-muted mt-1 break-all">
+                        已保存到 {task.destDir}
                       </div>
                     )}
                   </Card>
@@ -229,6 +234,7 @@ function statusOrder(status: JxxkDownloadTaskStatus): number {
   switch (status) {
     case "downloading":
     case "preparing":
+    case "saving":
       return 0;
     case "paused":
       return 1;

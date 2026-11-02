@@ -130,7 +130,10 @@ pub(crate) fn start_update(
         let aria_options = crate::aria2::DownloadJobOptions {
             uris: Vec::new(),
             prioritized_uris: candidates,
-            dest_dir: cache_dir.clone(),
+            target: crate::aria2::DownloadTarget::local(
+                cache_dir.clone(),
+                cache_dir.to_string_lossy().into_owned(),
+            ),
             filename: download_filename,
             expected_sha256: None,
             expected_size: None,

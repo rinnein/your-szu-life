@@ -11,6 +11,7 @@ pub(crate) mod mcp;
 
 pub(crate) const BASELINE_MARKER: &str = "__baseline__";
 pub(crate) const AUTH: &str = "auth";
+pub(crate) const STORAGE: &str = "storage";
 pub(crate) const DORMITORY: &str = "dormitory";
 pub(crate) const APPEARANCE: &str = "appearance";
 pub(crate) const LOCAL_MODEL: &str = "local_model";
@@ -52,9 +53,14 @@ pub(crate) struct OnboardingDefinition {
     pub skippable: bool,
 }
 
-pub(crate) const ONBOARDING_DEFINITION: [OnboardingDefinition; 6] = [
+pub(crate) const ONBOARDING_DEFINITION: [OnboardingDefinition; 7] = [
     OnboardingDefinition {
         id: AUTH,
+        revision: 1,
+        skippable: false,
+    },
+    OnboardingDefinition {
+        id: STORAGE,
         revision: 1,
         skippable: false,
     },
@@ -247,9 +253,10 @@ mod tests {
         let ids: Vec<_> = ONBOARDING_DEFINITION.iter().map(|item| item.id).collect();
         assert_eq!(
             ids,
-            vec![AUTH, DORMITORY, APPEARANCE, LOCAL_MODEL, AI, MCP]
+            vec![AUTH, STORAGE, DORMITORY, APPEARANCE, LOCAL_MODEL, AI, MCP]
         );
         assert!(!definition(AUTH).unwrap().skippable);
+        assert!(!definition(STORAGE).unwrap().skippable);
         assert!(definition(DORMITORY).unwrap().skippable);
         assert!(!definition(APPEARANCE).unwrap().skippable);
         assert!(definition(LOCAL_MODEL).unwrap().skippable);
@@ -263,6 +270,7 @@ mod tests {
             &ONBOARDING_DEFINITION,
             &rows(&[
                 (AUTH, "configured", 1),
+                (STORAGE, "configured", 1),
                 (DORMITORY, "skipped", 1),
                 (APPEARANCE, "configured", 1),
                 (LOCAL_MODEL, "skipped", 1),
@@ -278,11 +286,12 @@ mod tests {
     #[test]
     fn revision_bump_makes_a_completed_item_pending_again() {
         let mut definitions = ONBOARDING_DEFINITION;
-        definitions[4].revision = 2;
+        definitions[5].revision = 2;
         let state = compute_state(
             &definitions,
             &rows(&[
                 (AUTH, "configured", 1),
+                (STORAGE, "configured", 1),
                 (DORMITORY, "configured", 1),
                 (APPEARANCE, "configured", 1),
                 (LOCAL_MODEL, "skipped", 1),
@@ -302,7 +311,7 @@ mod tests {
         let state = compute_state(&ONBOARDING_DEFINITION, &rows(&[]), true);
         let auth = state.steps.iter().find(|step| step.id == AUTH).unwrap();
         assert_eq!(auth.status, OnboardingStatus::Configured);
-        assert_eq!(state.current_step.as_deref(), Some(DORMITORY));
+        assert_eq!(state.current_step.as_deref(), Some(STORAGE));
     }
 
     #[test]
