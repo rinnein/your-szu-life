@@ -54,16 +54,21 @@ impl Resolve for CampusResolver {
     fn resolve(&self, name: Name) -> Resolving {
         let host = name.as_str().to_owned();
         Box::pin(async move {
-            // 1. 最高优先级：针对特定域名的特殊解析规则（如 jxxk.szu.edu.cn）
-            if let Some(rule) = model::find_dns_override(&host) {
-                let target = if is_in_campus_network() {
+            // 1. 最高优先级：针对特定域名的特殊解析规则。仅处理裸主机/IP 形态的
+            //    目标；origin 形态（含 scheme/端口）的改写在 `netproxy::rewrite_origin`
+            //    里完成，不经过解析器。
+            if let Some(rule) = model::find_override(&host) {
+                let raw = if is_in_campus_network() {
                     &rule.on_campus
                 } else {
                     &rule.fallback
                 };
-                if let Ok(addrs) = resolve_target(target).await {
-                    if !addrs.is_empty() {
-                        return Ok(Box::new(addrs.into_iter().map(socket_addr)) as Addrs);
+                if let Some(model::OverrideTarget::Host(target)) = model::parse_override_target(raw)
+                {
+                    if let Ok(addrs) = resolve_target(&target).await {
+                        if !addrs.is_empty() {
+                            return Ok(Box::new(addrs.into_iter().map(socket_addr)) as Addrs);
+                        }
                     }
                 }
             }
@@ -169,6 +174,14 @@ fn mark_campus_dns_up() {
     *CAMPUS_DNS_DOWN
         .lock()
         .unwrap_or_else(|error| error.into_inner()) = None;
+}
+
+#[cfg(test)]
+pub(crate) static TEST_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(test)]
+pub(crate) fn reset_campus_dns_for_tests() {
+    mark_campus_dns_up();
 }
 
 /// 按配置顺序问每台 DNS；全都拿不到地址才算失败。
@@ -535,20 +548,26 @@ mod tests {
 
     #[tokio::test]
     async fn dns_override_resolves_jxxk_on_and_off_campus() {
-        // 1. 处于校内网络时，解析到 172.31.63.8
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        // 校内的重写目标 `http://172.31.63.8:80` 是 origin 形态，由
+        // `netproxy::rewrite_origin` 整体替换请求 URL，解析器不再插手 ——
+        // 因此校内状态下解析结果绝不能出现 172.31.63.8（否则 https:443 会
+        // 直连那个没有 TLS 服务的端口，正是本次 override 引入前的问题）。
         set_in_campus_network(true);
         let name_on = "jxxk.szu.edu.cn".parse::<Name>().unwrap();
         let addrs_on = CampusResolver
             .resolve(name_on)
             .await
-            .unwrap()
-            .collect::<Vec<_>>();
-        assert_eq!(
-            addrs_on.iter().map(|s| s.ip()).collect::<Vec<_>>(),
-            vec!["172.31.63.8".parse::<IpAddr>().unwrap()]
+            .map(|addrs| addrs.map(|s| s.ip()).collect::<Vec<_>>())
+            .unwrap_or_default();
+        assert!(
+            !addrs_on
+                .iter()
+                .any(|ip| *ip == "172.31.63.8".parse::<IpAddr>().unwrap()),
+            "校内解析 jxxk.szu.edu.cn 不应再由解析器固定到 172.31.63.8，实际：{addrs_on:?}"
         );
 
-        // 2. 处于非校内网络时，解析到 c46.szu.edu.cn 对应的 IP（210.39.4.1）
+        // 处于非校内网络时，fallback 仍是裸主机形态，解析到 c46.szu.edu.cn（210.39.4.1）。
         set_in_campus_network(false);
         let name_off = "jxxk.szu.edu.cn".parse::<Name>().unwrap();
         let addrs_off = CampusResolver

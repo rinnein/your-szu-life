@@ -108,6 +108,35 @@ impl Client {
         self.token.lock().map(|t| t.is_some()).unwrap_or(false)
     }
 
+    /// 当前校园网状态下巡课请求实际使用的 origin（overrides 的 origin 形态改写目标）。
+    /// 校外/裸主机形态的规则只影响 DNS，返回 `None`。
+    fn effective_endpoint(&self) -> Option<Url> {
+        crate::netproxy::origin_override_target(self.jxxk.host_str()?)
+    }
+
+    /// 把 cookie 写进 jar，同时落在公开 origin 与改写后的 origin 上：
+    /// 请求经 `netproxy::rewrite_origin` 后实际连的是改写目标，cookie 必须
+    /// 归属到它才会被发送；公开 origin 上的副本保证会话跨网络环境迁移时
+    /// 仍能恢复（token 从 jar 恢复按名字扫描，不区分域）。返回是否有写入成功。
+    fn insert_cookie(&self, raw: &str) -> bool {
+        let endpoint = self.effective_endpoint();
+        let mut targets: Vec<&Url> = vec![&self.jxxk];
+        if let Some(target) = &endpoint {
+            targets.push(target);
+        }
+        let mut inserted = false;
+        if let Ok(mut jar) = self.jar.lock() {
+            for target in targets {
+                if let Ok(parsed) = cookie_store::RawCookie::parse(raw.to_owned()) {
+                    if jar.insert_raw(&parsed, target).is_ok() {
+                        inserted = true;
+                    }
+                }
+            }
+        }
+        inserted
+    }
+
     /// 判断当前 token 是否即将到期（距过期不足 15 分钟，或无 exp 字段）。
     /// 只有确实需要续期时才触发网络 refreshToken，避免频繁刷新打爆平台或并发冲突。
     pub(super) fn token_needs_refresh(&self) -> bool {
@@ -144,7 +173,7 @@ impl Client {
 
     /// 把新 token 写回 jar 的 token cookie（域后缀沿用 COLLEGE_UNIVERSITY_DOMAIN），
     /// 保证会话持久化后重启仍能恢复。
-    fn store_token(&self, token: &str) {
+    pub(super) fn store_token(&self, token: &str) {
         *self.token.lock().unwrap() = Some(token.to_owned());
         let suffix = self.jar_cookie_value(DOMAIN_COOKIE).unwrap_or_default();
         // Max-Age 与 JWT 有效期一致，cookie_store 重载后生命周期语义不漂移。
@@ -154,22 +183,25 @@ impl Client {
         let raw = format!(
             "{TOKEN_COOKIE}_{suffix}={token}; Path=/; HttpOnly; Max-Age={max_age}"
         );
-        if let Ok(parsed) = cookie_store::RawCookie::parse(raw) {
-            if let Ok(mut jar) = self.jar.lock() {
-                let _ = jar.insert_raw(&parsed, &self.jxxk);
-            }
-        }
+        self.insert_cookie(&raw);
     }
 
     /// 保存 jar 中适用于巡课请求的 cookie（不含 authserver 会话，避免重复
     /// 保存主凭据）。用 `matches` 而非域名精确比较：平台的 token cookie
-    /// 可能带父域（Domain=szu.edu.cn），按 host 精确过滤会把会话丢掉。
+    /// 可能带父域（Domain=szu.edu.cn），按 host 精确过滤会把会话丢掉；
+    /// 校内改写目标 origin 上的 cookie 同样要保留，否则校内建立的会话
+    /// 重启后无法恢复。
     pub(super) fn cookies(&self) -> Result<String, String> {
+        let endpoint = self.effective_endpoint();
         let jar = self.jar.lock().map_err(|_| "巡课会话不可用".to_string())?;
         let mut filtered = cookie_store::CookieStore::default();
         for cookie in jar.iter_any() {
             if !cookie.is_expired() && cookie.matches(&self.jxxk) {
                 let _ = filtered.insert_raw(&cookie.clone().into(), &self.jxxk);
+            } else if let Some(endpoint) = &endpoint {
+                if !cookie.is_expired() && cookie.matches(endpoint) {
+                    let _ = filtered.insert_raw(&cookie.clone().into(), endpoint);
+                }
             }
         }
         let mut bytes = vec![];
@@ -183,13 +215,18 @@ impl Client {
         &self,
         url: Url,
     ) -> Result<(StatusCode, Url, Option<String>, Vec<String>, String), String> {
+        let mut url = url;
+        crate::netproxy::rewrite_origin(&mut url);
         let mut response = self
             .http
             .get(url.clone())
             .header("Referer", self.jxxk.as_str())
             .send()
             .await
-            .map_err(|_| "无法连接巡课平台，请检查校园网或代理设置".to_string())?;
+            .map_err(|e| {
+                log::warn!("[jxxk] 连接巡课平台失败 {url}: {e}");
+                "无法连接巡课平台，请检查校园网或代理设置".to_string()
+            })?;
         let status = response.status();
         let final_url = response.url().clone();
         let location = response
@@ -225,7 +262,12 @@ impl Client {
     }
 
     fn is_jxxk(&self, url: &Url) -> bool {
-        url.host_str() == self.jxxk.host_str()
+        if url.host_str() == self.jxxk.host_str() {
+            return true;
+        }
+        // 校内 origin 改写后请求落在目标 origin 上，落地判定必须同时认它。
+        self.effective_endpoint()
+            .is_some_and(|endpoint| same_origin(&endpoint, url))
     }
 
     /// 跳转目标是否可信：巡课 / authserver 两个主 host，或深大自己的任意子域。
@@ -236,6 +278,13 @@ impl Client {
         };
         if host == self.jxxk.host_str().unwrap_or_default()
             || host == self.auth.host_str().unwrap_or_default()
+        {
+            return true;
+        }
+        // 校内改写目标（如 172.31.63.8）也是巡课自己的入口。
+        if self
+            .effective_endpoint()
+            .is_some_and(|endpoint| endpoint.host_str() == Some(host))
         {
             return true;
         }
@@ -361,12 +410,8 @@ impl Client {
         let mut names = Vec::new();
         for (name, value) in extract_script_cookies(html) {
             let raw = format!("{name}={value}; Path=/");
-            if let Ok(parsed) = cookie_store::RawCookie::parse(raw) {
-                if let Ok(mut jar) = self.jar.lock() {
-                    if jar.insert_raw(&parsed, &self.jxxk).is_ok() {
-                        names.push(name);
-                    }
-                }
+            if self.insert_cookie(&raw) {
+                names.push(name);
             }
         }
         names
@@ -379,11 +424,7 @@ impl Client {
             return;
         }
         let raw = format!("fromUrl={}; Path=/", url_escape(self.jxxk.as_str()));
-        if let Ok(parsed) = cookie_store::RawCookie::parse(raw) {
-            if let Ok(mut jar) = self.jar.lock() {
-                let _ = jar.insert_raw(&parsed, &self.jxxk);
-            }
-        }
+        self.insert_cookie(&raw);
     }
 
     /// 用旧 token 换新 token（平台在到期前 900 秒会走同样的刷新）。
@@ -395,15 +436,20 @@ impl Client {
             .jxxk
             .join("university-user/public/refreshToken")
             .map_err(|_| "刷新地址无效".to_string())?;
+        let mut url = url;
+        crate::netproxy::rewrite_origin(&mut url);
         let response = self
             .http
-            .post(url)
+            .post(url.clone())
             .header("token", old)
             .header("Referer", self.jxxk.as_str())
             .json(&serde_json::json!({}))
             .send()
             .await
-            .map_err(|_| "无法连接巡课平台刷新 token".to_string())?;
+            .map_err(|e| {
+                log::warn!("[jxxk] 刷新 token 连接失败 {url}: {e}");
+                "无法连接巡课平台刷新 token".to_string()
+            })?;
         if !response.status().is_success() {
             return Err(format!(
                 "刷新巡课 token 失败: HTTP {}",
@@ -434,6 +480,14 @@ impl Client {
             .jxxk
             .join(path.trim_start_matches('/'))
             .map_err(|_| ApiError::local("接口地址无效"))?;
+        let mut url = url;
+        crate::netproxy::rewrite_origin(&mut url);
+        let query_clone = query
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join("&");
+        let display_url = format!("{url}?{query_clone}");
         let mut request = self
             .http
             .request(Method::GET, url)
@@ -445,7 +499,10 @@ impl Client {
         let response = request
             .send()
             .await
-            .map_err(|_| ApiError::local("无法连接巡课平台，请检查校园网或代理设置"))?;
+            .map_err(|e| {
+                log::warn!("[jxxk] GET 请求失败 {display_url}: {e}");
+                ApiError::local("无法连接巡课平台，请检查校园网或代理设置")
+            })?;
         let status = response.status();
         let bytes = response
             .bytes()
@@ -505,6 +562,9 @@ impl Client {
             .jxxk
             .join(path.trim_start_matches('/'))
             .map_err(|_| ApiError::local("接口地址无效"))?;
+        let mut url = url;
+        crate::netproxy::rewrite_origin(&mut url);
+        let display_url = url.to_string();
         let mut request = self
             .http
             .request(Method::POST, url)
@@ -516,7 +576,10 @@ impl Client {
         let response = request
             .send()
             .await
-            .map_err(|_| ApiError::local("无法连接巡课平台，请检查校园网或代理设置"))?;
+            .map_err(|e| {
+                log::warn!("[jxxk] POST 请求失败 {display_url}: {e}");
+                ApiError::local("无法连接巡课平台，请检查校园网或代理设置")
+            })?;
         let status = response.status();
         let bytes = response
             .bytes()
@@ -555,6 +618,9 @@ impl Client {
         if url.scheme() != "https" || !(host == "szu.edu.cn" || host.ends_with(".szu.edu.cn")) {
             return Err(format!("流地址不受信任: {host}"));
         }
+        // 信任校验按原始 URL 做，实际连接走改写后的 origin（如校内 http 入口）。
+        let mut url = url.clone();
+        crate::netproxy::rewrite_origin(&mut url);
         let mut request = self
             .http
             .get(url.clone())
@@ -567,7 +633,10 @@ impl Client {
         let response = request
             .send()
             .await
-            .map_err(|_| "拉取巡课媒体数据失败".to_string())?;
+            .map_err(|e| {
+                log::warn!("[jxxk] 拉取巡课媒体失败 {url}: {e}");
+                "拉取巡课媒体数据失败".to_string()
+            })?;
         if !response.status().is_success() {
             return Err(format!(
                 "巡课媒体服务返回 HTTP {}",
@@ -590,6 +659,14 @@ impl Client {
         }
         Ok((bytes, content_type))
     }
+}
+
+/// 两个 URL 是否同 origin（scheme、host、端口按 scheme 默认值归一）。
+fn same_origin(a: &Url, b: &Url) -> bool {
+    a.scheme() == b.scheme()
+        && a.host_str().map(|h| h.trim_end_matches('.'))
+            == b.host_str().map(|h| h.trim_end_matches('.'))
+        && a.port_or_known_default() == b.port_or_known_default()
 }
 
 fn normalize_base(raw: &str, message: &str) -> Result<Url, String> {

@@ -1,5 +1,5 @@
 {
-  "//": "alwaysDirect 内的地址永不走代理（校内门户只在校园网内可达，代理到不了，只能直连）；cidrs 是校内网在用网段、hosts 是校内域名（`+.szu.edu.cn` 表示本域及其子域），两者合起来是校内网名单，受设置页「校内网也走代理」开关控制（默认关闭即直连）；dns 是校内域名的主 DNS——部分校内域名只有它解析得对，因此解析 hosts 里的域名时先问它，连不到校园网（无路由/超时）自动退回系统 DNS。网段由 http://speedtest.szu.edu.cn:8080/ 的校内 IP 分配清单聚合为等价的最小 CIDR 集合；dnsOverrides 是针对特定域名的特殊解析规则（优先级最高）：当校园网登录模块检测到处于校内区域时解析到 onCampus，其它时候解析到 fallback。",
+  "//": "alwaysDirect 内的地址永不走代理（校内门户只在校园网内可达，代理到不了，只能直连）；cidrs 是校内网在用网段、hosts 是校内域名（`+.szu.edu.cn` 表示本域及其子域），两者合起来是校内网名单，受设置页「校内网也走代理」开关控制（默认关闭即直连）；dns 是校内域名的主 DNS——部分校内域名只有它解析得对，因此解析 hosts 里的域名时先问它，连不到校园网（无路由/超时）自动退回系统 DNS。网段由 http://speedtest.szu.edu.cn:8080/ 的校内 IP 分配清单聚合为等价的最小 CIDR 集合；overrides 是针对特定域名的出网重写规则（优先级最高）：当校园网登录模块检测到处于校内区域时使用 onCampus，其它时候使用 fallback。目标写完整 origin（如 http://172.31.63.8:80，省略端口按 http-80/https-443 推断）时请求的协议、主机与端口整体替换；写裸主机/IP（如 c46.szu.edu.cn）时仅替换 DNS 解析结果。",
   "alwaysDirect": ["172.30.255.42", "net.szu.edu.cn"],
   "cidrs": [
     "172.19.0.0/17",
@@ -68,10 +68,10 @@
   ],
   "hosts": ["+.szu.edu.cn"],
   "dns": ["192.168.247.6"],
-  "dnsOverrides": [
+  "overrides": [
     {
       "host": "jxxk.szu.edu.cn",
-      "onCampus": "172.31.63.8",
+      "onCampus": "http://172.31.63.8:80",
       "fallback": "c46.szu.edu.cn"
     }
   ]

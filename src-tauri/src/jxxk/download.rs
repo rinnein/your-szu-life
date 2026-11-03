@@ -414,13 +414,16 @@ async fn resolve_download_url(app: AppHandle, task_id: String) -> Result<String,
     let fresh = target.file_url.clone();
     drop(urls);
     // 校验目标仍在深大域内
-    let parsed = reqwest::Url::parse(&fresh).map_err(|_| "下载地址无效".to_string())?;
+    let mut parsed = reqwest::Url::parse(&fresh).map_err(|_| "下载地址无效".to_string())?;
     let Some(host) = parsed.host_str().map(|h| h.trim_end_matches('.')) else {
         return Err("下载地址缺少主机名".into());
     };
     if parsed.scheme() != "https" || !(host == "szu.edu.cn" || host.ends_with(".szu.edu.cn")) {
         return Err(format!("下载地址不受信任: {host}"));
     }
+    // 允许根据出网重写规则（如校内入口切换到 HTTP）改写实际提供给 aria2 的直链。
+    crate::netproxy::rewrite_origin(&mut parsed);
+    let fresh = parsed.to_string();
 
     // 更新缓存
     *core.latest_url.lock().unwrap() = (fresh.clone(), Instant::now());

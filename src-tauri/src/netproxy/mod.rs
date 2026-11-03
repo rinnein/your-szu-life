@@ -32,6 +32,8 @@ mod system;
 
 #[cfg(test)]
 pub(crate) use dns::is_in_campus_network;
+#[cfg(test)]
+pub(crate) use dns::TEST_ENV_LOCK;
 pub(crate) use dns::set_in_campus_network;
 pub(crate) use model::{ProxyProbeView, ProxySettings, ProxySettingsInput, ProxySettingsView};
 
@@ -125,6 +127,57 @@ pub(crate) fn blocking_client_builder() -> reqwest::blocking::ClientBuilder {
 /// [`resolve_proxy`] 决定 —— 这也正是「绕过逻辑只存在于一处」的前提。
 fn dynamic_proxy() -> Proxy {
     Proxy::custom(|target: &Url| resolve_proxy(target))
+}
+
+/// 出网前的 origin 改写（`overrides` 里 origin 形态的规则，优先级最高）。
+///
+/// DNS 覆盖只能替换解析出的 IP，改不了协议与端口；当校内入口只提供另一种
+/// scheme/端口（如 jxxk 校内只有 `http://172.31.63.8:80`）时，必须把请求 URL
+/// 本身整体替换。规则与匹配都在 [`model`] 里，各业务模块在构建请求前调用本函数，
+/// 除此之外不需要知道 override 的存在。
+///
+/// 裸主机形态的目标不在此处理，仍由 [`dns::CampusResolver`] 在解析层替换。
+pub(crate) fn rewrite_origin(url: &mut Url) {
+    let Some(rule) = model::find_override(url.host_str().unwrap_or_default()) else {
+        return;
+    };
+    let raw = if dns::is_in_campus_network() {
+        &rule.on_campus
+    } else {
+        &rule.fallback
+    };
+    let Some(model::OverrideTarget::Origin { scheme, host, port }) = model::parse_override_target(raw)
+    else {
+        return;
+    };
+    let mut next = Url::parse(&format!("{scheme}://{}:{port}", model::authority_host(&host)))
+        .expect("override 目标已校验为合法 http(s) origin");
+    next.set_path(url.path());
+    next.set_query(url.query());
+    next.set_fragment(url.fragment());
+    *url = next;
+}
+
+/// 当前校园网状态下 `host` 被改写到的完整 origin。
+///
+/// 供业务模块做身份判定与 cookie 归属（改写后请求落在目标 origin 上，
+/// cookie jar、跳转白名单都要同时认这两个 origin）。裸主机形态的目标
+/// 只影响 DNS，不产生新的 origin，返回 `None`。
+pub(crate) fn origin_override_target(host: &str) -> Option<Url> {
+    let rule = model::find_override(host)?;
+    let raw = if dns::is_in_campus_network() {
+        &rule.on_campus
+    } else {
+        &rule.fallback
+    };
+    match model::parse_override_target(raw)? {
+        model::OverrideTarget::Origin { scheme, host, port } => Url::parse(&format!(
+            "{scheme}://{}:{port}",
+            model::authority_host(&host)
+        ))
+        .ok(),
+        model::OverrideTarget::Host(_) => None,
+    }
 }
 
 /// 单次请求的代理决策：返回 `None` 表示这次请求直连。
@@ -298,6 +351,54 @@ mod tests {
     }
 
     #[test]
+    fn rewrite_origin_swaps_scheme_host_and_port_on_campus() {
+        let _guard = dns::TEST_ENV_LOCK.lock().unwrap();
+        // 随包配置：jxxk.szu.edu.cn 校内改写到 http://172.31.63.8:80。
+        // （Url 在端口为默认值 80 时序列化省略端口，因此 as_str() 为 http://172.31.63.8/...）
+        dns::set_in_campus_network(true);
+        let mut url = target("https://jxxk.szu.edu.cn/university-sso/ava/sso?ticket=ST-1");
+        rewrite_origin(&mut url);
+        assert_eq!(url.as_str(), "http://172.31.63.8/university-sso/ava/sso?ticket=ST-1");
+        assert_eq!(url.scheme(), "http");
+        assert_eq!(url.host_str(), Some("172.31.63.8"));
+        assert_eq!(url.port_or_known_default(), Some(80));
+
+        // http 入口同样收敛到校内 origin，会话不因 scheme 不同而分裂。
+        let mut url = target("http://jxxk.szu.edu.cn/university-sso/ava/sso");
+        rewrite_origin(&mut url);
+        assert_eq!(url.as_str(), "http://172.31.63.8/university-sso/ava/sso");
+
+        // 裸主机形态的 fallback 不参与 origin 改写；无关域名不受影响。
+        let mut url = target("https://authserver.szu.edu.cn/authserver/login");
+        rewrite_origin(&mut url);
+        assert_eq!(url.as_str(), "https://authserver.szu.edu.cn/authserver/login");
+
+        dns::set_in_campus_network(false);
+        let mut url = target("https://jxxk.szu.edu.cn/university-live/protect/course/page");
+        rewrite_origin(&mut url);
+        assert_eq!(
+            url.as_str(),
+            "https://jxxk.szu.edu.cn/university-live/protect/course/page"
+        );
+    }
+
+    #[test]
+    fn origin_override_target_only_applies_to_origin_rules() {
+        let _guard = dns::TEST_ENV_LOCK.lock().unwrap();
+        dns::set_in_campus_network(true);
+        let on = origin_override_target("jxxk.szu.edu.cn").expect("校内有 origin 规则");
+        assert_eq!(on.as_str(), "http://172.31.63.8/");
+        assert_eq!(on.scheme(), "http");
+        assert_eq!(on.port_or_known_default(), Some(80));
+
+        // fallback 是裸主机，只改 DNS，不产生新 origin。
+        dns::set_in_campus_network(false);
+        assert_eq!(origin_override_target("jxxk.szu.edu.cn"), None);
+        // 无规则的域名返回 None。
+        assert_eq!(origin_override_target("authserver.szu.edu.cn"), None);
+    }
+
+    #[test]
     fn current_defaults_to_auto_before_initialization() {
         // 测试进程不会初始化 Tauri 状态，缓存应保持默认值。
         assert_eq!(current().mode, model::MODE_AUTO);
@@ -399,6 +500,8 @@ mod tests {
 
     #[test]
     fn socks5_mode_resolves_campus_domains_locally() {
+        let _guard = dns::TEST_ENV_LOCK.lock().unwrap();
+        dns::reset_campus_dns_for_tests();
         // 校内域名只有开了「校内网也走代理」才会经过代理，那时才谈得上
         // SOCKS5 用本机还是远端解析。
         let settings = ProxySettings {

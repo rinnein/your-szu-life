@@ -479,6 +479,7 @@ async fn api_calls_require_token_header() {
 
 #[tokio::test]
 async fn trusted_redirects_cover_szu_subdomains_only() {
+    let _guard = crate::netproxy::TEST_ENV_LOCK.lock().unwrap();
     let seen = Arc::new(Seen::default());
     let (client, _jxxk, _auth) = make_client(false, seen).await;
     let trusted = |raw: &str| client.is_trusted_redirect(&raw.parse().unwrap());
@@ -489,6 +490,47 @@ async fn trusted_redirects_cover_szu_subdomains_only() {
     ));
     assert!(!trusted("https://evil.example.com/"));
     assert!(!trusted("https://szu.edu.cn.evil.com/"));
+
+    // 校内网络下，overrides 规则配置的内部入口（172.31.63.8）也是受信任的跳转目标。
+    let prod_client = Client::new(
+        super::client::JXXK_ORIGIN,
+        super::client::AUTH_LOGIN,
+        None,
+        &[],
+    )
+    .unwrap();
+    let trusted_prod = |raw: &str| prod_client.is_trusted_redirect(&raw.parse().unwrap());
+
+    crate::netproxy::set_in_campus_network(true);
+    assert!(trusted_prod("http://172.31.63.8:80/university-sso/ava/sso"));
+    assert!(trusted_prod("http://172.31.63.8/university-sso/ava/sso"));
+
+    // 校外网络下，不产生 origin override，非深大域的目标不被信任。
+    crate::netproxy::set_in_campus_network(false);
+    assert!(!trusted_prod("http://172.31.63.8:80/"));
+}
+
+#[tokio::test]
+async fn cookies_preserves_override_target_cookies_on_campus() {
+    let _guard = crate::netproxy::TEST_ENV_LOCK.lock().unwrap();
+    crate::netproxy::set_in_campus_network(true);
+    let client = Client::new(
+        super::client::JXXK_ORIGIN,
+        super::client::AUTH_LOGIN,
+        None,
+        &[],
+    )
+    .unwrap();
+
+    // 模拟写入 token，应同时落地到公开 origin 与校内 override 目标 origin。
+    client.store_token("test-jwt-token");
+    assert!(client.has_token());
+
+    // 导出会话 JSON，反序列化后检查两个 origin 的 cookie 均被保留。
+    let json = client.cookies().unwrap();
+    assert!(json.contains("test-jwt-token"));
+
+    crate::netproxy::set_in_campus_network(false);
 }
 
 #[test]

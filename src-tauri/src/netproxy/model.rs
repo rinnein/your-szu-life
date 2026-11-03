@@ -247,30 +247,61 @@ impl AddressSet {
     }
 }
 
-/// 针对特定域名的特殊解析规则。
+/// 针对特定域名的出网重写规则。
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct DnsOverrideRule {
+pub(crate) struct OverrideRule {
     /// 匹配的目标域名（如 `jxxk.szu.edu.cn`）。
     pub host: String,
-    /// 处于校内网络状态时解析到的目标（IP 或域名）。
+    /// 处于校内网络状态时使用的目标。
     pub on_campus: String,
-    /// 其它时候（校外/非校园网）解析到的目标（IP 或域名）。
+    /// 其它时候（校外/非校园网）使用的目标。
     pub fallback: String,
+}
+
+/// 重写目标。决定一条规则生效时请求被改写到哪里。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum OverrideTarget {
+    /// 完整 origin（`http://172.31.63.8:80`）：请求的 scheme、host、端口整体替换，
+    /// 路径与查询保持不变。用于「校内入口只提供另一种协议/端口」的场景。
+    Origin { scheme: String, host: String, port: u16 },
+    /// 裸主机/IP（`172.31.63.8`、`c46.szu.edu.cn`）：仅替换 DNS 解析结果，
+    /// 请求仍按原 scheme 与端口连接。
+    Host(String),
+}
+
+/// 解析重写目标。带 `scheme://` 的按完整 origin 解析，其余一律按裸主机处理。
+pub(crate) fn parse_override_target(raw: &str) -> Option<OverrideTarget> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    if raw.contains("://") {
+        let url = Url::parse(raw).ok()?;
+        if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+            return None;
+        }
+        return Some(OverrideTarget::Origin {
+            scheme: url.scheme().to_owned(),
+            host: url.host_str().unwrap_or_default().trim_end_matches('.').to_owned(),
+            port: url.port_or_known_default()?,
+        });
+    }
+    Some(OverrideTarget::Host(raw.trim_end_matches('.').to_ascii_lowercase()))
 }
 
 /// 项目根目录的 `campus-network.json`。
 ///
-/// 三类内容：`alwaysDirect` 永不走代理（校内门户只在校园网内可达，代理到不了），
+/// 四类内容：`alwaysDirect` 永不走代理（校内门户只在校园网内可达，代理到不了），
 /// `cidrs` + `hosts` 是校内网名单，是否走代理由设置里的 `campus_through_proxy`
-/// 开关决定，`dns` 是校内域名专用的主 DNS，`dns_overrides` 是针对特定域名的特殊解析规则。
+/// 开关决定，`dns` 是校内域名专用的主 DNS，`overrides` 是针对特定域名的出网重写规则。
 struct CampusNetwork {
     always_direct: AddressSet,
     campus: AddressSet,
     /// 校内域名专用的 DNS 服务器。空列表表示不做覆盖，全部交给系统解析器。
     dns: Vec<std::net::IpAddr>,
-    /// 特殊域名的解析重写规则（最高优先级）。
-    dns_overrides: Vec<DnsOverrideRule>,
+    /// 特殊域名的出网重写规则（最高优先级）。
+    overrides: Vec<OverrideRule>,
 }
 
 impl Default for CampusNetwork {
@@ -279,7 +310,7 @@ impl Default for CampusNetwork {
             always_direct: AddressSet::default(),
             campus: AddressSet::default(),
             dns: Vec::new(),
-            dns_overrides: Vec::new(),
+            overrides: Vec::new(),
         }
     }
 }
@@ -299,9 +330,9 @@ struct CampusNetworkSource {
     /// 校内域名要先问的 DNS 服务器地址。
     #[serde(default)]
     dns: Vec<String>,
-    /// 针对特定域名的特殊解析规则。
+    /// 针对特定域名的出网重写规则。
     #[serde(default)]
-    dns_overrides: Vec<DnsOverrideRule>,
+    overrides: Vec<OverrideRule>,
 }
 
 fn compile_set(entries: &[String]) -> AddressSet {
@@ -341,7 +372,7 @@ impl From<CampusNetworkSource> for CampusNetwork {
                     parsed.ok()
                 })
                 .collect(),
-            dns_overrides: source.dns_overrides,
+            overrides: source.overrides,
         }
     }
 }
@@ -351,11 +382,11 @@ pub(crate) fn campus_dns_servers() -> &'static [std::net::IpAddr] {
     &campus_network().dns
 }
 
-/// 查找特定域名是否配置了特殊解析规则。
-pub(crate) fn find_dns_override(host: &str) -> Option<&'static DnsOverrideRule> {
+/// 查找特定域名是否配置了出网重写规则。
+pub(crate) fn find_override(host: &str) -> Option<&'static OverrideRule> {
     let host = normalize_host(host);
     campus_network()
-        .dns_overrides
+        .overrides
         .iter()
         .find(|rule| normalize_host(&rule.host) == host)
 }
@@ -653,10 +684,59 @@ mod tests {
         }
         assert!(!campus.always_direct.matches("github.com"));
 
-        // 特殊解析规则：jxxk.szu.edu.cn
-        let override_rule = find_dns_override("jxxk.szu.edu.cn").expect("jxxk.szu.edu.cn 应有特殊解析规则");
-        assert_eq!(override_rule.on_campus, "172.31.63.8");
-        assert_eq!(override_rule.fallback, "c46.szu.edu.cn");
+        // 出网重写规则：jxxk.szu.edu.cn —— 校内改写到纯 HTTP 的内部入口，
+        // 校外仅替换 DNS（公网入口仍是 https）。
+        let override_rule = find_override("jxxk.szu.edu.cn").expect("jxxk.szu.edu.cn 应有重写规则");
+        assert_eq!(
+            parse_override_target(&override_rule.on_campus),
+            Some(OverrideTarget::Origin {
+                scheme: "http".into(),
+                host: "172.31.63.8".into(),
+                port: 80,
+            })
+        );
+        assert_eq!(
+            parse_override_target(&override_rule.fallback),
+            Some(OverrideTarget::Host("c46.szu.edu.cn".into()))
+        );
+    }
+
+    #[test]
+    fn override_targets_parse_origins_and_bare_hosts() {
+        assert_eq!(
+            parse_override_target("http://172.31.63.8:80"),
+            Some(OverrideTarget::Origin {
+                scheme: "http".into(),
+                host: "172.31.63.8".into(),
+                port: 80,
+            })
+        );
+        // 省略端口时按 scheme 的默认端口补齐。
+        assert_eq!(
+            parse_override_target("https://jxxk.szu.edu.cn"),
+            Some(OverrideTarget::Origin {
+                scheme: "https".into(),
+                host: "jxxk.szu.edu.cn".into(),
+                port: 443,
+            })
+        );
+        assert_eq!(
+            parse_override_target("c46.szu.edu.cn"),
+            Some(OverrideTarget::Host("c46.szu.edu.cn".into()))
+        );
+        assert_eq!(
+            parse_override_target("172.31.63.8"),
+            Some(OverrideTarget::Host("172.31.63.8".into()))
+        );
+        // 域名与结尾点、大小写都归一化。
+        assert_eq!(
+            parse_override_target("C46.SZU.edu.cn."),
+            Some(OverrideTarget::Host("c46.szu.edu.cn".into()))
+        );
+        // 非 http(s) 的 origin、空串与坏 URL 都不合法。
+        assert_eq!(parse_override_target("ftp://172.31.63.8:80"), None);
+        assert_eq!(parse_override_target("http://"), None);
+        assert_eq!(parse_override_target("  "), None);
     }
 
     #[test]
