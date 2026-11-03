@@ -170,6 +170,7 @@ function createPlayer(
     subtitleUrl: string | null;
     muted: boolean;
     rate: number;
+    isLive: boolean;
     onError?: (message: string) => void;
   },
 ): Artplayer {
@@ -177,6 +178,7 @@ function createPlayer(
     container,
     url: toMediaUrl(angle.playUrl),
     type: "m3u8",
+    isLive: options.isLive,
     customType: {
       m3u8: (video: HTMLVideoElement, url: string, player: Artplayer) => {
         attachHls(video, url, player, options.onError);
@@ -237,22 +239,66 @@ export default function WatchPage() {
     setPlayerError(null);
     (async () => {
       try {
-        const info = await lessonStreams(liveId);
-        if (cancelled) return;
-        setStreams(info);
         if (isLive) {
-          const sources = await liveStream(liveId);
+          let list: Angle[] = [];
+          // 1. 优先尝试直播流接口
+          try {
+            const sources = await liveStream(liveId);
+            if (sources.length > 0) {
+              list = sources.map((source: JxxkLiveStreamSource, index) => ({
+                key: source.label || `live-${index}`,
+                name: source.label || `直播流 ${index + 1}`,
+                playUrl: source.url,
+              }));
+            }
+          } catch {
+            // liveStream 出错时尝试从 playUrls 兜底
+          }
+
+          // 2. 兜底：录播主机在课堂直播进行中时，也会实时生成各画面的 HLS 直播切片（playUrls）
+          if (list.length === 0) {
+            try {
+              const screens = await playUrls(liveId);
+              list = screens
+                .filter((screen: JxxkPlayUrlScreen) => Boolean(screen.playUrl))
+                .map((screen) => ({
+                  key: screen.streamNo || screen.streamLabel || screen.streamName || "main",
+                  name: screen.streamName || "画面",
+                  playUrl: screen.playUrl,
+                }));
+            } catch {
+              // 忽略兜底失败
+            }
+          }
+
           if (cancelled) return;
-          const list = sources.map((source: JxxkLiveStreamSource, index) => ({
-            key: source.label || `live-${index}`,
-            name: source.label || `直播流 ${index + 1}`,
-            playUrl: source.url,
-          }));
+          if (list.length === 0) {
+            setError("当前暂未检测到可用直播信号，请稍后刷新重试");
+            return;
+          }
           setAngles(list);
-          setVisible(list.slice(0, 1).map((a) => a.key));
+          const last = loadLastStreams().filter((k) => list.some((a) => a.key === k));
+          const fallback = list.filter((a) => a.key !== "0");
+          const initial =
+            last.length > 0
+              ? last
+              : fallback.length > 0
+                ? fallback.map((a) => a.key)
+                : list.slice(0, 1).map((a) => a.key);
+          setVisible(initial.length > 0 ? initial : list.slice(0, 1).map((a) => a.key));
+
+          // 尽最大努力尝试加载录像元数据（非阻塞，失败静默忽略）
+          void lessonStreams(liveId)
+            .then((info) => {
+              if (!cancelled) setStreams(info);
+            })
+            .catch(() => {
+              // 直播尚未结束时无录像属正常情况，静默跳过
+            });
         } else {
-          const screens = await playUrls(liveId);
+          const [info, screens] = await Promise.all([lessonStreams(liveId), playUrls(liveId)]);
           if (cancelled) return;
+          setStreams(info);
           const list = screens
             .filter((screen: JxxkPlayUrlScreen) => Boolean(screen.playUrl))
             .map((screen) => ({
@@ -328,6 +374,7 @@ export default function WatchPage() {
         // 直播加入必须先静音；回放按持久化默认（其余画面始终静音）。
         muted: isLive || visibleAngles[0]?.key !== key || settings.muted,
         rate: settings.rate,
+        isLive,
         onError: (message) => setPlayerError(message),
       });
       artRefs.current.set(key, art);
@@ -438,9 +485,9 @@ export default function WatchPage() {
     <AuthGate>
       <PageSurface maxWidth="2xl">
         <TopAppBar
-          title={title || "课堂回放"}
+          title={title || (isLive ? "课堂直播" : "课堂回放")}
           description={`${course ?? ""}${course ? " · " : ""}${
-            streams ? `时长 ${formatDuration(streams.duration)}` : isLive ? "直播" : "回放"
+            isLive ? "直播中" : streams ? `时长 ${formatDuration(streams.duration)}` : "回放"
           }`}
           actions={
             <button

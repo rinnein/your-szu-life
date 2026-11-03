@@ -137,6 +137,19 @@ impl UnifiedSzuMcpService {
     }
 
     #[tool(
+        name = "jxxk_get_live_stream",
+        description = "获取一节课的实时直播流地址（仅在直播中可用）"
+    )]
+    pub async fn jxxk_get_live_stream(
+        &self,
+        Parameters(params): Parameters<JxxkLiveIdParams>,
+    ) -> Result<String, String> {
+        let service = service(&self.app)?;
+        let streams = service.live_stream(&params.live_id).await?;
+        serde_json::to_string_pretty(&streams).map_err(|e| format!("序列化失败: {e}"))
+    }
+
+    #[tool(
         name = "jxxk_get_download_urls",
         description = "获取一节课各画面的明文 mp4 下载直链（无加密），可用于下载录像"
     )]

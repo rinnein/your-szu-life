@@ -610,12 +610,12 @@ impl Client {
     }
 
     /// GET 一个巡课域的绝对 URL（流代理用），返回响应体与 Content-Type。
-    /// 仅放行深大域，防止被当作任意代理使用。
+    /// 仅放行深大域与校内合法目标，防止被当作任意代理使用。
     pub(super) async fn fetch_stream(&self, url: &Url) -> Result<(Vec<u8>, String), String> {
         let Some(host) = url.host_str().map(|h| h.trim_end_matches('.')) else {
             return Err("流地址缺少主机名".into());
         };
-        if url.scheme() != "https" || !(host == "szu.edu.cn" || host.ends_with(".szu.edu.cn")) {
+        if !super::stream::trusted_target(url) {
             return Err(format!("流地址不受信任: {host}"));
         }
         // 信任校验按原始 URL 做，实际连接走改写后的 origin（如校内 http 入口）。
@@ -695,14 +695,18 @@ pub(crate) fn extract_media_video_id(live: &Value) -> Option<String> {
 }
 
 /// best-effort 地从直播流接口响应中提取播放地址。
-/// 接口结构未完全实测（需有直播课才能验证），这里兼容若干常见形状：
-/// data 数组、data.streams / data.content / data.list 数组，以及
-/// 元素上的 playUrl / url / hlsUrl / flvUrl 字段。
+/// 从直播流接口（university-live/protect/live/getLiveStream）提取播放地址。
+/// 奥威亚平台典型返回：数组或含 streams 的对象；字段含 hls / flv / wsFlv 与 signalName / streamName / streamLabel。
 pub(crate) fn parse_live_streams(data: &Value) -> Vec<LiveStreamSource> {
-    const URL_KEYS: [&str; 4] = ["playUrl", "url", "hlsUrl", "flvUrl"];
-    const LABEL_KEYS: [&str; 4] = ["streamName", "name", "label", "tag"];
+    // 优先采用 HLS（m3u8 协议，前端 hls.js 原生支持），其次兼容各种 FLV/直接播放链接
+    const URL_KEYS: [&str; 7] = ["hls", "playUrl", "hlsUrl", "url", "flv", "flvUrl", "wsFlv"];
+    const LABEL_KEYS: [&str; 5] = ["signalName", "streamName", "name", "label", "tag"];
     let mut sources = Vec::new();
     let mut collect = |item: &Value| {
+        // 如果明确标注该流不可用（ifAvaliable == false），则略过
+        if item.get("ifAvaliable").and_then(Value::as_bool) == Some(false) {
+            return;
+        }
         let mut url: Option<String> = None;
         for key in URL_KEYS {
             if let Some(value) = item.get(key).and_then(Value::as_str) {
@@ -713,11 +717,38 @@ pub(crate) fn parse_live_streams(data: &Value) -> Vec<LiveStreamSource> {
             }
         }
         let Some(url) = url else { return };
-        let label = LABEL_KEYS
+        let mut label = LABEL_KEYS
             .iter()
             .find_map(|key| item.get(*key).and_then(Value::as_str))
             .filter(|s| !s.is_empty())
             .map(str::to_owned);
+
+        // 若无显式名称，尝试从 streamLabel / streamNo 推导人性化标签
+        if label.is_none() {
+            if let Some(stream_label) = item.get("streamLabel").and_then(Value::as_str) {
+                label = match stream_label {
+                    "TP" => Some("教师画面".to_string()),
+                    "SP" => Some("学生画面".to_string()),
+                    "PC" => Some("电脑画面".to_string()),
+                    "PRIMARY" => Some("主画面".to_string()),
+                    "HD" => Some("高清画面".to_string()),
+                    "SD" => Some("标清画面".to_string()),
+                    other => Some(other.to_string()),
+                };
+            }
+        }
+        if label.is_none() {
+            if let Some(stream_no) = item.get("streamNo").and_then(Value::as_i64) {
+                label = match stream_no {
+                    0 => Some("主画面".to_string()),
+                    1 => Some("教师画面".to_string()),
+                    2 => Some("学生画面".to_string()),
+                    4 => Some("标清画面".to_string()),
+                    30 => Some("电脑画面".to_string()),
+                    n => Some(format!("画面 {n}")),
+                };
+            }
+        }
         if !sources.iter().any(|s: &LiveStreamSource| s.url == url) {
             sources.push(LiveStreamSource { url, label });
         }

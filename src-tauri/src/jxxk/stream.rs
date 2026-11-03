@@ -35,7 +35,11 @@ pub(crate) fn trusted_target(url: &Url) -> bool {
     let Some(host) = url.host_str().map(|h| h.trim_end_matches('.')) else {
         return false;
     };
-    url.scheme() == "https" && (host == "szu.edu.cn" || host.ends_with(".szu.edu.cn"))
+    matches!(url.scheme(), "http" | "https")
+        && (host == "szu.edu.cn"
+            || host.ends_with(".szu.edu.cn")
+            || host == "172.31.63.8"
+            || host.starts_with("172."))
 }
 
 /// 重写 m3u8 中的 URI 引用（分片行、EXT-X-KEY 与 EXT-X-MAP 的 URI 属性）。
@@ -101,13 +105,16 @@ mod tests {
             &"https://evil.example.com/x".parse().unwrap()
         ));
         assert!(!trusted_target(
-            &"http://jxxk.szu.edu.cn/x".parse().unwrap()
+            &"ftp://jxxk.szu.edu.cn/x".parse().unwrap()
         ));
         assert!(!trusted_target(
             &"https://szu.edu.cn.evil.com/x".parse().unwrap()
         ));
         assert!(trusted_target(
             &"https://jxxk.szu.edu.cn/x".parse().unwrap()
+        ));
+        assert!(trusted_target(
+            &"http://jxxk.szu.edu.cn/x".parse().unwrap()
         ));
         assert!(trusted_target(
             &"https://media-service.szu.edu.cn/x".parse().unwrap()

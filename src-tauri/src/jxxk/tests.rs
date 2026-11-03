@@ -688,6 +688,7 @@ fn parse_semester_list_accepts_array_and_page_shapes() {
 
 #[test]
 fn live_stream_parser_handles_common_shapes() {
+    // 兼容对象包裹形式
     let sources = super::client::parse_live_streams(&json!({
         "streams": [
             {"name": "教师画面", "playUrl": "https://jxxk.szu.edu.cn/live/tp.m3u8"},
@@ -697,6 +698,41 @@ fn live_stream_parser_handles_common_shapes() {
     }));
     assert_eq!(sources.len(), 2);
     assert_eq!(sources[0].label.as_deref(), Some("教师画面"));
+
+    // 兼容奥威亚真实平台返回形式：顶层数组，包含 signalName、hls、ifAvaliable、streamLabel 等
+    let ava_sources = super::client::parse_live_streams(&json!([
+        {
+            "streamNo": 1,
+            "signalName": "教师画面",
+            "ifAvaliable": true,
+            "hls": "https://jxxk.szu.edu.cn/live/tp.m3u8",
+            "flv": "https://jxxk.szu.edu.cn/live/tp.flv"
+        },
+        {
+            "streamNo": 30,
+            "signalName": "电脑画面",
+            "ifAvaliable": true,
+            "hls": "https://jxxk.szu.edu.cn/live/pc.m3u8"
+        },
+        {
+            "streamNo": 2,
+            "signalName": "离线画面",
+            "ifAvaliable": false,
+            "hls": "https://jxxk.szu.edu.cn/live/sp.m3u8"
+        },
+        {
+            "streamNo": 0,
+            "streamLabel": "PRIMARY",
+            "ifAvaliable": true,
+            "hls": "https://jxxk.szu.edu.cn/live/main.m3u8"
+        }
+    ]));
+    // 离线画面（ifAvaliable=false）应被剔除
+    assert_eq!(ava_sources.len(), 3);
+    assert_eq!(ava_sources[0].label.as_deref(), Some("教师画面"));
+    assert_eq!(ava_sources[0].url, "https://jxxk.szu.edu.cn/live/tp.m3u8");
+    assert_eq!(ava_sources[1].label.as_deref(), Some("电脑画面"));
+    assert_eq!(ava_sources[2].label.as_deref(), Some("主画面"));
 }
 
 #[test]

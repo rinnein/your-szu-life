@@ -4,8 +4,17 @@ import WatchPage from "../../patrol/WatchPage";
 const textParam = (value: unknown) =>
   typeof value === "number" ? String(value) : typeof value === "string" ? value : undefined;
 
+const numberParam = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isSafeInteger(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number.parseInt(value, 10);
+    if (Number.isSafeInteger(parsed)) return parsed;
+  }
+  return undefined;
+};
+
 export const Route = createFileRoute("/study/patrol_/watch")({
-  head: () => ({ meta: [{ title: "巡课回放" }] }),
+  head: () => ({ meta: [{ title: "巡课播放" }] }),
   validateSearch: (
     search: Record<string, unknown>,
   ): {
@@ -23,10 +32,7 @@ export const Route = createFileRoute("/study/patrol_/watch")({
     semesterName: textParam(search.semesterName),
     teacher: textParam(search.teacher),
     title: textParam(search.title),
-    liveState:
-      typeof search.liveState === "number" && Number.isSafeInteger(search.liveState)
-        ? search.liveState
-        : undefined,
+    liveState: numberParam(search.liveState),
   }),
   component: WatchPage,
 });

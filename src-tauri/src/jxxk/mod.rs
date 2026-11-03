@@ -844,22 +844,54 @@ impl Service {
         .await
     }
 
-    /// 获取直播流地址（结构未完全实测，best-effort 提取）。
+    /// 获取直播流地址。优先使用 getLiveStream 返回的实时流；
+    /// 若为空或未推流，则从录播系统实时切片的 play_urls（HLS）兜底。
     pub(crate) async fn live_stream(&self, live_id: &str) -> Result<Vec<LiveStreamSource>, String> {
         let live_id = live_id.to_string();
-        self.with_session_retry(move |client| {
-            Box::pin(async move {
-                let value = client
-                    .get_json(
-                        "university-live/protect/live/getLiveStream",
-                        &[("id", live_id)],
-                    )
-                    .await
-                    .map_err(|e| e.message)?;
-                Ok(client::parse_live_streams(&value))
+        let direct_result = self
+            .with_session_retry({
+                let live_id = live_id.clone();
+                move |client| {
+                    Box::pin(async move {
+                        let value = client
+                            .get_json(
+                                "university-live/protect/live/getLiveStream",
+                                &[("id", live_id)],
+                            )
+                            .await
+                            .map_err(|e| e.message)?;
+                        log::info!("[jxxk] getLiveStream 原始响应: {value}");
+                        Ok(client::parse_live_streams(&value))
+                    })
+                }
             })
-        })
-        .await
+            .await;
+
+        match direct_result {
+            Ok(sources) if !sources.is_empty() => Ok(sources),
+            _ => {
+                // 奥威亚录播主机在课堂直播进行中时，也会实时生成各画面的 HLS 直播切片，
+                // 此时 getVideoPlayUrl 会返回可用的多角度 HLS 流；若 getLiveStream 未提取到流，
+                // 则通过 play_urls 兜底以保证直播画面可看。
+                if let Ok(screens) = self.play_urls(&live_id).await {
+                    let fallback_sources: Vec<LiveStreamSource> = screens
+                        .into_iter()
+                        .map(|s| LiveStreamSource {
+                            url: s.play_url,
+                            label: s.stream_name.or(s.stream_label),
+                        })
+                        .collect();
+                    if !fallback_sources.is_empty() {
+                        log::info!(
+                            "[jxxk] getLiveStream 未返回可用流，成功从 play_urls 兜底获取 {} 路直播画面",
+                            fallback_sources.len()
+                        );
+                        return Ok(fallback_sources);
+                    }
+                }
+                direct_result
+            }
+        }
     }
 
     fn persist(&self, client: &Client) -> Result<(), String> {
