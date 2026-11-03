@@ -8,6 +8,7 @@ export interface JxxkSnapshot {
   message: string;
   semesters: JxxkSemester[];
   fetchedAt?: number | null;
+  refreshing?: boolean;
 }
 
 export interface JxxkSemester {
@@ -62,6 +63,7 @@ export interface JxxkState {
   snapshot: JxxkSnapshot;
   courses: Record<string, JxxkCoursePage>;
   lessons: Record<string, JxxkLessonPage>;
+  revalidatingKeys?: string[];
 }
 
 export interface JxxkVideoStream {

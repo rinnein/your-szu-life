@@ -199,4 +199,71 @@ describe("PatrolPage", () => {
     expect(await screen.findByText("尚未获取到巡课会话")).toBeInTheDocument();
     expect(screen.getByText(/请先完成应用统一认证/)).toBeInTheDocument();
   });
+
+  it("命中开课时间段乐观推进为开课中时，展示开课中标签", async () => {
+    vi.mocked(invoke).mockImplementation(async (command: string) => {
+      if (command === "get_auth_state") {
+        return { Authenticated: { studentId: "2025150041", name: "测试" } };
+      }
+      if (command === "get_onboarding_state") {
+        return { steps: [], needsSetup: false, currentStep: null };
+      }
+      if (command === "get_jxxk_snapshot" || command === "refresh_jxxk") {
+        return { session: "ready", message: "", semesters, fetchedAt: 1 };
+      }
+      if (command === "jxxk_list_courses") {
+        return { pageIndex: 1, pageSize: 200, recordCount: courses.length, content: courses };
+      }
+      if (command === "jxxk_list_lessons") {
+        return {
+          pageIndex: 1,
+          pageSize: 200,
+          recordCount: 1,
+          content: [
+            {
+              id: "lesson-in-session",
+              targetName: "数据结构第1周星期5第3-5节",
+              liveId: "live-in-session",
+              liveState: 2,
+              liveStateText: "开课中",
+              startTime: "2026-09-04 10:15:00",
+              endTime: "2026-09-04 12:25:00",
+              classroom: "致理楼",
+              mediaVideoId: null,
+            },
+          ],
+        };
+      }
+      return null;
+    });
+
+    renderPatrol("/study/patrol?weekday=5");
+    expect(await screen.findByText("数据结构")).toBeInTheDocument();
+    expect(screen.getAllByText("开课中").length).toBeGreaterThan(0);
+  });
+
+  it("后台处于刷新状态时刷新按钮处于禁用状态", async () => {
+    vi.mocked(invoke).mockImplementation(async (command: string) => {
+      if (command === "get_auth_state") {
+        return { Authenticated: { studentId: "2025150041", name: "测试" } };
+      }
+      if (command === "get_onboarding_state") {
+        return { steps: [], needsSetup: false, currentStep: null };
+      }
+      if (command === "get_jxxk_snapshot") {
+        return { session: "ready", message: "", semesters, fetchedAt: 1, refreshing: true };
+      }
+      if (command === "jxxk_list_courses") {
+        return { pageIndex: 1, pageSize: 200, recordCount: courses.length, content: courses };
+      }
+      if (command === "jxxk_list_lessons") {
+        return { pageIndex: 1, pageSize: 200, recordCount: 0, content: [] };
+      }
+      return null;
+    });
+
+    renderPatrol("/study/patrol?weekday=all");
+    const refreshBtn = await screen.findByRole("button", { name: "刷新巡课数据" });
+    expect(refreshBtn).toBeDisabled();
+  });
 });

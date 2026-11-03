@@ -9561,7 +9561,7 @@ dependencies = [
 
 [[package]]
 name = "your-szu-life"
-version = "0.11.0"
+version = "0.13.6"
 dependencies = [
  "android-native-keyring-store",
  "argon2",

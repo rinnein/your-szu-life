@@ -21,6 +21,8 @@ pub(crate) struct Snapshot {
     pub semesters: Vec<Semester>,
     /// 学期列表拉取时间（Unix 毫秒；未拉取过为空）。
     pub fetched_at: Option<i64>,
+    /// 后台是否正处于刷新/重验证状态。
+    pub refreshing: bool,
 }
 
 /// 巡课页面需要的缓存快照：学期列表 + 课程页 + 课次页。
@@ -31,6 +33,8 @@ pub(crate) struct JxxkState {
     pub snapshot: Snapshot,
     pub courses: BTreeMap<String, CoursePage>,
     pub lessons: BTreeMap<String, LessonPage>,
+    /// 当前正在重验证的条目键（如 `["semesters"]`, `["lessons:c1"]`）。
+    pub revalidating_keys: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -429,6 +429,121 @@ async fn cached_lists_serve_without_network() {
 }
 
 #[tokio::test]
+async fn in_session_lesson_is_promoted_and_broadcasted() {
+    let credentials: Arc<crate::storage::testing::MemoryCredentialStore> = Arc::default();
+    let service = super::Service::new(None, credentials, temp_service_db_path("promote")).unwrap();
+
+    let now_cst = chrono::Utc::now()
+        .with_timezone(&chrono::FixedOffset::east_opt(8 * 3600).unwrap())
+        .naive_local();
+    let start_in_session = (now_cst - chrono::Duration::minutes(15)).format("%Y-%m-%d %H:%M:%S").to_string();
+    let end_in_session = (now_cst + chrono::Duration::minutes(30)).format("%Y-%m-%d %H:%M:%S").to_string();
+
+    let start_future = (now_cst + chrono::Duration::hours(2)).format("%Y-%m-%d %H:%M:%S").to_string();
+    let end_future = (now_cst + chrono::Duration::hours(3)).format("%Y-%m-%d %H:%M:%S").to_string();
+
+    let page = LessonPage {
+        page_index: 1,
+        page_size: 200,
+        record_count: 3,
+        content: vec![
+            Lesson {
+                id: "l-session".into(),
+                target_name: "正在上课的课次".into(),
+                live_id: Some("live-session".into()),
+                live_state: Some(1),
+                live_state_text: Some("未开始".into()),
+                start_time: Some(start_in_session),
+                end_time: Some(end_in_session),
+                classroom: Some("致理楼".into()),
+                media_video_id: None,
+            },
+            Lesson {
+                id: "l-future".into(),
+                target_name: "未来的课次".into(),
+                live_id: Some("live-future".into()),
+                live_state: Some(1),
+                live_state_text: Some("未开始".into()),
+                start_time: Some(start_future),
+                end_time: Some(end_future),
+                classroom: Some("致理楼".into()),
+                media_video_id: None,
+            },
+            Lesson {
+                id: "l-past".into(),
+                target_name: "过去的课次".into(),
+                live_id: Some("live-past".into()),
+                live_state: Some(4),
+                live_state_text: Some("可看回放".into()),
+                start_time: Some("2026-09-01 10:00:00".into()),
+                end_time: Some("2026-09-01 11:40:00".into()),
+                classroom: Some("致理楼".into()),
+                media_video_id: Some("mv-past".into()),
+            },
+        ],
+    };
+
+    {
+        let mut runtime = service.runtime.lock().unwrap();
+        runtime.session = super::model::SessionState::Ready;
+        runtime.lists.insert(
+            "lessons:course-1".to_string(),
+            (
+                chrono::Utc::now().timestamp_millis(),
+                super::CachedList::Lessons(page),
+            ),
+        );
+    }
+
+    // 1. 执行扫描与推进
+    let affected = service.promote_in_session_lessons();
+    assert_eq!(affected, vec!["course-1"]);
+
+    // 2. 检查 state() 中课次状态变化
+    let state = service.state();
+    let lessons = &state.lessons.get("course-1").unwrap().content;
+    assert_eq!(lessons[0].id, "l-session");
+    assert_eq!(lessons[0].live_state, Some(2));
+    assert_eq!(lessons[0].live_state_text.as_deref(), Some("开课中"));
+
+    // 未到时间的课次保持原状
+    assert_eq!(lessons[1].id, "l-future");
+    assert_eq!(lessons[1].live_state, Some(1));
+    assert_eq!(lessons[1].live_state_text.as_deref(), Some("未开始"));
+
+    // 历史回放课次保持原状
+    assert_eq!(lessons[2].id, "l-past");
+    assert_eq!(lessons[2].live_state, Some(4));
+
+    // 3. 再次执行推进：已为 live_state: 2，不会重复触发
+    let second_affected = service.promote_in_session_lessons();
+    assert!(second_affected.is_empty());
+}
+
+#[tokio::test]
+async fn revalidating_state_marks_refreshing_and_revalidating_keys() {
+    let credentials: Arc<crate::storage::testing::MemoryCredentialStore> = Arc::default();
+    let service = super::Service::new(None, credentials, temp_service_db_path("reval-state")).unwrap();
+
+    assert!(!service.is_revalidating());
+    assert!(!service.snapshot().refreshing);
+    assert!(service.state().revalidating_keys.is_empty());
+
+    // 模拟重验证开始
+    service.revalidating.lock().unwrap().insert("lessons:c1".to_string());
+    assert!(service.is_revalidating());
+    assert!(service.snapshot().refreshing);
+    let state = service.state();
+    assert!(state.revalidating_keys.contains(&"lessons:c1".to_string()));
+
+    // 模拟重验证结束
+    service.revalidating.lock().unwrap().remove("lessons:c1");
+    assert!(!service.is_revalidating());
+    assert!(!service.snapshot().refreshing);
+    assert!(service.state().revalidating_keys.is_empty());
+}
+
+#[tokio::test]
 async fn bootstrap_establishes_session_and_extracts_token() {
     let seen = Arc::new(Seen::default());
     let (client, _jxxk, _auth) = make_client(true, seen).await;

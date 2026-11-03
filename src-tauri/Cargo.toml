@@ -1,6 +1,6 @@
 [package]
 name = "your-szu-life"
-version = "0.11.0"
+version = "0.13.6"
 description = "泥深 - 你的SZU助手"
 authors = ["you"]
 edition = "2021"

@@ -8,8 +8,9 @@ import { PageSurface } from "../shell/PageSurface";
 import { TopAppBar } from "../shell/TopAppBar";
 import { AuthGate } from "../shell/AuthGate";
 import { useLogicalNavigation } from "../logical-navigation";
+import { useChannelSubscription } from "../tauri-channel";
 import { PatrolTopActions } from "./actions";
-import { type JxxkLesson } from "./api";
+import { type JxxkLesson, type JxxkState } from "./api";
 
 function liveStateColor(state: number | null | undefined): "danger" | "success" | "default" {
   switch (state) {
@@ -23,7 +24,7 @@ function liveStateColor(state: number | null | undefined): "danger" | "success" 
 }
 
 function liveStateText(lesson: JxxkLesson): string {
-  if (lesson.liveState === 2) return "直播中";
+  if (lesson.liveState === 2) return lesson.liveStateText || "直播中";
   if (lesson.liveState === 4) return "可看回放";
   return lesson.liveStateText || "已结束";
 }
@@ -70,6 +71,7 @@ export default function CourseLessonsPage() {
   const [lessons, setLessons] = useState<JxxkLesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [backendRefreshing, setBackendRefreshing] = useState(false);
 
   const load = useCallback(
     async (force: boolean) => {
@@ -103,6 +105,30 @@ export default function CourseLessonsPage() {
   useEffect(() => {
     void load(false);
   }, [load]);
+
+  useChannelSubscription<{ type: "initial" | "snapshot"; data: JxxkState }>(
+    "subscribe_jxxk_state",
+    (event) => {
+      const data = event?.data;
+      if (!data) return;
+      const isRevalidating =
+        data.snapshot?.refreshing === true ||
+        Boolean(
+          data.revalidatingKeys?.some((k) => k === `lessons:${courseId}` || k === "semesters"),
+        );
+      setBackendRefreshing(isRevalidating);
+      const page = data.lessons?.[courseId];
+      if (page?.content) {
+        setLessons(
+          page.content
+            .filter((lesson) => lesson.liveState !== 1)
+            .sort((a, b) => (b.startTime ?? "").localeCompare(a.startTime ?? "")),
+        );
+      }
+    },
+  );
+
+  const isRefreshing = refreshing || backendRefreshing;
 
   const openLesson = (lesson: JxxkLesson) => {
     const state = lesson.liveState;
@@ -148,11 +174,11 @@ export default function CourseLessonsPage() {
               <span>共 {lessons.length} 个课次</span>
               <Button
                 variant="text"
-                disabled={refreshing}
+                disabled={isRefreshing}
                 onClick={() => void load(true)}
                 aria-label="刷新课次列表"
               >
-                {refreshing ? <LoadingIndicator size={16} /> : <LuRotateCw aria-hidden="true" />}
+                {isRefreshing ? <LoadingIndicator size={16} /> : <LuRotateCw aria-hidden="true" />}
                 刷新
               </Button>
             </div>

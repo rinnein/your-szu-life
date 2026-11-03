@@ -58,7 +58,7 @@ function defaultSemesterId(
 }
 
 function liveStateText(lesson: JxxkLesson): string {
-  if (lesson.liveState === 2) return "直播中";
+  if (lesson.liveState === 2) return lesson.liveStateText || "直播中";
   if (lesson.liveState === 4) return "可看回放";
   return lesson.liveStateText || "已结束";
 }
@@ -327,11 +327,15 @@ export default function PatrolPage() {
             />
             <Button
               variant="text"
-              disabled={loading || refreshing}
+              disabled={loading || refreshing || snapshot?.refreshing === true}
               onClick={() => void load(true)}
               aria-label="刷新巡课数据"
             >
-              {refreshing ? <LoadingIndicator size={16} /> : <LuRotateCw aria-hidden="true" />}
+              {refreshing || snapshot?.refreshing === true ? (
+                <LoadingIndicator size={16} />
+              ) : (
+                <LuRotateCw aria-hidden="true" />
+              )}
               刷新
             </Button>
           </div>

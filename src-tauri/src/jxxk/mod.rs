@@ -214,8 +214,23 @@ impl Service {
         Ok(service)
     }
 
+    pub(crate) fn is_revalidating(&self) -> bool {
+        self.revalidating
+            .lock()
+            .map(|r| !r.is_empty())
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn revalidating_keys(&self) -> Vec<String> {
+        self.revalidating
+            .lock()
+            .map(|r| r.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
     pub(crate) fn snapshot(&self) -> Snapshot {
         let r = self.runtime.lock().unwrap();
+        let refreshing = self.is_revalidating();
         Snapshot {
             session: r.session,
             message: r.message.clone(),
@@ -225,6 +240,7 @@ impl Service {
                 .map(|(_, semesters)| semesters.clone())
                 .unwrap_or_default(),
             fetched_at: r.semesters.as_ref().map(|(at, _)| *at),
+            refreshing,
         }
     }
 
@@ -243,6 +259,8 @@ impl Service {
                 }
             }
         }
+        let revalidating_keys = self.revalidating_keys();
+        let refreshing = !revalidating_keys.is_empty();
         JxxkState {
             snapshot: Snapshot {
                 session: r.session,
@@ -253,9 +271,11 @@ impl Service {
                     .map(|(_, semesters)| semesters.clone())
                     .unwrap_or_default(),
                 fetched_at: r.semesters.as_ref().map(|(at, _)| *at),
+                refreshing,
             },
             courses,
             lessons,
+            revalidating_keys,
         }
     }
 
@@ -393,6 +413,7 @@ impl Service {
             r.semesters.is_some() || !r.lists.is_empty()
         };
         if has_cache {
+            self.check_and_refresh_in_session_lessons().await;
             if force {
                 let _ = self.revalidate_all().await;
             } else {
@@ -416,7 +437,12 @@ impl Service {
                 return;
             }
         }
-        if let Err(error) = self.fetch_semesters(&client).await {
+        self.revalidating.lock().unwrap().insert("semesters".to_string());
+        self.publish_state();
+        let res = self.fetch_semesters(&client).await;
+        self.revalidating.lock().unwrap().remove("semesters");
+        self.publish_state();
+        if let Err(error) = res {
             self.update(SessionState::Unavailable, &error);
         }
     }
@@ -531,10 +557,15 @@ impl Service {
             self.revalidating.lock().unwrap().remove(key);
             return;
         };
+        // 标记开始重验证，立即广播通知前端锁定刷新按钮
+        this.publish_state();
+
         let key = key.to_owned();
         tauri::async_runtime::spawn(async move {
             let result = this.revalidate_entry(&key).await;
             this.revalidating.lock().unwrap().remove(&key);
+            // 标记重验证结束，再次广播解除锁定
+            this.publish_state();
             match result {
                 Ok(()) => {
                     log::info!("[jxxk] 缓存重验证完成: {key}");
@@ -587,10 +618,20 @@ impl Service {
             keys.extend(r.lists.keys().cloned());
             keys
         };
-        for key in keys {
-            if let Err(error) = self.revalidate_entry(&key).await {
+        {
+            let mut reval = self.revalidating.lock().unwrap();
+            for key in &keys {
+                reval.insert(key.clone());
+            }
+        }
+        self.publish_state();
+
+        for key in &keys {
+            if let Err(error) = self.revalidate_entry(key).await {
                 log::warn!("[jxxk] 强制刷新条目失败 {key}: {error}");
             }
+            self.revalidating.lock().unwrap().remove(key);
+            self.publish_state();
         }
         if let Some(app) = &self.app {
             let _ = app.emit("jxxk-cache-changed", "all");
@@ -613,6 +654,99 @@ impl Service {
         for (key, updated_at) in entries {
             self.maybe_revalidate(&key, updated_at);
         }
+    }
+
+    /// 检查缓存中是否有处于开课时间段但状态仍为「未开课」的课次：
+    /// 在内存中乐观推进为「开课中」，若有变更则立即调用 `publish_state` 向前端广播。
+    /// 返回受影响的课程 ID 列表（去重）。
+    pub(crate) fn promote_in_session_lessons(&self) -> Vec<String> {
+        let now = chrono::Utc::now()
+            .with_timezone(&chrono::FixedOffset::east_opt(8 * 3600).unwrap())
+            .naive_local();
+
+        let mut affected_course_ids = Vec::new();
+
+        {
+            let mut r = self.runtime.lock().unwrap();
+            for (key, (_, cached)) in r.lists.iter_mut() {
+                let Some(course_id) = key.strip_prefix("lessons:") else {
+                    continue;
+                };
+                let CachedList::Lessons(ref mut page) = cached else {
+                    continue;
+                };
+                let mut modified = false;
+                for lesson in &mut page.content {
+                    // 仅关注当前状态为未开始（live_state == Some(1)）的课次
+                    if lesson.live_state != Some(1) {
+                        continue;
+                    }
+                    let Some(start_str) = &lesson.start_time else { continue; };
+                    let Some(end_str) = &lesson.end_time else { continue; };
+                    let Ok(start) = chrono::NaiveDateTime::parse_from_str(start_str.trim(), "%Y-%m-%d %H:%M:%S") else {
+                        continue;
+                    };
+                    let Ok(end) = chrono::NaiveDateTime::parse_from_str(end_str.trim(), "%Y-%m-%d %H:%M:%S") else {
+                        continue;
+                    };
+
+                    // 命中开课时间段（当前时间已达开始时间且未超过结束时间）
+                    if now >= start && now <= end {
+                        log::info!(
+                            "[jxxk] 课次已进入开课时间段，乐观推进为「开课中」: {} ({}) [{start_str} ~ {end_str}]",
+                            lesson.target_name,
+                            lesson.id
+                        );
+                        lesson.live_state = Some(2);
+                        lesson.live_state_text = Some("开课中".to_string());
+                        modified = true;
+                    }
+                }
+                if modified {
+                    affected_course_ids.push(course_id.to_string());
+                }
+            }
+        }
+
+        if !affected_course_ids.is_empty() {
+            self.publish_state();
+        }
+        affected_course_ids
+    }
+
+    /// 检查并自动触发命中时间段课次的 API 重验证：
+    /// 1. 内存中乐观推进为「开课中」并立即向前端推送；
+    /// 2. 随后自动发起对相关课程课次列表的后台刷新，成功后由 store_list 再次推送官方「直播中」标记。
+    pub(crate) async fn check_and_refresh_in_session_lessons(&self) {
+        let affected = self.promote_in_session_lessons();
+        for course_id in affected {
+            self.maybe_revalidate(&format!("lessons:{course_id}"), 0);
+        }
+    }
+
+    /// 启动自适应后台轮询任务：定期检查未开课课次是否已到达上课时间。
+    pub(crate) fn start_background_monitor(self: &Arc<Self>) {
+        let weak = Arc::downgrade(self);
+        tauri::async_runtime::spawn(async move {
+            loop {
+                let interval = crate::activity::interval(
+                    Some("jxxk"),
+                    std::time::Duration::from_secs(15),  // Active (在巡课页面)
+                    std::time::Duration::from_secs(60),  // Foreground (在应用其它页面)
+                    std::time::Duration::from_secs(180), // Background (最小化/后台)
+                );
+                tokio::time::sleep(crate::activity::sleep_chunk(
+                    interval,
+                    std::time::Duration::from_secs(15),
+                ))
+                .await;
+
+                let Some(this) = weak.upgrade() else {
+                    break;
+                };
+                this.check_and_refresh_in_session_lessons().await;
+            }
+        });
     }
 
     /// 带会话建立的列表拉取：先确保会话可用，失败时把状态落盘并返回错误。
@@ -784,6 +918,7 @@ impl Service {
             (page_index == 1 && page_size == 200).then(|| format!("lessons:{course_id}"));
         match cached_key {
             Some(key) => {
+                let _ = self.promote_in_session_lessons();
                 self.cached_list(&key, async {
                     self.network_lessons(course_id, page_index, page_size)
                         .await
@@ -915,6 +1050,7 @@ pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
         .join("jxxk/state.sqlite");
     let service = Service::new(Some(app.clone()), store.credentials.clone(), db_path)?;
     *service.self_weak.lock().unwrap() = Arc::downgrade(&service);
+    service.start_background_monitor();
     store
         .service
         .set(service)
