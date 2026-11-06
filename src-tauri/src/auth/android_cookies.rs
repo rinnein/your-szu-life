@@ -47,11 +47,11 @@ fn with_bridge<T>(
     result
 }
 
-pub(super) fn supports_cookie_info() -> Result<bool, String> {
+pub(super) fn supports_cookie_capture() -> Result<bool, String> {
     with_bridge(|env, class| {
-        env.call_static_method(class, "supportsCookieInfo", "()Z", &[])
+        env.call_static_method(class, "supportsCookieCapture", "()Z", &[])
             .and_then(|v| v.z())
-            .map_err(|_| "无法检查 Android WebView 版本".into())
+            .map_err(|_| "无法检查 Android 认证会话读取能力".into())
     })
 }
 
