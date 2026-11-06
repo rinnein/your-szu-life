@@ -84,8 +84,7 @@ html[data-szu-native-toolbar="true"] [data-webview-navigation] {
   }
 }
 
-:root:has(.page-surface[data-fullscreen]),
-:root:has([data-fullscreen]) {
+.app-frame[data-fullscreen] {
   --app-nav-bar-height: 0px;
 }
 
@@ -1712,13 +1711,8 @@ m-top-app-bar::part(trailing) {
   padding-block-start: 8px;
 }
 
-/* 认证流程是全屏独立页面：隐藏底部导航栏并收回它的留白。 */
-.app-frame:has(.page-surface[data-fullscreen]) .app-nav-bar,
-.app-frame:has(.page-surface[data-fullscreen]) .app-rail {
-  display: none;
-}
-
-.app-frame:has(.page-surface[data-fullscreen]) .app-content {
+/* 全屏状态由 React 注册：导航不挂载，普通属性选择器收回留白。 */
+.app-frame[data-fullscreen] .app-content {
   padding-block-end: 0;
 }
 

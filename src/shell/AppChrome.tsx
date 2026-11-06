@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { AppNavigation } from "./AppNavigation";
+import { FullscreenPageContext } from "./FullscreenPageContext";
 import { PageTransition } from "../motion/PageTransition";
 import { useNativeChromeColors } from "./native-chrome";
 
@@ -14,14 +15,22 @@ import { useNativeChromeColors } from "./native-chrome";
  * 独立门户页与 tab 页的顶栏结构不同。
  */
 export function AppChrome({ children }: { children: ReactNode }) {
+  const [fullscreenPages, setFullscreenPages] = useState(0);
+  const registerFullscreenPage = useCallback(() => {
+    setFullscreenPages((count) => count + 1);
+    return () => setFullscreenPages((count) => count - 1);
+  }, []);
+  const fullscreen = fullscreenPages > 0;
   // 沉浸式系统栏取色：状态栏跟随顶部应用栏的当前颜色，小白条取底部导航栏颜色。
   useNativeChromeColors();
   return (
-    <div className="app-frame">
-      <AppNavigation />
-      <main className="app-content">
-        <PageTransition>{children}</PageTransition>
-      </main>
-    </div>
+    <FullscreenPageContext.Provider value={registerFullscreenPage}>
+      <div className="app-frame" data-fullscreen={fullscreen || undefined}>
+        {!fullscreen && <AppNavigation />}
+        <main className="app-content">
+          <PageTransition>{children}</PageTransition>
+        </main>
+      </div>
+    </FullscreenPageContext.Provider>
   );
 }

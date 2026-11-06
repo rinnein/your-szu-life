@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
+import { useContext, useLayoutEffect, type ReactNode } from "react";
 import { useLogicalNavigation } from "../logical-navigation";
+import { FullscreenPageContext } from "./FullscreenPageContext";
 import { PageDrawerProvider } from "./PageDrawerContext";
 
 /** 页面内容的容器，替代原来的 `PageShell` 外层。 */
@@ -18,6 +19,12 @@ export function PageSurface({
   maxWidth?: "sm" | "md" | "lg" | "xl" | "2xl" | "full";
 }) {
   const navigation = useLogicalNavigation();
+  const registerFullscreenPage = useContext(FullscreenPageContext);
+  const isFullscreen = centered || fullscreen;
+  // 在浏览器绘制前隐藏导航；多个全屏页面交接时，最后一个卸载后才恢复。
+  useLayoutEffect(() => {
+    if (isFullscreen) return registerFullscreenPage?.();
+  }, [isFullscreen, registerFullscreenPage]);
   const width = {
     sm: "42rem",
     md: "48rem",
@@ -32,7 +39,7 @@ export function PageSurface({
       <div
         className={centered ? "page-surface page-surface-centered" : "page-surface"}
         // 居中的认证流程与初始化向导是全屏独立页面，不应显示底部导航栏。
-        data-fullscreen={centered || fullscreen || undefined}
+        data-fullscreen={isFullscreen || undefined}
       >
         <div className="page-surface-inner" style={{ maxInlineSize: width }}>
           {children}

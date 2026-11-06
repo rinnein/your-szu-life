@@ -1,12 +1,13 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
 import { routeTree } from "../routeTree.gen";
 import { initialLogicalEntries } from "../logical-navigation";
+import { typeInto, waitForUpgrade } from "../ui/testing";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
@@ -56,6 +57,46 @@ afterEach(() => {
 });
 
 describe("AppNavigation", () => {
+  it.each([false, true])(
+    "keeps the first onboarding login action accessible (wide=%s)",
+    async (wide) => {
+      vi.stubGlobal("matchMedia", (query: string) => ({
+        matches: wide && query.includes("min-width: 900px"),
+        media: query,
+        addEventListener() {},
+        removeEventListener() {},
+      }));
+      vi.mocked(invoke).mockImplementation(async (command) => {
+        if (command === "get_auth_state") return { Unauthenticated: null };
+        if (command === "get_onboarding_state")
+          return {
+            steps: [{ id: "auth", status: "pending", skippable: false, revision: 1 }],
+            needsSetup: true,
+            currentStep: "auth",
+          };
+        return null;
+      });
+      renderAt("/");
+      const login = await screen.findByRole("button", { name: "登录并继续" });
+      expect(login).toBeEnabled();
+      expect(document.querySelector("m-navigation-bar, m-navigation-rail")).toBeNull();
+
+      const fields = document.querySelectorAll<HTMLElement>("m-text-field");
+      await waitForUpgrade(fields[0]);
+      await waitForUpgrade(fields[1]);
+      typeInto(fields[0], "123456");
+      typeInto(fields[1], "test-only-password");
+      fireEvent.click(login);
+      await vi.waitFor(() => {
+        expect(invoke).toHaveBeenCalledWith("begin_setup_authentication", {
+          campusCardNumber: "123456",
+          password: "test-only-password",
+          userAgent: expect.any(String),
+        });
+      });
+    },
+  );
+
   it("shows the same four destinations in the narrow navigation bar", async () => {
     renderAt("/");
     await screen.findByRole("heading", { name: "首页" });
