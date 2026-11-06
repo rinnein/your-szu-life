@@ -650,7 +650,7 @@ fn navigate_to_authentication_locked(
         }
     }
     #[cfg(target_os = "android")]
-    if !super::android_cookies::supports_cookie_info()? {
+    if !super::android_cookies::supports_cookie_capture()? {
         set_terminal_state(&app, &store, AuthState::WebViewUpdateRequired);
         return Ok(());
     }

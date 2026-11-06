@@ -1,5 +1,6 @@
 package `in`.rinne.your_szu_life
 
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.webkit.CookieManager
@@ -9,9 +10,14 @@ import org.json.JSONArray
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.net.URI
 
 /** Native-only cookie transport. Cookie values never enter JavaScript or logs. */
 object AuthCookieBridge {
+  @Volatile private var applicationContext: Context? = null
+
+  fun bindContext(context: Context) { applicationContext = context.applicationContext }
+
   @JvmStatic
   fun showAuthentication(returnUrl: String): Boolean = AuthWindowBridge.showAuthentication(returnUrl)
 
@@ -19,13 +25,18 @@ object AuthCookieBridge {
   fun finishAuthentication(restore: Boolean): Boolean = AuthWindowBridge.finishAuthentication(restore)
 
   @JvmStatic
-  fun supportsCookieInfo(): Boolean =
-    WebViewFeature.isFeatureSupported(WebViewFeature.GET_COOKIE_INFO)
+  fun supportsCookieCapture(): Boolean =
+    WebViewFeature.isFeatureSupported(WebViewFeature.GET_COOKIE_INFO) ||
+      applicationContext?.let { LegacyAuthCookieStore(it).available() } == true
 
   @JvmStatic
   fun readCookies(urlsJson: String): String {
-    check(supportsCookieInfo()) { "cookie-info-unavailable" }
     val urls = JSONArray(urlsJson)
+    if (!WebViewFeature.isFeatureSupported(WebViewFeature.GET_COOKIE_INFO)) {
+      val context = checkNotNull(applicationContext) { "cookie-context-unavailable" }
+      val requested = (0 until urls.length()).map { URI(urls.getString(it)) }
+      return JSONArray(LegacyAuthCookieStore(context).read(requested)).toString()
+    }
     val result = JSONArray()
     val manager = CookieManager.getInstance()
     for (index in 0 until urls.length()) {
