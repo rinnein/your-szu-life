@@ -53,6 +53,8 @@ describe("AdaptiveTabs Component & Drawer Auto-injection", () => {
     fireEvent.click(trigger);
     const popover = screen.getByRole("listbox", { name: "功能分类" });
     expect(popover).toBeInTheDocument();
+    // 浮层离开页面与卡片的裁剪容器，避免被底栏和相邻字段遮挡。
+    expect(popover.parentElement).toBe(document.body);
 
     // 点击选择“详情”
     const detailsOption = screen.getByRole("option", { name: /详情/ });

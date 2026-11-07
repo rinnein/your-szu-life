@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { AppNavigation } from "./AppNavigation";
 import { FullscreenPageContext } from "./FullscreenPageContext";
 import { PageTransition } from "../motion/PageTransition";
@@ -21,13 +21,38 @@ export function AppChrome({ children }: { children: ReactNode }) {
     return () => setFullscreenPages((count) => count - 1);
   }, []);
   const fullscreen = fullscreenPages > 0;
+  const contentRef = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    const measure = () => {
+      content.style.setProperty(
+        "--app-content-width",
+        `${content.getBoundingClientRect().width}px`,
+      );
+    };
+    measure();
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
+    observer?.observe(content);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+  useLayoutEffect(() => {
+    document.documentElement.dataset.appFullscreen = String(fullscreen);
+    return () => {
+      delete document.documentElement.dataset.appFullscreen;
+    };
+  }, [fullscreen]);
   // 沉浸式系统栏取色：状态栏跟随顶部应用栏的当前颜色，小白条取底部导航栏颜色。
   useNativeChromeColors();
   return (
     <FullscreenPageContext.Provider value={registerFullscreenPage}>
       <div className="app-frame" data-fullscreen={fullscreen || undefined}>
         {!fullscreen && <AppNavigation />}
-        <main className="app-content">
+        <main ref={contentRef} className="app-content">
           <PageTransition>{children}</PageTransition>
         </main>
       </div>
