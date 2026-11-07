@@ -88,7 +88,7 @@ export default function HomePage() {
           }
         />
 
-        <div className="grid gap-12">
+        <div className="home-sections">
           <AnnouncementBoard />
           <HomeCalendarWidget />
         </div>

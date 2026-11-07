@@ -35,14 +35,13 @@ function formatDeadlineText(date: Date, now: Date = new Date()): string {
   return `${timeStr} (剩余 ${daysLeft} 天)`;
 }
 
-// 全部待办类别统一使用种子色生成的分类色板（accent-01…12），
-// 按类别声明顺序取前六档，保证彼此可区分且随主题变化。
+// 普通类别使用种子色生成的分类色板；电量预警保留错误色，便于辨认风险。
 function getCategoryDotClass(category: ScheduleCategory): string {
   switch (category) {
     case "oj-quiz":
       return "bg-accent-1";
     case "electricity-outage":
-      return "bg-accent-2";
+      return "bg-danger";
     case "uooc-exam":
       return "bg-accent-3";
     case "uooc-homework":
@@ -64,7 +63,7 @@ function renderCategoryChip(category: ScheduleCategory) {
       );
     case "electricity-outage":
       return (
-        <Chip size="sm" color="accent-2" variant="soft">
+        <Chip size="sm" color="danger" variant="soft">
           电量
         </Chip>
       );
@@ -170,16 +169,16 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
 
   return (
     <Card
-      className="home-calendar-widget p-4 sm:p-6"
+      className="home-calendar-widget"
       variant="outlined"
       aria-labelledby="calendar-schedule-heading"
     >
-      <div className="flex items-center justify-between gap-4 mb-4">
-        <h2 id="calendar-schedule-heading" className="text-lg font-medium flex items-center gap-2">
+      <div className="home-calendar-toolbar">
+        <h2 id="calendar-schedule-heading" className="home-calendar-heading">
           <LuCalendar className="text-primary" aria-hidden="true" />
           <span>日历与待办</span>
         </h2>
-        <div className="flex items-center gap-2">
+        <div className="home-calendar-actions">
           {loading && (
             <span className="text-sm text-muted flex items-center gap-1">
               <LoadingIndicator size={14} /> 加载中
@@ -199,9 +198,9 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+      <div className="home-calendar-layout">
         {/* 左侧日历栏 (md: 6 列，lg: 5 列) */}
-        <div className="md:col-span-6 lg:col-span-5 flex flex-col">
+        <div className="home-calendar-month">
           <div className="flex items-center justify-between mb-3 px-1">
             <span className="font-semibold text-base">
               {viewYear}年 {viewMonth + 1}月
@@ -211,7 +210,7 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
                 variant="text"
                 onClick={prevMonth}
                 aria-label="上个月"
-                className="!p-1 !min-w-8 !h-8"
+                className="home-calendar-month-button"
               >
                 <LuChevronLeft className="text-base" aria-hidden="true" />
               </Button>
@@ -219,7 +218,7 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
                 variant="text"
                 onClick={nextMonth}
                 aria-label="下个月"
-                className="!p-1 !min-w-8 !h-8"
+                className="home-calendar-month-button"
               >
                 <LuChevronRight className="text-base" aria-hidden="true" />
               </Button>
@@ -258,8 +257,8 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
                       : ""
                   } ${
                     isSelected
-                      ? "bg-primary text-on-primary font-bold hover:bg-primary/90"
-                      : "hover:bg-surface-container-high"
+                      ? "bg-primary text-primary-foreground font-bold"
+                      : "hover:bg-surface-tertiary"
                   }`}
                   aria-label={fullDateLabel}
                   aria-selected={isSelected}
@@ -273,7 +272,7 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
                       <span
                         key={category}
                         className={`w-1.5 h-1.5 rounded-full ${
-                          isSelected ? "bg-on-primary" : getCategoryDotClass(category)
+                          isSelected ? "bg-primary-foreground" : getCategoryDotClass(category)
                         }`}
                         aria-hidden="true"
                       />
@@ -291,7 +290,7 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
               <span>OJ 测验</span>
             </span>
             <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-accent-2" aria-hidden="true" />
+              <span className="w-2 h-2 rounded-full bg-danger" aria-hidden="true" />
               <span>电量预警</span>
             </span>
             <span className="flex items-center gap-1">
@@ -314,7 +313,7 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
         </div>
 
         {/* 右侧待办列表栏 (md: 6 列，lg: 7 列) */}
-        <div className="md:col-span-6 lg:col-span-7 flex flex-col border-t md:border-t-0 md:border-l border-outline-variant pt-4 md:pt-0 md:pl-6">
+        <div className="home-calendar-todos">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <span className="font-semibold text-base">待办事项</span>
@@ -347,7 +346,7 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
                   key={item.id}
                   type="button"
                   onClick={() => void handleItemClick(item)}
-                  className="w-full text-left p-3 rounded-lg border border-outline-variant/60 hover:border-primary hover:bg-surface-container-low transition-colors flex items-start justify-between gap-3 group"
+                  className="home-calendar-todo w-full text-left p-3 rounded-lg transition-colors flex items-start justify-between gap-3 group"
                   aria-label={`${getCategoryAriaLabel(item.category)}：${item.title}`}
                 >
                   <div className="flex-1 min-w-0">

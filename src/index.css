@@ -45,6 +45,12 @@
   --color-separator: var(--mtrl-sys-color-outline-variant);
   --color-border: var(--mtrl-sys-color-outline-variant);
   --color-focus: var(--mtrl-sys-color-primary);
+  --color-outline-variant: var(--mtrl-sys-color-outline-variant);
+  --color-surface-container: var(--mtrl-sys-color-surface-container);
+  --color-surface-container-lowest: var(--mtrl-sys-color-surface-container-lowest);
+  --color-surface-container-high: var(--mtrl-sys-color-surface-container-high);
+  --color-surface-container-highest: var(--mtrl-sys-color-surface-container-highest);
+  --color-error: var(--mtrl-sys-color-error);
 }
 
 /* Only a mounted native toolbar may replace the page's navigation controls. */
@@ -84,9 +90,94 @@ html[data-szu-native-toolbar="true"] [data-webview-navigation] {
   }
 }
 
-:root:has(.page-surface[data-fullscreen]),
-:root:has([data-fullscreen]) {
+.app-frame[data-fullscreen] {
   --app-nav-bar-height: 0px;
+}
+
+html[data-app-fullscreen="true"] {
+  --app-nav-bar-height: 0px;
+}
+
+/* 日历的内边距由卡片内容承担，宿主不再额外缩窄卡片边框。 */
+.home-sections {
+  display: grid;
+  gap: 24px;
+}
+
+.home-calendar-widget::part(content) {
+  padding: 16px;
+}
+
+.home-calendar-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-block-end: 16px;
+}
+
+.home-calendar-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 500;
+}
+
+.home-calendar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-inline-start: auto;
+}
+
+.home-calendar-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+
+.home-calendar-month,
+.home-calendar-todos {
+  min-inline-size: 0;
+}
+
+.home-calendar-todos {
+  border-block-start: 1px solid var(--mtrl-sys-color-outline-variant);
+  padding-block-start: 16px;
+}
+
+.home-calendar-month-button::part(button) {
+  min-inline-size: 40px;
+  inline-size: 40px;
+  padding-inline: 0;
+}
+
+.home-calendar-todo {
+  border: 1px solid var(--mtrl-sys-color-outline-variant);
+}
+
+.home-calendar-todo:hover {
+  border-color: var(--mtrl-sys-color-primary);
+  background: var(--mtrl-sys-color-surface-container-low);
+}
+
+@media (min-width: 768px) {
+  .home-calendar-widget::part(content) {
+    padding: 24px;
+  }
+  .home-calendar-layout {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  }
+  .home-calendar-todos {
+    border-block-start: 0;
+    border-inline-start: 1px solid var(--mtrl-sys-color-outline-variant);
+    padding-block-start: 0;
+    padding-inline-start: 24px;
+  }
 }
 
 /* 全局图标与文字排版：防止 SVG 因 Tailwind v4 Preflight 设为 block 而与相邻文字换行 */
@@ -127,7 +218,6 @@ input {
 .profile-card,
 .status-card {
   width: min(480px, 100%);
-  box-shadow: 0 20px 70px color-mix(in srgb, var(--mtrl-sys-color-shadow) 8%, transparent);
 }
 
 .auth-card-content {
@@ -152,11 +242,7 @@ input {
   margin: 0 auto 4px;
 }
 
-.status-card {
-  display: grid;
-  justify-items: center;
-  gap: 14px;
-  padding: 40px;
+.status-card::part(content) {
   text-align: center;
 }
 
@@ -171,10 +257,6 @@ input {
   gap: 10px;
   color: var(--szu-muted);
   font-size: 14px;
-}
-
-.profile-card {
-  padding: 6px;
 }
 
 .field {
@@ -1280,14 +1362,11 @@ p {
 .app-content {
   flex: 1;
   min-inline-size: 0;
-  padding-block-end: 88px;
-  /*
-   * 顶栏靠内容区宽度（cqw）横向撑满，基准容器就是这里。
-   * 代价是 layout containment：内容区里的 position: fixed 元素改为相对内容区
-   * 定位，浮动提示应当用 createPortal(..., document.body) 挂到 body
-   * （见 src/StudyPage.tsx 的占位提示与 src/app-content/UpdateNotice.tsx）。
-   */
-  container-type: inline-size;
+  padding-block-end: calc(var(--app-nav-bar-height) + 24px);
+}
+
+.app-frame[data-fullscreen] .app-content {
+  padding-block-end: 0;
 }
 
 /* 宽屏：侧边导航栏，内容区左移。 */
@@ -1331,29 +1410,9 @@ m-snackbar::part(snackbar),
   pointer-events: auto;
   /* 避让底部导航栏上边缘（默认 65px） + 16px 留白 */
   bottom: calc(
-    var(--app-nav-bar-height, 65px) + env(safe-area-inset-bottom, 0px) + 16px
+    max(var(--app-nav-bar-height, 0px), var(--app-onboarding-height, 0px)) +
+      env(safe-area-inset-bottom, 0px) + 16px
   ) !important;
-}
-
-/* 宽屏使用侧边导航栏（app-rail），底部无导航栏，snackbar 恢复标准 16px 底部留白 */
-@media (min-width: 900px) {
-  m-snackbar::part(snackbar),
-  .app-snackbar::part(snackbar) {
-    bottom: 16px !important;
-  }
-}
-
-/* 全屏页面（如认证页）隐藏了底部导航栏，或者当前页面没有底部导航栏时，恢复标准 16px 底部留白 */
-body:has(.page-surface[data-fullscreen]) m-snackbar::part(snackbar),
-body:has([data-fullscreen]) m-snackbar::part(snackbar),
-body:not(:has(.app-nav-bar)) m-snackbar::part(snackbar) {
-  bottom: 16px !important;
-}
-
-/* 初始化向导有常驻底部操作栏，Snackbar 抬到操作栏上方。 */
-body:has(.onboarding-actions) m-snackbar::part(snackbar),
-body:has(.onboarding-actions) .app-snackbar::part(snackbar) {
-  bottom: calc(65px + env(safe-area-inset-bottom, 0px) + 16px) !important;
 }
 
 /* ---------- 页面容器 ---------- */
@@ -1411,14 +1470,10 @@ body:has(.onboarding-actions) .app-snackbar::part(snackbar) {
   flex-direction: column;
   gap: 16px;
   /* 给常驻底栏留出空间，长步骤滚到底时最后一块不会被盖住。 */
-  padding-block: 24px 96px;
+  padding-block: 24px calc(var(--app-onboarding-height, 65px) + 24px);
 }
 
-/*
- * 底栏通过 portal 挂到 body，因此这里的 fixed 相对视口定位，不受
- * .app-content 的 container-type 影响。z-index 10 高于页面内容与顶栏，
- * 低于 Snackbar（1000）和 Dialog 的 top layer。
- */
+/* 底栏通过 portal 挂到 body；高度实测后供内容和提示条避让。 */
 .onboarding-actions {
   position: fixed;
   inset-inline: 0;
@@ -1443,26 +1498,15 @@ body:has(.onboarding-actions) .app-snackbar::part(snackbar) {
 
 /* ---------- 顶部应用栏 ---------- */
 /*
- * 顶栏吸顶固定并横向撑满内容区，内容从它下面滚过。
- *
- * `calc(50% - 50cqw)` 抵消内容列自身的横向留白：50% 是内容列的一半，50cqw 是
- * 内容区的一半，两者之差正好把顶栏推到内容区的左右边缘，因此它既跨越内层内容
- * 列的 max-inline-size，也跨越页面内边距。前提是顶栏的祖先链水平居中
- * ——`.page-surface-inner` 的 `margin-inline: auto` 已经保证这一点；新增页面
- * 不要把顶栏放进带横向内边距或非居中的容器。
- *
- * 顶栏内容与自身边缘的间距由 material 自带的内边距提供（宽屏 16px、窄屏 12px）。
- *
- * 顶栏块（顶栏 + 说明文字）必须是页面内容容器的直接子元素。页面里带 `gap` 的
- * grid/flex 容器会把 gap 插在顶栏和它自己的说明文字之间——两者是同级的两个
- * 节点——把本该 8px 的间距顶成几十像素。内容的节奏请交给内容块自己的
- * `margin-block-start`，顶栏到正文的 24px 由下面的统一规则提供。
+ * 顶栏用 AppChrome 测量的内容区宽度撑满，避免依赖旧内核不支持的 cqw。
+ * 内容区不建立 layout containment，菜单的 fixed 定位仍相对视口。
+ * 顶栏和说明文字作为内容容器的直接子元素，间距由统一规则管理。
  */
 .top-app-bar {
   position: sticky;
   inset-block-start: 0;
   z-index: 5;
-  margin-inline: calc(50% - 50cqw);
+  margin-inline: calc(50% - var(--app-content-width, 100vw) / 2);
 }
 
 /*
@@ -1547,6 +1591,26 @@ m-top-app-bar::part(trailing) {
   gap: 8px;
   flex: 1 1 auto;
   min-inline-size: 0;
+}
+
+@media (max-width: 480px) {
+  .top-app-bar-leading,
+  .top-app-bar-actions {
+    gap: 4px;
+  }
+  .top-app-bar-title {
+    font-size: 1.25rem;
+  }
+  .top-app-bar-eyebrow {
+    display: none;
+  }
+  .account-trigger::part(button) {
+    padding-inline: 8px;
+    min-inline-size: 0;
+    max-inline-size: 132px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 .top-app-bar-description {
@@ -1712,13 +1776,8 @@ m-top-app-bar::part(trailing) {
   padding-block-start: 8px;
 }
 
-/* 认证流程是全屏独立页面：隐藏底部导航栏并收回它的留白。 */
-.app-frame:has(.page-surface[data-fullscreen]) .app-nav-bar,
-.app-frame:has(.page-surface[data-fullscreen]) .app-rail {
-  display: none;
-}
-
-.app-frame:has(.page-surface[data-fullscreen]) .app-content {
+/* 全屏状态由 React 注册：导航不挂载，普通属性选择器收回留白。 */
+.app-frame[data-fullscreen] .app-content {
   padding-block-end: 0;
 }
 
@@ -1967,12 +2026,12 @@ m-top-app-bar::part(trailing) {
 }
 
 .md-chip[data-color="success"] {
-  background: color-mix(in srgb, var(--mtrl-sys-color-success) 18%, var(--mtrl-sys-color-surface));
+  background: var(--szu-chip-success-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-success);
 }
 
 .md-chip[data-color="warning"] {
-  background: color-mix(in srgb, var(--mtrl-sys-color-warning) 20%, var(--mtrl-sys-color-surface));
+  background: var(--szu-chip-warning-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-warning);
 }
 
@@ -1982,67 +2041,43 @@ m-top-app-bar::part(trailing) {
 }
 
 .md-chip[data-color="info"] {
-  background: color-mix(in srgb, var(--mtrl-sys-color-info) 18%, var(--mtrl-sys-color-surface));
+  background: var(--szu-chip-info-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-info);
 }
 
 .md-chip[data-color="tertiary"] {
-  background: color-mix(in srgb, var(--mtrl-sys-color-tertiary) 20%, var(--mtrl-sys-color-surface));
+  background: var(--szu-chip-tertiary-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-tertiary);
 }
 
 /* 分类色板的 Chip 变体：按需补档，与 bg-accent-N 对应。 */
 .md-chip[data-color="accent-1"] {
-  background: color-mix(
-    in srgb,
-    var(--mtrl-sys-color-accent-01) 20%,
-    var(--mtrl-sys-color-surface)
-  );
+  background: var(--szu-chip-accent-01-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-accent-01);
 }
 
 .md-chip[data-color="accent-2"] {
-  background: color-mix(
-    in srgb,
-    var(--mtrl-sys-color-accent-02) 20%,
-    var(--mtrl-sys-color-surface)
-  );
+  background: var(--szu-chip-accent-02-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-accent-02);
 }
 
 .md-chip[data-color="accent-3"] {
-  background: color-mix(
-    in srgb,
-    var(--mtrl-sys-color-accent-03) 20%,
-    var(--mtrl-sys-color-surface)
-  );
+  background: var(--szu-chip-accent-03-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-accent-03);
 }
 
 .md-chip[data-color="accent-4"] {
-  background: color-mix(
-    in srgb,
-    var(--mtrl-sys-color-accent-04) 20%,
-    var(--mtrl-sys-color-surface)
-  );
+  background: var(--szu-chip-accent-04-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-accent-04);
 }
 
 .md-chip[data-color="accent-5"] {
-  background: color-mix(
-    in srgb,
-    var(--mtrl-sys-color-accent-05) 20%,
-    var(--mtrl-sys-color-surface)
-  );
+  background: var(--szu-chip-accent-05-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-accent-05);
 }
 
 .md-chip[data-color="accent-6"] {
-  background: color-mix(
-    in srgb,
-    var(--mtrl-sys-color-accent-06) 20%,
-    var(--mtrl-sys-color-surface)
-  );
+  background: var(--szu-chip-accent-06-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-accent-06);
 }
 
@@ -2157,6 +2192,18 @@ m-card [slot="headline"] {
 /* 卡片本体同样可能被当作栅格子项，同 m-tabs 一样收掉自动最小尺寸。 */
 m-card {
   min-inline-size: 0;
+}
+
+/* material uses :has() to separate floating labels from placeholders. */
+@supports not selector(:has(*)) {
+  m-text-field[label]:not(:focus-within)::part(input)::placeholder {
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+  m-text-field[label]:focus-within::part(input)::placeholder {
+    color: var(--mtrl-sys-color-on-surface-variant);
+    -webkit-text-fill-color: var(--mtrl-sys-color-on-surface-variant);
+  }
 }
 
 /* ---------- AdaptiveTabs 自适应标签切换器 ---------- */
@@ -2363,10 +2410,9 @@ m-card {
 
 /* 下拉浮层 (Popover) */
 .adaptive-tabs-popover {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
+  position: fixed;
+  inset: auto;
+  margin: 0;
   z-index: 60;
   max-height: 60vh;
   overflow-y: auto;

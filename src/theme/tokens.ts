@@ -1,5 +1,13 @@
 import { schemeToTokens } from "material/core/theme";
-import { generateAccents, generateSchemes } from "./scheme";
+import {
+  argbFromHex,
+  argbFromRgb,
+  blueFromArgb,
+  greenFromArgb,
+  hexFromArgb,
+  redFromArgb,
+} from "@material/material-color-utilities";
+import { ACCENT_COUNT, generateAccents, generateSchemes } from "./scheme";
 import type { SchemeVariant } from "./defaults";
 
 export const THEME_NAME = "szu";
@@ -42,6 +50,31 @@ function withAccents(tokens: Record<string, string>, accents: string[]): Record<
   return merged;
 }
 
+/** Resolve opaque sRGB mixes before CSS reaches browsers without color-mix(). */
+function withChipContainers(tokens: Record<string, string>): Record<string, string> {
+  const merged = { ...tokens };
+  const surface = argbFromHex(tokens["--mtrl-sys-color-surface"]);
+  const roles: [string, number][] = [
+    ["success", 0.18],
+    ["warning", 0.2],
+    ["info", 0.18],
+    ["tertiary", 0.2],
+    ...Array.from({ length: ACCENT_COUNT }, (_, i): [string, number] => [
+      `accent-${String(i + 1).padStart(2, "0")}`,
+      0.2,
+    ]),
+  ];
+  for (const [role, weight] of roles) {
+    const foreground = argbFromHex(tokens[`--mtrl-sys-color-${role}`]);
+    const mix = (channel: (argb: number) => number) =>
+      Math.round(channel(foreground) * weight + channel(surface) * (1 - weight));
+    merged[`--szu-chip-${role}-container`] = hexFromArgb(
+      argbFromRgb(mix(redFromArgb), mix(greenFromArgb), mix(blueFromArgb)),
+    );
+  }
+  return merged;
+}
+
 /** 两套模式下的系统底色（供读取/测试，不再由主题推给原生）。 */
 export type ThemeSurface = { light: string; dark: string };
 
@@ -49,13 +82,17 @@ export type ThemeSurface = { light: string; dark: string };
 function buildTheme(seed: string, variant: SchemeVariant): { css: string; surface: ThemeSurface } {
   const schemes = generateSchemes(seed, variant);
   const tokens = schemeToTokens({ light: schemes.light, dark: schemes.dark });
-  const light = withAccents(
-    withStatus(tokens.light, schemes.light as unknown as Record<string, string>),
-    generateAccents(seed, false),
+  const light = withChipContainers(
+    withAccents(
+      withStatus(tokens.light, schemes.light as unknown as Record<string, string>),
+      generateAccents(seed, false),
+    ),
   );
-  const dark = withAccents(
-    withStatus(tokens.dark, schemes.dark as unknown as Record<string, string>),
-    generateAccents(seed, true),
+  const dark = withChipContainers(
+    withAccents(
+      withStatus(tokens.dark, schemes.dark as unknown as Record<string, string>),
+      generateAccents(seed, true),
+    ),
   );
   return {
     css:

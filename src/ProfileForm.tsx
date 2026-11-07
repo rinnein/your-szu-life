@@ -120,7 +120,9 @@ export function ProfileForm({
               type="password"
               required={!initial?.hasPassword}
               value={password}
-              placeholder={initial?.hasPassword ? "已保存（输入新密码可覆盖）" : "请输入密码"}
+              supportingText={
+                initial?.hasPassword ? "已保存密码；留空保留，输入新密码可覆盖。" : undefined
+              }
               {...bindField(setPassword)}
             />
           )}

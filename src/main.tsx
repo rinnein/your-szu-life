@@ -1,4 +1,6 @@
+import "./runtime-compat";
 import React from "react";
+import "./ui/popover-compat";
 import ReactDOM from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 import { attachConsole } from "@tauri-apps/plugin-log";

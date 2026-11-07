@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import tailwindcss from "@tailwindcss/vite";
 import { modernMonacoAssets } from "./scripts/modern-monaco-assets.mjs";
+import { compatibleCss } from "./scripts/compatible-css.mjs";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
@@ -14,6 +15,7 @@ export default defineConfig(async () => ({
     react(),
     tailwindcss(),
     ...modernMonacoAssets(),
+    compatibleCss(),
   ]),
 
   test: {
@@ -30,6 +32,11 @@ export default defineConfig(async () => ({
   //
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
+  build: {
+    target: "chrome92",
+    // Cascade layer ordering is global; compile it once across all routed pages.
+    cssCodeSplit: false,
+  },
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
     port: 1420,

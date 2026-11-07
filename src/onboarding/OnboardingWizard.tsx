@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button, Card, LoadingIndicator, Progress } from "material/react";
 import { toast } from "../ui";
@@ -45,6 +45,25 @@ export function OnboardingWizard({
   const [nextAction, setNextAction] = useState<StepNextAction | null>(null);
   const finished = useRef(false);
   const acting = useRef(false);
+  const footerRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const footer = footerRef.current;
+    if (!footer) return;
+    const measure = () =>
+      document.documentElement.style.setProperty(
+        "--app-onboarding-height",
+        `${footer.getBoundingClientRect().height}px`,
+      );
+    measure();
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
+    observer?.observe(footer);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+      document.documentElement.style.removeProperty("--app-onboarding-height");
+    };
+  }, []);
 
   const registerNext = useCallback((action: StepNextAction | null) => {
     setNextAction(action);
@@ -183,7 +202,7 @@ export function OnboardingWizard({
 
       {typeof document !== "undefined" &&
         createPortal(
-          <div className="onboarding-actions">
+          <div ref={footerRef} className="onboarding-actions">
             <div className="onboarding-actions-group">
               <Button
                 variant="text"

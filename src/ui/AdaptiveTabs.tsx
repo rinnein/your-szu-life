@@ -2,11 +2,13 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { Tabs, Tab } from "material/react";
 import {
   LuCheck,
@@ -152,6 +154,53 @@ export function AdaptiveTabs({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  useLayoutEffect(() => {
+    const trigger = triggerRef.current;
+    const popover = popoverRef.current;
+    if (!menuOpen || isWide || !trigger || !popover) return;
+    if (typeof popover.showPopover === "function") {
+      popover.setAttribute("popover", "manual");
+      popover.showPopover();
+    }
+    const position = () => {
+      const viewport = window.visualViewport;
+      const leftEdge = viewport?.offsetLeft ?? 0;
+      const topEdge = viewport?.offsetTop ?? 0;
+      const viewportWidth = viewport?.width ?? window.innerWidth;
+      const viewportBottom = topEdge + (viewport?.height ?? window.innerHeight);
+      const footer = document.querySelector(".onboarding-actions, .app-nav-bar");
+      const footerRect = footer?.getBoundingClientRect();
+      const bottomEdge =
+        footerRect && footerRect.height > 0
+          ? Math.min(viewportBottom, footerRect.top)
+          : viewportBottom;
+      const rect = trigger.getBoundingClientRect();
+      const width = Math.max(0, Math.min(rect.width, viewportWidth - 16));
+      popover.style.width = `${width}px`;
+      const below = Math.max(0, bottomEdge - rect.bottom - 12);
+      const above = Math.max(0, rect.top - topEdge - 12);
+      const upwards = popover.scrollHeight > below && above > below;
+      const height = Math.min(popover.scrollHeight, upwards ? above : below);
+      popover.style.maxHeight = `${height}px`;
+      popover.style.top = `${upwards ? rect.top - height - 4 : rect.bottom + 4}px`;
+      popover.style.left = `${Math.max(leftEdge + 8, Math.min(rect.left, leftEdge + viewportWidth - width - 8))}px`;
+    };
+    position();
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(position) : null;
+    observer?.observe(trigger);
+    window.addEventListener("scroll", position, true);
+    window.addEventListener("resize", position);
+    window.visualViewport?.addEventListener("resize", position);
+    window.visualViewport?.addEventListener("scroll", position);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("scroll", position, true);
+      window.removeEventListener("resize", position);
+      window.visualViewport?.removeEventListener("resize", position);
+      window.visualViewport?.removeEventListener("scroll", position);
+    };
+  }, [menuOpen, isWide, items, searchQuery]);
 
   // 3. 宽模式下的横向溢出检测与左右平滑滚动支持
   const checkScroll = useCallback(() => {
@@ -418,7 +467,7 @@ export function AdaptiveTabs({
     );
   }
 
-  // 窄模式（折叠下拉）：纯 CSS 相对容器绝对定位，零延迟、零闪烁、带丝滑展开动画
+  // 窄模式的菜单放到 body，按视口和底栏的实际空间定位。
   return (
     <div
       ref={containerRef}
@@ -451,88 +500,90 @@ export function AdaptiveTabs({
         />
       </button>
 
-      {menuOpen && (
-        <div
-          ref={popoverRef}
-          className="adaptive-tabs-popover"
-          role="listbox"
-          aria-label={ariaLabel ?? label ?? "选项列表"}
-          onKeyDown={handlePopoverKeyDown}
-        >
-          {isSearchEnabled && (
-            <div className="adaptive-tabs-search-box">
-              <LuSearch className="adaptive-tabs-search-icon" aria-hidden="true" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                className="adaptive-tabs-search-input"
-                placeholder={`查找${label || "选项"}…`}
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setHighlightIndex(0);
-                }}
-                autoFocus
-                onClick={(e) => e.stopPropagation()}
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  className="adaptive-tabs-search-clear"
-                  aria-label="清空搜索"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSearchQuery("");
-                    searchInputRef.current?.focus();
+      {menuOpen &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            className="adaptive-tabs-popover"
+            role="listbox"
+            aria-label={ariaLabel ?? label ?? "选项列表"}
+            onKeyDown={handlePopoverKeyDown}
+          >
+            {isSearchEnabled && (
+              <div className="adaptive-tabs-search-box">
+                <LuSearch className="adaptive-tabs-search-icon" aria-hidden="true" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  className="adaptive-tabs-search-input"
+                  placeholder={`查找${label || "选项"}…`}
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setHighlightIndex(0);
                   }}
-                >
-                  <LuX aria-hidden="true" />
-                </button>
-              )}
-            </div>
-          )}
-
-          <div className="adaptive-tabs-options-list">
-            {filteredItems.length === 0 ? (
-              <div className="adaptive-tabs-empty">没有匹配的选项</div>
-            ) : (
-              filteredItems.map((item, idx) => {
-                const isSelected = item.value === value;
-                const isHighlighted = idx === highlightIndex;
-                return (
+                  autoFocus
+                  onClick={(e) => e.stopPropagation()}
+                />
+                {searchQuery && (
                   <button
-                    key={item.value}
                     type="button"
-                    role="option"
-                    aria-selected={isSelected}
-                    disabled={item.disabled}
-                    className={`adaptive-tabs-item ${
-                      isSelected ? "adaptive-tabs-item--selected" : ""
-                    } ${isHighlighted ? "adaptive-tabs-item--highlighted" : ""}`}
-                    onClick={() => {
-                      setMenuOpen(false);
-                      onChange(item.value);
+                    className="adaptive-tabs-search-clear"
+                    aria-label="清空搜索"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSearchQuery("");
+                      searchInputRef.current?.focus();
                     }}
                   >
-                    {item.icon && (
-                      <span className="adaptive-tabs-item-icon">
-                        {renderAdaptiveIcon(item.icon)}
-                      </span>
-                    )}
-                    <span className="adaptive-tabs-item-label">{item.label}</span>
-                    {item.badge !== undefined && (
-                      <span className="adaptive-tabs-item-badge">{item.badge}</span>
-                    )}
-                    {isSelected && (
-                      <LuCheck aria-hidden="true" className="adaptive-tabs-item-check ml-auto" />
-                    )}
+                    <LuX aria-hidden="true" />
                   </button>
-                );
-              })
+                )}
+              </div>
             )}
-          </div>
-        </div>
-      )}
+
+            <div className="adaptive-tabs-options-list">
+              {filteredItems.length === 0 ? (
+                <div className="adaptive-tabs-empty">没有匹配的选项</div>
+              ) : (
+                filteredItems.map((item, idx) => {
+                  const isSelected = item.value === value;
+                  const isHighlighted = idx === highlightIndex;
+                  return (
+                    <button
+                      key={item.value}
+                      type="button"
+                      role="option"
+                      aria-selected={isSelected}
+                      disabled={item.disabled}
+                      className={`adaptive-tabs-item ${
+                        isSelected ? "adaptive-tabs-item--selected" : ""
+                      } ${isHighlighted ? "adaptive-tabs-item--highlighted" : ""}`}
+                      onClick={() => {
+                        setMenuOpen(false);
+                        onChange(item.value);
+                      }}
+                    >
+                      {item.icon && (
+                        <span className="adaptive-tabs-item-icon">
+                          {renderAdaptiveIcon(item.icon)}
+                        </span>
+                      )}
+                      <span className="adaptive-tabs-item-label">{item.label}</span>
+                      {item.badge !== undefined && (
+                        <span className="adaptive-tabs-item-badge">{item.badge}</span>
+                      )}
+                      {isSelected && (
+                        <LuCheck aria-hidden="true" className="adaptive-tabs-item-check ml-auto" />
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
