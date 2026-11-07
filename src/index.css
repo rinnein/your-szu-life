@@ -2026,12 +2026,12 @@ m-top-app-bar::part(trailing) {
 }
 
 .md-chip[data-color="success"] {
-  background: color-mix(in srgb, var(--mtrl-sys-color-success) 18%, var(--mtrl-sys-color-surface));
+  background: var(--szu-chip-success-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-success);
 }
 
 .md-chip[data-color="warning"] {
-  background: color-mix(in srgb, var(--mtrl-sys-color-warning) 20%, var(--mtrl-sys-color-surface));
+  background: var(--szu-chip-warning-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-warning);
 }
 
@@ -2041,67 +2041,43 @@ m-top-app-bar::part(trailing) {
 }
 
 .md-chip[data-color="info"] {
-  background: color-mix(in srgb, var(--mtrl-sys-color-info) 18%, var(--mtrl-sys-color-surface));
+  background: var(--szu-chip-info-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-info);
 }
 
 .md-chip[data-color="tertiary"] {
-  background: color-mix(in srgb, var(--mtrl-sys-color-tertiary) 20%, var(--mtrl-sys-color-surface));
+  background: var(--szu-chip-tertiary-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-tertiary);
 }
 
 /* 分类色板的 Chip 变体：按需补档，与 bg-accent-N 对应。 */
 .md-chip[data-color="accent-1"] {
-  background: color-mix(
-    in srgb,
-    var(--mtrl-sys-color-accent-01) 20%,
-    var(--mtrl-sys-color-surface)
-  );
+  background: var(--szu-chip-accent-01-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-accent-01);
 }
 
 .md-chip[data-color="accent-2"] {
-  background: color-mix(
-    in srgb,
-    var(--mtrl-sys-color-accent-02) 20%,
-    var(--mtrl-sys-color-surface)
-  );
+  background: var(--szu-chip-accent-02-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-accent-02);
 }
 
 .md-chip[data-color="accent-3"] {
-  background: color-mix(
-    in srgb,
-    var(--mtrl-sys-color-accent-03) 20%,
-    var(--mtrl-sys-color-surface)
-  );
+  background: var(--szu-chip-accent-03-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-accent-03);
 }
 
 .md-chip[data-color="accent-4"] {
-  background: color-mix(
-    in srgb,
-    var(--mtrl-sys-color-accent-04) 20%,
-    var(--mtrl-sys-color-surface)
-  );
+  background: var(--szu-chip-accent-04-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-accent-04);
 }
 
 .md-chip[data-color="accent-5"] {
-  background: color-mix(
-    in srgb,
-    var(--mtrl-sys-color-accent-05) 20%,
-    var(--mtrl-sys-color-surface)
-  );
+  background: var(--szu-chip-accent-05-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-accent-05);
 }
 
 .md-chip[data-color="accent-6"] {
-  background: color-mix(
-    in srgb,
-    var(--mtrl-sys-color-accent-06) 20%,
-    var(--mtrl-sys-color-surface)
-  );
+  background: var(--szu-chip-accent-06-container, var(--mtrl-sys-color-surface-container-high));
   color: var(--mtrl-sys-color-accent-06);
 }
 

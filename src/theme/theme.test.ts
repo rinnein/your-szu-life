@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { argbFromHex, Hct } from "@material/material-color-utilities";
+import { argbFromHex, Hct, lstarFromArgb } from "@material/material-color-utilities";
 import { DEFAULT_SEED, normalizeSeed, SEED_PRESETS } from "./defaults";
 import { ACCENT_COUNT, generateAccents, generateScheme, generateSchemes } from "./scheme";
 import { buildThemeCss, THEME_NAME } from "./tokens";
@@ -132,6 +132,39 @@ describe("buildThemeCss", () => {
       expect(css).toContain(`${name}:`);
     }
   });
+
+  it.each(["#5d5fef", "#b3261e", "#006c4e"])(
+    "gives chip text readable opaque backgrounds in both modes (seed %s)",
+    (seed) => {
+      const css = buildThemeCss(seed, "tonal-spot");
+      for (const block of css.matchAll(/\{([^}]+)\}/g)) {
+        const tokens = Object.fromEntries(
+          block[1]
+            .split(";")
+            .filter(Boolean)
+            .map((d) => d.split(":")),
+        );
+        for (const role of [
+          "success",
+          "warning",
+          "info",
+          "tertiary",
+          ...Array.from(
+            { length: ACCENT_COUNT },
+            (_, i) => `accent-${String(i + 1).padStart(2, "0")}`,
+          ),
+        ]) {
+          const foreground = tokens[`--mtrl-sys-color-${role}`];
+          const background = tokens[`--szu-chip-${role}-container`];
+          expect(background).toMatch(/^#[0-9a-f]{6}$/);
+          const toneA = lstarFromArgb(argbFromHex(foreground));
+          const toneB = lstarFromArgb(argbFromHex(background));
+          // Tiny chip text must remain distinct after dynamic theme or mode changes.
+          expect(Math.abs(toneA - toneB)).toBeGreaterThan(35);
+        }
+      }
+    },
+  );
 
   it("does not leak an unscoped :root block", () => {
     // 未加作用域的 :root 会污染 material 的基线主题，也会让嵌套主题失效。

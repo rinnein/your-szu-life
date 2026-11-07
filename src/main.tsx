@@ -1,3 +1,4 @@
+import "./runtime-compat";
 import React from "react";
 import "./ui/popover-compat";
 import ReactDOM from "react-dom/client";

@@ -68,6 +68,22 @@
   --mtrl-sys-color-accent-10: #007683;
   --mtrl-sys-color-accent-11: #0072a1;
   --mtrl-sys-color-accent-12: #4768b6;
+  --szu-chip-success-container: #cfdfdf;
+  --szu-chip-warning-container: #e8d5cc;
+  --szu-chip-info-container: #cfddef;
+  --szu-chip-tertiary-container: #e2d7e1;
+  --szu-chip-accent-01-container: #e1d9ef;
+  --szu-chip-accent-02-container: #e7d7ea;
+  --szu-chip-accent-03-container: #ebd6e2;
+  --szu-chip-accent-04-container: #ecd6d8;
+  --szu-chip-accent-05-container: #ead8cc;
+  --szu-chip-accent-06-container: #e4dbcc;
+  --szu-chip-accent-07-container: #ddddcd;
+  --szu-chip-accent-08-container: #d2dfd8;
+  --szu-chip-accent-09-container: #cadfe1;
+  --szu-chip-accent-10-container: #cadee6;
+  --szu-chip-accent-11-container: #caddec;
+  --szu-chip-accent-12-container: #d8dbf0;
 }
 [data-theme="szu"][data-theme-mode="dark"] {
   --mtrl-sys-color-error: #ffb4ab;
@@ -134,4 +150,20 @@
   --mtrl-sys-color-accent-10: #4fd8eb;
   --mtrl-sys-color-accent-11: #87ceff;
   --mtrl-sys-color-accent-12: #b1c5ff;
+  --szu-chip-success-container: #293633;
+  --szu-chip-warning-container: #423426;
+  --szu-chip-info-container: #2b3442;
+  --szu-chip-tertiary-container: #3e343d;
+  --szu-chip-accent-01-container: #393546;
+  --szu-chip-accent-02-container: #413245;
+  --szu-chip-accent-03-container: #42323b;
+  --szu-chip-accent-04-container: #423334;
+  --szu-chip-accent-05-container: #42342c;
+  --szu-chip-accent-06-container: #3f3622;
+  --szu-chip-accent-07-container: #353927;
+  --szu-chip-accent-08-container: #2a3b30;
+  --szu-chip-accent-09-container: #213b3a;
+  --szu-chip-accent-10-container: #1f3a42;
+  --szu-chip-accent-11-container: #2a3846;
+  --szu-chip-accent-12-container: #333746;
 }

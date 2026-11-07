@@ -35,6 +35,7 @@ const send = (method, params = {}, sessionId) =>
   });
 const delay = (ms) => new Promise((r) => setTimeout(r, ms)),
   reports = [];
+const contexts = new Set();
 const specs = [
   ["home", 360, 711],
   ["home-small", 320, 568],
@@ -54,6 +55,13 @@ const specs = [
   ["study", 360, 711],
   ["life", 360, 711],
   ["settings", 360, 711],
+  ["home-todos", 360, 711],
+  ["home-todos-dark", 360, 711],
+  ["payments-entry", 360, 711],
+  ["payments-card", 320, 568],
+  ["payments-network", 360, 711],
+  ["payments-electricity", 360, 711],
+  ["payments-recharge", 360, 711],
 ];
 try {
   for (const [name, width, height] of specs) {
@@ -64,7 +72,12 @@ try {
         : name.startsWith("dorm")
           ? "dormitory"
           : name;
-    const { targetId } = await send("Target.createTarget", { url: "about:blank" });
+    const { browserContextId } = await send("Target.createBrowserContext");
+    contexts.add(browserContextId);
+    const { targetId } = await send("Target.createTarget", {
+      url: "about:blank",
+      browserContextId,
+    });
     const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
     const cmd = (m, p = {}) => send(m, p, sessionId),
       evaluate = async (expression) => {
@@ -98,7 +111,14 @@ try {
       deviceScaleFactor: 1,
       mobile: true,
     });
-    const route = ["study", "life", "settings"].includes(scenario) ? "/" + scenario : "/";
+    const route = scenario.startsWith("payments-")
+      ? scenario === "payments-entry"
+        ? "/life"
+        : "/life/campus-payments/" + scenario.slice(9)
+      : ["study", "life", "settings"].includes(scenario)
+        ? "/" + scenario
+        : "/";
+    await cmd("Page.enable");
     await cmd("Page.addScriptToEvaluateOnNewDocument", { source: fixture });
     await cmd("Page.navigate", {
       url: base + route + "?scenario=" + scenario + (name.endsWith("dark") ? "&dark=1" : ""),
@@ -122,6 +142,25 @@ try {
     if (!ready) throw Error(`${name}: frontend did not become ready within 10 seconds`);
     await evaluate("document.fonts.ready.then(() => true)");
     await delay(200);
+    if (scenario === "payments-entry") {
+      await click(
+        await evaluate(
+          `(() => {const b=[...document.querySelectorAll('m-button,button')].find(e=>e.textContent.includes('校园卡/电费/网费'));const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`,
+        ),
+      );
+      await delay(500);
+    }
+    if (["payments-entry", "payments-electricity"].includes(scenario)) {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if (
+          await evaluate(
+            `!!document.querySelector('.recharts-wrapper svg.recharts-surface') || document.body.innerText.includes('Something went wrong!')`,
+          )
+        )
+          break;
+        await delay(100);
+      }
+    } else if (scenario.startsWith("payments-")) await delay(400);
     if (name === "home-large-font")
       await evaluate('document.documentElement.style.fontSize="24px"');
     if (scenario === "settings") {
@@ -130,7 +169,7 @@ try {
     }
     if (scenario === "dormitory") {
       await evaluate(
-        `(() => {const s=[...document.querySelectorAll('m-select')].find(e=>e.getAttribute('label')==='楼栋');s?.scrollIntoView({block:'center'});return !!s})()`,
+        `(() => {const s=[...document.querySelectorAll('m-select')].find(e=>e.getAttribute('label')==='楼栋');s?.scrollIntoView({behavior:'instant',block:'center'});return !!s})()`,
       );
       await delay(200);
       await click(
@@ -149,10 +188,21 @@ try {
    const calendar=document.querySelector('[role=grid][aria-label=月历]');
    const day=calendar?.querySelector('[aria-selected=true]');
    const login=[...document.querySelectorAll('m-button')].find(e=>e.textContent.trim()==='登录并继续'),loginRect=login?.getBoundingClientRect();
-   return {name: ${JSON.stringify(name)},browser:navigator.userAgent,width:innerWidth,height:innerHeight,text:document.body.innerText.slice(0,400),errors:window.__szuUiFixture?.errors,scrollWidth:document.documentElement.scrollWidth,overflow,footer:footer&&rect(footer),nav:nav&&rect(nav),loginClickable:!!loginRect&&loginRect.bottom<=innerHeight&&document.elementFromPoint(loginRect.x+loginRect.width/2,loginRect.y+loginRect.height/2)===login,list:list&&{rect:rect(list),options:[...list.querySelectorAll('[role=option]')].slice(0,3).map(e=>({label:e.textContent,rect:rect(e),hit:(list.getRootNode().elementFromPoint?.(e.getBoundingClientRect().x+10,e.getBoundingClientRect().y+10)||document.elementFromPoint(e.getBoundingClientRect().x+10,e.getBoundingClientRect().y+10))?.localName}))},calendar:calendar&&{rect:rect(calendar),columns:getComputedStyle(calendar).gridTemplateColumns},selected:day&&{foreground:getComputedStyle(day).color,background:getComputedStyle(day).backgroundColor}};
+   const chips=[...document.querySelectorAll('.home-calendar-todo .md-chip')].map(e=>({text:e.textContent,color:getComputedStyle(e).color,background:getComputedStyle(e).backgroundColor}));
+   return {name: ${JSON.stringify(name)},browser:navigator.userAgent,width:innerWidth,height:innerHeight,text:document.body.innerText.slice(0,400),errors:window.__szuUiFixture?.errors,scrollWidth:document.documentElement.scrollWidth,overflow,footer:footer&&rect(footer),nav:nav&&rect(nav),chips,charts:document.querySelectorAll('.recharts-wrapper svg.recharts-surface').length,hasOwn:typeof Object.hasOwn,loginClickable:!!loginRect&&loginRect.bottom<=innerHeight&&document.elementFromPoint(loginRect.x+loginRect.width/2,loginRect.y+loginRect.height/2)===login,list:list&&{rect:rect(list),options:[...list.querySelectorAll('[role=option]')].slice(0,3).map(e=>({label:e.textContent,rect:rect(e),hit:(list.getRootNode().elementFromPoint?.(e.getBoundingClientRect().x+10,e.getBoundingClientRect().y+10)||document.elementFromPoint(e.getBoundingClientRect().x+10,e.getBoundingClientRect().y+10))?.localName}))},calendar:calendar&&{rect:rect(calendar),columns:getComputedStyle(calendar).gridTemplateColumns},selected:day&&{foreground:getComputedStyle(day).color,background:getComputedStyle(day).backgroundColor}};
   })()`);
     const screenshot = await cmd("Page.captureScreenshot", { format: "png" });
     await writeFile(`${out}/${name}.png`, Buffer.from(screenshot.data, "base64"));
+    if (name.startsWith("home-todos")) {
+      await evaluate(
+        `document.querySelector('.home-calendar-todos').scrollIntoView({behavior:'instant',block:'start'})`,
+      );
+      await delay(150);
+      await writeFile(
+        `${out}/${name}.png`,
+        Buffer.from((await cmd("Page.captureScreenshot", { format: "png" })).data, "base64"),
+      );
+    }
     reports.push(result);
     console.log(
       JSON.stringify({
@@ -167,7 +217,7 @@ try {
     if (scenario === "dormitory" && result.list) {
       await click(
         await evaluate(
-          `(() => {const s=[...document.querySelectorAll('m-select')].find(e=>e.getAttribute('label')==='楼栋');const option=s.shadowRoot.querySelector('[role=option][data-id="2"]');option.scrollIntoView({block:'nearest'});const r=option.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`,
+          `(() => {const s=[...document.querySelectorAll('m-select')].find(e=>e.getAttribute('label')==='楼栋');const option=s.shadowRoot.querySelector('[role=option][data-id="2"]');option.scrollIntoView({behavior:'instant',block:'nearest'});const r=option.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`,
         ),
       );
       await delay(100);
@@ -176,6 +226,10 @@ try {
       );
     }
     if (scenario === "home") {
+      await evaluate(
+        `document.querySelector('[role=grid][aria-label=月历] button').scrollIntoView({behavior:'instant',block:'center'})`,
+      );
+      await delay(100);
       await click(
         await evaluate(
           `(() => {const day=document.querySelector('[role=grid][aria-label=月历] button');const r=day.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`,
@@ -221,6 +275,17 @@ try {
         result.calendarSelection?.selected === "true" &&
         result.calendarSelection.color !== result.calendarSelection.background &&
         result.calendarSelection.background !== "rgba(0, 0, 0, 0)";
+    if (scenario === "home")
+      result.passed &&=
+        result.chips.length === 6 &&
+        result.chips.every(
+          (c) => c.text.trim() && c.color !== c.background && c.background !== "rgba(0, 0, 0, 0)",
+        );
+    if (scenario.startsWith("payments-")) {
+      result.passed &&= result.text.includes("校园卡/电费/网费") && result.hasOwn === "function";
+      if (["payments-entry", "payments-electricity"].includes(scenario))
+        result.passed &&= result.charts > 0;
+    }
     if (scenario === "dormitory")
       result.passed &&=
         !!result.list &&
@@ -235,12 +300,19 @@ try {
       result.passed &&=
         !!result.list && result.list.rect.bottom <= result.nav.y && result.tabSelection;
     await send("Target.closeTarget", { targetId });
+    await send("Target.disposeBrowserContext", { browserContextId });
+    contexts.delete(browserContextId);
   }
   await writeFile(
     `${out}/results.json`,
     JSON.stringify({ browser: version.Browser, reports }, null, 2),
   );
 } finally {
+  await Promise.allSettled(
+    [...contexts].map((browserContextId) =>
+      send("Target.disposeBrowserContext", { browserContextId }),
+    ),
+  );
   ws.close();
 }
 const failed = reports.filter((r) => !r.passed).map((r) => r.name);

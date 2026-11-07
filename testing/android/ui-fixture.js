@@ -137,6 +137,40 @@
           buildingName: "测试宿舍楼 1 栋（1–12层）",
           roomName: "601",
         };
+      if (cmd === "get_electricity_constants") return { yuanPerKwh: 0.65 };
+      if (cmd === "get_cached_electricity" || cmd === "query_electricity") {
+        return {
+          campusId: "yuehai",
+          areaId: "south",
+          buildingName: "测试宿舍楼",
+          roomName: "601",
+          beginDate: "2026-11-01",
+          endDate: "2026-11-07",
+          currentRemaining: 12,
+          readings: Array.from({ length: 7 }, (_, i) => ({
+            date: `2026-11-${String(i + 1).padStart(2, "0")}`,
+            roomName: "601",
+            remaining: 24 - i * 2,
+            dailyUsed: 2,
+            totalUsed: i * 2,
+            totalPurchased: 24,
+            dailyPurchased: 0,
+          })),
+          summary: {
+            totalUsed: 12,
+            dailyAverage: 2,
+            validDays: 7,
+            predictionDailyAverage: 2,
+            estimatedDaysLeft: 6,
+            observedDate: "2026-11-07",
+            expired: false,
+            warningReason: null,
+          },
+          recharges: [],
+          rechargeError: null,
+          cache: { fromCache: true, updatedAtMs: Date.now(), refreshError: null },
+        };
+      }
       if (cmd === "get_appearance")
         return {
           mode: params.get("dark") ? "dark" : "light",
@@ -176,16 +210,22 @@
         args.channel.onmessage?.({
           type: "snapshot",
           data: [
-            {
-              id: "test-1",
-              kind: "oj-quiz",
-              title: "这是一个很长的测试待办标题，用于检查窄屏排版和截断",
-              subtitle: "界面回归测试",
-              dueAtMs: Date.now() + 86400000,
-              route: "/study/oj",
-              urgent: false,
-            },
-          ],
+            "lms-homework",
+            "electricity-outage",
+            "uooc-course-end",
+            "oj-quiz",
+            "uooc-exam",
+            "uooc-homework",
+          ].map((kind, i) => ({
+            id: "test-" + i,
+            kind,
+            title: "这是一个很长的测试待办标题，用于检查窄屏排版和截断 " + i,
+            subtitle: "界面回归测试",
+            dueAtMs: new Date().setHours(23, 59, i),
+            route:
+              kind === "electricity-outage" ? "/life/campus-payments/electricity" : "/study/oj",
+            urgent: false,
+          })),
         });
         return;
       }
