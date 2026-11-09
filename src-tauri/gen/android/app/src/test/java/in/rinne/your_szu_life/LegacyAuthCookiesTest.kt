@@ -78,4 +78,116 @@ class LegacyAuthCookiesTest {
     assertThrows(IllegalStateException::class.java) { row(name = "bad;name").canonical("opaque") }
     assertThrows(IllegalStateException::class.java) { row().canonical("value\r\nInjected: true") }
   }
+
+  @Test fun retriesChangedAttributesEvenWhenCookieValueStaysTheSame() {
+    val original = row()
+    for (updated in listOf(
+      original.copy(httpOnly = false), original.copy(secure = false), original.copy(sameSite = 1),
+      original.copy(hasExpires = true, expiresUtc = 13300000000000000L),
+    )) {
+      var observations = 0
+      val waits = mutableListOf<Long>()
+      val result = readStableLegacyCookies(urls,
+        { listOf(if (++observations == 1) original else updated) },
+        { "SESSION=unchanged" }, {}, waits::add)
+      assertEquals(4, observations)
+      assertEquals(listOf(50L), waits)
+      assertEquals(listOf(updated.canonical("unchanged")), result)
+    }
+  }
+
+  @Test fun retriesValueChangesAfterTheSecondMetadataObservation() {
+    var flushes = 0
+    val waits = mutableListOf<Long>()
+    val result = readStableLegacyCookies(urls, { listOf(row()) },
+      { if (flushes == 1) "SESSION=before" else "SESSION=after" },
+      { flushes++ }, waits::add)
+    assertEquals(listOf(50L), waits)
+    assertEquals(listOf(row().canonical("after")), result)
+  }
+
+  @Test fun limitsUnstableSnapshotsToThreeAttempts() {
+    var observations = 0
+    val waits = mutableListOf<Long>()
+    val failure = assertThrows(CookieReadException::class.java) {
+      readStableLegacyCookies(urls, { listOf(row().copy(httpOnly = ++observations % 2 == 0)) },
+        { "SESSION=same" }, {}, waits::add)
+    }
+    assertEquals(CookieReadError.SNAPSHOT_UNAVAILABLE, failure.code)
+    assertEquals(6, observations)
+    assertEquals(listOf(50L, 50L), waits)
+  }
+
+  @Test fun retriesTemporaryDatabaseLocksWithoutSleepingInTests() {
+    var observations = 0
+    val waits = mutableListOf<Long>()
+    val result = readStableLegacyCookies(urls, {
+      if (++observations < 3) throw CookieReadException(CookieReadError.SNAPSHOT_UNAVAILABLE)
+      listOf(row())
+    }, { "SESSION=ready" }, {}, waits::add)
+    assertEquals(listOf(50L, 50L), waits)
+    assertEquals(listOf(row().canonical("ready")), result)
+  }
+
+  @Test fun acceptsAbsentMetadataOnlyForAnEmptyAuthJar() {
+    assertEquals(emptyList<String>(), readStableLegacyCookies(urls, { emptyList() }, { null }, {}))
+    val waits = mutableListOf<Long>()
+    val failure = assertThrows(CookieReadException::class.java) {
+      readStableLegacyCookies(urls, { emptyList() }, { "SESSION=unrecorded" }, {}, waits::add)
+    }
+    assertEquals(CookieReadError.SNAPSHOT_UNAVAILABLE, failure.code)
+    assertEquals(listOf(50L, 50L), waits)
+  }
+
+  @Test fun doesNotRetryUnknownSchemasMissingColumnsOrInvalidMetadata() {
+    val columns = setOf("name", "host_key", "path", "expires_utc", "has_expires", "is_secure", "is_httponly", "samesite")
+    validateLegacyCookieSchema(14, columns)
+    for ((version, fields) in listOf(24 to columns, 14 to (columns - "path"), 14 to (columns + "top_frame_site_key"))) {
+      val waits = mutableListOf<Long>()
+      var observations = 0
+      val failure = assertThrows(CookieReadException::class.java) {
+        readStableLegacyCookies(urls, {
+          observations++
+          validateLegacyCookieSchema(version, fields)
+          emptyList()
+        }, { null }, {}, waits::add)
+      }
+      assertEquals(CookieReadError.UNSUPPORTED_STORE, failure.code)
+      assertEquals(1, observations)
+      assertTrue(waits.isEmpty())
+    }
+    val failure = assertThrows(CookieReadException::class.java) {
+      readStableLegacyCookies(urls, { listOf(row().copy(sameSite = 7)) }, { "SESSION=opaque" }, {},
+        { fail("invalid attributes must not be retried") })
+    }
+    assertEquals(CookieReadError.INVALID_METADATA, failure.code)
+  }
+
+  @Test fun rejectsForeignUrlsBeforeReadingAnyData() {
+    for (requested in listOf(emptyList(), listOf(URI("http://$host/authserver/login")),
+      listOf(URI("https://other.szu.edu.cn/authserver/login")), listOf(URI("https://$host:444/authserver/login")),
+      listOf(URI("https://user@$host/authserver/login")), listOf(URI("https://$host/unrelated")))) {
+      val failure = assertThrows(CookieReadException::class.java) {
+        readStableLegacyCookies(requested, { fail("metadata must not be read"); emptyList() },
+          { fail("header must not be read"); null }, {})
+      }
+      assertEquals(CookieReadError.INVALID_METADATA, failure.code)
+    }
+  }
+
+  @Test fun rejectsControlCharactersInNativeHeadersWithoutRetrying() {
+    val failure = assertThrows(CookieReadException::class.java) {
+      readStableLegacyCookies(urls, { listOf(row()) }, { "SESSION=value\r\n" }, {},
+        { fail("invalid headers must not be retried") })
+    }
+    assertEquals(CookieReadError.INVALID_METADATA, failure.code)
+  }
+
+  @Test fun doesNotPersistExpiredCookiesAndKeepsSessionExpiryAbsent() {
+    val expired = row().copy(hasExpires = true, expiresUtc = 11644473600000000L + 60000000L)
+    val metadata = listOf(row(), expired.copy(name = "OLD")).filter { !it.expired(60000) }
+    val result = readStableLegacyCookies(urls, { metadata }, { "SESSION=live" }, {})
+    assertEquals(listOf(row().canonical("live")), result)
+    assertFalse(result.single().contains("Expires="))
+  }
 }

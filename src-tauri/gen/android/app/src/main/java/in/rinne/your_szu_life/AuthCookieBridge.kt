@@ -7,6 +7,7 @@ import android.webkit.CookieManager
 import androidx.webkit.CookieManagerCompat
 import androidx.webkit.WebViewFeature
 import org.json.JSONArray
+import org.json.JSONObject
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -27,24 +28,35 @@ object AuthCookieBridge {
   @JvmStatic
   fun supportsCookieCapture(): Boolean =
     WebViewFeature.isFeatureSupported(WebViewFeature.GET_COOKIE_INFO) ||
-      applicationContext?.let { LegacyAuthCookieStore(it).available() } == true
+      applicationContext != null
 
   @JvmStatic
+  fun usesLegacyCookieCapture(): Boolean =
+    !WebViewFeature.isFeatureSupported(WebViewFeature.GET_COOKIE_INFO)
+
+  @JvmStatic
+  @Synchronized
   fun readCookies(urlsJson: String): String {
-    val urls = JSONArray(urlsJson)
-    if (!WebViewFeature.isFeatureSupported(WebViewFeature.GET_COOKIE_INFO)) {
-      val context = checkNotNull(applicationContext) { "cookie-context-unavailable" }
+    var backend = "legacy"
+    return try {
+      if (Looper.myLooper() == Looper.getMainLooper()) throw CookieReadException(CookieReadError.NATIVE_FAILURE)
+      val legacy = usesLegacyCookieCapture()
+      backend = if (legacy) "legacy" else "native"
+      val urls = JSONArray(urlsJson)
       val requested = (0 until urls.length()).map { URI(urls.getString(it)) }
-      return JSONArray(LegacyAuthCookieStore(context).read(requested)).toString()
-    }
-    val result = JSONArray()
-    val manager = CookieManager.getInstance()
-    for (index in 0 until urls.length()) {
-      for (cookie in CookieManagerCompat.getCookieInfo(manager, urls.getString(index))) {
-        result.put(cookie)
+      val cookies = if (legacy) {
+        val context = applicationContext ?: throw CookieReadException(CookieReadError.NATIVE_FAILURE)
+        LegacyAuthCookieStore(context).read(requested)
+      } else {
+        val manager = CookieManager.getInstance()
+        requested.flatMap { CookieManagerCompat.getCookieInfo(manager, it.toString()) }
       }
+      JSONObject().put("status", "ok").put("cookies", JSONArray(cookies)).toString()
+    } catch (failure: Exception) {
+      val code = (failure as? CookieReadException)?.code ?: CookieReadError.NATIVE_FAILURE
+      // Never serialize an Android exception or its message.
+      JSONObject().put("status", "error").put("backend", backend).put("code", code.wireName).toString()
     }
-    return result.toString()
   }
 
   /** Called on a Rust worker; callbacks run on Android's main looper. */

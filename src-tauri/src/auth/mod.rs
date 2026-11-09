@@ -1,6 +1,8 @@
 #[cfg(target_os = "android")]
 pub(crate) mod android_cookies;
 pub(crate) mod commands;
+#[cfg(any(target_os = "android", test))]
+mod cookie_transport;
 #[cfg(target_os = "linux")]
 mod linux_cookies;
 pub(crate) mod mcp;
@@ -57,9 +59,7 @@ pub(crate) fn reusable_sso_cookies(app: &tauri::AppHandle) -> Result<Vec<String>
     Ok(session_cookies_as_strings(&store))
 }
 
-fn session_cookies_as_strings(
-    session: &session::AuthSessionSecret,
-) -> Vec<String> {
+fn session_cookies_as_strings(session: &session::AuthSessionSecret) -> Vec<String> {
     session
         .cookies
         .iter()

@@ -7,7 +7,7 @@ use tauri::Manager;
 impl UnifiedSzuMcpService {
     #[tool(
         name = "auth_get_status",
-        description = "查询当前深圳大学统一身份认证会话状态（如已认证、未认证、过期等）。Android 优先使用完整 Cookie API，已验证的旧 WebView 可使用原生属性兼容读取；无法无损读取时返回需更新 WebView。此工具不返回 Cookie 或密码"
+        description = "查询当前深圳大学统一身份认证会话状态（如已认证、未认证、过期等）。Android 优先使用完整 Cookie API；缺少该 API 时支持 Chromium schema 14 的只读属性降级，并校验读取前后的属性和值。未知格式或读取失败返回会话读取/保存失败，保留已有会话，不因降级失败自动提交密码。此工具不返回 Cookie 或密码"
     )]
     pub async fn auth_get_status(&self) -> Result<String, String> {
         let store = self

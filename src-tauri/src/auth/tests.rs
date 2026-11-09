@@ -1,6 +1,122 @@
 use super::{model::*, probe::*, scripts::*, session::*, AUTH_HOST};
 
 #[test]
+fn legacy_cookie_read_failures_keep_saved_sessions_and_do_not_start_password_recovery() {
+    use crate::storage::{testing::MemoryCredentialStore, CredentialStore};
+    use std::{cell::Cell, sync::Arc};
+    let credentials = Arc::new(MemoryCredentialStore::default());
+    let secret = AuthSessionSecret {
+        format_version: 2,
+        student_id: "1234567890".into(),
+        cookies: vec![session_cookie()],
+    };
+    credentials.save_session(&secret).unwrap();
+    let store = super::AuthStore::new(credentials.clone());
+    for category in [
+        "unsupportedStore",
+        "invalidMetadata",
+        "snapshotUnavailable",
+        "nativeFailure",
+    ] {
+        let raw =
+            serde_json::json!({"status":"error", "backend":"legacy", "code":category}).to_string();
+        let error = super::cookie_transport::decode_cookie_read(&raw).unwrap_err();
+        let recovered = Cell::new(false);
+        super::cookie_transport::handle_install_failure(&store, &error, || {
+            recovered.set(true);
+            credentials.delete_session().unwrap();
+        });
+        assert!(!recovered.get());
+        assert_eq!(
+            *store.state.lock().unwrap(),
+            AuthState::SessionCaptureFailed
+        );
+        assert_eq!(credentials.load_session().unwrap(), Some(secret.clone()));
+    }
+    assert!(super::cookie_transport::is_legacy_cookie_failure(
+        &super::cookie_transport::legacy_native_failure()
+    ));
+}
+
+#[test]
+fn native_cookie_errors_keep_the_existing_recovery_behavior() {
+    use std::{cell::Cell, sync::Arc};
+    let store = super::AuthStore::new(Arc::new(
+        crate::storage::testing::MemoryCredentialStore::default(),
+    ));
+    let error = super::cookie_transport::decode_cookie_read(
+        r#"{"status":"error","backend":"native","code":"nativeFailure"}"#,
+    )
+    .unwrap_err();
+    let recovered = Cell::new(false);
+    super::cookie_transport::handle_install_failure(&store, &error, || recovered.set(true));
+    assert!(recovered.get());
+}
+
+#[test]
+fn reauthentication_forgets_saved_cookies_only_after_successful_native_cleanup() {
+    use std::cell::RefCell;
+    let operations = RefCell::new(Vec::new());
+    let error = super::cookie_transport::clear_then_forget_session(
+        || {
+            operations.borrow_mut().push("clear");
+            Err("legacy-cookie:snapshotUnavailable".into())
+        },
+        || {
+            operations.borrow_mut().push("forget");
+            Ok(())
+        },
+    )
+    .unwrap_err();
+    assert!(super::cookie_transport::is_legacy_cookie_failure(&error));
+    assert_eq!(*operations.borrow(), vec!["clear"]);
+    operations.borrow_mut().clear();
+    super::cookie_transport::clear_then_forget_session(
+        || {
+            operations.borrow_mut().push("clear");
+            Ok(())
+        },
+        || {
+            operations.borrow_mut().push("forget");
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(*operations.borrow(), vec!["clear", "forget"]);
+}
+
+#[test]
+fn legacy_cookie_envelope_preserves_metadata_through_the_existing_restore_parser() {
+    let headers = [
+        "MOD_AUTH_CAS=host; Domain=authserver.szu.edu.cn; Path=/; Secure; HttpOnly; SameSite=Lax",
+        "MOD_AUTH_CAS=domain; Domain=.authserver.szu.edu.cn; Path=/; Secure",
+        "JSESSIONID=profile; Domain=authserver.szu.edu.cn; Path=/personalInfo; HttpOnly",
+    ];
+    let raw = serde_json::json!({"status":"ok", "cookies":headers}).to_string();
+    let decoded = super::cookie_transport::decode_cookie_read(&raw).unwrap();
+    let cookies: Vec<_> = decoded
+        .iter()
+        .map(|header| from_android_cookie_info(header).unwrap())
+        .collect();
+    assert!(cookies[0].host_only);
+    assert!(!cookies[1].host_only);
+    assert_eq!(cookies[2].path, "/personalInfo");
+    assert_eq!(cookies[0].same_site.as_deref(), Some("Lax"));
+    assert!(!cookies[0]
+        .to_webview_cookie()
+        .unwrap()
+        .to_string()
+        .contains("Domain="));
+    for raw in [
+        r#"{"status":"error","backend":"legacy","code":"untrusted exception"}"#,
+        r#"["SESSION=opaque"]"#,
+    ] {
+        let error = super::cookie_transport::decode_cookie_read(raw).unwrap_err();
+        assert_eq!(error, "Android 认证会话格式无效");
+    }
+}
+
+#[test]
 fn login_service_uses_actual_ua_and_encodes_the_complete_profile_url() {
     for ua in [
         "Mozilla/5.0 (Linux; Android 14) Mobile",
@@ -519,7 +635,9 @@ fn finishing_authentication_clears_transient_secrets_and_resumes_the_local_flow(
         identifier: "123456".into(),
         password: "test-only".into(),
     });
-    let local: tauri::Url = "http://tauri.localhost/life/campus-network".parse().unwrap();
+    let local: tauri::Url = "http://tauri.localhost/life/campus-network"
+        .parse()
+        .unwrap();
     *store.resume_url.lock().unwrap() = Some(local.clone());
     let terminal = AuthState::Authenticated {
         student_id: "1234567890".into(),

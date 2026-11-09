@@ -290,10 +290,7 @@ fn validate_recovery_page<'a>(
     // lifetime boundary here.
     let trusted = window.label() == "main";
     let flow = store.recovery.lock().map_err(|_| "状态锁失败")?;
-    if !trusted
-        || !flow.active
-        || generation.parse::<u64>().ok() != Some(flow.generation)
-    {
+    if !trusted || !flow.active || generation.parse::<u64>().ok() != Some(flow.generation) {
         return Err("认证页面或流程已失效".into());
     }
     Ok(flow)
@@ -399,11 +396,19 @@ pub(crate) fn get_auth_state(
         // Restore the native jar before any HTTP validation or page uses it.
         // Offline/transient validation failures must leave this copy intact.
         if let Some(session) = &session {
-            if install_auth_session_cookies(&app, session).is_err() {
-                store.finish_attempt(AuthState::SessionCaptureFailed);
-                // 静默优先：重新认证会尝试重新安装会话；能力缺失时
-                // navigate_to_authentication_locked 仍会给出明确的终态。
-                recover_expired_session(&app, store);
+            if let Err(error) = install_auth_session_cookies(&app, session) {
+                #[cfg(target_os = "android")]
+                super::cookie_transport::handle_install_failure(store, &error, || {
+                    recover_expired_session(&app, store);
+                });
+                #[cfg(not(target_os = "android"))]
+                {
+                    let _ = error;
+                    store.finish_attempt(AuthState::SessionCaptureFailed);
+                    // 静默优先：重新认证会尝试重新安装会话；能力缺失时
+                    // navigate_to_authentication_locked 仍会给出明确的终态。
+                    recover_expired_session(&app, store);
+                }
                 return Ok(store.state.lock().map_err(|_| "状态锁失败")?.clone());
             }
         }
@@ -488,10 +493,24 @@ fn start_session_refresh(
         match outcome {
             RefreshOutcome::Refreshed(session) => {
                 if store.credentials.save_session(&session).is_ok() {
-                    if install_auth_session_cookies(&worker_app, &session).is_err() {
-                        store.finish_attempt(AuthState::SessionCaptureFailed);
-                        // 静默优先：用已保存密码重新认证；能力缺失时会落到明确终态。
-                        recover_expired_session(&worker_app, &store);
+                    if let Err(error) = install_auth_session_cookies(&worker_app, &session) {
+                        #[cfg(target_os = "android")]
+                        super::cookie_transport::handle_install_failure(&store, &error, || {
+                            recover_expired_session(&worker_app, &store);
+                        });
+                        #[cfg(not(target_os = "android"))]
+                        {
+                            let _ = error;
+                            store.finish_attempt(AuthState::SessionCaptureFailed);
+                            // 静默优先：用已保存密码重新认证；能力缺失时会落到明确终态。
+                            recover_expired_session(&worker_app, &store);
+                        }
+                        #[cfg(target_os = "android")]
+                        if super::cookie_transport::is_legacy_cookie_failure(&error) {
+                            if let Ok(state) = store.state.lock() {
+                                emit_state(&worker_app, state.clone());
+                            }
+                        }
                     }
                 }
             }
@@ -651,7 +670,7 @@ fn navigate_to_authentication_locked(
     }
     #[cfg(target_os = "android")]
     if !super::android_cookies::supports_cookie_capture()? {
-        set_terminal_state(&app, &store, AuthState::WebViewUpdateRequired);
+        set_terminal_state(&app, &store, AuthState::SessionCaptureFailed);
         return Ok(());
     }
     // The initial `get_auth_state` normally warms these caches. Load from the
@@ -702,10 +721,23 @@ fn navigate_to_authentication_locked(
     *store.captured.lock().map_err(|_| "状态锁失败")? = None;
     *store.submitted_password.lock().map_err(|_| "状态锁失败")? = None;
     *store.login_prefill.lock().map_err(|_| "状态锁失败")? = prefill;
-    store.credentials.delete_session()?;
-    if clear_webview_session(&app).is_err() {
+    #[cfg(target_os = "android")]
+    if super::cookie_transport::clear_then_forget_session(
+        || clear_webview_session(&app),
+        || store.credentials.delete_session(),
+    )
+    .is_err()
+    {
         set_terminal_state(&app, &store, AuthState::SessionCaptureFailed);
         return Ok(());
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        store.credentials.delete_session()?;
+        if clear_webview_session(&app).is_err() {
+            set_terminal_state(&app, &store, AuthState::SessionCaptureFailed);
+            return Ok(());
+        }
     }
     super::webview::show_authentication_window(app, store)?;
     store
@@ -803,11 +835,7 @@ fn abort_authentication_locked(
     store: &AuthStore,
     failure: Option<&str>,
 ) -> Result<(), String> {
-    let authenticating = store
-        .state
-        .lock()
-        .map_err(|_| "状态锁失败")?
-        .clone();
+    let authenticating = store.state.lock().map_err(|_| "状态锁失败")?.clone();
     if !matches!(authenticating, AuthState::Authenticating) {
         return Ok(());
     }

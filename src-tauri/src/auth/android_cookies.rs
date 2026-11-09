@@ -107,12 +107,31 @@ pub(crate) fn read_cookies(urls: &[&str]) -> Result<Vec<String>, String> {
             .get_string(&result)
             .map_err(|_| "读取 Android 认证会话失败")?
             .into();
-        serde_json::from_str(&raw).map_err(|_| "Android 认证会话格式无效".into())
+        super::cookie_transport::decode_cookie_read(&raw)
     })
+    .map_err(classify_cookie_error)
+}
+
+fn classify_cookie_error(error: String) -> String {
+    if super::cookie_transport::is_legacy_cookie_failure(&error) {
+        return error;
+    }
+    let legacy = with_bridge(|env, class| {
+        env.call_static_method(class, "usesLegacyCookieCapture", "()Z", &[])
+            .and_then(|v| v.z())
+            .map_err(|_| "无法检查 Cookie 后端".into())
+    })
+    .unwrap_or(true);
+    if legacy {
+        log::warn!("Android Cookie operation failed: backend=legacy, category=nativeFailure");
+        super::cookie_transport::legacy_native_failure()
+    } else {
+        error
+    }
 }
 
 pub(crate) fn write_cookies(cookies: &[serde_json::Value]) -> Result<(), String> {
-    with_bridge(|env, class| {
+    let result = with_bridge(|env, class| {
         let input = env
             .new_string(serde_json::to_string(cookies).map_err(|_| "认证会话格式无效")?)
             .map_err(|_| "写入 Android 认证会话失败")?;
@@ -130,5 +149,6 @@ pub(crate) fn write_cookies(cookies: &[serde_json::Value]) -> Result<(), String>
         } else {
             Err("写入 Android 认证会话失败或超时".into())
         }
-    })
+    });
+    result.map_err(classify_cookie_error)
 }
