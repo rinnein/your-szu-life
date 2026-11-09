@@ -45,35 +45,37 @@ pub(super) struct Client {
 
 impl Client {
     /// `cookies` 是之前保存的畅课会话 jar（JSON，仅含 lms 域 cookie）；
-    /// `sso_cookies` 是来自统一认证的 Set-Cookie 字符串，注入到 authserver 域。
+    /// `sso` 保留统一认证的原生 Cookie 身份，只投影当前 HTTP 上下文。
     pub(super) fn new(
         lms_base: &str,
         auth_base: &str,
         cookies: Option<&str>,
-        sso_cookies: &[String],
+        sso: Option<&CookieStoreMutex>,
     ) -> Result<Self, String> {
         let lms = normalize_base(lms_base, "畅课地址无效")?;
         let auth = normalize_base(auth_base, "统一认证地址无效")?;
-        let mut store = if cookies
-            .map(|c| !c.is_empty())
-            .unwrap_or(false)
-        {
+        let mut store = if cookies.map(|c| !c.is_empty()).unwrap_or(false) {
             cookie_store::serde::json::load_all(std::io::Cursor::new(cookies.unwrap()))
                 .map_err(|_| "畅课会话数据损坏，将重新建立会话".to_string())
                 .unwrap_or_default()
         } else {
             cookie_store::CookieStore::default()
         };
-        for raw in sso_cookies {
-            let _ = store.insert_raw(
-                &cookie_store::RawCookie::parse(raw.clone())
-                    .map_err(|_| "统一认证会话数据无效".to_string())?,
-                &auth,
-            );
+        if let Some(sso) = sso {
+            for cookie in sso
+                .lock()
+                .map_err(|_| "统一认证会话锁失败")?
+                .iter_unexpired()
+            {
+                let _ = store.insert(cookie.clone(), &auth);
+            }
         }
         let jar = Arc::new(CookieStoreMutex::new(store));
+        if let Some(sso) = sso {
+            crate::webview_cookies::copy_snapshot(sso, &jar);
+        }
         let builder = crate::netproxy::client_builder()
-            .cookie_provider(jar.clone())
+            .cookie_provider(crate::webview_cookies::http_provider(jar.clone()))
             // CAS 跳转由模块自己逐跳跟随，便于识别登录表单并限定跳转目标。
             .redirect(reqwest::redirect::Policy::none())
             .timeout(Duration::from_secs(20))
@@ -82,7 +84,9 @@ impl Client {
         #[cfg(target_os = "android")]
         crate::platform_tls::initialize_platform_verifier()?;
         Ok(Self {
-            http: builder.build().map_err(|_| "无法建立畅课连接".to_string())?,
+            http: builder
+                .build()
+                .map_err(|_| "无法建立畅课连接".to_string())?,
             jar,
             lms,
             auth,
@@ -107,10 +111,7 @@ impl Client {
     }
 
     /// 单次 GET（不跟随重定向），返回状态码、最终 URL、Location 与响应体。
-    async fn fetch(
-        &self,
-        url: Url,
-    ) -> Result<(StatusCode, Url, Option<String>, String), String> {
+    async fn fetch(&self, url: Url) -> Result<(StatusCode, Url, Option<String>, String), String> {
         let mut response = self
             .http
             .get(url.clone())
@@ -246,7 +247,10 @@ impl Client {
             });
         }
         if !status.is_success() {
-            return Err(ApiError::local(format!("畅课服务返回 HTTP {}", status.as_u16())));
+            return Err(ApiError::local(format!(
+                "畅课服务返回 HTTP {}",
+                status.as_u16()
+            )));
         }
         serde_json::from_slice(&bytes).map_err(|_| ApiError::local("畅课接口响应格式不兼容"))
     }

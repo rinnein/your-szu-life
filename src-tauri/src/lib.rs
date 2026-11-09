@@ -1,7 +1,7 @@
 #![recursion_limit = "512"]
 
-mod app;
 pub(crate) mod activity;
+mod app;
 mod app_content;
 pub(crate) mod app_paths;
 pub(crate) mod appearance;
@@ -15,25 +15,26 @@ mod embedding_model;
 mod enrollment;
 pub(crate) mod file_manager;
 pub(crate) mod ipc_channel;
-pub(crate) mod local_model;
 mod jxxk;
 mod lms;
+pub(crate) mod local_model;
+pub(crate) mod logging;
 pub mod mcp;
 pub(crate) mod migrations;
 pub(crate) mod netproxy;
 mod notification;
-pub(crate) mod logging;
 mod ocr;
 mod oj;
 mod onboarding;
-mod ports;
-mod preferences;
 #[cfg(target_os = "android")]
 mod platform_tls;
+mod ports;
+mod preferences;
 mod settings;
 mod storage;
 mod todos;
 mod uooc;
+pub(crate) mod webview_cookies;
 
 pub use auth::{
     model::{AccountProfileInput, AccountProfileView, AuthState, UserDataView},

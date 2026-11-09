@@ -2,7 +2,9 @@ use super::{
     model::Mode,
     protocol::{Error, Failure, Result},
 };
-use cookie_store::{CookieDomain, CookieStore, RawCookie};
+#[cfg(not(target_os = "android"))]
+use cookie_store::RawCookie;
+use cookie_store::{CookieDomain, CookieStore};
 use reqwest_cookie_store::CookieStoreMutex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -47,26 +49,14 @@ pub fn auth_url(target: &str) -> Result<reqwest::Url> {
     Ok(auth)
 }
 pub fn jar(raw: &str) -> Result<Arc<CookieStoreMutex>> {
-    let jar = if raw.is_empty() {
-        CookieStore::default()
-    } else {
-        cookie_store::serde::json::load(raw.as_bytes())
-            .map_err(|_| Error::new(Failure::Protocol, "认证数据损坏，请重新认证"))?
-    };
-    Ok(Arc::new(CookieStoreMutex::new(jar)))
+    crate::webview_cookies::load_jar(raw).map_err(Error::from)
 }
 pub fn serialize(jar: &CookieStoreMutex) -> Result<String> {
-    let mut out = Vec::new();
-    cookie_store::serde::json::save_incl_expired_and_nonpersistent(
-        &*jar
-            .lock()
-            .map_err(|_| Error::new(Failure::Protocol, "会话锁失败"))?,
-        &mut out,
-    )
-    .map_err(|_| Error::new(Failure::Protocol, "无法保存认证数据"))?;
-    String::from_utf8(out).map_err(|_| Error::new(Failure::Protocol, "认证编码无效"))
+    crate::webview_cookies::serialize_jar(jar).map_err(Error::from)
 }
-pub fn merge(target: &CookieStoreMutex, source: &CookieStoreMutex) {
+pub fn merge(target: &Arc<CookieStoreMutex>, source: &CookieStoreMutex) -> Result<()> {
+    let target_owner = target;
+    let source_owner = source;
     let source = source.lock().unwrap();
     let mut target = target.lock().unwrap();
     for c in source.iter_unexpired() {
@@ -78,12 +68,24 @@ pub fn merge(target: &CookieStoreMutex, source: &CookieStoreMutex) {
             let _ = target.insert(c.clone(), &url);
         }
     }
+    drop(target);
+    drop(source);
+    let scope = crate::webview_cookies::Scope::new(
+        crate::webview_cookies::Kind::Webvpn,
+        &[
+            VPN,
+            "https://bkxk.webvpn.szu.edu.cn/",
+            "https://bkxk.webvpn.szu.edu.cn/xsxkapp/sys/xsxkapp/*default/index.do",
+        ],
+    )
+    .map_err(Error::from)?;
+    crate::webview_cookies::merge_native(target_owner, source_owner, scope).map_err(Error::from)
 }
 pub fn client(jar: Arc<CookieStoreMutex>) -> Result<reqwest::blocking::Client> {
     #[cfg(target_os = "android")]
     crate::platform_tls::initialize_platform_verifier().map_err(Error::from)?;
     crate::netproxy::blocking_client_builder()
-        .cookie_provider(jar)
+        .cookie_provider(crate::webview_cookies::http_provider(jar))
         .redirect(reqwest::redirect::Policy::none())
         .timeout(std::time::Duration::from_secs(20))
         .connect_timeout(std::time::Duration::from_secs(5))
@@ -131,7 +133,9 @@ pub fn gateway_valid(raw: &str) -> Result<bool> {
         && !body.contains("/users/auth/cas"))
 }
 pub fn capture(window: &tauri::WebviewWindow, urls: &[&str], vpn: bool) -> Result<String> {
+    #[cfg(not(target_os = "android"))]
     let mut jar = CookieStore::default();
+    #[cfg(not(target_os = "android"))]
     let allowed = |host: &str, name: &str| {
         if vpn {
             VPN_NAMES.contains(&name)
@@ -144,24 +148,15 @@ pub fn capture(window: &tauri::WebviewWindow, urls: &[&str], vpn: bool) -> Resul
     };
     #[cfg(target_os = "android")]
     {
-        let _ = window;
-        for header in crate::auth::android_cookies::read_cookies(urls).map_err(Error::from)? {
-            let mut c = RawCookie::parse(header)
-                .map_err(|_| Error::new(Failure::Protocol, "Cookie格式无效"))?
-                .into_owned();
-            let domain = c.domain().unwrap_or("").to_owned();
-            let host = domain.trim_start_matches('.');
-            if !allowed(host, c.name()) {
-                continue;
-            }
-            if !domain.starts_with('.') {
-                c.unset_domain();
-            }
-            let url = format!("https://{host}/")
-                .parse()
-                .map_err(|_| Error::new(Failure::Protocol, "Cookie域无效"))?;
-            let _ = jar.insert_raw(&c, &url);
-        }
+        let kind = if vpn {
+            crate::webview_cookies::Kind::Gateway
+        } else {
+            crate::webview_cookies::Kind::Academic
+        };
+        let scope = crate::webview_cookies::Scope::new(kind, urls).map_err(Error::from)?;
+        let snapshot = crate::webview_cookies::capture(window, &scope).map_err(Error::from)?;
+        let jar = crate::webview_cookies::project(snapshot, scope).map_err(Error::from)?;
+        return serialize(jar.as_ref());
     }
     #[cfg(target_os = "linux")]
     for u in urls {
@@ -193,7 +188,10 @@ pub fn capture(window: &tauri::WebviewWindow, urls: &[&str], vpn: bool) -> Resul
             let _ = jar.insert_raw(&raw, &url);
         }
     }
-    serialize(&CookieStoreMutex::new(jar))
+    #[cfg(not(target_os = "android"))]
+    {
+        serialize(&CookieStoreMutex::new(jar))
+    }
 }
 pub fn school_jar(secrets: &Secrets, mode: Mode, fresh: bool) -> Result<Arc<CookieStoreMutex>> {
     let raw = match mode {
@@ -202,7 +200,7 @@ pub fn school_jar(secrets: &Secrets, mode: Mode, fresh: bool) -> Result<Arc<Cook
     };
     let school = jar(if fresh { "" } else { raw })?;
     if mode == Mode::Webvpn {
-        merge(&school, jar(&secrets.vpn)?.as_ref());
+        merge(&school, jar(&secrets.vpn)?.as_ref())?;
     }
     Ok(school)
 }
@@ -236,6 +234,7 @@ pub struct SharedSchool {
 
 pub fn gateway_only(source: &CookieStoreMutex) -> Result<String> {
     let mut target = CookieStore::default();
+    let native = crate::webview_cookies::native_snapshot(source);
     let source = source.lock().unwrap();
     for cookie in source
         .iter_unexpired()
@@ -249,5 +248,51 @@ pub fn gateway_only(source: &CookieStoreMutex) -> Result<String> {
             let _ = target.insert(cookie.clone(), &url);
         }
     }
-    serialize(&CookieStoreMutex::new(target))
+    let http = serialize(&CookieStoreMutex::new(target))?;
+    if let Some((snapshot, _)) = native {
+        let scope = crate::webview_cookies::Scope::new(
+            crate::webview_cookies::Kind::Gateway,
+            &[VPN, "https://bkxk.webvpn.szu.edu.cn/"],
+        )
+        .map_err(Error::from)?;
+        let keys = snapshot.http_keys.clone();
+        let cookies: Vec<_> = snapshot
+            .cookies
+            .into_iter()
+            .filter(|c| scope.allows(c))
+            .collect();
+        return crate::webview_cookies::SessionEnvelope::encode(
+            http,
+            crate::webview_cookies::Snapshot {
+                http_keys: keys.map(|keys| {
+                    keys.into_iter()
+                        .filter(|key| cookies.iter().any(|c| c.identity() == *key))
+                        .collect()
+                }),
+                cookies,
+            },
+            scope,
+        )
+        .map_err(Error::from);
+    }
+    Ok(http)
+}
+
+impl Secrets {
+    pub(crate) fn validate_cookie_snapshots(&self) -> std::result::Result<(), String> {
+        use crate::webview_cookies::{Kind, SessionEnvelope};
+        for (raw, kind) in [
+            (&self.vpn, Kind::Gateway),
+            (&self.campus, Kind::Campus),
+            (&self.webvpn, Kind::Webvpn),
+            (&self.ehall, Kind::Academic),
+        ] {
+            if let Some(envelope) = SessionEnvelope::decode(raw)? {
+                if envelope.scope.kind != kind {
+                    return Err("学业认证 Cookie 范围无效".into());
+                }
+            }
+        }
+        Ok(())
+    }
 }

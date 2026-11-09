@@ -45,10 +45,7 @@ struct Server {
 impl Server {
     /// `host` 用不同的回环地址（127.0.0.1 / 127.0.0.2）区分 lms 与 authserver
     /// 两个 cookie 域。handler 工厂先拿到自身 base，便于构造绝对跳转地址。
-    pub fn start<H>(
-        host: &str,
-        make_handler: impl FnOnce(&str) -> H,
-    ) -> Self
+    pub fn start<H>(host: &str, make_handler: impl FnOnce(&str) -> H) -> Self
     where
         H: Fn(Request) -> (u16, Vec<(String, String)>, Vec<u8>) + Send + Sync + 'static,
     {
@@ -107,9 +104,7 @@ impl Drop for Server {
 }
 
 fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
-    stream
-        .set_read_timeout(Some(Duration::from_secs(3)))
-        .ok()?;
+    stream.set_read_timeout(Some(Duration::from_secs(3))).ok()?;
     let mut bytes = vec![];
     let mut chunk = [0; 4096];
     loop {
@@ -241,7 +236,11 @@ async fn make_client(with_castgc: bool) -> (Client, Server, Server) {
                 if request.has_cookie("LMS_SESSION") {
                     (200, vec![], serde_json::to_vec(&todos_body()).unwrap())
                 } else {
-                    (302, vec![("Location".into(), lms_base.to_string())], Vec::new())
+                    (
+                        302,
+                        vec![("Location".into(), lms_base.to_string())],
+                        Vec::new(),
+                    )
                 }
             } else if request.path.starts_with("/ntf/users/12345/notifications") {
                 (
@@ -270,16 +269,21 @@ async fn make_client(with_castgc: bool) -> (Client, Server, Server) {
             }
         })
     });
-    let sso_cookies = if with_castgc {
-        vec!["CASTGC=test-only-cas-session; Path=/authserver".to_string()]
-    } else {
-        vec![]
-    };
+    let mut sso_store = cookie_store::CookieStore::default();
+    if with_castgc {
+        sso_store
+            .parse(
+                "CASTGC=test-only-cas-session; Path=/authserver",
+                &auth_server.base.parse().unwrap(),
+            )
+            .unwrap();
+    }
+    let sso = reqwest_cookie_store::CookieStoreMutex::new(sso_store);
     let client = Client::new(
         &lms_server.base,
         &format!("{}/authserver/login", auth_server.base),
         None,
-        &sso_cookies,
+        Some(&sso),
     )
     .unwrap();
     (client, lms_server, auth_server)
@@ -417,7 +421,9 @@ async fn trusted_redirects_cover_szu_subdomains_only() {
     let trusted = |raw: &str| client.is_trusted_redirect(&raw.parse().unwrap());
     assert!(trusted("https://lms.szu.edu.cn/"));
     assert!(trusted("https://authserver.szu.edu.cn/authserver/login"));
-    assert!(trusted("https://identity.szu.edu.cn/auth/realms/szu/protocol/cas/login"));
+    assert!(trusted(
+        "https://identity.szu.edu.cn/auth/realms/szu/protocol/cas/login"
+    ));
     assert!(!trusted("https://evil.example.com/"));
     assert!(!trusted("https://szu.edu.cn.evil.com/"));
 }

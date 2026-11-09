@@ -387,9 +387,8 @@ pub(crate) fn get_auth_state(
                     AuthState::SessionCaptureFailed
                 };
                 store.finish_attempt(state);
-                // 启动时静默优先：损坏/无法安装的会话快照或账号不一致，
-                // 都可以用已保存密码重新登录一次；没有凭据时才落到手动流程。
-                recover_expired_session(&app, store);
+                // A malformed or unsupported saved snapshot cannot authorize
+                // automatic password submission. Keep it for explicit recovery.
                 return Ok(store.state.lock().map_err(|_| "状态锁失败")?.clone());
             }
         };
@@ -398,7 +397,7 @@ pub(crate) fn get_auth_state(
         if let Some(session) = &session {
             if let Err(error) = install_auth_session_cookies(&app, session) {
                 #[cfg(target_os = "android")]
-                super::cookie_transport::handle_install_failure(store, &error, || {
+                super::session_policy::handle_install_failure(store, &error, || {
                     recover_expired_session(&app, store);
                 });
                 #[cfg(not(target_os = "android"))]
@@ -495,7 +494,7 @@ fn start_session_refresh(
                 if store.credentials.save_session(&session).is_ok() {
                     if let Err(error) = install_auth_session_cookies(&worker_app, &session) {
                         #[cfg(target_os = "android")]
-                        super::cookie_transport::handle_install_failure(&store, &error, || {
+                        super::session_policy::handle_install_failure(&store, &error, || {
                             recover_expired_session(&worker_app, &store);
                         });
                         #[cfg(not(target_os = "android"))]
@@ -506,7 +505,7 @@ fn start_session_refresh(
                             recover_expired_session(&worker_app, &store);
                         }
                         #[cfg(target_os = "android")]
-                        if super::cookie_transport::is_legacy_cookie_failure(&error) {
+                        if super::session_policy::is_cookie_failure(&error) {
                             if let Ok(state) = store.state.lock() {
                                 emit_state(&worker_app, state.clone());
                             }
@@ -668,11 +667,6 @@ fn navigate_to_authentication_locked(
             *store.resume_url.lock().map_err(|_| "状态锁失败")? = Some(current_url);
         }
     }
-    #[cfg(target_os = "android")]
-    if !super::android_cookies::supports_cookie_capture()? {
-        set_terminal_state(&app, &store, AuthState::SessionCaptureFailed);
-        return Ok(());
-    }
     // The initial `get_auth_state` normally warms these caches. Load from the
     // credential store as a fallback so a reauthentication click still gets
     // the saved form values after an app/window restart.
@@ -722,7 +716,7 @@ fn navigate_to_authentication_locked(
     *store.submitted_password.lock().map_err(|_| "状态锁失败")? = None;
     *store.login_prefill.lock().map_err(|_| "状态锁失败")? = prefill;
     #[cfg(target_os = "android")]
-    if super::cookie_transport::clear_then_forget_session(
+    if super::session_policy::clear_then_forget_session(
         || clear_webview_session(&app),
         || store.credentials.delete_session(),
     )
@@ -894,12 +888,12 @@ pub(super) fn logout(app: tauri::AppHandle, store: &AuthStore) -> Result<(), Str
     *store.login_prefill.lock().map_err(|_| "状态锁失败")? = None;
     *store.attempt.lock().map_err(|_| "状态锁失败")? = AuthAttempt::None;
     *store.state.lock().map_err(|_| "状态锁失败")? = AuthState::Unauthenticated;
-    clear_webview_session(&app)?;
+    let cleanup = clear_webview_session(&app);
     emit_state(&app, AuthState::Unauthenticated);
     if was_authenticating {
         resume_application_window(&app, store);
     }
-    Ok(())
+    cleanup
 }
 
 pub(super) fn cancel_departed_authentication(app: tauri::AppHandle, generation: u64) {
@@ -937,5 +931,5 @@ pub(super) fn cancel_departed_authentication(app: tauri::AppHandle, generation: 
     store.finish_attempt(state.clone());
     emit_state(&app, state);
     #[cfg(target_os = "android")]
-    let _ = super::android_cookies::finish_authentication(true);
+    let _ = super::android_window::finish_authentication(true);
 }

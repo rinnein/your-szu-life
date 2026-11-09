@@ -317,24 +317,21 @@ impl Service {
             .map_err(|error| log::warn!("读取巡课会话失败: {error}"))
             .ok()
             .flatten();
-        let sso_cookies = match &self.app {
-            Some(app) => crate::auth::reusable_sso_cookies(app)
+        let sso = match &self.app {
+            Some(app) => crate::auth::reusable_sso_jar(app)
                 .map_err(|message| {
                     log::warn!("[jxxk] 统一会话不可用: {message}");
                     self.update(SessionState::NeedsAuth, &message);
                 })
-                .map(|cookies| {
-                    log::info!("[jxxk] 注入统一认证 cookie {} 条", cookies.len());
-                    cookies
-                })
-                .ok()?,
-            None => Vec::new(),
+                .ok()
+                .map(Some)?,
+            None => None,
         };
         let client = Client::new(
             client::JXXK_ORIGIN,
             client::AUTH_LOGIN,
             cookies.as_deref(),
-            &sso_cookies,
+            sso.as_deref(),
         )
         .map_err(|message| self.update(SessionState::Unavailable, &message))
         .ok()?;
@@ -437,7 +434,10 @@ impl Service {
                 return;
             }
         }
-        self.revalidating.lock().unwrap().insert("semesters".to_string());
+        self.revalidating
+            .lock()
+            .unwrap()
+            .insert("semesters".to_string());
         self.publish_state();
         let res = self.fetch_semesters(&client).await;
         self.revalidating.lock().unwrap().remove("semesters");
@@ -681,12 +681,21 @@ impl Service {
                     if lesson.live_state != Some(1) {
                         continue;
                     }
-                    let Some(start_str) = &lesson.start_time else { continue; };
-                    let Some(end_str) = &lesson.end_time else { continue; };
-                    let Ok(start) = chrono::NaiveDateTime::parse_from_str(start_str.trim(), "%Y-%m-%d %H:%M:%S") else {
+                    let Some(start_str) = &lesson.start_time else {
                         continue;
                     };
-                    let Ok(end) = chrono::NaiveDateTime::parse_from_str(end_str.trim(), "%Y-%m-%d %H:%M:%S") else {
+                    let Some(end_str) = &lesson.end_time else {
+                        continue;
+                    };
+                    let Ok(start) = chrono::NaiveDateTime::parse_from_str(
+                        start_str.trim(),
+                        "%Y-%m-%d %H:%M:%S",
+                    ) else {
+                        continue;
+                    };
+                    let Ok(end) =
+                        chrono::NaiveDateTime::parse_from_str(end_str.trim(), "%Y-%m-%d %H:%M:%S")
+                    else {
                         continue;
                     };
 
@@ -731,8 +740,8 @@ impl Service {
             loop {
                 let interval = crate::activity::interval(
                     Some("jxxk"),
-                    std::time::Duration::from_secs(15),  // Active (在巡课页面)
-                    std::time::Duration::from_secs(60),  // Foreground (在应用其它页面)
+                    std::time::Duration::from_secs(15), // Active (在巡课页面)
+                    std::time::Duration::from_secs(60), // Foreground (在应用其它页面)
                     std::time::Duration::from_secs(180), // Background (最小化/后台)
                 );
                 tokio::time::sleep(crate::activity::sleep_chunk(

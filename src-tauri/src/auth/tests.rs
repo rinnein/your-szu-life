@@ -1,4 +1,5 @@
 use super::{model::*, probe::*, scripts::*, session::*, AUTH_HOST};
+use crate::webview_cookies::CookieRecord;
 
 #[test]
 fn legacy_cookie_read_failures_keep_saved_sessions_and_do_not_start_password_recovery() {
@@ -9,20 +10,22 @@ fn legacy_cookie_read_failures_keep_saved_sessions_and_do_not_start_password_rec
         format_version: 2,
         student_id: "1234567890".into(),
         cookies: vec![session_cookie()],
+        http_keys: None,
     };
     credentials.save_session(&secret).unwrap();
     let store = super::AuthStore::new(credentials.clone());
     for category in [
-        "unsupportedStore",
-        "invalidMetadata",
-        "snapshotUnavailable",
-        "nativeFailure",
+        crate::webview_cookies::Error::Unavailable,
+        crate::webview_cookies::Error::Protocol,
+        crate::webview_cookies::Error::UnsupportedMethod,
+        crate::webview_cookies::Error::UnsupportedPartition,
+        crate::webview_cookies::Error::InvalidMetadata,
+        crate::webview_cookies::Error::OutOfScope,
+        crate::webview_cookies::Error::WriteUncertain,
     ] {
-        let raw =
-            serde_json::json!({"status":"error", "backend":"legacy", "code":category}).to_string();
-        let error = super::cookie_transport::decode_cookie_read(&raw).unwrap_err();
+        let error = String::from(category);
         let recovered = Cell::new(false);
-        super::cookie_transport::handle_install_failure(&store, &error, || {
+        super::session_policy::handle_install_failure(&store, &error, || {
             recovered.set(true);
             credentials.delete_session().unwrap();
         });
@@ -33,9 +36,6 @@ fn legacy_cookie_read_failures_keep_saved_sessions_and_do_not_start_password_rec
         );
         assert_eq!(credentials.load_session().unwrap(), Some(secret.clone()));
     }
-    assert!(super::cookie_transport::is_legacy_cookie_failure(
-        &super::cookie_transport::legacy_native_failure()
-    ));
 }
 
 #[test]
@@ -44,12 +44,9 @@ fn native_cookie_errors_keep_the_existing_recovery_behavior() {
     let store = super::AuthStore::new(Arc::new(
         crate::storage::testing::MemoryCredentialStore::default(),
     ));
-    let error = super::cookie_transport::decode_cookie_read(
-        r#"{"status":"error","backend":"native","code":"nativeFailure"}"#,
-    )
-    .unwrap_err();
+    let error = "unrelated credential failure".to_owned();
     let recovered = Cell::new(false);
-    super::cookie_transport::handle_install_failure(&store, &error, || recovered.set(true));
+    super::session_policy::handle_install_failure(&store, &error, || recovered.set(true));
     assert!(recovered.get());
 }
 
@@ -57,10 +54,10 @@ fn native_cookie_errors_keep_the_existing_recovery_behavior() {
 fn reauthentication_forgets_saved_cookies_only_after_successful_native_cleanup() {
     use std::cell::RefCell;
     let operations = RefCell::new(Vec::new());
-    let error = super::cookie_transport::clear_then_forget_session(
+    let error = super::session_policy::clear_then_forget_session(
         || {
             operations.borrow_mut().push("clear");
-            Err("legacy-cookie:snapshotUnavailable".into())
+            Err("webview-cookie:unavailable".into())
         },
         || {
             operations.borrow_mut().push("forget");
@@ -68,10 +65,10 @@ fn reauthentication_forgets_saved_cookies_only_after_successful_native_cleanup()
         },
     )
     .unwrap_err();
-    assert!(super::cookie_transport::is_legacy_cookie_failure(&error));
+    assert!(super::session_policy::is_cookie_failure(&error));
     assert_eq!(*operations.borrow(), vec!["clear"]);
     operations.borrow_mut().clear();
-    super::cookie_transport::clear_then_forget_session(
+    super::session_policy::clear_then_forget_session(
         || {
             operations.borrow_mut().push("clear");
             Ok(())
@@ -92,12 +89,27 @@ fn legacy_cookie_envelope_preserves_metadata_through_the_existing_restore_parser
         "MOD_AUTH_CAS=domain; Domain=.authserver.szu.edu.cn; Path=/; Secure",
         "JSESSIONID=profile; Domain=authserver.szu.edu.cn; Path=/personalInfo; HttpOnly",
     ];
-    let raw = serde_json::json!({"status":"ok", "cookies":headers}).to_string();
-    let decoded = super::cookie_transport::decode_cookie_read(&raw).unwrap();
-    let cookies: Vec<_> = decoded
+    let cookies: Vec<_> = headers
         .iter()
         .map(|header| from_android_cookie_info(header).unwrap())
         .collect();
+    let snapshot = crate::webview_cookies::Snapshot {
+        cookies: cookies.clone(),
+        ..Default::default()
+    };
+    let encoded = crate::webview_cookies::SessionEnvelope::encode(
+        "".into(),
+        snapshot.clone(),
+        crate::webview_cookies::Scope::auth(),
+    )
+    .unwrap();
+    assert_eq!(
+        crate::webview_cookies::SessionEnvelope::decode(&encoded)
+            .unwrap()
+            .unwrap()
+            .webview,
+        snapshot
+    );
     assert!(cookies[0].host_only);
     assert!(!cookies[1].host_only);
     assert_eq!(cookies[2].path, "/personalInfo");
@@ -107,13 +119,6 @@ fn legacy_cookie_envelope_preserves_metadata_through_the_existing_restore_parser
         .unwrap()
         .to_string()
         .contains("Domain="));
-    for raw in [
-        r#"{"status":"error","backend":"legacy","code":"untrusted exception"}"#,
-        r#"["SESSION=opaque"]"#,
-    ] {
-        let error = super::cookie_transport::decode_cookie_read(raw).unwrap_err();
-        assert_eq!(error, "Android 认证会话格式无效");
-    }
 }
 
 #[test]
@@ -253,8 +258,8 @@ fn legacy_android_snapshots_require_reauthentication_without_guessing_scope() {
     );
 }
 
-fn session_cookie() -> StoredAuthCookie {
-    StoredAuthCookie {
+fn session_cookie() -> CookieRecord {
+    CookieRecord {
         name: "JSESSIONID".into(),
         value: "opaque-session".into(),
         domain: AUTH_HOST.into(),
@@ -265,6 +270,7 @@ fn session_cookie() -> StoredAuthCookie {
         secure: Some(true),
         same_site: Some("Lax".into()),
         partitioned: None,
+        extensions: None,
     }
 }
 
@@ -292,6 +298,7 @@ fn cookie_session_round_trip_keeps_sensitive_attributes_internal() {
         format_version: 2,
         student_id: "1234567890".into(),
         cookies: vec![cookie],
+        http_keys: None,
     };
     let public = serde_json::to_string(&AccountProfileView {
         student_id: secret.student_id,
@@ -325,6 +332,7 @@ fn restoration_keeps_session_cookies_and_drops_only_expired_records() {
         format_version: 3,
         student_id: "1234567890".into(),
         cookies: vec![persistent, expired],
+        http_keys: None,
     };
     let restored = session
         .restorable_snapshot("1234567890", time::OffsetDateTime::now_utc())
@@ -352,6 +360,7 @@ fn legacy_linux_cookie_scope_is_narrowed_and_latest_update_wins() {
         format_version: 2,
         student_id: "1234567890".into(),
         cookies: vec![old, fresh],
+        http_keys: None,
     };
     let restored = session
         .restorable_snapshot("1234567890", time::OffsetDateTime::now_utc())
@@ -371,7 +380,12 @@ fn auth_cookie_serialization_requires_a_safe_matching_path() {
     cookie.path = "/personalInfo".into();
     assert!(cookie.to_webview_cookie().is_ok());
     cookie.domain = "other.szu.edu.cn".into();
-    assert!(cookie.to_webview_cookie().is_err());
+    assert!(crate::webview_cookies::Snapshot {
+        cookies: vec![cookie],
+        ..Default::default()
+    }
+    .validate(&crate::webview_cookies::Scope::auth())
+    .is_err());
 }
 
 #[test]

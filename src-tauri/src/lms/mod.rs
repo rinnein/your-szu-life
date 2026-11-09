@@ -219,20 +219,21 @@ impl Service {
             .map_err(|error| log::warn!("读取畅课会话失败: {error}"))
             .ok()
             .flatten();
-        let sso_cookies = match &self.app {
-            Some(app) => crate::auth::reusable_sso_cookies(app)
+        let sso = match &self.app {
+            Some(app) => crate::auth::reusable_sso_jar(app)
                 .map_err(|message| {
                     self.update(SessionState::NeedsAuth, &message, None);
                 })
-                .ok()?,
-            None => Vec::new(),
+                .ok()
+                .map(Some)?,
+            None => None,
         };
         Some(
             Client::new(
                 client::LMS_ORIGIN,
                 client::AUTH_LOGIN,
                 cookies.as_deref(),
-                &sso_cookies,
+                sso.as_deref(),
             )
             .map_err(|message| self.update(SessionState::Unavailable, &message, None))
             .ok()?,
@@ -304,8 +305,7 @@ impl Service {
                 }
                 Err(error) if error.session_expired && !retried => {
                     retried = true;
-                    if let Err(BootstrapFailure::NeedsAuth(message)) =
-                        self.establish(client).await
+                    if let Err(BootstrapFailure::NeedsAuth(message)) = self.establish(client).await
                     {
                         return Err(message);
                     }

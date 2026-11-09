@@ -16,7 +16,7 @@ mod platform;
 pub(crate) mod portal;
 mod protocol;
 mod school_cookies;
-mod session;
+pub(crate) mod session;
 #[cfg(test)]
 mod tests;
 use model::*;
@@ -282,7 +282,8 @@ impl Service {
     }
     fn publish(&self) {
         let snapshot = self.snapshot();
-        self.state_subscribers.broadcast(&EnrollmentDeltaEvent::Snapshot(Box::new(snapshot.clone())));
+        self.state_subscribers
+            .broadcast(&EnrollmentDeltaEvent::Snapshot(Box::new(snapshot.clone())));
         let _ = self.app.emit("enrollment-update", snapshot);
     }
     fn message(&self, message: &str) {
@@ -361,6 +362,7 @@ impl Service {
                 })
                 .transpose()?
                 .unwrap_or_default();
+            secrets.validate_cookie_snapshots().map_err(Error::from)?;
             if secrets.student != profile.student_id {
                 secrets = session::Secrets {
                     student: profile.student_id.clone(),
@@ -470,7 +472,7 @@ impl Service {
         let gateway_seed = self.secrets.lock().unwrap().vpn.clone();
         if let Some(shared) = self.shared_sessions.lock().unwrap().get_mut(&mode) {
             if mode == Mode::Webvpn && shared.gateway_seed != gateway_seed {
-                session::merge(&shared.client.jar, session::jar(&gateway_seed)?.as_ref());
+                session::merge(&shared.client.jar, session::jar(&gateway_seed)?.as_ref())?;
                 shared.gateway_seed = gateway_seed;
             }
             return Ok(shared.clone());
@@ -1089,6 +1091,7 @@ impl Service {
                 .map_err(Error::from)?
                 .ok_or_else(|| Error::new(Failure::Session, "请先登录应用账户"))?;
             let secrets = self.secrets.lock().unwrap();
+            secrets.validate_cookie_snapshots().map_err(Error::from)?;
             if secrets.student != profile.student_id {
                 return Err(Error::new(Failure::Session, "账户信息正在更新"));
             }

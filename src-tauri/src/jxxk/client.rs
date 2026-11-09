@@ -58,12 +58,12 @@ pub(crate) struct Client {
 
 impl Client {
     /// `cookies` 是之前保存的巡课会话 jar（JSON，仅含 jxxk 域 cookie）；
-    /// `sso_cookies` 是来自统一认证的 Set-Cookie 字符串，注入到 authserver 域。
+    /// `sso` 保留统一认证的原生 Cookie 身份，只投影当前 HTTP 上下文。
     pub(super) fn new(
         jxxk_base: &str,
         auth_base: &str,
         cookies: Option<&str>,
-        sso_cookies: &[String],
+        sso: Option<&CookieStoreMutex>,
     ) -> Result<Self, String> {
         let jxxk = normalize_base(jxxk_base, "巡课地址无效")?;
         let auth = normalize_base(auth_base, "统一认证地址无效")?;
@@ -74,16 +74,21 @@ impl Client {
         } else {
             cookie_store::CookieStore::default()
         };
-        for raw in sso_cookies {
-            let _ = store.insert_raw(
-                &cookie_store::RawCookie::parse(raw.clone())
-                    .map_err(|_| "统一认证会话数据无效".to_string())?,
-                &auth,
-            );
+        if let Some(sso) = sso {
+            for cookie in sso
+                .lock()
+                .map_err(|_| "统一认证会话锁失败")?
+                .iter_unexpired()
+            {
+                let _ = store.insert(cookie.clone(), &auth);
+            }
         }
         let jar = Arc::new(CookieStoreMutex::new(store));
+        if let Some(sso) = sso {
+            crate::webview_cookies::copy_snapshot(sso, &jar);
+        }
         let builder = crate::netproxy::client_builder()
-            .cookie_provider(jar.clone())
+            .cookie_provider(crate::webview_cookies::http_provider(jar.clone()))
             // CAS 跳转由模块自己逐跳跟随，便于识别登录表单并限定跳转目标。
             .redirect(reqwest::redirect::Policy::none())
             .timeout(Duration::from_secs(20))
@@ -180,9 +185,7 @@ impl Client {
         let max_age = token_exp(token)
             .map(|exp| (exp - chrono::Utc::now().timestamp()).max(1).to_string())
             .unwrap_or_else(|| "7200".to_string());
-        let raw = format!(
-            "{TOKEN_COOKIE}_{suffix}={token}; Path=/; HttpOnly; Max-Age={max_age}"
-        );
+        let raw = format!("{TOKEN_COOKIE}_{suffix}={token}; Path=/; HttpOnly; Max-Age={max_age}");
         self.insert_cookie(&raw);
     }
 
@@ -496,13 +499,10 @@ impl Client {
         if let Some(token) = self.token() {
             request = request.header("token", token);
         }
-        let response = request
-            .send()
-            .await
-            .map_err(|e| {
-                log::warn!("[jxxk] GET 请求失败 {display_url}: {e}");
-                ApiError::local("无法连接巡课平台，请检查校园网或代理设置")
-            })?;
+        let response = request.send().await.map_err(|e| {
+            log::warn!("[jxxk] GET 请求失败 {display_url}: {e}");
+            ApiError::local("无法连接巡课平台，请检查校园网或代理设置")
+        })?;
         let status = response.status();
         let bytes = response
             .bytes()
@@ -573,13 +573,10 @@ impl Client {
         if let Some(token) = self.token() {
             request = request.header("token", token);
         }
-        let response = request
-            .send()
-            .await
-            .map_err(|e| {
-                log::warn!("[jxxk] POST 请求失败 {display_url}: {e}");
-                ApiError::local("无法连接巡课平台，请检查校园网或代理设置")
-            })?;
+        let response = request.send().await.map_err(|e| {
+            log::warn!("[jxxk] POST 请求失败 {display_url}: {e}");
+            ApiError::local("无法连接巡课平台，请检查校园网或代理设置")
+        })?;
         let status = response.status();
         let bytes = response
             .bytes()
@@ -630,13 +627,10 @@ impl Client {
         if let Some(token) = self.token() {
             request = request.header("token", token);
         }
-        let response = request
-            .send()
-            .await
-            .map_err(|e| {
-                log::warn!("[jxxk] 拉取巡课媒体失败 {url}: {e}");
-                "拉取巡课媒体数据失败".to_string()
-            })?;
+        let response = request.send().await.map_err(|e| {
+            log::warn!("[jxxk] 拉取巡课媒体失败 {url}: {e}");
+            "拉取巡课媒体数据失败".to_string()
+        })?;
         if !response.status().is_success() {
             return Err(format!(
                 "巡课媒体服务返回 HTTP {}",

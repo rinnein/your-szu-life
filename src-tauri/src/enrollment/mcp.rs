@@ -27,13 +27,10 @@ pub struct AcademicRecordParams {
 impl UnifiedSzuMcpService {
     #[tool(
         name = "enrollment_get_snapshot",
-        description = "获取深大选课系统整体状态快照（当前开放选课批次、个人学分限制、抢课监控任务列表）"
+        description = "获取深大选课系统整体状态快照（当前开放选课批次、个人学分限制、抢课监控任务列表）。Android Cookie 验证与恢复使用共享原生服务，支持缺失完整 Cookie API 的内核和可序列化分区；不返回 Cookie。"
     )]
     pub async fn enrollment_get_snapshot(&self) -> Result<String, String> {
-        let store = self
-            .app
-            .try_state::<Store>()
-            .ok_or("选课服务存储不可用")?;
+        let store = self.app.try_state::<Store>().ok_or("选课服务存储不可用")?;
         let service = store.0.clone();
         let value = tokio::task::spawn_blocking(move || {
             service.execute(Action::Snapshot).map_err(|e| e.message)
@@ -49,10 +46,7 @@ impl UnifiedSzuMcpService {
         description = "获取学生当前学期已成功选上的所有课程明细与授课教师、上课地点及学分"
     )]
     pub async fn enrollment_get_selected_courses(&self) -> Result<String, String> {
-        let store = self
-            .app
-            .try_state::<Store>()
-            .ok_or("选课服务存储不可用")?;
+        let store = self.app.try_state::<Store>().ok_or("选课服务存储不可用")?;
         let service = store.0.clone();
         let value = tokio::task::spawn_blocking(move || {
             service.execute(Action::Selected).map_err(|e| e.message)
@@ -71,10 +65,7 @@ impl UnifiedSzuMcpService {
         &self,
         Parameters(params): Parameters<SearchCoursesParams>,
     ) -> Result<String, String> {
-        let store = self
-            .app
-            .try_state::<Store>()
-            .ok_or("选课服务存储不可用")?;
+        let store = self.app.try_state::<Store>().ok_or("选课服务存储不可用")?;
         let service = store.0.clone();
         let query = Query {
             category: params.category.unwrap_or_else(|| "TJKC".to_string()),
@@ -82,7 +73,9 @@ impl UnifiedSzuMcpService {
             page: params.page.unwrap_or(0),
         };
         let value = tokio::task::spawn_blocking(move || {
-            service.execute(Action::Cache { query }).map_err(|e| e.message)
+            service
+                .execute(Action::Cache { query })
+                .map_err(|e| e.message)
         })
         .await
         .map_err(|_| "任务执行失败".to_string())??;
@@ -98,14 +91,13 @@ impl UnifiedSzuMcpService {
         &self,
         Parameters(params): Parameters<AcademicRecordParams>,
     ) -> Result<String, String> {
-        let store = self
-            .app
-            .try_state::<Store>()
-            .ok_or("教务服务存储不可用")?;
+        let store = self.app.try_state::<Store>().ok_or("教务服务存储不可用")?;
         let service = store.0.clone();
         let recalculate = params.recalculate.unwrap_or(false);
         let value = tokio::task::spawn_blocking(move || {
-            service.execute(Action::Academic { recalculate }).map_err(|e| e.message)
+            service
+                .execute(Action::Academic { recalculate })
+                .map_err(|e| e.message)
         })
         .await
         .map_err(|_| "任务执行失败".to_string())??;
@@ -118,13 +110,12 @@ impl UnifiedSzuMcpService {
         description = "分析本科毕业学分修读完成度（各类别必修/选修学分要求、已修学分与尚欠学分）"
     )]
     pub async fn enrollment_get_academic_progress(&self) -> Result<String, String> {
-        let store = self
-            .app
-            .try_state::<Store>()
-            .ok_or("教务服务存储不可用")?;
+        let store = self.app.try_state::<Store>().ok_or("教务服务存储不可用")?;
         let service = store.0.clone();
         let value = tokio::task::spawn_blocking(move || {
-            service.execute(Action::AcademicProgress).map_err(|e| e.message)
+            service
+                .execute(Action::AcademicProgress)
+                .map_err(|e| e.message)
         })
         .await
         .map_err(|_| "任务执行失败".to_string())??;

@@ -138,7 +138,7 @@ abstract class ApplicationBackActivity : TauriActivity(), app.tauri.AppBackNavig
     com.google.android.material.color.DynamicColors.applyToActivityIfAvailable(this)
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
-    AuthCookieBridge.bindContext(this)
+    WebviewCookieBridge.bindContext(this)
     AuthWindowBridge.created(this)
     WallpaperColorBridge.bindActivity(this)
     // SAF 目录选择器需要 Activity 与它自己的 onActivityResult。

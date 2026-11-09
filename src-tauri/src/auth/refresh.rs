@@ -4,12 +4,13 @@ use super::{
         auth_probe_succeeded, is_auth_login_url, is_auth_profile_url, is_authserver_url,
         probe_identity,
     },
+    session::AuthSessionSecret,
     session::SessionRestoreError,
-    session::{AuthSessionSecret, StoredAuthCookie},
 };
-use reqwest::{cookie::Jar, redirect::Policy, Url};
-use std::{io::Read, sync::Arc, time::Duration};
-use time::{format_description::well_known::Rfc2822, OffsetDateTime};
+use crate::webview_cookies::CookieRecord;
+use reqwest::{redirect::Policy, Url};
+use std::{io::Read, time::Duration};
+use time::OffsetDateTime;
 
 const USER_CONF_URL: &str = super::AUTH_USER_CONF_URL;
 const MAX_RESPONSE_BYTES: u64 = 512 * 1024;
@@ -29,7 +30,7 @@ enum ResponseDisposition {
     Unavailable,
 }
 
-type ResponseCookie = StoredAuthCookie;
+type ResponseCookie = CookieRecord;
 
 pub(super) fn refresh_session(
     session: Option<AuthSessionSecret>,
@@ -45,35 +46,31 @@ pub(super) fn refresh_session(
     {
         Ok(session) => session.flatten(),
         Err(SessionRestoreError::AccountMismatch) => return RefreshOutcome::Mismatch,
-        Err(SessionRestoreError::Unsupported) => return RefreshOutcome::Invalid,
+        Err(SessionRestoreError::Unsupported) => return RefreshOutcome::Unavailable,
         Err(SessionRestoreError::InvalidCookie) => return RefreshOutcome::Unavailable,
-    };
-    let endpoint = match USER_CONF_URL.parse::<Url>() {
-        Ok(url) => url,
-        Err(_) => return RefreshOutcome::Unavailable,
     };
     #[cfg(target_os = "android")]
     if crate::platform_tls::initialize_platform_verifier().is_err() {
         return RefreshOutcome::Unavailable;
     }
-    let jar = Arc::new(Jar::default());
-    if let Some(existing) = session.as_ref() {
-        for cookie in &existing.cookies {
-            if cookie.is_definitely_expired(OffsetDateTime::now_utc()) {
-                continue;
-            }
-            let Ok(serialized) = cookie.to_webview_cookie() else {
-                continue;
-            };
-            jar.add_cookie_str(&serialized.to_string(), &endpoint);
-        }
-    }
+    let scope = crate::webview_cookies::Scope::auth();
+    let snapshot = match &session {
+        Some(session) => crate::webview_cookies::Snapshot {
+            cookies: session.cookies.clone(),
+            http_keys: session.http_keys.clone(),
+        },
+        None => crate::webview_cookies::Snapshot::default(),
+    };
+    let jar = match crate::webview_cookies::project(snapshot, scope) {
+        Ok(jar) => jar,
+        Err(_) => return RefreshOutcome::Unavailable,
+    };
     let client = match crate::netproxy::blocking_client_builder()
         .connect_timeout(Duration::from_secs(3))
         .timeout(Duration::from_secs(8))
         .redirect(Policy::none())
         .retry(reqwest::retry::never())
-        .cookie_provider(jar.clone())
+        .cookie_provider(crate::webview_cookies::http_provider(jar.clone()))
         .build()
     {
         Ok(client) => client,
@@ -148,6 +145,7 @@ fn verify_response(response: &AuthResponse, expected: &str) -> RefreshOutcome {
         student_id: expected.into(),
         format_version: 2,
         cookies: Vec::new(),
+        http_keys: None,
     })
 }
 
@@ -163,13 +161,16 @@ fn refresh_with_transport(
         student_id: expected.into(),
         format_version: 2,
         cookies: Vec::new(),
+        http_keys: None,
     });
     let endpoint: Url = USER_CONF_URL.parse().expect("official endpoint");
     let Ok(mut first) = request(endpoint.clone()) else {
         return RefreshOutcome::Unavailable;
     };
     let outcome = verify_response(&first, expected);
-    merge_response_cookies(&mut stored, std::mem::take(&mut first.updates));
+    if merge_response_cookies(&mut stored, std::mem::take(&mut first.updates)).is_err() {
+        return RefreshOutcome::Unavailable;
+    }
     match outcome {
         RefreshOutcome::Refreshed(_) => {
             return if stored.cookies.is_empty() {
@@ -188,7 +189,9 @@ fn refresh_with_transport(
         let Ok(mut response) = request(url) else {
             return RefreshOutcome::Unavailable;
         };
-        merge_response_cookies(&mut stored, std::mem::take(&mut response.updates));
+        if merge_response_cookies(&mut stored, std::mem::take(&mut response.updates)).is_err() {
+            return RefreshOutcome::Unavailable;
+        }
         if (300..400).contains(&response.status) {
             let Some(next) = response.location else {
                 return RefreshOutcome::Unavailable;
@@ -217,7 +220,9 @@ fn refresh_with_transport(
             return RefreshOutcome::Unavailable;
         };
         let outcome = verify_response(&verified, expected);
-        merge_response_cookies(&mut stored, std::mem::take(&mut verified.updates));
+        if merge_response_cookies(&mut stored, std::mem::take(&mut verified.updates)).is_err() {
+            return RefreshOutcome::Unavailable;
+        }
         return match outcome {
             RefreshOutcome::Refreshed(_) => {
                 if stored.cookies.is_empty() {
@@ -261,60 +266,33 @@ fn classify_response(
     ResponseDisposition::Valid
 }
 
-fn merge_response_cookies(session: &mut AuthSessionSecret, response: Vec<ResponseCookie>) {
+fn merge_response_cookies(
+    session: &mut AuthSessionSecret,
+    response: Vec<ResponseCookie>,
+) -> Result<(), crate::webview_cookies::Error> {
+    let scope = crate::webview_cookies::Scope::auth();
+    let mut snapshot = crate::webview_cookies::Snapshot {
+        cookies: session.cookies.clone(),
+        http_keys: session.http_keys.clone(),
+    };
     for cookie in response {
-        if !super::session::is_auth_cookie_domain(&cookie.domain)
-            || !super::session::is_valid_cookie_path(&cookie.path)
-        {
+        if !scope.allows(&cookie) {
             continue;
         }
-        let existing = session.cookies.iter_mut().find(|stored| {
-            stored.name == cookie.name
-                && stored.domain == cookie.domain
-                && stored.path == cookie.path
-                && stored.host_only == cookie.host_only
-        });
-        let expired = cookie
-            .expires
-            .as_deref()
-            .and_then(|value| OffsetDateTime::parse(value, &Rfc2822).ok())
-            .is_some_and(|expires| expires <= OffsetDateTime::now_utc());
-        if cookie.value.is_empty() || expired {
-            session.cookies.retain(|stored| {
-                !(stored.name == cookie.name
-                    && stored.domain == cookie.domain
-                    && stored.path == cookie.path
-                    && stored.host_only == cookie.host_only)
-            });
-            continue;
-        }
-        if let Some(existing) = existing {
-            existing.value = cookie.value;
-            existing.expires = cookie.expires;
-            existing.http_only = cookie.http_only;
-            existing.secure = cookie.secure;
-            existing.same_site = cookie.same_site;
-            existing.partitioned = cookie.partitioned;
-        } else {
-            session.cookies.push(StoredAuthCookie {
-                name: cookie.name,
-                value: cookie.value,
-                domain: cookie.domain,
-                host_only: cookie.host_only,
-                path: cookie.path,
-                expires: cookie.expires,
-                http_only: cookie.http_only,
-                secure: cookie.secure,
-                same_site: cookie.same_site,
-                partitioned: cookie.partitioned,
-            });
-        }
+        let url = cookie.url(&scope)?;
+        crate::webview_cookies::update_http(&mut snapshot, &scope, cookie, &url)?;
     }
+    session.cookies = snapshot.cookies;
+    session.http_keys = snapshot.http_keys;
+    Ok(())
 }
 
 fn response_cookie(raw: &str, response_url: &Url) -> Option<ResponseCookie> {
     let cookie = tauri::webview::cookie::Cookie::parse(raw.to_owned()).ok()?;
-    let mut stored = StoredAuthCookie::from_webview_cookie(cookie.clone().into_owned())?;
+    let mut stored = CookieRecord::from_cookie(cookie.clone().into_owned(), super::AUTH_HOST);
+    if !super::session::is_auth_cookie_domain(&stored.domain) {
+        return None;
+    }
     if cookie.path().is_none_or(|path| !path.starts_with('/')) {
         // RFC 6265 default-path is the request's directory, not always '/'.
         stored.path = response_url
@@ -337,7 +315,7 @@ mod tests {
         AuthSessionSecret {
             format_version: 3,
             student_id: "1234567890".into(),
-            cookies: vec![StoredAuthCookie {
+            cookies: vec![CookieRecord {
                 name: "CASTGC".into(),
                 value: "test-only-cas-session".into(),
                 domain: AUTH_HOST.into(),
@@ -348,7 +326,9 @@ mod tests {
                 secure: Some(true),
                 same_site: None,
                 partitioned: None,
+                extensions: None,
             }],
+            http_keys: None,
         }
     }
     fn reply(url: Url, status: u16, redirect: Option<&str>, text: &str) -> AuthResponse {
@@ -520,18 +500,21 @@ mod tests {
             format_version: 2,
             student_id: "1234567890".into(),
             cookies: vec![host, domain.clone()],
+            http_keys: None,
         };
         merge_response_cookies(
             &mut session,
             vec![response_cookie("MOD_AUTH_CAS=new; Path=/; HttpOnly", &endpoint).unwrap()],
-        );
+        )
+        .unwrap();
         assert_eq!(session.cookies.len(), 2);
         assert_eq!(session.cookies[0].value, "new");
         assert_eq!(session.cookies[1], domain);
         merge_response_cookies(
             &mut session,
             vec![response_cookie("MOD_AUTH_CAS=; Path=/; Max-Age=0", &endpoint).unwrap()],
-        );
+        )
+        .unwrap();
         assert_eq!(session.cookies, vec![domain]);
     }
 
@@ -563,7 +546,7 @@ mod tests {
         let mut session = AuthSessionSecret {
             format_version: 2,
             student_id: "1234567890".into(),
-            cookies: vec![StoredAuthCookie {
+            cookies: vec![CookieRecord {
                 name: "sid".into(),
                 value: "old".into(),
                 domain: AUTH_HOST.into(),
@@ -574,7 +557,9 @@ mod tests {
                 secure: Some(true),
                 same_site: None,
                 partitioned: None,
+                extensions: None,
             }],
+            http_keys: None,
         };
         merge_response_cookies(
             &mut session,
@@ -590,6 +575,7 @@ mod tests {
                     expires: Some("Fri, 13 Sep 2030 00:00:00 +0000".into()),
                     same_site: Some("Lax".into()),
                     partitioned: None,
+                    extensions: None,
                 },
                 ResponseCookie {
                     name: "evil".into(),
@@ -602,9 +588,11 @@ mod tests {
                     expires: None,
                     same_site: None,
                     partitioned: None,
+                    extensions: None,
                 },
             ],
-        );
+        )
+        .unwrap();
         assert_eq!(session.cookies.len(), 1);
         assert_eq!(session.cookies[0].value, "new");
         assert_eq!(
