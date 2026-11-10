@@ -34,7 +34,7 @@ pub(super) fn resume_application_window(app: &tauri::AppHandle, store: &AuthStor
         .ok()
         .is_some_and(|state| matches!(*state, AuthState::Authenticated { .. }));
     #[cfg(target_os = "android")]
-    let _ = super::android_cookies::finish_authentication(success);
+    let _ = super::android_window::finish_authentication(success);
     let previous = store
         .resume_window
         .lock()
@@ -186,7 +186,7 @@ pub(super) fn show_authentication_window(
             .map_err(|_| "状态锁失败")?
             .clone()
             .unwrap_or_else(|| LOCAL_ENTRY_URL.parse().expect("local URL"));
-        super::android_cookies::show_authentication(return_url.as_str())?;
+        super::android_window::show_authentication(return_url.as_str())?;
     }
     #[cfg(not(target_os = "android"))]
     {

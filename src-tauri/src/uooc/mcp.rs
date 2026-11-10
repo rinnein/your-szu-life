@@ -36,7 +36,7 @@ pub(crate) struct SolveQuestionParams {
 impl UnifiedSzuMcpService {
     #[tool(
         name = "uooc_get_courses",
-        description = "获取当前学期正在修读的全部 UOOC 优课联盟慕课列表，以及各小节与视频的综合完成度百分比"
+        description = "获取当前学期正在修读的全部 UOOC 优课联盟慕课列表，以及各小节与视频的综合完成度百分比。Android Cookie 验证与恢复使用共享原生服务，支持缺失完整 Cookie API 的内核和可序列化分区；不返回 Cookie。"
     )]
     pub async fn uooc_get_courses(&self) -> Result<String, String> {
         let service = service(&self.app)?;

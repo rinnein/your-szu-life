@@ -1,8 +1,13 @@
-use super::client::{LOGIN, ORIGIN};
-use cookie_store::{CookieDomain, CookieStore, RawCookie};
+#[cfg(not(target_os = "android"))]
+use super::client::LOGIN;
+use super::client::ORIGIN;
+#[cfg(not(target_os = "android"))]
+use cookie_store::RawCookie;
+use cookie_store::{CookieDomain, CookieStore};
 use reqwest_cookie_store::CookieStoreMutex;
 use std::sync::Arc;
 
+#[cfg(not(target_os = "android"))]
 const URLS: [&str; 5] = [
     LOGIN,
     ORIGIN,
@@ -24,52 +29,42 @@ fn allowed(cookie: &cookie_store::Cookie<'_>) -> bool {
     }
 }
 pub(super) fn load(raw: Option<&str>) -> Result<Arc<CookieStoreMutex>, String> {
-    let mut jar = CookieStore::default();
-    if let Some(raw) = raw {
-        let stored = cookie_store::serde::json::load(raw.as_bytes())
-            .map_err(|_| "UOOC 会话数据损坏，请重新登录")?;
-        for cookie in stored.iter_any().filter(|c| allowed(c) && !c.is_expired()) {
-            let _ = jar.insert(cookie.clone(), &ORIGIN.parse().unwrap());
+    let stored = crate::webview_cookies::load_jar(raw.unwrap_or(""))?;
+    if let Some((snapshot, scope)) = crate::webview_cookies::native_snapshot(&stored) {
+        if scope.kind != crate::webview_cookies::Kind::Uooc {
+            return Err("UOOC 会话范围无效".into());
         }
+        snapshot
+            .validate(&crate::webview_cookies::Scope::uooc())
+            .map_err(String::from)?;
     }
-    Ok(Arc::new(CookieStoreMutex::new(jar)))
+    let mut jar = CookieStore::default();
+    for cookie in stored
+        .lock()
+        .map_err(|_| "UOOC 会话不可用")?
+        .iter_any()
+        .filter(|c| allowed(c) && !c.is_expired())
+    {
+        let _ = jar.insert(cookie.clone(), &ORIGIN.parse().unwrap());
+    }
+    let jar = Arc::new(CookieStoreMutex::new(jar));
+    crate::webview_cookies::copy_snapshot(&stored, &jar);
+    Ok(jar)
 }
 pub(super) fn serialize(jar: &CookieStoreMutex) -> Result<String, String> {
-    let jar = jar.lock().map_err(|_| "UOOC 会话不可用")?;
-    let mut bytes = vec![];
-    cookie_store::serde::json::save_incl_expired_and_nonpersistent(&jar, &mut bytes)
-        .map_err(|_| "UOOC 会话保存失败")?;
-    String::from_utf8(bytes).map_err(|_| "UOOC 会话保存失败".into())
+    crate::webview_cookies::serialize_jar(jar)
 }
 
 pub(super) fn capture(window: &tauri::WebviewWindow) -> Result<Arc<CookieStoreMutex>, String> {
+    #[cfg(not(target_os = "android"))]
     let mut jar = CookieStore::default();
     #[cfg(target_os = "android")]
     {
-        let _ = window;
-        for header in crate::auth::android_cookies::read_cookies(&URLS)? {
-            let domain = header
-                .split(';')
-                .skip(1)
-                .filter_map(|p| p.trim().split_once('='))
-                .find(|(k, _)| k.eq_ignore_ascii_case("domain"))
-                .map(|(_, v)| v.trim().to_owned())
-                .ok_or("UOOC Cookie 缺少域信息")?;
-            let mut cookie = RawCookie::parse(header)
-                .map_err(|_| "UOOC Cookie 格式无效")?
-                .into_owned();
-            if !allowed_domain(&domain) {
-                continue;
-            }
-            // AndroidX canonical domain without a dot denotes a host-only cookie.
-            if !domain.starts_with('.') {
-                cookie.unset_domain();
-            }
-            if cookie.path().is_none() {
-                return Err("UOOC Cookie 缺少路径信息".into());
-            }
-            let _ = jar.insert_raw(&cookie, &ORIGIN.parse().unwrap());
-        }
+        let scope = crate::webview_cookies::Scope::uooc();
+        return crate::webview_cookies::project(
+            crate::webview_cookies::capture(window, &scope)?,
+            scope,
+        );
     }
     #[cfg(not(target_os = "android"))]
     for url in URLS {
@@ -84,7 +79,10 @@ pub(super) fn capture(window: &tauri::WebviewWindow) -> Result<Arc<CookieStoreMu
             let _ = jar.insert_raw(&raw, &url.parse().unwrap());
         }
     }
-    Ok(Arc::new(CookieStoreMutex::new(jar)))
+    #[cfg(not(target_os = "android"))]
+    {
+        Ok(Arc::new(CookieStoreMutex::new(jar)))
+    }
 }
 
 pub(super) fn install(
@@ -92,34 +90,53 @@ pub(super) fn install(
     jar: &CookieStoreMutex,
     delete: bool,
 ) -> Result<(), String> {
-    let cookies: Vec<RawCookie<'static>> = jar
-        .lock()
-        .map_err(|_| "UOOC 会话不可用")?
-        .iter_any()
-        .filter(|c| allowed(c))
-        .map(|cookie| {
-            let mut raw: RawCookie<'static> = cookie.clone().into();
-            if delete {
-                raw.set_max_age(time::Duration::ZERO);
-                raw.set_expires(time::OffsetDateTime::UNIX_EPOCH);
-            }
-            raw
-        })
-        .collect();
-    #[cfg(not(target_os = "android"))]
-    for raw in cookies {
-        let cookie = tauri::webview::cookie::Cookie::parse(raw.to_string())
-            .map_err(|_| "UOOC Cookie 格式无效")?
-            .into_owned();
-        window
-            .set_cookie(cookie)
-            .map_err(|_| "无法恢复 UOOC Cookie")?;
-    }
     #[cfg(target_os = "android")]
     {
-        let _ = window;
-        let data: Vec<_> = cookies.iter().map(|c| serde_json::json!({"url": format!("{ORIGIN}{}", c.path().unwrap_or("/")), "header": c.to_string()})).collect();
-        crate::auth::android_cookies::write_cookies(&data)?;
+        let scope = crate::webview_cookies::Scope::uooc();
+        if delete {
+            return crate::webview_cookies::clear(window, &scope);
+        }
+        if let Some(envelope) = crate::webview_cookies::SessionEnvelope::decode(&serialize(jar)?)? {
+            return crate::webview_cookies::replace(window, &scope, &envelope.webview);
+        }
+        let records = jar
+            .lock()
+            .map_err(|_| "UOOC 会话不可用")?
+            .iter_any()
+            .filter(|c| allowed(c))
+            .map(|c| crate::webview_cookies::Patch {
+                cookie: crate::webview_cookies::CookieRecord::from_stored(c)
+                    .expect("allowed cookie domain"),
+                remove: false,
+            })
+            .collect::<Vec<_>>();
+        return crate::webview_cookies::apply(window, &scope, &records);
     }
-    Ok(())
+    #[cfg(not(target_os = "android"))]
+    {
+        let cookies: Vec<RawCookie<'static>> = jar
+            .lock()
+            .map_err(|_| "UOOC 会话不可用")?
+            .iter_any()
+            .filter(|c| allowed(c))
+            .map(|cookie| {
+                let mut raw: RawCookie<'static> = cookie.clone().into();
+                if delete {
+                    raw.set_max_age(time::Duration::ZERO);
+                    raw.set_expires(time::OffsetDateTime::UNIX_EPOCH);
+                }
+                raw
+            })
+            .collect();
+        #[cfg(not(target_os = "android"))]
+        for raw in cookies {
+            let cookie = tauri::webview::cookie::Cookie::parse(raw.to_string())
+                .map_err(|_| "UOOC Cookie 格式无效")?
+                .into_owned();
+            window
+                .set_cookie(cookie)
+                .map_err(|_| "无法恢复 UOOC Cookie")?;
+        }
+        Ok(())
+    }
 }

@@ -7,7 +7,7 @@ use rmcp::tool_router;
 impl UnifiedSzuMcpService {
     #[tool(
         name = "lms_get_todos",
-        description = "获取畅课（lms.szu.edu.cn）当前课程待办列表，包含课程名、任务标题、截止时间与任务页面链接构造所需的 course_id 与任务 id"
+        description = "获取畅课（lms.szu.edu.cn）当前课程待办列表，包含课程名、任务标题、截止时间与任务页面链接构造所需的 course_id 与任务 id。统一认证会话在 Android 上支持原生 Cookie API 缺失时的 CDP 降级；传输失败保留已有会话，不自动提交密码"
     )]
     pub async fn lms_get_todos(&self) -> Result<String, String> {
         let service = service(&self.app)?;

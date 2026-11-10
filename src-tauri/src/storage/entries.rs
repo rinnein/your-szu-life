@@ -110,9 +110,32 @@ pub(crate) fn validate_value(key: &str, value: Value) -> Result<(), String> {
                 .map_err(|_| "待确认账户格式无效")?;
         }
         AUTH_SESSION => {
-            serde_json::from_value::<AuthSessionSecret>(value).map_err(|_| "登录会话格式无效")?;
+            let session = serde_json::from_value::<AuthSessionSecret>(value)
+                .map_err(|_| "登录会话格式无效")?;
+            crate::webview_cookies::Snapshot {
+                cookies: session.cookies,
+                http_keys: session.http_keys,
+            }
+            .validate(&crate::webview_cookies::Scope::auth())
+            .map_err(String::from)?;
         }
-        UOOC_AI | UOOC_SESSION | ACADEMIC_SESSIONS | LMS_SESSION | JXXK_SESSION => {
+        UOOC_SESSION => {
+            let raw = serde_json::from_value::<String>(value).map_err(|_| "设置格式无效")?;
+            if let Some(envelope) = crate::webview_cookies::SessionEnvelope::decode(&raw)? {
+                if envelope.scope.kind != crate::webview_cookies::Kind::Uooc {
+                    return Err("UOOC 会话范围无效".into());
+                }
+            }
+        }
+        ACADEMIC_SESSIONS => {
+            let raw = serde_json::from_value::<String>(value).map_err(|_| "设置格式无效")?;
+            if !raw.is_empty() {
+                let sessions: crate::enrollment::session::Secrets =
+                    serde_json::from_str(&raw).map_err(|_| "学业认证数据格式无效")?;
+                sessions.validate_cookie_snapshots()?;
+            }
+        }
+        UOOC_AI | LMS_SESSION | JXXK_SESSION => {
             serde_json::from_value::<String>(value).map_err(|_| "设置格式无效")?;
         }
         OJ_ACCOUNTS => {

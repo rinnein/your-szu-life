@@ -152,11 +152,19 @@ pub async fn open(
         .insert(mode, label.clone());
     let target = window.clone();
     let c = shared.client.clone();
+    let installing = service.clone();
     let installed = tauri::async_runtime::spawn_blocking(move || -> Result<_> {
+        let _operation = installing.operation.lock().unwrap();
+        if installing.shared_client(mode)?.generation != c.generation {
+            return Err(Error::new(Failure::Session, "会话已更新"));
+        }
+        #[cfg(target_os = "android")]
+        cookies::restore_snapshot(&target, &c.jar)?;
         let desired = cookies::records(&c.jar, mode);
         let browser = cookies::capture(&target, mode, &desired)?;
         cookies::install(
             &target,
+            mode,
             cookies::patch(&cookies::records(&browser, mode), &desired),
         )?;
         Ok(desired)
@@ -197,7 +205,10 @@ fn synchronize(
     baseline: cookies::Records,
 ) {
     let mut previous_browser = baseline.clone();
+    #[cfg(not(target_os = "android"))]
     let mut previous_native = baseline;
+    #[cfg(target_os = "android")]
+    let mut previous_snapshot = None;
     let mut revision = 0;
     let mut dirty_until = Instant::now();
     let mut next_refresh = Instant::now();
@@ -217,6 +228,9 @@ fn synchronize(
             let _ = window.destroy();
             break;
         }
+        let Ok(_cookie_operation) = service.operation.try_lock() else {
+            continue;
+        };
         let Ok(shared) = service.shared_client(mode) else {
             continue;
         };
@@ -241,9 +255,14 @@ fn synchronize(
             continue;
         };
         if !shared.logged_out && page.generation < shared.generation {
+            #[cfg(target_os = "android")]
+            if cookies::restore_snapshot(&window, &shared.client.jar).is_err() {
+                continue;
+            }
             let desired = cookies::records(&shared.client.jar, mode);
             if cookies::install(
                 &window,
+                mode,
                 cookies::patch(&cookies::records(&browser, mode), &desired),
             )
             .is_err()
@@ -263,7 +282,15 @@ fn synchronize(
                 let _ = window.eval(js);
             }
             previous_browser = desired.clone();
-            previous_native = desired;
+            #[cfg(target_os = "android")]
+            {
+                previous_snapshot = crate::webview_cookies::native_snapshot(&shared.client.jar)
+                    .map(|(s, _)| (s.clone(), s));
+            }
+            #[cfg(not(target_os = "android"))]
+            {
+                previous_native = desired;
+            }
             continue;
         }
         if !shared.logged_out && page.generation != shared.generation {
@@ -310,6 +337,7 @@ fn synchronize(
             continue;
         }
         if !page.token.is_empty() && (shared.logged_out || page.token != shared.client.token) {
+            drop(_cookie_operation);
             if let Ok(mut candidate) =
                 Client::from_jar(mode, page.token.clone(), browser.clone(), student.clone())
             {
@@ -334,7 +362,9 @@ fn synchronize(
         if shared.logged_out {
             continue;
         }
+        #[cfg(not(target_os = "android"))]
         let browser_records = cookies::records(&browser, mode);
+        #[cfg(not(target_os = "android"))]
         cookies::merge_browser_delta(
             &shared.client.jar,
             mode,
@@ -342,6 +372,46 @@ fn synchronize(
             &browser_records,
             &previous_native,
         );
+        #[cfg(target_os = "android")]
+        {
+            let Some((observed, scope)) = crate::webview_cookies::native_snapshot(&browser) else {
+                continue;
+            };
+            let current = crate::webview_cookies::native_snapshot(&shared.client.jar)
+                .map(|(s, _)| s)
+                .unwrap_or_else(|| crate::webview_cookies::Snapshot {
+                    cookies: shared
+                        .client
+                        .jar
+                        .lock()
+                        .unwrap()
+                        .iter_unexpired()
+                        .filter_map(crate::webview_cookies::CookieRecord::from_stored)
+                        .collect(),
+                    ..Default::default()
+                });
+            let (previous_browser, previous_native) = previous_snapshot
+                .as_ref()
+                .unwrap_or(&(current.clone(), current.clone()))
+                .clone();
+            let merged = crate::webview_cookies::merge_browser_snapshot(
+                &current,
+                &previous_browser,
+                &observed,
+                &previous_native,
+            );
+            if merged != observed
+                && crate::webview_cookies::replace(&window, &scope, &merged).is_err()
+            {
+                continue;
+            }
+            if crate::webview_cookies::store_snapshot(&shared.client.jar, merged.clone(), scope)
+                .is_err()
+            {
+                continue;
+            }
+            previous_snapshot = Some((merged.clone(), merged));
+        }
         let native = cookies::records(&shared.client.jar, mode);
         if service
             .shared_client(mode)
@@ -350,12 +420,17 @@ fn synchronize(
         {
             continue;
         }
-        if cookies::install(&window, cookies::patch(&browser_records, &native)).is_err() {
+        #[cfg(not(target_os = "android"))]
+        if cookies::install(&window, mode, cookies::patch(&browser_records, &native)).is_err() {
             continue;
         }
         previous_browser = native.clone();
-        previous_native = native;
+        #[cfg(not(target_os = "android"))]
+        {
+            previous_native = native;
+        }
         let _ = service.save_shared_cookies();
+        drop(_cookie_operation);
         if page.changed != revision {
             revision = page.changed;
             dirty_until = Instant::now() + Duration::from_secs(15);

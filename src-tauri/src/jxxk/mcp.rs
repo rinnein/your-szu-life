@@ -62,7 +62,7 @@ pub(crate) struct JxxkTaskIdParams {
 impl UnifiedSzuMcpService {
     #[tool(
         name = "jxxk_list_semesters",
-        description = "获取督导巡课平台（jxxk.szu.edu.cn）的学年学期列表，包含学期 id 与名称（如 2026-2027-1），供课程列表过滤使用"
+        description = "获取督导巡课平台（jxxk.szu.edu.cn）的学年学期列表，包含学期 id 与名称（如 2026-2027-1），供课程列表过滤使用。统一认证会话在 Android 上支持原生 Cookie API 缺失时的 CDP 降级；传输失败保留已有会话，不自动提交密码"
     )]
     pub async fn jxxk_list_semesters(&self) -> Result<String, String> {
         let service = service(&self.app)?;
@@ -168,7 +168,8 @@ impl UnifiedSzuMcpService {
     )]
     pub async fn jxxk_list_downloads(&self) -> Result<String, String> {
         let service = service(&self.app)?;
-        serde_json::to_string_pretty(&service.downloads.list()).map_err(|e| format!("序列化失败: {e}"))
+        serde_json::to_string_pretty(&service.downloads.list())
+            .map_err(|e| format!("序列化失败: {e}"))
     }
 
     #[tool(

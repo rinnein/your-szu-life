@@ -291,16 +291,21 @@ async fn make_client(with_castgc: bool, seen: Arc<Seen>) -> (Client, Server, Ser
             }
         })
     });
-    let sso_cookies = if with_castgc {
-        vec!["CASTGC=test-only-cas-session; Path=/authserver".to_string()]
-    } else {
-        vec![]
-    };
+    let mut sso_store = cookie_store::CookieStore::default();
+    if with_castgc {
+        sso_store
+            .parse(
+                "CASTGC=test-only-cas-session; Path=/authserver",
+                &auth_server.base.parse().unwrap(),
+            )
+            .unwrap();
+    }
+    let sso = reqwest_cookie_store::CookieStoreMutex::new(sso_store);
     let client = Client::new(
         &jxxk_server.base,
         &format!("{}/authserver/login", auth_server.base),
         None,
-        &sso_cookies,
+        Some(&sso),
     )
     .unwrap();
     (client, jxxk_server, auth_server)
@@ -314,7 +319,7 @@ fn cookies_keeps_parent_domain_token_cookie() {
         super::client::JXXK_ORIGIN,
         super::client::AUTH_LOGIN,
         None,
-        &[],
+        None,
     )
     .unwrap();
     let raw = "COLLEGE_UNIVERSITY_TOKEN_=parent-domain-token; Domain=szu.edu.cn; Path=/";
@@ -333,7 +338,6 @@ fn cookies_keeps_parent_domain_token_cookie() {
     );
 }
 
-
 fn temp_service_db_path(tag: &str) -> std::path::PathBuf {
     static COUNTER: Mutex<u32> = Mutex::new(0);
     let mut counter = COUNTER.lock().unwrap();
@@ -344,7 +348,6 @@ fn temp_service_db_path(tag: &str) -> std::path::PathBuf {
         *counter
     ))
 }
-
 
 #[tokio::test]
 async fn seeded_cache_keys_include_prefix_and_hit_optimistically() {
@@ -378,7 +381,10 @@ async fn seeded_cache_keys_include_prefix_and_hit_optimistically() {
         );
     }
     // 无客户端（None app → 无 SSO cookie）：命中缓存即返回，不触网。
-    let page = service.list_courses(Some("sem-1"), None, 1, 200).await.unwrap();
+    let page = service
+        .list_courses(Some("sem-1"), None, 1, 200)
+        .await
+        .unwrap();
     assert_eq!(page.content[0].name, "数据结构");
 }
 #[tokio::test]
@@ -388,7 +394,8 @@ async fn establish_persists_session_on_refresh_path() {
     let (client, _jxxk, _auth) = make_client(true, seen).await;
     client.bootstrap().await.unwrap();
     let credentials: Arc<crate::storage::testing::MemoryCredentialStore> = Arc::default();
-    let service = super::Service::new(None, credentials.clone(), temp_service_db_path("refresh")).unwrap();
+    let service =
+        super::Service::new(None, credentials.clone(), temp_service_db_path("refresh")).unwrap();
     service.establish(&client, false).await.unwrap();
     use crate::storage::CredentialStore as _;
     let saved = credentials.load_jxxk_session().unwrap().unwrap();
@@ -436,11 +443,19 @@ async fn in_session_lesson_is_promoted_and_broadcasted() {
     let now_cst = chrono::Utc::now()
         .with_timezone(&chrono::FixedOffset::east_opt(8 * 3600).unwrap())
         .naive_local();
-    let start_in_session = (now_cst - chrono::Duration::minutes(15)).format("%Y-%m-%d %H:%M:%S").to_string();
-    let end_in_session = (now_cst + chrono::Duration::minutes(30)).format("%Y-%m-%d %H:%M:%S").to_string();
+    let start_in_session = (now_cst - chrono::Duration::minutes(15))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+    let end_in_session = (now_cst + chrono::Duration::minutes(30))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
 
-    let start_future = (now_cst + chrono::Duration::hours(2)).format("%Y-%m-%d %H:%M:%S").to_string();
-    let end_future = (now_cst + chrono::Duration::hours(3)).format("%Y-%m-%d %H:%M:%S").to_string();
+    let start_future = (now_cst + chrono::Duration::hours(2))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
+    let end_future = (now_cst + chrono::Duration::hours(3))
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
 
     let page = LessonPage {
         page_index: 1,
@@ -523,14 +538,19 @@ async fn in_session_lesson_is_promoted_and_broadcasted() {
 #[tokio::test]
 async fn revalidating_state_marks_refreshing_and_revalidating_keys() {
     let credentials: Arc<crate::storage::testing::MemoryCredentialStore> = Arc::default();
-    let service = super::Service::new(None, credentials, temp_service_db_path("reval-state")).unwrap();
+    let service =
+        super::Service::new(None, credentials, temp_service_db_path("reval-state")).unwrap();
 
     assert!(!service.is_revalidating());
     assert!(!service.snapshot().refreshing);
     assert!(service.state().revalidating_keys.is_empty());
 
     // 模拟重验证开始
-    service.revalidating.lock().unwrap().insert("lessons:c1".to_string());
+    service
+        .revalidating
+        .lock()
+        .unwrap()
+        .insert("lessons:c1".to_string());
     assert!(service.is_revalidating());
     assert!(service.snapshot().refreshing);
     let state = service.state();
@@ -611,7 +631,7 @@ async fn trusted_redirects_cover_szu_subdomains_only() {
         super::client::JXXK_ORIGIN,
         super::client::AUTH_LOGIN,
         None,
-        &[],
+        None,
     )
     .unwrap();
     let trusted_prod = |raw: &str| prod_client.is_trusted_redirect(&raw.parse().unwrap());
@@ -633,7 +653,7 @@ async fn cookies_preserves_override_target_cookies_on_campus() {
         super::client::JXXK_ORIGIN,
         super::client::AUTH_LOGIN,
         None,
-        &[],
+        None,
     )
     .unwrap();
 
@@ -755,7 +775,6 @@ fn parse_lesson_streams_and_play_urls() {
     assert!(urls[0].play_url.contains("index.m3u8"));
 }
 
-
 #[test]
 fn extract_jwt_token_finds_embedded_jwt() {
     // 合成三段式 JWT 形态：header/payload 为无意义 JSON 的 base64url，
@@ -768,7 +787,10 @@ fn extract_jwt_token_finds_embedded_jwt() {
     let html = format!(
         r#"<script>var t = "{jwt}"; document.cookie = "COLLEGE_UNIVERSITY_TOKEN_=" + t;</script>"#
     );
-    assert_eq!(super::client::extract_jwt_token(&html).as_deref(), Some(jwt.as_str()));
+    assert_eq!(
+        super::client::extract_jwt_token(&html).as_deref(),
+        Some(jwt.as_str())
+    );
     // 页面没有任何 JWT 时返回 None
     assert!(super::client::extract_jwt_token("<p>hello world, no token here</p>").is_none());
     // eyJ 开头但不足三段的不误报
@@ -798,7 +820,9 @@ fn parse_semester_list_accepts_array_and_page_shapes() {
     assert_eq!(semesters[0].name, "2024-2025-1");
 
     // 空对象视为无数据而非错误
-    assert!(super::model::parse_semester_list(&json!({"pageIndex": 1})).unwrap().is_empty());
+    assert!(super::model::parse_semester_list(&json!({"pageIndex": 1}))
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -932,15 +956,13 @@ fn token_needs_refresh_distinguishes_fresh_and_expiring() {
     let sig = "c2lnbmF0dXJl";
 
     // 1. 2小时后到期：无需刷新
-    let fresh_payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
-        serde_json::to_string(&serde_json::json!({"exp": now + 7200})).unwrap(),
-    );
+    let fresh_payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(serde_json::to_string(&serde_json::json!({"exp": now + 7200})).unwrap());
     let fresh_jwt = format!("{header}.{fresh_payload}.{sig}");
 
     // 2. 5分钟后到期（< 15 分钟）：必须刷新
-    let expiring_payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
-        serde_json::to_string(&serde_json::json!({"exp": now + 300})).unwrap(),
-    );
+    let expiring_payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(serde_json::to_string(&serde_json::json!({"exp": now + 300})).unwrap());
     let expiring_jwt = format!("{header}.{expiring_payload}.{sig}");
 
     assert!(!super::client::token_needs_refresh_for(&fresh_jwt));
@@ -961,7 +983,9 @@ fn jxxk_strictly_follows_campus_dns_and_netproxy_egress() {
     // 验证配置的校内主 DNS 包含深圳大学指定的 DNS 服务器
     let dns_servers = crate::netproxy::model::campus_dns_servers();
     assert!(
-        dns_servers.iter().any(|ip| ip.to_string() == "192.168.247.6"),
+        dns_servers
+            .iter()
+            .any(|ip| ip.to_string() == "192.168.247.6"),
         "校内 DNS 服务器列表必须包含深圳大学指定 DNS 192.168.247.6"
     );
 }

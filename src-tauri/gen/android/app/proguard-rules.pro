@@ -62,3 +62,5 @@
 # Enrollment callbacks are resolved by name from Rust JNI.
 -keep class in.rinne.your_szu_life.EnrollmentTaskBridge { public *; }
 -keep class in.rinne.your_szu_life.EnrollmentTaskService { public *; }
+
+-keep class in.rinne.your_szu_life.WebviewCookieBridge { public *; }

@@ -1,4 +1,125 @@
 use super::{model::*, probe::*, scripts::*, session::*, AUTH_HOST};
+use crate::webview_cookies::CookieRecord;
+
+#[test]
+fn legacy_cookie_read_failures_keep_saved_sessions_and_do_not_start_password_recovery() {
+    use crate::storage::{testing::MemoryCredentialStore, CredentialStore};
+    use std::{cell::Cell, sync::Arc};
+    let credentials = Arc::new(MemoryCredentialStore::default());
+    let secret = AuthSessionSecret {
+        format_version: 2,
+        student_id: "1234567890".into(),
+        cookies: vec![session_cookie()],
+        http_keys: None,
+    };
+    credentials.save_session(&secret).unwrap();
+    let store = super::AuthStore::new(credentials.clone());
+    for category in [
+        crate::webview_cookies::Error::Unavailable,
+        crate::webview_cookies::Error::Protocol,
+        crate::webview_cookies::Error::UnsupportedMethod,
+        crate::webview_cookies::Error::UnsupportedPartition,
+        crate::webview_cookies::Error::InvalidMetadata,
+        crate::webview_cookies::Error::OutOfScope,
+        crate::webview_cookies::Error::WriteUncertain,
+    ] {
+        let error = String::from(category);
+        let recovered = Cell::new(false);
+        super::session_policy::handle_install_failure(&store, &error, || {
+            recovered.set(true);
+            credentials.delete_session().unwrap();
+        });
+        assert!(!recovered.get());
+        assert_eq!(
+            *store.state.lock().unwrap(),
+            AuthState::SessionCaptureFailed
+        );
+        assert_eq!(credentials.load_session().unwrap(), Some(secret.clone()));
+    }
+}
+
+#[test]
+fn native_cookie_errors_keep_the_existing_recovery_behavior() {
+    use std::{cell::Cell, sync::Arc};
+    let store = super::AuthStore::new(Arc::new(
+        crate::storage::testing::MemoryCredentialStore::default(),
+    ));
+    let error = "unrelated credential failure".to_owned();
+    let recovered = Cell::new(false);
+    super::session_policy::handle_install_failure(&store, &error, || recovered.set(true));
+    assert!(recovered.get());
+}
+
+#[test]
+fn reauthentication_forgets_saved_cookies_only_after_successful_native_cleanup() {
+    use std::cell::RefCell;
+    let operations = RefCell::new(Vec::new());
+    let error = super::session_policy::clear_then_forget_session(
+        || {
+            operations.borrow_mut().push("clear");
+            Err("webview-cookie:unavailable".into())
+        },
+        || {
+            operations.borrow_mut().push("forget");
+            Ok(())
+        },
+    )
+    .unwrap_err();
+    assert!(super::session_policy::is_cookie_failure(&error));
+    assert_eq!(*operations.borrow(), vec!["clear"]);
+    operations.borrow_mut().clear();
+    super::session_policy::clear_then_forget_session(
+        || {
+            operations.borrow_mut().push("clear");
+            Ok(())
+        },
+        || {
+            operations.borrow_mut().push("forget");
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert_eq!(*operations.borrow(), vec!["clear", "forget"]);
+}
+
+#[test]
+fn legacy_cookie_envelope_preserves_metadata_through_the_existing_restore_parser() {
+    let headers = [
+        "MOD_AUTH_CAS=host; Domain=authserver.szu.edu.cn; Path=/; Secure; HttpOnly; SameSite=Lax",
+        "MOD_AUTH_CAS=domain; Domain=.authserver.szu.edu.cn; Path=/; Secure",
+        "JSESSIONID=profile; Domain=authserver.szu.edu.cn; Path=/personalInfo; HttpOnly",
+    ];
+    let cookies: Vec<_> = headers
+        .iter()
+        .map(|header| from_android_cookie_info(header).unwrap())
+        .collect();
+    let snapshot = crate::webview_cookies::Snapshot {
+        cookies: cookies.clone(),
+        ..Default::default()
+    };
+    let encoded = crate::webview_cookies::SessionEnvelope::encode(
+        "".into(),
+        snapshot.clone(),
+        crate::webview_cookies::Scope::auth(),
+    )
+    .unwrap();
+    assert_eq!(
+        crate::webview_cookies::SessionEnvelope::decode(&encoded)
+            .unwrap()
+            .unwrap()
+            .webview,
+        snapshot
+    );
+    assert!(cookies[0].host_only);
+    assert!(!cookies[1].host_only);
+    assert_eq!(cookies[2].path, "/personalInfo");
+    assert_eq!(cookies[0].same_site.as_deref(), Some("Lax"));
+    assert!(!cookies[0]
+        .to_webview_cookie()
+        .unwrap()
+        .to_string()
+        .contains("Domain="));
+}
 
 #[test]
 fn login_service_uses_actual_ua_and_encodes_the_complete_profile_url() {
@@ -137,8 +258,8 @@ fn legacy_android_snapshots_require_reauthentication_without_guessing_scope() {
     );
 }
 
-fn session_cookie() -> StoredAuthCookie {
-    StoredAuthCookie {
+fn session_cookie() -> CookieRecord {
+    CookieRecord {
         name: "JSESSIONID".into(),
         value: "opaque-session".into(),
         domain: AUTH_HOST.into(),
@@ -149,6 +270,7 @@ fn session_cookie() -> StoredAuthCookie {
         secure: Some(true),
         same_site: Some("Lax".into()),
         partitioned: None,
+        extensions: None,
     }
 }
 
@@ -176,6 +298,7 @@ fn cookie_session_round_trip_keeps_sensitive_attributes_internal() {
         format_version: 2,
         student_id: "1234567890".into(),
         cookies: vec![cookie],
+        http_keys: None,
     };
     let public = serde_json::to_string(&AccountProfileView {
         student_id: secret.student_id,
@@ -209,6 +332,7 @@ fn restoration_keeps_session_cookies_and_drops_only_expired_records() {
         format_version: 3,
         student_id: "1234567890".into(),
         cookies: vec![persistent, expired],
+        http_keys: None,
     };
     let restored = session
         .restorable_snapshot("1234567890", time::OffsetDateTime::now_utc())
@@ -236,6 +360,7 @@ fn legacy_linux_cookie_scope_is_narrowed_and_latest_update_wins() {
         format_version: 2,
         student_id: "1234567890".into(),
         cookies: vec![old, fresh],
+        http_keys: None,
     };
     let restored = session
         .restorable_snapshot("1234567890", time::OffsetDateTime::now_utc())
@@ -255,7 +380,12 @@ fn auth_cookie_serialization_requires_a_safe_matching_path() {
     cookie.path = "/personalInfo".into();
     assert!(cookie.to_webview_cookie().is_ok());
     cookie.domain = "other.szu.edu.cn".into();
-    assert!(cookie.to_webview_cookie().is_err());
+    assert!(crate::webview_cookies::Snapshot {
+        cookies: vec![cookie],
+        ..Default::default()
+    }
+    .validate(&crate::webview_cookies::Scope::auth())
+    .is_err());
 }
 
 #[test]
@@ -519,7 +649,9 @@ fn finishing_authentication_clears_transient_secrets_and_resumes_the_local_flow(
         identifier: "123456".into(),
         password: "test-only".into(),
     });
-    let local: tauri::Url = "http://tauri.localhost/life/campus-network".parse().unwrap();
+    let local: tauri::Url = "http://tauri.localhost/life/campus-network"
+        .parse()
+        .unwrap();
     *store.resume_url.lock().unwrap() = Some(local.clone());
     let terminal = AuthState::Authenticated {
         student_id: "1234567890".into(),

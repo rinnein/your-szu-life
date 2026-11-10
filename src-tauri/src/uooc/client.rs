@@ -33,8 +33,8 @@ fn collect_thread_ids(value: &Value, output: &mut Vec<String>, depth: usize) {
                 "topicid",
                 "id",
             ]
-                .iter()
-                .find_map(|key| id(map.get(*key).unwrap_or(&Value::Null)))
+            .iter()
+            .find_map(|key| id(map.get(*key).unwrap_or(&Value::Null)))
             {
                 if !output.contains(&tid) {
                     output.push(tid);
@@ -111,7 +111,7 @@ fn thread_rows(value: &Value) -> Option<Vec<&Value>> {
         ]
         .iter()
         .find_map(|key| map.get(*key).and_then(thread_rows))
-            .or_else(|| map.get("data").and_then(thread_rows)),
+        .or_else(|| map.get("data").and_then(thread_rows)),
         _ => None,
     }
 }
@@ -150,7 +150,11 @@ impl Error {
             Self::Server(601, msg, details) => {
                 let detail_str = details.join("；");
                 if detail_str.contains("评价") || msg.contains("评价") {
-                    let text = if !detail_str.is_empty() { &detail_str } else { msg };
+                    let text = if !detail_str.is_empty() {
+                        &detail_str
+                    } else {
+                        msg
+                    };
                     format!("请先完成课程评价：{text}（UOOC 业务码 601）。可在官网打开课程完成评价后再提交。")
                 } else if !detail_str.is_empty() {
                     format!("服务器验证错误：{detail_str}（{msg}，业务码 601）")
@@ -208,7 +212,10 @@ mod tests {
         let mut tids = Vec::new();
         collect_thread_ids(&value, &mut tids, 0);
         assert_eq!(tids, vec!["18"]);
-        assert_eq!(thread_rows(&json!({"data": {"rows": []}})).unwrap().len(), 0);
+        assert_eq!(
+            thread_rows(&json!({"data": {"rows": []}})).unwrap().len(),
+            0
+        );
     }
 }
 impl Client {
@@ -305,9 +312,7 @@ impl Client {
             for row in rows {
                 all.push(row.clone());
             }
-            let pages = text(&data["page"]["pages"])
-                .parse::<u64>()
-                .unwrap_or(1);
+            let pages = text(&data["page"]["pages"]).parse::<u64>().unwrap_or(1);
             if page >= pages {
                 return Ok(all);
             }
@@ -349,9 +354,7 @@ impl Client {
             for row in rows {
                 all.push(row.clone());
             }
-            let pages = text(&data["page"]["pages"])
-                .parse::<u64>()
-                .unwrap_or(1);
+            let pages = text(&data["page"]["pages"]).parse::<u64>().unwrap_or(1);
             if page >= pages {
                 return Ok(all);
             }
@@ -654,7 +657,7 @@ impl Client {
         #[cfg(target_os = "android")]
         crate::platform_tls::initialize_platform_verifier()?;
         let http = crate::netproxy::client_builder()
-            .cookie_provider(jar.clone())
+            .cookie_provider(crate::webview_cookies::http_provider(jar.clone()))
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(10))
             .redirect(reqwest::redirect::Policy::none())
@@ -894,10 +897,7 @@ impl Client {
         if tids.is_empty() {
             collect_thread_ids(&value, &mut tids, 0);
         }
-        Ok(tids
-            .into_iter()
-            .map(|tid| ThreadSummary { tid })
-            .collect())
+        Ok(tids.into_iter().map(|tid| ThreadSummary { tid }).collect())
     }
     pub async fn thread_details(
         &self,

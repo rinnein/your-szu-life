@@ -2,9 +2,10 @@
 //! Going through Wry's generic Cookie conversion loses the leading-dot flag
 //! and passes an empty native domain for host-only HTTP cookies.
 use super::{
-    session::{cookie_in_auth_scope, StoredAuthCookie},
-    AUTH_LOGIN_URL, AUTH_MOBILE_PROFILE_URL, AUTH_PROFILE_URL, AUTH_USER_CONF_URL,
+    session::cookie_in_auth_scope, AUTH_LOGIN_URL, AUTH_MOBILE_PROFILE_URL, AUTH_PROFILE_URL,
+    AUTH_USER_CONF_URL,
 };
+use crate::webview_cookies::CookieRecord;
 use std::{collections::VecDeque, sync::mpsc, time::Duration};
 use time::{format_description::well_known::Rfc2822, OffsetDateTime};
 use webkit2gtk::{
@@ -12,9 +13,9 @@ use webkit2gtk::{
     glib, CookieManager, CookieManagerExt, WebContextExt, WebViewExt,
 };
 
-fn from_native(mut cookie: soup::Cookie) -> Option<StoredAuthCookie> {
+fn from_native(mut cookie: soup::Cookie) -> Option<CookieRecord> {
     let domain = cookie.domain()?.to_string();
-    let stored = StoredAuthCookie {
+    let stored = CookieRecord {
         name: cookie.name()?.to_string(),
         value: cookie.value()?.to_string(),
         host_only: !domain.starts_with('.'),
@@ -33,11 +34,12 @@ fn from_native(mut cookie: soup::Cookie) -> Option<StoredAuthCookie> {
             _ => None,
         },
         partitioned: None,
+        extensions: None,
     };
     (cookie_in_auth_scope(&stored) && stored.to_webview_cookie().is_ok()).then_some(stored)
 }
 
-fn to_native(cookie: &StoredAuthCookie) -> Result<soup::Cookie, String> {
+fn to_native(cookie: &CookieRecord) -> Result<soup::Cookie, String> {
     cookie.to_webview_cookie()?;
     let domain = if cookie.host_only {
         cookie.domain.clone()
@@ -136,7 +138,7 @@ fn read_native(
     });
 }
 
-pub(super) fn read(window: &tauri::WebviewWindow) -> Result<Vec<StoredAuthCookie>, String> {
+pub(super) fn read(window: &tauri::WebviewWindow) -> Result<Vec<CookieRecord>, String> {
     with_manager(window, |manager, cancel, sender| {
         read_native(manager, cancel, 0, Vec::new(), move |result| {
             let _ = sender.send(
@@ -179,7 +181,7 @@ fn write_next(
 
 pub(super) fn replace(
     window: &tauri::WebviewWindow,
-    cookies: Vec<StoredAuthCookie>,
+    cookies: Vec<CookieRecord>,
 ) -> Result<(), String> {
     with_manager(window, move |manager, cancel, sender| {
         replace_native(manager, cancel, cookies, sender)
@@ -189,7 +191,7 @@ pub(super) fn replace(
 fn replace_native(
     manager: CookieManager,
     cancel: gio::Cancellable,
-    cookies: Vec<StoredAuthCookie>,
+    cookies: Vec<CookieRecord>,
     sender: mpsc::SyncSender<Result<(), String>>,
 ) {
     let additions = match cookies.iter().map(to_native).collect::<Result<Vec<_>, _>>() {
@@ -246,13 +248,13 @@ mod tests {
         value.expect("isolated native operation failed")
     }
 
-    fn replace_in(manager: &CookieManager, cookies: Vec<StoredAuthCookie>) {
+    fn replace_in(manager: &CookieManager, cookies: Vec<CookieRecord>) {
         let (sender, receiver) = mpsc::sync_channel(1);
         replace_native(manager.clone(), gio::Cancellable::new(), cookies, sender);
         wait(receiver);
     }
 
-    fn read_in(manager: &CookieManager) -> Vec<StoredAuthCookie> {
+    fn read_in(manager: &CookieManager) -> Vec<CookieRecord> {
         let (sender, receiver) = mpsc::sync_channel(1);
         read_native(
             manager.clone(),

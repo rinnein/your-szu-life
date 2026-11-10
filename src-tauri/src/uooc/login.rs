@@ -30,7 +30,11 @@ pub(super) fn is_completion_url(url: &Url) -> bool {
 }
 
 pub(super) fn local_parent(parent: &WebviewWindow) -> Result<(), String> {
-    trusted_local_page(parent, Some("/study/uooc"), "请从应用内的 UOOC 页面打开登录")
+    trusted_local_page(
+        parent,
+        Some("/study/uooc"),
+        "请从应用内的 UOOC 页面打开登录",
+    )
 }
 
 pub(super) fn local_app_parent(parent: &WebviewWindow) -> Result<(), String> {
@@ -190,7 +194,8 @@ pub(super) async fn open(service: Arc<Service>, parent: WebviewWindow) -> Result
                     Ok(Ok(jar)) => jar,
                     _ => {
                         service.change(|s| {
-                            s.message = "无法读取原生 UOOC Cookie，请检查 WebView 版本后重试".into()
+                            s.message =
+                                "无法完整读取 UOOC 原生会话，已有保存数据仍保留，请重试".into()
                         });
                         break;
                     }
