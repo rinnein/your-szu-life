@@ -29,6 +29,9 @@ dist-ssr
 !.env.example
 .vitest/
 
+# Build-time generated contributor snapshot and avatars
+/src/generated/
+
 docs/
 
 # OJ licenses copied into the Android bundle by Tauri

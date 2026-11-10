@@ -121,6 +121,7 @@ jobs:
       - name: Build desktop bundles
         env:
           APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: vpr tauri build --ci --bundles ${{ matrix.bundles }}
 
       - name: Normalize desktop bundle names
@@ -273,6 +274,7 @@ jobs:
         # default armv7/x86 libraries that are intentionally not compiled.
         env:
           APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: vpr tauri android build --ci --apk --target aarch64 --split-per-abi
 
       - name: Verify Android signatures

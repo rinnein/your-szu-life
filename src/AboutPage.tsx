@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { LoadingIndicator, Button, Select, SelectOption } from "material/react";
-import { Banner, Avatar, toast } from "./ui";
-import { LuArrowUpRight, LuDownload, LuRefreshCw, LuUsers } from "react-icons/lu";
+import { Banner, toast } from "./ui";
+import { LuArrowUpRight, LuDownload, LuRefreshCw } from "react-icons/lu";
 import { BrandMark, Card } from "./components";
 import { useAppContent } from "./app-content/context";
 import { ChangelogMarkdown } from "./app-content/ChangelogMarkdown";
@@ -12,7 +12,8 @@ import { clearPostponedUpdateReminder } from "./app-content/update-postpone";
 import { createTaskChannel } from "./tauri-channel";
 import { getPlatform } from "./os-info";
 import { DownloadSession } from "./DownloadSession";
-import type { AppContentSnapshot, ContributorsSnapshot, UpdateChannel } from "./app-content/types";
+import { Contributors } from "./app-content/Contributors";
+import type { AppContentSnapshot, UpdateChannel } from "./app-content/types";
 import packageInfo from "../package.json";
 
 type UpdateProgress = {
@@ -56,138 +57,6 @@ export function updateStatus(
   }
   if (snapshot.update.error) return "本次更新检查失败";
   return "尚未完成更新检查";
-}
-
-function Contributors() {
-  const [result, setResult] = useState<ContributorsSnapshot>();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>();
-  const [linkError, setLinkError] = useState<string>();
-  const [generation, setGeneration] = useState(0);
-  const request = useRef<Promise<ContributorsSnapshot> | undefined>(undefined);
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setError(undefined);
-    // StrictMode reuses the same request; only entering About or explicitly retrying loads contributors.
-    request.current ??= invoke<ContributorsSnapshot>("get_contributors");
-    void request.current
-      .then((next) => {
-        if (!active) return;
-        if (!next) {
-          setError("无法读取贡献者信息，请在原生应用中重试。");
-          return;
-        }
-        setResult(next);
-      })
-      .catch(() => {
-        if (active) setError("贡献者加载失败，请检查网络后重试。");
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, [generation]);
-
-  const open = (url: string) => {
-    setLinkError(undefined);
-    void openPublicUrl(url).catch(() => setLinkError("无法打开系统浏览器，请稍后重试。"));
-  };
-
-  return (
-    <Card
-      title="贡献者"
-      icon={<LuUsers />}
-      description="感谢每一位参与者。列表来自公开 GitHub 仓库，按仓库缓存 24 小时"
-    >
-      <div className="grid gap-4">
-        {result?.repository && (
-          <Button
-            className="repository-link"
-            size="xs"
-            variant="text"
-            onClick={() => open(result.repository!.url)}
-          >
-            {result.repository.fullName}
-            <LuArrowUpRight aria-hidden="true" />
-          </Button>
-        )}
-        {loading && (
-          <p className="content-loading" role="status">
-            <LoadingIndicator size={16} /> 正在加载贡献者…
-          </p>
-        )}
-        {result?.status === "unconfigured" && (
-          <p className="content-muted" role="status">
-            {result.message}
-          </p>
-        )}
-        {(error || result?.error) && (
-          <Banner status="warning" role="status">
-            <Banner.Title>
-              {result?.status === "rateLimited" ? "GitHub 请求受限" : "贡献者加载失败"}
-            </Banner.Title>
-            <Banner.Description>
-              {error || result?.error?.message}
-              {result?.fromCache && " 仍显示上次成功加载的贡献者。"}
-              {result?.error?.retryAt && " 可在 " + contentTime(result.error.retryAt) + " 后重试。"}
-            </Banner.Description>
-          </Banner>
-        )}
-        {!!result?.contributors.length && (
-          <ul className="contributors-grid" aria-label="GitHub 贡献者">
-            {result.contributors.map((contributor) => (
-              <li key={contributor.login}>
-                <Button
-                  className="contributor-link"
-                  variant="text"
-                  onClick={() => open(contributor.url)}
-                  aria-label={contributor.login + " 的 GitHub 主页"}
-                >
-                  <Avatar
-                    size="sm"
-                    src={contributor.avatarUrl}
-                    alt={contributor.login + "头像"}
-                    fallback={contributor.login.slice(0, 2).toUpperCase()}
-                  />
-                  <span>{contributor.login}</span>
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-        {!loading && result?.status === "ready" && result.contributors.length === 0 && (
-          <p className="content-muted">该仓库暂无贡献者。</p>
-        )}
-        {result?.truncated && (
-          <p className="content-muted">仅展示前 1,000 位贡献者，完整列表请前往 GitHub。</p>
-        )}
-        {result?.fromCache && (
-          <p className="content-muted">缓存于 {contentTime(result.lastSuccessAt)}</p>
-        )}
-        {(error || result?.error) && (
-          <Button
-            variant="tonal"
-            size="xs"
-            disabled={loading}
-            onClick={() => {
-              request.current = undefined;
-              setGeneration((value) => value + 1);
-            }}
-          >
-            重新加载贡献者
-          </Button>
-        )}
-        {linkError && (
-          <p role="alert" className="content-error">
-            {linkError}
-          </p>
-        )}
-      </div>
-    </Card>
-  );
 }
 
 export default function AboutPage() {

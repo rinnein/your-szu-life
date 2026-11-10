@@ -96,7 +96,6 @@ fn test_all_tools_registered() {
 
     // 9. 公共内容模块工具
     assert!(tool_names.contains(&"app_get_announcements"));
-    assert!(tool_names.contains(&"app_get_contributors"));
     assert!(tool_names.contains(&"app_check_update"));
     assert!(tool_names.contains(&"app_set_update_channel"));
 

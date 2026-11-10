@@ -24,10 +24,6 @@ impl AppContentStore {
         self.0.snapshot()
     }
 
-    pub(crate) fn get_contributors(&self) -> model::ContributorsSnapshot {
-        self.0.get_contributors()
-    }
-
     #[cfg(any(target_os = "android", target_os = "windows"))]
     pub(crate) fn build_download_candidates(&self, direct_url: &str) -> Vec<(u32, String)> {
         self.0.build_download_candidates(direct_url)

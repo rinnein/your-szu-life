@@ -33,23 +33,6 @@ impl UnifiedSzuMcpService {
     }
 
     #[tool(
-        name = "app_get_contributors",
-        description = "获取your-szu-life开源项目的作者与社区贡献者列表"
-    )]
-    pub async fn app_get_contributors(&self) -> Result<String, String> {
-        let store = self
-            .app
-            .try_state::<AppContentStore>()
-            .ok_or("公共内容存储不可用")?
-            .inner()
-            .clone();
-        let contributors = tokio::task::spawn_blocking(move || store.get_contributors())
-            .await
-            .map_err(|_| "任务执行失败".to_string())?;
-        serde_json::to_string_pretty(&contributors).map_err(|e| format!("序列化失败: {e}"))
-    }
-
-    #[tool(
         name = "app_check_update",
         description = "检查软件版本更新状态及最新版本信息。返回当前版本、更新频道（stable 稳定版 / canary 测试版）、稳定版是否回退到测试版、是否有新版本以及最新版本信息。对应资源 your-szu-life://data/app/update"
     )]

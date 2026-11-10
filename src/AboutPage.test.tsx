@@ -13,6 +13,9 @@ vi.mock("./app-content/context", () => ({
   useAppContent: vi.fn(),
 }));
 
+// 构建产物里可能带着贡献者快照；这里固定走运行时回退，避免本地构建后的生成物影响断言。
+vi.mock("./app-content/contributors-static", () => ({ staticContributors: null }));
+
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn().mockResolvedValue(null),
   Channel: class MockChannel {

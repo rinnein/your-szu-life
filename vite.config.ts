@@ -2,6 +2,7 @@ import { defineConfig, lazyPlugins } from "vite-plus";
 import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import tailwindcss from "@tailwindcss/vite";
+import { githubContributorsSnapshot } from "./scripts/github-contributors";
 import { modernMonacoAssets } from "./scripts/modern-monaco-assets";
 import { compatibilityPostcssPlugins, materialCompatibilityStyles } from "./scripts/webview-compat";
 import { WEBVIEW_TARGET } from "./src/compat/contracts";
@@ -29,6 +30,7 @@ export default defineConfig(async () => ({
     react(),
     tailwindcss(),
     ...modernMonacoAssets(),
+    githubContributorsSnapshot(),
   ]),
 
   test: {
