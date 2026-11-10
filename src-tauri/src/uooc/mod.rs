@@ -1967,19 +1967,6 @@ pub(crate) fn service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
         .cloned()
         .ok_or("UOOC 服务尚未初始化".into())
 }
-#[cfg(desktop)]
-pub(crate) fn keep_running(app: &tauri::AppHandle) -> bool {
-    service(app).is_ok_and(|s| {
-        let r = s.runtime.lock().unwrap();
-        !r.workers.is_empty()
-            || !r.checkins.queue.is_empty()
-            || r.checkins.active.is_some()
-            || r.snapshot
-                .tasks
-                .iter()
-                .any(|t| t.desired_running && t.status == TaskStatus::AwaitingDecision)
-    })
-}
 pub(crate) fn window_closed(app: &tauri::AppHandle, label: &str) {
     if let Ok(service) = service(app) {
         login::window_closed(&service, label);

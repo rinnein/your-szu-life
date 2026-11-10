@@ -1152,14 +1152,4 @@ pub(crate) fn service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
         .cloned()
         .ok_or("OJ 服务尚未初始化".into())
 }
-#[cfg(desktop)]
-pub(crate) fn keep_running(app: &tauri::AppHandle) -> bool {
-    service(app).is_ok_and(|s| {
-        let r = s.runtime.lock().unwrap();
-        (r.data.companion_enabled && !r.entries.is_empty())
-            || r.data
-                .sites
-                .iter()
-                .any(|site| site.reminders && r.entries.contains_key(&site.id))
-    })
-}
+

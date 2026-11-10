@@ -31,11 +31,3 @@ mod testing;
 #[cfg(test)]
 mod tests;
 
-#[cfg(desktop)]
-pub(crate) fn keep_running_in_background(app: &tauri::AppHandle) -> bool {
-    use tauri::Manager;
-    app.try_state::<CampusNetworkStore>().is_some_and(|store| {
-        settings::dorm_settings(&store).is_ok_and(|settings| settings.enabled)
-            || staff_login::keep_running_in_background(&store)
-    })
-}

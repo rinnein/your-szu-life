@@ -68,6 +68,9 @@ pub(crate) fn publish(app: &AppHandle, items: &[TodoItem]) -> bool {
     store
         .subscribers
         .broadcast(&TodosEvent::Snapshot(Box::new(items.to_vec())));
+    // 托盘菜单跟随待办快照变化（仅桌面端有托盘）。
+    #[cfg(desktop)]
+    crate::desktop::update_todo_menu(app, items);
     true
 }
 

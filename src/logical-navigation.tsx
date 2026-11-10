@@ -320,7 +320,9 @@ export function LogicalNavigationProvider({ children }: { children: ReactNode })
       saveCurrentScroll();
       record("push");
       try {
-        if (nativeRuntime() && window.SzuApplicationBack && (await supportsMultipleWindows())) {
+        // 桌面端与 Android 一致：子逻辑页面以独立窗口打开（桌面为 feature-* WebviewWindow，
+        // Android 为 FeatureActivity）；浏览器等不支持多窗口的环境退回窗口内叠加导航。
+        if (nativeRuntime() && (await supportsMultipleWindows())) {
           await openLogicalWindow(path);
         } else {
           await router.navigate({ to: path });

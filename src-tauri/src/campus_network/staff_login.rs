@@ -872,18 +872,6 @@ pub(super) fn auto_due(
     due
 }
 
-#[cfg(desktop)]
-pub(crate) fn keep_running_in_background(store: &CampusNetworkStore) -> bool {
-    settings::load(store).is_ok_and(|s| {
-        s.mode == StaffLoginMode::AppAuto
-            && s.enabled
-            && s.applied_revision == Some(s.revision)
-            && s.applied_mode == Some(s.mode)
-            && s.applied_credentials.is_some()
-            && !store.staff.suspended.load(Ordering::Acquire)
-    })
-}
-
 pub(super) fn start_auto(
     app: tauri::AppHandle,
     observation: &NetworkObservation,

@@ -11,9 +11,20 @@ import {
   useLogicalNavigation,
 } from "./logical-navigation";
 import { useRouter } from "@tanstack/react-router";
+import { supportsMultipleWindows } from "@tauri-apps/api/app";
+import { WebviewWindow, getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 vi.mock("@tanstack/react-router", () => ({
   useRouter: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/api/app", () => ({
+  supportsMultipleWindows: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  WebviewWindow: vi.fn(),
+  getCurrentWebviewWindow: vi.fn(),
 }));
 
 describe("logical navigation entry stack", () => {
@@ -111,6 +122,91 @@ describe("LogicalNavigationProvider toast error", () => {
 
     const button = screen.getByRole("button", { name: "Navigate" });
     button.click();
+
+    await vi.waitFor(() => {
+      expect(dangerSpy).toHaveBeenCalledWith("页面未打开", {
+        description: "无法打开独立页面，请重试；当前页面已保留。",
+      });
+    });
+  });
+});
+
+describe("desktop push opens a feature window", () => {
+  const createdWindows: { label: string; options: Record<string, unknown> }[] = [];
+
+  // 用 function 声明实现：`new WebviewWindow(...)` 需要真实的构造语义。
+  function mockCreatedWindow(mode: "created" | "error") {
+    vi.mocked(WebviewWindow).mockImplementation(function MockWindow(
+      label: string,
+      options: Record<string, unknown>,
+    ) {
+      createdWindows.push({ label, options });
+      return {
+        once: (event: string, callback: () => void) => {
+          if (event === `tauri://${mode}`) queueMicrotask(callback);
+          return Promise.resolve(() => {});
+        },
+      } as unknown as WebviewWindow;
+    } as unknown as typeof WebviewWindow);
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    createdWindows.length = 0;
+    (window as { __TAURI_INTERNALS__?: object }).__TAURI_INTERNALS__ = {};
+    vi.mocked(supportsMultipleWindows).mockResolvedValue(true);
+    vi.mocked(getCurrentWebviewWindow).mockReturnValue({
+      onCloseRequested: vi.fn(() => Promise.resolve(() => {})),
+    } as unknown as ReturnType<typeof getCurrentWebviewWindow>);
+    const navigate = vi.fn();
+    vi.mocked(useRouter).mockReturnValue({
+      history: { canGoBack: () => false, back: vi.fn() },
+      navigate,
+    } as unknown as ReturnType<typeof useRouter>);
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete (window as { __TAURI_INTERNALS__?: object }).__TAURI_INTERNALS__;
+  });
+
+  function PushConsumer({ path }: { path: string }) {
+    const nav = useLogicalNavigation();
+    return (
+      <button type="button" onClick={() => void nav.push(path)}>
+        Navigate
+      </button>
+    );
+  }
+
+  it("creates a feature window carrying the child identity", async () => {
+    mockCreatedWindow("created");
+    render(
+      <LogicalNavigationProvider>
+        <PushConsumer path="/study/oj?site=szu-67" />
+      </LogicalNavigationProvider>,
+    );
+
+    screen.getByRole("button", { name: "Navigate" }).click();
+
+    await vi.waitFor(() => expect(createdWindows).toHaveLength(1));
+    const { label, options } = createdWindows[0];
+    expect(label).toMatch(/^feature-/);
+    expect(options.url).toBe("/study/oj?site=szu-67&__szu_window=child");
+    // 窗口创建成功时不应再走窗口内导航。
+    expect(vi.mocked(useRouter().navigate as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+  });
+
+  it("falls back to toast when window creation fails", async () => {
+    const dangerSpy = vi.spyOn(toast, "danger").mockReturnValue("toast-id");
+    mockCreatedWindow("error");
+    render(
+      <LogicalNavigationProvider>
+        <PushConsumer path="/study/oj" />
+      </LogicalNavigationProvider>,
+    );
+
+    screen.getByRole("button", { name: "Navigate" }).click();
 
     await vi.waitFor(() => {
       expect(dangerSpy).toHaveBeenCalledWith("页面未打开", {
