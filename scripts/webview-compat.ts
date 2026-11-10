@@ -14,12 +14,26 @@ const compositeTransform =
 function appendScoped(destination: any, clone: any, source: any) {
   let scoped = clone;
   for (let parent = source.parent; parent && parent.type !== "root"; parent = parent.parent) {
-    if (parent.type !== "atrule") continue;
+    // @layer 只是优先级容器，能力门控块不需要继承它；带进旧内核会被整块丢弃。
+    if (parent.type !== "atrule" || parent.name === "layer") continue;
     const wrapper = parent.clone({ nodes: [] });
     wrapper.append(scoped);
     scoped = wrapper;
   }
   destination.append(scoped);
+}
+
+/**
+ * 旧内核不认 `@layer`（Chromium 99 起才有），整块规则会被丢弃。为这类内核展开
+ * 一份去掉层级包装的副本；原生 `@layer` 保留，现代内核不受影响。
+ */
+function flattenLayer(atRule: any): any[] {
+  const nodes: any[] = [];
+  for (const node of atRule.nodes ?? []) {
+    if (node.type === "atrule" && node.name === "layer") nodes.push(...flattenLayer(node));
+    else if (node.type === "rule" || node.type === "atrule") nodes.push(node.clone());
+  }
+  return nodes;
 }
 
 function candidateFor(node: any) {
@@ -261,6 +275,20 @@ export function compatibilityCss() {
         supports.append(clone.nodes);
         container.after(supports);
       });
+      // @layer 从 Chromium 99 起可用，:has 从 105 起可用；缺 :has 的内核必定也缺
+      // @layer，因此用同一道能力门控为它们展开副本，现代内核继续走原生层级。
+      const layers: any[] = [];
+      root.walkAtRules("layer", (layer: any) => {
+        if (!layer.nodes?.length) return;
+        for (let parent = layer.parent; parent && parent.type !== "root"; parent = parent.parent)
+          if (parent.type === "atrule" && parent.name === "layer") return;
+        layers.push(layer);
+      });
+      for (const layer of layers) {
+        const gate = postcss.atRule({ name: "supports", params: "not (selector(:has(*)))" });
+        gate.append(...flattenLayer(layer));
+        layer.after(gate);
+      }
       if (fallbackEasing.nodes?.length) root.append(fallbackEasing);
       if (fallbackTransforms.nodes?.length) {
         // 这些变量必须是元素自己的值，不能继承祖先的位移或缩放。
@@ -272,10 +300,9 @@ export function compatibilityCss() {
           transform: "translate(0)",
         }))
           reset.append(postcss.decl({ prop: `--szu-${property}`, value }));
-        const defaults = postcss.atRule({ name: "layer", params: "szu.compat-defaults" });
-        defaults.append(
-          postcss.atRule({ name: "supports", params: "not (scale: 1)" }).append(reset),
-        );
+        // 直接放在根级：旧内核没有 @layer，包进层级会被整块丢弃。
+        const defaults = postcss.atRule({ name: "supports", params: "not (scale: 1)" });
+        defaults.append(reset);
         root.prepend(defaults);
         root.append(fallbackTransforms);
       }
@@ -304,7 +331,8 @@ export function compatibilityPostcssPlugins() {
       browsers: ["Chrome >= 90", "Edge >= 90", "Firefox >= 104", "Safari >= 16"],
       stage: 3,
       features: {
-        "cascade-layers": true,
+        // 保留原生 @layer（Chromium 99+）；旧内核的展开副本由 compatibilityCss 门控生成。
+        "cascade-layers": false,
         "custom-properties": false,
         "has-pseudo-class": false,
         "color-mix": false,

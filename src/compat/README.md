@@ -5,12 +5,18 @@ same Oxc target with dependency optimization and copied Monaco modules. The
 entry loads ECMAScript patches before importing the application; Workers carry
 their own idempotent runtime.
 
-`scripts/webview-compat.mjs` processes application CSS and Material's registered
+`scripts/webview-compat.ts` processes application CSS and Material's registered
 Shadow DOM styles. It retains native declarations and emits capability-gated
 fallbacks. `:has()` attributes preserve selector specificity and are synchronized
 within each DOM scope. Container conditions use measured container widths.
 Independent transforms and spring curves have fallbacks that preserve media
 conditions and do not turn `transform: none` into a containing block.
+
+Cascade layers stay native: `@layer` blocks are never flattened for capable
+engines. A flattened copy, scoped to `@supports not (selector(:has(*)))`, is
+emitted right after each layer so engines without `@layer` still get its rules.
+Engines that understand `@layer` therefore keep layer priority and the original
+selector specificity.
 
 Theme generation publishes RGB channels and common mixed colors alongside MD3
 roles. Remaining mixes involving component-local variables or `currentColor`

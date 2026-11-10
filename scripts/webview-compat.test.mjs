@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import postcss from "postcss";
 import { readFileSync, readdirSync } from "node:fs";
-import { compatibilityCss, compatibilityPostcssPlugins } from "./webview-compat.mjs";
+import { compatibilityCss, compatibilityPostcssPlugins } from "./webview-compat.ts";
 import { SHEET_METADATA } from "../src/compat/contracts.ts";
 import selectorParser from "postcss-selector-parser";
 import { selectorSpecificity } from "@csstools/selector-specificity";
@@ -46,15 +46,34 @@ describe("compatibility CSS pipeline", () => {
     expect(transforms).toEqual(["none"]);
     expect(output.css).toContain(":where(*, ::before, ::after)");
   });
-  it("flattens layers and retains variables, native rules and fallback selectors", async () => {
+  it("retains native layers and only flattens them for old WebViews", async () => {
     const result = await postcss(compatibilityPostcssPlugins()).process(
       "@layer base {.control:not(:has(> input:disabled)){color:color-mix(in srgb,var(--mtrl-sys-color-primary) 10%,transparent)}}",
       { from: undefined },
     );
-    expect(result.css).not.toContain("@layer");
+    expect(result.css).toContain("@layer base");
+    expect(result.css).toContain("@supports not (selector(:has(*)))");
+    expect(result.css).toContain(
+      "color-mix(in srgb,var(--mtrl-sys-color-primary) 10%,transparent)",
+    );
     expect(result.css).toContain(":not([data-szu-has-");
     expect(result.css).toContain("rgba(var(--szu-compat-rgb-primary), 0.1)");
     expect(result.css).toContain(SHEET_METADATA);
+  });
+  it("keeps every gated fallback outside @layer so old WebViews can apply it", async () => {
+    const result = await postcss([compatibilityCss()]).process(
+      "@media (min-width: 600px) {@layer utilities{.a{scale:.8}}}",
+      { from: undefined },
+    );
+    const nested = [];
+    result.root.walkAtRules("supports", (rule) => {
+      for (let parent = rule.parent; parent && parent.type !== "root"; parent = parent.parent)
+        if (parent.type === "atrule" && parent.name === "layer") nested.push(rule.params);
+    });
+    expect(nested).toEqual([]);
+    expect(result.css).toContain("@layer utilities");
+    // 原生规则 + 媒体查询内、层级外的一份展开副本。
+    expect(result.css.match(/\.a\{scale:\.8\}/g)).toHaveLength(2);
   });
   it("compiles every shipped Material component style, including nested :has", async () => {
     for (const file of readdirSync("node_modules/material/dist/elements/css").filter((file) =>

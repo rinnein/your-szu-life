@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { createContext, runInContext } from "node:vm";
 import { parse } from "rolldown/utils";
-import { buildCompatibilityRuntime, transformMonacoModule } from "./modern-monaco-assets.mjs";
+import { buildCompatibilityRuntime, transformMonacoModule } from "./modern-monaco-assets.ts";
 
 describe("copied Monaco modules and isolated Worker realms", () => {
   it("bundles nested helpers without reintroducing class static blocks", async () => {

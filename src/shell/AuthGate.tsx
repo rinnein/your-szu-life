@@ -27,7 +27,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
   };
 
   const retryButton = (label: string) => (
-    <Button className="w-full" variant="filled" onClick={beginWithBusy} disabled={busy}>
+    <Button
+      className="w-full justify-center"
+      variant="filled"
+      onClick={beginWithBusy}
+      disabled={busy}
+    >
       {busy && <LoadingIndicator size={16} />}
       {busy ? "正在打开…" : label}
     </Button>
