@@ -6,5 +6,10 @@
     "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true
   },
-  "include": ["vite.config.ts"]
+  "include": [
+    "vite.config.ts",
+    "src/compat/contracts.ts",
+    "scripts/modern-monaco-assets.ts",
+    "scripts/webview-compat.ts"
+  ]
 }

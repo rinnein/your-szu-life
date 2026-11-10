@@ -11,7 +11,7 @@ const STATUS_PILL_COLORS: Record<StatusTone, [background: string, foreground: st
   warning: ["var(--mtrl-sys-color-warning)", "var(--mtrl-sys-color-on-warning)"],
   accent: ["var(--mtrl-sys-color-primary)", "var(--mtrl-sys-color-on-primary)"],
   default: [
-    "color-mix(in srgb, var(--mtrl-sys-color-on-surface-variant) 14%, transparent)",
+    "rgba(var(--szu-compat-rgb-on-surface-variant), 0.14)",
     "var(--mtrl-sys-color-on-surface-variant)",
   ],
 };

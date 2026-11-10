@@ -2,14 +2,29 @@ import { defineConfig, lazyPlugins } from "vite-plus";
 import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import tailwindcss from "@tailwindcss/vite";
-import { modernMonacoAssets } from "./scripts/modern-monaco-assets.mjs";
+import { modernMonacoAssets } from "./scripts/modern-monaco-assets";
+import { compatibilityPostcssPlugins, materialCompatibilityStyles } from "./scripts/webview-compat";
+import { WEBVIEW_TARGET } from "./src/compat/contracts";
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
+  oxc: { target: WEBVIEW_TARGET },
+  build: { target: WEBVIEW_TARGET, cssTarget: WEBVIEW_TARGET, cssMinify: "lightningcss" },
+  optimizeDeps: {
+    // 只扫描应用入口；默认递归扫描 HTML 会把 output/playwright 中的浏览器资源也算进去。
+    entries: ["index.html"],
+    exclude: ["material"],
+    rolldownOptions: { transform: { target: WEBVIEW_TARGET } },
+  },
+  css: {
+    transformer: "postcss",
+    postcss: { plugins: compatibilityPostcssPlugins() },
+    lightningcss: { targets: { chrome: 90 << 16 } },
+  },
   plugins: lazyPlugins(() => [
+    materialCompatibilityStyles(),
     tanstackRouter({ target: "react", autoCodeSplitting: true }),
     react(),
     tailwindcss(),
@@ -43,8 +58,8 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 原生项目与浏览器验收产物不参与前端文件监听。
+      ignored: ["**/src-tauri/**", "**/output/playwright/**"],
     },
   },
 }));

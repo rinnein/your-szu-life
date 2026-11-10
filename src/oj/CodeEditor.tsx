@@ -30,7 +30,7 @@ const darkTheme = EditorView.theme(
       borderLeftColor: "var(--mtrl-sys-color-primary)",
     },
     "&.cm-focused .cm-selectionBackground, ::selection": {
-      backgroundColor: "color-mix(in srgb, var(--mtrl-sys-color-primary) 30%, transparent)",
+      backgroundColor: "rgba(var(--szu-compat-rgb-primary), 0.3)",
     },
     ".cm-gutters": {
       backgroundColor: "var(--mtrl-sys-color-surface-container-lowest)",

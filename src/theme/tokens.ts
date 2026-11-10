@@ -1,6 +1,7 @@
 import { schemeToTokens } from "material/core/theme";
 import { generateAccents, generateSchemes } from "./scheme";
 import type { SchemeVariant } from "./defaults";
+import { compatibilityThemeTokens } from "../compat/colors";
 
 export const THEME_NAME = "szu";
 export const THEME_STYLE_ID = "szu-md3-theme";
@@ -59,8 +60,8 @@ function buildTheme(seed: string, variant: SchemeVariant): { css: string; surfac
   );
   return {
     css:
-      `[data-theme="${THEME_NAME}"]{${block(light)}}` +
-      `[data-theme="${THEME_NAME}"][data-theme-mode="dark"]{${block(dark)}}`,
+      `[data-theme="${THEME_NAME}"]{${block(compatibilityThemeTokens(light))}}` +
+      `[data-theme="${THEME_NAME}"][data-theme-mode="dark"]{${block(compatibilityThemeTokens(dark))}}`,
     surface: {
       light: light["--mtrl-sys-color-surface"],
       dark: dark["--mtrl-sys-color-surface"],
@@ -89,6 +90,7 @@ export function applyThemeCss(seed: string, variant: SchemeVariant): ThemeSurfac
       document.head.append(style);
     }
     style.textContent = css;
+    document.dispatchEvent(new Event("szu-theme-changed"));
   }
   return surface;
 }

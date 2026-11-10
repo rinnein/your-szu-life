@@ -116,10 +116,10 @@ describe("HomeCalendarWidget", () => {
     expect(screen.getByText("UOOC 作业")).toBeInTheDocument();
     expect(screen.getByText("UOOC 结课")).toBeInTheDocument();
 
-    // 电量预警必须落到主题里真实存在的 danger 色，而不是未定义的 bg-error。
+    // 待办类别已统一使用动态分类色板；日历圆点与图例必须保持同一角色。
     const day31 = screen.getByRole("button", { name: "2026年10月31日" });
-    expect(day31.querySelector(".bg-danger")).not.toBeNull();
-    expect(screen.getByText("电量预警").previousElementSibling).toHaveClass("bg-danger");
+    expect(day31.querySelector(".bg-accent-2")).not.toBeNull();
+    expect(screen.getByText("电量预警").previousElementSibling).toHaveClass("bg-accent-2");
   });
 
   it("filters todo list when clicking on a date with events and clears filter on click again", () => {

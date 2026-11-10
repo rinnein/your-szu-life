@@ -204,6 +204,8 @@ it("keeps a successful but restricted login separate from captcha failure", asyn
     return original(name, args);
   });
   const router = mount("/study/enrollment/login");
+  // 等初始访问方式探测落定，避免其后续快照覆盖本次登录返回的受限状态。
+  await screen.findByText("需2FA验证");
   fireEvent.click(await screen.findByRole("button", { name: "登录并进入选课" }));
   await screen.findByText("登录成功，当前暂不可选课");
   expect(screen.getByText("抱歉,未评教,学籍信息不对,无法选课!")).toBeInTheDocument();

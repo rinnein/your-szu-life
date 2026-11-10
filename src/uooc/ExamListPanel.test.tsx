@@ -102,6 +102,8 @@ const mockPaper: ExamPaper = {
 };
 
 beforeEach(() => {
+  // 考试样本在 2026-10-30 截止；固定时钟，避免真实日期让可参加考试变成已过期。
+  vi.setSystemTime(new Date("2026-10-10T12:00:00+08:00"));
   vi.clearAllMocks();
   Element.prototype.getAnimations = () => [];
   vi.mocked(invoke).mockImplementation((cmd, args) => {
@@ -130,6 +132,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
 });
 
 it("renders exam tasks correctly in list panel", async () => {
