@@ -629,7 +629,7 @@ p {
   flex-shrink: 0;
 }
 
-.announcement-bar-page-index {
+.announcement-nav-index {
   font-size: 11px;
   color: var(--mtrl-sys-color-on-surface-variant);
   font-variant-numeric: tabular-nums;
@@ -646,14 +646,15 @@ p {
   color: var(--mtrl-sys-color-primary);
 }
 
-.announcement-bar-nav {
+/* 公告切换控件：横条轮播与详情模态框页脚共用。 */
+.announcement-nav {
   display: flex;
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
 }
 
-.announcement-bar-nav-btn {
+.announcement-nav-btn {
   width: 32px !important;
   min-width: 32px !important;
   height: 32px !important;
@@ -662,7 +663,7 @@ p {
   overflow: hidden;
 }
 
-.announcement-bar-nav-btn::part(button) {
+.announcement-nav-btn::part(button) {
   min-width: 0 !important;
   min-inline-size: 0 !important;
   width: 32px !important;

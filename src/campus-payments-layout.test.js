@@ -52,9 +52,9 @@ describe("material component narrow screen layout contract", () => {
   });
 
   it("constrains announcement nav button shadow DOM internals to host bounds", () => {
-    expect(styles).toMatch(/\.announcement-bar-nav-btn\s*\{[^}]*overflow:\s*hidden/);
+    expect(styles).toMatch(/\.announcement-nav-btn\s*\{[^}]*overflow:\s*hidden/);
     expect(styles).toMatch(
-      /\.announcement-bar-nav-btn::part\(button\)[\s\S]*?min-width:\s*0\s*!important/,
+      /\.announcement-nav-btn::part\(button\)[\s\S]*?min-width:\s*0\s*!important/,
     );
   });
 });

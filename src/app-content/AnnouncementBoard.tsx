@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, LoadingIndicator, Button } from "material/react";
 import { Banner } from "../ui";
@@ -122,7 +122,7 @@ export function AnnouncementBoard() {
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [carouselPaused, setCarouselPaused] = useState(false);
-  const [activeModal, setActiveModal] = useState<Announcement | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
 
   const announcementCount = displayUnits.length;
   const hasMultipleAnnouncements = announcementCount > 1;
@@ -131,22 +131,27 @@ export function AnnouncementBoard() {
     setCurrentIndex((index) =>
       announcementCount === 0 ? 0 : Math.min(index, announcementCount - 1),
     );
+    // 公告列表变空（例如刷新后已经撤下）时不要再把详情模态框留在屏幕上。
+    setModalOpen((open) => open && announcementCount > 0);
   }, [announcementCount]);
 
   useEffect(() => {
-    if (!hasMultipleAnnouncements || carouselPaused) return;
+    // 详情模态框打开时暂停自动轮播，否则内容会在阅读中途自己换掉。
+    if (!hasMultipleAnnouncements || carouselPaused || modalOpen) return;
     const timer = window.setInterval(() => {
       setCurrentIndex((index) => (index + 1) % announcementCount);
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [announcementCount, carouselPaused, hasMultipleAnnouncements]);
+  }, [announcementCount, carouselPaused, hasMultipleAnnouncements, modalOpen]);
 
-  const showPrevious = () => {
-    setCurrentIndex((index) => (index - 1 + announcementCount) % announcementCount);
-  };
-  const showNext = () => {
-    setCurrentIndex((index) => (index + 1) % announcementCount);
-  };
+  const showPrevious = useCallback(() => {
+    setCurrentIndex((index) =>
+      announcementCount === 0 ? 0 : (index - 1 + announcementCount) % announcementCount,
+    );
+  }, [announcementCount]);
+  const showNext = useCallback(() => {
+    setCurrentIndex((index) => (announcementCount === 0 ? 0 : (index + 1) % announcementCount));
+  }, [announcementCount]);
 
   const currentAnnouncement = displayUnits[currentIndex];
 
@@ -199,7 +204,7 @@ export function AnnouncementBoard() {
           <button
             type="button"
             className="announcement-bar-trigger"
-            onClick={() => setActiveModal(currentAnnouncement)}
+            onClick={() => setModalOpen(true)}
             aria-label={`查看公告详情：${currentAnnouncement.title}`}
           >
             <span className="announcement-bar-prefix">
@@ -211,7 +216,7 @@ export function AnnouncementBoard() {
 
             <span className="announcement-bar-suffix">
               {hasMultipleAnnouncements && (
-                <span className="announcement-bar-page-index">
+                <span className="announcement-nav-index">
                   {currentIndex + 1}/{announcementCount}
                 </span>
               )}
@@ -220,10 +225,10 @@ export function AnnouncementBoard() {
           </button>
 
           {hasMultipleAnnouncements && (
-            <div className="announcement-bar-nav">
+            <div className="announcement-nav">
               <Button
                 variant="text"
-                className="announcement-bar-nav-btn"
+                className="announcement-nav-btn"
                 aria-label="上一条公告"
                 onClick={showPrevious}
               >
@@ -231,7 +236,7 @@ export function AnnouncementBoard() {
               </Button>
               <Button
                 variant="text"
-                className="announcement-bar-nav-btn"
+                className="announcement-nav-btn"
                 aria-label="下一条公告"
                 onClick={showNext}
               >
@@ -261,9 +266,16 @@ export function AnnouncementBoard() {
         </Card>
       )}
 
-      {/* 点击弹出的公告详情模态框 */}
-      {activeModal && (
-        <AnnouncementModal announcement={activeModal} onClose={() => setActiveModal(null)} />
+      {/* 点击弹出的公告详情模态框：与横条共用 currentIndex，页脚可翻看相邻公告 */}
+      {modalOpen && currentAnnouncement && (
+        <AnnouncementModal
+          announcement={currentAnnouncement}
+          index={currentIndex}
+          total={announcementCount}
+          onPrevious={showPrevious}
+          onNext={showNext}
+          onClose={() => setModalOpen(false)}
+        />
       )}
     </section>
   );

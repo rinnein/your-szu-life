@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { AnnouncementBoard, AnnouncementImage } from "./AnnouncementBoard";
@@ -190,6 +190,77 @@ describe("AnnouncementBoard compact bar & modal", () => {
     // Close modal
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("browses neighbouring announcements from the open modal footer", () => {
+    mockContent(makeSnapshot(announcements));
+    render(<AnnouncementBoard />);
+
+    fireEvent.click(screen.getByRole("button", { name: /查看公告详情：公告一/ }));
+
+    const dialog = screen.getByRole("dialog", { name: "公告一" });
+    // 横条上有一对同名按钮，断言必须限定在 dialog 内。
+    expect(within(dialog).getByText("1/3")).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "下一条公告" }));
+    expect(dialog).toHaveAttribute("aria-label", "公告二");
+    expect(within(dialog).getByText("2/3")).toBeInTheDocument();
+    expect(within(dialog).getByText("第二条公告内容描述")).toBeInTheDocument();
+    // 横条与模态框共用同一个下标：关掉后横条停在刚浏览的那条。
+    expect(screen.getByTestId("announcement-bar")).toHaveTextContent("公告二");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "上一条公告" }));
+    expect(dialog).toHaveAttribute("aria-label", "公告一");
+    expect(within(dialog).getByText("1/3")).toBeInTheDocument();
+
+    // 反向环绕到末条。
+    fireEvent.click(within(dialog).getByRole("button", { name: "上一条公告" }));
+    expect(dialog).toHaveAttribute("aria-label", "公告三");
+    expect(within(dialog).getByText("3/3")).toBeInTheDocument();
+  });
+
+  it("switches announcements with arrow keys while the modal is open", () => {
+    mockContent(makeSnapshot(announcements));
+    render(<AnnouncementBoard />);
+
+    fireEvent.click(screen.getByRole("button", { name: /查看公告详情：公告一/ }));
+    const dialog = screen.getByRole("dialog", { name: "公告一" });
+
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(dialog).toHaveAttribute("aria-label", "公告二");
+    expect(within(dialog).getByText("2/3")).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(dialog).toHaveAttribute("aria-label", "公告一");
+    expect(within(dialog).getByText("1/3")).toBeInTheDocument();
+  });
+
+  it("hides modal browsing controls for a single announcement", () => {
+    mockContent(makeSnapshot([announcements[0]]));
+    render(<AnnouncementBoard />);
+
+    fireEvent.click(screen.getByRole("button", { name: /查看公告详情：公告一/ }));
+
+    const dialog = screen.getByRole("dialog", { name: "公告一" });
+    expect(within(dialog).queryByRole("button", { name: "上一条公告" })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "下一条公告" })).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/\d+\/\d+/)).not.toBeInTheDocument();
+  });
+
+  it("does not auto-cycle announcements while the modal is open", () => {
+    vi.useFakeTimers();
+    mockContent(makeSnapshot(announcements));
+    render(<AnnouncementBoard />);
+
+    fireEvent.click(screen.getByRole("button", { name: /查看公告详情：公告一/ }));
+    const dialog = screen.getByRole("dialog", { name: "公告一" });
+
+    act(() => {
+      vi.advanceTimersByTime(15000);
+    });
+
+    expect(dialog).toHaveAttribute("aria-label", "公告一");
+    vi.useRealTimers();
   });
 
   it("opens in browser when goto URL is HTTP/HTTPS", () => {

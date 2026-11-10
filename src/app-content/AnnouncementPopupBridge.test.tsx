@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   AnnouncementPopupBridge,
@@ -159,6 +159,19 @@ describe("AnnouncementPopupBridge global popups", () => {
     render(<AnnouncementPopupBridge />);
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("offers no neighbour browsing in popup dialogs (the queue is not a browsable list)", () => {
+    mockContent([
+      { title: "第一条", mode: "alert", desc: "一" },
+      { title: "第二条", id: "second", mode: "popup", desc: "二" },
+    ]);
+    render(<AnnouncementPopupBridge />);
+
+    const dialog = screen.getByRole("dialog", { name: "第一条" });
+    expect(within(dialog).queryByRole("button", { name: "上一条公告" })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "下一条公告" })).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/\d+\/\d+/)).not.toBeInTheDocument();
   });
 
   it("shows nothing when the announcement feed is empty or not ready", () => {
