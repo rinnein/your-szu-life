@@ -45,12 +45,40 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Check out repository
+        # 全量历史与 tag：正式版要按「上一个版本 tag → 当前 tag」生成 release notes。
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up vp
+        uses: voidzero-dev/setup-vp@v1.22.0
 
       - name: Download this run's packages
         uses: actions/download-artifact@v8
         with:
           path: packages
+
+      - name: Generate stable release notes
+        # changelogen（unjs/changelogen）按 tag 差异输出 commit 概要；找不到上一个
+        # 版本 tag（首个发布）就不产出文件，发布时走 generate-notes 回退。
+        # 失败不阻断发布：BODY_FILE 缺失时 .ci/publish-github-release.mjs 会回退。
+        if: github.ref_type == 'tag'
+        continue-on-error: true
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          prev_tag="$(git tag --sort=-v:refname | grep -E '^v[0-9]' | awk -v t="$TAG" 'found{print; exit} $0==t{found=1}')"
+          if [ -z "$prev_tag" ]; then
+            echo "::notice::找不到 $TAG 之前的版本 tag，跳过 changelogen，发布时回退 generate-notes"
+            exit 0
+          fi
+          echo "生成 $prev_tag..$TAG 的 commit 概要"
+          vpx changelogen@latest --dir "$GITHUB_WORKSPACE" \
+            --from "$prev_tag" --to "$TAG" --noAuthors \
+            --output "$GITHUB_WORKSPACE/release-notes.md"
+          # 文件输出会带一行「# Changelog」大标题，release 正文里是噪音，去掉。
+          sed -i '1{/^# Changelog$/d}' "$GITHUB_WORKSPACE/release-notes.md"
 
       - name: Publish stable release
         # 正式版的身份就是推上来的 tag；版本号、资产名以 package.json 为准。
@@ -64,8 +92,9 @@ jobs:
           PRERELEASE: 'false'
           MAKE_LATEST: 'true'
           TARGET_COMMITISH: ${{ github.sha }}
+          BODY_FILE: release-notes.md
           ASSET_DIR: packages
-        run: node .ci/publish-github-release.mjs
+        run: vpx .ci/publish-github-release.mjs
 
       - name: Publish canary release
         # 滚动 tag 指向本次构建的提交，旧资产全部替换，只保留本次的产物。
@@ -82,7 +111,7 @@ jobs:
           MOVE_TAG: 'true'
           TARGET_COMMITISH: ${{ github.sha }}
           ASSET_DIR: packages
-        run: node .ci/publish-github-release.mjs
+        run: vpx .ci/publish-github-release.mjs
 
   # 发布完成后拉起 rinnein/auto-aur，只重建由 canary release 供养的子包
   # your-szu-life-bin。AUR 代表 canary 频道的更新频率，不为正式版另外分包。

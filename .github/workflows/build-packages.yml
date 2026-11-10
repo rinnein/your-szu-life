@@ -39,12 +39,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
+      - name: Set up vp
+        uses: voidzero-dev/setup-vp@v1.22.0
+
       - name: Read version from package.json
         id: version
         shell: bash
         run: |
           set -euo pipefail
-          version="$(node -e "process.stdout.write(JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version)")"
+          version="$(vp node -e "process.stdout.write(JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version)")"
           if [ -z "$version" ]; then
             echo "::error::package.json 缺少 version"
             exit 1

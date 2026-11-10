@@ -1,7 +1,8 @@
 // 发布（或覆盖）一个 GitHub Release，供稳定版与 canary 两条通道共用。
 //
 // 稳定版：TAG=<推上来的版本 tag>、PRERELEASE=false、MAKE_LATEST=true、
-//         TARGET_COMMITISH=<构建提交>；正文优先用 GitHub 的 generate-notes。
+//         TARGET_COMMITISH=<构建提交>；正文优先取 BODY_FILE（changelogen 按
+//         tag 差异生成的 commit 概要），其次 GitHub generate-notes。
 // canary ：TAG=canary、PRERELEASE=true、MAKE_LATEST=false、MOVE_TAG=true，
 //         把滚动 tag 强推到本次构建的提交。
 //
@@ -11,7 +12,8 @@
 // 参数全部走环境变量，token 只放在 Authorization 头里：
 //   GH_TOKEN（必需）、GH_REPO（默认 GITHUB_REPOSITORY）、
 //   TAG、TITLE、VERSION、PRERELEASE、MAKE_LATEST、TARGET_COMMITISH、
-//   MOVE_TAG、GENERATE_NOTES、BODY、ASSET_DIR（默认 packages）、DRY_RUN。
+//   MOVE_TAG、GENERATE_NOTES、BODY、BODY_FILE、ASSET_DIR（默认 packages）、
+//   DRY_RUN。BODY_FILE 不存在或读取失败时按日志回退到后续链路。
 //
 // 自检：DRY_RUN=1 GH_REPO=owner/repo TAG=canary ASSET_DIR=<有文件的目录> \
 //       node .ci/publish-github-release.mjs
@@ -132,6 +134,15 @@ function fallbackBody() {
 
 async function resolveBody() {
   if (env.BODY) return env.BODY;
+  if (env.BODY_FILE) {
+    try {
+      const body = (await readFile(env.BODY_FILE, "utf8")).trim();
+      if (body) return body;
+      log(`BODY_FILE ${env.BODY_FILE} 是空文件，退回自动正文`);
+    } catch (error) {
+      log(`BODY_FILE ${env.BODY_FILE} 读取失败，退回自动正文：${error.message}`);
+    }
+  }
   if (GENERATE_NOTES && !PRERELEASE && TAG && TAG !== "canary") {
     try {
       const notes = await gh(`/repos/${REPO}/releases/generate-notes`, {
