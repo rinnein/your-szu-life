@@ -123,9 +123,9 @@ describe("frontend smoke tests", () => {
   it("reaches the about panel from the unauthenticated footer link", async () => {
     const { testRouter } = renderRouterApp();
     expect(await screen.findByRole("heading", { name: "请完成统一认证" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /关于 · 检查更新/ }));
+    fireEvent.click(screen.getByRole("button", { name: "关于与更新" }));
     await waitFor(() => expect(testRouter.state.location.pathname).toBe("/settings"));
-    expect(await screen.findByRole("heading", { name: "关于" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "关于与更新" })).toBeInTheDocument();
   });
 
   it("enters the home page immediately without frontend session polling", async () => {

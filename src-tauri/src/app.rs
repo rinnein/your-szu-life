@@ -300,6 +300,7 @@ pub(crate) fn run() {
             uooc::commands::uooc_qa_http_request,
             app_content::commands::get_app_content_snapshot,
             app_content::commands::refresh_app_content,
+            app_content::commands::set_update_channel,
             app_content::commands::get_contributors,
             app_content::commands::load_announcement_image,
             app_content::commands::start_in_app_update,

@@ -214,6 +214,9 @@ importers:
       '@oddbird/popover-polyfill':
         specifier: ^0.7.3
         version: 0.7.3
+      '@tanstack/markdown':
+        specifier: ^1.2.0
+        version: 1.2.0(react@19.3.1)
       '@tanstack/react-router':
         specifier: ^1.170.46
         version: 1.170.46(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -1709,6 +1712,17 @@ packages:
   '@tanstack/history@1.162.5':
     resolution: {integrity: sha512-w1+YvwmTkwt5n8yUqEH3IWZ9DsmorCZW/EQ3KYHnqEgIkOZpH54NvW6/Epq3Dzb8H0ifIeYX8PExvrNLIH5FIA==}
     engines: {node: '>=20.19'}
+
+  '@tanstack/markdown@1.2.0':
+    resolution: {integrity: sha512-8ZaMDLvp7iUuo7R5Ot+yvX/h1ZN8Cq2p38iL+X9uOkIKVFw3IjgP62dXT6+dp/Nk522qsuSDCJNdt2F4fZvVXQ==}
+    peerDependencies:
+      octane: '>=0.1.12'
+      react: '>=18'
+    peerDependenciesMeta:
+      octane:
+        optional: true
+      react:
+        optional: true
 
   '@tanstack/react-router@1.170.46':
     resolution: {integrity: sha512-ez1iNIhsPjGlaDHg3BXWs67EWVIYzB2tbopEHYDESdkO7owgkGb5de52+5Kv2v1fxdkggcNzo35bdk4arTVGQw==}
@@ -4845,6 +4859,10 @@ snapshots:
       vite: '@voidzero-dev/vite-plus-core@1.5.1(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(typescript@7.0.2)'
 
   '@tanstack/history@1.162.5': {}
+
+  '@tanstack/markdown@1.2.0(react@19.3.1)':
+    optionalDependencies:
+      react: 19.3.1
 
   '@tanstack/react-router@1.170.46(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:

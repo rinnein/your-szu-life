@@ -7,6 +7,9 @@
 #      - GitHub Actions 构建/发布完成后回调（api_trigger_github_sync）
 #      用 tencentcom/git-sync 的 pull 模式把 GitHub 的 main 拉过来 rebase 到 CNB 的 main 上，
 #      因此 CNB 独有的 .cnb.yml / .ci 等提交会保留在被 rebase 到顶部；随后镜像 Release。
+#      GitHub 侧有两条发布通道：main push 刷新的滚动 canary 预发布，以及 v* tag
+#      触发的正式 release（GitHub 的 latest）。push_tags 会同时把版本 tag 拉到
+#      CNB，镜像时按 GitHub 的 latest 标记设置 CNB 的 is_latest。
 #   2. CNB → GitHub（三种入口，最终都跑 .ci/push-to-github-pr.mjs）：
 #      - 页面按钮：.cnb/web_trigger.yml，事件 web_trigger_pr_to_github
 #      - NPC 角色「gh-pr」：见 .cnb/settings.yml，在 PR/Issue 里 @ 本仓库(gh-pr)
@@ -61,8 +64,8 @@ main:
   # 手动触发：分支详情页的按钮（见 .cnb/web_trigger.yml），只挂在 main 上。
   web_trigger_sync_from_github: *github-to-cnb
 
-  # GitHub Actions 在 main 的构建/发布结束后主动拉一次，见
-  # .github/workflows/build.yml 的 sync-cnb job：
+  # GitHub Actions 每次发布结束后主动拉一次（main push 的 canary、版本 tag 的
+  # 正式版都会走到这里），见 .github/workflows/build.yml 的 sync-cnb job：
   #   curl -X POST "$CNB_API_ENDPOINT/$CNB_REPO_SLUG/-/build/start" \
   #     -H "Authorization: Bearer $CNB_TOKEN" \
   #     -H "Accept: application/vnd.cnb.api+json" -H "Content-Type: application/json" \

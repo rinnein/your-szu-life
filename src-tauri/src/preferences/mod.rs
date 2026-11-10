@@ -18,6 +18,8 @@ pub(crate) const LOG_LEVEL: &str = "logging.level";
 pub(crate) const DEBUG_ENABLED: &str = "debug.enabled";
 /// 用户可直接获取/管理的文件统一目录。设备相关，不随设置包导出。
 pub(crate) const FILE_DIRECTORY: &str = "file.directory";
+/// 应用内更新频道：`"stable"`（默认）或 `"canary"`。
+pub(crate) const UPDATE_CHANNEL: &str = "update.channel";
 
 static DATABASE: OnceLock<db::SettingsDatabase> = OnceLock::new();
 

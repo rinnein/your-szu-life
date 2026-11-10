@@ -33,6 +33,7 @@ fn test_resources_uris_and_metadata() {
     assert!(uris.contains(&"your-szu-life://data/todos/notification-settings"));
     assert!(uris.contains(&"your-szu-life://data/notification/settings"));
     assert!(uris.contains(&"your-szu-life://data/app/announcements"));
+    assert!(uris.contains(&"your-szu-life://data/app/update"));
     assert!(uris.contains(&"your-szu-life://data/network/proxy"));
     assert!(uris.contains(&"your-szu-life://data/settings/snapshot"));
     assert!(uris.contains(&"your-szu-life://data/onboarding/status"));
@@ -96,6 +97,8 @@ fn test_all_tools_registered() {
     // 9. 公共内容模块工具
     assert!(tool_names.contains(&"app_get_announcements"));
     assert!(tool_names.contains(&"app_get_contributors"));
+    assert!(tool_names.contains(&"app_check_update"));
+    assert!(tool_names.contains(&"app_set_update_channel"));
 
     // 10. 设置与安全模块工具
     assert!(tool_names.contains(&"settings_get_snapshot"));

@@ -359,6 +359,36 @@ pub(crate) enum Source {
     Cnb,
 }
 
+/// 应用内更新频道。
+///
+/// - `Stable`：只接收正式 release（GitHub 的 latest / CNB 的非预发布版本）；
+///   还没有正式版时回退到 canary 内容，并由快照上的 `update_channel_fallback`
+///   告知前端「当前显示的是测试版」。
+/// - `Canary`：跟随滚动 `canary` release。
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum UpdateChannel {
+    #[default]
+    Stable,
+    Canary,
+}
+
+impl UpdateChannel {
+    /// 写进缓存 scope 与 URL 的稳定标识。
+    pub(super) fn slug(self) -> &'static str {
+        match self {
+            Self::Stable => "stable",
+            Self::Canary => "canary",
+        }
+    }
+
+    pub(super) fn is_stable(self) -> bool {
+        self == Self::Stable
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct CnbAsset {
     pub name: String,
@@ -372,6 +402,8 @@ pub(crate) struct CnbRelease {
     pub tag_ref: String,
     pub title: Option<String>,
     pub body: Option<String>,
+    #[serde(default)]
+    pub prerelease: bool,
     #[serde(default)]
     pub assets: Vec<CnbAsset>,
 }
@@ -451,6 +483,10 @@ pub(crate) struct AppContentSnapshot {
     pub repository_message: Option<String>,
     pub refreshing: bool,
     pub next_automatic_check_at: Option<u64>,
+    /// 当前选中的更新频道。
+    pub update_channel: UpdateChannel,
+    /// 稳定版频道因暂无正式 release 而回退显示测试版内容。
+    pub update_channel_fallback: bool,
     pub announcements: FeedSnapshot<Announcements>,
     pub update: FeedSnapshot<UpdateInfo>,
     pub update_available: bool,

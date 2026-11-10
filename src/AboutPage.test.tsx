@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { invoke } from "@tauri-apps/api/core";
 import AboutPage, { updateStatus } from "./AboutPage";
 import { useAppContent } from "./app-content/context";
 import * as osInfo from "./os-info";
@@ -49,6 +50,8 @@ function makeSnapshot(
     repositoryMessage: null,
     refreshing: false,
     nextAutomaticCheckAt: null,
+    updateChannel: "stable",
+    updateChannelFallback: false,
     announcements: {
       data: null,
       lastAttemptAt: null,
@@ -207,5 +210,76 @@ describe("AboutPage update logic", () => {
 
     const cnbBadges = await screen.findAllByText(/CNB 镜像/i);
     expect(cnbBadges.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders the changelog as markdown", async () => {
+    const snapshot = makeSnapshot(true, "0.9.1");
+    snapshot.update.data!.changelog = "**重要**变更\n\n- 第一项";
+    vi.mocked(useAppContent).mockReturnValue({
+      snapshot,
+      error: undefined,
+      refreshing: false,
+      refresh: vi.fn(),
+    });
+
+    render(<AboutPage />);
+
+    expect((await screen.findByText("重要")).tagName).toBe("STRONG");
+    expect(screen.getByRole("listitem")).toHaveTextContent("第一项");
+  });
+
+  it("switches the update channel through the backend", async () => {
+    // 未配置自定义内容源（status=unconfigured）且有仓库时，更新来自 Release，
+    // 频道切换才有意义。
+    const snapshot = makeSnapshot(false, "0.9.0");
+    snapshot.configuration = { status: "unconfigured", message: null };
+    vi.mocked(useAppContent).mockReturnValue({
+      snapshot,
+      error: undefined,
+      refreshing: false,
+      refresh: vi.fn(),
+    });
+
+    render(<AboutPage />);
+
+    const combobox = await screen.findByRole("combobox", { name: "更新频道" });
+    const host = (combobox.getRootNode() as ShadowRoot).host ?? combobox;
+    await waitFor(() => expect(host).not.toHaveAttribute("disabled"));
+    fireEvent(host, new CustomEvent("change", { detail: { value: "canary" } }));
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("set_update_channel", { channel: "canary" }),
+    );
+  });
+
+  it("explains the canary fallback and disables the switch for custom feeds", async () => {
+    const fallback = makeSnapshot(false, "0.9.0");
+    fallback.configuration = { status: "unconfigured", message: null };
+    fallback.updateChannelFallback = true;
+    vi.mocked(useAppContent).mockReturnValue({
+      snapshot: fallback,
+      error: undefined,
+      refreshing: false,
+      refresh: vi.fn(),
+    });
+    const { unmount } = render(<AboutPage />);
+    expect(
+      await screen.findByText(/正式版暂无 Release，当前回退使用测试版构建/),
+    ).toBeInTheDocument();
+    unmount();
+
+    // 编译期自定义内容源与频道无关：下拉必须禁用并给出说明。
+    const custom = makeSnapshot(false, "0.9.0");
+    vi.mocked(useAppContent).mockReturnValue({
+      snapshot: custom,
+      error: undefined,
+      refreshing: false,
+      refresh: vi.fn(),
+    });
+    render(<AboutPage />);
+    const combobox = await screen.findByRole("combobox", { name: "更新频道" });
+    const host = (combobox.getRootNode() as ShadowRoot).host ?? combobox;
+    expect(host).toHaveAttribute("disabled");
+    expect(screen.getByText(/当前构建使用自定义内容源，频道切换不生效/)).toBeInTheDocument();
   });
 });

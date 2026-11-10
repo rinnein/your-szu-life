@@ -2,8 +2,17 @@ name: Build packages
 
 # 只作为可复用 workflow 被 build.yml / pr-build.yml 调用，自身不订阅任何事件。
 # 这里只负责造包并上传 artifact，不碰 release、tag、AUR。
+#
+# inputs.signing 由调用方决定：repo = 用仓库正式签名；ephemeral = 一次性签名。
+# 条目名与资产名里的版本号来自 package.json，并通过 outputs.version 交给发布 job。
 on:
   workflow_call:
+    inputs:
+      signing:
+        description: repo 使用仓库正式签名，ephemeral 使用一次性签名
+        required: false
+        type: string
+        default: ephemeral
     secrets:
       ANDROID_KEYSTORE_BASE64:
         required: false
@@ -15,10 +24,44 @@ on:
         required: false
       APTABASE_APP_KEY:
         required: false
+    outputs:
+      version:
+        description: 从 package.json 读取的版本号
+        value: ${{ jobs.meta.outputs.version }}
 
 jobs:
+  meta:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Read version from package.json
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -e "process.stdout.write(JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version)")"
+          if [ -z "$version" ]; then
+            echo "::error::package.json 缺少 version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # tag 与 package.json 不一致不阻断发布，但要在日志里显式说明，
+          # 避免「tag 写 0.14.1、产物却是 0.14.0」被静默接受。
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            tag_version="${GITHUB_REF_NAME#v}"
+            if [ "$tag_version" != "$version" ]; then
+              echo "::notice::tag $GITHUB_REF_NAME 与 package.json 版本 $version 不一致；发布名与资产名以 package.json 为准"
+            fi
+          fi
+
   desktop:
     name: ${{ matrix.name }}
+    needs: meta
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -84,7 +127,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="$(node -e "process.stdout.write(JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version)")"
+          version='${{ needs.meta.outputs.version }}'
+          test -n "$version"
           output_dir="release-packages"
           mkdir -p "$output_dir"
           shopt -s nullglob
@@ -114,6 +158,7 @@ jobs:
 
   android:
     name: android
+    needs: meta
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -178,7 +223,7 @@ jobs:
         run: vp install --frozen-lockfile
 
       - name: Configure fixed Android signing
-        if: github.ref == 'refs/heads/main'
+        if: inputs.signing == 'repo'
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -201,7 +246,7 @@ jobs:
           EOF
 
       - name: Configure temporary Android signing
-        if: github.ref != 'refs/heads/main'
+        if: inputs.signing != 'repo'
         shell: bash
         run: |
           set -euo pipefail
@@ -245,7 +290,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="$(node -e "process.stdout.write(JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version)")"
+          version='${{ needs.meta.outputs.version }}'
+          test -n "$version"
           mkdir -p release-packages
           mapfile -d '' apks < <(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print0)
           test "${#apks[@]}" -eq 1

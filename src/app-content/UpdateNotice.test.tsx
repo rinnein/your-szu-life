@@ -40,6 +40,8 @@ function makeSnapshot(updateAvailable: boolean, latestVer?: string): AppContentS
     repositoryMessage: null,
     refreshing: false,
     nextAutomaticCheckAt: null,
+    updateChannel: "stable",
+    updateChannelFallback: false,
     announcements: {
       data: null,
       lastAttemptAt: null,
@@ -103,6 +105,36 @@ describe("UpdateNotice dialog", () => {
     expect(await screen.findByText("发现新版本 0.2.0")).toBeInTheDocument();
     expect(screen.getByText("稍后再说")).toBeInTheDocument();
     expect(screen.getByText("下载并安装")).toBeInTheDocument();
+  });
+
+  it("renders the changelog as markdown", async () => {
+    const snapshot = makeSnapshot(true, "0.2.0");
+    snapshot.update.data!.changelog = "**重要**修复\n\n- 第一项\n- 第二项";
+    vi.mocked(useAppContent).mockReturnValue({
+      snapshot,
+      refreshing: false,
+      refresh: vi.fn(),
+    });
+
+    render(<UpdateNotice />);
+
+    expect((await screen.findByText("重要")).tagName).toBe("STRONG");
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+  });
+
+  it("marks canary channel updates in the dialog", async () => {
+    const snapshot = makeSnapshot(true, "0.2.0");
+    snapshot.updateChannel = "canary";
+    vi.mocked(useAppContent).mockReturnValue({
+      snapshot,
+      refreshing: false,
+      refresh: vi.fn(),
+    });
+
+    render(<UpdateNotice />);
+
+    expect(await screen.findByText("测试版")).toBeInTheDocument();
+    expect(screen.getByText(/当前更新频道为测试版/)).toBeInTheDocument();
   });
 
   it("does not render dialog when on the settings about tab", () => {

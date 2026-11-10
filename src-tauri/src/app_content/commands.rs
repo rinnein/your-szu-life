@@ -20,6 +20,22 @@ pub(crate) async fn refresh_app_content(
 }
 
 #[tauri::command]
+pub(crate) async fn set_update_channel(
+    store: State<'_, AppContentStore>,
+    channel: super::model::UpdateChannel,
+) -> Result<AppContentSnapshot, String> {
+    // 先落盘再切内存：持久化失败时界面状态保持不变。
+    super::channel::save(channel)?;
+    let service = store.0.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        service.set_channel(channel);
+        service.refresh()
+    })
+    .await
+    .map_err(|_| "更新频道切换任务未能完成".to_owned())
+}
+
+#[tauri::command]
 pub(crate) async fn get_contributors(
     store: State<'_, AppContentStore>,
 ) -> Result<ContributorsSnapshot, String> {

@@ -302,7 +302,7 @@ fn github_content_service_loads_cache_and_preserves_on_request_failure() {
         http::{HttpResponse, PublicHttp, RequestKind},
         model::{
             Announcement, AnnouncementConditions, AnnouncementMode, Announcements, ContentError,
-            ErrorKind, Source, UpdateInfo,
+            ErrorKind, Source, UpdateChannel, UpdateInfo,
         },
         runtime::Clock,
         service::ContentService,
@@ -339,7 +339,10 @@ fn github_content_service_loads_cache_and_preserves_on_request_failure() {
     );
     assert!(config.uses_github_releases());
 
-    let scope = format!("github:{}", config.repository.as_ref().unwrap().full_name);
+    let repository = config.repository.as_ref().unwrap();
+    let announcement_scope = format!("github:{}", repository.full_name);
+    // 更新缓存按频道隔离：稳定版默认频道对应 `:stable` 目录。
+    let update_scope = format!("github:{}:stable", repository.full_name);
     let cache = Cache::new(Some(temp_dir.clone()));
     let announcements = Announcements {
         announcements: vec![
@@ -373,19 +376,26 @@ fn github_content_service_loads_cache_and_preserves_on_request_failure() {
         release_url: None,
     };
     cache.save(
-        &scope,
+        &announcement_scope,
         "announcements.json",
         &announcements,
         Source::Github,
         1000,
     );
-    cache.save(&scope, "latest-release.json", &update, Source::Github, 1000);
+    cache.save(
+        &update_scope,
+        "latest-release.json",
+        &update,
+        Source::Github,
+        1000,
+    );
 
     let service = ContentService::new(
         config,
         Arc::new(RateLimitedHttp),
         Arc::new(TestClock(2000)),
         Some(temp_dir.clone()),
+        UpdateChannel::Stable,
         |_| {},
     );
 
@@ -416,7 +426,7 @@ fn github_content_service_loads_cache_and_preserves_on_request_failure() {
     );
     assert_eq!(
         cache
-            .load::<Announcements>(&scope, "announcements.json", 2000)
+            .load::<Announcements>(&announcement_scope, "announcements.json", 2000)
             .expect("raw cache entry")
             .data
             .announcements
@@ -491,7 +501,7 @@ fn test_extract_release_tag_and_filename() {
 fn test_cnb_fallback_when_github_fails() {
     use super::{
         http::{HttpResponse, PublicHttp, RequestKind},
-        model::{ContentError, ErrorKind, Source},
+        model::{ContentError, ErrorKind, Source, UpdateChannel},
         runtime::Clock,
         service::ContentService,
     };
@@ -578,6 +588,7 @@ fn test_cnb_fallback_when_github_fails() {
         Arc::new(CnbFallbackHttp),
         Arc::new(TestClock),
         None,
+        UpdateChannel::Stable,
         |_| {},
     );
 
@@ -665,7 +676,7 @@ fn announcement_images_are_downscaled_before_reaching_the_webview() {
 fn test_build_download_candidates_with_cnb() {
     use super::{
         http::{HttpResponse, PublicHttp, RequestKind},
-        model::{ContentError, ErrorKind},
+        model::{ContentError, ErrorKind, UpdateChannel},
         runtime::Clock,
         service::ContentService,
     };
@@ -721,6 +732,7 @@ fn test_build_download_candidates_with_cnb() {
         Arc::new(SyncCheckHttp),
         Arc::new(TestClock),
         None,
+        UpdateChannel::Stable,
         |_| {},
     );
 
@@ -908,11 +920,414 @@ fn invalid_mode_values_degrade_to_silent_without_rejecting_the_document() {
         ]
     }))
     .unwrap();
-    let parsed: Announcements = parse_document(&bytes)
-        .expect("新字段语义错误不得整体拒绝文档");
+    let parsed: Announcements = parse_document(&bytes).expect("新字段语义错误不得整体拒绝文档");
     assert_eq!(parsed.announcements[0].mode, AnnouncementMode::Silent);
     assert_eq!(parsed.announcements[1].mode, AnnouncementMode::Silent);
     assert_eq!(parsed.announcements[2].mode, AnnouncementMode::Alert);
 }
 
+/// 发布资产名必须匹配当前测试主机的平台后缀，否则 `find_platform_asset_index` 会跳过它。
+fn channel_test_asset_name(version: &str) -> String {
+    #[cfg(target_os = "android")]
+    let (platform, arch, extension) = ("android", "arm64", "apk.gz");
+    #[cfg(target_os = "windows")]
+    let (platform, arch, extension) = ("windows", "x64", "msi");
+    #[cfg(target_os = "macos")]
+    let (platform, arch, extension) = ("macos", "x64", "dmg");
+    #[cfg(not(any(target_os = "android", target_os = "windows", target_os = "macos")))]
+    let (platform, arch, extension) = ("linux", "x64", "deb");
+    format!("your-szu-life_{platform}_{arch}_{version}-release.{extension}")
+}
 
+#[test]
+fn update_channel_filters_github_releases_and_falls_back_to_canary() {
+    use super::{
+        http::{HttpResponse, PublicHttp, RequestKind},
+        model::{ContentError, ErrorKind, Source, UpdateChannel},
+        runtime::Clock,
+        service::ContentService,
+    };
+
+    struct ChannelHttp {
+        /// 是否存在正式版；false 时稳定版频道应回退到 canary。
+        stable: bool,
+    }
+
+    fn asset(version: &str) -> serde_json::Value {
+        let name = channel_test_asset_name(version);
+        json!({
+            "name": name,
+            "browser_download_url": format!(
+                "https://github.com/rinnein/your-szu-life/releases/download/v{version}/{name}"
+            )
+        })
+    }
+
+    fn stable_release() -> serde_json::Value {
+        json!({
+            "tag_name": "v0.1.5",
+            "name": "v0.1.5",
+            "draft": false,
+            "prerelease": false,
+            "assets": [asset("0.1.5")]
+        })
+    }
+
+    fn canary_release() -> serde_json::Value {
+        json!({
+            "tag_name": "canary",
+            "name": "canary v0.2.0",
+            "body": "测试版说明",
+            "draft": false,
+            "prerelease": true,
+            "assets": [asset("0.2.0")]
+        })
+    }
+
+    impl PublicHttp for ChannelHttp {
+        fn get(
+            &self,
+            url: &reqwest::Url,
+            _kind: RequestKind,
+            _limit: usize,
+        ) -> Result<HttpResponse, ContentError> {
+            let ok = |body: serde_json::Value| {
+                Ok(HttpResponse {
+                    status: 200,
+                    body: serde_json::to_vec(&body).unwrap(),
+                    content_type: Some("application/json".into()),
+                    has_next_page: false,
+                    retry_at: None,
+                })
+            };
+            if url.host_str() != Some("api.github.com") {
+                return Err(ContentError::new(ErrorKind::Http, "404 Not Found"));
+            }
+            let path = url.path();
+            if path.ends_with("/releases/tags/announcement") {
+                return ok(json!({
+                    "tag_name": "announcement",
+                    "body": "{\"announcements\":[]}"
+                }));
+            }
+            if path.ends_with("/releases/tags/canary") {
+                return ok(canary_release());
+            }
+            if path.ends_with("/releases/latest") {
+                return if self.stable {
+                    ok(stable_release())
+                } else {
+                    Err(ContentError::new(ErrorKind::Http, "404 Not Found"))
+                };
+            }
+            if path.ends_with("/releases") {
+                let mut releases = Vec::new();
+                if self.stable {
+                    releases.push(stable_release());
+                }
+                releases.push(canary_release());
+                return ok(serde_json::Value::Array(releases));
+            }
+            Err(ContentError::new(ErrorKind::Http, "404 Not Found"))
+        }
+    }
+
+    struct TestClock;
+    impl Clock for TestClock {
+        fn now_ms(&self) -> u64 {
+            1000
+        }
+    }
+
+    fn service(stable: bool, channel: UpdateChannel) -> ContentService {
+        let config = ContentConfig::new(
+            "0.1.0".into(),
+            None,
+            None,
+            Some(&json!({"type": "git", "url": "https://github.com/rinnein/your-szu-life.git"})),
+        );
+        ContentService::new(
+            config,
+            Arc::new(ChannelHttp { stable }),
+            Arc::new(TestClock),
+            None,
+            channel,
+            |_| {},
+        )
+    }
+
+    // 稳定版只认非 prerelease 的正式版
+    let snapshot = service(true, UpdateChannel::Stable).refresh();
+    assert_eq!(snapshot.update_channel, UpdateChannel::Stable);
+    assert!(!snapshot.update_channel_fallback);
+    assert_eq!(snapshot.update.source, Some(Source::Github));
+    assert_eq!(snapshot.update.data.as_ref().unwrap().latest_ver, "0.1.5");
+
+    // 测试版只认滚动 canary
+    let snapshot = service(true, UpdateChannel::Canary).refresh();
+    assert_eq!(snapshot.update_channel, UpdateChannel::Canary);
+    assert!(!snapshot.update_channel_fallback);
+    assert_eq!(snapshot.update.data.as_ref().unwrap().latest_ver, "0.2.0");
+
+    // 没有正式版时稳定版回退 canary，并显式标记
+    let snapshot = service(false, UpdateChannel::Stable).refresh();
+    assert!(snapshot.update_channel_fallback);
+    assert_eq!(snapshot.update.data.as_ref().unwrap().latest_ver, "0.2.0");
+}
+
+#[test]
+fn switching_channel_uses_its_own_cached_update_feed() {
+    use super::{
+        http::{HttpResponse, PublicHttp, RequestKind},
+        model::{ContentError, ErrorKind, UpdateChannel},
+        runtime::Clock,
+        service::ContentService,
+    };
+
+    struct ChannelHttp;
+    impl PublicHttp for ChannelHttp {
+        fn get(
+            &self,
+            url: &reqwest::Url,
+            _kind: RequestKind,
+            _limit: usize,
+        ) -> Result<HttpResponse, ContentError> {
+            let ok = |body: serde_json::Value| {
+                Ok(HttpResponse {
+                    status: 200,
+                    body: serde_json::to_vec(&body).unwrap(),
+                    content_type: Some("application/json".into()),
+                    has_next_page: false,
+                    retry_at: None,
+                })
+            };
+            if url.host_str() != Some("api.github.com") {
+                return Err(ContentError::new(ErrorKind::Http, "404 Not Found"));
+            }
+            let path = url.path();
+            if path.ends_with("/releases/tags/announcement") {
+                return ok(json!({
+                    "tag_name": "announcement",
+                    "body": "{\"announcements\":[]}"
+                }));
+            }
+            if path.ends_with("/releases/tags/canary") {
+                let name = channel_test_asset_name("0.2.0");
+                return ok(json!({
+                    "tag_name": "canary",
+                    "name": "canary v0.2.0",
+                    "prerelease": true,
+                    "assets": [{"name": name, "browser_download_url": format!("https://example.com/{name}")}]
+                }));
+            }
+            if path.ends_with("/releases/latest") {
+                let name = channel_test_asset_name("0.1.5");
+                return ok(json!({
+                    "tag_name": "v0.1.5",
+                    "name": "v0.1.5",
+                    "prerelease": false,
+                    "assets": [{"name": name, "browser_download_url": format!("https://example.com/{name}")}]
+                }));
+            }
+            if path.ends_with("/releases") {
+                let stable_name = channel_test_asset_name("0.1.5");
+                let canary_name = channel_test_asset_name("0.2.0");
+                return ok(json!([
+                    {
+                        "tag_name": "v0.1.5",
+                        "name": "v0.1.5",
+                        "prerelease": false,
+                        "assets": [{"name": stable_name, "browser_download_url": format!("https://example.com/{stable_name}")}]
+                    },
+                    {
+                        "tag_name": "canary",
+                        "name": "canary v0.2.0",
+                        "prerelease": true,
+                        "assets": [{"name": canary_name, "browser_download_url": format!("https://example.com/{canary_name}")}]
+                    }
+                ]));
+            }
+            Err(ContentError::new(ErrorKind::Http, "404 Not Found"))
+        }
+    }
+
+    struct TestClock;
+    impl Clock for TestClock {
+        fn now_ms(&self) -> u64 {
+            1000
+        }
+    }
+
+    let temp_dir = std::env::temp_dir().join(format!("test-channel-{}", uuid::Uuid::new_v4()));
+    fn config() -> ContentConfig {
+        ContentConfig::new(
+            "0.1.0".into(),
+            None,
+            None,
+            Some(&json!({"type": "git", "url": "https://github.com/rinnein/your-szu-life.git"})),
+        )
+    }
+    let service = ContentService::new(
+        config(),
+        Arc::new(ChannelHttp),
+        Arc::new(TestClock),
+        Some(temp_dir.clone()),
+        UpdateChannel::Stable,
+        |_| {},
+    );
+    let stable = service.refresh();
+    assert_eq!(stable.update.data.as_ref().unwrap().latest_ver, "0.1.5");
+
+    // 切换后先只看到新频道（canary）自己的缓存：此时还没有缓存。
+    let switched = service.set_channel(UpdateChannel::Canary);
+    assert_eq!(switched.update_channel, UpdateChannel::Canary);
+    assert!(switched.update.data.is_none());
+    let canary = service.refresh();
+    assert_eq!(canary.update.data.as_ref().unwrap().latest_ver, "0.2.0");
+
+    // 换回稳定版：立刻从独立缓存读回正式版，不串到 canary 的数据。
+    let switched_back = service.set_channel(UpdateChannel::Stable);
+    assert_eq!(
+        switched_back.update.data.as_ref().unwrap().latest_ver,
+        "0.1.5"
+    );
+
+    // 新进程按缓存恢复到各自频道。
+    let restored_stable = ContentService::new(
+        config(),
+        Arc::new(ChannelHttp),
+        Arc::new(TestClock),
+        Some(temp_dir.clone()),
+        UpdateChannel::Stable,
+        |_| {},
+    );
+    assert_eq!(
+        restored_stable
+            .snapshot()
+            .update
+            .data
+            .as_ref()
+            .unwrap()
+            .latest_ver,
+        "0.1.5"
+    );
+    let restored_canary = ContentService::new(
+        config(),
+        Arc::new(ChannelHttp),
+        Arc::new(TestClock),
+        Some(temp_dir.clone()),
+        UpdateChannel::Canary,
+        |_| {},
+    );
+    assert_eq!(
+        restored_canary
+            .snapshot()
+            .update
+            .data
+            .as_ref()
+            .unwrap()
+            .latest_ver,
+        "0.2.0"
+    );
+
+    let _ = std::fs::remove_dir_all(temp_dir);
+}
+
+#[test]
+fn cnb_mirror_respects_update_channel() {
+    use super::{
+        http::{HttpResponse, PublicHttp, RequestKind},
+        model::{ContentError, ErrorKind, Source, UpdateChannel},
+        runtime::Clock,
+        service::ContentService,
+    };
+
+    struct CnbChannelHttp {
+        stable: bool,
+    }
+
+    impl PublicHttp for CnbChannelHttp {
+        fn get(
+            &self,
+            url: &reqwest::Url,
+            _kind: RequestKind,
+            _limit: usize,
+        ) -> Result<HttpResponse, ContentError> {
+            // GitHub 全部失败，强制走 CNB 镜像。
+            if url.host_str() != Some("cnb.cool") {
+                return Err(ContentError::new(ErrorKind::Http, "404 Not Found"));
+            }
+            let ok = |body: serde_json::Value| {
+                Ok(HttpResponse {
+                    status: 200,
+                    body: serde_json::to_vec(&body).unwrap(),
+                    content_type: Some("application/vnd.cnb.web+json".into()),
+                    has_next_page: false,
+                    retry_at: None,
+                })
+            };
+            if url.path().ends_with("/releases/tags/announcement") {
+                return ok(json!({"release": {"body": "{\"announcements\":[]}"}}));
+            }
+            if url.path().ends_with("/releases") {
+                let stable_name = channel_test_asset_name("0.9.5");
+                let canary_name = channel_test_asset_name("0.9.9");
+                let mut releases = Vec::new();
+                if self.stable {
+                    releases.push(json!({
+                        "tag_ref": "refs/tags/v0.9.5",
+                        "title": "v0.9.5",
+                        "body": "正式版",
+                        "prerelease": false,
+                        "assets": [{"name": stable_name, "browser_download_url": format!("https://cnb.cool/x/{stable_name}")}]
+                    }));
+                }
+                releases.push(json!({
+                    "tag_ref": "refs/tags/canary",
+                    "title": "canary v0.9.9",
+                    "body": "测试版",
+                    "prerelease": true,
+                    "assets": [{"name": canary_name, "browser_download_url": format!("https://cnb.cool/x/{canary_name}")}]
+                }));
+                return ok(json!({ "releases": releases }));
+            }
+            Err(ContentError::new(ErrorKind::Http, "404 Not Found"))
+        }
+    }
+
+    struct TestClock;
+    impl Clock for TestClock {
+        fn now_ms(&self) -> u64 {
+            1000
+        }
+    }
+
+    fn service(stable: bool, channel: UpdateChannel) -> ContentService {
+        let config = ContentConfig::new(
+            "0.1.0".into(),
+            None,
+            None,
+            Some(&json!({"type": "git", "url": "https://github.com/rinnein/your-szu-life.git"})),
+        );
+        ContentService::new(
+            config,
+            Arc::new(CnbChannelHttp { stable }),
+            Arc::new(TestClock),
+            None,
+            channel,
+            |_| {},
+        )
+    }
+
+    let snapshot = service(true, UpdateChannel::Stable).refresh();
+    assert_eq!(snapshot.update.source, Some(Source::Cnb));
+    assert!(!snapshot.update_channel_fallback);
+    assert_eq!(snapshot.update.data.as_ref().unwrap().latest_ver, "0.9.5");
+
+    let snapshot = service(true, UpdateChannel::Canary).refresh();
+    assert_eq!(snapshot.update.data.as_ref().unwrap().latest_ver, "0.9.9");
+
+    let snapshot = service(false, UpdateChannel::Stable).refresh();
+    assert!(snapshot.update_channel_fallback);
+    assert_eq!(snapshot.update.data.as_ref().unwrap().latest_ver, "0.9.9");
+}

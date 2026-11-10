@@ -1,6 +1,7 @@
 #[cfg(target_os = "android")]
 pub(crate) mod android_update;
 mod cache;
+mod channel;
 pub(crate) mod commands;
 mod config;
 mod http;
@@ -40,12 +41,14 @@ pub(crate) fn initialize(app: &tauri::AppHandle) -> std::io::Result<()> {
     windows_update::set_app_handle(app.clone());
     let config = config::ContentConfig::compiled(app.package_info().version.to_string());
     let http = Arc::new(http::PublicClient::new(&config.version));
+    let channel = channel::load();
     let handle = app.clone();
     let service = Arc::new(service::ContentService::new(
         config,
         http,
         Arc::new(runtime::SystemClock),
         app.path().app_cache_dir().ok(),
+        channel,
         move |snapshot| {
             let _ = handle.emit("app-content-changed", snapshot);
         },

@@ -52,7 +52,7 @@ const SETTINGS_TABS: ReadonlyArray<{
   { id: "mcp", label: "MCP", icon: LuServer },
   { id: "transfer", label: "设置迁移", icon: LuArrowUpDown },
   { id: "shortcuts", label: "快捷键", icon: LuKeyboard },
-  { id: "about", label: "关于", icon: LuInfo },
+  { id: "about", label: "关于与更新", icon: LuInfo },
   { id: "debug", label: "调试", icon: LuBug, debugOnly: true },
 ];
 
@@ -106,7 +106,7 @@ export default function SettingsPage() {
     if (!aboutOnly) return null;
     return (
       <PageShell maxWidth="lg">
-        <TopAppBar title="关于" description="应用信息与检查更新" showBack={false} />
+        <TopAppBar title="关于与更新" description="应用信息、更新频道与检查更新" showBack={false} />
         <div className="settings-page">
           <div className="settings-panel">
             <AboutPage />

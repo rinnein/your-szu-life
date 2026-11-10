@@ -4,9 +4,10 @@ import { useRouterState } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Dialog, LoadingIndicator, Button } from "material/react";
-import { Banner, toast } from "../ui";
+import { Banner, Chip, toast } from "../ui";
 import { LuArrowUpRight, LuDownload } from "react-icons/lu";
 import { useAppContent } from "./context";
+import { ChangelogMarkdown } from "./ChangelogMarkdown";
 import { openPublicUrl } from "./external";
 import { getPlatform } from "../os-info";
 import { isUpdatePostponed, postponeUpdateReminder } from "./update-postpone";
@@ -176,10 +177,19 @@ export function UpdateNotice() {
             : "检测到新版本可用，建议更新以体验最新功能与修复。"}
         </p>
 
+        {snapshot?.updateChannel === "canary" && (
+          <p className="text-xs text-muted">
+            <Chip color="warning" size="sm">
+              测试版
+            </Chip>{" "}
+            当前更新频道为测试版（canary）。
+          </p>
+        )}
+
         {updateData.changelog ? (
-          <div className="max-h-48 overflow-y-auto rounded-lg bg-surface p-3 text-xs leading-relaxed text-muted whitespace-pre-wrap border border-separator">
+          <div className="max-h-48 overflow-y-auto rounded-lg bg-surface p-3 text-xs leading-relaxed text-muted border border-separator">
             <div className="font-semibold text-foreground mb-1">更新日志：</div>
-            {updateData.changelog}
+            <ChangelogMarkdown source={updateData.changelog} compact />
           </div>
         ) : (
           <p className="text-xs text-muted">此版本未提供更新日志。</p>

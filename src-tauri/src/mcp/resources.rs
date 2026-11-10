@@ -84,6 +84,12 @@ pub fn list_available_resources() -> Vec<Resource> {
         .with_title("公告")
         .with_description("获取软件公告、电费/OJ提醒")
         .with_mime_type("application/json"),
+        Resource::new("your-szu-life://data/app/update", "app_update")
+            .with_title("更新状态与频道")
+            .with_description(
+                "返回当前版本、更新频道（stable/canary）、稳定版是否回退到测试版、是否有新版本与最新版本信息",
+            )
+            .with_mime_type("application/json"),
         Resource::new("your-szu-life://data/network/proxy", "network_proxy")
             .with_title("全局网络代理设置")
             .with_description(
@@ -242,6 +248,21 @@ pub async fn read_resource_by_uri(
                 "{}".to_string()
             }
         }
+        "your-szu-life://data/app/update" => {
+            if let Some(store) = app.try_state::<crate::app_content::AppContentStore>() {
+                let snapshot = store.snapshot();
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "currentVersion": snapshot.version,
+                    "updateChannel": snapshot.update_channel,
+                    "updateChannelFallback": snapshot.update_channel_fallback,
+                    "updateAvailable": snapshot.update_available,
+                    "update": snapshot.update,
+                }))
+                .unwrap_or_else(|_| "{}".to_string())
+            } else {
+                "{}".to_string()
+            }
+        }
         "your-szu-life://data/network/proxy" => {
             if let Some(store) = app.try_state::<crate::netproxy::ProxyStore>() {
                 let view = crate::netproxy::model::view(store.credentials.as_ref()).ok();
@@ -259,19 +280,13 @@ pub async fn read_resource_by_uri(
             }
         }
         "your-szu-life://data/onboarding/status" => match crate::onboarding::state_view() {
-            Ok(state) => {
-                serde_json::to_string_pretty(&state).unwrap_or_else(|_| "{}".to_string())
-            }
+            Ok(state) => serde_json::to_string_pretty(&state).unwrap_or_else(|_| "{}".to_string()),
             Err(_) => "{}".to_string(),
         },
-        "your-szu-life://data/file-manager/state" => {
-            match crate::file_manager::state(app) {
-                Ok(state) => {
-                    serde_json::to_string_pretty(&state).unwrap_or_else(|_| "{}".to_string())
-                }
-                Err(_) => "{}".to_string(),
-            }
-        }
+        "your-szu-life://data/file-manager/state" => match crate::file_manager::state(app) {
+            Ok(state) => serde_json::to_string_pretty(&state).unwrap_or_else(|_| "{}".to_string()),
+            Err(_) => "{}".to_string(),
+        },
         _ => {
             return Err(rmcp::ErrorData::new(
                 rmcp::model::ErrorCode::INVALID_REQUEST,

@@ -181,9 +181,9 @@ export const COMMAND_LIST: CommandItem[] = [
   },
   {
     id: "about",
-    name: "关于",
+    name: "关于与更新",
     shortcuts: ["about", "gy"],
-    description: "应用信息与检查更新",
+    description: "应用信息、更新频道与检查更新",
     category: "系统",
     target: "/settings?tab=about",
     icon: FaCircleInfo,

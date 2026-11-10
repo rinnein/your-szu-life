@@ -44,7 +44,7 @@ export function PageSurface({
               className="page-surface-footer-link"
               onClick={() => void navigation.push("/settings?tab=about")}
             >
-              关于 · 检查更新
+              关于与更新
             </button>
           </footer>
         )}

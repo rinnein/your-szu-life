@@ -382,6 +382,7 @@ fn main() {
             "uooc_qa_http_request",
             "get_app_content_snapshot",
             "refresh_app_content",
+            "set_update_channel",
             "get_contributors",
             "load_announcement_image",
             "start_in_app_update",

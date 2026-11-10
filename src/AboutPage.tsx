@@ -1,17 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { LoadingIndicator, Button } from "material/react";
+import { LoadingIndicator, Button, Select, SelectOption } from "material/react";
 import { Banner, Avatar, toast } from "./ui";
 import { LuArrowUpRight, LuDownload, LuRefreshCw, LuUsers } from "react-icons/lu";
 import { BrandMark, Card } from "./components";
 import { useAppContent } from "./app-content/context";
+import { ChangelogMarkdown } from "./app-content/ChangelogMarkdown";
 import { contentTime, openPublicUrl } from "./app-content/external";
 import { clearPostponedUpdateReminder } from "./app-content/update-postpone";
 import { createTaskChannel } from "./tauri-channel";
 import { getPlatform } from "./os-info";
 import { DownloadSession } from "./DownloadSession";
-import type { AppContentSnapshot, ContributorsSnapshot } from "./app-content/types";
+import type { AppContentSnapshot, ContributorsSnapshot, UpdateChannel } from "./app-content/types";
 import packageInfo from "../package.json";
 
 type UpdateProgress = {
@@ -194,6 +195,7 @@ export default function AboutPage() {
   const [openError, setOpenError] = useState<string>();
   const [platform, setPlatform] = useState<string>("unknown");
   const [updating, setUpdating] = useState(false);
+  const [channelSaving, setChannelSaving] = useState(false);
   const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null);
 
   useEffect(() => {
@@ -267,6 +269,27 @@ export default function AboutPage() {
   const configured = snapshot?.configuration.status === "ready";
   const hasUpdateSource =
     configured || (snapshot?.configuration.status === "unconfigured" && !!snapshot.repository);
+  const channel: UpdateChannel = snapshot?.updateChannel ?? "stable";
+  // 编译期自定义内容源与频道无关；快照未就绪时也不让用户盲切。
+  const channelLocked = !snapshot || configured;
+
+  const handleChannelChange = async (value: string) => {
+    const next: UpdateChannel = value === "canary" ? "canary" : "stable";
+    if (next === channel || channelSaving) return;
+    setChannelSaving(true);
+    try {
+      await invoke("set_update_channel", { channel: next });
+      toast.success(next === "canary" ? "已切换到测试版更新" : "已切换到稳定版更新", {
+        description: "正在按新频道检查更新…",
+      });
+    } catch (error) {
+      toast.danger("切换更新频道失败", {
+        description: typeof error === "string" ? error : "请稍后重试。",
+      });
+    } finally {
+      setChannelSaving(false);
+    }
+  };
   // 作为设置页的「关于」tab 呈现，页面外壳与标题由设置页提供。
   return (
     <div className="about-layout">
@@ -287,6 +310,32 @@ export default function AboutPage() {
         description="启动时自动检查,持续运行每 24 小时检查一次。手动检查同时刷新公告与更新信息"
       >
         <div className="grid gap-4">
+          <div>
+            <Select
+              label="更新频道"
+              value={channel}
+              disabled={channelLocked || channelSaving || refreshing}
+              onChange={(event: any) => {
+                const value = event.detail?.value ?? event.target?.value;
+                if (value) void handleChannelChange(String(value));
+              }}
+            >
+              <SelectOption value="stable">稳定版（latest）</SelectOption>
+              <SelectOption value="canary">测试版（canary）</SelectOption>
+            </Select>
+            <p className="content-muted">
+              {!snapshot
+                ? "正在读取更新频道…"
+                : channelLocked
+                  ? "当前构建使用自定义内容源，频道切换不生效。"
+                  : "稳定版只接收正式 release；测试版跟随 canary 构建。切换后会立即检查一次更新。"}
+            </p>
+            {snapshot?.updateChannelFallback && (
+              <p className="content-muted" role="status">
+                正式版暂无 Release，当前回退使用测试版构建。
+              </p>
+            )}
+          </div>
           <div className="about-update-toolbar">
             <p className="update-status" role="status">
               {updateStatus(snapshot, refreshing, error)}
@@ -372,9 +421,11 @@ export default function AboutPage() {
                 更新日志 · {update.data.latest_ver}
                 {update.fromCache ? "（缓存）" : ""}
               </h3>
-              <p className="content-plaintext">
-                {update.data.changelog || "此版本未提供更新日志。"}
-              </p>
+              {update.data.changelog ? (
+                <ChangelogMarkdown source={update.data.changelog} />
+              ) : (
+                <p className="content-plaintext">此版本未提供更新日志。</p>
+              )}
             </section>
           )}
           {snapshot?.updateAvailable && update?.data && (

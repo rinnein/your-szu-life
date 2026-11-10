@@ -24,7 +24,8 @@ const CNB_REPO = process.env.CNB_REPO_SLUG || "";
 const CNB_TOKEN = process.env.CNB_TOKEN || "";
 const GH_REPO = process.env.GITHUB_REPO || "rinnein/your-szu-life";
 const GH_TOKEN = process.env.GITHUB_SYNC_TOKEN || process.env.GITHUB_TOKEN || "";
-const DRY_RUN = process.argv.includes("--dry-run") || /^(1|true|yes)$/i.test(process.env.DRY_RUN || "");
+const DRY_RUN =
+  process.argv.includes("--dry-run") || /^(1|true|yes)$/i.test(process.env.DRY_RUN || "");
 const SYNC_DRAFTS = /^(1|true|yes)$/i.test(process.env.SYNC_DRAFTS || "");
 const ONLY_TAGS = (process.env.ONLY_TAGS || "")
   .split(",")
@@ -35,7 +36,11 @@ const log = (...args) => console.log("[release-sync]", ...args);
 const warn = (...args) => console.log("[release-sync][warn]", ...args);
 
 function ghHeaders(extra = {}) {
-  const headers = { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", ...extra };
+  const headers = {
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    ...extra,
+  };
   if (GH_TOKEN) headers.Authorization = `Bearer ${GH_TOKEN}`;
   return headers;
 }
@@ -56,11 +61,28 @@ async function ghJson(path) {
   return response.json();
 }
 
+// GitHub 的「latest」由发布时的 make_latest 决定，先问权威端点：还没有任何
+// 正式 release 时它返回 404，此时才退回「最新的非草稿、非预发布版本」推断。
+// 用列表顺序猜会在「重发旧版本」时与 GitHub 的标记不一致，这里以端点为准。
+async function resolveLatestTag(releases) {
+  try {
+    const latest = await ghJson(`/repos/${GH_REPO}/releases/latest`);
+    if (latest?.tag_name) return latest.tag_name;
+  } catch (error) {
+    if (!/\b404\b/.test(String(error.message))) {
+      warn(`读取 latest release 失败，回退到列表推断：${error.message}`);
+    }
+  }
+  return releases.find((release) => !release.draft && !release.prerelease)?.tag_name;
+}
+
 async function cnbJson(path, init = {}) {
   const response = await fetch(`${CNB_API}${path}`, {
     ...init,
     headers: cnbHeaders(
-      init.body === undefined ? (init.headers || {}) : { "Content-Type": "application/json", ...(init.headers || {}) },
+      init.body === undefined
+        ? init.headers || {}
+        : { "Content-Type": "application/json", ...init.headers },
     ),
   });
   if (!response.ok) throw new Error(`CNB ${path} 请求失败: ${await readError(response)}`);
@@ -103,13 +125,15 @@ function sameRelease(github, cnb, latestTag) {
   if ((github.body || "") !== (cnb.body || "")) differences.push("说明");
   if (Boolean(github.prerelease) !== Boolean(cnb.prerelease)) differences.push("预发布");
   if (Boolean(github.draft) !== Boolean(cnb.draft)) differences.push("草稿");
-  if (latestTag && (github.tag_name === latestTag) !== Boolean(cnb.is_latest)) differences.push("最新版本标记");
+  if (latestTag && (github.tag_name === latestTag) !== Boolean(cnb.is_latest))
+    differences.push("最新版本标记");
   return differences;
 }
 
 function assetDifferences(githubAsset, cnbAsset) {
   const reasons = [];
-  if (cnbAsset.size !== githubAsset.size) reasons.push(`大小 ${cnbAsset.size} → ${githubAsset.size}`);
+  if (cnbAsset.size !== githubAsset.size)
+    reasons.push(`大小 ${cnbAsset.size} → ${githubAsset.size}`);
   const digest = parseDigest(githubAsset.digest);
   if (digest && digest.algo === "sha256") {
     if (!cnbAsset.hash_value) reasons.push("缺少 sha256");
@@ -120,7 +144,9 @@ function assetDifferences(githubAsset, cnbAsset) {
 
 async function downloadGithubAsset(asset, dir) {
   const file = join(dir, `${asset.id}-${asset.name.replace(/[^\w.-]+/g, "_")}`);
-  const response = await fetch(asset.url, { headers: ghHeaders({ Accept: "application/octet-stream" }) });
+  const response = await fetch(asset.url, {
+    headers: ghHeaders({ Accept: "application/octet-stream" }),
+  });
   if (!response.ok) throw new Error(`下载 ${asset.name} 失败: ${await readError(response)}`);
   await pipeline(Readable.fromWeb(response.body), createWriteStream(file));
   const { size } = await stat(file);
@@ -257,7 +283,9 @@ async function syncRelease(github, cnb, latestTag, dir, summary) {
       const digest = parseDigest(asset.digest);
       if (digest && digest.algo === "sha256" && remote.hash_value) {
         if (remote.hash_value.toLowerCase() !== digest.value) {
-          throw new Error(`附件 ${asset.name} sha256 不符: GitHub ${digest.value}，CNB ${remote.hash_value}`);
+          throw new Error(
+            `附件 ${asset.name} sha256 不符: GitHub ${digest.value}，CNB ${remote.hash_value}`,
+          );
         }
       }
     }
@@ -278,8 +306,8 @@ async function main() {
   const cnbReleases = await listCnbReleases();
   log(`GitHub Release ${githubReleases.length} 个，CNB Release ${cnbReleases.length} 个`);
 
-  // GitHub 的「latest」= 最新的非草稿、非预发布版本。
-  const latestTag = githubReleases.find((release) => !release.draft && !release.prerelease)?.tag_name;
+  // GitHub 的「latest」= 发布时被标记为 latest 的正式版本（没有则退回列表推断）。
+  const latestTag = await resolveLatestTag(githubReleases);
 
   const cnbByTag = new Map(cnbReleases.map((release) => [release.tag_name, release]));
   const summary = { created: 0, updated: 0, uploadedAssets: 0, deletedAssets: 0 };

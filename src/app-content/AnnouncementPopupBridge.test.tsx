@@ -42,6 +42,8 @@ function makeSnapshot(units: Announcement[] | undefined): AppContentSnapshot {
     repositoryMessage: null,
     refreshing: false,
     nextAutomaticCheckAt: null,
+    updateChannel: "stable",
+    updateChannelFallback: false,
     announcements: {
       data: units === undefined ? null : { announcements: units },
       lastAttemptAt: null,

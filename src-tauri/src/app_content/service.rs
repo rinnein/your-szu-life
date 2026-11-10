@@ -16,6 +16,35 @@ use std::{
 
 type ImageFlight = Arc<SingleFlight<Result<Vec<u8>, ContentError>>>;
 
+/// 一次更新检查的结果。`fallback` 表示稳定版频道因暂无正式版而回退了测试版。
+#[derive(Clone)]
+struct UpdateOutcome {
+    data: UpdateInfo,
+    source: Source,
+    fallback: bool,
+}
+
+/// GitHub Release 的最小视图。`draft` / `prerelease` 决定它属于哪个频道。
+#[derive(Deserialize)]
+struct GithubRelease {
+    tag_name: String,
+    name: Option<String>,
+    body: Option<String>,
+    html_url: Option<String>,
+    #[serde(default)]
+    draft: bool,
+    #[serde(default)]
+    prerelease: bool,
+    #[serde(default)]
+    assets: Vec<GithubAsset>,
+}
+
+#[derive(Deserialize)]
+struct GithubAsset {
+    name: String,
+    browser_download_url: String,
+}
+
 pub(super) struct ContentService {
     pub config: ContentConfig,
     http: Arc<dyn PublicHttp>,
@@ -23,6 +52,8 @@ pub(super) struct ContentService {
     cache: Cache,
     state: Mutex<AppContentSnapshot>,
     schedule: Mutex<AutomaticSchedule>,
+    /// `(当前频道, 切换代数)`。代数用于丢弃切换前在途刷新返回的旧频道数据。
+    channel: Mutex<(UpdateChannel, u64)>,
     refresh_flight: SingleFlight<AppContentSnapshot>,
     contributors_flight: SingleFlight<ContributorsSnapshot>,
     contributors: Mutex<Option<ContributorsSnapshot>>,
@@ -37,6 +68,7 @@ impl ContentService {
         http: Arc<dyn PublicHttp>,
         clock: Arc<dyn Clock>,
         cache_dir: Option<PathBuf>,
+        channel: UpdateChannel,
         emit: impl Fn(AppContentSnapshot) + Send + Sync + 'static,
     ) -> Self {
         let now = clock.now_ms();
@@ -50,6 +82,8 @@ impl ContentService {
             refreshing: false,
             next_automatic_check_at: (config.sources.is_some() || config.uses_github_releases())
                 .then_some(now),
+            update_channel: channel,
+            update_channel_fallback: false,
             announcements: FeedSnapshot::default(),
             update: FeedSnapshot::default(),
             update_available: false,
@@ -58,25 +92,28 @@ impl ContentService {
             snapshot.announcements =
                 load_announcements_feed(&cache, &sources.key(), now, &config.version);
             snapshot.update = load_feed(&cache, &sources.key(), "update.json", now);
-            snapshot.update_available = snapshot
-                .update
-                .data
-                .as_ref()
-                .is_some_and(|update| is_newer(&config.version, &update.latest_ver));
         }
         if config.uses_github_releases() {
             if let Some(repository) = &config.repository {
-                let key = format!("github:{}", repository.full_name);
-                snapshot.announcements =
-                    load_announcements_feed(&cache, &key, now, &config.version);
-                snapshot.update = load_feed(&cache, &key, "latest-release.json", now);
-                snapshot.update_available = snapshot
-                    .update
-                    .data
-                    .as_ref()
-                    .is_some_and(|update| is_newer(&config.version, &update.latest_ver));
+                snapshot.announcements = load_announcements_feed(
+                    &cache,
+                    &github_announcement_scope(repository),
+                    now,
+                    &config.version,
+                );
+                snapshot.update = load_feed(
+                    &cache,
+                    &github_update_scope(repository, channel),
+                    "latest-release.json",
+                    now,
+                );
             }
         }
+        snapshot.update_available = snapshot
+            .update
+            .data
+            .as_ref()
+            .is_some_and(|update| is_newer(&config.version, &update.latest_ver));
         Self {
             config,
             http,
@@ -84,6 +121,7 @@ impl ContentService {
             cache,
             state: Mutex::new(snapshot),
             schedule: Mutex::new(AutomaticSchedule::new(now)),
+            channel: Mutex::new((channel, 0)),
             refresh_flight: SingleFlight::default(),
             contributors_flight: SingleFlight::default(),
             contributors: Mutex::new(None),
@@ -124,257 +162,382 @@ impl ContentService {
         (self.emit)(snapshot);
     }
 
-    pub fn refresh(&self) -> AppContentSnapshot {
-        let sources = self.config.sources.as_ref();
-        if sources.is_none() && !self.config.uses_github_releases() {
+    /// 切换更新频道：立即展示该频道自己的缓存，随后由调用方触发一次检查。
+    ///
+    /// 频道状态与代数在同一个锁里更新，刷新侧据此丢弃切换前出发的请求结果。
+    pub fn set_channel(&self, channel: UpdateChannel) -> AppContentSnapshot {
+        let changed = {
+            let mut state = self.channel.lock().unwrap();
+            if state.0 == channel {
+                false
+            } else {
+                state.0 = channel;
+                state.1 = state.1.wrapping_add(1);
+                true
+            }
+        };
+        if !changed {
             return self.snapshot();
         }
-        self.refresh_flight.run(|| {
-            let attempted_at = self.clock.now_ms();
-            self.mutate(|snapshot| {
-                snapshot.refreshing = true;
-                snapshot.announcements.last_attempt_at = Some(attempted_at);
-                snapshot.update.last_attempt_at = Some(attempted_at);
-            });
-            // Each document has its own fallback chain. No successful request is repeated.
-            let (announcements, update) = if let Some(sources) = sources {
-                std::thread::scope(|scope| {
-                    let announcements =
-                        scope.spawn(|| self.fetch::<Announcements>(sources, "announcements.json"));
-                    let update = self.fetch::<UpdateInfo>(sources, "update.json");
-                    (
-                        Some(announcements.join().expect("content request worker")),
-                        update,
-                    )
-                })
-            } else {
-                let (announcements, update) = self.fetch_github_releases();
-                (Some(announcements), update)
-            };
-            let completed_at = self.clock.now_ms();
-            let cache_scope = sources.map(Sources::key).unwrap_or_else(|| {
-                format!(
-                    "github:{}",
-                    self.config.repository.as_ref().unwrap().full_name
+        let now = self.clock.now_ms();
+        let update = if let Some(sources) = &self.config.sources {
+            load_feed(&self.cache, &sources.key(), "update.json", now)
+        } else if self.config.uses_github_releases() {
+            match &self.config.repository {
+                Some(repository) => load_feed(
+                    &self.cache,
+                    &github_update_scope(repository, channel),
+                    "latest-release.json",
+                    now,
+                ),
+                None => FeedSnapshot::default(),
+            }
+        } else {
+            FeedSnapshot::default()
+        };
+        self.mutate(|snapshot| {
+            snapshot.update_channel = channel;
+            // 回退标记只代表上一轮检查的结论，换频道后先当作「未确认」。
+            snapshot.update_channel_fallback = false;
+            snapshot.update = update;
+            snapshot.update_available = snapshot
+                .update
+                .data
+                .as_ref()
+                .is_some_and(|update| is_newer(&snapshot.version, &update.latest_ver));
+        });
+        self.snapshot()
+    }
+
+    pub fn refresh(&self) -> AppContentSnapshot {
+        if self.config.sources.is_none() && !self.config.uses_github_releases() {
+            return self.snapshot();
+        }
+        // 切频道会让在途刷新的结果作废；此时最多再跑一轮，避免旧频道的数据
+        // 盖住新频道的快照。
+        for _ in 0..2 {
+            let epoch = self.channel_state().1;
+            let snapshot = self.refresh_flight.run(|| self.refresh_once(epoch));
+            if self.channel_state().1 == epoch {
+                return snapshot;
+            }
+        }
+        self.snapshot()
+    }
+
+    fn channel_state(&self) -> (UpdateChannel, u64) {
+        *self.channel.lock().unwrap()
+    }
+
+    fn refresh_once(&self, epoch: u64) -> AppContentSnapshot {
+        let channel = self.channel_state().0;
+        let attempted_at = self.clock.now_ms();
+        self.mutate(|snapshot| {
+            snapshot.refreshing = true;
+            snapshot.announcements.last_attempt_at = Some(attempted_at);
+            snapshot.update.last_attempt_at = Some(attempted_at);
+        });
+        let announcement_scope = self.config.sources.as_ref().map(Sources::key).or_else(|| {
+            self.config
+                .repository
+                .as_ref()
+                .map(github_announcement_scope)
+        });
+        let update_scope = self.config.sources.as_ref().map(Sources::key).or_else(|| {
+            self.config
+                .repository
+                .as_ref()
+                .map(|repository| github_update_scope(repository, channel))
+        });
+        // Each document has its own fallback chain. No successful request is repeated.
+        let (announcements, update) = if let Some(sources) = &self.config.sources {
+            std::thread::scope(|scope| {
+                let announcements =
+                    scope.spawn(|| self.fetch::<Announcements>(sources, "announcements.json"));
+                let update =
+                    self.fetch::<UpdateInfo>(sources, "update.json")
+                        .map(|(data, source)| UpdateOutcome {
+                            data,
+                            source,
+                            fallback: false,
+                        });
+                (
+                    Some(announcements.join().expect("content request worker")),
+                    update,
                 )
+            })
+        } else {
+            let announcements = self.fetch_github_announcement().or_else(|github_err| {
+                log::info!("GitHub 公告获取失败 ({github_err:?})，尝试从 CNB 镜像获取");
+                self.fetch_cnb_announcements()
             });
-            if let Some(Ok((data, source))) = &announcements {
-                self.cache.save(
-                    &cache_scope,
-                    "announcements.json",
-                    data,
-                    *source,
-                    completed_at,
-                );
+            (Some(announcements), self.fetch_update(channel))
+        };
+        let completed_at = self.clock.now_ms();
+
+        // 频道在请求期间被切换：丢弃这一轮结果，让调用方按新频道重跑。
+        if self.channel_state().1 != epoch {
+            self.mutate(|snapshot| snapshot.refreshing = false);
+            return self.snapshot();
+        }
+
+        if let (Some(scope), Some(Ok((data, source)))) = (&announcement_scope, &announcements) {
+            self.cache
+                .save(scope, "announcements.json", data, *source, completed_at);
+        }
+        if let (Some(scope), Ok(outcome)) = (&update_scope, &update) {
+            self.cache.save(
+                scope,
+                if self.config.sources.is_some() {
+                    "update.json"
+                } else {
+                    "latest-release.json"
+                },
+                &outcome.data,
+                outcome.source,
+                completed_at,
+            );
+        }
+        let fallback = match &update {
+            Ok(outcome) => outcome.fallback,
+            Err(_) => false,
+        };
+        self.mutate(|snapshot| {
+            if let Some(announcements) = announcements.as_ref() {
+                // 快照侧按当前版本过滤，缓存侧已在上方保存原始数据。
+                let filtered = announcements.clone().map(|(data, source)| {
+                    (applicable_announcements(data, &snapshot.version), source)
+                });
+                apply_result(&mut snapshot.announcements, filtered, completed_at);
             }
-            if let Ok((data, source)) = &update {
-                self.cache.save(
-                    &cache_scope,
-                    if sources.is_some() {
-                        "update.json"
-                    } else {
-                        "latest-release.json"
-                    },
-                    data,
-                    *source,
-                    completed_at,
-                );
-            }
-            self.mutate(|snapshot| {
-                if let Some(announcements) = announcements.as_ref() {
-                    // 快照侧按当前版本过滤，缓存侧已在上方保存原始数据。
-                    let filtered = announcements.clone().map(|(data, source)| {
-                        (applicable_announcements(data, &snapshot.version), source)
-                    });
-                    apply_result(&mut snapshot.announcements, filtered, completed_at);
-                }
-                apply_result(&mut snapshot.update, update, completed_at);
-                snapshot.refreshing = false;
-                snapshot.update_available = snapshot
-                    .update
-                    .data
-                    .as_ref()
-                    .is_some_and(|update| is_newer(&snapshot.version, &update.latest_ver));
-            });
-            if let Some(Ok(_)) = &announcements {
-                let allowed = self.allowed_images();
-                self.image_flights
-                    .lock()
-                    .unwrap()
-                    .retain(|url, _| allowed.contains(url));
-                self.cache.prune_images(&cache_scope, &allowed);
-            }
-            self.snapshot()
+            apply_update(&mut snapshot.update, &update, completed_at);
+            snapshot.refreshing = false;
+            snapshot.update_channel = channel;
+            snapshot.update_channel_fallback = fallback;
+            snapshot.update_available = snapshot
+                .update
+                .data
+                .as_ref()
+                .is_some_and(|update| is_newer(&snapshot.version, &update.latest_ver));
+        });
+        if let (Some(Ok(_)), Some(scope)) = (&announcements, &announcement_scope) {
+            let allowed = self.allowed_images();
+            self.image_flights
+                .lock()
+                .unwrap()
+                .retain(|url, _| allowed.contains(url));
+            self.cache.prune_images(scope, &allowed);
+        }
+        self.snapshot()
+    }
+
+    fn fetch_github_announcement(&self) -> Result<(Announcements, Source), ContentError> {
+        let Some(repository) = self.config.repository.as_ref() else {
+            return Err(ContentError::new(
+                ErrorKind::Unavailable,
+                "未配置 GitHub 仓库",
+            ));
+        };
+        let release = self.github_release(repository, "releases/tags/announcement")?;
+        let body = release.body.unwrap_or_default();
+        let data: Announcements = serde_json::from_str(&body)
+            .map_err(|_| ContentError::invalid("announcement Release 的 body 不是有效公告 JSON"))?;
+        data.validate()?;
+        Ok((data, Source::Github))
+    }
+
+    fn fetch_update(&self, channel: UpdateChannel) -> Result<UpdateOutcome, ContentError> {
+        self.fetch_github_update(channel).or_else(|github_err| {
+            log::info!("GitHub 更新检查失败 ({github_err:?})，尝试从 CNB 镜像获取");
+            self.fetch_cnb_update(channel)
         })
     }
 
-    fn fetch_github_releases(
+    fn github_release(
         &self,
-    ) -> (
-        Result<(Announcements, Source), ContentError>,
-        Result<(UpdateInfo, Source), ContentError>,
-    ) {
-        #[derive(Deserialize)]
-        struct Release {
-            tag_name: String,
-            name: Option<String>,
-            body: Option<String>,
-            html_url: Option<String>,
-            assets: Vec<Asset>,
-        }
-        #[derive(Deserialize)]
-        struct Asset {
-            name: String,
-            browser_download_url: String,
-        }
+        repository: &Repository,
+        endpoint: &str,
+    ) -> Result<GithubRelease, ContentError> {
+        let url = Url::parse(&format!(
+            "https://api.github.com/repos/{}/{endpoint}",
+            repository.full_name
+        ))
+        .map_err(|_| ContentError::invalid("GitHub 仓库地址无效"))?;
+        let response = self
+            .http
+            .get(&url, RequestKind::Github, JSON_LIMIT)?
+            .successful(RequestKind::Github)?;
+        serde_json::from_slice(&response.body)
+            .map_err(|_| ContentError::invalid("GitHub Release 响应无效"))
+    }
+
+    fn github_releases(
+        &self,
+        repository: &Repository,
+        endpoint: &str,
+    ) -> Result<Vec<GithubRelease>, ContentError> {
+        let url = Url::parse(&format!(
+            "https://api.github.com/repos/{}/{endpoint}",
+            repository.full_name
+        ))
+        .map_err(|_| ContentError::invalid("GitHub 仓库地址无效"))?;
+        let response = self
+            .http
+            .get(&url, RequestKind::Github, JSON_LIMIT)?
+            .successful(RequestKind::Github)?;
+        serde_json::from_slice(&response.body)
+            .map_err(|_| ContentError::invalid("GitHub Release 响应无效"))
+    }
+
+    fn fetch_github_update(&self, channel: UpdateChannel) -> Result<UpdateOutcome, ContentError> {
         let Some(repository) = self.config.repository.as_ref() else {
-            let error = ContentError::new(ErrorKind::Unavailable, "未配置 GitHub 仓库");
-            return (Err(error.clone()), Err(error));
+            return Err(ContentError::new(
+                ErrorKind::Unavailable,
+                "未配置 GitHub 仓库",
+            ));
         };
-        let get_release = |endpoint: &str| -> Result<Release, ContentError> {
-            let url = Url::parse(&format!(
-                "https://api.github.com/repos/{}/{endpoint}",
-                repository.full_name
-            ))
-            .map_err(|_| ContentError::invalid("GitHub 仓库地址无效"))?;
-            let response = self
-                .http
-                .get(&url, RequestKind::Github, JSON_LIMIT)?
-                .successful(RequestKind::Github)?;
-            serde_json::from_slice(&response.body)
-                .map_err(|_| ContentError::invalid("GitHub Release 响应无效"))
-        };
-        let get_releases = |endpoint: &str| -> Result<Vec<Release>, ContentError> {
-            let url = Url::parse(&format!(
-                "https://api.github.com/repos/{}/{endpoint}",
-                repository.full_name
-            ))
-            .map_err(|_| ContentError::invalid("GitHub 仓库地址无效"))?;
-            let response = self
-                .http
-                .get(&url, RequestKind::Github, JSON_LIMIT)?
-                .successful(RequestKind::Github)?;
-            serde_json::from_slice(&response.body)
-                .map_err(|_| ContentError::invalid("GitHub Release 响应无效"))
-        };
-        let announcement = get_release("releases/tags/announcement").and_then(|release| {
-            let body = release.body.unwrap_or_default();
-            let data: Announcements = serde_json::from_str(&body).map_err(|_| {
-                ContentError::invalid("announcement Release 的 body 不是有效公告 JSON")
-            })?;
-            data.validate()?;
-            Ok((data, Source::Github))
-        });
-        let update = (|| -> Result<(UpdateInfo, Source), ContentError> {
-            let releases = match get_releases("releases?per_page=10") {
-                Ok(r) => r,
-                Err(err) => {
-                    if err.kind == ErrorKind::RateLimited {
-                        return Err(err);
-                    }
-                    match get_release("releases/latest") {
-                        Ok(r) => vec![r],
-                        Err(err) => {
-                            if err.kind == ErrorKind::RateLimited {
-                                return Err(err);
-                            }
-                            get_release("releases/tags/canary").map(|r| vec![r])?
-                        }
-                    }
-                }
-            };
 
-            struct Candidate<'a> {
-                release: &'a Release,
-                asset: Option<&'a Asset>,
-                version: String,
+        // canary 频道优先直接取滚动 tag；稳定版在列表里筛掉草稿与预发布。
+        let mut releases = Vec::new();
+        if !channel.is_stable() {
+            match self.github_release(repository, "releases/tags/canary") {
+                Ok(release) => releases.push(release),
+                Err(error) if error.kind == ErrorKind::RateLimited => return Err(error),
+                Err(_) => {}
             }
+        }
+        if releases.is_empty() {
+            releases = self.github_releases(repository, "releases?per_page=10")?;
+        }
+        if let Some(selected) = self.select_github_update(repository, &releases, channel)? {
+            return Ok(selected);
+        }
 
-            let mut candidates: Vec<Candidate> = Vec::new();
-            for release in &releases {
-                let asset_names: Vec<&str> =
-                    release.assets.iter().map(|a| a.name.as_str()).collect();
-                if let Some(asset_idx) = find_platform_asset_index(&asset_names) {
-                    let asset = &release.assets[asset_idx];
-                    if let Some(ver) = extract_release_version(
-                        &release.tag_name,
-                        release.name.as_deref(),
-                        &asset.name,
-                    ) {
+        if !channel.is_stable() {
+            return Err(ContentError::new(
+                ErrorKind::Unavailable,
+                "GitHub Release 中还没有测试版",
+            ));
+        }
+
+        // 列表可能因排序或分页漏掉正式版，用 latest 端点再确认一次。
+        if let Ok(latest) = self.github_release(repository, "releases/latest") {
+            if let Some(selected) =
+                self.select_github_update(repository, std::slice::from_ref(&latest), channel)?
+            {
+                return Ok(selected);
+            }
+        }
+        // 正式版空窗：回退到 canary，并标记「当前展示的是测试版内容」。
+        if let Some(mut selected) = self.github_canary_update(repository)? {
+            selected.fallback = true;
+            return Ok(selected);
+        }
+        Err(ContentError::new(
+            ErrorKind::Unavailable,
+            "GitHub Release 中还没有正式版本",
+        ))
+    }
+
+    fn github_canary_update(
+        &self,
+        repository: &Repository,
+    ) -> Result<Option<UpdateOutcome>, ContentError> {
+        let mut releases = Vec::new();
+        match self.github_release(repository, "releases/tags/canary") {
+            Ok(release) => releases.push(release),
+            Err(error) if error.kind == ErrorKind::RateLimited => return Err(error),
+            Err(_) => releases = self.github_releases(repository, "releases?per_page=10")?,
+        }
+        self.select_github_update(repository, &releases, UpdateChannel::Canary)
+    }
+
+    fn select_github_update(
+        &self,
+        repository: &Repository,
+        releases: &[GithubRelease],
+        channel: UpdateChannel,
+    ) -> Result<Option<UpdateOutcome>, ContentError> {
+        struct Candidate<'a> {
+            release: &'a GithubRelease,
+            asset: Option<&'a GithubAsset>,
+            version: String,
+        }
+
+        let mut candidates: Vec<Candidate> = Vec::new();
+        for release in releases {
+            if !release_matches_channel(release, channel) {
+                continue;
+            }
+            let asset_names: Vec<&str> = release.assets.iter().map(|a| a.name.as_str()).collect();
+            if let Some(asset_idx) = find_platform_asset_index(&asset_names) {
+                let asset = &release.assets[asset_idx];
+                if let Some(ver) =
+                    extract_release_version(&release.tag_name, release.name.as_deref(), &asset.name)
+                {
+                    candidates.push(Candidate {
+                        release,
+                        asset: Some(asset),
+                        version: ver,
+                    });
+                }
+            } else {
+                #[cfg(target_os = "linux")]
+                {
+                    if let Some(ver) =
+                        extract_release_version(&release.tag_name, release.name.as_deref(), "")
+                    {
                         candidates.push(Candidate {
                             release,
-                            asset: Some(asset),
+                            asset: None,
                             version: ver,
                         });
                     }
-                } else {
-                    #[cfg(target_os = "linux")]
-                    {
-                        if let Some(ver) =
-                            extract_release_version(&release.tag_name, release.name.as_deref(), "")
-                        {
-                            candidates.push(Candidate {
-                                release,
-                                asset: None,
-                                version: ver,
-                            });
-                        }
-                    }
                 }
             }
+        }
 
-            if candidates.is_empty() {
-                return Err(ContentError::new(
-                    ErrorKind::Unavailable,
-                    "最新 GitHub Release 未包含当前平台的安装包",
-                ));
-            }
+        if candidates.is_empty() {
+            return Ok(None);
+        }
 
-            let newer_candidate = candidates
+        let newer_candidate = candidates
+            .iter()
+            .find(|c| is_newer(&self.config.version, &c.version));
+        let selected = newer_candidate.unwrap_or(&candidates[0]);
+
+        let release_url = Some(selected.release.html_url.clone().unwrap_or_else(|| {
+            format!(
+                "https://github.com/{}/releases/tag/{}",
+                repository.full_name, selected.release.tag_name
+            )
+        }));
+
+        let (direct, accelerated) = if let Some(asset) = selected.asset {
+            let direct = web_url(&asset.browser_download_url)?;
+            let accelerated = self
+                .config
+                .github_accelerators
                 .iter()
-                .find(|c| is_newer(&self.config.version, &c.version));
-            let selected = newer_candidate.unwrap_or(&candidates[0]);
+                .find_map(|prefix| web_url(&format!("{prefix}{direct}")).ok());
+            (direct, accelerated)
+        } else {
+            let direct = web_url(release_url.as_deref().unwrap_or("https://github.com"))?;
+            (direct, None)
+        };
 
-            let release_url = selected.release.html_url.clone().or_else(|| {
-                self.config.repository.as_ref().map(|r| {
-                    format!(
-                        "https://github.com/{}/releases/tag/{}",
-                        r.full_name, selected.release.tag_name
-                    )
-                })
-            });
-
-            let (direct, accelerated) = if let Some(asset) = selected.asset {
-                let direct = web_url(&asset.browser_download_url)?;
-                let accelerated = self
-                    .config
-                    .github_accelerators
-                    .iter()
-                    .find_map(|prefix| web_url(&format!("{prefix}{direct}")).ok());
-                (direct, accelerated)
-            } else {
-                let direct = web_url(release_url.as_deref().unwrap_or("https://github.com"))?;
-                (direct, None)
-            };
-
-            let update = UpdateInfo {
-                latest_ver: selected.version.clone(),
-                latest_ver_url: accelerated.unwrap_or(direct).to_string(),
-                changelog: selected.release.body.clone().unwrap_or_default(),
-                release_url,
-            };
-            update.validate()?;
-            Ok((update, Source::Github))
-        })();
-        let announcement = announcement.or_else(|github_err| {
-            log::info!("GitHub 公告获取失败 ({github_err:?})，尝试从 CNB 镜像获取");
-            self.fetch_cnb_announcements()
-        });
-        let update = update.or_else(|github_err| {
-            log::info!("GitHub 更新检查失败 ({github_err:?})，尝试从 CNB 镜像获取");
-            self.fetch_cnb_releases()
-        });
-        (announcement, update)
+        let update = UpdateInfo {
+            latest_ver: selected.version.clone(),
+            latest_ver_url: accelerated.unwrap_or(direct).to_string(),
+            changelog: selected.release.body.clone().unwrap_or_default(),
+            release_url,
+        };
+        update.validate()?;
+        Ok(Some(UpdateOutcome {
+            data: update,
+            source: Source::Github,
+            fallback: false,
+        }))
     }
 
     fn fetch_cnb_announcements(&self) -> Result<(Announcements, Source), ContentError> {
@@ -400,7 +563,7 @@ impl ContentService {
         Ok((announcements, Source::Cnb))
     }
 
-    fn fetch_cnb_releases(&self) -> Result<(UpdateInfo, Source), ContentError> {
+    fn fetch_cnb_update(&self, channel: UpdateChannel) -> Result<UpdateOutcome, ContentError> {
         let url = Url::parse(&format!(
             "https://cnb.cool/{}/-/releases",
             self.config.cnb_repository
@@ -413,6 +576,31 @@ impl ContentService {
         let data: CnbReleasesResponse = serde_json::from_slice(&response.body)
             .map_err(|_| ContentError::invalid("CNB Release 列表响应无效"))?;
 
+        if let Some(selected) = self.select_cnb_update(&data.releases, channel)? {
+            return Ok(selected);
+        }
+        if !channel.is_stable() {
+            return Err(ContentError::new(
+                ErrorKind::Unavailable,
+                "CNB Release 中还没有测试版",
+            ));
+        }
+        // 正式版空窗：回退到 canary，并标记「当前展示的是测试版内容」。
+        if let Some(mut selected) = self.select_cnb_update(&data.releases, UpdateChannel::Canary)? {
+            selected.fallback = true;
+            return Ok(selected);
+        }
+        Err(ContentError::new(
+            ErrorKind::Unavailable,
+            "CNB Release 中还没有正式版本",
+        ))
+    }
+
+    fn select_cnb_update(
+        &self,
+        releases: &[CnbRelease],
+        channel: UpdateChannel,
+    ) -> Result<Option<UpdateOutcome>, ContentError> {
         struct Candidate<'a> {
             release: &'a CnbRelease,
             asset: Option<&'a CnbAsset>,
@@ -420,7 +608,10 @@ impl ContentService {
         }
 
         let mut candidates: Vec<Candidate> = Vec::new();
-        for release in &data.releases {
+        for release in releases {
+            if !cnb_release_matches_channel(release, channel) {
+                continue;
+            }
             let asset_names: Vec<&str> = release.assets.iter().map(|a| a.name.as_str()).collect();
             if let Some(asset_idx) = find_platform_asset_index(&asset_names) {
                 let asset = &release.assets[asset_idx];
@@ -452,10 +643,7 @@ impl ContentService {
         }
 
         if candidates.is_empty() {
-            return Err(ContentError::new(
-                ErrorKind::Unavailable,
-                "CNB Release 未包含当前平台的安装包",
-            ));
+            return Ok(None);
         }
 
         let newer_candidate = candidates
@@ -491,7 +679,11 @@ impl ContentService {
             release_url: Some(release_url),
         };
         update.validate()?;
-        Ok((update, Source::Cnb))
+        Ok(Some(UpdateOutcome {
+            data: update,
+            source: Source::Cnb,
+            fallback: false,
+        }))
     }
 
     #[cfg(any(target_os = "android", target_os = "windows", test))]
@@ -779,20 +971,17 @@ impl ContentService {
     pub fn load_image(&self, value: &str) -> Result<Vec<u8>, ContentError> {
         let url = web_url(value)?;
         self.require_image(url.as_str())?;
-        let scope = self
-            .config
-            .sources
-            .as_ref()
-            .map(Sources::key)
-            .or_else(|| {
-                self.config.uses_github_releases().then(|| {
-                    format!(
-                        "github:{}",
-                        self.config.repository.as_ref().unwrap().full_name
-                    )
-                })
-            })
-            .ok_or_else(|| ContentError::invalid("未配置内容源"))?;
+        let scope = if let Some(sources) = &self.config.sources {
+            Some(sources.key())
+        } else if self.config.uses_github_releases() {
+            self.config
+                .repository
+                .as_ref()
+                .map(github_announcement_scope)
+        } else {
+            None
+        };
+        let scope = scope.ok_or_else(|| ContentError::invalid("未配置内容源"))?;
         let flight = self
             .image_flights
             .lock()
@@ -981,6 +1170,53 @@ fn load_announcements_feed(
         .data
         .map(|data| applicable_announcements(data, current_version));
     feed
+}
+
+/// 公告的缓存 scope 与更新时间无关：公告不区分频道。
+fn github_announcement_scope(repository: &Repository) -> String {
+    format!("github:{}", repository.full_name)
+}
+
+/// 更新缓存按频道隔离：切换频道不会读到另一条通道的版本。
+fn github_update_scope(repository: &Repository, channel: UpdateChannel) -> String {
+    format!("github:{}:{}", repository.full_name, channel.slug())
+}
+
+/// 稳定版只认非草稿、非预发布且不是滚动 canary 的 release；测试版只认 canary。
+fn release_matches_channel(release: &GithubRelease, channel: UpdateChannel) -> bool {
+    if channel.is_stable() {
+        !release.draft && !release.prerelease && release.tag_name != "canary"
+    } else {
+        release.tag_name == "canary"
+    }
+}
+
+fn cnb_release_matches_channel(release: &CnbRelease, channel: UpdateChannel) -> bool {
+    if channel.is_stable() {
+        !release.prerelease && release.tag_name() != "canary"
+    } else {
+        release.tag_name() == "canary"
+    }
+}
+
+fn apply_update(
+    snapshot: &mut FeedSnapshot<UpdateInfo>,
+    result: &Result<UpdateOutcome, ContentError>,
+    completed_at: u64,
+) {
+    match result {
+        Ok(outcome) => {
+            snapshot.data = Some(outcome.data.clone());
+            snapshot.last_success_at = Some(completed_at);
+            snapshot.source = Some(outcome.source);
+            snapshot.from_cache = false;
+            snapshot.error = None;
+        }
+        Err(error) => {
+            snapshot.error = Some(error.clone());
+            snapshot.from_cache = snapshot.data.is_some();
+        }
+    }
 }
 
 fn apply_result<T>(

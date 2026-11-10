@@ -1,14 +1,17 @@
 name: Build and publish packages
 
-# 完整流程（构建 + canary release + AUR + 回调 CNB 同步）只有两个入口：
-#   - push 到 main
-#   - 手动 workflow_dispatch（可在任意分支上手动指定）
+# 两条发布通道，共用同一套构建产物：
+#   - push 到 main（或手动 workflow_dispatch）→ 刷新滚动 canary 预发布
+#   - push 版本 tag（v*）→ 发布正式 release（latest），并把同一次构建的资产
+#     同步到 canary，让测试版频道与 AUR 立刻拿到这个版本
+# 两种入口都会派发 AUR（只消费 canary tag）并回调 CNB 同步。
 # PR 的构建在 pr-build.yml 里，那个 workflow 没有任何发布 job。
-# 注意 push 只放宽到 main：CNB 同步过来的 cnb/* 分支也是 push 事件，
+# push 只放宽到 main 与 v* tag：CNB 同步过来的 cnb/* 分支也是 push 事件，
 # 不限制的话推一次分支就会跑整套构建并覆盖 canary release。
 on:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -20,121 +23,69 @@ concurrency:
 
 jobs:
   packages:
-    # 构建步骤与 PR 构建共用，见 build-packages.yml。
+    # 构建步骤与 PR 构建共用，见 build-packages.yml。这里的入口都是可信事件
+    # （main push / 版本 tag / 手动触发），所以直接用仓库正式签名。
     permissions:
       contents: read
     uses: ./.github/workflows/build-packages.yml
+    with:
+      signing: repo
     secrets: inherit
 
-  canary:
-    name: Publish canary prerelease
-    needs: [ packages ]
-    # 本 workflow 只有 main 的 push 与手动 workflow_dispatch 两个入口，
-    # 所以这里不额外加事件判断：能进到这个文件就说明是完整流程。
+  publish:
+    name: Publish release
+    needs: [packages]
+    # 发布代码在 .ci/publish-github-release.mjs：同样的「先删旧资产再上传」
+    # 覆盖语义，稳定版与 canary 只是参数不同。
     runs-on: ubuntu-latest
     permissions:
       contents: write
     concurrency:
-      group: canary-release
+      group: release-publish
       cancel-in-progress: false
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
       - name: Download this run's packages
         uses: actions/download-artifact@v8
         with:
           path: packages
 
-      - name: Replace canary release assets
-        uses: actions/github-script@v9
-        with:
-          script: |
-            const fs = require('node:fs/promises');
-            const path = require('node:path');
-            const repo = context.repo;
-            const tag = 'canary';
-            const root = path.resolve('packages');
-            const files = [];
-            async function collect(dir) {
-              for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
-                const file = path.join(dir, entry.name);
-                if (entry.isDirectory()) await collect(file);
-                else if (entry.isFile()) files.push(file);
-              }
-            }
-            await collect(root);
-            if (!files.length) throw new Error('No packages downloaded');
-            // Each build job has already assigned a unique release filename.
-            const assets = files.sort().map(file => ({
-              file,
-              name: path.basename(file),
-            }));
-            if (new Set(assets.map(asset => asset.name)).size !== assets.length) {
-              throw new Error('Duplicate release asset names');
-            }
-            const versionMatch = assets
-              .map(asset => asset.name.match(/_(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)-release\./))
-              .find(Boolean);
-            const releaseVersion = versionMatch ? versionMatch[1] : '';
-            const metadata = {
-              ...repo,
-              tag_name: tag,
-              target_commitish: context.sha,
-              name: releaseVersion ? `canary v${releaseVersion}` : 'canary',
-              body: `自动构建预发布。\n\n${releaseVersion ? `版本：${releaseVersion}\n` : ''}提交：${context.sha}\n构建：${context.serverUrl}/${repo.owner}/${repo.repo}/actions/runs/${context.runId}`,
-              draft: false,
-              prerelease: true,
-              make_latest: 'false',
-            };
-            let release;
-            try {
-              ({ data: release } = await github.rest.repos.getReleaseByTag({ ...repo, tag }));
-            } catch (error) {
-              if (error.status !== 404) throw error;
-            }
-            if (release) {
-              const previousAssets = await github.paginate(github.rest.repos.listReleaseAssets, {
-                ...repo, release_id: release.id, per_page: 100,
-              });
-              for (const asset of previousAssets) {
-                await github.rest.repos.deleteReleaseAsset({ ...repo, asset_id: asset.id });
-              }
-            }
-            // Keep the rolling tag on the commit that produced these packages.
-            try {
-              await github.rest.git.updateRef({
-                ...repo, ref: `tags/${tag}`, sha: context.sha, force: true,
-              });
-            } catch (error) {
-              if (error.status !== 404 && error.status !== 422) throw error;
-              await github.rest.git.createRef({
-                ...repo, ref: `refs/tags/${tag}`, sha: context.sha,
-              });
-            }
-            ({ data: release } = release
-              ? await github.rest.repos.updateRelease({ ...metadata, release_id: release.id })
-              : await github.rest.repos.createRelease(metadata));
-            for (const asset of assets) {
-              await github.rest.repos.uploadReleaseAsset({
-                ...repo,
-                release_id: release.id,
-                name: asset.name,
-                data: await fs.readFile(asset.file),
-              });
-            }
-            // Remove any stale assets that survived the replacement, keeping
-            // only the files produced by this workflow run.
-            const currentNames = new Set(assets.map(asset => asset.name));
-            const remainingAssets = await github.paginate(github.rest.repos.listReleaseAssets, {
-              ...repo, release_id: release.id, per_page: 100,
-            });
-            for (const asset of remainingAssets) {
-              if (!currentNames.has(asset.name)) {
-                await github.rest.repos.deleteReleaseAsset({ ...repo, asset_id: asset.id });
-              }
-            }
-            core.info(`Uploaded ${assets.length} assets to ${release.html_url}`);
+      - name: Publish stable release
+        # 正式版的身份就是推上来的 tag；版本号、资产名以 package.json 为准。
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.packages.outputs.version }}
+          TITLE: v${{ needs.packages.outputs.version }}
+          PRERELEASE: 'false'
+          MAKE_LATEST: 'true'
+          TARGET_COMMITISH: ${{ github.sha }}
+          ASSET_DIR: packages
+        run: node .ci/publish-github-release.mjs
+
+      - name: Publish canary release
+        # 滚动 tag 指向本次构建的提交，旧资产全部替换，只保留本次的产物。
+        # tag push 时这里也让测试版频道与 AUR 直接拿到同一个版本。
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: canary
+          VERSION: ${{ needs.packages.outputs.version }}
+          TITLE: canary v${{ needs.packages.outputs.version }}
+          PRERELEASE: 'true'
+          MAKE_LATEST: 'false'
+          GENERATE_NOTES: 'false'
+          MOVE_TAG: 'true'
+          TARGET_COMMITISH: ${{ github.sha }}
+          ASSET_DIR: packages
+        run: node .ci/publish-github-release.mjs
 
   # 发布完成后拉起 rinnein/auto-aur，只重建由 canary release 供养的子包
-  # your-szu-life-bin。
+  # your-szu-life-bin。AUR 代表 canary 频道的更新频率，不为正式版另外分包。
   #
   # 跨仓库权限靠一个 GitHub App 换取临时的 installation token：
   #   - 变量 APP_CLIENT_ID：App 的 Client ID
@@ -146,8 +97,7 @@ jobs:
   # 长期 PAT。任一凭据缺失时跳过派发，不影响 release 本身的发布。
   aur:
     name: Publish to AUR
-    needs: [ canary ]
-    # 同上：能走到这里只有 main push 或手动触发，pr-build.yml 里没有这个 job。
+    needs: [publish]
     runs-on: ubuntu-latest
     steps:
       - name: Check AUR trigger credentials
@@ -206,12 +156,13 @@ jobs:
               "https://api.github.com/repos/rinnein/auto-aur/dispatches"
           echo "dispatched AUR publish for $SOURCE@$TAG ($tasks)"
 
-  # 构建 + canary 发布结束后，主动让 CNB 拉一次（CNB 侧事件 api_trigger_github_sync，
-  # 定义在 .cnb.yml，跑的是和每日定时任务同一段 pipeline：拉代码/tag + 镜像 Release）。
-  # 这样不用等第二天 06:00 的定时任务；失败不影响已经发出去的 release。
+  # 发布结束后，主动让 CNB 拉一次（CNB 侧事件 api_trigger_github_sync，
+  # 定义在 .cnb.yml，跑的是和每日定时任务同一段 pipeline：拉代码/tag + 镜像
+  # Release）。pipeline 里的 push_tags 会把版本 tag 一并拉到 CNB，正式版与
+  # canary 都会被镜像；失败不影响已经发出去的 release。
   sync-cnb:
     name: Trigger CNB sync
-    needs: [ canary ]
+    needs: [publish]
     runs-on: ubuntu-latest
     steps:
       - name: Trigger CNB github-to-cnb pipeline

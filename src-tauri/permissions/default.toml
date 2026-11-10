@@ -115,6 +115,7 @@ permissions = [
   "allow-uooc-qa-http-request",
   "allow-get-app-content-snapshot",
   "allow-refresh-app-content",
+  "allow-set-update-channel",
   "allow-get-contributors",
   "allow-load-announcement-image",
   "allow-start-in-app-update",

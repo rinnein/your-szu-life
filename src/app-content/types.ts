@@ -34,6 +34,8 @@ export type FeedSnapshot<T> = {
 
 export type Repository = { fullName: string; url: string };
 
+export type UpdateChannel = "stable" | "canary";
+
 export type AppContentSnapshot = {
   revision: number;
   version: string;
@@ -45,6 +47,10 @@ export type AppContentSnapshot = {
   repositoryMessage: string | null;
   refreshing: boolean;
   nextAutomaticCheckAt: number | null;
+  /** 当前选中的更新频道。 */
+  updateChannel: UpdateChannel;
+  /** 稳定版暂无正式 release，当前展示的是回退的测试版内容。 */
+  updateChannelFallback: boolean;
   announcements: FeedSnapshot<{ announcements: Announcement[] }>;
   update: FeedSnapshot<UpdateInfo>;
   updateAvailable: boolean;
