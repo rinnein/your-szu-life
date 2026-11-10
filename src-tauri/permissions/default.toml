@@ -195,6 +195,8 @@ permissions = [
   "allow-get-notification-settings",
   "allow-save-notification-settings",
   "allow-set-application-focus",
+  "allow-get-analytics-settings",
+  "allow-save-analytics-settings",
   "allow-subscribe-todos",
   "allow-refresh-todos",
   "allow-get-proxy-settings",

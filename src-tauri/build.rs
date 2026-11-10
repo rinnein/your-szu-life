@@ -8,7 +8,11 @@ use std::{
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-const CONTENT_ENV_VARS: [&str; 2] = ["SZU_LIFE_BASE_URL", "SZU_LIFE_FALLBACK_BASE_URL"];
+const EMBEDDED_ENV_VARS: [&str; 3] = [
+    "SZU_LIFE_BASE_URL",
+    "SZU_LIFE_FALLBACK_BASE_URL",
+    "APTABASE_APP_KEY",
+];
 
 /// Tauri CLI 只把 `bundle.externalBin` 打进桌面端安装包，Android 侧不会处理它。
 /// Android 的 `nativeLibraryDir` 只包含 APK 内 `lib/<abi>/` 的条目，所以这里把侧车
@@ -238,7 +242,7 @@ fn main() {
     let dotenv_path = manifest_dir.join("../.env");
     let dotenv = load_dotenv(&dotenv_path);
     println!("cargo:rerun-if-changed={}", dotenv_path.display());
-    for name in CONTENT_ENV_VARS {
+    for name in EMBEDDED_ENV_VARS {
         if let Some(value) = configured_value(name, &dotenv) {
             println!("cargo:rustc-env={name}={value}");
         }
@@ -454,6 +458,8 @@ fn main() {
             "trigger_dorm_login",
             "logout_campus_network",
             "consume_dorm_login_failure_notice",
+            "get_analytics_settings",
+            "save_analytics_settings",
         ]),
     ))
     .expect("failed to build Tauri ACL metadata");

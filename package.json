@@ -15,6 +15,7 @@
     "prepare": "vp config"
   },
   "dependencies": {
+    "@aptabase/tauri": "^0.7.0",
     "@better-auth/api-key": "^1.7.12",
     "@codemirror/lang-cpp": "^6.0.3",
     "@codemirror/lang-go": "^6.0.1",

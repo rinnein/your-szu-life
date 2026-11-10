@@ -13,6 +13,8 @@ on:
         required: false
       ANDROID_KEY_PASSWORD:
         required: false
+      APTABASE_APP_KEY:
+        required: false
 
 jobs:
   desktop:
@@ -74,6 +76,8 @@ jobs:
         run: vp install --frozen-lockfile
 
       - name: Build desktop bundles
+        env:
+          APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
         run: vpr tauri build --ci --bundles ${{ matrix.bundles }}
 
       - name: Normalize desktop bundle names
@@ -222,6 +226,8 @@ jobs:
         # The release artifact is ARM64. Explicitly limit Tauri/Gradle to the
         # target that is built so the generated project does not require the
         # default armv7/x86 libraries that are intentionally not compiled.
+        env:
+          APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
         run: vpr tauri android build --ci --apk --target aarch64 --split-per-abi
 
       - name: Verify Android signatures

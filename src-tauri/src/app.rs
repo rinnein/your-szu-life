@@ -91,6 +91,7 @@ pub(crate) fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_aptabase::Builder::new(crate::analytics::app_key()).build())
         .setup(move |app| {
             // 日志级别本身也存于 settings.sqlite，必须先打开设置库再初始化日志。
             if let Err(error) = crate::preferences::initialize(app.handle()) {
@@ -99,6 +100,11 @@ pub(crate) fn run() {
             // 旧的内部存储日志/模型要先搬到新位置，再初始化日志与模型服务。
             crate::migrations::storage::migrate_legacy_storage(app.handle());
             crate::logging::initialize(app.handle());
+            if crate::analytics::app_key().is_empty() {
+                log::info!("未配置 Aptabase App Key，匿名统计已关闭");
+            } else {
+                crate::analytics::track(app.handle(), "app_started", None);
+            }
             // 端口分配器的通知需要在任意调用点推送到前端，先把句柄存下来。
             crate::ports::initialize(app.handle());
             if let Err(error) = crate::storage::initialize(app.handle()) {
@@ -229,6 +235,8 @@ pub(crate) fn run() {
             crate::notification::commands::get_notification_settings,
             crate::notification::commands::save_notification_settings,
             crate::notification::commands::set_application_focus,
+            crate::analytics::commands::get_analytics_settings,
+            crate::analytics::commands::save_analytics_settings,
             crate::todos::commands::subscribe_todos,
             crate::todos::commands::refresh_todos,
             crate::netproxy::commands::get_proxy_settings,
@@ -396,7 +404,13 @@ pub(crate) fn run() {
         #[cfg(desktop)]
         crate::desktop::on_window_event(window, event);
     });
-    builder
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    let app = builder
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::Exit = event {
+            crate::analytics::track(app_handle, "app_exited", None);
+            crate::analytics::flush(app_handle);
+        }
+    });
 }

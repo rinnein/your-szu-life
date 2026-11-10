@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { Card, LoadingIndicator, Button } from "material/react";
+import { Card, LoadingIndicator, Button, Switch } from "material/react";
 import { Banner, Chip, toast } from "./ui";
+import { setAnalyticsEnabled as setAnalyticsTracking } from "./analytics";
 import { LuFileText, LuFolderOpen, LuPower, LuRefreshCw, LuTrash2 } from "react-icons/lu";
 import { isAndroidPlatform } from "./os-info";
 
@@ -27,6 +28,10 @@ type LogInfo = {
 
 const initialMode: DebugMode = { enabled: false, logCount: 0 };
 
+type AnalyticsSettings = {
+  enabled: boolean;
+};
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -41,6 +46,8 @@ export default function DebugLogPage() {
   const [settingLevel, setSettingLevel] = useState(false);
   const [restarting, setRestarting] = useState(false);
   const [isAndroid, setIsAndroid] = useState(false);
+  const [analyticsEnabled, setAnalyticsEnabledState] = useState(true);
+  const [savingAnalytics, setSavingAnalytics] = useState(false);
 
   const loadLogInfo = async () => {
     try {
@@ -72,6 +79,17 @@ export default function DebugLogPage() {
         toast.danger(`无法读取调试模式状态: ${String(err)}`);
       });
 
+    void invoke<AnalyticsSettings>("get_analytics_settings")
+      .then((settings) => {
+        if (!active) return;
+        const enabled = settings?.enabled !== false;
+        setAnalyticsEnabledState(enabled);
+        setAnalyticsTracking(enabled);
+      })
+      .catch(() => {
+        // 读取失败时保持默认开启，实际发送仍由后端偏好决定。
+      });
+
     const unlistenPromise = listen<DebugMode>("debug-mode-changed", (event) => {
       if (!active) return;
       setMode(event.payload);
@@ -80,9 +98,19 @@ export default function DebugLogPage() {
       }
     });
 
+    const unlistenAnalytics = listen<AnalyticsSettings>("analytics-settings-changed", (event) => {
+      if (!active) return;
+      const enabled = event.payload?.enabled !== false;
+      setAnalyticsEnabledState(enabled);
+      setAnalyticsTracking(enabled);
+    });
+
     return () => {
       active = false;
       void unlistenPromise.then((fn) => fn());
+      void Promise.resolve(unlistenAnalytics)
+        .then((fn) => fn?.())
+        .catch(() => undefined);
     };
   }, []);
 
@@ -131,6 +159,29 @@ export default function DebugLogPage() {
       toast.danger(`设置日志级别失败: ${String(e)}`);
     } finally {
       setSettingLevel(false);
+    }
+  };
+
+  const handleAnalyticsToggle = async (enabled: boolean) => {
+    if (savingAnalytics) return;
+    const previous = analyticsEnabled;
+    setAnalyticsEnabledState(enabled);
+    setAnalyticsTracking(enabled);
+    setSavingAnalytics(true);
+    try {
+      const saved = await invoke<AnalyticsSettings>("save_analytics_settings", {
+        settings: { enabled },
+      });
+      const next = saved?.enabled !== false;
+      setAnalyticsEnabledState(next);
+      setAnalyticsTracking(next);
+      toast.success(next ? "匿名统计已开启" : "匿名统计已关闭");
+    } catch (cause) {
+      setAnalyticsEnabledState(previous);
+      setAnalyticsTracking(previous);
+      toast.danger(`保存统计设置失败: ${String(cause)}`);
+    } finally {
+      setSavingAnalytics(false);
     }
   };
 
@@ -284,6 +335,29 @@ export default function DebugLogPage() {
                   );
                 })}
               </div>
+            </div>
+          </Card>
+
+          <Card variant="outlined">
+            <div slot="headline">匿名使用统计</div>
+            <div slot="subhead">
+              仅发送应用启动/退出、页面路径、应用版本与系统类型等匿名信息，不包含账号、成绩或课程内容。
+            </div>
+            <div className="flex items-center justify-between gap-4 p-4">
+              <div className="space-y-1">
+                <div className="font-medium text-base text-foreground">发送匿名统计</div>
+                <p className="text-sm text-muted">
+                  关闭后不再产生新的统计事件；已排队的事件可能在下一次发送前完成上报。
+                </p>
+              </div>
+              <Switch
+                checked={analyticsEnabled}
+                onChange={(e: any) => {
+                  const checked = Boolean(e.detail?.checked ?? e.target?.checked);
+                  void handleAnalyticsToggle(checked);
+                }}
+                aria-label="匿名使用统计"
+              />
             </div>
           </Card>
 

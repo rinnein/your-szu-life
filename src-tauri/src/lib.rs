@@ -1,6 +1,7 @@
 #![recursion_limit = "512"]
 
 pub(crate) mod activity;
+mod analytics;
 mod app;
 mod app_content;
 pub(crate) mod app_paths;

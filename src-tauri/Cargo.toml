@@ -41,6 +41,8 @@ tauri-plugin-deep-link = "2"
 tauri-plugin-os = "2"
 tauri-plugin-log = "2"
 tauri-plugin-clipboard-manager = "2"
+# 匿名统计。与项目 reqwest 的 rustls 后端保持一致，避免额外引入 native-tls。
+tauri-plugin-aptabase = { version = "1.3.0", default-features = false, features = ["rustls-tls"] }
 rust-ini = "=0.21.1"
 log = "0.4"
 encoding_rs = "0.8"

@@ -12,6 +12,7 @@
     "os:default",
     "log:default",
     "clipboard-manager:default",
+    "aptabase:allow-track-event",
     "core:webview:allow-create-webview-window",
     "core:window:allow-activity-name",
     "core:window:allow-destroy"

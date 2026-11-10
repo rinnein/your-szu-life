@@ -7358,6 +7358,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-plugin-aptabase"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "436efd760ded732281174745bea5a391acad55047f60c5c2f395be7bb1766a14"
+dependencies = [
+ "futures",
+ "log",
+ "os_info",
+ "rand 0.10.3",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sys-locale",
+ "tauri",
+ "tauri-plugin",
+ "time",
+ "tokio",
+]
+
+[[package]]
 name = "tauri-plugin-clipboard-manager"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9615,6 +9635,7 @@ dependencies = [
  "ssid",
  "tauri",
  "tauri-build",
+ "tauri-plugin-aptabase",
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-deep-link",
  "tauri-plugin-dialog",

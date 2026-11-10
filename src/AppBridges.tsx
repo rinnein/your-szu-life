@@ -1,4 +1,5 @@
 import { AppLifecycleBridge } from "./app-lifecycle";
+import { AnalyticsBridge } from "./AnalyticsBridge";
 import { AndroidBackNavigation } from "./AndroidBackNavigation";
 import { DeepLinkNavigation } from "./DeepLinkNavigation";
 import { ModuleActivityBridge } from "./ModuleActivityBridge";
@@ -12,6 +13,7 @@ import { PortNoticeBridge } from "./PortNoticeBridge";
  *
  * 这些组件不渲染 UI，但都必须在整个应用生命周期内常驻，且与当前页面无关：
  * - AppLifecycleBridge：前后台焦点/可见性上报；
+ * - AnalyticsBridge：匿名页面浏览上报，受调试页统计开关控制；
  * - ModuleActivityBridge：把当前功能页面上报给后端，用于动态轮询档位；
  * - AndroidBackNavigation / DeepLinkNavigation：系统返回键与深链接入口；
  * - NotificationCenter：应用内通知展示与通知点击跳转的唯一出口；
@@ -25,6 +27,7 @@ export function AppBridges() {
   return (
     <>
       <AppLifecycleBridge />
+      <AnalyticsBridge />
       <ModuleActivityBridge />
       <AndroidBackNavigation />
       <DeepLinkNavigation />

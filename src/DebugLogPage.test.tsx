@@ -58,6 +58,10 @@ describe("debug log page", () => {
     listeners.clear();
     vi.mocked(invoke).mockImplementation(async (command, args) => {
       if (command === "get_debug_mode") return { enabled: true, logCount: 0 };
+      if (command === "get_analytics_settings") return { enabled: true };
+      if (command === "save_analytics_settings") {
+        return (args as { settings?: { enabled: boolean } })?.settings;
+      }
       if (command === "get_log_info") return mockLogInfo;
       if (command === "set_log_level") {
         const { level } = (args ?? {}) as { level: string };
@@ -149,6 +153,23 @@ describe("debug log page", () => {
       expect(invoke).toHaveBeenCalledWith("set_debug_mode", { enabled: false });
     });
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("toggles anonymous analytics and persists the choice", async () => {
+    render(<DebugLogPage />);
+    await screen.findByText("日志文件概览");
+
+    const analyticsSwitch = await screen.findByRole("switch", { name: "匿名使用统计" });
+    expect(analyticsSwitch).toBeChecked();
+
+    fireEvent.change(analyticsSwitch, { target: { checked: false } });
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("save_analytics_settings", {
+        settings: { enabled: false },
+      });
+    });
+    expect(analyticsSwitch).not.toBeChecked();
   });
 
   it("restarts onboarding without resetting settings", async () => {
