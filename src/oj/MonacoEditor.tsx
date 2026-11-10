@@ -4,6 +4,7 @@ import { Banner } from "../ui";
 import { init } from "modern-monaco";
 import type * as Monaco from "modern-monaco/editor-core";
 import { registerOjCompletions } from "./monaco-completions";
+import { OJ_MONO_FONT_FAMILY } from "./monospace";
 import type { CodeEditorProps } from "./CodeEditor";
 let loading: Promise<typeof Monaco> | undefined;
 function loadMonaco() {
@@ -59,6 +60,7 @@ export default function MonacoEditor(props: CodeEditorProps) {
           tabCompletion: "on",
           suggest: { showWords: true, showSnippets: true },
           fontSize: 14,
+          fontFamily: OJ_MONO_FONT_FAMILY,
           wordWrap: "on",
           scrollBeyondLastLine: false,
           ariaLabel: current.ariaLabel ?? "代码编辑器",

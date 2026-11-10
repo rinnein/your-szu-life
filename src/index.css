@@ -1929,8 +1929,11 @@ m-top-app-bar::part(trailing) {
 
 /* ---------- 原生控件（M3 外观） ---------- */
 /*
- * OJ 样例区需要与蒙层逐字符对齐，material 的 TextField 无法定制内部
+ * OJ 样例区需要与空白标记层逐字符对齐，material 的 TextField 无法定制内部
  * textarea 的字体与内边距，因此这里保留原生 textarea 并沿用 M3 外观。
+ * 结构为「滚动容器 + 双层同流」：.md-sample-field 是外层滚动容器（兼 M3 外观），
+ * 内部内容 wrapper 按最宽行撑开，textarea（文本层）与空白标记层叠放其上，
+ * 滚动由外层容器统一驱动，两层天然同步。
  */
 .md-sample-field {
   inline-size: 100%;
@@ -1941,7 +1944,7 @@ m-top-app-bar::part(trailing) {
   min-block-size: 4.5rem;
 }
 
-.md-sample-field:focus-visible {
+.md-sample-field:focus-within {
   outline: 2px solid var(--mtrl-sys-color-primary);
   outline-offset: -1px;
   border-color: var(--mtrl-sys-color-primary);

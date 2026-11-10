@@ -169,15 +169,37 @@ it("toggles visible spaces in sample field via overlay and handles original symb
   fireEvent.click(screen.getByRole("button", { name: "复制样例 1 输出" }));
   await waitFor(() => expect(copyText).toHaveBeenCalledWith(value));
 
-  // Scrolling textarea syncs overlay scroll position
-  fireEvent.scroll(field, { target: { scrollTop: 50, scrollLeft: 20 } });
-  expect(overlay.scrollTop).toBe(50);
-  expect(overlay.scrollLeft).toBe(20);
-
   // Toggle off unmounts overlay
   fireEvent.click(screen.getByRole("button", { name: "隐藏样例 1 输出空格" }));
   expect(screen.queryByTestId("whitespace-overlay")).toBeNull();
   expect(field).toHaveValue(value);
+});
+
+it("co-scrolls textarea and overlay in one scroll container without sync", () => {
+  render(<SampleField sample={1} label="输入" value={"1\n2\n3"} />);
+  fireEvent.click(screen.getByRole("button", { name: "显示样例 1 输入空格" }));
+  const field = screen.getByRole("textbox", { name: "样例 1 输入" });
+  const overlay = screen.getByTestId("whitespace-overlay");
+  const scroller = overlay.closest(".md-sample-field");
+  // 文本层与标记层是同一滚动容器的孩子：滚动天然同步，无需事件复制
+  expect(scroller).not.toBeNull();
+  expect(scroller).toContainElement(field);
+  // 文本层自身不滚动：行数全部展开（rows = 总行数），溢出裁剪交给外层容器
+  expect(field).toHaveAttribute("rows", "3");
+  expect(field.style.overflow).toBe("hidden");
+});
+
+it("renders whitespace markers with column-aware exact advances", () => {
+  // 行内 tab 在第 1 列 → 原生制表位前进 7 列；连续空格 2 个 → 2 列
+  render(<SampleField sample={1} label="输出" value={"a\tb  c"} />);
+  fireEvent.click(screen.getByRole("button", { name: "显示样例 1 输出空格" }));
+  const overlay = screen.getByTestId("whitespace-overlay");
+  const tab = overlay.querySelector('[data-whitespace="tab"]');
+  expect(tab).not.toBeNull();
+  expect(tab!.getAttribute("style")).toContain("width: 7ch");
+  const space = overlay.querySelector('[data-whitespace="space"]');
+  expect(space).not.toBeNull();
+  expect(space!.getAttribute("style")).toContain("width: 2ch");
 });
 it("renders structured cases, units and safely escaped compiler errors", () => {
   const view = render(<JudgeResult submission={finished} polling={false} onRefresh={() => {}} />);

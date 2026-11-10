@@ -1,9 +1,10 @@
-import { useId, useRef, useEffect } from "react";
+import { Fragment, useId, useMemo, useRef } from "react";
 import { Button } from "material/react";
 import { toast } from "../ui";
 import { LuCopy, LuSpace } from "react-icons/lu";
 import { copyText } from "../clipboard";
 import { notifySuccess } from "./feedback";
+import { OJ_MONO_FONT_FAMILY } from "./monospace";
 import {
   useWhitespaceVisible,
   toggleWhitespaceVisible,
@@ -20,47 +21,70 @@ export {
   resetWhitespaceVisible,
 };
 
-export function WhitespaceOverlay({ text }: { text: string }) {
-  const tokens = text.match(/([ ]+|\t|\r?\n|[^\t\r\n ]+)/g) ?? [];
-  return (
-    <>
-      {tokens.map((token, i) => {
-        if (token.startsWith(" ")) {
-          return (
-            <span
-              key={i}
-              className="text-muted/50 dark:text-muted/60 select-none"
-              data-whitespace="space"
-            >
-              {"·".repeat(token.length)}
-            </span>
-          );
-        }
-        if (token === "\t") {
-          return (
-            <span
-              key={i}
-              className="relative inline-block text-muted/50 dark:text-muted/60 select-none"
-              data-whitespace="tab"
-            >
-              <span className="absolute inset-0 pointer-events-none select-none overflow-hidden">
-                →
-              </span>
-              {"\t"}
-            </span>
-          );
-        }
-        if (token === "\n" || token === "\r\n") {
-          return token;
-        }
-        return (
-          <span key={i} className="text-transparent select-none">
-            {token}
-          </span>
-        );
-      })}
-    </>
+/** 文本层与标记层共用的几何常量；容器高度与内容宽度由它们推导。 */
+const LINE_HEIGHT = 24;
+const PAD_X = 16;
+const PAD_Y = 12;
+/** 浏览器原生制表位宽度（与两侧显式钉住的 tabSize 一致）。 */
+const TAB_SIZE = 8;
+
+type Token =
+  | { kind: "text"; value: string }
+  | { kind: "space"; count: number }
+  | { kind: "tab"; width: number };
+
+/**
+ * 把一行文本展开为列位置感知的 token 序列（Monaco renderWhitespace 式）：
+ * tab 的 advance 取决于所在列（(tabSize - col % tabSize) 列），空格串按字符数计列，
+ * 因此标记层可以用 `ch` 单位给出与文本层完全一致的宽度，不依赖任何字形度量。
+ */
+function layoutLine(line: string): Token[] {
+  const tokens: Token[] = [];
+  let col = 0;
+  for (const m of line.matchAll(/([ ]+|\t|[^\t ]+)/g)) {
+    const t = m[0];
+    if (t.startsWith(" ")) {
+      tokens.push({ kind: "space", count: t.length });
+      col += t.length;
+    } else if (t === "\t") {
+      const width = TAB_SIZE - (col % TAB_SIZE);
+      tokens.push({ kind: "tab", width });
+      col += width;
+    } else {
+      tokens.push({ kind: "text", value: t });
+      col += t.length;
+    }
+  }
+  return tokens;
+}
+
+const tokenCols = (tokens: Token[]) =>
+  tokens.reduce(
+    (c, t) => c + (t.kind === "text" ? t.value.length : t.kind === "space" ? t.count : t.width),
+    0,
   );
+
+function MarkerToken({ token }: { token: Token }) {
+  if (token.kind === "space" || token.kind === "tab") {
+    return (
+      <span
+        className="text-muted/50 dark:text-muted/60 select-none"
+        data-whitespace={token.kind}
+        style={{
+          display: "inline-block",
+          width: `${token.kind === "space" ? token.count : token.width}ch`,
+          // overflow:hidden 的 inline-block 基线取底边，会把行盒撑高；
+          // 高度等于行高（line-height 继承），顶对齐后字形与文本同带。
+          verticalAlign: "top",
+          overflow: "hidden",
+          whiteSpace: "pre",
+        }}
+      >
+        {token.kind === "space" ? "·".repeat(token.count) : "→"}
+      </span>
+    );
+  }
+  return <span className="text-transparent select-none">{token.value}</span>;
 }
 
 export interface SampleFieldProps {
@@ -84,25 +108,23 @@ export function SampleField({
 }: SampleFieldProps) {
   const id = useId();
   const element = useRef<HTMLTextAreaElement>(null);
-  const overlayRef = useRef<HTMLDivElement>(null);
   const showSpaces = useWhitespaceVisible();
 
   const itemLabel = ariaLabel ?? (sample !== undefined ? `样例 ${sample} ${label}` : label);
   const hasValue = value !== undefined && value !== "";
 
-  useEffect(() => {
-    if (showSpaces && element.current && overlayRef.current) {
-      overlayRef.current.scrollTop = element.current.scrollTop;
-      overlayRef.current.scrollLeft = element.current.scrollLeft;
-    }
-  }, [showSpaces]);
-
-  const handleScroll = () => {
-    if (element.current && overlayRef.current) {
-      overlayRef.current.scrollTop = element.current.scrollTop;
-      overlayRef.current.scrollLeft = element.current.scrollLeft;
-    }
-  };
+  const lines = useMemo(
+    () => (hasValue && value !== undefined ? value.replace(/\r\n?/g, "\n").split("\n") : []),
+    [hasValue, value],
+  );
+  const lineTokens = useMemo(() => lines.map(layoutLine), [lines]);
+  // 内容 wrapper 按“最宽行的展开列数”撑开，双向滚动都发生在外层容器上，
+  // 文本层与标记层随之同流滚动，无需任何滚动位置复制。
+  const maxCols = useMemo(
+    () => Math.max(1, ...lineTokens.map((tokens) => tokenCols(tokens))),
+    [lineTokens],
+  );
+  const clampedRows = Math.max(minRows, Math.min(maxRows, lines.length || minRows));
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
@@ -146,43 +168,72 @@ export function SampleField({
       </div>
       <div className="relative min-w-0">
         {hasValue ? (
-          <>
-            <textarea
-              ref={element}
-              id={id}
-              aria-label={itemLabel}
-              readOnly
-              value={value}
-              rows={Math.max(minRows, Math.min(maxRows, value.split("\n").length))}
-              wrap="off"
-              spellCheck={false}
-              className="md-sample-field resize-y font-mono whitespace-pre text-sm leading-6"
+          <div
+            className="md-sample-field overflow-auto resize-y"
+            style={{
+              height: `${clampedRows * LINE_HEIGHT + PAD_Y * 2 + 2}px`,
+            }}
+            tabIndex={0}
+          >
+            <div
+              className="relative"
               style={{
-                fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                minWidth: "100%",
+                width: `calc(${maxCols}ch + ${PAD_X * 2}px)`,
+                fontFamily: OJ_MONO_FONT_FAMILY,
                 fontSize: "14px",
-                lineHeight: "24px",
-                padding: "12px 16px",
+                lineHeight: `${LINE_HEIGHT}px`,
               }}
-              onScroll={handleScroll}
-            />
-            {showSpaces && (
-              <div
-                ref={overlayRef}
-                aria-hidden="true"
-                data-testid="whitespace-overlay"
-                className="pointer-events-none select-none absolute inset-0 overflow-hidden font-mono whitespace-pre text-sm leading-6"
+            >
+              <textarea
+                ref={element}
+                id={id}
+                aria-label={itemLabel}
+                readOnly
+                value={value}
+                rows={lines.length}
+                wrap="off"
+                spellCheck={false}
+                className="whitespace-pre"
                 style={{
-                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                  display: "block",
+                  overflow: "hidden",
+                  border: "none",
+                  outline: "none",
+                  resize: "none",
+                  background: "transparent",
+                  color: "inherit",
+                  width: "100%",
+                  padding: `${PAD_Y}px ${PAD_X}px`,
+                  tabSize: TAB_SIZE,
+                  fontFamily: "inherit",
                   fontSize: "14px",
-                  lineHeight: "24px",
-                  padding: "12px 16px",
-                  border: "1px solid transparent",
+                  lineHeight: `${LINE_HEIGHT}px`,
                 }}
-              >
-                <WhitespaceOverlay text={value} />
-              </div>
-            )}
-          </>
+              />
+              {showSpaces && (
+                <div
+                  aria-hidden="true"
+                  data-testid="whitespace-overlay"
+                  className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre select-none"
+                  style={{
+                    padding: `${PAD_Y}px ${PAD_X}px`,
+                    tabSize: TAB_SIZE,
+                    boxSizing: "border-box",
+                  }}
+                >
+                  {lineTokens.map((tokens, line) => (
+                    <Fragment key={line}>
+                      {tokens.map((token, i) => (
+                        <MarkerToken key={i} token={token} />
+                      ))}
+                      {line < lineTokens.length - 1 && "\n"}
+                    </Fragment>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         ) : (
           <p className="text-xs text-muted italic py-1">{placeholder ?? "（未提供）"}</p>
         )}
