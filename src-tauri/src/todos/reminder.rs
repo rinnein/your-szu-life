@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 
 use super::model::{reminder_key, ReminderState, TodoItem};
-use super::{aggregate, publish, refresh_sources, TodosStore};
+use super::{aggregate, publish, refresh_sources, RefreshSource, TodosStore};
 use crate::notification::settings::NotificationSettings;
 use crate::notification::{NotificationCategory, NotificationPayload};
 
@@ -30,7 +30,7 @@ pub(super) fn start(app: AppHandle) {
             );
             if last_refresh.elapsed() >= refresh_interval {
                 last_refresh = Instant::now();
-                refresh_sources(&app, false).await;
+                refresh_sources(&app, RefreshSource::Periodic).await;
             }
             tick(&app).await;
             tokio::time::sleep(crate::activity::sleep_chunk(

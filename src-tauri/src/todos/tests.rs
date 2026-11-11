@@ -304,3 +304,39 @@ async fn reminder_state_roundtrips_through_sqlite() {
     assert_eq!(loaded.notified["oj-quiz|t|1|60"], 42);
     assert_eq!(loaded.scheduled["oj-quiz|t|1|60"], 7);
 }
+
+fn lms_snapshot_with(session: SessionState, fetched_at: Option<i64>) -> LmsSnapshot {
+    LmsSnapshot {
+        session,
+        message: String::new(),
+        profile: None,
+        todos: Vec::new(),
+        notifications: Vec::new(),
+        unread_count: 0,
+        fetched_at,
+    }
+}
+
+/// 首页待办只在「畅课确实未登录且没有任何缓存」时自动登录一次；
+/// 定时轮询与用户手动刷新都不走这条捷径（后者本来就会 force 重登）。
+#[test]
+fn home_subscription_auto_logs_in_only_a_cold_needs_auth_snapshot() {
+    use super::{lms_needs_auto_login, RefreshSource};
+
+    let cases = [
+        (SessionState::NeedsAuth, false, RefreshSource::Subscription, true),
+        (SessionState::NeedsAuth, false, RefreshSource::Periodic, false),
+        (SessionState::NeedsAuth, false, RefreshSource::Manual, false),
+        (SessionState::NeedsAuth, true, RefreshSource::Subscription, false),
+        (SessionState::Unavailable, false, RefreshSource::Subscription, false),
+        (SessionState::Ready, false, RefreshSource::Subscription, false),
+    ];
+    for (session, has_cache, source, expected) in cases {
+        let snapshot = lms_snapshot_with(session, has_cache.then_some(now()));
+        assert_eq!(
+            lms_needs_auto_login(&snapshot, source),
+            expected,
+            "session={session:?} has_cache={has_cache} source={source:?}"
+        );
+    }
+}

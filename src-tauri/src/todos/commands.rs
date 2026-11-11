@@ -2,7 +2,7 @@ use tauri::{AppHandle, Manager};
 
 use super::aggregate;
 use super::model::TodosEvent;
-use super::TodosStore;
+use super::{RefreshSource, TodosStore};
 
 fn local(window: &tauri::WebviewWindow) -> Result<(), String> {
     if !(window.label() == "main" || window.label().starts_with("feature-")) {
@@ -25,7 +25,7 @@ pub(crate) fn subscribe_todos(
 
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        super::refresh_sources(&app, false).await;
+        super::refresh_sources(&app, RefreshSource::Subscription).await;
         super::reminder::tick(&app).await;
     });
     Ok(())
@@ -37,7 +37,7 @@ pub(crate) async fn refresh_todos(
     app: AppHandle,
 ) -> Result<(), String> {
     local(&window)?;
-    super::refresh_sources(&app, true).await;
+    super::refresh_sources(&app, RefreshSource::Manual).await;
     super::reminder::tick(&app).await;
     Ok(())
 }
