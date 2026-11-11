@@ -164,6 +164,7 @@ szu-uooc = { path = "crates/szu-uooc" }
 szu-oj = { path = "crates/szu-oj" }
 szu-lms = { path = "crates/szu-lms" }
 szu-jxxk = { path = "crates/szu-jxxk" }
+szu-enrollment = { path = "crates/szu-enrollment" }
 tauri = { workspace = true }
 tauri-plugin-opener = { workspace = true }
 tauri-plugin-notification = { workspace = true }

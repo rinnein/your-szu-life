@@ -136,7 +136,7 @@ pub async fn open(
     Ok(())
 }
 
-pub(crate) fn on_page_load(window: &tauri::Webview, payload: &tauri::webview::PageLoadPayload<'_>) {
+pub fn on_page_load(window: &tauri::Webview, payload: &tauri::webview::PageLoadPayload<'_>) {
     if window.label().starts_with("academic-auth-")
         || !matches!(payload.event(), tauri::webview::PageLoadEvent::Started)
         || !session::vpn_url(payload.url())

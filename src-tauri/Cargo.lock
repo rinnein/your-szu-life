@@ -9039,6 +9039,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "szu-enrollment"
+version = "0.14.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "cookie_store",
+ "des",
+ "image",
+ "imageproc",
+ "log",
+ "regex",
+ "reqwest",
+ "reqwest_cookie_store",
+ "serde",
+ "serde_json",
+ "soup3",
+ "szu-core",
+ "szu-runtime",
+ "tauri",
+ "tempfile",
+ "toasty",
+ "tokio",
+ "uuid",
+ "webkit2gtk",
+]
+
+[[package]]
 name = "szu-jxxk"
 version = "0.14.0"
 dependencies = [
@@ -11875,6 +11902,7 @@ dependencies = [
  "ssid",
  "szu-core",
  "szu-download",
+ "szu-enrollment",
  "szu-jxxk",
  "szu-lms",
  "szu-oj",

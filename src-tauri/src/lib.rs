@@ -4,7 +4,6 @@ mod app;
 mod app_content;
 #[cfg(desktop)]
 mod desktop;
-mod enrollment;
 pub mod mcp;
 pub(crate) mod mesh;
 pub(crate) mod migrations;
@@ -17,10 +16,11 @@ mod todos;
 pub(crate) use szu_core::{
     activity, analytics, appearance, auth, campus_network, campus_payments, demo,
     ipc_channel, logging, netproxy, notification, onboarding, ports, preferences, settings,
-    storage, webview_cookies,
+    storage,
 };
 pub(crate) use szu_download::file_manager;
 pub(crate) use szu_runtime::{embedding_model, ocr};
+pub(crate) use szu_enrollment::enrollment;
 pub(crate) use szu_jxxk::jxxk;
 pub(crate) use szu_lms::lms;
 pub(crate) use szu_oj::oj;

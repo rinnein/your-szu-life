@@ -86,7 +86,7 @@ fn glyph(image: &DynamicImage, x: u32, y: u32, w: u32, h: u32) -> Result<String,
     canvas
         .write_to(&mut bytes, ImageFormat::Png)
         .map_err(|_| "验证码处理失败")?;
-    let text = crate::ocr::recognize(bytes.get_ref())?;
+    let text = szu_runtime::ocr::recognize(bytes.get_ref())?;
     let cleaned: String = text.chars().filter(|c| !c.is_whitespace()).collect();
     if cleaned.chars().count() != 1 {
         return Err("验证码字块识别不确定".into());
@@ -234,7 +234,7 @@ fn match_unique(targets: &[Vec<String>], candidates: &[Vec<String>]) -> Option<V
     }
 }
 pub fn recognize_next(bytes: &[u8], accepted: &[[u32; 2]]) -> Result<[u32; 2], RecognitionError> {
-    if crate::ocr::status()
+    if szu_runtime::ocr::status()
         .map(|s| s.status != "ready")
         .unwrap_or(true)
     {
@@ -278,7 +278,7 @@ pub fn recognize_next(bytes: &[u8], accepted: &[[u32; 2]]) -> Result<[u32; 2], R
     Ok([b.x + b.w / 2, b.y + b.h / 2])
 }
 pub fn recognize(bytes: &[u8]) -> Result<Vec<[u32; 2]>, RecognitionError> {
-    if crate::ocr::status()
+    if szu_runtime::ocr::status()
         .map(|s| s.status != "ready")
         .unwrap_or(true)
     {

@@ -20,7 +20,7 @@ struct PageState {
     logout: bool,
     expired: bool,
 }
-pub(super) fn is_school_url(url: &reqwest::Url, mode: Mode) -> bool {
+pub fn is_school_url(url: &reqwest::Url, mode: Mode) -> bool {
     url.origin() == reqwest::Url::parse(mode.origin()).unwrap().origin()
         && url.username().is_empty()
         && url.password().is_none()
@@ -284,7 +284,7 @@ fn synchronize(
             previous_browser = desired.clone();
             #[cfg(target_os = "android")]
             {
-                previous_snapshot = crate::webview_cookies::native_snapshot(&shared.client.jar)
+                previous_snapshot = szu_core::webview_cookies::native_snapshot(&shared.client.jar)
                     .map(|(s, _)| (s.clone(), s));
             }
             #[cfg(not(target_os = "android"))]
@@ -374,19 +374,19 @@ fn synchronize(
         );
         #[cfg(target_os = "android")]
         {
-            let Some((observed, scope)) = crate::webview_cookies::native_snapshot(&browser) else {
+            let Some((observed, scope)) = szu_core::webview_cookies::native_snapshot(&browser) else {
                 continue;
             };
-            let current = crate::webview_cookies::native_snapshot(&shared.client.jar)
+            let current = szu_core::webview_cookies::native_snapshot(&shared.client.jar)
                 .map(|(s, _)| s)
-                .unwrap_or_else(|| crate::webview_cookies::Snapshot {
+                .unwrap_or_else(|| szu_core::webview_cookies::Snapshot {
                     cookies: shared
                         .client
                         .jar
                         .lock()
                         .unwrap()
                         .iter_unexpired()
-                        .filter_map(crate::webview_cookies::CookieRecord::from_stored)
+                        .filter_map(szu_core::webview_cookies::CookieRecord::from_stored)
                         .collect(),
                     ..Default::default()
                 });
@@ -394,18 +394,18 @@ fn synchronize(
                 .as_ref()
                 .unwrap_or(&(current.clone(), current.clone()))
                 .clone();
-            let merged = crate::webview_cookies::merge_browser_snapshot(
+            let merged = szu_core::webview_cookies::merge_browser_snapshot(
                 &current,
                 &previous_browser,
                 &observed,
                 &previous_native,
             );
             if merged != observed
-                && crate::webview_cookies::replace(&window, &scope, &merged).is_err()
+                && szu_core::webview_cookies::replace(&window, &scope, &merged).is_err()
             {
                 continue;
             }
-            if crate::webview_cookies::store_snapshot(&shared.client.jar, merged.clone(), scope)
+            if szu_core::webview_cookies::store_snapshot(&shared.client.jar, merged.clone(), scope)
                 .is_err()
             {
                 continue;

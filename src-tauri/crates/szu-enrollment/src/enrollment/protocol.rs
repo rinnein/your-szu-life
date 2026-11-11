@@ -182,8 +182,8 @@ pub fn classify_student(status: u16, location: &str, body: &str) -> Result<Value
     classify(status, location, body)
 }
 
-impl From<crate::webview_cookies::Error> for Error {
-    fn from(error: crate::webview_cookies::Error) -> Self {
+impl From<szu_core::webview_cookies::Error> for Error {
+    fn from(error: szu_core::webview_cookies::Error) -> Self {
         Self::new(Failure::Protocol, String::from(error))
     }
 }

@@ -3,19 +3,20 @@ mod cache;
 mod captcha;
 mod captcha_flow;
 mod client;
-pub(crate) mod commands;
-pub(crate) use commands::Action;
+pub mod commands;
+pub use commands::Action;
 mod contract;
 #[cfg(target_os = "linux")]
 mod linux_cookies;
 mod maintenance;
-pub(crate) mod model;
+pub mod model;
 mod official;
 mod platform;
-pub(crate) mod portal;
+pub mod portal;
 mod protocol;
 mod school_cookies;
-pub(crate) mod session;
+pub mod session;
+pub mod migrations;
 #[cfg(test)]
 mod tests;
 use model::*;
@@ -35,7 +36,7 @@ use tauri::{Emitter, Listener, Manager};
 pub struct Store(pub Arc<Service>);
 pub struct Service {
     app: tauri::AppHandle,
-    credentials: crate::storage::SharedCredentialStore,
+    credentials: szu_core::storage::SharedCredentialStore,
     operation: Mutex<()>,
     state: Mutex<Snapshot>,
     cache: Mutex<cache::Cache>,
@@ -50,18 +51,18 @@ pub struct Service {
     session_serial: AtomicU64,
     official_windows: Mutex<HashMap<Mode, String>>,
     official_opener: tokio::sync::Mutex<()>,
-    pub(crate) state_subscribers: crate::ipc_channel::SubscriberPool<EnrollmentDeltaEvent>,
+    pub state_subscribers: szu_core::ipc_channel::SubscriberPool<EnrollmentDeltaEvent>,
 }
 
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", content = "data", rename_all = "camelCase")]
-pub(crate) enum EnrollmentDeltaEvent {
+pub enum EnrollmentDeltaEvent {
     Initial(Box<Snapshot>),
     Snapshot(Box<Snapshot>),
 }
-pub(crate) fn initialize(
+pub fn initialize(
     app: &tauri::AppHandle,
-    credentials: crate::storage::SharedCredentialStore,
+    credentials: szu_core::storage::SharedCredentialStore,
 ) -> std::result::Result<(), String> {
     let dir = app
         .path()
@@ -85,7 +86,7 @@ pub(crate) fn initialize(
         session_serial: AtomicU64::new(chrono::Utc::now().timestamp_millis() as u64),
         official_windows: Mutex::new(HashMap::new()),
         official_opener: tokio::sync::Mutex::new(()),
-        state_subscribers: crate::ipc_channel::SubscriberPool::new(),
+        state_subscribers: szu_core::ipc_channel::SubscriberPool::new(),
     });
     platform::initialize(&service);
     app.manage(Store(service.clone()));
@@ -130,7 +131,7 @@ pub(crate) fn initialize(
     std::thread::spawn(move || {
         let mut cadence = maintenance::Cadence::new(
             std::time::Instant::now(),
-            crate::activity::interval(
+            szu_core::activity::interval(
                 Some("enrollment"),
                 Duration::from_secs(60),
                 Duration::from_secs(300),
@@ -146,7 +147,7 @@ pub(crate) fn initialize(
             let interval = if s.state.lock().unwrap().running {
                 Duration::from_secs(60)
             } else {
-                crate::activity::interval(
+                szu_core::activity::interval(
                     Some("enrollment"),
                     Duration::from_secs(60),
                     Duration::from_secs(300),
@@ -295,14 +296,14 @@ impl Service {
         self.publish();
         if message.contains("需2FA") || message.contains("已暂停") || message.contains("任务已完成")
         {
-            let payload = crate::notification::NotificationPayload::new(
-                crate::notification::NotificationCategory::Enrollment,
+            let payload = szu_core::notification::NotificationPayload::new(
+                szu_core::notification::NotificationCategory::Enrollment,
                 "选课任务",
                 message,
             )
             .route("/study/enrollment")
             .action_label("查看任务");
-            crate::notification::notify(&self.app, payload);
+            szu_core::notification::notify(&self.app, payload);
         }
     }
     fn persist(&self) -> Result<()> {
@@ -317,7 +318,7 @@ impl Service {
             .map_err(Error::from)?;
         Ok(())
     }
-    fn identity(&self) -> Result<crate::auth::model::StoredAccountProfile> {
+    fn identity(&self) -> Result<szu_core::auth::model::StoredAccountProfile> {
         let profile = self
             .credentials
             .load_profile()
@@ -1022,14 +1023,14 @@ impl Service {
         let _ = self.persist();
         let _ = platform::running(0, self.generation.load(Ordering::SeqCst));
         self.publish();
-        let payload = crate::notification::NotificationPayload::new(
-            crate::notification::NotificationCategory::Enrollment,
+        let payload = szu_core::notification::NotificationPayload::new(
+            szu_core::notification::NotificationCategory::Enrollment,
             "选课任务",
             message,
         )
         .route("/study/enrollment")
         .action_label("查看任务");
-        crate::notification::notify(&self.app, payload);
+        szu_core::notification::notify(&self.app, payload);
     }
     fn resume_authenticated(&self) -> Result<()> {
         if !self.snapshot().can_select() {
@@ -1046,7 +1047,7 @@ impl Service {
         }
         Ok(())
     }
-    pub(crate) fn execute(&self, action: commands::Action) -> Result<Value> {
+    pub fn execute(&self, action: commands::Action) -> Result<Value> {
         use commands::Action;
         match &action {
             Action::CaptchaCancel {

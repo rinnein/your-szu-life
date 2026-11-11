@@ -15,7 +15,7 @@ struct Challenge {
     bytes: Vec<u8>,
 }
 #[derive(Default)]
-pub(super) struct Flow {
+pub struct Flow {
     revision: u64,
     challenge: Option<Challenge>,
 }
@@ -45,7 +45,7 @@ fn valid_points(points: &[[u32; 2]]) -> bool {
             .all(|(i, p)| p[0] < 250 && p[1] < 80 && !points[..i].contains(p))
 }
 impl Service {
-    pub(super) fn cancel_captcha(&self, flow: &str, revision: u64, discard: bool) -> Result<Value> {
+    pub fn cancel_captcha(&self, flow: &str, revision: u64, discard: bool) -> Result<Value> {
         let mut flows = self.captcha_flows.lock().unwrap();
         let state = flows.entry(flow.into()).or_default();
         if state.advance(revision) && discard {
@@ -68,7 +68,7 @@ impl Service {
                 .ok()
                 .is_some_and(|s| s.generation == c.generation)
     }
-    pub(super) fn prepare_captcha(&self, flow: &str, revision: u64) -> Result<Value> {
+    pub fn prepare_captcha(&self, flow: &str, revision: u64) -> Result<Value> {
         {
             let mut flows = self.captcha_flows.lock().unwrap();
             let state = flows.entry(flow.into()).or_default();
@@ -115,7 +115,7 @@ impl Service {
         });
         Ok(json!({"status":"challenge","challengeId":id,"image":image,"revision":revision}))
     }
-    pub(super) fn captcha_point(
+    pub fn captcha_point(
         &self,
         flow: &str,
         revision: u64,
@@ -162,7 +162,7 @@ impl Service {
             }
         })
     }
-    pub(super) fn submit_captcha(
+    pub fn submit_captcha(
         &self,
         flow: &str,
         revision: u64,

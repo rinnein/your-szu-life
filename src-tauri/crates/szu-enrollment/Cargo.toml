@@ -1,0 +1,37 @@
+[package]
+name = "szu-enrollment"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "泥深抢课模块：验证码、选课与学业门户"
+
+[lib]
+name = "szu_enrollment"
+path = "src/lib.rs"
+
+[dependencies]
+szu-core = { path = "../szu-core" }
+szu-runtime = { path = "../szu-runtime" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+cookie_store = { workspace = true }
+reqwest_cookie_store = { workspace = true }
+image = { workspace = true }
+imageproc = { workspace = true }
+regex = { workspace = true }
+base64 = { workspace = true }
+uuid = { workspace = true }
+toasty = { workspace = true }
+des = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = { workspace = true }
+soup3 = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

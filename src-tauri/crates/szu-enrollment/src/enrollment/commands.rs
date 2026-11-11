@@ -6,7 +6,7 @@ use tauri::Manager;
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct OnlineUsersEvent {
+pub struct OnlineUsersEvent {
     pub online: Option<u64>,
     pub updated_at: Option<i64>,
     pub error: Option<String>,
@@ -123,7 +123,7 @@ mod source_tests {
     }
 }
 #[tauri::command]
-pub(crate) async fn enrollment_command(
+pub async fn enrollment_command(
     window: tauri::WebviewWindow,
     action: Action,
 ) -> Result<Value, String> {
@@ -134,7 +134,7 @@ pub(crate) async fn enrollment_command(
         .map_err(|_| "选课任务异常".to_owned())?
 }
 #[tauri::command]
-pub(crate) async fn open_academic_portal(
+pub async fn open_academic_portal(
     window: tauri::WebviewWindow,
     kind: String,
     target: Option<String>,
@@ -145,14 +145,14 @@ pub(crate) async fn open_academic_portal(
 }
 
 #[tauri::command]
-pub(crate) async fn open_enrollment_official(window: tauri::WebviewWindow) -> Result<(), String> {
+pub async fn open_enrollment_official(window: tauri::WebviewWindow) -> Result<(), String> {
     local(&window)?;
     let service = window.state::<Store>().0.clone();
     super::official::open(service, window).await
 }
 
 #[tauri::command]
-pub(crate) fn subscribe_enrollment_state(
+pub fn subscribe_enrollment_state(
     window: tauri::WebviewWindow,
     channel: tauri::ipc::Channel<super::EnrollmentDeltaEvent>,
 ) -> Result<(), String> {
@@ -166,7 +166,7 @@ pub(crate) fn subscribe_enrollment_state(
 
 /// 后端负责在线人数轮询，前端只收 Channel；通道关闭后在下一次推送时退出。
 #[tauri::command]
-pub(crate) async fn watch_enrollment_online_users(
+pub async fn watch_enrollment_online_users(
     window: tauri::WebviewWindow,
     mode: Mode,
     channel: tauri::ipc::Channel<OnlineUsersEvent>,
@@ -215,7 +215,7 @@ fn count(value: &Value) -> u64 {
 
 /// 学业重算由后端启动并轮询进度，完成后返回最新快照。
 #[tauri::command]
-pub(crate) async fn recalculate_academic(
+pub async fn recalculate_academic(
     window: tauri::WebviewWindow,
     on_progress: tauri::ipc::Channel<Value>,
 ) -> Result<Value, String> {

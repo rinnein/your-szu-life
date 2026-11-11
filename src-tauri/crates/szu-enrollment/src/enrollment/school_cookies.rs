@@ -158,13 +158,13 @@ pub fn capture(
     {
         let refs: Vec<_> = urls.iter().map(String::as_str).collect();
         let kind = if mode == Mode::Campus {
-            crate::webview_cookies::Kind::Campus
+            szu_core::webview_cookies::Kind::Campus
         } else {
-            crate::webview_cookies::Kind::Webvpn
+            szu_core::webview_cookies::Kind::Webvpn
         };
-        let scope = crate::webview_cookies::Scope::new(kind, &refs).map_err(Error::from)?;
-        return crate::webview_cookies::project(
-            crate::webview_cookies::capture(window, &scope).map_err(Error::from)?,
+        let scope = szu_core::webview_cookies::Scope::new(kind, &refs).map_err(Error::from)?;
+        return szu_core::webview_cookies::project(
+            szu_core::webview_cookies::capture(window, &scope).map_err(Error::from)?,
             scope,
         )
         .map_err(Error::from);
@@ -221,11 +221,11 @@ pub fn install(window: &tauri::WebviewWindow, mode: Mode, changes: Vec<Patch>) -
     {
         let refs: Vec<_> = changes.iter().map(|p| p.record.url.as_str()).collect();
         let kind = if mode == Mode::Campus {
-            crate::webview_cookies::Kind::Campus
+            szu_core::webview_cookies::Kind::Campus
         } else {
-            crate::webview_cookies::Kind::Webvpn
+            szu_core::webview_cookies::Kind::Webvpn
         };
-        let scope = crate::webview_cookies::Scope::new(kind, &refs).map_err(Error::from)?;
+        let scope = szu_core::webview_cookies::Scope::new(kind, &refs).map_err(Error::from)?;
         let patches = changes
             .iter()
             .map(|p| {
@@ -233,14 +233,14 @@ pub fn install(window: &tauri::WebviewWindow, mode: Mode, changes: Vec<Patch>) -
                     .map_err(|_| Error::new(Failure::Protocol, "Cookie格式无效"))?
                     .into_owned();
                 let cookie =
-                    crate::webview_cookies::CookieRecord::from_cookie(raw, &p.record.key.1);
-                Ok(crate::webview_cookies::Patch {
+                    szu_core::webview_cookies::CookieRecord::from_cookie(raw, &p.record.key.1);
+                Ok(szu_core::webview_cookies::Patch {
                     cookie,
                     remove: p.remove,
                 })
             })
             .collect::<Result<Vec<_>>>()?;
-        crate::webview_cookies::apply(window, &scope, &patches).map_err(Error::from)
+        szu_core::webview_cookies::apply(window, &scope, &patches).map_err(Error::from)
     }
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     {
@@ -265,12 +265,12 @@ pub fn install(window: &tauri::WebviewWindow, mode: Mode, changes: Vec<Patch>) -
 
 #[cfg(target_os = "android")]
 pub fn restore_snapshot(window: &tauri::WebviewWindow, jar: &CookieStoreMutex) -> Result<()> {
-    if let Some(envelope) = crate::webview_cookies::SessionEnvelope::decode(
-        &crate::webview_cookies::serialize_jar(jar).map_err(Error::from)?,
+    if let Some(envelope) = szu_core::webview_cookies::SessionEnvelope::decode(
+        &szu_core::webview_cookies::serialize_jar(jar).map_err(Error::from)?,
     )
     .map_err(Error::from)?
     {
-        crate::webview_cookies::replace(window, &envelope.scope, &envelope.webview)
+        szu_core::webview_cookies::replace(window, &envelope.scope, &envelope.webview)
             .map_err(Error::from)?;
     }
     Ok(())

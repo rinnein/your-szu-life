@@ -6,7 +6,6 @@
 
 pub use szu_core::migrations::db;
 
-pub mod enrollment;
 pub mod mesh;
 pub mod todos;
 

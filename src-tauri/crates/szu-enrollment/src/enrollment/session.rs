@@ -37,10 +37,10 @@ pub fn auth_url(target: &str) -> Result<reqwest::Url> {
     Ok(auth)
 }
 pub fn jar(raw: &str) -> Result<Arc<CookieStoreMutex>> {
-    crate::webview_cookies::load_jar(raw).map_err(Error::from)
+    szu_core::webview_cookies::load_jar(raw).map_err(Error::from)
 }
 pub fn serialize(jar: &CookieStoreMutex) -> Result<String> {
-    crate::webview_cookies::serialize_jar(jar).map_err(Error::from)
+    szu_core::webview_cookies::serialize_jar(jar).map_err(Error::from)
 }
 pub fn merge(target: &Arc<CookieStoreMutex>, source: &CookieStoreMutex) -> Result<()> {
     let target_owner = target;
@@ -58,8 +58,8 @@ pub fn merge(target: &Arc<CookieStoreMutex>, source: &CookieStoreMutex) -> Resul
     }
     drop(target);
     drop(source);
-    let scope = crate::webview_cookies::Scope::new(
-        crate::webview_cookies::Kind::Webvpn,
+    let scope = szu_core::webview_cookies::Scope::new(
+        szu_core::webview_cookies::Kind::Webvpn,
         &[
             VPN,
             "https://bkxk.webvpn.szu.edu.cn/",
@@ -67,13 +67,13 @@ pub fn merge(target: &Arc<CookieStoreMutex>, source: &CookieStoreMutex) -> Resul
         ],
     )
     .map_err(Error::from)?;
-    crate::webview_cookies::merge_native(target_owner, source_owner, scope).map_err(Error::from)
+    szu_core::webview_cookies::merge_native(target_owner, source_owner, scope).map_err(Error::from)
 }
 pub fn client(jar: Arc<CookieStoreMutex>) -> Result<reqwest::blocking::Client> {
     #[cfg(target_os = "android")]
-    crate::platform_tls::initialize_platform_verifier().map_err(Error::from)?;
-    crate::netproxy::blocking_client_builder()
-        .cookie_provider(crate::webview_cookies::http_provider(jar))
+    szu_core::platform_tls::initialize_platform_verifier().map_err(Error::from)?;
+    szu_core::netproxy::blocking_client_builder()
+        .cookie_provider(szu_core::webview_cookies::http_provider(jar))
         .redirect(reqwest::redirect::Policy::none())
         .timeout(std::time::Duration::from_secs(20))
         .connect_timeout(std::time::Duration::from_secs(5))
@@ -137,13 +137,13 @@ pub fn capture(window: &tauri::WebviewWindow, urls: &[&str], vpn: bool) -> Resul
     #[cfg(target_os = "android")]
     {
         let kind = if vpn {
-            crate::webview_cookies::Kind::Gateway
+            szu_core::webview_cookies::Kind::Gateway
         } else {
-            crate::webview_cookies::Kind::Academic
+            szu_core::webview_cookies::Kind::Academic
         };
-        let scope = crate::webview_cookies::Scope::new(kind, urls).map_err(Error::from)?;
-        let snapshot = crate::webview_cookies::capture(window, &scope).map_err(Error::from)?;
-        let jar = crate::webview_cookies::project(snapshot, scope).map_err(Error::from)?;
+        let scope = szu_core::webview_cookies::Scope::new(kind, urls).map_err(Error::from)?;
+        let snapshot = szu_core::webview_cookies::capture(window, &scope).map_err(Error::from)?;
+        let jar = szu_core::webview_cookies::project(snapshot, scope).map_err(Error::from)?;
         return serialize(jar.as_ref());
     }
     #[cfg(target_os = "linux")]
@@ -222,7 +222,7 @@ pub struct SharedSchool {
 
 pub fn gateway_only(source: &CookieStoreMutex) -> Result<String> {
     let mut target = CookieStore::default();
-    let native = crate::webview_cookies::native_snapshot(source);
+    let native = szu_core::webview_cookies::native_snapshot(source);
     let source = source.lock().unwrap();
     for cookie in source
         .iter_unexpired()
@@ -238,8 +238,8 @@ pub fn gateway_only(source: &CookieStoreMutex) -> Result<String> {
     }
     let http = serialize(&CookieStoreMutex::new(target))?;
     if let Some((snapshot, _)) = native {
-        let scope = crate::webview_cookies::Scope::new(
-            crate::webview_cookies::Kind::Gateway,
+        let scope = szu_core::webview_cookies::Scope::new(
+            szu_core::webview_cookies::Kind::Gateway,
             &[VPN, "https://bkxk.webvpn.szu.edu.cn/"],
         )
         .map_err(Error::from)?;
@@ -249,9 +249,9 @@ pub fn gateway_only(source: &CookieStoreMutex) -> Result<String> {
             .into_iter()
             .filter(|c| scope.allows(c))
             .collect();
-        return crate::webview_cookies::SessionEnvelope::encode(
+        return szu_core::webview_cookies::SessionEnvelope::encode(
             http,
-            crate::webview_cookies::Snapshot {
+            szu_core::webview_cookies::Snapshot {
                 http_keys: keys.map(|keys| {
                     keys.into_iter()
                         .filter(|key| cookies.iter().any(|c| c.identity() == *key))

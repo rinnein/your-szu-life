@@ -19,11 +19,11 @@ pub struct Cache {
 
 impl Cache {
     pub fn open(path: &Path) -> Result<Self, String> {
-        crate::migrations::db::run_sync(async {
-            let db = crate::migrations::db::open_sqlite_db(
+        szu_core::migrations::db::run_sync(async {
+            let db = szu_core::migrations::db::open_sqlite_db(
                 path,
                 toasty::models!(EnrollmentSnapshot),
-                Some(&crate::migrations::enrollment::ENROLLMENT_MIGRATIONS),
+                Some(&crate::enrollment::migrations::ENROLLMENT_MIGRATIONS),
             )
             .await?;
             Ok(Self { db })
@@ -51,7 +51,7 @@ impl Cache {
     ) -> Result<Option<T>, String> {
         let key = format!("{account}:{kind}:{scope}");
         let mut db = self.db.clone();
-        let raw = crate::migrations::db::run_sync(async {
+        let raw = szu_core::migrations::db::run_sync(async {
             match EnrollmentSnapshot::get_by_id(&mut db, &key).await {
                 Ok(row) => Ok(Some(row.payload)),
                 Err(error) if error.is_record_not_found() => Ok(None),
@@ -73,7 +73,7 @@ impl Cache {
     ) -> Result<serde_json::Value, String> {
         use super::model::{Context, Course, Query};
         let mut db = self.db.clone();
-        let rows = crate::migrations::db::run_sync(async {
+        let rows = szu_core::migrations::db::run_sync(async {
             match EnrollmentSnapshot::filter_by_account(account)
                 .exec(&mut db)
                 .await
@@ -139,7 +139,7 @@ impl Cache {
         let key = format!("{account}:{kind}:{scope}");
         let now = chrono::Utc::now().timestamp_millis();
         let mut db = self.db.clone();
-        crate::migrations::db::run_sync(async {
+        szu_core::migrations::db::run_sync(async {
             match EnrollmentSnapshot::get_by_id(&mut db, &key).await {
                 Ok(mut existing) => {
                     toasty::update!(existing {
