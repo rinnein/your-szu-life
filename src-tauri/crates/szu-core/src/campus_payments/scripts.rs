@@ -22,7 +22,7 @@ struct ScriptOptions<'a> {
     password: Option<&'a str>,
 }
 
-pub(super) fn page_script(
+pub fn page_script(
     session: &Session,
     operation: &str,
     document_token: Option<&str>,
@@ -51,7 +51,7 @@ pub(super) fn page_script(
     )
 }
 
-pub(super) fn cancel_script(generation: u64) -> String {
+pub fn cancel_script(generation: u64) -> String {
     format!(
         "(() => {{ const flow = window.__szuNetworkFeeFlow; if (flow?.generation === {:?}) {{ flow.cancelled = true; flow.manual = true; flow.dispose?.(); }} }})()",
         generation.to_string(),

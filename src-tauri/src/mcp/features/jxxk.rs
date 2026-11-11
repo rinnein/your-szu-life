@@ -1,4 +1,4 @@
-use crate::jxxk::service;
+use szu_jxxk::jxxk::service;
 use crate::mcp::service::UnifiedSzuMcpService;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::tool;
@@ -181,7 +181,7 @@ impl UnifiedSzuMcpService {
         Parameters(params): Parameters<JxxkTaskIdParams>,
     ) -> Result<String, String> {
         let service = service(&self.app)?;
-        crate::jxxk::download::pause_task(&service.downloads, &params.task_id)?;
+        szu_jxxk::jxxk::download::pause_task(&service.downloads, &params.task_id)?;
         Ok("已暂停".into())
     }
 
@@ -193,7 +193,7 @@ impl UnifiedSzuMcpService {
         &self,
         Parameters(params): Parameters<JxxkTaskIdParams>,
     ) -> Result<String, String> {
-        crate::jxxk::download::resume_task(&self.app, &params.task_id).await?;
+        szu_jxxk::jxxk::download::resume_task(&self.app, &params.task_id).await?;
         Ok("已继续".into())
     }
 
@@ -205,7 +205,7 @@ impl UnifiedSzuMcpService {
         &self,
         Parameters(params): Parameters<JxxkTaskIdParams>,
     ) -> Result<String, String> {
-        crate::jxxk::download::remove_task(&self.app, &params.task_id, false).await?;
+        szu_jxxk::jxxk::download::remove_task(&self.app, &params.task_id, false).await?;
         Ok("已删除".into())
     }
 }

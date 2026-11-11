@@ -16,7 +16,7 @@ const USER_CONF_URL: &str = super::AUTH_USER_CONF_URL;
 const MAX_RESPONSE_BYTES: u64 = 512 * 1024;
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum RefreshOutcome {
+pub enum RefreshOutcome {
     Refreshed(AuthSessionSecret),
     Invalid,
     Mismatch,
@@ -32,7 +32,7 @@ enum ResponseDisposition {
 
 type ResponseCookie = CookieRecord;
 
-pub(super) fn refresh_session(
+pub fn refresh_session(
     session: Option<AuthSessionSecret>,
     expected_student_id: &str,
 ) -> RefreshOutcome {

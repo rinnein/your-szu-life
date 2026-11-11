@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-pub(super) struct Document<'a> {
-    pub(super) metas: Vec<&'a str>,
-    pub(super) scripts: Vec<&'a str>,
+pub struct Document<'a> {
+    pub metas: Vec<&'a str>,
+    pub scripts: Vec<&'a str>,
 }
 
 fn tag_end(html: &str, start: usize) -> Option<usize> {
@@ -21,7 +21,7 @@ fn tag_end(html: &str, start: usize) -> Option<usize> {
     None
 }
 
-pub(super) fn parse(html: &str) -> Document<'_> {
+pub fn parse(html: &str) -> Document<'_> {
     let lower = html.to_ascii_lowercase();
     let mut document = Document {
         metas: Vec::new(),
@@ -91,7 +91,7 @@ pub(super) fn parse(html: &str) -> Document<'_> {
     document
 }
 
-pub(super) fn attributes(raw: &str) -> HashMap<String, String> {
+pub fn attributes(raw: &str) -> HashMap<String, String> {
     let bytes = raw.as_bytes();
     let mut result = HashMap::new();
     let mut index = 0;
@@ -143,7 +143,7 @@ pub(super) fn attributes(raw: &str) -> HashMap<String, String> {
     result
 }
 
-pub(super) fn content_type_charset(content_type: &str) -> Option<String> {
+pub fn content_type_charset(content_type: &str) -> Option<String> {
     content_type
         .split(';')
         .filter_map(|part| part.split_once('='))
@@ -154,7 +154,7 @@ pub(super) fn content_type_charset(content_type: &str) -> Option<String> {
         })
 }
 
-pub(super) fn meta_charset(html: &str) -> Option<String> {
+pub fn meta_charset(html: &str) -> Option<String> {
     parse(html).metas.into_iter().find_map(|meta| {
         let attrs = attributes(meta);
         attrs
@@ -209,7 +209,7 @@ fn decode_attribute_entities(value: &str) -> String {
     result
 }
 
-pub(super) fn meta_refresh_target(html: &str) -> Option<String> {
+pub fn meta_refresh_target(html: &str) -> Option<String> {
     parse(html).metas.into_iter().find_map(|meta| {
         let attrs = attributes(meta);
         if !attrs

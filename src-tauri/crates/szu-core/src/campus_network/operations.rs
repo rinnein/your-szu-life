@@ -4,7 +4,7 @@ use std::{
 };
 
 #[derive(Debug, Clone, Copy)]
-pub(super) enum OperationToken {
+pub enum OperationToken {
     Passive(u64),
     Login(u64),
     Logout(u64),
@@ -16,25 +16,25 @@ struct OperationState {
     logout: Option<u64>,
 }
 #[derive(Default)]
-pub(super) struct OperationGate {
+pub struct OperationGate {
     state: Mutex<OperationState>,
     settled: Condvar,
 }
 
 impl OperationGate {
-    pub(super) fn generation(&self) -> u64 {
+    pub fn generation(&self) -> u64 {
         self.state
             .lock()
             .map(|state| state.generation)
             .unwrap_or(u64::MAX)
     }
-    pub(super) fn busy(&self) -> bool {
+    pub fn busy(&self) -> bool {
         self.state
             .lock()
             .map(|state| state.login.is_some() || state.logout.is_some())
             .unwrap_or(true)
     }
-    pub(super) fn begin_login(self: &Arc<Self>) -> Result<LoginGuard, String> {
+    pub fn begin_login(self: &Arc<Self>) -> Result<LoginGuard, String> {
         let mut state = self.state.lock().map_err(|_| "校园网操作锁失败")?;
         if state.login.is_some() || state.logout.is_some() {
             return Err("校园网登录或注销正在进行中".into());
@@ -47,7 +47,7 @@ impl OperationGate {
             generation,
         })
     }
-    pub(super) fn begin_logout(self: &Arc<Self>) -> Result<LogoutGuard, String> {
+    pub fn begin_logout(self: &Arc<Self>) -> Result<LogoutGuard, String> {
         let mut state = self.state.lock().map_err(|_| "校园网操作锁失败")?;
         if state.logout.is_some() {
             return Err("校园网注销正在进行中".into());
@@ -76,18 +76,18 @@ impl OperationGate {
             }
         }
     }
-    pub(super) fn current(&self, token: OperationToken) -> bool {
+    pub fn current(&self, token: OperationToken) -> bool {
         self.state
             .lock()
             .map(|state| Self::permits(&state, token))
             .unwrap_or(false)
     }
     /// Commit and emit under the same gate, so a stale event cannot be delivered after logout starts.
-    pub(super) fn commit<T>(&self, token: OperationToken, update: impl FnOnce() -> T) -> Option<T> {
+    pub fn commit<T>(&self, token: OperationToken, update: impl FnOnce() -> T) -> Option<T> {
         let state = self.state.lock().ok()?;
         Self::permits(&state, token).then(update)
     }
-    pub(super) fn configure<T>(
+    pub fn configure<T>(
         &self,
         update: impl FnOnce() -> Result<T, String>,
     ) -> Result<T, String> {
@@ -97,7 +97,7 @@ impl OperationGate {
         }
         update()
     }
-    pub(super) fn settings<T>(
+    pub fn settings<T>(
         &self,
         update: impl FnOnce() -> Result<T, String>,
     ) -> Result<T, String> {
@@ -109,18 +109,18 @@ impl OperationGate {
     }
 }
 
-pub(super) struct LoginGuard {
+pub struct LoginGuard {
     gate: Arc<OperationGate>,
     generation: u64,
 }
 impl LoginGuard {
-    pub(super) fn token(&self) -> OperationToken {
+    pub fn token(&self) -> OperationToken {
         OperationToken::Login(self.generation)
     }
-    pub(super) fn current(&self) -> bool {
+    pub fn current(&self) -> bool {
         self.gate.current(self.token())
     }
-    pub(super) fn commit<T>(&self, update: impl FnOnce() -> T) -> Option<T> {
+    pub fn commit<T>(&self, update: impl FnOnce() -> T) -> Option<T> {
         self.gate.commit(self.token(), update)
     }
 }
@@ -138,21 +138,21 @@ impl Drop for LoginGuard {
     }
 }
 
-pub(super) struct LogoutGuard {
+pub struct LogoutGuard {
     gate: Arc<OperationGate>,
     generation: u64,
 }
 impl LogoutGuard {
-    pub(super) fn token(&self) -> OperationToken {
+    pub fn token(&self) -> OperationToken {
         OperationToken::Logout(self.generation)
     }
-    pub(super) fn current(&self) -> bool {
+    pub fn current(&self) -> bool {
         self.gate.current(self.token())
     }
-    pub(super) fn commit<T>(&self, update: impl FnOnce() -> T) -> Option<T> {
+    pub fn commit<T>(&self, update: impl FnOnce() -> T) -> Option<T> {
         self.gate.commit(self.token(), update)
     }
-    pub(super) fn wait_for_login(&self, timeout: Duration) -> bool {
+    pub fn wait_for_login(&self, timeout: Duration) -> bool {
         let Ok(state) = self.gate.state.lock() else {
             return false;
         };

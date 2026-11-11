@@ -50,7 +50,7 @@ release. Add a tool name to select part of the graph. For example, run
 - 动效统一走 `src/motion/`（motion 库）与 MD3 的弹簧参数；material 自带动效的组件不要叠加二次动画。页面切换动画只在 `push`/`back` 时启用，tab 切换（`replace`）不动画。转场由 `src/shell/AppChrome.tsx` 挂载 `src/motion/PageTransition.tsx`：CSS 动画 + 一次强制回流重播，**不要**改成给包裹元素换 `key` —— 换 key 会在同一批次里卸载整棵路由子树，打断正在进行的 history 回退（表现为点返回后停在原页）。入场方向取自 `logical-navigation` 记录的导航动作，因此 `record(...)` 必须在导航开始之前完成（它只写 ref、不触发渲染）。
 - Android 的原生浏览器栏（`NativeWebViewChrome` 自绘的 `MaterialToolbar`）**只在外部页面出现**：统一认证、自助服务、官方网费等受控打开的非 Tauri 本地页面才需要它提供标题与返回/刷新；本地页面一律由 Web 顶栏负责，因此 Android 本地页面不会收到 `native-toolbar-ready`，也就不会再隐藏页内的 `data-webview-navigation` 控件。判定依据是当前 document 的来源是否属于本地 origin（`ApplicationBackPolicy.localDocument` → `shouldShowBrowserToolbar`），切换页面时随 `document` 通知即时显隐。
 - Android 的状态栏与「小白条」（手势导航条）共用同一套沉浸式逻辑：上下两条 inset 区域各由一块占位视图（`NativeWebViewChrome` 的 `statusBarBand` / `navigationBarBand`）绘制，因为 Android 15 起 `window.statusBarColor` / `navigationBarColor` 会被系统忽略、边到边模式下只能自己画；旧版本系统会用不透明系统栏盖住这两块，效果一致。`SystemBars.apply(window, statusBar, navigationBar)` 一个入口给两条栏上色并一起决定图标明暗，内容区留白由 `NativeWebViewChrome` 的 insets 监听统一处理（内容不画到系统栏下面，栏上的颜色就是应用自己画的那条带状区域；Android 15 起 `statusBarColor` 被系统忽略时由该区域兜住）。取色规则：**状态栏取「顶部条」当前的颜色**——本地页面是 Web 顶栏（滚动到一定位置会从 `surface` 变成 `surface-container`，因此随滚动变化），外部页面是原生浏览器栏（取其主题色）；**小白条固定取底部导航栏的颜色**，不随滚动变化。Web 端在 `src/shell/native-chrome.ts` 里**读控件的 computed style**得到颜色（不在前端重复 M3 令牌值），用 `chrome-status-bar:#rrggbb` / `chrome-nav-bar:#rrggbb` 两条消息推送，并且只在颜色真的变了时才发——滚动每一帧都发会刷爆原生侧。原生侧解析失败或还没收到推送时退回主题的 `colorSurface` / `colorSurfaceContainer`。
-- 日志插件的 `Webview` 目标是「每条 Rust 日志过一次 JNI 转发」，因此**不要**给它或 `Stdout` 放开 DEBUG/TRACE：`jni` crate 会为转发本身的 JNI 调用再记一条日志，两者互相放大，真机实测几秒内刷出每秒上万行并把主线程压到 ANR。现状是 `src-tauri/src/logging.rs` 的 `quiet_targets` 只放行 Info 及以上、并在 `app.rs` 里关掉 `jni`/`tao`/`wry` 等噪声库；逐条的 DEBUG/TRACE 应用日志仍然写进日志文件（由用户的保留级别控制）。
+- 日志插件的 `Webview` 目标是「每条 Rust 日志过一次 JNI 转发」，因此**不要**给它或 `Stdout` 放开 DEBUG/TRACE：`jni` crate 会为转发本身的 JNI 调用再记一条日志，两者互相放大，真机实测几秒内刷出每秒上万行并把主线程压到 ANR。现状是 `src-tauri/crates/szu-core/src/logging.rs` 的 `quiet_targets` 只放行 Info 及以上、并在 `app.rs` 里关掉 `jni`/`tao`/`wry` 等噪声库；逐条的 DEBUG/TRACE 应用日志仍然写进日志文件（由用户的保留级别控制）。
 - 测试里 material 控件的角色与可访问名称在 shadow root 内部：全局补丁 `src/test-setup-element-internals.ts` 让 `getByRole` 能穿透 open shadow root；输入请用 `src/ui/testing.ts` 的 `typeInto`，断言可见文案请用 `hostOf` 取宿主元素。
 
 ---
@@ -61,6 +61,33 @@ release. Add a tool name to select part of the graph. For example, run
 - Android构建仅对 aarch64 架构进行apk构建，不要构建universe包
 - 进行测试时，需要考虑对 桌面端(Linux/Windows)/Android 的平台指定代码，保证CI中需要构建的平台能够全部通过cargo test的基本构建
 - 不要 allow(dead_code) 或 allow(unused) 来绕过检查，需要明确确定是真的没用(直接删掉)或是特定平台测试专用(配置好cfg)
+
+## Rust workspace 结构
+
+`src-tauri` 是 workspace 根，同时仍是 app 包自己的目录：`Cargo.lock` 在
+`src-tauri/Cargo.lock`、`target/` 在 `src-tauri/target`，因此 Android 的
+`gen/android/buildSrc`（按 `rootDirRel` 找 `libyour_szu_life_lib.so`）、Gradle 读取的
+`../../Cargo.lock`、CI 缓存与打包路径都不需要改。成员 crate 在 `src-tauri/crates/`，
+完整地图与约定见 `src-tauri/crates/README.md`。
+
+依赖方向只能从下到上：`szu-build-support` → `szu-core` →（`szu-download` →
+`szu-runtime`）与 `szu-app-content` / `szu-enrollment` / `szu-jxxk` / `szu-lms` /
+`szu-oj` / `szu-uooc` → `szu-todos` / `szu-mesh` → app。新增功能先放进已有 crate；
+要开新 crate 时也必须落在这个方向上，不要制造循环依赖。
+
+- 测试与检查用 `--workspace`：`cargo test --workspace --manifest-path src-tauri/Cargo.toml`。
+  不带 `--workspace` 只跑 app 包自己的测试，功能模块的测试在各自 crate 里。
+- 日常增量验证只需 `cargo check -p <crate>` / `cargo test -p <crate>`。
+- `szu-*` 的 `pub` 只为跨 crate 编译服务，不是对外公共 API；不要在 crate 之外新增
+  对内部类型的直接依赖。
+- 用到 `cfg(desktop)` / `cfg(mobile)` / `cfg(dev)` 的 crate 必须有自己的 `build.rs`
+  调用 `szu_build_support::emit_platform_cfgs()`——`tauri-build` 只给它自己那个 crate
+  打印这些 cfg。`.env` 的编译期注入同理走 `emit_embedded_env()`。
+- 数据库迁移跟随模块（`<crate>/src/<module>/migrations.rs`），通用 SQLite 句柄工厂在
+  `szu_core::migrations::db`。
+- 命令注册：`#[tauri::command]` 跟随模块留在各自 crate，`src/build.rs` 的
+  `AppManifest` 命令表、`permissions/default.toml` 与各 `commands.rs` 仍由
+  `src/tests.rs` 的命令名守卫测试交叉校验。
 
 ---
 
@@ -88,12 +115,12 @@ release. Add a tool name to select part of the graph. For example, run
 ### 2. 实现与技术选型约定
 
 - **协议框架**：统一使用 `rmcp` 宏体系（`#[rmcp::tool]` 与 `#[rmcp::tool_router]`），参数统一封装于 `rmcp::handler::server::wrapper::Parameters<T>`。
-- **端口与安全限制**：所有需要监听本机回环端口的本地服务统一由 `src-tauri/src/ports` 分配，端口段互不重叠：MCP `53901..=54000`、aria2 RPC `54001..=54100`、JXXK 录像下载入口 `54101..=54200`、设备自组网 `54201..=54300`。MCP 优先使用设置中持久化的端口（`mcp.port`），被占用时切换到段内其它端口、永久保存新端口并通过 `app://port-notice` 弹模态框告知；任一端口段耗尽时记录 `log::error!` 并同样弹模态框。所有服务**仅监听本地回环地址 `127.0.0.1` / `localhost`**，绝对禁止对外网或局域网广播。唯一显式例外是 EasyTier 的 P2P 监听器（必须绑 `0.0.0.0` 才能被对端直连），它只承载虚拟网握手与加密隧道，安全性由网络密钥承担。
+- **端口与安全限制**：所有需要监听本机回环端口的本地服务统一由 `src-tauri/crates/szu-core/src/ports` 分配，端口段互不重叠：MCP `53901..=54000`、aria2 RPC `54001..=54100`、JXXK 录像下载入口 `54101..=54200`、设备自组网 `54201..=54300`。MCP 优先使用设置中持久化的端口（`mcp.port`），被占用时切换到段内其它端口、永久保存新端口并通过 `app://port-notice` 弹模态框告知；任一端口段耗尽时记录 `log::error!` 并同样弹模态框。所有服务**仅监听本地回环地址 `127.0.0.1` / `localhost`**，绝对禁止对外网或局域网广播。唯一显式例外是 EasyTier 的 P2P 监听器（必须绑 `0.0.0.0` 才能被对端直连），它只承载虚拟网握手与加密隧道，安全性由网络密钥承担。
 - **协议 URI Scheme 规范**：所有通过协议暴露的端点统一注册为 `your-szu-life://`，并严格区分两大 route 空间：
   - `your-szu-life://page/...`：用于控制客户端打开/激活特定前端页面（如 `page/workbench`, `page/auth`, `page/electricity` 等）。
   - `your-szu-life://data/...`：用于传递与订阅结构化数据/MCP Resources 资源（如 `data/auth/profile`, `data/electricity/status` 等）。
 - **类型契约**：所有工具入参和出参必须 `derive(Serialize, Deserialize, schemars::JsonSchema)`，并提供清晰详尽的中文描述字段，杜绝任何未定义结构或无提示的 JSON Value。
-- **子路由导出**：每个功能模块目录内建立 `mcp.rs`，导出命名的 `pub(crate) fn xxx_tools(...) -> ToolRouter`，并在 `src-tauri/src/mcp/server.rs` 中合并接入全局路由器。
+- **子路由导出**：工具胶水统一放在 app crate 的 `src/mcp/features/<功能>.rs`（导出命名的 `pub(crate) fn xxx_tools(...) -> ToolRouter`），并在 `src/mcp/server.rs` 中合并接入全局路由器。`rmcp` 的 `ToolRouter<H>` 由处理者类型决定，所有工具必须与 `UnifiedSzuMcpService` 处在同一个 crate，因此**不要**把 `mcp.rs` 分散回各功能 crate。
 - **内部智能体互通**：所有 MCP 工具必须兼容 `rig-rmcp`，确保应用内置的 `rig-core` 智能体能够通过 `tools_from_server` 直接动态挂载并使用。
 
 ### 3. 开发验收检查清单 (Checklist)
@@ -104,14 +131,14 @@ release. Add a tool name to select part of the graph. For example, run
 - [ ] 工具名称符合命名规范（`<module>_<action>`，如 `uooc_search_qa_bank`）。
 - [ ] 工具入参均已实现 `schemars::JsonSchema`，且字段具有明确的注释描述。
 - [ ] 若涉及页面跳转或数据快照，已分别在 `your-szu-life://page/...` 与 `your-szu-life://data/...` 下补充对应 URI 契约。
-- [ ] 运行 `cargo test --manifest-path src-tauri/Cargo.toml` 验证 MCP 单元测试与 Schema 生成。
+- [ ] 运行 `cargo test --workspace --manifest-path src-tauri/Cargo.toml` 验证 MCP 单元测试与 Schema 生成。
 - [ ] 本地 MCP 服务（HTTP/SSE 与 stdio）能够正常返回该工具的调用结果。
 
 ---
 
 ## 设备自组网、设置同步与校园网访问
 
-- **组网实现**：`src-tauri/src/mesh` 把 `easytier`（git 依赖，固定 rev）链进进程，始终 `no_tun`，不创建 TUN 设备、不使用 Android VpnService、不改系统路由/代理。对等设备之间的 TCP 走 `ffi-dataplane`（`data_plane_tcp_bind/connect`），两端再经 `bridge.rs` 桥到本机回环，因此 HTTP 服务与 `reqwest` 只认 `127.0.0.1`。预置 rendezvous 节点在根目录 `easytier-peers.json`；EasyTier 没有局域网自动发现，列表全部不可达时跨网设备无法互相发现。
+- **组网实现**：`src-tauri/crates/szu-mesh/src/mesh` 把 `easytier`（git 依赖，固定 rev）链进进程，始终 `no_tun`，不创建 TUN 设备、不使用 Android VpnService、不改系统路由/代理。对等设备之间的 TCP 走 `ffi-dataplane`（`data_plane_tcp_bind/connect`），两端再经 `bridge.rs` 桥到本机回环，因此 HTTP 服务与 `reqwest` 只认 `127.0.0.1`。预置 rendezvous 节点在根目录 `easytier-peers.json`；EasyTier 没有局域网自动发现，列表全部不可达时跨网设备无法互相发现。
 - **身份**：`mesh/identity.rs` 由 vault `fixed.account.profile` 派生 `network_name = your-szu-life:self:<sha256(学号)前16位>` 与 `network_secret = Argon2id(密码, salt=学号+校园卡号)`。改统一认证密码等于换网络，其它设备需先用新密码登录才能重新入网。
 - **同步白名单**：只有 `settings_sync/items.rs::ITEM_DEFS` 里的项会同步（UOOC 登录态/AI/运行设置/题库、OJ 账号密码、宿舍区与教工区「单独配置」凭据、宿舍信息）。`fixed.account.profile`、authserver 会话、lms/jxxk 会话与 `settings.sqlite` 本地偏好永不同步。整项用版本向量合并，题库按 `question_id` / `cid:clean_tid` 逐行三路合并；两端都改过且内容不同时该项/该行**冻结**，不再同步（没有解除入口）。
 - **校园网访问**：`netproxy/campus_access.rs` 是唯一决策点。在校时完全维持原有绕过/覆写逻辑；校外且存在可用在校设备时，`campus-network.json` 的直连白名单不再强制生效——校内目标先按普通策略走外网，对外探测（`host:port` 缓存 60 秒）确认不可达才改走 overlay 代理；非校内目标永远不经过 overlay。`overrides.fallback` 在校外继续生效。在校设备上的 `mesh/campus_proxy.rs` 只接受校内目标，且只在「校园网访问」开关打开时响应。
@@ -157,7 +184,7 @@ release. Add a tool name to select part of the graph. For example, run
 1. 先判断变更是同一逻辑页面内的状态替换，还是新的逻辑页面；据此选择 `replace` 或 `push`。
 2. 检查桌面、Android 和页面按钮是否都复用统一返回桥接。
 3. 为逻辑栈、深链接、tab 替换、独立门户窗口和返回边界补充测试。
-4. 至少运行 `vp check`、`vp test`、`vp run build`、`cargo test --manifest-path src-tauri/Cargo.toml` 以及相关 Android 编译检查。
+4. 至少运行 `vp check`、`vp test`、`vp run build`、`cargo test --workspace --manifest-path src-tauri/Cargo.toml` 以及相关 Android 编译检查。
 5. 真机 Android 返回键、页面内返回按钮和真实账户门户流程属于独立的手工验收；未安装并点击最终 APK 前，不得声称原生返回已验证。
 6. 若 Android lint 报 `EnsureInitializerMetadata`，检查生成的 `SplitInitializer` 与 `AndroidManifest.xml` 的 `<meta-data>` 配对，不要用无关的 lint baseline 掩盖问题。
 

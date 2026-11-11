@@ -12,29 +12,29 @@ const MAX_REDIRECTS: usize = 4;
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct StaffPortalConfig {
-    pub(super) ip: String,
-    pub(super) acid: String,
-    pub(super) mac_auth: bool,
+pub struct StaffPortalConfig {
+    pub ip: String,
+    pub acid: String,
+    pub mac_auth: bool,
 }
 
 #[derive(Debug, Clone, Default)]
-pub(super) struct StaffPortalProbe {
-    pub(super) reachable: bool,
-    pub(super) state: PortalOnlineState,
-    pub(super) config: Option<StaffPortalConfig>,
-    pub(super) session: Option<StaffPortalSessionInfo>,
-    pub(super) domain: String,
-    pub(super) page_url: Option<Url>,
-    pub(super) nas_ip: String,
+pub struct StaffPortalProbe {
+    pub reachable: bool,
+    pub state: PortalOnlineState,
+    pub config: Option<StaffPortalConfig>,
+    pub session: Option<StaffPortalSessionInfo>,
+    pub domain: String,
+    pub page_url: Option<Url>,
+    pub nas_ip: String,
 }
 
-pub(super) fn valid_ip(value: &str) -> Option<IpAddr> {
+pub fn valid_ip(value: &str) -> Option<IpAddr> {
     let ip: IpAddr = value.trim().parse().ok()?;
     (!ip.is_unspecified() && !ip.is_loopback() && !ip.is_multicast()).then_some(ip)
 }
 
-pub(super) fn unsigned(value: &Value) -> Option<u64> {
+pub fn unsigned(value: &Value) -> Option<u64> {
     value
         .as_u64()
         .or_else(|| value.as_str()?.trim().parse().ok())
@@ -46,7 +46,7 @@ fn text(value: &Value, key: &str) -> Option<String> {
     (!text.is_empty()).then(|| text.to_owned())
 }
 
-pub(super) fn parse_staff_config(html: &str) -> Option<StaffPortalConfig> {
+pub fn parse_staff_config(html: &str) -> Option<StaffPortalConfig> {
     let values = config_literals(html)?;
     let ip = valid_ip(values.get("ip")?.as_str()?)?.to_string();
     let acid = values.get("acid")?;
@@ -64,14 +64,14 @@ pub(super) fn parse_staff_config(html: &str) -> Option<StaffPortalConfig> {
     })
 }
 
-pub(super) fn staff_url(path: &str) -> Url {
+pub fn staff_url(path: &str) -> Url {
     Url::parse(STAFF_ORIGIN)
         .unwrap()
         .join(path)
         .expect("static staff URL")
 }
 
-pub(super) fn staff_redirect(base: &Url, target: &str) -> Option<Url> {
+pub fn staff_redirect(base: &Url, target: &str) -> Option<Url> {
     let url = base.join(target).ok()?;
     (allowed_url(&url) && url.scheme() == "https" && url.host_str() == Some("net.szu.edu.cn"))
         .then_some(url)
@@ -110,7 +110,7 @@ fn read_config(http: &dyn PortalHttp, probe: &mut StaffPortalProbe) -> Option<St
     None
 }
 
-pub(super) fn staff_info_url(config: &StaffPortalConfig, now: u64) -> (Url, String) {
+pub fn staff_info_url(config: &StaffPortalConfig, now: u64) -> (Url, String) {
     let callback = format!("szuLifeInfo_{now}");
     let mut url = staff_url("/cgi-bin/rad_user_info");
     url.query_pairs_mut()
@@ -120,7 +120,7 @@ pub(super) fn staff_info_url(config: &StaffPortalConfig, now: u64) -> (Url, Stri
     (url, callback)
 }
 
-pub(super) fn apply_staff_info(probe: &mut StaffPortalProbe, value: &Value) {
+pub fn apply_staff_info(probe: &mut StaffPortalProbe, value: &Value) {
     probe.session = None;
     probe.domain.clear();
     probe.state = PortalOnlineState::Unknown;
@@ -168,7 +168,7 @@ pub(super) fn apply_staff_info(probe: &mut StaffPortalProbe, value: &Value) {
     probe.state = PortalOnlineState::Online;
 }
 
-pub(super) fn probe_staff_portal(http: &dyn PortalHttp, now: u64) -> StaffPortalProbe {
+pub fn probe_staff_portal(http: &dyn PortalHttp, now: u64) -> StaffPortalProbe {
     let mut probe = StaffPortalProbe::default();
     let Some(config) = read_config(http, &mut probe) else {
         return probe;

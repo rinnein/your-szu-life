@@ -10,25 +10,25 @@ const SESSION_REFRESH_COOLDOWN_MS: u64 = 10_000;
 
 pub struct AuthStore {
     // Serializes native cookie writes with reauthentication and logout.
-    pub(super) session_operations: Mutex<()>,
-    pub(super) state: Mutex<AuthState>,
-    pub(super) attempt: Mutex<AuthAttempt>,
-    pub(super) profile: Mutex<Option<StoredAccountProfile>>,
-    pub(super) pending: Mutex<Option<PendingAuthCredentials>>,
-    pub(super) captured: Mutex<Option<CapturedCredentials>>,
-    pub(super) submitted_password: Mutex<Option<CapturedCredentials>>,
-    pub(super) login_prefill: Mutex<Option<LoginFormPrefill>>,
-    pub(super) last_failure: Mutex<Option<String>>,
-    pub(super) resume_url: Mutex<Option<tauri::Url>>,
-    pub(super) resume_window: Mutex<Option<String>>,
-    pub(super) recovery: Mutex<super::recovery::Recovery>,
-    pub(super) auth_probe_running: AtomicBool,
-    pub(super) auth_probe_generation: AtomicU64,
-    pub(super) auth_completion_claimed: AtomicBool,
-    pub(super) session_refresh_running: AtomicBool,
-    pub(super) session_refresh_generation: AtomicU64,
-    pub(super) session_refresh_last_started_ms: AtomicU64,
-    pub(super) credentials: SharedCredentialStore,
+    pub session_operations: Mutex<()>,
+    pub state: Mutex<AuthState>,
+    pub attempt: Mutex<AuthAttempt>,
+    pub profile: Mutex<Option<StoredAccountProfile>>,
+    pub pending: Mutex<Option<PendingAuthCredentials>>,
+    pub captured: Mutex<Option<CapturedCredentials>>,
+    pub submitted_password: Mutex<Option<CapturedCredentials>>,
+    pub login_prefill: Mutex<Option<LoginFormPrefill>>,
+    pub last_failure: Mutex<Option<String>>,
+    pub resume_url: Mutex<Option<tauri::Url>>,
+    pub resume_window: Mutex<Option<String>>,
+    pub recovery: Mutex<super::recovery::Recovery>,
+    pub auth_probe_running: AtomicBool,
+    pub auth_probe_generation: AtomicU64,
+    pub auth_completion_claimed: AtomicBool,
+    pub session_refresh_running: AtomicBool,
+    pub session_refresh_generation: AtomicU64,
+    pub session_refresh_last_started_ms: AtomicU64,
+    pub credentials: SharedCredentialStore,
 }
 
 impl AuthStore {
@@ -56,7 +56,7 @@ impl AuthStore {
         }
     }
 
-    pub(super) fn reset_auth_flow_guards(&self) {
+    pub fn reset_auth_flow_guards(&self) {
         if let Ok(mut recovery) = self.recovery.lock() {
             recovery.invalidate();
         }
@@ -71,7 +71,7 @@ impl AuthStore {
         self.cancel_session_refresh();
     }
 
-    pub(super) fn try_start_session_refresh(&self) -> Option<u64> {
+    pub fn try_start_session_refresh(&self) -> Option<u64> {
         if self
             .session_refresh_running
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -93,24 +93,24 @@ impl AuthStore {
         Some(self.session_refresh_generation.load(Ordering::Acquire))
     }
 
-    pub(super) fn cancel_session_refresh(&self) {
+    pub fn cancel_session_refresh(&self) {
         self.session_refresh_generation
             .fetch_add(1, Ordering::AcqRel);
         self.session_refresh_running.store(false, Ordering::Release);
     }
 
-    pub(super) fn session_refresh_is_current(&self, generation: u64) -> bool {
+    pub fn session_refresh_is_current(&self, generation: u64) -> bool {
         self.session_refresh_running.load(Ordering::Acquire)
             && self.session_refresh_generation.load(Ordering::Acquire) == generation
     }
 
-    pub(super) fn finish_session_refresh(&self, generation: u64) {
+    pub fn finish_session_refresh(&self, generation: u64) {
         if self.session_refresh_generation.load(Ordering::Acquire) == generation {
             self.session_refresh_running.store(false, Ordering::Release);
         }
     }
 
-    pub(super) fn try_start_auth_probe(&self) -> Option<u64> {
+    pub fn try_start_auth_probe(&self) -> Option<u64> {
         if self
             .auth_probe_running
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -121,33 +121,33 @@ impl AuthStore {
         Some(self.auth_probe_generation.load(Ordering::Acquire))
     }
 
-    pub(super) fn cancel_auth_probe(&self) {
+    pub fn cancel_auth_probe(&self) {
         self.auth_probe_generation.fetch_add(1, Ordering::AcqRel);
         self.auth_probe_running.store(false, Ordering::Release);
     }
 
-    pub(super) fn auth_probe_is_current(&self, generation: u64) -> bool {
+    pub fn auth_probe_is_current(&self, generation: u64) -> bool {
         self.auth_probe_running.load(Ordering::Acquire)
             && self.auth_probe_generation.load(Ordering::Acquire) == generation
     }
 
-    pub(super) fn finish_auth_probe(&self, generation: u64) {
+    pub fn finish_auth_probe(&self, generation: u64) {
         if self.auth_probe_generation.load(Ordering::Acquire) == generation {
             self.auth_probe_running.store(false, Ordering::Release);
         }
     }
 
-    pub(super) fn claim_auth_completion(&self) -> bool {
+    pub fn claim_auth_completion(&self) -> bool {
         self.auth_completion_claimed
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
     }
 
-    pub(super) fn auth_completion_is_claimed(&self) -> bool {
+    pub fn auth_completion_is_claimed(&self) -> bool {
         self.auth_completion_claimed.load(Ordering::Acquire)
     }
 
-    pub(super) fn finish_attempt(&self, state: AuthState) {
+    pub fn finish_attempt(&self, state: AuthState) {
         if let Ok(mut recovery) = self.recovery.lock() {
             recovery.invalidate();
         }
@@ -172,7 +172,7 @@ impl AuthStore {
     }
 
     /// 记录本次自动登录失败的原因，供初始化设置凭据页展示。
-    pub(super) fn set_failure_notice(&self, message: impl Into<String>) {
+    pub fn set_failure_notice(&self, message: impl Into<String>) {
         if let Ok(mut notice) = self.last_failure.lock() {
             *notice = Some(message.into());
         }
@@ -186,7 +186,7 @@ impl AuthStore {
     }
 
     /// A narrow, password-free account snapshot for authenticated service flows.
-    pub(super) fn authenticated_campus_card_number(&self) -> Result<String, String> {
+    pub fn authenticated_campus_card_number(&self) -> Result<String, String> {
         let state = self.state.lock().map_err(|_| "认证状态不可用")?;
         let AuthState::Authenticated { student_id, .. } = &*state else {
             return Err("请先完成应用统一认证，再打开网费服务。".into());
@@ -208,7 +208,7 @@ impl AuthStore {
     }
 
     /// Take only the two required values; no auth lock escapes this boundary.
-    pub(super) fn network_credentials(&self) -> Result<(String, String), String> {
+    pub fn network_credentials(&self) -> Result<(String, String), String> {
         {
             let profile = self.profile.lock().map_err(|_| "状态锁失败")?;
             if let Some(profile) = profile.as_ref() {

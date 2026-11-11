@@ -1,4 +1,4 @@
-use crate::lms::service;
+use szu_lms::lms::service;
 use crate::mcp::service::UnifiedSzuMcpService;
 use rmcp::tool;
 use rmcp::tool_router;

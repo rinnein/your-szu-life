@@ -2,7 +2,7 @@ use super::{
     model::is_student_id, AUTH_HOST, AUTH_LOGIN_URL, AUTH_MOBILE_PROFILE_URL, AUTH_PROFILE_URL,
 };
 
-pub(super) fn authentication_url(user_agent: Option<&str>) -> tauri::Url {
+pub fn authentication_url(user_agent: Option<&str>) -> tauri::Url {
     let ua = user_agent.unwrap_or_default().to_ascii_lowercase();
     let mobile = cfg!(target_os = "android")
         || ["android", "iphone", "ipad", "ipod", "mobile"]
@@ -18,7 +18,7 @@ pub(super) fn authentication_url(user_agent: Option<&str>) -> tauri::Url {
     url
 }
 
-pub(super) fn is_auth_login_url(raw: &str) -> bool {
+pub fn is_auth_login_url(raw: &str) -> bool {
     let Ok(url) = raw.parse::<tauri::Url>() else {
         return false;
     };
@@ -29,14 +29,14 @@ pub(super) fn is_auth_login_url(raw: &str) -> bool {
         && (path == "/authserver/login" || path.starts_with("/authserver/login;"))
 }
 
-pub(super) fn is_authserver_url(raw: &str) -> bool {
+pub fn is_authserver_url(raw: &str) -> bool {
     let Ok(url) = raw.parse::<tauri::Url>() else {
         return false;
     };
     url.scheme() == "https" && url.host_str() == Some(AUTH_HOST)
 }
 
-pub(super) fn is_auth_profile_url(raw: &str) -> bool {
+pub fn is_auth_profile_url(raw: &str) -> bool {
     let Ok(url) = raw.parse::<tauri::Url>() else {
         return false;
     };
@@ -44,7 +44,7 @@ pub(super) fn is_auth_profile_url(raw: &str) -> bool {
     is_authserver_url(raw) && (path == "/personalInfo" || path.starts_with("/personalInfo/"))
 }
 
-pub(super) fn decode_callback_payload(payload: &str) -> Option<serde_json::Value> {
+pub fn decode_callback_payload(payload: &str) -> Option<serde_json::Value> {
     let mut parsed = serde_json::from_str::<serde_json::Value>(payload).ok()?;
     if let Some(encoded) = parsed.as_str() {
         parsed = serde_json::from_str(encoded).ok()?;
@@ -58,14 +58,14 @@ pub struct VerifiedUserIdentity {
     pub name: Option<String>,
 }
 
-pub(super) fn normalized_user_name(value: Option<&str>) -> Option<String> {
+pub fn normalized_user_name(value: Option<&str>) -> Option<String> {
     value.and_then(|value| {
         let value = value.trim();
         (!value.is_empty() && value.chars().count() <= 80).then(|| value.to_owned())
     })
 }
 
-pub(super) fn probe_identity(payload: &str) -> Option<VerifiedUserIdentity> {
+pub fn probe_identity(payload: &str) -> Option<VerifiedUserIdentity> {
     let parsed = decode_callback_payload(payload)?;
     let text = parsed.get("text")?.as_str()?;
     let user_conf = serde_json::from_str::<serde_json::Value>(text).ok()?;
@@ -106,7 +106,7 @@ pub(super) fn probe_identity(payload: &str) -> Option<VerifiedUserIdentity> {
     Some(VerifiedUserIdentity { student_id, name })
 }
 
-pub(super) fn auth_probe_reached_verified_endpoint(payload: &str) -> bool {
+pub fn auth_probe_reached_verified_endpoint(payload: &str) -> bool {
     let Some(parsed) = decode_callback_payload(payload) else {
         return false;
     };
@@ -124,6 +124,6 @@ pub(super) fn auth_probe_reached_verified_endpoint(payload: &str) -> bool {
             .is_some_and(is_auth_profile_url)
 }
 
-pub(super) fn auth_probe_succeeded(payload: &str) -> bool {
+pub fn auth_probe_succeeded(payload: &str) -> bool {
     auth_probe_reached_verified_endpoint(payload) && probe_identity(payload).is_some()
 }

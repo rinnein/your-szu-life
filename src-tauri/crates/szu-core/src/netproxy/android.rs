@@ -65,7 +65,7 @@ fn with_bridge<T>(
 ///
 /// `scheme` 决定用哪个协议去问 `ProxySelector`（系统的分流规则按协议不同）。
 #[cfg(target_os = "android")]
-pub(super) fn system_proxy(scheme: &str) -> Result<Option<reqwest::Url>, String> {
+pub fn system_proxy(scheme: &str) -> Result<Option<reqwest::Url>, String> {
     let probe = format!("{scheme}://example.invalid/");
     with_bridge(move |environment, class| {
         use jni::{objects::JValue, objects::JString};

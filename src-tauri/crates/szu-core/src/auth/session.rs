@@ -37,15 +37,15 @@ fn is_zero(value: &u8) -> bool {
 }
 
 impl AuthSessionSecret {
-    pub(super) fn has_android_cookie_metadata(&self) -> bool {
+    pub fn has_android_cookie_metadata(&self) -> bool {
         matches!(self.format_version, 2..=4)
     }
 
-    pub(super) fn can_restore(&self) -> bool {
+    pub fn can_restore(&self) -> bool {
         !cfg!(target_os = "android") || self.has_android_cookie_metadata()
     }
 
-    pub(super) fn restorable_snapshot(
+    pub fn restorable_snapshot(
         &self,
         expected_id: &str,
         now: OffsetDateTime,
@@ -114,7 +114,7 @@ impl AuthSessionSecret {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum SessionRestoreError {
+pub enum SessionRestoreError {
     AccountMismatch,
     Unsupported,
     InvalidCookie,
@@ -124,7 +124,7 @@ pub(super) enum SessionRestoreError {
 /// This differs from HTTP Set-Cookie semantics. Inspect the original attribute
 /// before the cookie crate strips its leading dot.
 #[cfg(test)]
-pub(super) fn from_android_cookie_info(raw: &str) -> Result<CookieRecord, String> {
+pub fn from_android_cookie_info(raw: &str) -> Result<CookieRecord, String> {
     let stored = CookieRecord::from_android(raw).map_err(String::from)?;
     if !is_auth_cookie_domain(&stored.domain) || (stored.host_only && stored.domain != AUTH_HOST) {
         return Err("Android Cookie 范围无效".into());
@@ -133,7 +133,7 @@ pub(super) fn from_android_cookie_info(raw: &str) -> Result<CookieRecord, String
     Ok(stored)
 }
 
-pub(super) fn is_auth_cookie_domain(domain: &str) -> bool {
+pub fn is_auth_cookie_domain(domain: &str) -> bool {
     // `cookies_for_url` already returns only cookies applicable to the official
     // host. Keep the persisted allow-list equally narrow so a corrupted secret
     // cannot make us inject unrelated SZU subdomain cookies on restore.
@@ -143,7 +143,7 @@ pub(super) fn is_auth_cookie_domain(domain: &str) -> bool {
     )
 }
 
-pub(super) fn is_valid_cookie_path(path: &str) -> bool {
+pub fn is_valid_cookie_path(path: &str) -> bool {
     path.starts_with('/') && !path.contains([';', '\r', '\n'])
 }
 
@@ -154,7 +154,7 @@ const AUTH_COOKIE_URLS: [&str; 4] = [
     AUTH_USER_CONF_URL,
 ];
 
-pub(super) fn cookie_in_auth_scope(cookie: &CookieRecord) -> bool {
+pub fn cookie_in_auth_scope(cookie: &CookieRecord) -> bool {
     is_auth_cookie_domain(&cookie.domain)
         && (!cookie.host_only || cookie.domain.trim_start_matches('.') == AUTH_HOST)
         && is_valid_cookie_path(&cookie.path)
@@ -167,7 +167,7 @@ pub(super) fn cookie_in_auth_scope(cookie: &CookieRecord) -> bool {
         })
 }
 
-pub(super) fn capture_auth_session(
+pub fn capture_auth_session(
     window: &tauri::WebviewWindow,
     student_id: String,
 ) -> Result<AuthSessionSecret, String> {
@@ -212,7 +212,7 @@ pub(super) fn capture_auth_session(
 }
 
 #[cfg(any(not(any(target_os = "android", target_os = "linux")), test))]
-pub(super) fn collect_auth_cookies(
+pub fn collect_auth_cookies(
     cookies: impl IntoIterator<Item = Cookie<'static>>,
 ) -> Vec<CookieRecord> {
     let mut seen = HashSet::new();
@@ -236,7 +236,7 @@ pub(super) fn collect_auth_cookies(
 }
 
 #[cfg(not(any(target_os = "android", target_os = "linux")))]
-pub(super) fn install_auth_cookie(
+pub fn install_auth_cookie(
     window: &tauri::WebviewWindow,
     cookie: &CookieRecord,
 ) -> Result<(), String> {
@@ -249,7 +249,7 @@ pub(super) fn install_auth_cookie(
 
 /// Install persisted cookies without navigating or clearing the local app
 /// document. Startup refresh uses this path so the workbench remains visible.
-pub(super) fn install_auth_session_cookies(
+pub fn install_auth_session_cookies(
     app: &tauri::AppHandle,
     session: &AuthSessionSecret,
 ) -> Result<(), String> {
@@ -291,7 +291,7 @@ pub(super) fn install_auth_session_cookies(
     }
 }
 
-pub(super) fn clear_webview_session(app: &tauri::AppHandle) -> Result<(), String> {
+pub fn clear_webview_session(app: &tauri::AppHandle) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
         if let Some(window) = app.get_webview_window("main") {

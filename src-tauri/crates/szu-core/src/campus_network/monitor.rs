@@ -365,7 +365,7 @@ fn same_network_identity(current: &NetworkSnapshot, initial: &NetworkSnapshot) -
         && current.wifi_has_private_172_ipv4 == initial.wifi_has_private_172_ipv4
 }
 
-pub(super) fn monitor_dorm_network(
+pub fn monitor_dorm_network(
     app: tauri::AppHandle,
     generation: u64,
     receiver: mpsc::Receiver<MonitorCommand>,
@@ -716,7 +716,7 @@ pub fn refresh_now(app: tauri::AppHandle) -> Result<NetworkOverviewView, String>
     Ok(overview)
 }
 
-pub(super) fn login_due(status: &DormLoginStatusView, now: u64, in_flight: bool) -> bool {
+pub fn login_due(status: &DormLoginStatusView, now: u64, in_flight: bool) -> bool {
     !in_flight
         && !matches!(status.state, DormLoginState::Paused)
         && status.next_probe_at_ms.is_none_or(|next| next <= now)

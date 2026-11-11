@@ -1,5 +1,5 @@
-use crate::enrollment::model::Query;
-use crate::enrollment::{Action, Store};
+use szu_enrollment::enrollment::model::Query;
+use szu_enrollment::enrollment::{Action, Store};
 use crate::mcp::service::UnifiedSzuMcpService;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::tool;

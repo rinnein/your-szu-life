@@ -98,7 +98,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             src-tauri/target
-          key: ${{ runner.os }}-${{ matrix.name }}-cargo-${{ hashFiles('src-tauri/Cargo.toml', 'src-tauri/Cargo.lock') }}
+          key: ${{ runner.os }}-${{ matrix.name }}-cargo-${{ hashFiles('src-tauri/Cargo.toml', 'src-tauri/Cargo.lock', 'src-tauri/crates/*/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.name }}-cargo-
 
@@ -182,7 +182,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             src-tauri/target
-          key: ${{ runner.os }}-android-cargo-${{ hashFiles('src-tauri/Cargo.toml', 'src-tauri/Cargo.lock') }}
+          key: ${{ runner.os }}-android-cargo-${{ hashFiles('src-tauri/Cargo.toml', 'src-tauri/Cargo.lock', 'src-tauri/crates/*/Cargo.toml') }}
           restore-keys: |
             ${{ runner.os }}-android-cargo-
 

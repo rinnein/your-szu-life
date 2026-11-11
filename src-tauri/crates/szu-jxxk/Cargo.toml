@@ -26,5 +26,3 @@ uuid = { workspace = true }
 toasty = { workspace = true }
 axum = { workspace = true }
 
-[dev-dependencies]
-tempfile = { workspace = true }

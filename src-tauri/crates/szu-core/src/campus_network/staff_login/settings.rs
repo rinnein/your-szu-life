@@ -26,7 +26,7 @@ pub fn load(store: &CampusNetworkStore) -> Result<StaffNetworkSettings, String> 
     }
     Ok(settings)
 }
-pub(super) fn credentials(
+pub fn credentials(
     store: &CampusNetworkStore,
     settings: &StaffNetworkSettings,
     current: &CredentialsProvider<'_>,
@@ -49,7 +49,7 @@ pub(super) fn credentials(
     }
     Ok((card, password))
 }
-pub(super) fn applied(settings: &StaffNetworkSettings, stamp: &str) -> bool {
+pub fn applied(settings: &StaffNetworkSettings, stamp: &str) -> bool {
     settings.applied_revision == Some(settings.revision)
         && settings.applied_mode == Some(settings.mode)
         && settings.applied_credentials.as_deref() == Some(stamp)
@@ -85,7 +85,7 @@ pub fn cached_view(
         applied_mode: settings.applied_mode,
     })
 }
-pub(super) fn view(
+pub fn view(
     store: &CampusNetworkStore,
     current: &CredentialsProvider<'_>,
 ) -> Result<StaffNetworkSettingsView, String> {
@@ -99,7 +99,7 @@ pub(super) fn view(
         .store(needs_apply, Ordering::Release);
     cached_view(store, &settings)
 }
-pub(super) fn persist(
+pub fn persist(
     store: &CampusNetworkStore,
     settings: &StaffNetworkSettings,
 ) -> Result<(), String> {
@@ -115,7 +115,7 @@ pub(super) fn persist(
     *cache = Some(settings.clone());
     Ok(())
 }
-pub(super) fn save(
+pub fn save(
     store: &CampusNetworkStore,
     input: StaffNetworkSettingsInput,
     current: &CredentialsProvider<'_>,

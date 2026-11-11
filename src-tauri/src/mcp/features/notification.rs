@@ -30,7 +30,7 @@ impl UnifiedSzuMcpService {
         description = "获取应用通知配置（总开关、校园网、电费、选课、OJ、UOOC 分类开关与待办提醒配置）。对应资源 your-szu-life://data/notification/settings"
     )]
     pub async fn notification_get_settings(&self) -> Result<String, String> {
-        let settings = crate::notification::settings::load(&self.app);
+        let settings = szu_core::notification::settings::load(&self.app);
         serde_json::to_string_pretty(&settings).map_err(|e| format!("序列化失败: {e}"))
     }
 
@@ -42,7 +42,7 @@ impl UnifiedSzuMcpService {
         &self,
         Parameters(params): Parameters<SetNotificationSettingsParams>,
     ) -> Result<String, String> {
-        let mut current = crate::notification::settings::load(&self.app);
+        let mut current = szu_core::notification::settings::load(&self.app);
         if let Some(enabled) = params.enabled {
             current.enabled = enabled;
         }
@@ -64,7 +64,7 @@ impl UnifiedSzuMcpService {
         if let Some(todo) = params.todo {
             todo.apply(&mut current.todo);
         }
-        let saved = crate::notification::settings::save(&self.app, &current)?;
+        let saved = szu_core::notification::settings::save(&self.app, &current)?;
         serde_json::to_string_pretty(&saved).map_err(|e| format!("序列化失败: {e}"))
     }
 }

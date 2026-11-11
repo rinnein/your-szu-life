@@ -1,19 +1,19 @@
 use reqwest::{blocking::Client, redirect::Policy, Url};
 use std::{fmt, io::Read, time::Duration};
 
-pub(super) const REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
 const MAX_RESPONSE_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug, Clone, Default)]
-pub(super) struct HttpResponse {
-    pub(super) status: u16,
-    pub(super) content_type: Option<String>,
-    pub(super) location: Option<String>,
-    pub(super) body: Vec<u8>,
+pub struct HttpResponse {
+    pub status: u16,
+    pub content_type: Option<String>,
+    pub location: Option<String>,
+    pub body: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum HttpError {
+pub enum HttpError {
     Unavailable,
     Timeout,
     Dns,
@@ -39,13 +39,13 @@ impl fmt::Display for HttpError {
     }
 }
 
-pub(super) trait PortalHttp: Sync {
+pub trait PortalHttp: Sync {
     fn get(&self, url: &Url) -> Result<HttpResponse, HttpError>;
 }
 
-pub(super) struct PortalClient(Client);
+pub struct PortalClient(Client);
 impl PortalClient {
-    pub(super) fn new() -> Result<Self, HttpError> {
+    pub fn new() -> Result<Self, HttpError> {
         #[cfg(target_os = "android")]
         crate::platform_tls::initialize_platform_verifier().map_err(|_| HttpError::Unavailable)?;
         client_builder()
@@ -76,7 +76,7 @@ fn classify_reqwest_error(error: reqwest::Error) -> HttpError {
     HttpError::Unavailable
 }
 
-pub(super) fn client_builder() -> reqwest::blocking::ClientBuilder {
+pub fn client_builder() -> reqwest::blocking::ClientBuilder {
     // 校内网地址是否走代理由 netproxy 按目标地址统一判断，调用方不再自己决定。
     crate::netproxy::blocking_client_builder()
         .redirect(Policy::none())
@@ -85,7 +85,7 @@ pub(super) fn client_builder() -> reqwest::blocking::ClientBuilder {
         .user_agent("your-szu-life/0.1")
 }
 
-pub(super) fn allowed_url(url: &Url) -> bool {
+pub fn allowed_url(url: &Url) -> bool {
     if !url.username().is_empty() || url.password().is_some() || url.fragment().is_some() {
         return false;
     }
@@ -110,7 +110,7 @@ impl PortalHttp for PortalClient {
     }
 }
 
-pub(super) fn read_response(
+pub fn read_response(
     response: reqwest::blocking::Response,
 ) -> Result<HttpResponse, HttpError> {
     let mut result = HttpResponse {
@@ -138,9 +138,9 @@ pub(super) fn read_response(
 }
 
 /// Check cancellation/network identity before every request, not just before a multi-step probe.
-pub(super) struct CheckedHttp<'a> {
-    pub(super) inner: &'a dyn PortalHttp,
-    pub(super) allowed: &'a (dyn Fn() -> bool + Sync),
+pub struct CheckedHttp<'a> {
+    pub inner: &'a dyn PortalHttp,
+    pub allowed: &'a (dyn Fn() -> bool + Sync),
 }
 impl PortalHttp for CheckedHttp<'_> {
     fn get(&self, url: &Url) -> Result<HttpResponse, HttpError> {
@@ -151,13 +151,13 @@ impl PortalHttp for CheckedHttp<'_> {
     }
 }
 
-pub(super) fn portal_url(host: &str, port: u16, path: &str) -> Url {
+pub fn portal_url(host: &str, port: u16, path: &str) -> Url {
     Url::parse(&format!("http://{host}:{port}{path}")).expect("static portal URL")
 }
 
 // Retained for the existing explicitly ignored read-only live check.
 #[cfg(test)]
-pub(super) fn read_http_response_bytes(
+pub fn read_http_response_bytes(
     host: &str,
     port: u16,
     path: &str,
@@ -167,7 +167,7 @@ pub(super) fn read_http_response_bytes(
         .map_err(|error| error.to_string())
 }
 
-pub(super) struct UnavailablePortal;
+pub struct UnavailablePortal;
 impl PortalHttp for UnavailablePortal {
     fn get(&self, _url: &Url) -> Result<HttpResponse, HttpError> {
         Err(HttpError::Unavailable)

@@ -1,9 +1,13 @@
-use crate::{
-    app_content, auth, campus_network, campus_payments, demo, file_manager, jxxk, lms, netproxy,
-    oj, onboarding, settings,
+use szu_app_content::app_content;
+use szu_core::{
+    auth, campus_network, campus_payments, demo, netproxy, onboarding, settings,
     storage::{PlatformCredentialStore, SharedCredentialStore},
-    uooc,
 };
+use szu_download::file_manager;
+use szu_jxxk::jxxk;
+use szu_lms::lms;
+use szu_oj::oj;
+use szu_uooc::uooc;
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -13,12 +17,12 @@ pub(crate) fn run() {
     let academic_credentials = credentials.clone();
     let proxy_credentials = credentials.clone();
     let sync_credentials = credentials.clone();
-    let (daily_writer, file_filter) = crate::logging::create_daily_writer();
+    let (daily_writer, file_filter) = szu_core::logging::create_daily_writer();
     let file_dispatch = tauri_plugin_log::fern::Dispatch::new()
         .format(move |out, message, record| {
             out.finish(format_args!(
                 "{}[{}][{}] {}",
-                crate::logging::timestamp_now(),
+                szu_core::logging::timestamp_now(),
                 record.target(),
                 record.level(),
                 message
@@ -43,8 +47,8 @@ pub(crate) fn run() {
         .manage(settings::SettingsStore::new(Arc::new(
             PlatformCredentialStore,
         )))
-        .manage(Arc::new(crate::mesh::MeshStore::new()))
-        .manage(Arc::new(crate::settings_sync::engine::SyncStore::new()))
+        .manage(Arc::new(szu_mesh::mesh::MeshStore::new()))
+        .manage(Arc::new(szu_mesh::settings_sync::engine::SyncStore::new()))
         .manage(netproxy::ProxyStore::new(proxy_credentials));
     // 必须最先注册：重复启动的进程在这里把参数交给已运行实例后退出。
     #[cfg(desktop)]
@@ -58,7 +62,7 @@ pub(crate) fn run() {
 
     let builder = builder
         .plugin(tauri_plugin_opener::init())
-        .plugin(crate::notification::init())
+        .plugin(szu_core::notification::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_os::init())
         .plugin(
@@ -67,7 +71,7 @@ pub(crate) fn run() {
                     // 控制台/系统日志只收 Warn 及以上：库的 DEBUG/TRACE 会把真机
                     // logcat 刷到每秒上万行（Android 还会按每进程配额丢弃）。
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout)
-                        .filter(crate::logging::quiet_targets),
+                        .filter(szu_core::logging::quiet_targets),
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Dispatch(
                         file_dispatch,
                     ))
@@ -76,7 +80,7 @@ pub(crate) fn run() {
                     // 调试日志，「转发 → JNI 调用 → jni 日志 → 再转发」会互相放大，
                     // 真机实测几秒内就把主线程压到 ANR。因此这里同样只收 Warn 及以上。
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview)
-                        .filter(crate::logging::quiet_targets),
+                        .filter(szu_core::logging::quiet_targets),
                 ])
                 // 全局仍放行 Trace，好让文件目标按用户选择记录 DEBUG/TRACE 的应用日志；
                 // 噪声库单独关掉。
@@ -94,45 +98,45 @@ pub(crate) fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_aptabase::Builder::new(crate::analytics::app_key()).build())
+        .plugin(tauri_plugin_aptabase::Builder::new(szu_core::analytics::app_key()).build())
         .setup(move |app| {
             // 日志级别本身也存于 settings.sqlite，必须先打开设置库再初始化日志。
-            if let Err(error) = crate::preferences::initialize(app.handle()) {
+            if let Err(error) = szu_core::preferences::initialize(app.handle()) {
                 eprintln!("设置数据库初始化失败，本次使用默认设置: {error}");
             }
             // 旧的内部存储日志/模型要先搬到新位置，再初始化日志与模型服务。
             szu_core::migrations::storage::migrate_legacy_storage(app.handle());
-            crate::logging::initialize(app.handle());
-            if crate::analytics::app_key().is_empty() {
+            szu_core::logging::initialize(app.handle());
+            if szu_core::analytics::app_key().is_empty() {
                 log::info!("未配置 Aptabase App Key，匿名统计已关闭");
             } else {
-                crate::analytics::track(app.handle(), "app_started", None);
+                szu_core::analytics::track(app.handle(), "app_started", None);
             }
             // 端口分配器的通知需要在任意调用点推送到前端，先把句柄存下来。
-            crate::ports::initialize(app.handle());
-            if let Err(error) = crate::storage::initialize(app.handle()) {
+            szu_core::ports::initialize(app.handle());
+            if let Err(error) = szu_core::storage::initialize(app.handle()) {
                 log::error!("凭据存储初始化失败: {error}");
             }
             // 必须在任何 HTTP 客户端被构建之前：代理设置以进程级缓存决定所有出网策略。
-            if let Err(error) = crate::netproxy::initialize(app.handle()) {
+            if let Err(error) = szu_core::netproxy::initialize(app.handle()) {
                 log::error!("代理设置初始化失败，本次运行按「自动」处理: {error}");
             }
-            if let Err(error) = crate::ocr::initialize(app.handle()) {
+            if let Err(error) = szu_runtime::ocr::initialize(app.handle()) {
                 log::error!("OCR 模型服务初始化失败: {error}");
             }
-            if let Err(error) = crate::embedding_model::initialize(app.handle()) {
+            if let Err(error) = szu_runtime::embedding_model::initialize(app.handle()) {
                 log::error!("Embedding 模型服务初始化失败: {error}");
             }
             // 本地模型来自 `szu-runtime`，core 不能反向依赖它们，因此就绪状态由这里探测后传入。
-            let local_models_ready = crate::ocr::status()
+            let local_models_ready = szu_runtime::ocr::status()
                 .is_ok_and(|status| status.status == "ready")
-                && crate::embedding_model::status()
+                && szu_runtime::embedding_model::status()
                     .is_ok_and(|status| status.status == "ready");
-            if let Err(error) = crate::onboarding::initialize(app.handle(), local_models_ready) {
+            if let Err(error) = szu_core::onboarding::initialize(app.handle(), local_models_ready) {
                 log::warn!("初始化设置状态迁移失败，将在下次启动重试: {error}");
             }
             auth::webview::setup_login_injection(app.handle())?;
-            crate::enrollment::initialize(app.handle(), academic_credentials.clone())?;
+            szu_enrollment::enrollment::initialize(app.handle(), academic_credentials.clone())?;
             if let Err(error) = oj::initialize(app.handle()) {
                 log::error!("OJ 初始化失败: {error}");
             }
@@ -142,7 +146,7 @@ pub(crate) fn run() {
             if let Err(error) = lms::initialize(app.handle()) {
                 log::error!("畅课服务初始化失败: {error}");
             }
-            if let Err(error) = crate::todos::initialize(app.handle()) {
+            if let Err(error) = szu_todos::todos::initialize(app.handle()) {
                 log::error!("待办服务初始化失败: {error}");
             }
             if let Err(error) = jxxk::initialize(app.handle()) {
@@ -183,39 +187,39 @@ pub(crate) fn run() {
                 crate::desktop::setup(app)?;
                 // 待办快照变化时刷新托盘菜单。`szu-todos` 是独立 crate，不能反向
                 // 依赖 desktop，因此由 app 层注册回调。
-                crate::todos::set_tray_updater(crate::desktop::update_todo_menu);
+                szu_todos::todos::set_tray_updater(crate::desktop::update_todo_menu);
             }
             if let Err(error) = crate::mcp::initialize(app.handle()) {
                 log::error!("MCP 本地服务启动失败: {error}");
             }
-            crate::mesh::initialize(app.handle());
-            crate::settings_sync::initialize(app.handle(), sync_credentials);
+            szu_mesh::mesh::initialize(app.handle());
+            szu_mesh::settings_sync::initialize(app.handle(), sync_credentials);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             crate::mcp::get_mcp_server_status,
             crate::mcp::set_mcp_server_enabled,
-            crate::mesh::commands::get_mesh_status,
-            crate::mesh::commands::list_mesh_devices,
-            crate::mesh::commands::set_mesh_enabled,
-            crate::mesh::commands::set_mesh_campus_access,
-            crate::mesh::commands::set_mesh_device_name,
-            crate::settings_sync::commands::get_sync_status,
-            crate::settings_sync::commands::get_sync_items,
-            crate::settings_sync::commands::trigger_sync,
-            crate::ports::commands::take_port_notices,
-            crate::enrollment::commands::enrollment_command,
-            crate::enrollment::commands::open_academic_portal,
-            crate::enrollment::commands::open_enrollment_official,
-            crate::enrollment::commands::subscribe_enrollment_state,
-            crate::enrollment::commands::watch_enrollment_online_users,
-            crate::enrollment::commands::recalculate_academic,
-            crate::ocr::commands::get_ocr_model_status,
-            crate::ocr::commands::download_ocr_model,
-            crate::ocr::commands::update_ocr_model,
-            crate::embedding_model::commands::get_embedding_model_status,
-            crate::embedding_model::commands::download_embedding_model,
-            crate::embedding_model::commands::update_embedding_model,
+            szu_mesh::mesh::commands::get_mesh_status,
+            szu_mesh::mesh::commands::list_mesh_devices,
+            szu_mesh::mesh::commands::set_mesh_enabled,
+            szu_mesh::mesh::commands::set_mesh_campus_access,
+            szu_mesh::mesh::commands::set_mesh_device_name,
+            szu_mesh::settings_sync::commands::get_sync_status,
+            szu_mesh::settings_sync::commands::get_sync_items,
+            szu_mesh::settings_sync::commands::trigger_sync,
+            szu_core::ports::commands::take_port_notices,
+            szu_enrollment::enrollment::commands::enrollment_command,
+            szu_enrollment::enrollment::commands::open_academic_portal,
+            szu_enrollment::enrollment::commands::open_enrollment_official,
+            szu_enrollment::enrollment::commands::subscribe_enrollment_state,
+            szu_enrollment::enrollment::commands::watch_enrollment_online_users,
+            szu_enrollment::enrollment::commands::recalculate_academic,
+            szu_runtime::ocr::commands::get_ocr_model_status,
+            szu_runtime::ocr::commands::download_ocr_model,
+            szu_runtime::ocr::commands::update_ocr_model,
+            szu_runtime::embedding_model::commands::get_embedding_model_status,
+            szu_runtime::embedding_model::commands::download_embedding_model,
+            szu_runtime::embedding_model::commands::update_embedding_model,
             oj::commands::load_oj_image,
             oj::commands::save_oj_preferences,
             oj::commands::configure_oj_companion,
@@ -246,24 +250,24 @@ pub(crate) fn run() {
             oj::commands::send_oj_companion,
             oj::commands::refresh_oj,
             oj::commands::read_oj_notice,
-            crate::storage::commands::get_credential_storage_status,
+            szu_core::storage::commands::get_credential_storage_status,
             settings::commands::get_settings_snapshot,
-            crate::activity::commands::set_active_module,
-            crate::appearance::commands::get_appearance,
-            crate::appearance::commands::save_appearance,
-            crate::appearance::commands::get_wallpaper_seed,
-            crate::appearance::commands::get_wallpaper_image,
-            crate::appearance::commands::watch_wallpaper_image,
-            crate::notification::commands::get_notification_settings,
-            crate::notification::commands::save_notification_settings,
-            crate::notification::commands::set_application_focus,
-            crate::analytics::commands::get_analytics_settings,
-            crate::analytics::commands::save_analytics_settings,
-            crate::todos::commands::subscribe_todos,
-            crate::todos::commands::refresh_todos,
-            crate::netproxy::commands::get_proxy_settings,
-            crate::netproxy::commands::save_proxy_settings,
-            crate::netproxy::commands::test_proxy_settings,
+            szu_core::activity::commands::set_active_module,
+            szu_core::appearance::commands::get_appearance,
+            szu_core::appearance::commands::save_appearance,
+            szu_core::appearance::commands::get_wallpaper_seed,
+            szu_core::appearance::commands::get_wallpaper_image,
+            szu_core::appearance::commands::watch_wallpaper_image,
+            szu_core::notification::commands::get_notification_settings,
+            szu_core::notification::commands::save_notification_settings,
+            szu_core::notification::commands::set_application_focus,
+            szu_core::analytics::commands::get_analytics_settings,
+            szu_core::analytics::commands::save_analytics_settings,
+            szu_todos::todos::commands::subscribe_todos,
+            szu_todos::todos::commands::refresh_todos,
+            szu_core::netproxy::commands::get_proxy_settings,
+            szu_core::netproxy::commands::save_proxy_settings,
+            szu_core::netproxy::commands::test_proxy_settings,
             uooc::commands::get_uooc_snapshot,
             uooc::commands::subscribe_uooc_state,
             uooc::commands::subscribe_uooc_assessments,
@@ -403,7 +407,7 @@ pub(crate) fn run() {
             campus_network::commands::consume_dorm_login_failure_notice,
         ])
         .on_page_load(|window, payload| {
-            crate::enrollment::portal::on_page_load(window, payload);
+            szu_enrollment::enrollment::portal::on_page_load(window, payload);
             if !campus_payments::on_page_load(window, payload) && window.label() == "main" {
                 auth::webview::on_page_load(window, payload);
             }
@@ -433,8 +437,8 @@ pub(crate) fn run() {
         .expect("error while building tauri application");
     app.run(|app_handle, event| {
         if let tauri::RunEvent::Exit = event {
-            crate::analytics::track(app_handle, "app_exited", None);
-            crate::analytics::flush(app_handle);
+            szu_core::analytics::track(app_handle, "app_exited", None);
+            szu_core::analytics::flush(app_handle);
         }
     });
 }

@@ -12,9 +12,9 @@ impl UnifiedSzuMcpService {
     pub async fn auth_get_status(&self) -> Result<String, String> {
         let store = self
             .app
-            .try_state::<crate::auth::AuthStore>()
+            .try_state::<szu_core::auth::AuthStore>()
             .ok_or("认证存储不可用")?;
-        let state = crate::auth::service::get_auth_state(self.app.clone(), &store)?;
+        let state = szu_core::auth::service::get_auth_state(self.app.clone(), &store)?;
         serde_json::to_string_pretty(&state).map_err(|e| format!("序列化失败: {e}"))
     }
 
@@ -25,10 +25,10 @@ impl UnifiedSzuMcpService {
     pub async fn auth_get_profile(&self) -> Result<String, String> {
         let store = self
             .app
-            .try_state::<crate::auth::AuthStore>()
+            .try_state::<szu_core::auth::AuthStore>()
             .ok_or("认证存储不可用")?;
-        let profile = crate::auth::service::get_account_profile(&store)?;
-        let user_data = crate::auth::service::get_user_data(&store)?;
+        let profile = szu_core::auth::service::get_account_profile(&store)?;
+        let user_data = szu_core::auth::service::get_user_data(&store)?;
         serde_json::to_string_pretty(&serde_json::json!({
             "profile": profile,
             "userData": user_data,
@@ -42,7 +42,7 @@ impl UnifiedSzuMcpService {
     )]
     pub async fn auth_refresh_session(&self) -> Result<String, String> {
         let app = self.app.clone();
-        tokio::task::spawn_blocking(move || crate::auth::service::refresh_auth_session(app))
+        tokio::task::spawn_blocking(move || szu_core::auth::service::refresh_auth_session(app))
             .await
             .map_err(|_| "任务执行失败".to_string())??;
         Ok("认证会话刷新成功".to_string())

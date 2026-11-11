@@ -14,9 +14,9 @@ impl UnifiedSzuMcpService {
     pub async fn mesh_get_status(&self) -> Result<String, String> {
         let store = self
             .app
-            .try_state::<Arc<crate::mesh::MeshStore>>()
+            .try_state::<Arc<szu_mesh::mesh::MeshStore>>()
             .ok_or_else(|| "设备同步模块未初始化".to_string())?;
-        serde_json::to_string_pretty(&crate::mesh::status(&store))
+        serde_json::to_string_pretty(&szu_mesh::mesh::status(&store))
             .map_err(|error| format!("序列化失败: {error}"))
     }
 
@@ -27,7 +27,7 @@ impl UnifiedSzuMcpService {
     pub async fn mesh_list_devices(&self) -> Result<String, String> {
         let store = self
             .app
-            .try_state::<Arc<crate::mesh::MeshStore>>()
+            .try_state::<Arc<szu_mesh::mesh::MeshStore>>()
             .ok_or_else(|| "设备同步模块未初始化".to_string())?;
         serde_json::to_string_pretty(&store.devices())
             .map_err(|error| format!("序列化失败: {error}"))
@@ -40,7 +40,7 @@ impl UnifiedSzuMcpService {
     pub async fn mesh_get_campus_access(&self) -> Result<String, String> {
         let store = self
             .app
-            .try_state::<Arc<crate::mesh::MeshStore>>()
+            .try_state::<Arc<szu_mesh::mesh::MeshStore>>()
             .ok_or_else(|| "设备同步模块未初始化".to_string())?;
         let devices = store.devices();
         let self_device = devices.iter().find(|device| device.is_self);
@@ -57,8 +57,8 @@ impl UnifiedSzuMcpService {
             })
             .collect();
         serde_json::to_string_pretty(&serde_json::json!({
-            "enabled": crate::mesh::campus_access_enabled(),
-            "running": crate::mesh::is_running(&self.app),
+            "enabled": szu_mesh::mesh::campus_access_enabled(),
+            "running": szu_mesh::mesh::is_running(&self.app),
             "localOnCampus": self_device.is_some_and(|device| device.on_campus),
             "egress": store.campus_peer().map(|ip| ip.to_string()),
             "campusDevices": campus_devices,

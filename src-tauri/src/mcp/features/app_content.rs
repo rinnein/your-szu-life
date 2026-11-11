@@ -1,4 +1,4 @@
-use crate::app_content::AppContentStore;
+use szu_app_content::app_content::AppContentStore;
 use crate::mcp::service::UnifiedSzuMcpService;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::tool;
@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
-use crate::app_content::model::UpdateChannel;
+use szu_app_content::app_content::model::UpdateChannel;
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
 pub(crate) struct SetUpdateChannelParams {
@@ -66,7 +66,7 @@ impl UnifiedSzuMcpService {
             .ok_or("公共内容存储不可用")?
             .inner()
             .clone();
-        crate::app_content::channel::save(params.channel)?;
+        szu_app_content::app_content::channel::save(params.channel)?;
         let snapshot = tokio::task::spawn_blocking(move || {
             store.set_channel(params.channel);
             store.refresh()

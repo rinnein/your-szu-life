@@ -160,14 +160,14 @@ tempfile = "3"
 szu-core = { path = "crates/szu-core" }
 szu-download = { path = "crates/szu-download" }
 szu-runtime = { path = "crates/szu-runtime" }
-szu-uooc = { path = "crates/szu-uooc" }
-szu-oj = { path = "crates/szu-oj" }
-szu-lms = { path = "crates/szu-lms" }
-szu-jxxk = { path = "crates/szu-jxxk" }
-szu-enrollment = { path = "crates/szu-enrollment" }
 szu-app-content = { path = "crates/szu-app-content" }
 szu-todos = { path = "crates/szu-todos" }
 szu-mesh = { path = "crates/szu-mesh" }
+szu-enrollment = { path = "crates/szu-enrollment" }
+szu-jxxk = { path = "crates/szu-jxxk" }
+szu-lms = { path = "crates/szu-lms" }
+szu-oj = { path = "crates/szu-oj" }
+szu-uooc = { path = "crates/szu-uooc" }
 tauri = { workspace = true }
 tauri-plugin-opener = { workspace = true }
 tauri-plugin-notification = { workspace = true }
@@ -178,75 +178,22 @@ tauri-plugin-clipboard-manager = { workspace = true }
 tauri-plugin-aptabase = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-semver = { workspace = true }
 chrono = { workspace = true }
-image = { workspace = true }
-time = { workspace = true }
 log = { workspace = true }
-encoding_rs = { workspace = true }
-reqwest = { workspace = true }
-sha1 = { workspace = true }
-hmac = { workspace = true }
-md-5 = { workspace = true }
 base64 = { workspace = true }
-argon2 = { workspace = true }
-rand = { workspace = true }
-chacha20poly1305 = { workspace = true }
-uuid = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
-tokio-tungstenite = { workspace = true }
-cookie_store = { workspace = true }
-reqwest_cookie_store = { workspace = true }
-mp4 = { workspace = true }
-m3u8-rs = { workspace = true }
-scraper = { workspace = true }
-ddddocr-core = { workspace = true }
-ddddocr-tract2 = { workspace = true }
-sha2 = { workspace = true }
-flate2 = { workspace = true }
-calamine = { workspace = true }
-toasty = { workspace = true }
-imageproc = { workspace = true }
-des = { workspace = true }
-regex = { workspace = true }
-base16384 = { workspace = true }
-async-openai = { workspace = true }
 rig-core = { workspace = true }
 rig-rmcp = { workspace = true }
 rmcp = { workspace = true }
 schemars = { workspace = true }
 axum = { workspace = true }
-futures-util = { workspace = true }
-netdev = { workspace = true }
-easytier = { workspace = true }
-easytier-core = { workspace = true }
-tracing = { workspace = true }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
-keyring = { workspace = true }
-ssid = { workspace = true }
 tauri-plugin-dialog = { workspace = true }
-
-[target.'cfg(target_os = "android")'.dependencies]
-android-native-keyring-store = { workspace = true }
-keyring-core = { workspace = true }
-jni = { workspace = true }
-jni022 = { workspace = true }
-ndk-context = { workspace = true }
-rustls-platform-verifier = { workspace = true }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-webkit2gtk = { workspace = true }
-soup3 = { workspace = true }
-gtk = { workspace = true }
-
-[target.'cfg(target_os = "windows")'.dependencies]
-windows-sys = { workspace = true }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { workspace = true }
-wallpaper = { workspace = true }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -262,7 +209,6 @@ proc-macro-crate = { path = "vendor/proc-macro-crate" }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-szu-runtime = { path = "crates/szu-runtime", features = ["testing"] }
 
 [profile.dev]
 debug = "line-tables-only"

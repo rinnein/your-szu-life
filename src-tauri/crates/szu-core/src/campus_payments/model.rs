@@ -84,7 +84,7 @@ impl From<NoticeCode> for NetworkFeePortalNotice {
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(super) enum PageKind {
+pub enum PageKind {
     Loading,
     Pending,
     LoginReady,
@@ -102,12 +102,12 @@ pub(super) enum PageKind {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct PageObservation {
-    pub(super) kind: PageKind,
-    pub(super) document_token: String,
+pub struct PageObservation {
+    pub kind: PageKind,
+    pub document_token: String,
 }
 
-pub(super) fn parse_observation(value: &str) -> Option<PageObservation> {
+pub fn parse_observation(value: &str) -> Option<PageObservation> {
     if value.len() > 4096 {
         return None;
     }

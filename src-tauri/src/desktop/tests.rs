@@ -1,5 +1,5 @@
 use super::{todo_menu_label, todo_menu_specs, TODO_MENU_LIMIT};
-use crate::todos::model::{TodoItem, TodoKind};
+use szu_todos::todos::model::{TodoItem, TodoKind};
 
 fn item(title: &str, due_at_ms: i64) -> TodoItem {
     TodoItem {

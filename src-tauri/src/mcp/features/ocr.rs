@@ -31,7 +31,7 @@ impl UnifiedSzuMcpService {
             .decode(raw.trim())
             .map_err(|e| format!("Base64 解码失败: {e}"))?;
 
-        let result = tokio::task::spawn_blocking(move || crate::ocr::recognize(&bytes))
+        let result = tokio::task::spawn_blocking(move || szu_runtime::ocr::recognize(&bytes))
             .await
             .map_err(|_| "OCR 推理任务失败".to_string())??;
 
@@ -43,7 +43,7 @@ impl UnifiedSzuMcpService {
         description = "查询本地 OCR 模型的装载状态、文件校验哈希与可用性"
     )]
     pub async fn ocr_get_status(&self) -> Result<String, String> {
-        let status = crate::ocr::status()?;
+        let status = szu_runtime::ocr::status()?;
         serde_json::to_string_pretty(&status).map_err(|e| format!("序列化失败: {e}"))
     }
 }

@@ -51,7 +51,7 @@ pub fn set_mode(
     Ok(mode_view(store))
 }
 
-pub(super) fn clear_logs(app: &tauri::AppHandle, store: &CampusNetworkStore) -> Result<(), String> {
+pub fn clear_logs(app: &tauri::AppHandle, store: &CampusNetworkStore) -> Result<(), String> {
     let view = mode_view(store);
     let _ = app.emit("debug-mode-changed", &view);
     Ok(())
@@ -161,7 +161,7 @@ fn sanitize_entry(mut entry: DebugLogEntry) -> DebugLogEntry {
     entry
 }
 
-pub(super) fn record_snapshot(
+pub fn record_snapshot(
     app: &tauri::AppHandle,
     store: &CampusNetworkStore,
     snapshot: &NetworkSnapshot,
@@ -192,10 +192,10 @@ pub(super) fn record_snapshot(
     );
 }
 
-pub(super) struct DiagnosticHttp<'a> {
-    pub(super) inner: &'a dyn PortalHttp,
-    pub(super) app: &'a tauri::AppHandle,
-    pub(super) store: &'a CampusNetworkStore,
+pub struct DiagnosticHttp<'a> {
+    pub inner: &'a dyn PortalHttp,
+    pub app: &'a tauri::AppHandle,
+    pub store: &'a CampusNetworkStore,
 }
 
 impl PortalHttp for DiagnosticHttp<'_> {

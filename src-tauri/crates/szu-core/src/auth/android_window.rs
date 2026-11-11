@@ -47,7 +47,7 @@ fn with_bridge<T>(
     result
 }
 
-pub(super) fn show_authentication(return_url: &str) -> Result<(), String> {
+pub fn show_authentication(return_url: &str) -> Result<(), String> {
     with_bridge(|env, class| {
         let input = env.new_string(return_url).map_err(|_| "认证返回地址无效")?;
         let shown = env
@@ -67,7 +67,7 @@ pub(super) fn show_authentication(return_url: &str) -> Result<(), String> {
     })
 }
 
-pub(super) fn finish_authentication(restore: bool) -> Result<(), String> {
+pub fn finish_authentication(restore: bool) -> Result<(), String> {
     with_bridge(|env, class| {
         env.call_static_method(
             class,

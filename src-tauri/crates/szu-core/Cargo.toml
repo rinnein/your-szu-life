@@ -15,8 +15,6 @@ szu-build-support = { path = "../szu-build-support" }
 [dependencies]
 tauri = { workspace = true }
 tauri-plugin-notification = { workspace = true }
-tauri-plugin-log = { workspace = true }
-tauri-plugin-os = { workspace = true }
 tauri-plugin-opener = { workspace = true }
 tauri-plugin-aptabase = { workspace = true }
 serde = { workspace = true }
@@ -31,23 +29,17 @@ sha1 = { workspace = true }
 hmac = { workspace = true }
 md-5 = { workspace = true }
 base64 = { workspace = true }
-argon2 = { workspace = true }
 rand = { workspace = true }
 chacha20poly1305 = { workspace = true }
 uuid = { workspace = true }
 tokio = { workspace = true }
-tokio-util = { workspace = true }
 tokio-tungstenite = { workspace = true }
 cookie_store = { workspace = true }
 reqwest_cookie_store = { workspace = true }
 scraper = { workspace = true }
-sha2 = { workspace = true }
 flate2 = { workspace = true }
 calamine = { workspace = true }
 toasty = { workspace = true }
-imageproc = { workspace = true }
-des = { workspace = true }
-regex = { workspace = true }
 futures-util = { workspace = true }
 base16384 = { workspace = true }
 schemars = { workspace = true }

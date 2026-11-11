@@ -10,13 +10,13 @@ use std::net::IpAddr;
 
 /// 已解析的网段集合，按地址族分开存 `(网络地址, 掩码)`。
 #[derive(Debug, Default)]
-pub(super) struct Compiled {
+pub struct Compiled {
     ipv4: Vec<(u32, u32)>,
     ipv6: Vec<(u128, u128)>,
 }
 
 impl Compiled {
-    pub(super) fn matches(&self, host: IpAddr) -> bool {
+    pub fn matches(&self, host: IpAddr) -> bool {
         match host {
             IpAddr::V4(host) => self
                 .ipv4
@@ -31,7 +31,7 @@ impl Compiled {
 }
 
 /// 把网段文本列表解析成可复用的匹配器；解析不了的条目直接忽略。
-pub(super) fn compile(networks: &[String]) -> Compiled {
+pub fn compile(networks: &[String]) -> Compiled {
     let mut compiled = Compiled::default();
     for network in networks {
         match network.trim().parse::<IpAddr>() {
@@ -57,7 +57,7 @@ pub(super) fn compile(networks: &[String]) -> Compiled {
 }
 
 /// 单条网段判断。`no_proxy` 这类短列表直接用它即可。
-pub(super) fn contains(host: IpAddr, network: &str) -> bool {
+pub fn contains(host: IpAddr, network: &str) -> bool {
     let network = network.trim();
     if network.is_empty() {
         return false;

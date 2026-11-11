@@ -647,10 +647,10 @@ fn notices_and_ipc_contracts_keep_credentials_and_remote_permissions_out() {
     for operation in ["confirm_profile", "navigate_to_authentication", "logout"] {
         let auth = include_str!("../auth/service.rs");
         let function = auth
-            .split(&format!("pub(super) fn {operation}("))
+            .split(&format!("pub fn {operation}("))
             .nth(1)
             .unwrap()
-            .split("\npub(super) fn ")
+            .split("\npub fn ")
             .next()
             .unwrap();
         assert!(function.contains("crate::campus_payments::cancel(&app)"));

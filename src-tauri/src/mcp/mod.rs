@@ -9,7 +9,7 @@ mod features;
 #[cfg(test)]
 mod tests;
 
-use crate::ports::{self, PortService};
+use szu_core::ports::{self, PortService};
 use rmcp::transport::streamable_http_server::{
     session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
 };
@@ -65,7 +65,7 @@ pub fn get_mcp_server_status() -> McpStatusView {
 }
 
 fn persisted_port() -> Option<u16> {
-    crate::preferences::load::<u16>(crate::preferences::MCP_PORT)
+    szu_core::preferences::load::<u16>(szu_core::preferences::MCP_PORT)
         .ok()
         .flatten()
         .filter(|port| (ports::MCP_PORT_RANGE.0..=ports::MCP_PORT_RANGE.1).contains(port))
@@ -94,7 +94,7 @@ pub fn start_mcp_server(app: &AppHandle) -> Result<u16, String> {
     let bound_port = allocation.port;
 
     if saved_port != Some(bound_port) {
-        if let Err(error) = crate::preferences::save(crate::preferences::MCP_PORT, &bound_port) {
+        if let Err(error) = szu_core::preferences::save(szu_core::preferences::MCP_PORT, &bound_port) {
             log::error!("保存 MCP 端口失败: {error}");
         }
     }
@@ -146,14 +146,14 @@ pub fn start_mcp_server(app: &AppHandle) -> Result<u16, String> {
 }
 
 fn is_persisted_enabled() -> bool {
-    crate::preferences::load::<bool>(crate::preferences::MCP_ENABLED)
+    szu_core::preferences::load::<bool>(szu_core::preferences::MCP_ENABLED)
         .ok()
         .flatten()
         .unwrap_or(false)
 }
 
 fn save_persisted_enabled(enabled: bool) {
-    if let Err(error) = crate::preferences::save(crate::preferences::MCP_ENABLED, &enabled) {
+    if let Err(error) = szu_core::preferences::save(szu_core::preferences::MCP_ENABLED, &enabled) {
         eprintln!("保存 MCP 开关失败: {error}");
     }
 }

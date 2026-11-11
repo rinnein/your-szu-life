@@ -32,7 +32,7 @@ fn words(value: &str, with_length: bool) -> Vec<u32> {
     }
     words
 }
-pub(super) fn encode_info(
+pub fn encode_info(
     username: &str,
     password: &str,
     config: &StaffPortalConfig,
@@ -72,7 +72,7 @@ pub(super) fn encode_info(
     )
 }
 
-pub(super) fn login_url(
+pub fn login_url(
     username: &str,
     password: &str,
     config: &StaffPortalConfig,
@@ -133,7 +133,7 @@ pub(super) fn login_url(
     (url, callback)
 }
 
-pub(super) fn remember_value(username: &str, password: &str) -> Result<String, &'static str> {
+pub fn remember_value(username: &str, password: &str) -> Result<String, &'static str> {
     #[derive(Serialize)]
     struct Remember<'a> {
         username: &'a str,
@@ -148,7 +148,7 @@ pub(super) fn remember_value(username: &str, password: &str) -> Result<String, &
     Ok(general_purpose::STANDARD.encode(bytes))
 }
 
-pub(super) fn credential_stamp(username: &str, password: &str) -> String {
+pub fn credential_stamp(username: &str, password: &str) -> String {
     // Equality/version marker kept in the keyring; never emitted or used as an auth verifier.
     format!(
         "{:x}",

@@ -1,5 +1,5 @@
 use crate::mcp::service::UnifiedSzuMcpService;
-use crate::settings::SettingsStore;
+use szu_core::settings::SettingsStore;
 use rmcp::tool;
 use rmcp::tool_router;
 use tauri::Manager;
@@ -24,7 +24,7 @@ impl UnifiedSzuMcpService {
         description = "查询本地加密凭据存储的运行状态。凭据以单一主密钥加密保存于本机文件，钥匙环中仅保留该主密钥"
     )]
     pub async fn settings_get_storage_status(&self) -> Result<String, String> {
-        let status = crate::storage::commands::get_credential_storage_status();
+        let status = szu_core::storage::commands::get_credential_storage_status();
         serde_json::to_string_pretty(&status).map_err(|e| format!("序列化失败: {e}"))
     }
 }

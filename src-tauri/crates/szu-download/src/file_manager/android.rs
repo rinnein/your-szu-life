@@ -30,7 +30,7 @@ pub fn parse_picked_json(raw: &str) -> Result<AndroidPickedDirectory, String> {
 }
 
 #[cfg(target_os = "android")]
-pub(super) use android_impl::{
+pub use android_impl::{
     check_access, delete_file, ensure_directory, export_resume_state, inspect, pick, publish_file,
     release, staging_root,
 };

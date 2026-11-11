@@ -2,7 +2,7 @@
 use super::{CookieRecord, Error, Patch, Scope, Snapshot};
 use std::collections::HashSet;
 
-pub(super) trait Transport {
+pub trait Transport {
     fn native_available(&mut self) -> bool;
     fn capture_native(&mut self, scope: &Scope) -> Result<Snapshot, Error>;
     fn write_native(&mut self, scope: &Scope, patches: &[Patch]) -> Result<(), Error>;
@@ -34,7 +34,7 @@ fn native_read(transport: &mut impl Transport, scope: &Scope) -> Result<Snapshot
     }
     Err(Error::Unavailable)
 }
-pub(super) fn capture(transport: &mut impl Transport, scope: &Scope) -> Result<Snapshot, Error> {
+pub fn capture(transport: &mut impl Transport, scope: &Scope) -> Result<Snapshot, Error> {
     if transport.native_available() {
         match native_read(transport, scope) {
             Ok(snapshot) => return Ok(snapshot),
@@ -44,7 +44,7 @@ pub(super) fn capture(transport: &mut impl Transport, scope: &Scope) -> Result<S
     }
     transport.capture_cdp(scope)
 }
-pub(super) fn apply(
+pub fn apply(
     transport: &mut impl Transport,
     scope: &Scope,
     patches: &[Patch],
@@ -75,7 +75,7 @@ pub(super) fn apply(
     }
     native_replace(transport, scope, &before, &desired)
 }
-pub(super) fn replace(
+pub fn replace(
     transport: &mut impl Transport,
     scope: &Scope,
     desired: &Snapshot,
@@ -143,7 +143,7 @@ fn native_replace(
         Err(write.err().unwrap_or(Error::WriteUncertain))
     }
 }
-pub(super) fn equivalent(a: &Snapshot, b: &Snapshot) -> bool {
+pub fn equivalent(a: &Snapshot, b: &Snapshot) -> bool {
     let actual: Vec<_> = a
         .cookies
         .iter()
@@ -168,7 +168,7 @@ pub(super) fn equivalent(a: &Snapshot, b: &Snapshot) -> bool {
         })
     })
 }
-pub(super) fn record_matches(got: &CookieRecord, want: &CookieRecord) -> bool {
+pub fn record_matches(got: &CookieRecord, want: &CookieRecord) -> bool {
     let expiry = |c: &CookieRecord| {
         c.expires
             .as_deref()

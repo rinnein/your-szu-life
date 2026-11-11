@@ -14,9 +14,9 @@ impl UnifiedSzuMcpService {
     pub async fn sync_get_status(&self) -> Result<String, String> {
         let store = self
             .app
-            .try_state::<Arc<crate::settings_sync::engine::SyncStore>>()
+            .try_state::<Arc<szu_mesh::settings_sync::engine::SyncStore>>()
             .ok_or_else(|| "设置同步模块未初始化".to_string())?;
-        let view = crate::settings_sync::status(&self.app, &store).await;
+        let view = szu_mesh::settings_sync::status(&self.app, &store).await;
         serde_json::to_string_pretty(&view).map_err(|error| format!("序列化失败: {error}"))
     }
 
@@ -27,7 +27,7 @@ impl UnifiedSzuMcpService {
     pub async fn sync_list_items(&self) -> Result<String, String> {
         let store = self
             .app
-            .try_state::<Arc<crate::settings_sync::engine::SyncStore>>()
+            .try_state::<Arc<szu_mesh::settings_sync::engine::SyncStore>>()
             .ok_or_else(|| "设置同步模块未初始化".to_string())?;
         serde_json::to_string_pretty(&store.item_views().await)
             .map_err(|error| format!("序列化失败: {error}"))

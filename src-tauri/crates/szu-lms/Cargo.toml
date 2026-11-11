@@ -22,5 +22,3 @@ cookie_store = { workspace = true }
 reqwest_cookie_store = { workspace = true }
 toasty = { workspace = true }
 
-[dev-dependencies]
-tempfile = { workspace = true }

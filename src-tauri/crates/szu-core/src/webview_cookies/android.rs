@@ -51,7 +51,7 @@ use super::{cdp, Error, Patch, Scope, Snapshot};
 use serde::Serialize;
 use std::sync::OnceLock;
 
-pub(super) fn alive(window: &tauri::WebviewWindow) -> bool {
+pub fn alive(window: &tauri::WebviewWindow) -> bool {
     use tauri::Manager;
     window
         .app_handle()
@@ -238,10 +238,10 @@ fn execute<T: Send>(
         call(&mut AndroidTransport { window })
     })
 }
-pub(super) fn capture(window: &tauri::WebviewWindow, scope: &Scope) -> Result<Snapshot, Error> {
+pub fn capture(window: &tauri::WebviewWindow, scope: &Scope) -> Result<Snapshot, Error> {
     execute(window, |transport| super::ops::capture(transport, scope))
 }
-pub(super) fn apply(
+pub fn apply(
     window: &tauri::WebviewWindow,
     scope: &Scope,
     patches: &[Patch],
@@ -250,7 +250,7 @@ pub(super) fn apply(
         super::ops::apply(transport, scope, patches)
     })
 }
-pub(super) fn replace(
+pub fn replace(
     window: &tauri::WebviewWindow,
     scope: &Scope,
     snapshot: &Snapshot,

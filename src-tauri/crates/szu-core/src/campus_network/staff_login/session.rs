@@ -4,17 +4,17 @@ use crate::campus_network::http::{
 use reqwest::{blocking::Client, cookie::Jar, Url};
 use std::sync::Arc;
 
-pub(super) trait StaffSession: PortalHttp {
+pub trait StaffSession: PortalHttp {
     fn remember(&self, value: Option<&str>) -> Result<(), HttpError>;
 }
 
 /// One operation, one cookie jar. No browser store, global jar, disk serialization or Debug output.
-pub(super) struct StaffSessionClient {
+pub struct StaffSessionClient {
     client: Client,
     jar: Arc<Jar>,
 }
 impl StaffSessionClient {
-    pub(super) fn new() -> Result<Self, HttpError> {
+    pub fn new() -> Result<Self, HttpError> {
         let jar = Arc::new(Jar::default());
         let client = client_builder()
             .cookie_provider(jar.clone())

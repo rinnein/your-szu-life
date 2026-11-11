@@ -8,14 +8,14 @@ struct Share {
     version: u8,
     location: ElectricityLocationSettings,
 }
-pub(super) fn normalize_settings(
+pub fn normalize_settings(
     mut settings: ElectricityLocationSettings,
 ) -> ElectricityLocationSettings {
     settings.room_name = settings.room_name.trim().to_owned();
     settings
 }
 
-pub(super) fn validate_shape(s: &ElectricityLocationSettings) -> Result<(), String> {
+pub fn validate_shape(s: &ElectricityLocationSettings) -> Result<(), String> {
     for value in [
         &s.campus_id,
         &s.area_id,
@@ -74,7 +74,7 @@ pub fn decode_settings(text: &str) -> Result<ElectricityLocationSettings, String
     validate_shape(&location)?;
     Ok(location)
 }
-pub(super) fn validate_options(
+pub fn validate_options(
     s: &ElectricityLocationSettings,
     campuses: &[ElectricityCampus],
 ) -> Result<(), String> {

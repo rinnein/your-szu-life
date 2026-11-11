@@ -13,7 +13,7 @@ use super::{
 use std::{thread, time::Duration};
 use tauri::Manager;
 
-pub(super) fn backoff_delay(failures: u32) -> Duration {
+pub fn backoff_delay(failures: u32) -> Duration {
     if failures <= 5 {
         Duration::from_secs(10)
     } else if failures <= 10 {
@@ -279,7 +279,7 @@ fn perform_dorm_login(
     }
 }
 
-pub(super) fn start_dorm_login(app: tauri::AppHandle, manual: bool) -> Result<(), String> {
+pub fn start_dorm_login(app: tauri::AppHandle, manual: bool) -> Result<(), String> {
     let store = app
         .try_state::<CampusNetworkStore>()
         .ok_or("校园网状态不可用")?;
@@ -305,7 +305,7 @@ pub(super) fn start_dorm_login(app: tauri::AppHandle, manual: bool) -> Result<()
     Ok(())
 }
 
-pub(super) fn login_result_from_response(
+pub fn login_result_from_response(
     parsed: &serde_json::Value,
     login_status: u16,
 ) -> DormLoginResultView {
@@ -328,7 +328,7 @@ pub(super) fn login_result_from_response(
     }
 }
 
-pub(super) fn apply_login_status(status: &mut DormLoginStatusView, view: &DormLoginResultView) {
+pub fn apply_login_status(status: &mut DormLoginStatusView, view: &DormLoginResultView) {
     status.portal_reachable = true;
     status.last_result = Some(view.clone());
     if view.ok {
@@ -343,7 +343,7 @@ pub(super) fn apply_login_status(status: &mut DormLoginStatusView, view: &DormLo
     }
 }
 
-pub(super) fn apply_transport_failure(
+pub fn apply_transport_failure(
     status: &mut DormLoginStatusView,
     portal_reachable: bool,
     now: u64,

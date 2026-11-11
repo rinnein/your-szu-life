@@ -697,7 +697,7 @@ pub fn status(store: &ElectricityStore) -> ElectricityStatusView {
     }
 }
 
-pub(super) fn emit_status(app: &AppHandle, store: &ElectricityStore) {
+pub fn emit_status(app: &AppHandle, store: &ElectricityStore) {
     let _ = app.emit(ELECTRICITY_STATUS_EVENT, status(store));
 }
 

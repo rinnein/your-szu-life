@@ -1,13 +1,13 @@
 mod protocol;
 mod session;
-pub(super) mod settings;
+pub mod settings;
 
 use crate::campus_network::{model::*, network::NetworkSnapshot, staff::StaffPortalConfig};
 use std::sync::{atomic::AtomicBool, Mutex};
 
-pub(super) type CredentialsProvider<'a> = dyn Fn() -> Result<(String, String), String> + Sync + 'a;
+pub type CredentialsProvider<'a> = dyn Fn() -> Result<(String, String), String> + Sync + 'a;
 
-pub(super) struct PendingConfirmation {
+pub struct PendingConfirmation {
     token: String,
     expires_at_ms: u64,
     snapshot: NetworkSnapshot,
@@ -18,17 +18,17 @@ pub(super) struct PendingConfirmation {
     credentials: String,
 }
 #[derive(Clone)]
-pub(super) struct StaffNetworkHint {
+pub struct StaffNetworkHint {
     fingerprint: String,
     ip: String,
     acid: String,
 }
-pub(super) struct StaffRuntime {
-    pub(super) settings: Mutex<Option<StaffNetworkSettings>>,
-    pub(super) status: Mutex<StaffLoginStatusView>,
-    pub(super) suspended: AtomicBool,
-    pub(super) configured: AtomicBool,
-    pub(super) needs_apply: AtomicBool,
+pub struct StaffRuntime {
+    pub settings: Mutex<Option<StaffNetworkSettings>>,
+    pub status: Mutex<StaffLoginStatusView>,
+    pub suspended: AtomicBool,
+    pub configured: AtomicBool,
+    pub needs_apply: AtomicBool,
     confirmation: Mutex<Option<PendingConfirmation>>,
     hint: Mutex<Option<StaffNetworkHint>>,
     last_fingerprint: Mutex<Option<String>>,
@@ -763,7 +763,7 @@ fn perform_apply(
     ))
 }
 
-pub(super) fn trusted_network(
+pub fn trusted_network(
     store: &CampusNetworkStore,
     snapshot: &NetworkSnapshot,
     probe: &StaffPortalProbe,
@@ -793,7 +793,7 @@ pub(super) fn trusted_network(
         })
     })
 }
-pub(super) fn auto_due(
+pub fn auto_due(
     store: &CampusNetworkStore,
     observation: &NetworkObservation,
     now: u64,
@@ -872,7 +872,7 @@ pub(super) fn auto_due(
     due
 }
 
-pub(super) fn start_auto(
+pub fn start_auto(
     app: tauri::AppHandle,
     observation: &NetworkObservation,
 ) -> Result<(), String> {

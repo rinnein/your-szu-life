@@ -8,17 +8,17 @@ use std::{
 };
 use tauri::Url;
 
-pub(super) const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
-pub(super) const FORM_TIMEOUT: Duration = Duration::from_secs(5);
-pub(super) const MANUAL_MESSAGE: &str = "请自行办理；应用不会自动充值、扣款或修改套餐。";
-pub(super) const CAPTCHA_MESSAGE: &str = "官网需要验证码，请手动完成登录；应用不会重复提交。";
-pub(super) const LOGIN_ERROR_MESSAGE: &str =
+pub const LOAD_TIMEOUT: Duration = Duration::from_secs(20);
+pub const FORM_TIMEOUT: Duration = Duration::from_secs(5);
+pub const MANUAL_MESSAGE: &str = "请自行办理；应用不会自动充值、扣款或修改套餐。";
+pub const CAPTCHA_MESSAGE: &str = "官网需要验证码，请手动完成登录；应用不会重复提交。";
+pub const LOGIN_ERROR_MESSAGE: &str =
     "自动登录未完成，请在官网手动登录，或返回设置检查密码。";
-pub(super) const FORM_ERROR_MESSAGE: &str =
+pub const FORM_ERROR_MESSAGE: &str =
     "登录表单与预期不符，已停止自动填写，请手动操作或返回。";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Phase {
+pub enum Phase {
     Opening,
     AwaitingForm,
     Submitting,
@@ -27,7 +27,7 @@ pub(super) enum Phase {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum Action {
+pub enum Action {
     Wait,
     Submit(String),
     RestoreTarget(String),
@@ -35,24 +35,24 @@ pub(super) enum Action {
     Fail(NoticeCode),
 }
 
-pub(super) struct Session {
-    pub(super) generation: u64,
-    pub(super) account: String,
-    pub(super) return_url: Url,
-    pub(super) window_label: String,
-    pub(super) parent_label: String,
-    pub(super) phase: Phase,
-    pub(super) phase_since: Instant,
-    pub(super) seen_remote: bool,
-    pub(super) attempted: bool,
-    pub(super) restored_target: bool,
-    pub(super) submitted_document: Option<String>,
-    pub(super) restoring_document: Option<String>,
-    pub(super) manual_message: &'static str,
+pub struct Session {
+    pub generation: u64,
+    pub account: String,
+    pub return_url: Url,
+    pub window_label: String,
+    pub parent_label: String,
+    pub phase: Phase,
+    pub phase_since: Instant,
+    pub seen_remote: bool,
+    pub attempted: bool,
+    pub restored_target: bool,
+    pub submitted_document: Option<String>,
+    pub restoring_document: Option<String>,
+    pub manual_message: &'static str,
 }
 
 impl Session {
-    pub(super) fn new(generation: u64, account: String, return_url: Url, now: Instant) -> Self {
+    pub fn new(generation: u64, account: String, return_url: Url, now: Instant) -> Self {
         Self {
             generation,
             account,
@@ -70,11 +70,11 @@ impl Session {
         }
     }
 
-    pub(super) fn is_manual(&self) -> bool {
+    pub fn is_manual(&self) -> bool {
         self.phase == Phase::Manual
     }
 
-    pub(super) fn message(&self) -> &'static str {
+    pub fn message(&self) -> &'static str {
         match self.phase {
             Phase::Manual => self.manual_message,
             Phase::Submitting => "正在等待官网登录结果；每次打开最多自动提交一次。",
@@ -82,7 +82,7 @@ impl Session {
         }
     }
 
-    pub(super) fn timeout(&self, now: Instant) -> Option<NoticeCode> {
+    pub fn timeout(&self, now: Instant) -> Option<NoticeCode> {
         let elapsed = now.saturating_duration_since(self.phase_since);
         match self.phase {
             Phase::Opening | Phase::RestoringTarget if elapsed >= LOAD_TIMEOUT => {
@@ -94,20 +94,20 @@ impl Session {
         }
     }
 
-    pub(super) fn hand_off(&mut self, message: &'static str) -> Action {
+    pub fn hand_off(&mut self, message: &'static str) -> Action {
         self.phase = Phase::Manual;
         self.manual_message = message;
         Action::HandOff
     }
 
-    pub(super) fn observe_location(&mut self, url: &Url, now: Instant) {
+    pub fn observe_location(&mut self, url: &Url, now: Instant) {
         if self.phase == Phase::Opening && is_login_url(url) {
             self.phase = Phase::AwaitingForm;
             self.phase_since = now;
         }
     }
 
-    pub(super) fn observe(&mut self, page: &PageObservation, url: &Url, now: Instant) -> Action {
+    pub fn observe(&mut self, page: &PageObservation, url: &Url, now: Instant) -> Action {
         if self.phase == Phase::Manual {
             return Action::Wait;
         }
@@ -179,11 +179,11 @@ impl Session {
 }
 
 #[derive(Default)]
-pub(super) struct Runtime {
-    pub(super) generation: u64,
-    pub(super) active: Option<Session>,
-    pub(super) notice: Option<NetworkFeePortalNotice>,
-    pub(super) last_account: Option<String>,
+pub struct Runtime {
+    pub generation: u64,
+    pub active: Option<Session>,
+    pub notice: Option<NetworkFeePortalNotice>,
+    pub last_account: Option<String>,
 }
 
 impl Runtime {
@@ -191,7 +191,7 @@ impl Runtime {
     /// the remote document never committed. Preserve its one-shot notice and
     /// release ownership so the user can retry. An explicit local route change
     /// also cancels an opening before the first remote page is observed.
-    pub(super) fn finish_local_navigation(&mut self, url: &Url, generation: u64) -> bool {
+    pub fn finish_local_navigation(&mut self, url: &Url, generation: u64) -> bool {
         let finished = self.active.as_ref().is_some_and(|session| {
             session.generation == generation
                 && same_application_origin(url, &session.return_url)
@@ -208,8 +208,8 @@ impl Runtime {
 
 #[derive(Default)]
 pub struct CampusPaymentsStore {
-    pub(super) opening: Mutex<()>,
-    pub(super) runtime: Mutex<Runtime>,
+    pub opening: Mutex<()>,
+    pub runtime: Mutex<Runtime>,
     pub electricity: super::electricity::ElectricityStore,
 }
 
@@ -223,7 +223,7 @@ impl CampusPaymentsStore {
     }
     /// Reserve before any native browsing-data operation. Concurrent opens
     /// must not clear a WebView after another request has already navigated.
-    pub(super) fn reserve(
+    pub fn reserve(
         &self,
         account: String,
         return_url: Url,
@@ -244,7 +244,7 @@ impl CampusPaymentsStore {
         Ok((generation, changed_account))
     }
 
-    pub(super) fn prepare_navigation(&self, generation: u64, now: Instant) -> Result<(), String> {
+    pub fn prepare_navigation(&self, generation: u64, now: Instant) -> Result<(), String> {
         let mut runtime = self.runtime.lock().map_err(|_| "网费服务状态不可用")?;
         let session = runtime
             .active
@@ -258,7 +258,7 @@ impl CampusPaymentsStore {
     }
 
     #[cfg(test)]
-    pub(super) fn cancel_generation(&self, generation: u64) -> Option<Url> {
+    pub fn cancel_generation(&self, generation: u64) -> Option<Url> {
         let mut runtime = self.runtime.lock().ok()?;
         if runtime.active.as_ref()?.generation != generation {
             return None;
@@ -267,7 +267,7 @@ impl CampusPaymentsStore {
     }
 
     #[cfg(test)]
-    pub(super) fn fail(&self, generation: u64, code: NoticeCode) -> Option<Url> {
+    pub fn fail(&self, generation: u64, code: NoticeCode) -> Option<Url> {
         let mut runtime = self.runtime.lock().ok()?;
         if runtime.active.as_ref()?.generation != generation {
             return None;

@@ -20,7 +20,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(100);
 #[cfg(not(target_os = "android"))]
 const CALLBACK_TIMEOUT: Duration = Duration::from_millis(750);
 
-pub(super) fn local_return_url(window: &WebviewWindow) -> Result<Url, String> {
+pub fn local_return_url(window: &WebviewWindow) -> Result<Url, String> {
     if window.label() != "main" && !window.label().starts_with("feature-") {
         return Err("请从应用内的校园卡/电费/网费页面打开网费服务。".into());
     }
@@ -30,7 +30,7 @@ pub(super) fn local_return_url(window: &WebviewWindow) -> Result<Url, String> {
     Ok(current)
 }
 
-pub(super) fn open(parent: WebviewWindow) -> Result<(), String> {
+pub fn open(parent: WebviewWindow) -> Result<(), String> {
     let return_url = local_return_url(&parent)?;
     let app = parent.app_handle();
     let account = auth::authenticated_campus_card_number(app)?;

@@ -1,6 +1,6 @@
 use super::model::LoginFormPrefill;
 
-pub(super) fn auth_probe_script(
+pub fn auth_probe_script(
     generation: u64,
     budget: std::time::Duration,
     operation: &str,
@@ -10,7 +10,7 @@ pub(super) fn auth_probe_script(
     format!("({source})({options})")
 }
 
-pub(super) fn auth_login_capture_script(
+pub fn auth_login_capture_script(
     allow_qr_login: bool,
     prefill: Option<&LoginFormPrefill>,
     generation: u64,

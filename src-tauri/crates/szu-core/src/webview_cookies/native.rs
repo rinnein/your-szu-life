@@ -9,7 +9,7 @@ enum Reply {
     Ok { cookies: Vec<Vec<String>> },
     Error { code: Error },
 }
-pub(super) fn decode(raw: &str, scope: &Scope) -> Result<Snapshot, Error> {
+pub fn decode(raw: &str, scope: &Scope) -> Result<Snapshot, Error> {
     let rows = match serde_json::from_str::<Reply>(raw).map_err(|_| Error::Protocol)? {
         Reply::Ok { cookies } => cookies,
         Reply::Error { code } => return Err(code),

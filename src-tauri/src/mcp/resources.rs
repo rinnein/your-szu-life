@@ -149,9 +149,9 @@ pub async fn read_resource_by_uri(
     let clean_uri = uri.trim();
     let json_text = match clean_uri {
         "your-szu-life://data/auth/profile" => {
-            if let Some(store) = app.try_state::<crate::auth::AuthStore>() {
-                let user_data = crate::auth::service::get_user_data(&store).ok().flatten();
-                let profile = crate::auth::service::get_account_profile(&store)
+            if let Some(store) = app.try_state::<szu_core::auth::AuthStore>() {
+                let user_data = szu_core::auth::service::get_user_data(&store).ok().flatten();
+                let profile = szu_core::auth::service::get_account_profile(&store)
                     .ok()
                     .flatten();
                 serde_json::to_string_pretty(&serde_json::json!({
@@ -164,26 +164,26 @@ pub async fn read_resource_by_uri(
             }
         }
         "your-szu-life://data/network/status" => {
-            if let Some(store) = app.try_state::<crate::campus_network::CampusNetworkStore>() {
-                let overview = crate::campus_network::service::get_network_overview(&store).ok();
+            if let Some(store) = app.try_state::<szu_core::campus_network::CampusNetworkStore>() {
+                let overview = szu_core::campus_network::service::get_network_overview(&store).ok();
                 serde_json::to_string_pretty(&overview).unwrap_or_else(|_| "{}".to_string())
             } else {
                 "{}".to_string()
             }
         }
         "your-szu-life://data/electricity/status" => {
-            if let Some(store) = app.try_state::<crate::campus_payments::CampusPaymentsStore>() {
-                let status = crate::campus_payments::electricity::status(&store.electricity);
+            if let Some(store) = app.try_state::<szu_core::campus_payments::CampusPaymentsStore>() {
+                let status = szu_core::campus_payments::electricity::status(&store.electricity);
                 serde_json::to_string_pretty(&status).unwrap_or_else(|_| "{}".to_string())
             } else {
                 "{}".to_string()
             }
         }
         "your-szu-life://data/enrollment/timetable" => {
-            if let Some(store) = app.try_state::<crate::enrollment::Store>() {
+            if let Some(store) = app.try_state::<szu_enrollment::enrollment::Store>() {
                 let service = store.0.clone();
                 let selected = service
-                    .execute(crate::enrollment::commands::Action::Selected)
+                    .execute(szu_enrollment::enrollment::commands::Action::Selected)
                     .ok();
                 serde_json::to_string_pretty(&selected).unwrap_or_else(|_| "{}".to_string())
             } else {
@@ -191,7 +191,7 @@ pub async fn read_resource_by_uri(
             }
         }
         "your-szu-life://data/uooc/courses" => {
-            if let Ok(service) = crate::uooc::service(app) {
+            if let Ok(service) = szu_uooc::uooc::service(app) {
                 let snapshot = service.snapshot();
                 serde_json::to_string_pretty(&snapshot).unwrap_or_else(|_| "{}".to_string())
             } else {
@@ -199,7 +199,7 @@ pub async fn read_resource_by_uri(
             }
         }
         "your-szu-life://data/oj/contests" => {
-            if let Ok(service) = crate::oj::service(app) {
+            if let Ok(service) = szu_oj::oj::service(app) {
                 let snapshot = service.snapshot();
                 serde_json::to_string_pretty(&snapshot).unwrap_or_else(|_| "{}".to_string())
             } else {
@@ -207,7 +207,7 @@ pub async fn read_resource_by_uri(
             }
         }
         "your-szu-life://data/lms/todos" => {
-            if let Ok(service) = crate::lms::service(app) {
+            if let Ok(service) = szu_lms::lms::service(app) {
                 service.ensure(false).await;
                 let snapshot = service.snapshot();
                 serde_json::to_string_pretty(&serde_json::json!({
@@ -221,7 +221,7 @@ pub async fn read_resource_by_uri(
             }
         }
         "your-szu-life://data/lms/notifications" => {
-            if let Ok(service) = crate::lms::service(app) {
+            if let Ok(service) = szu_lms::lms::service(app) {
                 service.ensure(false).await;
                 let snapshot = service.snapshot();
                 serde_json::to_string_pretty(&serde_json::json!({
@@ -235,19 +235,19 @@ pub async fn read_resource_by_uri(
             }
         }
         "your-szu-life://data/todos" => {
-            let items = crate::todos::aggregate::aggregate(app);
+            let items = szu_todos::todos::aggregate::aggregate(app);
             serde_json::to_string_pretty(&items).unwrap_or_else(|_| "[]".to_string())
         }
         "your-szu-life://data/todos/notification-settings" => {
-            let settings = crate::notification::settings::load(app);
+            let settings = szu_core::notification::settings::load(app);
             serde_json::to_string_pretty(&settings.todo).unwrap_or_else(|_| "{}".to_string())
         }
         "your-szu-life://data/notification/settings" => {
-            let settings = crate::notification::settings::load(app);
+            let settings = szu_core::notification::settings::load(app);
             serde_json::to_string_pretty(&settings).unwrap_or_else(|_| "{}".to_string())
         }
         "your-szu-life://data/jxxk/semesters" => {
-            if let Ok(service) = crate::jxxk::service(app) {
+            if let Ok(service) = szu_jxxk::jxxk::service(app) {
                 service.ensure(false).await;
                 let snapshot = service.snapshot();
                 serde_json::to_string_pretty(&serde_json::json!({
@@ -261,7 +261,7 @@ pub async fn read_resource_by_uri(
             }
         }
         "your-szu-life://data/app/announcements" => {
-            if let Some(store) = app.try_state::<crate::app_content::AppContentStore>() {
+            if let Some(store) = app.try_state::<szu_app_content::app_content::AppContentStore>() {
                 let snapshot = store.snapshot();
                 serde_json::to_string_pretty(&snapshot).unwrap_or_else(|_| "{}".to_string())
             } else {
@@ -269,7 +269,7 @@ pub async fn read_resource_by_uri(
             }
         }
         "your-szu-life://data/app/update" => {
-            if let Some(store) = app.try_state::<crate::app_content::AppContentStore>() {
+            if let Some(store) = app.try_state::<szu_app_content::app_content::AppContentStore>() {
                 let snapshot = store.snapshot();
                 serde_json::to_string_pretty(&serde_json::json!({
                     "currentVersion": snapshot.version,
@@ -284,45 +284,45 @@ pub async fn read_resource_by_uri(
             }
         }
         "your-szu-life://data/network/proxy" => {
-            if let Some(store) = app.try_state::<crate::netproxy::ProxyStore>() {
-                let view = crate::netproxy::model::view(store.credentials.as_ref()).ok();
+            if let Some(store) = app.try_state::<szu_core::netproxy::ProxyStore>() {
+                let view = szu_core::netproxy::model::view(store.credentials.as_ref()).ok();
                 serde_json::to_string_pretty(&view).unwrap_or_else(|_| "{}".to_string())
             } else {
                 "{}".to_string()
             }
         }
         "your-szu-life://data/settings/snapshot" => {
-            if let Some(store) = app.try_state::<crate::settings::SettingsStore>() {
+            if let Some(store) = app.try_state::<szu_core::settings::SettingsStore>() {
                 let snapshot = store.snapshot().ok();
                 serde_json::to_string_pretty(&snapshot).unwrap_or_else(|_| "{}".to_string())
             } else {
                 "{}".to_string()
             }
         }
-        "your-szu-life://data/onboarding/status" => match crate::onboarding::state_view() {
+        "your-szu-life://data/onboarding/status" => match szu_core::onboarding::state_view() {
             Ok(state) => serde_json::to_string_pretty(&state).unwrap_or_else(|_| "{}".to_string()),
             Err(_) => "{}".to_string(),
         },
-        "your-szu-life://data/file-manager/state" => match crate::file_manager::state(app) {
+        "your-szu-life://data/file-manager/state" => match szu_download::file_manager::state(app) {
             Ok(state) => serde_json::to_string_pretty(&state).unwrap_or_else(|_| "{}".to_string()),
             Err(_) => "{}".to_string(),
         },
         "your-szu-life://data/mesh/status" => {
-            match app.try_state::<std::sync::Arc<crate::mesh::MeshStore>>() {
-                Some(store) => serde_json::to_string_pretty(&crate::mesh::status(&store))
+            match app.try_state::<std::sync::Arc<szu_mesh::mesh::MeshStore>>() {
+                Some(store) => serde_json::to_string_pretty(&szu_mesh::mesh::status(&store))
                     .unwrap_or_else(|_| "{}".to_string()),
                 None => "{}".to_string(),
             }
         }
         "your-szu-life://data/mesh/devices" => {
-            match app.try_state::<std::sync::Arc<crate::mesh::MeshStore>>() {
+            match app.try_state::<std::sync::Arc<szu_mesh::mesh::MeshStore>>() {
                 Some(store) => serde_json::to_string_pretty(&store.devices())
                     .unwrap_or_else(|_| "{}".to_string()),
                 None => "{}".to_string(),
             }
         }
         "your-szu-life://data/mesh/campus-access" => {
-            match app.try_state::<std::sync::Arc<crate::mesh::MeshStore>>() {
+            match app.try_state::<std::sync::Arc<szu_mesh::mesh::MeshStore>>() {
                 Some(store) => {
                     let devices = store.devices();
                     let self_device = devices.iter().find(|device| device.is_self);
@@ -339,8 +339,8 @@ pub async fn read_resource_by_uri(
                         })
                         .collect();
                     serde_json::to_string_pretty(&serde_json::json!({
-                        "enabled": crate::mesh::campus_access_enabled(),
-                        "running": crate::mesh::is_running(app),
+                        "enabled": szu_mesh::mesh::campus_access_enabled(),
+                        "running": szu_mesh::mesh::is_running(app),
                         "localOnCampus": self_device.is_some_and(|device| device.on_campus),
                         "egress": store.campus_peer().map(|ip| ip.to_string()),
                         "campusDevices": campus_devices,
@@ -351,16 +351,16 @@ pub async fn read_resource_by_uri(
             }
         }
         "your-szu-life://data/sync/status" => {
-            match app.try_state::<std::sync::Arc<crate::settings_sync::engine::SyncStore>>() {
+            match app.try_state::<std::sync::Arc<szu_mesh::settings_sync::engine::SyncStore>>() {
                 Some(store) => {
-                    let view = crate::settings_sync::status(app, &store).await;
+                    let view = szu_mesh::settings_sync::status(app, &store).await;
                     serde_json::to_string_pretty(&view).unwrap_or_else(|_| "{}".to_string())
                 }
                 None => "{}".to_string(),
             }
         }
         "your-szu-life://data/sync/items" => {
-            match app.try_state::<std::sync::Arc<crate::settings_sync::engine::SyncStore>>() {
+            match app.try_state::<std::sync::Arc<szu_mesh::settings_sync::engine::SyncStore>>() {
                 Some(store) => serde_json::to_string_pretty(&store.item_views().await)
                     .unwrap_or_else(|_| "{}".to_string()),
                 None => "{}".to_string(),

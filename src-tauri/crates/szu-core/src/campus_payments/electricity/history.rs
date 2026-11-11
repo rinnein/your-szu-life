@@ -17,8 +17,8 @@ pub struct CacheInfo {
 }
 #[derive(Clone, Deserialize, Serialize, PartialEq)]
 pub struct Check {
-    pub(super) fetched_at: i64,
-    pub(super) expires_at: i64,
+    pub fetched_at: i64,
+    pub expires_at: i64,
 }
 #[derive(Clone, Default, Deserialize, Serialize, PartialEq)]
 pub struct Room {
@@ -41,7 +41,7 @@ pub struct Room {
     pub recharge_retry_after: i64,
 }
 #[derive(Default)]
-pub(super) struct History {
+pub struct History {
     path: Option<PathBuf>,
     rooms: Vec<Room>,
     persistence_error: Option<String>,
@@ -55,7 +55,7 @@ fn today_at(now: i64) -> NaiveDate {
         .with_timezone(&FixedOffset::east_opt(8 * 3600).unwrap())
         .date_naive()
 }
-pub(super) fn valid_until(now: i64) -> i64 {
+pub fn valid_until(now: i64) -> i64 {
     let zone = FixedOffset::east_opt(8 * 3600).unwrap();
     let local = Utc.timestamp_millis_opt(now).unwrap().with_timezone(&zone);
     let boundary = zone
@@ -69,7 +69,7 @@ pub(super) fn valid_until(now: i64) -> i64 {
         boundary.timestamp_millis()
     }
 }
-pub(super) fn attempt_key(now: i64) -> String {
+pub fn attempt_key(now: i64) -> String {
     let local = Utc
         .timestamp_millis_opt(now)
         .unwrap()
@@ -82,13 +82,13 @@ pub(super) fn attempt_key(now: i64) -> String {
 }
 
 impl History {
-    pub(super) fn unavailable() -> Self {
+    pub fn unavailable() -> Self {
         Self {
             persistence_error: Some("无法确定本地缓存目录，当前仅在本次运行中缓存。".into()),
             ..Self::default()
         }
     }
-    pub(super) fn open(path: PathBuf) -> Self {
+    pub fn open(path: PathBuf) -> Self {
         let db_res = crate::migrations::db::run_sync(async {
             let db = super::db::ElectricityDatabase::open(&path).await?;
             let _ = crate::migrations::electricity::migrate_electricity_history_if_needed(&path, &db).await;
@@ -304,7 +304,7 @@ fn view(
     });
     result
 }
-pub(super) fn snapshot(
+pub fn snapshot(
     store: &ElectricityStore,
     input: ElectricityQueryInput,
 ) -> Result<Option<ElectricityQueryView>, String> {
@@ -322,7 +322,7 @@ pub(super) fn snapshot(
         history.persistence_error.clone(),
     )))
 }
-pub(super) fn query(
+pub fn query(
     store: &ElectricityStore,
     input: ElectricityQueryInput,
     purpose: QueryPurpose,
@@ -461,7 +461,7 @@ fn refresh_recharges(
     room.recharges
         .sort_by_key(|r| std::cmp::Reverse(reading_datetime(&r.time)));
 }
-pub(super) fn recharges(
+pub fn recharges(
     store: &ElectricityStore,
     mut input: ElectricityQueryInput,
 ) -> Result<Vec<Recharge>, String> {

@@ -17,13 +17,13 @@ pub fn constants() -> ElectricityConstants {
 fn shanghai() -> FixedOffset {
     FixedOffset::east_opt(8 * 3600).unwrap()
 }
-pub(super) fn today() -> NaiveDate {
+pub fn today() -> NaiveDate {
     Utc::now().with_timezone(&shanghai()).date_naive()
 }
-pub(super) fn expiry_ms() -> i64 {
+pub fn expiry_ms() -> i64 {
     super::history::valid_until(Utc::now().timestamp_millis())
 }
-pub(super) fn window(today: NaiveDate, purpose: QueryPurpose) -> (String, String) {
+pub fn window(today: NaiveDate, purpose: QueryPurpose) -> (String, String) {
     (
         (today
             - Duration::days(if purpose == QueryPurpose::Detail {
@@ -38,7 +38,7 @@ pub(super) fn window(today: NaiveDate, purpose: QueryPurpose) -> (String, String
 
 // Direct daily usage (Lihu) is preserved. Cumulative readings (SIMS) require
 // consecutive dates; gaps and meter resets are not daily measurements.
-pub(super) fn normalize(mut rows: Vec<ElectricityReading>) -> Vec<ElectricityReading> {
+pub fn normalize(mut rows: Vec<ElectricityReading>) -> Vec<ElectricityReading> {
     rows.sort_by_key(|r| reading_datetime(&r.date));
     let mut days = BTreeMap::new();
     for mut row in rows {
@@ -82,7 +82,7 @@ pub struct Summary {
     pub expired: bool,
     pub warning_reason: Option<String>,
 }
-pub(super) fn summarize(
+pub fn summarize(
     rows: &[ElectricityReading],
     remaining: Option<f64>,
     observed_date: Option<String>,

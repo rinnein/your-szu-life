@@ -14,20 +14,20 @@ use std::{
 use tauri::{Emitter, Manager};
 
 pub struct CampusNetworkStore {
-    pub(super) credentials: SharedCredentialStore,
-    pub(super) staff: super::staff_login::StaffRuntime,
-    pub(super) dorm_settings: Mutex<Option<DormNetworkSettings>>,
-    pub(super) custom_configured: AtomicBool,
-    pub(super) auto_connect_suspended: AtomicBool,
-    pub(super) dorm_status: Mutex<DormLoginStatusView>,
-    pub(super) operations: Arc<OperationGate>,
+    pub credentials: SharedCredentialStore,
+    pub staff: super::staff_login::StaffRuntime,
+    pub dorm_settings: Mutex<Option<DormNetworkSettings>>,
+    pub custom_configured: AtomicBool,
+    pub auto_connect_suspended: AtomicBool,
+    pub dorm_status: Mutex<DormLoginStatusView>,
+    pub operations: Arc<OperationGate>,
     dorm_monitor: Mutex<Option<(u64, mpsc::Sender<super::monitor::MonitorCommand>)>>,
     monitor_generation: AtomicU64,
     monitor_restart_window: Mutex<Option<(Instant, u8)>>,
     probe_pending: AtomicBool,
-    pub(super) dorm_last_fingerprint: Mutex<Option<String>>,
-    pub(super) network_overview: Mutex<NetworkOverviewView>,
-    pub(super) debug_enabled: AtomicBool,
+    pub dorm_last_fingerprint: Mutex<Option<String>>,
+    pub network_overview: Mutex<NetworkOverviewView>,
+    pub debug_enabled: AtomicBool,
     region_evidence: Mutex<RegionEvidence>,
 }
 
@@ -51,7 +51,7 @@ impl CampusNetworkStore {
             region_evidence: Mutex::new(RegionEvidence::default()),
         }
     }
-    pub(super) fn forget_region_evidence(&self) {
+    pub fn forget_region_evidence(&self) {
         if let Ok(mut evidence) = self.region_evidence.lock() {
             *evidence = RegionEvidence::default();
         }
@@ -63,20 +63,20 @@ impl CampusNetworkStore {
     pub fn force_debug_enabled(&self, enabled: bool) {
         self.debug_enabled.store(enabled, Ordering::Release);
     }
-    pub(super) fn begin_login(&self) -> Result<LoginGuard, String> {
+    pub fn begin_login(&self) -> Result<LoginGuard, String> {
         self.operations.begin_login()
     }
-    pub(super) fn login_in_flight(&self) -> bool {
+    pub fn login_in_flight(&self) -> bool {
         self.operations.busy()
     }
-    pub(super) fn monitor_running(&self) -> bool {
+    pub fn monitor_running(&self) -> bool {
         self.dorm_monitor
             .lock()
             .map(|monitor| monitor.is_some())
             .unwrap_or(false)
     }
 
-    pub(super) fn reserve_monitor_restart(&self) -> bool {
+    pub fn reserve_monitor_restart(&self) -> bool {
         let Ok(mut window) = self.monitor_restart_window.lock() else {
             return false;
         };
@@ -93,7 +93,7 @@ impl CampusNetworkStore {
         true
     }
 
-    pub(super) fn reserve_monitor(
+    pub fn reserve_monitor(
         &self,
     ) -> Option<(u64, mpsc::Receiver<super::monitor::MonitorCommand>)> {
         let mut monitor = self.dorm_monitor.lock().ok()?;
@@ -107,7 +107,7 @@ impl CampusNetworkStore {
         Some((generation, receiver))
     }
 
-    pub(super) fn finish_monitor(&self, generation: u64) {
+    pub fn finish_monitor(&self, generation: u64) {
         if let Ok(mut monitor) = self.dorm_monitor.lock() {
             if monitor
                 .as_ref()
@@ -119,7 +119,7 @@ impl CampusNetworkStore {
         }
     }
 
-    pub(super) fn request_probe(&self) -> Result<bool, String> {
+    pub fn request_probe(&self) -> Result<bool, String> {
         if self.probe_pending.swap(true, Ordering::AcqRel) {
             return Ok(false);
         }
@@ -144,20 +144,20 @@ impl CampusNetworkStore {
         Ok(true)
     }
 
-    pub(super) fn probe_started(&self) {
+    pub fn probe_started(&self) {
         self.probe_pending.store(true, Ordering::Release);
     }
 
-    pub(super) fn probe_finished(&self) {
+    pub fn probe_finished(&self) {
         self.probe_pending.store(false, Ordering::Release);
     }
 
     /// 手动探测/登录流程进行中时，监控应按 Active 档位运行。
-    pub(super) fn probing(&self) -> bool {
+    pub fn probing(&self) -> bool {
         self.probe_pending.load(Ordering::Acquire)
     }
 
-    pub(super) fn change_dorm_status(
+    pub fn change_dorm_status(
         &self,
         update: impl FnOnce(&mut DormLoginStatusView),
         events: &dyn NetworkEvents,
@@ -170,7 +170,7 @@ impl CampusNetworkStore {
         drop(status);
         events.status_changed(&next);
     }
-    pub(super) fn change_staff_status(
+    pub fn change_staff_status(
         &self,
         update: impl FnOnce(&mut StaffLoginStatusView),
         events: &dyn NetworkEvents,
@@ -190,7 +190,7 @@ impl CampusNetworkStore {
     /// continuing to report the initial `NoNetwork` state while the monitor is
     /// already aware of a connected Wi-Fi interface. Region and portal fields are
     /// deliberately preserved until the full observation is applied.
-    pub(super) fn apply_snapshot_connection(
+    pub fn apply_snapshot_connection(
         &self,
         snapshot: &NetworkSnapshot,
         events: &dyn NetworkEvents,
@@ -230,7 +230,7 @@ impl CampusNetworkStore {
         }
     }
 
-    pub(super) fn apply_observation(
+    pub fn apply_observation(
         &self,
         token: OperationToken,
         observation: &NetworkObservation,
@@ -255,7 +255,7 @@ impl CampusNetworkStore {
     }
 }
 
-pub(super) trait NetworkEvents {
+pub trait NetworkEvents {
     fn staff_settings_changed(&self, _settings: &StaffNetworkSettingsView) {}
     fn staff_status_changed(&self, _status: &StaffLoginStatusView) {}
     fn staff_failure(&self, _message: &str) {}
@@ -266,7 +266,7 @@ pub(super) trait NetworkEvents {
 }
 impl NetworkEvents for () {}
 
-pub(super) struct AppNetworkEvents<'a>(pub(super) &'a tauri::AppHandle);
+pub struct AppNetworkEvents<'a>(pub &'a tauri::AppHandle);
 impl NetworkEvents for AppNetworkEvents<'_> {
     fn staff_settings_changed(&self, view: &StaffNetworkSettingsView) {
         let _ = self.0.emit("staff-network-settings-changed", view);
@@ -310,7 +310,7 @@ impl NetworkEvents for AppNetworkEvents<'_> {
     }
 }
 
-pub(super) fn set_dorm_status(
+pub fn set_dorm_status(
     app: &tauri::AppHandle,
     update: impl FnOnce(&mut DormLoginStatusView),
 ) {

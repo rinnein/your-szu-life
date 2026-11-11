@@ -24,7 +24,7 @@ pub fn refresh_campus_network(app: tauri::AppHandle) -> Result<NetworkOverviewVi
     super::monitor::refresh_now(app)
 }
 
-pub(super) fn get_dorm_network_settings(
+pub fn get_dorm_network_settings(
     app: tauri::AppHandle,
     store: &CampusNetworkStore,
 ) -> Result<DormNetworkSettingsView, String> {
@@ -34,7 +34,7 @@ pub(super) fn get_dorm_network_settings(
     Ok(view)
 }
 
-pub(super) fn save_dorm_network_settings(
+pub fn save_dorm_network_settings(
     app: tauri::AppHandle,
     input: DormNetworkSettingsInput,
     store: &CampusNetworkStore,
@@ -105,7 +105,7 @@ pub fn trigger_dorm_login(app: tauri::AppHandle) -> Result<(), String> {
     start_dorm_login(app, true)
 }
 
-pub(super) fn consume_dorm_login_failure_notice(
+pub fn consume_dorm_login_failure_notice(
     app: tauri::AppHandle,
     store: &CampusNetworkStore,
 ) -> Result<Option<DormFailureNotice>, String> {

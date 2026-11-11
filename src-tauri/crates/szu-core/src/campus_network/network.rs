@@ -7,7 +7,7 @@ use super::{
 use serde_json::Value;
 use std::{thread, time::Duration};
 
-pub(super) const DORM_PORTAL_HOST: &str = "172.30.255.42";
+pub const DORM_PORTAL_HOST: &str = "172.30.255.42";
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NetworkSnapshot {
@@ -48,7 +48,7 @@ pub fn is_dorm_ssid(ssid: &str) -> bool {
 }
 
 #[cfg(not(target_os = "android"))]
-pub(super) fn network_snapshot() -> NetworkSnapshot {
+pub fn network_snapshot() -> NetworkSnapshot {
     use netdev::prelude::*;
 
     let raw_ssid = ssid::get_ssid()
@@ -212,7 +212,7 @@ pub(super) fn network_snapshot() -> NetworkSnapshot {
 }
 
 #[cfg(target_os = "android")]
-pub(super) fn network_snapshot() -> NetworkSnapshot {
+pub fn network_snapshot() -> NetworkSnapshot {
     super::android::network_snapshot()
 }
 
@@ -222,11 +222,11 @@ impl NetworkSnapshot {
             && !self.wifi_connected
     }
 
-    pub(super) fn effective_connected(&self) -> bool {
+    pub fn effective_connected(&self) -> bool {
         self.connected || self.wifi_connected || self.ip.is_some() || self.wifi_ip.is_some()
     }
 
-    pub(super) fn fingerprint(&self) -> String {
+    pub fn fingerprint(&self) -> String {
         format!(
             "{:?}|{:?}|{}|{:?}|{}|{}|{:?}|{}",
             self.ssid,
@@ -241,7 +241,7 @@ impl NetworkSnapshot {
     }
 }
 
-pub(super) fn network_snapshot_result() -> Result<NetworkSnapshot, String> {
+pub fn network_snapshot_result() -> Result<NetworkSnapshot, String> {
     #[cfg(target_os = "android")]
     {
         return super::android::network_snapshot_result();
@@ -252,12 +252,12 @@ pub(super) fn network_snapshot_result() -> Result<NetworkSnapshot, String> {
     }
 }
 
-pub(super) trait NetworkEnvironment: Sync {
+pub trait NetworkEnvironment: Sync {
     fn snapshot(&self) -> NetworkSnapshot;
     fn now_ms(&self) -> u64;
     fn sleep(&self, duration: Duration);
 }
-pub(super) struct SystemNetworkEnvironment;
+pub struct SystemNetworkEnvironment;
 impl NetworkEnvironment for SystemNetworkEnvironment {
     fn snapshot(&self) -> NetworkSnapshot {
         network_snapshot()
@@ -271,23 +271,23 @@ impl NetworkEnvironment for SystemNetworkEnvironment {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(super) struct DormPortalContext {
-    pub(super) ip: String,
-    pub(super) ipv6: String,
-    pub(super) mac: String,
-    pub(super) vlan: String,
-    pub(super) ac_ip: String,
-    pub(super) ac_name: String,
+pub struct DormPortalContext {
+    pub ip: String,
+    pub ipv6: String,
+    pub mac: String,
+    pub vlan: String,
+    pub ac_ip: String,
+    pub ac_name: String,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct DormPortalProbe {
     pub reachable: bool,
     pub authenticated: bool,
-    pub(super) recognized: bool,
-    pub(super) state: PortalOnlineState,
+    pub recognized: bool,
+    pub state: PortalOnlineState,
     pub session: Option<DormPortalSessionInfo>,
-    pub(super) context: Option<DormPortalContext>,
+    pub context: Option<DormPortalContext>,
 }
 
 fn gateway_text(value: Option<&Value>, name: &str) -> Option<String> {
@@ -339,7 +339,7 @@ fn dorm_context(html: &str, status: Option<&Value>) -> Option<DormPortalContext>
     })
 }
 
-pub(super) fn portal_probe_from_html(html: &str, status_authenticated: bool) -> DormPortalProbe {
+pub fn portal_probe_from_html(html: &str, status_authenticated: bool) -> DormPortalProbe {
     let session = extract_portal_session_info(html);
     let authenticated = !has_login_portal_marker(html)
         && (has_online_portal_marker(html)
@@ -360,7 +360,7 @@ pub(super) fn portal_probe_from_html(html: &str, status_authenticated: bool) -> 
     }
 }
 
-pub(super) fn dorm_probe_from_responses(html: &str, status: Option<&Value>) -> DormPortalProbe {
+pub fn dorm_probe_from_responses(html: &str, status: Option<&Value>) -> DormPortalProbe {
     let result = status
         .and_then(|value| value.get("result"))
         .and_then(unsigned);
@@ -398,7 +398,7 @@ pub(super) fn dorm_probe_from_responses(html: &str, status: Option<&Value>) -> D
     probe
 }
 
-pub(super) fn probe_dorm_portal(http: &dyn PortalHttp, now: u64) -> DormPortalProbe {
+pub fn probe_dorm_portal(http: &dyn PortalHttp, now: u64) -> DormPortalProbe {
     let root = http.get(&portal_url(DORM_PORTAL_HOST, 80, "/"));
     let html = root
         .as_ref()
@@ -428,17 +428,17 @@ pub(super) fn probe_dorm_portal(http: &dyn PortalHttp, now: u64) -> DormPortalPr
 }
 
 #[derive(Debug, Clone, Default)]
-pub(super) struct NetworkObservation {
-    pub(super) snapshot: NetworkSnapshot,
-    pub(super) dorm: DormPortalProbe,
-    pub(super) staff: StaffPortalProbe,
+pub struct NetworkObservation {
+    pub snapshot: NetworkSnapshot,
+    pub dorm: DormPortalProbe,
+    pub staff: StaffPortalProbe,
 }
 #[derive(Debug, Clone, Default)]
-pub(super) struct RegionEvidence {
+pub struct RegionEvidence {
     staff: Option<(String, String)>,
 }
 
-pub(super) fn classify_network_overview(
+pub fn classify_network_overview(
     observation: &NetworkObservation,
     evidence: &mut RegionEvidence,
 ) -> NetworkOverviewView {
@@ -521,7 +521,7 @@ pub(super) fn classify_network_overview(
     }
 }
 
-pub(super) fn probe_network_overview(
+pub fn probe_network_overview(
     http: &dyn PortalHttp,
     snapshot: NetworkSnapshot,
     now: u64,

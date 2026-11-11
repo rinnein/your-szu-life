@@ -49,7 +49,7 @@ fn with_bridge<T>(
 
 /// 壁纸种子色，仅在 Android 上可用。
 #[cfg(target_os = "android")]
-pub(super) fn wallpaper_seed_result() -> Result<super::WallpaperSeed, String> {
+pub fn wallpaper_seed_result() -> Result<super::WallpaperSeed, String> {
     with_bridge(|environment, class| {
         let value = environment
             .call_static_method(class, "getSeedColorJson", "()Ljava/lang/String;", &[])

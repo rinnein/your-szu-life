@@ -1,5 +1,5 @@
 use crate::mcp::service::UnifiedSzuMcpService;
-use crate::uooc::{quiz::model::Question, service};
+use szu_uooc::uooc::{quiz::model::Question, service};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::tool;
 use rmcp::tool_router;
@@ -77,7 +77,7 @@ impl UnifiedSzuMcpService {
     ) -> Result<String, String> {
         let service = service(&self.app)?;
         let ids = params.course_ids.unwrap_or_default();
-        service.enqueue_checkins(ids, crate::uooc::checkin::CheckinSource::Manual)?;
+        service.enqueue_checkins(ids, szu_uooc::uooc::checkin::CheckinSource::Manual)?;
         Ok("已启动签到任务".to_string())
     }
 
@@ -118,7 +118,7 @@ impl UnifiedSzuMcpService {
             .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
         let api_key = service.qa_api_key_for_server(Some(&url)).await;
 
-        let results = crate::uooc::quiz::qa::search_questions_with_local_embedding(
+        let results = szu_uooc::uooc::quiz::qa::search_questions_with_local_embedding(
             qa_db,
             &url,
             api_key.as_deref(),

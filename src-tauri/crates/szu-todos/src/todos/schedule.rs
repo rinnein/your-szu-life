@@ -20,7 +20,7 @@ mod mobile {
         offset: i64,
     }
 
-    pub(in crate::todos) async fn reconcile(app: &tauri::AppHandle, items: &[TodoItem]) {
+    pub async fn reconcile(app: &tauri::AppHandle, items: &[TodoItem]) {
         let settings = szu_core::notification::settings::load(app);
         let Some(store) = app.try_state::<TodosStore>() else {
             return;

@@ -5,23 +5,23 @@ use super::{
 use std::{thread, time::Instant};
 use tauri::{Emitter, Manager};
 
-pub(super) fn emit_state(app: &tauri::AppHandle, state: AuthState) {
+pub fn emit_state(app: &tauri::AppHandle, state: AuthState) {
     let _ = app.emit("auth-state-changed", state);
 }
 
-pub(super) fn set_terminal_state(app: &tauri::AppHandle, store: &AuthStore, state: AuthState) {
+pub fn set_terminal_state(app: &tauri::AppHandle, store: &AuthStore, state: AuthState) {
     store.finish_attempt(state.clone());
     emit_state(app, state);
     resume_application_window(app, store);
 }
 
-pub(super) fn session_failure(app: &tauri::AppHandle, store: &AuthStore) {
+pub fn session_failure(app: &tauri::AppHandle, store: &AuthStore) {
     let _ = store.credentials.delete_session();
     let _ = clear_webview_session(app);
     set_terminal_state(app, store, AuthState::SessionCaptureFailed);
 }
 
-pub(super) fn credential_capture_failure(app: &tauri::AppHandle, store: &AuthStore) {
+pub fn credential_capture_failure(app: &tauri::AppHandle, store: &AuthStore) {
     // Even a failed first-time setup may already have obtained official
     // cookies. The keyring must remain the only durable session copy.
     let _ = store.credentials.delete_session();
@@ -29,7 +29,7 @@ pub(super) fn credential_capture_failure(app: &tauri::AppHandle, store: &AuthSto
     set_terminal_state(app, store, AuthState::CredentialCaptureFailed);
 }
 
-pub(super) fn complete_authentication(app: tauri::AppHandle, payload: String, generation: u64) {
+pub fn complete_authentication(app: tauri::AppHandle, payload: String, generation: u64) {
     let Some(store) = app.try_state::<AuthStore>() else {
         return;
     };
@@ -244,13 +244,13 @@ pub(super) fn complete_authentication(app: tauri::AppHandle, payload: String, ge
     set_terminal_state(&app, &store, terminal);
 }
 
-pub(super) fn record_credential_capture_failure(category: &str) {
+pub fn record_credential_capture_failure(category: &str) {
     // Never log the captured identifier or password. Categories are useful for
     // diagnosing remote-page drift and capability failures without secrets.
     eprintln!("authentication credential capture rejected: {category}");
 }
 
-pub(super) fn capture_auth_credentials(
+pub fn capture_auth_credentials(
     window: tauri::WebviewWindow,
     capture: CapturedCredentials,
     generation: &str,
@@ -296,7 +296,7 @@ fn validate_recovery_page<'a>(
     Ok(flow)
 }
 
-pub(super) fn control_auth_recovery(
+pub fn control_auth_recovery(
     window: tauri::WebviewWindow,
     generation: &str,
     document_id: &str,
@@ -568,7 +568,7 @@ pub fn get_user_data(store: &AuthStore) -> Result<Option<UserDataView>, String> 
     Ok(user_data_view(profile.as_ref(), pending.as_ref()))
 }
 
-pub(super) fn confirm_profile(
+pub fn confirm_profile(
     app: tauri::AppHandle,
     input: AccountProfileInput,
     store: &AuthStore,
@@ -606,7 +606,7 @@ pub(super) fn confirm_profile(
     Ok(())
 }
 
-pub(super) fn navigate_to_authentication(
+pub fn navigate_to_authentication(
     app: tauri::AppHandle,
     user_agent: Option<&str>,
     setup: Option<LoginFormPrefill>,
@@ -759,7 +759,7 @@ fn manual_login_credentials<T>(
     }
 }
 
-pub(super) fn begin_authentication(
+pub fn begin_authentication(
     app: tauri::AppHandle,
     user_agent: Option<&str>,
 ) -> Result<(), String> {
@@ -767,7 +767,7 @@ pub(super) fn begin_authentication(
 }
 
 /// 初始化设置的初次登录：把上一步输入的校园卡号与密码作为本次自动登录的凭据。
-pub(super) fn begin_setup_authentication(
+pub fn begin_setup_authentication(
     app: tauri::AppHandle,
     campus_card_number: String,
     password: String,
@@ -778,7 +778,7 @@ pub(super) fn begin_setup_authentication(
 }
 
 /// 校验初始化设置的校园卡号 + 密码，并构造注入官方页面的预填凭据。
-pub(super) fn setup_login_prefill(
+pub fn setup_login_prefill(
     campus_card_number: &str,
     password: &str,
 ) -> Result<LoginFormPrefill, String> {
@@ -796,7 +796,7 @@ pub(super) fn setup_login_prefill(
 }
 
 /// 显式中止当前自动登录（用户在初始化设置里点“取消并重试”）。
-pub(super) fn cancel_authentication(
+pub fn cancel_authentication(
     app: tauri::AppHandle,
     store: &AuthStore,
 ) -> Result<(), String> {
@@ -869,7 +869,7 @@ fn abort_authentication_locked(
     Ok(())
 }
 
-pub(super) fn logout(app: tauri::AppHandle, store: &AuthStore) -> Result<(), String> {
+pub fn logout(app: tauri::AppHandle, store: &AuthStore) -> Result<(), String> {
     let _operation = store
         .session_operations
         .lock()
@@ -896,7 +896,7 @@ pub(super) fn logout(app: tauri::AppHandle, store: &AuthStore) -> Result<(), Str
     cleanup
 }
 
-pub(super) fn cancel_departed_authentication(app: tauri::AppHandle, generation: u64) {
+pub fn cancel_departed_authentication(app: tauri::AppHandle, generation: u64) {
     let Some(store) = app.try_state::<AuthStore>() else {
         return;
     };

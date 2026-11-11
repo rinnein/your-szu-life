@@ -1,4 +1,4 @@
-use crate::campus_payments::{
+use szu_core::campus_payments::{
     electricity::{self, ElectricityQueryInput, QueryPurpose},
     CampusPaymentsStore,
 };

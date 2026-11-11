@@ -1,6 +1,6 @@
 use crate::mcp::service::UnifiedSzuMcpService;
-use crate::oj::model::SubmitInput;
-use crate::oj::service;
+use szu_oj::oj::model::SubmitInput;
+use szu_oj::oj::service;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::tool;
 use rmcp::tool_router;

@@ -3,11 +3,11 @@ use std::time::{Duration, Instant};
 
 const LOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const PREPARE_TIMEOUT: Duration = Duration::from_secs(30);
-pub(super) const SUBMIT_TIMEOUT: Duration = Duration::from_secs(90);
+pub const SUBMIT_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) enum RecoveryPhase {
+pub enum RecoveryPhase {
     Loading,
     Ready,
     Submitted,
@@ -32,12 +32,12 @@ pub enum RecoveryOperation {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecoveryStatus {
-    pub(super) phase: RecoveryPhase,
-    pub(super) remaining_ms: u64,
+    pub phase: RecoveryPhase,
+    pub remaining_ms: u64,
 }
 
 /// Native ownership survives page reloads. No credentials or URLs live here.
-pub(super) struct Recovery {
+pub struct Recovery {
     pub generation: u64,
     pub document: u64,
     pub active: bool,

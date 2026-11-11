@@ -105,10 +105,10 @@ async fn test_electricity_history_migration() {
     #[derive(serde::Serialize)]
     struct LegacyDiskCache {
         version: u8,
-        rooms: Vec<crate::campus_payments::electricity::history::Room>,
+        rooms: Vec<szu_core::campus_payments::electricity::history::Room>,
     }
 
-    let mut room = crate::campus_payments::electricity::history::Room::default();
+    let mut room = szu_core::campus_payments::electricity::history::Room::default();
     room.location.area_id = "area_a".into();
     room.location.building_id = "b1".into();
     room.location.room_name = "101".into();
@@ -121,7 +121,7 @@ async fn test_electricity_history_migration() {
     fs::write(&json_path, serde_json::to_vec(&disk).unwrap()).unwrap();
     assert!(json_path.exists());
 
-    let db = crate::campus_payments::electricity::db::ElectricityDatabase::open(&db_path)
+    let db = szu_core::campus_payments::electricity::db::ElectricityDatabase::open(&db_path)
         .await
         .unwrap();
     let migrated = szu_core::migrations::electricity::migrate_electricity_history_if_needed(&db_path, &db)

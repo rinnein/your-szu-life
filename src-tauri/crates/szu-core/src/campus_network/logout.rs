@@ -14,7 +14,7 @@ use sha1::{Digest, Sha1};
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
-pub(super) enum LogoutTarget {
+pub enum LogoutTarget {
     Dorm(DormPortalContext),
     Staff {
         config: StaffPortalConfig,
@@ -23,7 +23,7 @@ pub(super) enum LogoutTarget {
     },
 }
 impl LogoutTarget {
-    pub(super) fn from_observation(
+    pub fn from_observation(
         region: &NetworkRegion,
         observation: &NetworkObservation,
     ) -> Option<Self> {
@@ -37,7 +37,7 @@ impl LogoutTarget {
             NetworkRegion::None => None,
         }
     }
-    pub(super) fn request(&self, now: u64) -> (Url, String) {
+    pub fn request(&self, now: u64) -> (Url, String) {
         let callback = match self {
             Self::Dorm(_) => format!("dr{}", 1000 + now % 9000),
             Self::Staff { .. } => format!("szuLifeLogout_{now}"),
@@ -108,13 +108,13 @@ impl LogoutTarget {
         url.query_pairs_mut().append_pair("_", &now.to_string());
         (url, callback)
     }
-    pub(super) fn state(&self, observation: &NetworkObservation) -> PortalOnlineState {
+    pub fn state(&self, observation: &NetworkObservation) -> PortalOnlineState {
         match self {
             Self::Dorm(_) => observation.dorm.state,
             Self::Staff { .. } => observation.staff.state,
         }
     }
-    pub(super) fn same_identity(&self, observation: &NetworkObservation) -> Option<bool> {
+    pub fn same_identity(&self, observation: &NetworkObservation) -> Option<bool> {
         match self {
             Self::Dorm(target) => observation
                 .dorm
@@ -128,7 +128,7 @@ impl LogoutTarget {
                 .map(|current| current.ip == config.ip && current.acid == config.acid),
         }
     }
-    pub(super) fn refresh(
+    pub fn refresh(
         &self,
         http: &dyn PortalHttp,
         observation: &mut NetworkObservation,
@@ -177,7 +177,7 @@ fn network_changed(
 }
 
 /// All IO is injectable. Tests never invoke a real logout or the system credential store.
-pub(super) fn perform_network_logout(
+pub fn perform_network_logout(
     store: &CampusNetworkStore,
     http: &dyn PortalHttp,
     environment: &dyn NetworkEnvironment,
@@ -296,13 +296,13 @@ pub(super) fn perform_network_logout(
     })
 }
 
-pub(super) struct TargetLogoutReport {
-    pub(super) acknowledged: bool,
-    pub(super) state: PortalOnlineState,
-    pub(super) changed: bool,
+pub struct TargetLogoutReport {
+    pub acknowledged: bool,
+    pub state: PortalOnlineState,
+    pub changed: bool,
 }
 /// Used by explicit logout and mode application. Does not change preferences or acquire another operation lock.
-pub(super) fn disconnect_target(
+pub fn disconnect_target(
     target: &LogoutTarget,
     http: &dyn PortalHttp,
     environment: &dyn NetworkEnvironment,

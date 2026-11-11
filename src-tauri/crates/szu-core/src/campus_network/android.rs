@@ -31,7 +31,7 @@ struct AndroidNetworkSnapshotPayload {
 }
 
 #[cfg(any(target_os = "android", test))]
-pub(super) fn parse_network_snapshot_json(payload: &str) -> Option<NetworkSnapshot> {
+pub fn parse_network_snapshot_json(payload: &str) -> Option<NetworkSnapshot> {
     let parsed = serde_json::from_str::<AndroidNetworkSnapshotPayload>(payload).ok()?;
     let transport = parsed.transport.and_then(normalize_text);
     let raw_ssid = parsed.ssid.and_then(|value| {
@@ -141,7 +141,7 @@ fn with_bridge<T>(
 }
 
 #[cfg(target_os = "android")]
-pub(super) fn network_snapshot_result() -> Result<NetworkSnapshot, String> {
+pub fn network_snapshot_result() -> Result<NetworkSnapshot, String> {
     with_bridge(|environment, class| {
         let value = environment
             .call_static_method(class, "getNetworkSnapshotJson", "()Ljava/lang/String;", &[])
@@ -158,12 +158,12 @@ pub(super) fn network_snapshot_result() -> Result<NetworkSnapshot, String> {
 }
 
 #[cfg(target_os = "android")]
-pub(super) fn network_snapshot() -> NetworkSnapshot {
+pub fn network_snapshot() -> NetworkSnapshot {
     network_snapshot_result().unwrap_or_default()
 }
 
 #[cfg(target_os = "android")]
-pub(super) fn request_permissions() -> Result<(), String> {
+pub fn request_permissions() -> Result<(), String> {
     with_bridge(|environment, class| {
         environment
             .call_static_method(class, "requestWifiPermissions", "()V", &[])
@@ -173,6 +173,6 @@ pub(super) fn request_permissions() -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "android"))]
-pub(super) fn request_permissions() -> Result<(), String> {
+pub fn request_permissions() -> Result<(), String> {
     Ok(())
 }

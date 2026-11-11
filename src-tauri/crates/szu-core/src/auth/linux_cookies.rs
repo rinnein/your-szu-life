@@ -138,7 +138,7 @@ fn read_native(
     });
 }
 
-pub(super) fn read(window: &tauri::WebviewWindow) -> Result<Vec<CookieRecord>, String> {
+pub fn read(window: &tauri::WebviewWindow) -> Result<Vec<CookieRecord>, String> {
     with_manager(window, |manager, cancel, sender| {
         read_native(manager, cancel, 0, Vec::new(), move |result| {
             let _ = sender.send(
@@ -179,7 +179,7 @@ fn write_next(
     }
 }
 
-pub(super) fn replace(
+pub fn replace(
     window: &tauri::WebviewWindow,
     cookies: Vec<CookieRecord>,
 ) -> Result<(), String> {

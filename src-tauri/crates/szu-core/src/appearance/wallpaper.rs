@@ -7,7 +7,7 @@ use std::{io::Cursor, path::Path};
 const MAX_WALLPAPER_BYTES: u64 = 64 * 1024 * 1024;
 const THUMBNAIL_EDGE: u32 = 256;
 
-pub(super) fn current_wallpaper_image() -> Result<WallpaperImage, String> {
+pub fn current_wallpaper_image() -> Result<WallpaperImage, String> {
     let path = wallpaper::get().map_err(|error| format!("无法读取当前桌面壁纸：{error}"))?;
     encode_wallpaper(Path::new(&path))
 }

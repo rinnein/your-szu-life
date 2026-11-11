@@ -30,7 +30,7 @@
 
 ## 验证
 
-运行 `vp test src/enrollment`、`cargo test --manifest-path src-tauri/Cargo.toml enrollment::`，并运行项目全量检查。测试数据为合成数据，不包含账户 cookies 或凭据。
+运行 `vp test src/enrollment`、`cargo test -p szu-enrollment --manifest-path src-tauri/Cargo.toml`，并运行项目全量检查。测试数据为合成数据，不包含账户 cookies 或凭据。
 
 最终 APK 还需独立验证：2FA完整回跳、实际选退课、真实容量竞争下的换课循环、学校重启后的恢复，以及锁屏后台、Android返回键与页面按钮。编译和模拟测试不代表这些真实流程已通过。
 
@@ -51,7 +51,7 @@
 - 官网入口创建独立原生窗口，恢复 cookies 元数据和学校实际返回的初始化数据。token 只在原生层与精确学校页面之间传递，官网无应用业务 IPC 权限。
 - 官网直接请求学校，不代理、不串行化官网写操作。原生任务以学校已选列表核验结果，不撤销官网操作；仅暂停依赖关系已无法安全继续的任务。
 - 双向同步以会话代次和 cookie 增量处理，旧窗口快照不能覆盖更新会话。官网主动退出会暂停相关任务，必须主动重新登录；不同账户不导入共享会话。
-- 官网脚本合成测试：`node --test src-tauri/src/enrollment/official-page.node-test.mjs`。真实账户的官网共享、双端并行操作及最终 APK 原生返回仍须设备验收。
+- 官网脚本合成测试：`node --test src-tauri/crates/szu-enrollment/src/enrollment/official-page.node-test.mjs`。真实账户的官网共享、双端并行操作及最终 APK 原生返回仍须设备验收。
 
 ## 会话维护和登录信息
 

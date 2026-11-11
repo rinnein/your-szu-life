@@ -9,7 +9,7 @@ use std::path::Path;
 
 const BRIDGE_CLASS: &str = "in.rinne.your_szu_life.LogFileBridge";
 
-pub(super) fn open_log_file(path: &Path) -> Result<(), String> {
+pub fn open_log_file(path: &Path) -> Result<(), String> {
     let context = ndk_context::android_context();
     let vm =
         unsafe { jni::JavaVM::from_raw(context.vm().cast()) }.map_err(|error| error.to_string())?;

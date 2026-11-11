@@ -135,7 +135,7 @@ impl Protocol {
     }
 }
 
-pub(super) struct Session<S> {
+pub struct Session<S> {
     ws: WebSocketStream<S>,
     next_id: u64,
     protocol: Protocol,
@@ -143,7 +143,7 @@ pub(super) struct Session<S> {
 }
 impl<S: AsyncRead + AsyncWrite + Unpin + Send> Session<S> {
     #[cfg(test)]
-    pub(super) async fn from_stream(stream: S, protocol: Value) -> Result<Self, Error> {
+    pub async fn from_stream(stream: S, protocol: Value) -> Result<Self, Error> {
         let config = WebSocketConfig::default()
             .max_message_size(Some(MAX_RESPONSE))
             .max_frame_size(Some(MAX_RESPONSE));
@@ -205,14 +205,14 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Session<S> {
         .await
         .map_err(|_| Error::Unavailable)?
     }
-    pub(super) async fn capture(&mut self, scope: &Scope) -> Result<Snapshot, Error> {
+    pub async fn capture(&mut self, scope: &Scope) -> Result<Snapshot, Error> {
         let mut result = self.call("Storage.getCookies", json!({})).await;
         if matches!(result, Err(Error::UnsupportedMethod)) {
             result = self.call("Network.getAllCookies", json!({})).await;
         }
         decode_cookies(&result?, scope)
     }
-    pub(super) async fn apply(&mut self, scope: &Scope, patches: &[Patch]) -> Result<(), Error> {
+    pub async fn apply(&mut self, scope: &Scope, patches: &[Patch]) -> Result<(), Error> {
         let before = self.capture(scope).await?;
         let mut desired = before.clone();
         for patch in patches {
@@ -242,7 +242,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Session<S> {
         }
         self.replace_known(scope, &before, &desired).await
     }
-    pub(super) async fn replace(&mut self, scope: &Scope, desired: &Snapshot) -> Result<(), Error> {
+    pub async fn replace(&mut self, scope: &Scope, desired: &Snapshot) -> Result<(), Error> {
         desired.validate(scope)?;
         let before = self.capture(scope).await?;
         self.replace_known(scope, &before, desired).await
@@ -294,7 +294,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin + Send> Session<S> {
         }
     }
 }
-pub(super) fn select_http(
+pub fn select_http(
     snapshot: &mut Snapshot,
     scope: &Scope,
     headers: &[String],
@@ -373,7 +373,7 @@ pub(super) fn select_http(
     );
     Ok(())
 }
-pub(super) fn decode_cookies(result: &Value, scope: &Scope) -> Result<Snapshot, Error> {
+pub fn decode_cookies(result: &Value, scope: &Scope) -> Result<Snapshot, Error> {
     let list = result["cookies"].as_array().ok_or(Error::Protocol)?;
     let mut cookies = vec![];
     for item in list {
@@ -453,7 +453,7 @@ pub(super) fn decode_cookies(result: &Value, scope: &Scope) -> Result<Snapshot, 
     })
 }
 
-pub(super) async fn read_retry<T, F, Fut>(mut read: F) -> Result<T, Error>
+pub async fn read_retry<T, F, Fut>(mut read: F) -> Result<T, Error>
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<T, Error>>,
@@ -660,7 +660,7 @@ fn decode_http(bytes: &[u8]) -> Result<Value, Error> {
     decode_body(&http_body(bytes, true)?.ok_or(Error::Protocol)?)
 }
 #[cfg(target_os = "android")]
-pub(super) async fn open(
+pub async fn open(
     socket: &str,
     window: &tauri::WebviewWindow,
 ) -> Result<Session<tokio::net::UnixStream>, Error> {

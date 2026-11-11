@@ -1,6 +1,6 @@
 use crate::mcp::service::UnifiedSzuMcpService;
-use crate::netproxy::{ProxyProbeView, ProxySettingsInput, ProxyStore};
-use crate::storage::SharedCredentialStore;
+use szu_core::netproxy::{ProxyProbeView, ProxySettingsInput, ProxyStore};
+use szu_core::storage::SharedCredentialStore;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::tool;
 use rmcp::tool_router;
@@ -69,7 +69,7 @@ impl UnifiedSzuMcpService {
         description = "获取your-szu-life的全局网络代理设置（模式、协议、主机、端口、用户名）。出于安全考虑不返回代理密码，只返回是否已设置。对应资源 your-szu-life://data/network/proxy"
     )]
     pub async fn netproxy_get_settings(&self) -> Result<String, String> {
-        let view = crate::netproxy::model::view(self.proxy_credentials()?.as_ref())?;
+        let view = szu_core::netproxy::model::view(self.proxy_credentials()?.as_ref())?;
         serde_json::to_string_pretty(&view).map_err(|e| format!("序列化失败: {e}"))
     }
 
@@ -90,7 +90,7 @@ impl UnifiedSzuMcpService {
             password: params.password,
             campus_through_proxy: params.campus_through_proxy,
         };
-        let view = crate::netproxy::save(self.proxy_credentials()?.as_ref(), &self.app, input)?;
+        let view = szu_core::netproxy::save(self.proxy_credentials()?.as_ref(), &self.app, input)?;
         serde_json::to_string_pretty(&view).map_err(|e| format!("序列化失败: {e}"))
     }
 
@@ -105,7 +105,7 @@ impl UnifiedSzuMcpService {
         let credentials = self.proxy_credentials()?;
         let target = params.url.clone();
         let result: Result<ProxyProbeView, String> = tauri::async_runtime::spawn_blocking(move || {
-            crate::netproxy::test(
+            szu_core::netproxy::test(
                 credentials.as_ref(),
                 ProxySettingsInput {
                     mode: params.mode,

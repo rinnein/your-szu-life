@@ -1,7 +1,7 @@
 use super::{model::*, CampusNetworkStore};
 use crate::auth::model::is_campus_card_number;
 
-pub(super) fn dorm_settings(store: &CampusNetworkStore) -> Result<DormNetworkSettings, String> {
+pub fn dorm_settings(store: &CampusNetworkStore) -> Result<DormNetworkSettings, String> {
     // Serialize lazy loading with disabling: an older keyring read must never restore enabled=true.
     let mut cached = store.dorm_settings.lock().map_err(|_| "状态锁失败")?;
     if cached.is_none() {
@@ -18,7 +18,7 @@ pub(super) fn dorm_settings(store: &CampusNetworkStore) -> Result<DormNetworkSet
 }
 
 /// Caller owns the logout operation. Failure keeps the runtime disabled and forbids a remote logout.
-pub(super) fn disable_auto_connection(
+pub fn disable_auto_connection(
     store: &CampusNetworkStore,
 ) -> Result<DormNetworkSettings, String> {
     store
@@ -47,7 +47,7 @@ pub(super) fn disable_auto_connection(
     Ok(settings)
 }
 
-pub(super) fn dorm_settings_view(
+pub fn dorm_settings_view(
     store: &CampusNetworkStore,
     settings: &DormNetworkSettings,
 ) -> Result<DormNetworkSettingsView, String> {
@@ -71,7 +71,7 @@ pub(super) fn dorm_settings_view(
     })
 }
 
-pub(super) fn dormant_credentials(
+pub fn dormant_credentials(
     app: &tauri::AppHandle,
     store: &CampusNetworkStore,
     settings: &DormNetworkSettings,
@@ -81,7 +81,7 @@ pub(super) fn dormant_credentials(
     })
 }
 
-pub(super) fn resolve_credentials(
+pub fn resolve_credentials(
     store: &CampusNetworkStore,
     settings: &DormNetworkSettings,
     current_account: impl FnOnce() -> Result<(String, String), String>,

@@ -1,7 +1,7 @@
-use crate::appearance::Appearance;
+use szu_core::appearance::Appearance;
 // 只在非 Android 平台构造兜底值；Android 走 Kotlin 壁纸色桥，不需要这个类型。
 #[cfg(not(target_os = "android"))]
-use crate::appearance::WallpaperSeed;
+use szu_core::appearance::WallpaperSeed;
 use crate::mcp::service::UnifiedSzuMcpService;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::tool;
@@ -26,7 +26,7 @@ impl UnifiedSzuMcpService {
         description = "获取your-szu-life当前外观主题设定：深浅色模式、种子色、M3 配色变体，以及桌面自动壁纸取色开关与检查间隔。对应资源 your-szu-life://data/appearance/theme"
     )]
     pub async fn appearance_get_theme(&self) -> Result<String, String> {
-        let appearance = crate::appearance::load(&self.app);
+        let appearance = szu_core::appearance::load(&self.app);
         serde_json::to_string_pretty(&appearance).map_err(|e| format!("序列化失败: {e}"))
     }
 
@@ -38,7 +38,7 @@ impl UnifiedSzuMcpService {
         &self,
         Parameters(params): Parameters<SetThemeParams>,
     ) -> Result<String, String> {
-        let current = crate::appearance::load(&self.app);
+        let current = szu_core::appearance::load(&self.app);
         let appearance = Appearance {
             mode: params.mode,
             seed: params.seed,
@@ -48,7 +48,7 @@ impl UnifiedSzuMcpService {
             auto_wallpaper: false,
             wallpaper_poll_minutes: current.wallpaper_poll_minutes,
         };
-        let saved = crate::appearance::save(&self.app, &appearance)?;
+        let saved = szu_core::appearance::save(&self.app, &appearance)?;
         serde_json::to_string_pretty(&saved).map_err(|e| format!("序列化失败: {e}"))
     }
 
@@ -58,7 +58,7 @@ impl UnifiedSzuMcpService {
     )]
     pub async fn appearance_get_wallpaper_seed(&self) -> Result<String, String> {
         #[cfg(target_os = "android")]
-        let value = crate::appearance::android::wallpaper_seed_result()?;
+        let value = szu_core::appearance::android::wallpaper_seed_result()?;
         #[cfg(not(target_os = "android"))]
         let value = WallpaperSeed {
             seed: None,

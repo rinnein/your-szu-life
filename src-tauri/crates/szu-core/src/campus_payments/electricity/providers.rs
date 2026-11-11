@@ -13,7 +13,7 @@ pub struct Recharge {
     pub source: Option<String>,
     pub source_kind: String,
 }
-pub(super) struct ProviderData {
+pub struct ProviderData {
     pub readings: Vec<ElectricityReading>,
     pub current_remaining: Option<f64>,
     pub recharges: Vec<Recharge>,
@@ -82,7 +82,7 @@ fn cell<'a>(row: &'a [String], index: Option<usize>) -> &'a str {
         .map(String::as_str)
         .unwrap_or("")
 }
-pub(super) fn in_window(time: &str, input: &ElectricityQueryInput) -> bool {
+pub fn in_window(time: &str, input: &ElectricityQueryInput) -> bool {
     reading_date(time).is_some_and(|d| {
         Some(d) >= query_date(&input.begin_date) && Some(d) <= query_date(&input.end_date)
     })
@@ -150,7 +150,7 @@ fn bytes(response: Response) -> Result<Vec<u8>, String> {
     }
     Ok(data)
 }
-pub(super) fn sims_recharges(input: &ElectricityQueryInput) -> Result<Vec<Recharge>, String> {
+pub fn sims_recharges(input: &ElectricityQueryInput) -> Result<Vec<Recharge>, String> {
     let mut records = query_in_windows(input, sims_recharges_chunk)?;
     records.sort_by_key(|r| std::cmp::Reverse(reading_datetime(&r.time)));
     Ok(records)
@@ -254,7 +254,7 @@ fn recharge_sheets<RS: Read + std::io::Seek, R: Reader<RS>>(
     None
 }
 
-pub(super) fn safe_url(base: &str, action: &str) -> Result<String, String> {
+pub fn safe_url(base: &str, action: &str) -> Result<String, String> {
     let base = reqwest::Url::parse(base).map_err(|_| "门户地址无效")?;
     let url = base.join(action).map_err(|_| "门户地址无效")?;
     if url.origin() != base.origin() {
@@ -461,7 +461,7 @@ fn lihu_usage(
     }
     Err("无法识别丽湖每日用电表格".into())
 }
-pub(super) fn lihu_recharges(input: &ElectricityQueryInput) -> Result<Vec<Recharge>, String> {
+pub fn lihu_recharges(input: &ElectricityQueryInput) -> Result<Vec<Recharge>, String> {
     let mut records = query_in_windows(input, lihu_recharges_chunk)?;
     records.sort_by_key(|r| std::cmp::Reverse(reading_datetime(&r.time)));
     Ok(records)
@@ -481,7 +481,7 @@ fn lihu_recharges_chunk(input: &ElectricityQueryInput) -> Result<Vec<Recharge>, 
     records.sort_by_key(|r| std::cmp::Reverse(reading_datetime(&r.time)));
     Ok(records)
 }
-pub(super) fn lihuo(
+pub fn lihuo(
     input: &ElectricityQueryInput,
     purpose: QueryPurpose,
 ) -> Result<ProviderData, String> {

@@ -5,7 +5,7 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Emitter, Manager};
 
-use crate::todos::model::TodoItem;
+use szu_todos::todos::model::TodoItem;
 
 const TRAY_ICON: tauri::image::Image<'static> = tauri::include_image!("icons/32x32.png");
 
@@ -167,9 +167,9 @@ pub(crate) fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent
         tauri::WindowEvent::Focused(false) => {
             if let Some(store) = window
                 .app_handle()
-                .try_state::<crate::campus_payments::CampusPaymentsStore>()
+                .try_state::<szu_core::campus_payments::CampusPaymentsStore>()
             {
-                crate::campus_payments::electricity::set_background(
+                szu_core::campus_payments::electricity::set_background(
                     window.app_handle().clone(),
                     store.electricity.clone(),
                     true,
@@ -179,9 +179,9 @@ pub(crate) fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent
         tauri::WindowEvent::Focused(true) => {
             if let Some(store) = window
                 .app_handle()
-                .try_state::<crate::campus_payments::CampusPaymentsStore>()
+                .try_state::<szu_core::campus_payments::CampusPaymentsStore>()
             {
-                crate::campus_payments::electricity::set_background(
+                szu_core::campus_payments::electricity::set_background(
                     window.app_handle().clone(),
                     store.electricity.clone(),
                     false,
@@ -196,9 +196,9 @@ pub(crate) fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent
                 let _ = window.hide();
                 if let Some(store) = window
                     .app_handle()
-                    .try_state::<crate::campus_payments::CampusPaymentsStore>()
+                    .try_state::<szu_core::campus_payments::CampusPaymentsStore>()
                 {
-                    crate::campus_payments::electricity::set_background(
+                    szu_core::campus_payments::electricity::set_background(
                         window.app_handle().clone(),
                         store.electricity.clone(),
                         true,

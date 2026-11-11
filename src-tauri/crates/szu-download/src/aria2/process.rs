@@ -17,7 +17,7 @@ pub struct Aria2Process {
 }
 
 /// aria2 的固定参数表。抽成纯函数是为了能直接断言代理注入前后的命令行。
-pub(super) fn base_args(port: u16, secret: &str, log_path: &Path) -> Vec<String> {
+pub fn base_args(port: u16, secret: &str, log_path: &Path) -> Vec<String> {
     vec![
         "--enable-rpc=true".into(),
         "--rpc-listen-all=false".into(),
@@ -44,9 +44,9 @@ pub(super) fn base_args(port: u16, secret: &str, log_path: &Path) -> Vec<String>
 
 /// 代理相关的额外参数，以及必须先清掉的环境变量。
 #[derive(Debug, PartialEq, Eq)]
-pub(super) struct ProxyInjection {
-    pub(super) args: Vec<String>,
-    pub(super) removed_env: Vec<&'static str>,
+pub struct ProxyInjection {
+    pub args: Vec<String>,
+    pub removed_env: Vec<&'static str>,
 }
 
 const PROXY_ENV: [&str; 8] = [
@@ -60,7 +60,7 @@ const PROXY_ENV: [&str; 8] = [
     "FTP_PROXY",
 ];
 
-pub(super) fn proxy_injection(proxy: &szu_core::netproxy::Aria2Proxy) -> ProxyInjection {
+pub fn proxy_injection(proxy: &szu_core::netproxy::Aria2Proxy) -> ProxyInjection {
     use szu_core::netproxy::Aria2Proxy;
     match proxy {
         // 显式空值 = 禁用 aria2 的全部代理；同时清掉环境变量，免得它自己又读回来。

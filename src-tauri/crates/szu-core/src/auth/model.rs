@@ -48,7 +48,7 @@ pub struct CapturedCredentials {
     pub password: String,
 }
 
-pub(super) fn verified_password_update<'a>(
+pub fn verified_password_update<'a>(
     saved_student_id: &str,
     saved_campus_card: Option<&str>,
     verified_student_id: &str,
@@ -101,18 +101,18 @@ impl Default for AuthState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum AuthAttempt {
+pub enum AuthAttempt {
     None,
     InitialSetup,
     ReauthenticateExisting { student_id: String },
 }
 
 impl AuthAttempt {
-    pub(super) fn allows_qr_login(&self) -> bool {
+    pub fn allows_qr_login(&self) -> bool {
         matches!(self, Self::ReauthenticateExisting { .. })
     }
 }
-pub(super) fn profile_view(profile: &StoredAccountProfile) -> AccountProfileView {
+pub fn profile_view(profile: &StoredAccountProfile) -> AccountProfileView {
     AccountProfileView {
         student_id: profile.student_id.clone(),
         campus_card_number: profile.campus_card_number.clone(),
@@ -121,7 +121,7 @@ pub(super) fn profile_view(profile: &StoredAccountProfile) -> AccountProfileView
     }
 }
 
-pub(super) fn user_data_view(
+pub fn user_data_view(
     profile: Option<&StoredAccountProfile>,
     pending: Option<&PendingAuthCredentials>,
 ) -> Option<UserDataView> {
@@ -138,7 +138,7 @@ pub(super) fn user_data_view(
         })
 }
 
-pub(super) fn login_form_prefill(
+pub fn login_form_prefill(
     profile: Option<&StoredAccountProfile>,
     pending: Option<&PendingAuthCredentials>,
 ) -> Option<LoginFormPrefill> {
@@ -164,7 +164,7 @@ pub fn is_campus_card_number(value: &str) -> bool {
 }
 
 impl AccountProfileInput {
-    pub(super) fn validate(&self, current_password: Option<&str>) -> Result<(), String> {
+    pub fn validate(&self, current_password: Option<&str>) -> Result<(), String> {
         if !is_student_id(&self.student_id) {
             return Err("学号必须是 10 位数字".into());
         }

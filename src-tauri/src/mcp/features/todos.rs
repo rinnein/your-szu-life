@@ -5,7 +5,7 @@ use rmcp::tool_router;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::todos::model::TodoKind;
+use szu_todos::todos::model::TodoKind;
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct ListTodosParams {
@@ -37,7 +37,7 @@ pub struct TodoSettingsUpdate {
 impl TodoSettingsUpdate {
     pub(crate) fn apply(
         self,
-        target: &mut crate::notification::settings::TodoNotificationSettings,
+        target: &mut szu_core::notification::settings::TodoNotificationSettings,
     ) {
         if let Some(value) = self.enabled {
             target.enabled = value;
@@ -76,7 +76,7 @@ impl UnifiedSzuMcpService {
         &self,
         Parameters(params): Parameters<ListTodosParams>,
     ) -> Result<String, String> {
-        let mut items = crate::todos::aggregate::aggregate(&self.app);
+        let mut items = szu_todos::todos::aggregate::aggregate(&self.app);
         if let Some(kind) = params.kind {
             items.retain(|item| item.kind == kind);
         }
@@ -88,7 +88,7 @@ impl UnifiedSzuMcpService {
         description = "获取待办提醒配置（六个注册项开关与提前量列表）。对应资源 your-szu-life://data/todos/notification-settings"
     )]
     pub async fn todos_get_settings(&self) -> Result<String, String> {
-        let settings = crate::notification::settings::load(&self.app);
+        let settings = szu_core::notification::settings::load(&self.app);
         serde_json::to_string_pretty(&settings.todo).map_err(|e| format!("序列化失败: {e}"))
     }
 
@@ -100,9 +100,9 @@ impl UnifiedSzuMcpService {
         &self,
         Parameters(params): Parameters<TodoSettingsUpdate>,
     ) -> Result<String, String> {
-        let mut settings = crate::notification::settings::load(&self.app);
+        let mut settings = szu_core::notification::settings::load(&self.app);
         params.apply(&mut settings.todo);
-        let saved = crate::notification::settings::save(&self.app, &settings)?;
+        let saved = szu_core::notification::settings::save(&self.app, &settings)?;
         serde_json::to_string_pretty(&saved.todo).map_err(|e| format!("序列化失败: {e}"))
     }
 }

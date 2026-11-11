@@ -23,7 +23,7 @@ const LOCAL_ENTRY_URL: &str = "tauri://localhost/";
 const LOGIN_CAPTURE_RETRY_INTERVAL: Duration = Duration::from_millis(250);
 const AUTH_PROBE_INTERVAL: Duration = Duration::from_millis(250);
 
-pub(super) fn resume_application_window(app: &tauri::AppHandle, store: &AuthStore) {
+pub fn resume_application_window(app: &tauri::AppHandle, store: &AuthStore) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
@@ -48,7 +48,7 @@ pub(super) fn resume_application_window(app: &tauri::AppHandle, store: &AuthStor
     }
 }
 
-pub(super) fn application_resume_url(store: &AuthStore) -> tauri::Url {
+pub fn application_resume_url(store: &AuthStore) -> tauri::Url {
     store
         .resume_url
         .lock()
@@ -167,7 +167,7 @@ fn inject_login_capture(window: &tauri::Webview) {
     });
 }
 
-pub(super) fn show_authentication_window(
+pub fn show_authentication_window(
     app: &tauri::AppHandle,
     store: &AuthStore,
 ) -> Result<(), String> {
@@ -204,7 +204,7 @@ pub(super) fn show_authentication_window(
     Ok(())
 }
 
-pub(super) fn start_recovery_deadline(app: &tauri::AppHandle, store: &AuthStore) {
+pub fn start_recovery_deadline(app: &tauri::AppHandle, store: &AuthStore) {
     let Some(generation) = store
         .recovery
         .lock()

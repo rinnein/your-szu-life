@@ -2,14 +2,14 @@ use super::document;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
-pub(super) enum Value {
+pub enum Value {
     Text(String),
     Number(u64),
     Bool(bool),
 }
 
 impl Value {
-    pub(super) fn text(&self) -> Option<String> {
+    pub fn text(&self) -> Option<String> {
         match self {
             Self::Text(text) => {
                 let text = text.trim();
@@ -18,7 +18,7 @@ impl Value {
             _ => None,
         }
     }
-    pub(super) fn number(&self) -> Option<u64> {
+    pub fn number(&self) -> Option<u64> {
         match self {
             Self::Number(value) => Some(*value),
             Self::Text(text) => text.trim().parse().ok(),
@@ -212,7 +212,7 @@ fn tokens(script: &str) -> Vec<Token> {
     tokens
 }
 
-pub(super) fn values(html: &str) -> HashMap<String, Value> {
+pub fn values(html: &str) -> HashMap<String, Value> {
     let mut values = HashMap::new();
     for script in document::parse(html).scripts {
         let tokens = tokens(script);
@@ -339,7 +339,7 @@ fn object_literals(
 }
 
 /// Extract literal properties only. Expressions (including lang's ||), calls and templates are never executed.
-pub(super) fn object_values(html: &str, wanted: &str) -> Option<HashMap<String, Value>> {
+pub fn object_values(html: &str, wanted: &str) -> Option<HashMap<String, Value>> {
     let mut found = None;
     for script in document::parse(html).scripts {
         let tokens = tokens(script);

@@ -3,7 +3,7 @@ mod script;
 
 use super::model::DormPortalSessionInfo;
 
-pub(super) fn decode_portal_html(bytes: &[u8], content_type: Option<&str>) -> String {
+pub fn decode_portal_html(bytes: &[u8], content_type: Option<&str>) -> String {
     // Charset sniffing needs only ASCII markup; never replace the original body before decoding it.
     let ascii: String = bytes
         .iter()
@@ -25,11 +25,11 @@ pub(super) fn decode_portal_html(bytes: &[u8], content_type: Option<&str>) -> St
     }
 }
 
-pub(super) fn extract_portal_value(html: &str, name: &str) -> Option<String> {
+pub fn extract_portal_value(html: &str, name: &str) -> Option<String> {
     script::values(html).get(name).and_then(script::Value::text)
 }
 
-pub(super) fn extract_portal_session_info(html: &str) -> DormPortalSessionInfo {
+pub fn extract_portal_session_info(html: &str) -> DormPortalSessionInfo {
     let values = script::values(html);
     let text = |name| values.get(name).and_then(script::Value::text);
     let number = |name| values.get(name).and_then(script::Value::number);
@@ -45,13 +45,13 @@ pub(super) fn extract_portal_session_info(html: &str) -> DormPortalSessionInfo {
     }
 }
 
-pub(super) fn has_online_portal_marker(html: &str) -> bool {
+pub fn has_online_portal_marker(html: &str) -> bool {
     html.contains("Dr.COMWebLoginID_1.htm")
 }
-pub(super) fn has_login_portal_marker(html: &str) -> bool {
+pub fn has_login_portal_marker(html: &str) -> bool {
     html.contains("Dr.COMWebLoginID_0.htm")
 }
-pub(super) fn has_online_session_fields(session: &DormPortalSessionInfo) -> bool {
+pub fn has_online_session_fields(session: &DormPortalSessionInfo) -> bool {
     session.online_username.is_some()
         || session.campus_card_number.is_some()
         || session.login_ip.is_some()
@@ -59,7 +59,7 @@ pub(super) fn has_online_session_fields(session: &DormPortalSessionInfo) -> bool
         || session.login_expires_at.is_some()
 }
 
-pub(super) fn valid_ipv4(value: &str) -> bool {
+pub fn valid_ipv4(value: &str) -> bool {
     let parts: Vec<_> = value.trim().split('.').collect();
     parts.len() == 4
         && parts.iter().all(|part| part.parse::<u8>().is_ok())
@@ -67,7 +67,7 @@ pub(super) fn valid_ipv4(value: &str) -> bool {
         && value != "0.0.0.0"
 }
 
-pub(super) fn extract_terminal_ip(html: &str) -> Option<String> {
+pub fn extract_terminal_ip(html: &str) -> Option<String> {
     ["v4ip", "v46ip", "ss5"]
         .into_iter()
         .filter_map(|key| extract_portal_value(html, key))
@@ -75,13 +75,13 @@ pub(super) fn extract_terminal_ip(html: &str) -> Option<String> {
 }
 
 #[cfg(test)]
-pub(super) fn parse_jsonp_response(body: &str) -> Result<serde_json::Value, String> {
+pub fn parse_jsonp_response(body: &str) -> Result<serde_json::Value, String> {
     let body = body.trim().trim_start_matches('﻿');
     let (callback, _) = body.split_once('(').ok_or("门户响应不是 JSONP")?;
     parse_jsonp_callback(body, callback.trim())
 }
 
-pub(super) fn parse_jsonp_callback(
+pub fn parse_jsonp_callback(
     body: &str,
     callback: &str,
 ) -> Result<serde_json::Value, String> {
@@ -104,11 +104,11 @@ pub(super) fn parse_jsonp_callback(
     serde_json::from_str(json.trim()).map_err(|_| "门户 JSON 数据无效".into())
 }
 
-pub(super) fn meta_refresh_target(html: &str) -> Option<String> {
+pub fn meta_refresh_target(html: &str) -> Option<String> {
     document::meta_refresh_target(html)
 }
 
-pub(super) fn config_literals(
+pub fn config_literals(
     html: &str,
 ) -> Option<std::collections::HashMap<String, serde_json::Value>> {
     Some(

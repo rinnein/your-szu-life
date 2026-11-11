@@ -1,7 +1,7 @@
 use super::{model::*, now_ms, settings::dorm_settings, CampusNetworkStore};
 use tauri::Manager;
 
-pub(super) fn append_dorm_log(_app: &tauri::AppHandle, log: DormLoginLogView) {
+pub fn append_dorm_log(_app: &tauri::AppHandle, log: DormLoginLogView) {
     let sanitized = sanitized_log(log);
     log::info!(
         target: "campus_network::dorm",
@@ -13,7 +13,7 @@ pub(super) fn append_dorm_log(_app: &tauri::AppHandle, log: DormLoginLogView) {
     );
 }
 
-pub(super) fn dorm_notify_failure(app: &tauri::AppHandle, message: &str) {
+pub fn dorm_notify_failure(app: &tauri::AppHandle, message: &str) {
     let payload = crate::notification::NotificationPayload::new(
         crate::notification::NotificationCategory::CampusNetwork,
         "校园网登录失败",
@@ -24,7 +24,7 @@ pub(super) fn dorm_notify_failure(app: &tauri::AppHandle, message: &str) {
     crate::notification::notify(app, payload);
 }
 
-pub(super) fn save_dorm_failure_notice(app: &tauri::AppHandle, message: &str) {
+pub fn save_dorm_failure_notice(app: &tauri::AppHandle, message: &str) {
     let Some(store) = app.try_state::<CampusNetworkStore>() else {
         return;
     };
@@ -44,7 +44,7 @@ pub(super) fn save_dorm_failure_notice(app: &tauri::AppHandle, message: &str) {
 }
 
 /// Central safety boundary: gateway response bodies never enter disk logs or log events.
-pub(super) fn sanitized_log(mut log: DormLoginLogView) -> DormLoginLogView {
+pub fn sanitized_log(mut log: DormLoginLogView) -> DormLoginLogView {
     log.response = None;
     log
 }

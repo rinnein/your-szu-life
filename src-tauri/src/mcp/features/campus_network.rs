@@ -1,4 +1,4 @@
-use crate::campus_network::{service, staff_login, CampusNetworkStore};
+use szu_core::campus_network::{service, staff_login, CampusNetworkStore};
 use crate::mcp::service::UnifiedSzuMcpService;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::tool;
