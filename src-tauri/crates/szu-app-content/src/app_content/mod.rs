@@ -1,45 +1,45 @@
 #[cfg(target_os = "android")]
-pub(crate) mod android_update;
+pub mod android_update;
 mod cache;
-pub(crate) mod channel;
-pub(crate) mod commands;
+pub mod channel;
+pub mod commands;
 mod config;
 mod http;
 mod images;
-pub(crate) mod model;
+pub mod model;
 mod runtime;
 mod service;
 #[cfg(target_os = "windows")]
-pub(crate) mod windows_update;
+pub mod windows_update;
 
 use std::{sync::Arc, time::Duration};
 use tauri::{Emitter, Manager};
 
 #[derive(Clone)]
-pub(crate) struct AppContentStore(Arc<service::ContentService>);
+pub struct AppContentStore(Arc<service::ContentService>);
 
 impl AppContentStore {
-    pub(crate) fn snapshot(&self) -> model::AppContentSnapshot {
+    pub fn snapshot(&self) -> model::AppContentSnapshot {
         self.0.snapshot()
     }
 
     /// 切换更新渠道并返回切换后的快照。
-    pub(crate) fn set_channel(&self, channel: model::UpdateChannel) -> model::AppContentSnapshot {
+    pub fn set_channel(&self, channel: model::UpdateChannel) -> model::AppContentSnapshot {
         self.0.set_channel(channel)
     }
 
     /// 立即刷新公共内容并返回最新快照。
-    pub(crate) fn refresh(&self) -> model::AppContentSnapshot {
+    pub fn refresh(&self) -> model::AppContentSnapshot {
         self.0.refresh()
     }
 
     #[cfg(any(target_os = "android", target_os = "windows"))]
-    pub(crate) fn build_download_candidates(&self, direct_url: &str) -> Vec<(u32, String)> {
+    pub fn build_download_candidates(&self, direct_url: &str) -> Vec<(u32, String)> {
         self.0.build_download_candidates(direct_url)
     }
 }
 
-pub(crate) fn initialize(app: &tauri::AppHandle) -> std::io::Result<()> {
+pub fn initialize(app: &tauri::AppHandle) -> std::io::Result<()> {
     #[cfg(target_os = "android")]
     android_update::set_app_handle(app.clone());
     #[cfg(target_os = "windows")]
@@ -70,7 +70,7 @@ pub(crate) fn initialize(app: &tauri::AppHandle) -> std::io::Result<()> {
                     // activity-tier delay after resume; missed days coalesce into one refresh
                     // instead of a burst of catch-up requests.
                     let now = runtime::Clock::now_ms(&runtime::SystemClock);
-                    let max_delay = crate::activity::interval(
+                    let max_delay = szu_core::activity::interval(
                         Some("app-content"),
                         Duration::from_secs(15),
                         Duration::from_secs(60),

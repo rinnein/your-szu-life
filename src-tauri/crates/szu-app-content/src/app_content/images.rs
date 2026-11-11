@@ -9,7 +9,7 @@ const MAX_IMAGE_EDGE: u32 = 1600;
 /// Validate an image response and return the bytes worth caching plus their MIME type.
 /// Oversized originals are decoded, downscaled and re-encoded so the WebView never has to
 /// receive a multi-megabyte payload. GIFs keep their original bytes to stay animated.
-pub(super) fn normalize_image(
+pub fn normalize_image(
     bytes: &[u8],
     content_type: Option<&str>,
 ) -> Result<(Vec<u8>, &'static str), ContentError> {

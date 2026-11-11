@@ -8,18 +8,18 @@ use std::{
     sync::Mutex,
 };
 
-pub(super) fn cache_key(value: &str) -> String {
+pub fn cache_key(value: &str) -> String {
     format!("{:x}", Sha1::digest(value.as_bytes()))
 }
 
-pub(super) struct Cache {
+pub struct Cache {
     root: Option<PathBuf>,
     io: Mutex<()>,
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct CachedDocument<T> {
+pub struct CachedDocument<T> {
     schema: u8,
     key: String,
     pub saved_at: u64,

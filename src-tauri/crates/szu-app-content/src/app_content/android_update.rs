@@ -3,9 +3,9 @@ use std::sync::OnceLock;
 #[cfg(target_os = "android")]
 use tauri::Emitter;
 
-pub(crate) static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+pub static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 
-pub(crate) fn set_app_handle(handle: tauri::AppHandle) {
+pub fn set_app_handle(handle: tauri::AppHandle) {
     let _ = APP_HANDLE.set(handle);
 }
 
@@ -16,7 +16,7 @@ static UPDATE_CHANNEL: std::sync::Mutex<Option<tauri::ipc::Channel<UpdateProgres
     std::sync::Mutex::new(None);
 
 #[cfg(not(target_os = "android"))]
-pub(crate) fn start_update(
+pub fn start_update(
     _store: &crate::app_content::AppContentStore,
     _channel: tauri::ipc::Channel<UpdateProgressPayload>,
 ) -> Result<(), String> {
@@ -54,7 +54,7 @@ fn emit_error(msg: &str) {
 }
 
 #[cfg(target_os = "android")]
-pub(crate) fn start_update(
+pub fn start_update(
     store: &crate::app_content::AppContentStore,
     channel: tauri::ipc::Channel<UpdateProgressPayload>,
 ) -> Result<(), String> {

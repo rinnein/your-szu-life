@@ -3,18 +3,18 @@ use semver::Version;
 use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
 use std::cmp::Ordering;
 
-pub(super) const DAY_MS: u64 = 24 * 60 * 60 * 1000;
-pub(super) const JSON_LIMIT: usize = 1024 * 1024;
+pub const DAY_MS: u64 = 24 * 60 * 60 * 1000;
+pub const JSON_LIMIT: usize = 1024 * 1024;
 /// Final image size handed to the WebView (and stored in the cache).
-pub(super) const IMAGE_LIMIT: usize = 4 * 1024 * 1024;
+pub const IMAGE_LIMIT: usize = 4 * 1024 * 1024;
 /// Raw image responses may be much larger: they are decoded, downscaled and re-encoded
 /// before they reach the WebView, so the download cap is independent of `IMAGE_LIMIT`.
-pub(super) const IMAGE_DOWNLOAD_LIMIT: usize = 16 * 1024 * 1024;
-pub(super) const MAX_ANNOUNCEMENTS: usize = 100;
+pub const IMAGE_DOWNLOAD_LIMIT: usize = 16 * 1024 * 1024;
+pub const MAX_ANNOUNCEMENTS: usize = 100;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ContentError {
+pub struct ContentError {
     pub kind: ErrorKind,
     pub message: String,
     pub retry_at: Option<u64>,
@@ -22,7 +22,7 @@ pub(crate) struct ContentError {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum ErrorKind {
+pub enum ErrorKind {
     Network,
     Http,
     InvalidData,
@@ -32,7 +32,7 @@ pub(crate) enum ErrorKind {
 }
 
 impl ContentError {
-    pub(super) fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
+    pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
         Self {
             kind,
             message: message.into(),
@@ -40,14 +40,14 @@ impl ContentError {
         }
     }
 
-    pub(super) fn invalid(message: impl Into<String>) -> Self {
+    pub fn invalid(message: impl Into<String>) -> Self {
         Self::new(ErrorKind::InvalidData, message)
     }
 }
 
 /// Public content deliberately accepts HTTP, private addresses and intranet names.
 /// This validator is NOT used by authentication or campus-network clients.
-pub(super) fn web_url(value: &str) -> Result<Url, ContentError> {
+pub fn web_url(value: &str) -> Result<Url, ContentError> {
     if value.len() > 4096 || value.chars().any(char::is_control) || value.trim() != value {
         return Err(ContentError::invalid("地址格式无效"));
     }
@@ -68,11 +68,11 @@ pub(super) fn web_url(value: &str) -> Result<Url, ContentError> {
     Ok(url)
 }
 
-pub(super) trait Document: Clone + Serialize + DeserializeOwned {
+pub trait Document: Clone + Serialize + DeserializeOwned {
     fn validate(&self) -> Result<(), ContentError>;
 }
 
-pub(super) fn parse_document<T: Document>(bytes: &[u8]) -> Result<T, ContentError> {
+pub fn parse_document<T: Document>(bytes: &[u8]) -> Result<T, ContentError> {
     if bytes.len() > JSON_LIMIT {
         return Err(ContentError::new(
             ErrorKind::TooLarge,
@@ -92,7 +92,7 @@ fn present_string<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<S
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum AnnouncementMode {
+pub enum AnnouncementMode {
     #[default]
     Silent,
     Popup,
@@ -147,7 +147,7 @@ fn is_usable_announcement_id(id: &str) -> bool {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct Announcement {
+pub struct Announcement {
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -177,7 +177,7 @@ pub(crate) struct Announcement {
 
 /// 版本限定条件。`conditions` / `conditions.ver` 缺省 = 全局公告，对所有版本生效。
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct AnnouncementConditions {
+pub struct AnnouncementConditions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ver: Option<String>,
 }
@@ -232,12 +232,12 @@ impl VersionComparator {
 
 /// 逗号分隔的条件组，全部满足（AND）才算命中。
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct VersionCondition {
+pub struct VersionCondition {
     comparators: Vec<VersionComparator>,
 }
 
 impl VersionCondition {
-    pub(super) fn parse(value: &str) -> Option<Self> {
+    pub fn parse(value: &str) -> Option<Self> {
         let mut comparators = Vec::new();
         for part in value.split(',') {
             comparators.push(VersionComparator::parse(part)?);
@@ -245,7 +245,7 @@ impl VersionCondition {
         (!comparators.is_empty()).then_some(Self { comparators })
     }
 
-    pub(super) fn matches(&self, current: &Version) -> bool {
+    pub fn matches(&self, current: &Version) -> bool {
         self.comparators.iter().all(|c| c.matches(current))
     }
 }
@@ -257,7 +257,7 @@ impl VersionCondition {
 /// - `ver` 解析失败：丢弃该条（定向公告错误地展示给全部版本比不展示更危险）；
 /// - popup 缺失或携带不可用 id：降级为 silent，照常展示；
 /// - 当前版本号解析失败：全部保留（宁可多显示）。
-pub(crate) fn applicable_announcements(data: Announcements, current: &str) -> Announcements {
+pub fn applicable_announcements(data: Announcements, current: &str) -> Announcements {
     let Ok(current) = version(current) else {
         return data;
     };
@@ -282,7 +282,7 @@ pub(crate) fn applicable_announcements(data: Announcements, current: &str) -> An
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct Announcements {
+pub struct Announcements {
     pub announcements: Vec<Announcement>,
 }
 
@@ -316,7 +316,7 @@ impl Document for Announcements {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct UpdateInfo {
+pub struct UpdateInfo {
     pub latest_ver: String,
     pub latest_ver_url: String,
     pub changelog: String,
@@ -324,7 +324,7 @@ pub(crate) struct UpdateInfo {
     pub release_url: Option<String>,
 }
 
-pub(super) fn version(value: &str) -> Result<Version, ContentError> {
+pub fn version(value: &str) -> Result<Version, ContentError> {
     Version::parse(value.strip_prefix('v').unwrap_or(value))
         .map_err(|_| ContentError::invalid("版本号不是有效的 SemVer"))
 }
@@ -343,7 +343,7 @@ impl Document for UpdateInfo {
     }
 }
 
-pub(super) fn is_newer(current: &str, latest: &str) -> bool {
+pub fn is_newer(current: &str, latest: &str) -> bool {
     match (version(current), version(latest)) {
         (Ok(current), Ok(latest)) => latest.cmp_precedence(&current).is_gt(),
         _ => false,
@@ -352,7 +352,7 @@ pub(super) fn is_newer(current: &str, latest: &str) -> bool {
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum Source {
+pub enum Source {
     Primary,
     Fallback,
     Github,
@@ -369,7 +369,7 @@ pub(crate) enum Source {
     Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
 )]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum UpdateChannel {
+pub enum UpdateChannel {
     #[default]
     Stable,
     Canary,
@@ -377,27 +377,27 @@ pub(crate) enum UpdateChannel {
 
 impl UpdateChannel {
     /// 写进缓存 scope 与 URL 的稳定标识。
-    pub(super) fn slug(self) -> &'static str {
+    pub fn slug(self) -> &'static str {
         match self {
             Self::Stable => "stable",
             Self::Canary => "canary",
         }
     }
 
-    pub(super) fn is_stable(self) -> bool {
+    pub fn is_stable(self) -> bool {
         self == Self::Stable
     }
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub(crate) struct CnbAsset {
+pub struct CnbAsset {
     pub name: String,
     #[serde(default)]
     pub browser_download_url: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub(crate) struct CnbRelease {
+pub struct CnbRelease {
     #[serde(default)]
     pub tag_ref: String,
     pub title: Option<String>,
@@ -417,19 +417,19 @@ impl CnbRelease {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub(crate) struct CnbTagReleaseResponse {
+pub struct CnbTagReleaseResponse {
     pub release: Option<CnbRelease>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub(crate) struct CnbReleasesResponse {
+pub struct CnbReleasesResponse {
     #[serde(default)]
     pub releases: Vec<CnbRelease>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct FeedSnapshot<T> {
+pub struct FeedSnapshot<T> {
     pub data: Option<T>,
     pub last_attempt_at: Option<u64>,
     pub last_success_at: Option<u64>,
@@ -453,14 +453,14 @@ impl<T> Default for FeedSnapshot<T> {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ConfigurationView {
+pub struct ConfigurationView {
     pub status: ConfigurationStatus,
     pub message: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum ConfigurationStatus {
+pub enum ConfigurationStatus {
     Ready,
     Unconfigured,
     Invalid,
@@ -468,14 +468,14 @@ pub(crate) enum ConfigurationStatus {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Repository {
+pub struct Repository {
     pub full_name: String,
     pub url: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct AppContentSnapshot {
+pub struct AppContentSnapshot {
     pub revision: u64,
     pub version: String,
     pub configuration: ConfigurationView,
@@ -494,7 +494,7 @@ pub(crate) struct AppContentSnapshot {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Contributor {
+pub struct Contributor {
     pub login: String,
     pub avatar_url: String,
     pub url: String,
@@ -521,7 +521,7 @@ pub struct UpdateProgressPayload {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct ContributorList {
+pub struct ContributorList {
     pub contributors: Vec<Contributor>,
     pub truncated: bool,
 }
@@ -553,7 +553,7 @@ impl Document for ContributorList {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ContributorsSnapshot {
+pub struct ContributorsSnapshot {
     pub status: ContributorStatus,
     pub repository: Option<Repository>,
     pub contributors: Vec<Contributor>,
@@ -566,7 +566,7 @@ pub(crate) struct ContributorsSnapshot {
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum ContributorStatus {
+pub enum ContributorStatus {
     Unconfigured,
     Ready,
     Error,

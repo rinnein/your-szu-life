@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     env,
     fs::{self, File},
     io::Cursor,
@@ -8,12 +7,6 @@ use std::{
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-const EMBEDDED_ENV_VARS: [&str; 3] = [
-    "SZU_LIFE_BASE_URL",
-    "SZU_LIFE_FALLBACK_BASE_URL",
-    "APTABASE_APP_KEY",
-];
-
 /// Tauri CLI 只把 `bundle.externalBin` 打进桌面端安装包，Android 侧不会处理它。
 /// Android 的 `nativeLibraryDir` 只包含 APK 内 `lib/<abi>/` 的条目，所以这里把侧车
 /// 二进制以 `libaria2c.so` 的命名放进 `jniLibs` 由 Gradle 打包。
@@ -21,23 +14,6 @@ const EMBEDDED_ENV_VARS: [&str; 3] = [
 /// 补上 `extractNativeLibs="true"`），安装时系统会将它解压到 `nativeLibraryDir`，
 /// 运行时即可直接作为可执行程序启动。
 const ARIA2C_ANDROID_LIB_NAME: &str = "libaria2c.so";
-
-fn load_dotenv(path: &std::path::Path) -> HashMap<String, String> {
-    if !path.is_file() {
-        return HashMap::new();
-    }
-    dotenvy::from_path_iter(path)
-        .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
-        .collect::<Result<HashMap<_, _>, _>>()
-        .unwrap_or_else(|error| panic!("failed to parse {}: {error}", path.display()))
-}
-
-fn configured_value(name: &str, dotenv: &HashMap<String, String>) -> Option<String> {
-    match env::var_os(name) {
-        Some(value) => value.into_string().ok(),
-        None => dotenv.get(name).cloned(),
-    }
-}
 
 const WIN_32_URL: &str = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-32bit-build1.zip";
 const WIN_64_URL: &str = "https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip";
@@ -240,15 +216,7 @@ fn stage_android_sidecar_lib(manifest_dir: &Path, target: &str, sidecar: &Path) 
 
 fn main() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let dotenv_path = manifest_dir.join("../.env");
-    let dotenv = load_dotenv(&dotenv_path);
-    println!("cargo:rerun-if-changed={}", dotenv_path.display());
-    for name in EMBEDDED_ENV_VARS {
-        if let Some(value) = configured_value(name, &dotenv) {
-            println!("cargo:rustc-env={name}={value}");
-        }
-        println!("cargo:rerun-if-env-changed={name}");
-    }
+    szu_build_support::emit_embedded_env(&manifest_dir.join("../.env"));
 
     println!("cargo:rerun-if-changed=../package.json");
     println!("cargo:rerun-if-changed=../github-accelerator.json");

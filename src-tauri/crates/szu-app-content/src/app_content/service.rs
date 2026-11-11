@@ -45,7 +45,7 @@ struct GithubAsset {
     browser_download_url: String,
 }
 
-pub(super) struct ContentService {
+pub struct ContentService {
     pub config: ContentConfig,
     http: Arc<dyn PublicHttp>,
     clock: Arc<dyn Clock>,
@@ -1017,7 +1017,7 @@ impl ContentService {
 }
 
 #[cfg(any(target_os = "android", target_os = "windows", test))]
-pub(crate) fn extract_release_tag_and_filename(url: &str) -> Option<(&str, &str)> {
+pub fn extract_release_tag_and_filename(url: &str) -> Option<(&str, &str)> {
     if let Some(idx) = url.find("releases/download/") {
         let rest = &url[idx + "releases/download/".len()..];
         let (tag, filename) = rest.split_once('/')?;
@@ -1030,7 +1030,7 @@ pub(crate) fn extract_release_tag_and_filename(url: &str) -> Option<(&str, &str)
 }
 
 #[cfg(any(target_os = "android", target_os = "windows", test))]
-pub(crate) fn collect_candidate_urls(
+pub fn collect_candidate_urls(
     direct_url: &str,
     accelerators: &[reqwest::Url],
 ) -> Vec<String> {
@@ -1052,7 +1052,7 @@ pub(crate) fn collect_candidate_urls(
 }
 
 /// 判断发布资产文件名是否匹配当前平台的可安装包。
-pub(super) fn is_platform_asset(name: &str) -> bool {
+pub fn is_platform_asset(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     #[cfg(target_os = "android")]
     {
@@ -1086,7 +1086,7 @@ pub(super) fn is_platform_asset(name: &str) -> bool {
 ///
 /// 用「偏好扩展名」的顺序表达平台差异，而不是给每个平台重复写一遍匹配逻辑，
 /// 这样 [`is_platform_asset`] 在所有平台上都是真正参与运行时判断的代码。
-pub(super) fn find_platform_asset_index(names: &[&str]) -> Option<usize> {
+pub fn find_platform_asset_index(names: &[&str]) -> Option<usize> {
     let preferred: &[&str] = if cfg!(target_os = "android") {
         // Android 应用内更新仅下载 .apk.gz
         &[".apk.gz"]
@@ -1106,7 +1106,7 @@ pub(super) fn find_platform_asset_index(names: &[&str]) -> Option<usize> {
     names.iter().position(|name| is_platform_asset(name))
 }
 
-pub(super) fn extract_version_from_asset_name(name: &str) -> Option<String> {
+pub fn extract_version_from_asset_name(name: &str) -> Option<String> {
     if let Some(idx) = name.find("-release.") {
         let prefix = &name[..idx];
         if let Some(last_underscore) = prefix.rfind('_') {
@@ -1119,7 +1119,7 @@ pub(super) fn extract_version_from_asset_name(name: &str) -> Option<String> {
     None
 }
 
-pub(super) fn extract_release_version(
+pub fn extract_release_version(
     tag_name: &str,
     release_name: Option<&str>,
     asset_name: &str,

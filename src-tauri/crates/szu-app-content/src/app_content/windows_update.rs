@@ -7,15 +7,15 @@ use tauri::Emitter;
 
 pub use super::model::UpdateProgressPayload;
 
-pub(crate) static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+pub static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
 static IS_UPDATING: AtomicBool = AtomicBool::new(false);
 static UPDATE_CHANNEL: Mutex<Option<tauri::ipc::Channel<UpdateProgressPayload>>> = Mutex::new(None);
 
-pub(crate) fn set_app_handle(handle: tauri::AppHandle) {
+pub fn set_app_handle(handle: tauri::AppHandle) {
     let _ = APP_HANDLE.set(handle);
 }
 
-pub(crate) fn emit_progress(payload: UpdateProgressPayload) {
+pub fn emit_progress(payload: UpdateProgressPayload) {
     if let Some(ref ch) = *UPDATE_CHANNEL.lock().unwrap() {
         let _ = ch.send(payload.clone());
     }
@@ -24,7 +24,7 @@ pub(crate) fn emit_progress(payload: UpdateProgressPayload) {
     }
 }
 
-pub(crate) fn start_update(
+pub fn start_update(
     store: &AppContentStore,
     channel: tauri::ipc::Channel<UpdateProgressPayload>,
 ) -> Result<(), String> {
@@ -77,7 +77,7 @@ pub(crate) fn start_update(
     Ok(())
 }
 
-pub(crate) fn download_and_install(
+pub fn download_and_install(
     version: &str,
     candidates: Vec<(u32, String)>,
 ) -> Result<(), String> {

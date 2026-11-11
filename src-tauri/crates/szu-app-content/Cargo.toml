@@ -1,0 +1,28 @@
+[package]
+name = "szu-app-content"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "泥深公共内容与更新模块：公告、贡献者与应用内更新"
+
+[lib]
+name = "szu_app_content"
+path = "src/lib.rs"
+
+[build-dependencies]
+szu-build-support = { path = "../szu-build-support" }
+
+[dependencies]
+szu-core = { path = "../szu-core" }
+szu-download = { path = "../szu-download" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+reqwest = { workspace = true }
+flate2 = { workspace = true }
+semver = { workspace = true }
+image = { workspace = true }
+uuid = { workspace = true }
+schemars = { workspace = true }
+sha1 = { workspace = true }

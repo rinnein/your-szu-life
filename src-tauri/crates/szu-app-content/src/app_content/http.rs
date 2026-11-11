@@ -3,14 +3,14 @@ use reqwest::{Url, blocking::Client};
 use std::{io::Read, time::Duration};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum RequestKind {
+pub enum RequestKind {
     Json,
     Github,
     CnbWeb,
     Image,
 }
 
-pub(super) struct HttpResponse {
+pub struct HttpResponse {
     pub status: u16,
     pub body: Vec<u8>,
     pub content_type: Option<String>,
@@ -37,7 +37,7 @@ impl HttpResponse {
     }
 }
 
-pub(super) trait PublicHttp: Send + Sync {
+pub trait PublicHttp: Send + Sync {
     fn get(&self, url: &Url, kind: RequestKind, limit: usize)
     -> Result<HttpResponse, ContentError>;
 }
@@ -47,14 +47,14 @@ pub(super) trait PublicHttp: Send + Sync {
 /// plain HTTP(S) URL without credentials, and the chain is bounded.
 const MAX_IMAGE_REDIRECTS: usize = 5;
 
-pub(super) fn check_image_redirect(previous: usize, target: &Url) -> Result<(), ContentError> {
+pub fn check_image_redirect(previous: usize, target: &Url) -> Result<(), ContentError> {
     if previous >= MAX_IMAGE_REDIRECTS {
         return Err(ContentError::new(ErrorKind::Http, "头图重定向次数过多"));
     }
     web_url(target.as_str()).map(|_| ())
 }
 
-pub(super) struct PublicClient {
+pub struct PublicClient {
     client: Result<Client, ContentError>,
 }
 
@@ -67,10 +67,10 @@ impl PublicClient {
 
     fn build(version: &str) -> Result<Client, ContentError> {
         #[cfg(target_os = "android")]
-        crate::platform_tls::initialize_platform_verifier()
+        szu_core::platform_tls::initialize_platform_verifier()
             .map_err(|_| ContentError::new(ErrorKind::Unavailable, "无法初始化系统 TLS 验证器"))?;
         // 代理策略与绕过判断都在 netproxy 里，这里只描述这个客户端自己要什么。
-        crate::netproxy::blocking_client_builder()
+        szu_core::netproxy::blocking_client_builder()
             .user_agent(format!("your-szu-life/{version}"))
             .connect_timeout(Duration::from_secs(5))
             .timeout(Duration::from_secs(15))

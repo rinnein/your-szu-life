@@ -8,3 +8,6 @@ description = "本仓库各 crate 的 build.rs 复用的公共构建逻辑"
 [lib]
 name = "szu_build_support"
 path = "src/lib.rs"
+
+[dependencies]
+dotenvy = "0.15"

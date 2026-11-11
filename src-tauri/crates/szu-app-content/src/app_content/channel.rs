@@ -5,16 +5,16 @@
 //! 切换时的落盘由 command 负责，服务本身保持可单测。
 
 use super::model::UpdateChannel;
-use crate::preferences;
+use szu_core::preferences;
 
-pub(crate) fn load() -> UpdateChannel {
+pub fn load() -> UpdateChannel {
     preferences::load::<UpdateChannel>(preferences::UPDATE_CHANNEL)
         .ok()
         .flatten()
         .unwrap_or_default()
 }
 
-pub(crate) fn save(channel: UpdateChannel) -> Result<UpdateChannel, String> {
+pub fn save(channel: UpdateChannel) -> Result<UpdateChannel, String> {
     preferences::save(preferences::UPDATE_CHANNEL, &channel)?;
     Ok(channel)
 }

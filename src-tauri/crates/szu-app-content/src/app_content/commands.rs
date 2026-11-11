@@ -5,12 +5,12 @@ use super::{
 use tauri::State;
 
 #[tauri::command]
-pub(crate) fn get_app_content_snapshot(store: State<'_, AppContentStore>) -> AppContentSnapshot {
+pub fn get_app_content_snapshot(store: State<'_, AppContentStore>) -> AppContentSnapshot {
     store.0.snapshot()
 }
 
 #[tauri::command]
-pub(crate) async fn refresh_app_content(
+pub async fn refresh_app_content(
     store: State<'_, AppContentStore>,
 ) -> Result<AppContentSnapshot, String> {
     let service = store.0.clone();
@@ -20,7 +20,7 @@ pub(crate) async fn refresh_app_content(
 }
 
 #[tauri::command]
-pub(crate) async fn set_update_channel(
+pub async fn set_update_channel(
     store: State<'_, AppContentStore>,
     channel: super::model::UpdateChannel,
 ) -> Result<AppContentSnapshot, String> {
@@ -36,7 +36,7 @@ pub(crate) async fn set_update_channel(
 }
 
 #[tauri::command]
-pub(crate) async fn get_contributors(
+pub async fn get_contributors(
     store: State<'_, AppContentStore>,
 ) -> Result<ContributorsSnapshot, String> {
     let service = store.0.clone();
@@ -46,7 +46,7 @@ pub(crate) async fn get_contributors(
 }
 
 #[tauri::command]
-pub(crate) async fn load_announcement_image(
+pub async fn load_announcement_image(
     store: State<'_, AppContentStore>,
     url: String,
 ) -> Result<tauri::ipc::Response, ContentError> {
@@ -60,7 +60,7 @@ pub(crate) async fn load_announcement_image(
 }
 
 #[tauri::command]
-pub(crate) fn start_in_app_update(
+pub fn start_in_app_update(
     store: State<'_, AppContentStore>,
     on_progress: tauri::ipc::Channel<super::model::UpdateProgressPayload>,
 ) -> Result<(), String> {

@@ -8953,8 +8953,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "szu-app-content"
+version = "0.14.0"
+dependencies = [
+ "flate2",
+ "image",
+ "log",
+ "reqwest",
+ "schemars 1.2.3",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha1 0.10.7",
+ "szu-build-support",
+ "szu-core",
+ "szu-download",
+ "tauri",
+ "uuid",
+]
+
+[[package]]
 name = "szu-build-support"
 version = "0.14.0"
+dependencies = [
+ "dotenvy",
+]
 
 [[package]]
 name = "szu-core"
@@ -11863,7 +11886,6 @@ dependencies = [
  "ddddocr-core",
  "ddddocr-tract2",
  "des",
- "dotenvy",
  "easytier",
  "easytier-core",
  "encoding_rs",
@@ -11900,6 +11922,8 @@ dependencies = [
  "sha2 0.10.9",
  "soup3",
  "ssid",
+ "szu-app-content",
+ "szu-build-support",
  "szu-core",
  "szu-download",
  "szu-enrollment",

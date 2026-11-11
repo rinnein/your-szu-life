@@ -29,3 +29,42 @@ pub fn emit_platform_cfgs() {
         println!("cargo:rustc-cfg=dev");
     }
 }
+
+/// 需要在编译期打进二进制的配置项。
+///
+/// 优先取构建进程的环境变量，其次读仓库根的 `.env`；两者都没有时 `option_env!`
+/// 会得到 `None`，由各模块按「未配置」降级。
+pub const EMBEDDED_ENV_VARS: [&str; 3] = [
+    "SZU_LIFE_BASE_URL",
+    "SZU_LIFE_FALLBACK_BASE_URL",
+    "APTABASE_APP_KEY",
+];
+
+/// 把 [`EMBEDDED_ENV_VARS`] 注入当前 crate，并声明重跑条件。
+pub fn emit_embedded_env(dotenv_path: &std::path::Path) {
+    let dotenv = load_dotenv(dotenv_path);
+    println!("cargo:rerun-if-changed={}", dotenv_path.display());
+    for name in EMBEDDED_ENV_VARS {
+        if let Some(value) = configured_value(name, &dotenv) {
+            println!("cargo:rustc-env={name}={value}");
+        }
+        println!("cargo:rerun-if-env-changed={name}");
+    }
+}
+
+fn load_dotenv(path: &std::path::Path) -> std::collections::HashMap<String, String> {
+    if !path.is_file() {
+        return std::collections::HashMap::new();
+    }
+    dotenvy::from_path_iter(path)
+        .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
+        .collect::<Result<std::collections::HashMap<_, _>, _>>()
+        .unwrap_or_else(|error| panic!("failed to parse {}: {error}", path.display()))
+}
+
+fn configured_value(name: &str, dotenv: &std::collections::HashMap<String, String>) -> Option<String> {
+    match std::env::var_os(name) {
+        Some(value) => value.into_string().ok(),
+        None => dotenv.get(name).cloned(),
+    }
+}

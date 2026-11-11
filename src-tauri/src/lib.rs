@@ -1,7 +1,6 @@
 #![recursion_limit = "512"]
 
 mod app;
-mod app_content;
 #[cfg(desktop)]
 mod desktop;
 pub mod mcp;
@@ -20,6 +19,7 @@ pub(crate) use szu_core::{
 };
 pub(crate) use szu_download::file_manager;
 pub(crate) use szu_runtime::{embedding_model, ocr};
+pub(crate) use szu_app_content::app_content;
 pub(crate) use szu_enrollment::enrollment;
 pub(crate) use szu_jxxk::jxxk;
 pub(crate) use szu_lms::lms;

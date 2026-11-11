@@ -165,6 +165,7 @@ szu-oj = { path = "crates/szu-oj" }
 szu-lms = { path = "crates/szu-lms" }
 szu-jxxk = { path = "crates/szu-jxxk" }
 szu-enrollment = { path = "crates/szu-enrollment" }
+szu-app-content = { path = "crates/szu-app-content" }
 tauri = { workspace = true }
 tauri-plugin-opener = { workspace = true }
 tauri-plugin-notification = { workspace = true }
@@ -247,7 +248,7 @@ wallpaper = { workspace = true }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
-dotenvy = "0.15"
+szu-build-support = { path = "crates/szu-build-support" }
 reqwest = { workspace = true }
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 

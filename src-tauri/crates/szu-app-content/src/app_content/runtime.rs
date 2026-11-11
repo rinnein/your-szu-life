@@ -1,11 +1,11 @@
 use super::model::DAY_MS;
 use std::sync::{Arc, Condvar, Mutex};
 
-pub(super) trait Clock: Send + Sync {
+pub trait Clock: Send + Sync {
     fn now_ms(&self) -> u64;
 }
 
-pub(super) struct SystemClock;
+pub struct SystemClock;
 impl Clock for SystemClock {
     fn now_ms(&self) -> u64 {
         std::time::SystemTime::now()
@@ -17,7 +17,7 @@ impl Clock for SystemClock {
     }
 }
 
-pub(super) struct AutomaticSchedule {
+pub struct AutomaticSchedule {
     pub next_at: u64,
 }
 impl AutomaticSchedule {
@@ -47,7 +47,7 @@ struct Flight<T> {
 
 /// All callers arriving while work is in progress receive that exact round's result.
 /// The completed result stays alive for waiters even if another round has already begun.
-pub(super) struct SingleFlight<T> {
+pub struct SingleFlight<T> {
     active: Mutex<Option<Arc<Flight<T>>>>,
 }
 impl<T> Default for SingleFlight<T> {
@@ -92,11 +92,11 @@ impl<T: Clone> SingleFlight<T> {
 }
 
 #[derive(Default)]
-pub(super) struct ImageSlots {
+pub struct ImageSlots {
     count: Mutex<usize>,
     available: Condvar,
 }
-pub(super) struct ImageSlot<'a>(&'a ImageSlots);
+pub struct ImageSlot<'a>(&'a ImageSlots);
 impl ImageSlots {
     pub fn acquire(&self) -> ImageSlot<'_> {
         let count = self.count.lock().unwrap();

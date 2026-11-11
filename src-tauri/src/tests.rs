@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 fn command_names_match_handlers_manifest_and_local_permissions() {
     let commands: BTreeSet<_> = [
         include_str!("../crates/szu-core/src/activity/commands.rs"),
-        include_str!("app_content/commands.rs"),
+        include_str!("../crates/szu-app-content/src/app_content/commands.rs"),
         include_str!("../crates/szu-core/src/appearance/commands.rs"),
         include_str!("../crates/szu-core/src/auth/commands.rs"),
         include_str!("../crates/szu-core/src/onboarding/commands.rs"),

@@ -3,7 +3,7 @@ use reqwest::Url;
 use serde_json::Value;
 
 #[derive(Clone)]
-pub(super) struct Sources {
+pub struct Sources {
     pub primary: Url,
     pub fallback: Option<Url>,
 }
@@ -18,9 +18,9 @@ impl Sources {
     }
 }
 
-pub(super) const DEFAULT_CNB_REPOSITORY: &str = "rinnein/szu/your-szu-life";
+pub const DEFAULT_CNB_REPOSITORY: &str = "rinnein/szu/your-szu-life";
 
-pub(super) struct ContentConfig {
+pub struct ContentConfig {
     pub version: String,
     pub sources: Option<Sources>,
     pub view: ConfigurationView,
@@ -52,7 +52,7 @@ impl ContentConfig {
     }
 
     pub fn compiled(version: String) -> Self {
-        let package: Value = serde_json::from_str(include_str!("../../../package.json"))
+        let package: Value = serde_json::from_str(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../package.json")))
             .expect("package.json must be valid JSON");
         Self::new(
             version,
@@ -126,9 +126,10 @@ impl ContentConfig {
                 .filter(|s| !s.is_empty())
                 .unwrap_or(DEFAULT_CNB_REPOSITORY)
                 .to_string(),
-            github_accelerators: serde_json::from_str::<Vec<String>>(include_str!(
-                "../../../github-accelerator.json"
-            ))
+            github_accelerators: serde_json::from_str::<Vec<String>>(include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../../github-accelerator.json"
+            )))
             .unwrap_or_default()
             .into_iter()
             .filter_map(|value| directory_url(&value).ok())
@@ -137,7 +138,7 @@ impl ContentConfig {
     }
 }
 
-pub(super) fn parse_repository(value: &Value) -> Option<Repository> {
+pub fn parse_repository(value: &Value) -> Option<Repository> {
     let text = value
         .as_str()
         .or_else(|| value.get("url")?.as_str())?
