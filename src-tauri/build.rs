@@ -17,8 +17,9 @@ const EMBEDDED_ENV_VARS: [&str; 3] = [
 /// Tauri CLI 只把 `bundle.externalBin` 打进桌面端安装包，Android 侧不会处理它。
 /// Android 的 `nativeLibraryDir` 只包含 APK 内 `lib/<abi>/` 的条目，所以这里把侧车
 /// 二进制以 `libaria2c.so` 的命名放进 `jniLibs` 由 Gradle 打包。
-/// 配合 `extractNativeLibs="true"` 与 `useLegacyPackaging = true`，安装时系统会将它
-/// 解压到 `nativeLibraryDir`，运行时即可直接作为可执行程序启动。
+/// 配合 `packaging.jniLibs.useLegacyPackaging = true`（AGP 据此在合并后的 manifest 里
+/// 补上 `extractNativeLibs="true"`），安装时系统会将它解压到 `nativeLibraryDir`，
+/// 运行时即可直接作为可执行程序启动。
 const ARIA2C_ANDROID_LIB_NAME: &str = "libaria2c.so";
 
 fn load_dotenv(path: &std::path::Path) -> HashMap<String, String> {
