@@ -40,6 +40,44 @@ fn contest(id: &str, begin: i64, end: i64, now: i64) -> Contest {
         is_exam: false,
     }
 }
+fn read_request(stream: &mut std::net::TcpStream) -> String {
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(4)))
+        .unwrap();
+    let mut raw = vec![];
+    let mut buffer = [0; 4096];
+    loop {
+        let n = stream.read(&mut buffer).unwrap();
+        if n == 0 {
+            break;
+        }
+        raw.extend_from_slice(&buffer[..n]);
+        if let Some(end) = raw.windows(4).position(|w| w == b"\r\n\r\n") {
+            let header = String::from_utf8_lossy(&raw[..end]);
+            let len = header
+                .lines()
+                .find_map(|l| {
+                    l.to_ascii_lowercase()
+                        .strip_prefix("content-length: ")
+                        .and_then(|v| v.parse::<usize>().ok())
+                })
+                .unwrap_or(0);
+            if raw.len() >= end + 4 + len {
+                break;
+            }
+        }
+    }
+    String::from_utf8_lossy(&raw).into_owned()
+}
+fn respond(stream: &mut std::net::TcpStream, status: u16, value: &Value) {
+    let body = value.to_string();
+    write!(
+        stream,
+        "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )
+    .unwrap();
+}
 // A bounded HTTP double; no test touches the user's OJ account or keyring.
 fn server(responses: Vec<(u16, Value)>) -> (String, std::thread::JoinHandle<Vec<String>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -48,39 +86,32 @@ fn server(responses: Vec<(u16, Value)>) -> (String, std::thread::JoinHandle<Vec<
         let mut captured = vec![];
         for (status, value) in responses {
             let (mut stream, _) = listener.accept().unwrap();
-            stream
-                .set_read_timeout(Some(std::time::Duration::from_secs(4)))
-                .unwrap();
-            let mut raw = vec![];
-            let mut buffer = [0; 4096];
-            loop {
-                let n = stream.read(&mut buffer).unwrap();
-                if n == 0 {
-                    break;
-                }
-                raw.extend_from_slice(&buffer[..n]);
-                if let Some(end) = raw.windows(4).position(|w| w == b"\r\n\r\n") {
-                    let header = String::from_utf8_lossy(&raw[..end]);
-                    let len = header
-                        .lines()
-                        .find_map(|l| {
-                            l.to_ascii_lowercase()
-                                .strip_prefix("content-length: ")
-                                .and_then(|v| v.parse::<usize>().ok())
-                        })
-                        .unwrap_or(0);
-                    if raw.len() >= end + 4 + len {
-                        break;
-                    }
-                }
-            }
-            captured.push(String::from_utf8_lossy(&raw).into_owned());
-            let body = value.to_string();
-            write!(stream,"HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+            captured.push(read_request(&mut stream));
+            respond(&mut stream, status, &value);
         }
         captured
     });
     (url, handle)
+}
+/// 队列耗尽后一律 404 并持续受理，便于断言「哪些路径被探测、哪些从未被探测」。
+fn probing_server(responses: Vec<(u16, Value)>) -> (String, Arc<std::sync::Mutex<Vec<String>>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/", listener.local_addr().unwrap());
+    let captured = Arc::new(std::sync::Mutex::new(vec![]));
+    let inner = captured.clone();
+    std::thread::spawn(move || {
+        let mut queue = responses.into_iter();
+        while let Ok((mut stream, _)) = listener.accept() {
+            let request = read_request(&mut stream);
+            inner
+                .lock()
+                .unwrap()
+                .push(request.lines().next().unwrap_or_default().to_owned());
+            let (status, value) = queue.next().unwrap_or((404, json!({})));
+            respond(&mut stream, status, &value);
+        }
+    });
+    (url, captured)
 }
 #[test]
 fn nine_defaults_preserve_addresses_and_restrictions() {
@@ -1215,6 +1246,60 @@ async fn stale_lists_are_returned_without_network() {
     assert_eq!(s.groups(&id, false).await.unwrap().len(), 1);
     assert_eq!(s.contests(&id, "1", false).await.unwrap().len(), 1);
     assert!(handle.join().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn deadlines_only_probe_started_contests() {
+    // 回归：首页待办曾对未开始测验补算进度，服务端对详情返回 404，
+    // 而失败进度不入缓存，导致每轮扫描都重试并刷 WARN。
+    let detail = fixture();
+    let rank = json!({"data":{"submission_info":{"1":{"accepted":true}}}});
+    let (url, captured) = probing_server(vec![(200, detail), (200, rank)]);
+    let (_dir, s) = setup();
+    *s.self_weak.lock().unwrap() = Arc::downgrade(&s);
+    let id = s.save_site(input(&url)).unwrap();
+    let e = s.entry(&id).unwrap();
+    e.state.lock().unwrap().session = Session::Ready;
+    s.store_groups(
+        &id,
+        &[Group {
+            id: "1".into(),
+            name: "班级".into(),
+        }],
+    );
+    let now = chrono::Utc::now().timestamp_millis();
+    s.store_contests(
+        &format!("{id}:1"),
+        &[
+            contest("12", now - 60_000, now + 60_000, now),
+            contest("99", now + 60_000, now + 120_000, now),
+        ],
+    );
+    let rows = s.deadlines();
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().all(|r| !r.has_progress));
+    // 条件等待：已开始测验的进度补算完成（详情 + self_rank 都到达）。
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    loop {
+        let paths = captured.lock().unwrap().join(" ");
+        assert!(!paths.contains("contests/99/"), "未开始测验被探测: {paths}");
+        if paths.contains("self_rank") {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "已开始测验未补算进度: {paths}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    // 留出收尾时间，确认未开始测验在整轮 kick 里始终未被探测。
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let paths = captured.lock().unwrap().join(" ");
+    assert!(!paths.contains("contests/99/"), "未开始测验被探测: {paths}");
+    assert!(
+        paths.contains("contests/12/"),
+        "已开始测验应补算进度: {paths}"
+    );
 }
 
 #[tokio::test]

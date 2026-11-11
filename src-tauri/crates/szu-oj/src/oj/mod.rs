@@ -248,6 +248,7 @@ impl Service {
         }
     }
     pub fn deadlines(&self) -> Vec<OjDeadline> {
+        let now = chrono::Utc::now().timestamp_millis();
         let mut missing = Vec::new();
         let rows = {
             let r = self.runtime.lock().unwrap();
@@ -256,9 +257,9 @@ impl Service {
                 let Some(entry) = r.entries.get(&site.id) else {
                     continue;
                 };
-                let (session, progress) = {
+                let (session, offset, progress) = {
                     let state = entry.state.lock().unwrap();
-                    (state.session, state.progress.clone())
+                    (state.session, state.offset, state.progress.clone())
                 };
                 let has_cache = r.data.groups.contains_key(&site.id);
                 // 会话未建立但已有本地缓存时仍展示；完全没有缓存才跳过。
@@ -283,7 +284,9 @@ impl Service {
                         let (accepted, total, has_progress) = match parsed {
                             Some((accepted, total)) => (accepted, total, true),
                             None => {
-                                if session == Session::Ready {
+                                // 未开始的测验服务端尚不可见（详情 404），也没有进度可取；
+                                // 失败进度不会入缓存，跳过才能避免每轮扫描重复探测。
+                                if session == Session::Ready && contest.phase(now + offset) > 0 {
                                     missing.push((
                                         site.id.clone(),
                                         contest.id.clone(),
