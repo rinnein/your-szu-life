@@ -2,21 +2,21 @@ use super::Service;
 use std::sync::Arc;
 
 #[cfg(not(target_os = "android"))]
-pub(super) fn initialize(_: &Arc<Service>) {}
+pub fn initialize(_: &Arc<Service>) {}
 #[cfg(not(target_os = "android"))]
-pub(super) fn running(_: usize, _: u64) -> Result<(), String> {
+pub fn running(_: usize, _: u64) -> Result<(), String> {
     Ok(())
 }
 
 #[cfg(target_os = "android")]
 static SERVICE: std::sync::OnceLock<std::sync::Weak<Service>> = std::sync::OnceLock::new();
 #[cfg(target_os = "android")]
-pub(super) fn initialize(service: &Arc<Service>) {
+pub fn initialize(service: &Arc<Service>) {
     let _ = SERVICE.set(Arc::downgrade(service));
 }
 
 #[cfg(target_os = "android")]
-pub(super) fn running(count: usize, generation: u64) -> Result<(), String> {
+pub fn running(count: usize, generation: u64) -> Result<(), String> {
     use jni::{
         objects::{JClass, JObject, JValue},
         JavaVM,

@@ -54,15 +54,15 @@ pub struct BankQuestion {
 /// 异步 Toasty ORM 题库数据库封装
 #[derive(Clone)]
 pub struct QaDatabase {
-    pub(crate) db: toasty::Db,
+    pub db: toasty::Db,
 }
 
 impl QaDatabase {
     pub async fn open(db_path: &Path) -> Result<Self, String> {
-        let db = crate::migrations::db::open_sqlite_db(
+        let db = szu_core::migrations::db::open_sqlite_db(
             db_path,
             toasty::models!(SubmittedPaper, BankQuestion, VideoDuration),
-            Some(&crate::migrations::uooc::UOOC_MIGRATIONS),
+            Some(&crate::uooc::migrations::UOOC_MIGRATIONS),
         )
         .await?;
         Ok(Self { db })

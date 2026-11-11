@@ -7,7 +7,7 @@ use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ReferenceExample {
+pub struct ReferenceExample {
     pub question_id: String,
     pub stem: String,
     pub answers: Vec<String>,
@@ -16,7 +16,7 @@ pub(crate) struct ReferenceExample {
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct Provider {
+pub struct Provider {
     pub base_url: String,
     pub model: String,
     pub key: String,
@@ -39,7 +39,7 @@ fn default_web_search() -> bool {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct Config {
+pub struct Config {
     pub main: Provider,
     pub jev: Provider,
     pub jev_enabled: bool,
@@ -75,14 +75,14 @@ impl Default for Config {
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ProviderView {
+pub struct ProviderView {
     pub base_url: String,
     pub model: String,
     pub has_key: bool,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ConfigView {
+pub struct ConfigView {
     pub main: ProviderView,
     pub jev: ProviderView,
     pub jev_enabled: bool,
@@ -95,19 +95,19 @@ pub(crate) struct ConfigView {
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ConnectionProviderView {
+pub struct ConnectionProviderView {
     pub base_url: String,
     pub has_key: bool,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ConnectionsView {
+pub struct ConnectionsView {
     pub main: ConnectionProviderView,
     pub jev: ConnectionProviderView,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ConnectionProviderInput {
+pub struct ConnectionProviderInput {
     pub base_url: String,
     pub api_key: Option<String>,
     #[serde(default)]
@@ -115,13 +115,13 @@ pub(crate) struct ConnectionProviderInput {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ConnectionsInput {
+pub struct ConnectionsInput {
     pub main: ConnectionProviderInput,
     pub jev: ConnectionProviderInput,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PreferencesInput {
+pub struct PreferencesInput {
     pub main_model: String,
     pub jev_model: String,
     pub jev_enabled: bool,
@@ -138,7 +138,7 @@ pub(crate) struct PreferencesInput {
 }
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum ProviderKind {
+pub enum ProviderKind {
     Main,
     Jev,
 }
@@ -244,7 +244,7 @@ impl Config {
         }
     }
 }
-pub(super) fn normalize_url(raw: &str) -> Result<String, String> {
+pub fn normalize_url(raw: &str) -> Result<String, String> {
     let raw = raw.trim().trim_end_matches('/');
     let raw = raw
         .strip_suffix("/chat/completions")
@@ -264,8 +264,8 @@ pub(super) fn normalize_url(raw: &str) -> Result<String, String> {
 }
 fn http() -> Result<reqwest::Client, String> {
     #[cfg(target_os = "android")]
-    crate::platform_tls::initialize_platform_verifier()?;
-    crate::netproxy::client_builder()
+    szu_core::platform_tls::initialize_platform_verifier()?;
+    szu_core::netproxy::client_builder()
         .timeout(Duration::from_secs(180))
         .connect_timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::none())
@@ -283,7 +283,7 @@ fn sdk(p: &Provider) -> Result<async_openai::Client<OpenAIConfig>, String> {
     )
     .with_http_client(http()?))
 }
-pub(super) async fn models(
+pub async fn models(
     config: &Config,
     provider: ProviderKind,
     cancel: &CancellationToken,
@@ -521,7 +521,7 @@ mod config_tests {
 }
 
 fn search_http_client() -> Result<reqwest::Client, String> {
-    crate::netproxy::client_builder()
+    szu_core::netproxy::client_builder()
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(15))
         .redirect(reqwest::redirect::Policy::limited(5))
@@ -530,7 +530,7 @@ fn search_http_client() -> Result<reqwest::Client, String> {
 }
 
 /// 执行网页检索（优先采用 Bing 搜索国内直连，支持多节点回退与 DuckDuckGo 兜底）
-pub(crate) async fn execute_bing_search(query: &str) -> String {
+pub async fn execute_bing_search(query: &str) -> String {
     let clean_query = query.trim();
     if clean_query.is_empty() {
         return "搜索查询为空".into();
@@ -585,7 +585,7 @@ pub(crate) async fn execute_bing_search(query: &str) -> String {
     execute_web_search(clean_query).await
 }
 
-pub(crate) fn parse_bing_snippets_from_html(html_text: &str) -> Vec<(String, String, String)> {
+pub fn parse_bing_snippets_from_html(html_text: &str) -> Vec<(String, String, String)> {
     let doc = scraper::Html::parse_document(html_text);
     let algo_sel = scraper::Selector::parse("li.b_algo").ok();
     let title_sel = scraper::Selector::parse("h2 a").ok();
@@ -634,7 +634,7 @@ fn is_private_or_local_ip(ip: std::net::IpAddr) -> bool {
     }
 }
 
-pub(crate) async fn execute_web_fetch(raw_url: &str) -> String {
+pub async fn execute_web_fetch(raw_url: &str) -> String {
     let raw_url = raw_url.trim();
     let Ok(parsed) = reqwest::Url::parse(raw_url) else {
         return "网页地址无效，仅支持以 http:// 或 https:// 开头的有效网址".into();
@@ -710,7 +710,7 @@ pub(crate) async fn execute_web_fetch(raw_url: &str) -> String {
     }
 }
 
-pub(crate) fn extract_clean_article_text(html_text: &str) -> String {
+pub fn extract_clean_article_text(html_text: &str) -> String {
     let doc = scraper::Html::parse_document(html_text);
 
     let container_sel = scraper::Selector::parse("article, main, .content, .main-content, #content, body").ok();
@@ -749,7 +749,7 @@ pub(crate) fn extract_clean_article_text(html_text: &str) -> String {
 }
 
 /// 执行网页检索（优先采用 DuckDuckGo Lite 提取标题与摘要内容，支持 Fallback）
-pub(crate) async fn execute_web_search(query: &str) -> String {
+pub async fn execute_web_search(query: &str) -> String {
     let clean_query = query.trim();
     if clean_query.is_empty() {
         return "搜索查询为空".into();
@@ -811,7 +811,7 @@ pub(crate) async fn execute_web_search(query: &str) -> String {
     format!("已检索网络关键词「{}」，未获得有效外部网页摘要，请根据已知知识库与题目逻辑推导作答。", clean_query)
 }
 
-pub(crate) fn parse_search_snippets_from_html(html_text: &str) -> Vec<String> {
+pub fn parse_search_snippets_from_html(html_text: &str) -> Vec<String> {
     let doc = scraper::Html::parse_document(html_text);
     let snippet_sel = scraper::Selector::parse(".result-snippet, .result__snippet, td.result-snippet").ok();
     let title_sel = scraper::Selector::parse(".result-link, .result__title, a.result-link, a.result__url").ok();
@@ -1287,7 +1287,7 @@ async fn answer_batch(
     Ok((final_answers, final_reasons, prompt_str, full_raw))
 }
 
-pub(super) fn interpret_jev(
+pub fn interpret_jev(
     q: &Question,
     response: &Value,
     threshold: f64,
@@ -1363,7 +1363,7 @@ async fn judge(
     let data: Value = response.json().await.map_err(|_| "Jev 响应格式无效")?;
     interpret_jev(q, &data, config.confidence)
 }
-pub(super) async fn generate(
+pub async fn generate(
     service: &Service,
     questions: &[Question],
     wrong_options_map: &BTreeMap<String, Vec<String>>,
@@ -1573,7 +1573,7 @@ pub(super) async fn generate(
     (all_answers, all_reviews, all_sessions, None)
 }
 
-pub(crate) async fn generate_subjective_answer(
+pub async fn generate_subjective_answer(
     service: &Service,
     stem: &str,
     context: Option<&str>,

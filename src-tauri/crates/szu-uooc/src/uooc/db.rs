@@ -21,26 +21,26 @@ pub struct UoocStateRecord {
 
 /// 同步封装的 Toasty 数据库，供 `Service` 在持有运行时锁时直接读写。
 #[derive(Clone)]
-pub(super) struct UoocStateDatabase {
+pub struct UoocStateDatabase {
     db: toasty::Db,
 }
 
 impl UoocStateDatabase {
-    pub(super) fn open(db_path: &Path) -> Result<Self, String> {
-        let db = crate::migrations::db::run_sync(async {
-            crate::migrations::db::open_sqlite_db(
+    pub fn open(db_path: &Path) -> Result<Self, String> {
+        let db = szu_core::migrations::db::run_sync(async {
+            szu_core::migrations::db::open_sqlite_db(
                 db_path,
                 toasty::models!(UoocStateRecord),
-                Some(&crate::migrations::uooc::UOOC_STATE_MIGRATIONS),
+                Some(&crate::uooc::migrations::UOOC_STATE_MIGRATIONS),
             )
             .await
         })?;
         Ok(Self { db })
     }
 
-    pub(super) fn load(&self) -> Result<Option<SavedState>, String> {
+    pub fn load(&self) -> Result<Option<SavedState>, String> {
         let mut db = self.db.clone();
-        crate::migrations::db::run_sync(async {
+        szu_core::migrations::db::run_sync(async {
             let row = match UoocStateRecord::get_by_id(&mut db, "current").await {
                 Ok(row) => row,
                 Err(error) if error.is_record_not_found() => return Ok(None),
@@ -60,7 +60,7 @@ impl UoocStateDatabase {
         })
     }
 
-    pub(super) fn save(&self, state: &SavedState) -> Result<(), String> {
+    pub fn save(&self, state: &SavedState) -> Result<(), String> {
         let settings_json = serialize(&state.settings)?;
         let tasks_json = serialize(&state.tasks)?;
         let quizzes_json = serialize(&state.quizzes)?;
@@ -69,7 +69,7 @@ impl UoocStateDatabase {
         let qa_bootstrapped_json = serialize(&state.initial_qa_bootstrapped_accounts)?;
         let now = chrono::Utc::now().timestamp_millis();
         let mut db = self.db.clone();
-        crate::migrations::db::run_sync(async {
+        szu_core::migrations::db::run_sync(async {
             match UoocStateRecord::get_by_id(&mut db, "current").await {
                 Ok(mut existing) => toasty::update!(existing {
                     settings_json,

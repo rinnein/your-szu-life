@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Metric {
+pub struct Metric {
     pub percent: Option<f64>,
     pub count: Option<u64>,
     pub total: Option<u64>,
@@ -22,7 +22,7 @@ pub(crate) struct Metric {
 }
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum Attendance {
+pub enum Attendance {
     NotRequired,
     Complete,
     Today,
@@ -32,7 +32,7 @@ pub(crate) enum Attendance {
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CourseProgress {
+pub struct CourseProgress {
     pub total_percent: Option<f64>,
     pub video: Metric,
     pub test: Metric,
@@ -57,7 +57,7 @@ pub(crate) struct CourseProgress {
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ProgressEntry {
+pub struct ProgressEntry {
     pub data: Option<CourseProgress>,
     pub updated_at_ms: Option<i64>,
     pub refreshing: bool,
@@ -133,7 +133,7 @@ fn weighted_progress(metrics: [&Metric; 6]) -> (Option<f64>, Option<f64>, bool) 
     }
     (known.then_some(confirmed.min(100.0)), Some(total), partial)
 }
-pub(super) fn today() -> NaiveDate {
+pub fn today() -> NaiveDate {
     Utc::now()
         .with_timezone(&FixedOffset::east_opt(8 * 3600).unwrap())
         .date_naive()
@@ -243,7 +243,7 @@ impl CourseProgress {
 struct Flight {
     last: Option<(Instant, Result<CourseProgress, Error>)>,
 }
-pub(super) struct ProgressRequests {
+pub struct ProgressRequests {
     flights: Mutex<HashMap<(u64, String, String), Arc<tokio::sync::Mutex<Flight>>>>,
     permits: Arc<Semaphore>,
 }
@@ -285,7 +285,7 @@ impl Default for ProgressRequests {
     }
 }
 impl Service {
-    pub(super) async fn fetch_progress(
+    pub async fn fetch_progress(
         self: &Arc<Self>,
         cid: &str,
         cancel: &CancellationToken,
@@ -293,7 +293,7 @@ impl Service {
         self.fetch_progress_with(cid, cancel, false).await
     }
     /// 后台轮询不切换 `refreshing`，避免每 30 秒把整份快照推给前端。
-    pub(super) async fn fetch_progress_background(
+    pub async fn fetch_progress_background(
         self: &Arc<Self>,
         cid: &str,
         cancel: &CancellationToken,
@@ -404,7 +404,7 @@ impl Service {
         };
         result
     }
-    pub(crate) async fn refresh_progress(self: &Arc<Self>, ids: Vec<String>, background: bool) {
+    pub async fn refresh_progress(self: &Arc<Self>, ids: Vec<String>, background: bool) {
         let mut pending = tokio::task::JoinSet::new();
         for cid in ids {
             let service = self.clone();
@@ -419,7 +419,7 @@ impl Service {
         }
         while pending.join_next().await.is_some() {}
     }
-    pub(super) async fn session_ready(self: &Arc<Self>) {
+    pub async fn session_ready(self: &Arc<Self>) {
         let ids = {
             let mut runtime = self.runtime.lock().unwrap();
             if runtime.snapshot.session != SessionStatus::Ready {
@@ -451,8 +451,8 @@ impl Service {
     }
 }
 
-pub(super) fn start_updates(service: &Arc<Service>) {
-    use crate::activity::ActivityTier;
+pub fn start_updates(service: &Arc<Service>) {
+    use szu_core::activity::ActivityTier;
     use std::time::{Duration, Instant};
 
     let weak = Arc::downgrade(service);
@@ -477,10 +477,10 @@ pub(super) fn start_updates(service: &Arc<Service>) {
             // 任务/签到在跑时强制 Active；否则按页面是否打开、应用是否在前台分档。
             let tier = if active_work {
                 ActivityTier::Active
-            } else if crate::activity::tier(Some("uooc")) == ActivityTier::Active {
+            } else if szu_core::activity::tier(Some("uooc")) == ActivityTier::Active {
                 ActivityTier::Active
             } else {
-                crate::activity::tier(None)
+                szu_core::activity::tier(None)
             };
             let progress_interval = match tier {
                 ActivityTier::Active => Duration::from_secs(30),
@@ -525,7 +525,7 @@ pub(super) fn start_updates(service: &Arc<Service>) {
             }
 
             // 分块睡眠让打开 UOOC 页/回到前台时最多一个块后就能提速。
-            tokio::time::sleep(crate::activity::sleep_chunk(
+            tokio::time::sleep(szu_core::activity::sleep_chunk(
                 progress_interval,
                 Duration::from_secs(15),
             ))

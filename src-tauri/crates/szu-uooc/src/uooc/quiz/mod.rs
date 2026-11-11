@@ -1,7 +1,7 @@
-pub(crate) mod db;
-pub(crate) mod model;
-pub(crate) mod qa;
-pub(crate) mod protocol;
+pub mod db;
+pub mod model;
+pub mod qa;
+pub mod protocol;
 #[cfg(test)]
 mod tests;
 use self::model::*;
@@ -99,18 +99,18 @@ fn update(service: &Service, ctx: &Context, edit: impl FnOnce(&mut QuizState)) {
     }
     if let (Some(app), Some(body)) = (&service.app, notify) {
         let route = format!("/study/uooc?tab=tasks&course={}", ctx.cid);
-        let payload = crate::notification::NotificationPayload::new(
-            crate::notification::NotificationCategory::Uooc,
+        let payload = szu_core::notification::NotificationPayload::new(
+            szu_core::notification::NotificationCategory::Uooc,
             "UOOC 测验需要处理",
             body,
         )
         .route(route)
         .action_label("查看测验")
         .extra(serde_json::json!({ "uoocCourse": ctx.cid }));
-        crate::notification::notify(app, payload);
+        szu_core::notification::notify(app, payload);
     }
 }
-pub(super) fn saved(
+pub fn saved(
     states: &BTreeMap<String, QuizState>,
     root: &std::path::Path,
 ) -> Result<BTreeMap<String, QuizState>, String> {
@@ -132,7 +132,7 @@ pub(super) fn saved(
     }
     Ok(copy)
 }
-pub(super) fn restore_media(states: &mut BTreeMap<String, QuizState>, root: &std::path::Path) {
+pub fn restore_media(states: &mut BTreeMap<String, QuizState>, root: &std::path::Path) {
     for q in states.values_mut() {
         for question in &mut q.questions {
             let mut missing = false;
@@ -274,7 +274,7 @@ async fn allowed(
         .weight
         .is_some_and(|w| w > 0.0))
 }
-pub(super) async fn run(
+pub async fn run(
     service: Arc<Service>,
     client: Arc<Client>,
     cid: String,
@@ -896,14 +896,14 @@ async fn match_qa_action(service: &Arc<Service>, ctx: &Context, cancel: &Cancell
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum Action {
+pub enum Action {
     Generate,
     Submit,
     Check,
     MatchQa,
 }
 impl Service {
-    pub(super) fn quiz_policy(&self, cid: String, mode: Mode) -> Result<(), String> {
+    pub fn quiz_policy(&self, cid: String, mode: Mode) -> Result<(), String> {
         let mut r = self.runtime.lock().unwrap();
         let account = r.snapshot.user.as_ref().ok_or("请先登录")?.id.clone();
         if r.workers.contains_key(&cid) {
@@ -920,7 +920,7 @@ impl Service {
         self.publish(&mut r);
         Ok(())
     }
-    pub(super) fn quiz_edit(
+    pub fn quiz_edit(
         &self,
         cid: String,
         revision: u64,
@@ -960,7 +960,7 @@ impl Service {
         self.publish(&mut r);
         Ok(())
     }
-    pub(super) async fn quiz_action(
+    pub async fn quiz_action(
         self: &Arc<Self>,
         cid: String,
         revision: u64,
@@ -1065,7 +1065,7 @@ impl Service {
 
         result.map(|_| ()).map_err(|e| e.message())
     }
-    pub(super) async fn quiz_portal(
+    pub async fn quiz_portal(
         self: &Arc<Self>,
         parent: tauri::WebviewWindow,
         cid: String,
@@ -1167,7 +1167,7 @@ impl Service {
     }
 
     /// 强制拉取已完成测验的题目与标准答案，展示在测验面板中
-    pub(crate) async fn fetch_completed_quiz(
+    pub async fn fetch_completed_quiz(
         &self,
         cid: &str,
         task_id: Option<&str>,
@@ -1315,7 +1315,7 @@ impl Service {
         Ok(())
     }
 }
-pub(super) fn window_closed(service: &Arc<Service>, label: &str) {
+pub fn window_closed(service: &Arc<Service>, label: &str) {
     let closed = service.runtime.lock().unwrap().quiz_windows.remove(label);
     if let Some((epoch, cid)) = closed {
         let revision = {
@@ -1478,7 +1478,7 @@ async fn fetch_task_group_content(
 
 /// 构建单个题组时与共享题库交互的方式。
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BankSyncMode {
+pub enum BankSyncMode {
     /// 开课中/复习模式课程：允许从服务端拉取已有答案，并回传本地新增题目。
     Active,
     /// 已结课且服务端尚未收录该课程：只从官方接口构建，整门课程题库直接上传。
@@ -1497,7 +1497,7 @@ impl BankSyncMode {
     }
 }
 
-pub(crate) async fn build_single_task_group(
+pub async fn build_single_task_group(
     service: &Service,
     cid: &str,
     tid: &str,
@@ -1872,7 +1872,7 @@ pub(crate) async fn build_single_task_group(
     Ok((details.questions.len(), details))
 }
 
-pub(crate) async fn build_local_bank(service: &Arc<Service>) -> Result<usize, String> {
+pub async fn build_local_bank(service: &Arc<Service>) -> Result<usize, String> {
     let Ok(_guard) = service.bank_building.try_lock() else {
         if let Ok(qa_db) = service.get_qa_db().await {
             return Ok(qa_db.count_questions().await.unwrap_or(0));

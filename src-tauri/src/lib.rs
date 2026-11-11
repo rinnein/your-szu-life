@@ -13,7 +13,6 @@ pub(crate) mod migrations;
 mod oj;
 mod settings_sync;
 mod todos;
-mod uooc;
 
 // 过渡期重导出：M2 把核心域搬进 `szu-core` 后，尚未搬走的模块仍以
 // `crate::<module>` 引用它们。全部功能模块下沉到各自 crate 后（M6）删除这段，
@@ -25,6 +24,7 @@ pub(crate) use szu_core::{
 };
 pub(crate) use szu_download::{aria2, file_manager};
 pub(crate) use szu_runtime::{embedding_model, ocr};
+pub(crate) use szu_uooc::uooc;
 #[cfg(target_os = "android")]
 pub(crate) use szu_core::platform_tls;
 

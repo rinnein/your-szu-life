@@ -1,24 +1,25 @@
 mod ai;
-pub(crate) mod checkin;
+pub mod checkin;
 mod client;
-pub(crate) mod commands;
-pub(crate) mod db;
+pub mod commands;
+pub mod db;
 mod discussion;
 mod duration;
 mod login;
 mod media;
-pub(crate) mod model;
+pub mod model;
 mod persistence;
 mod platform;
 mod progress;
-pub(crate) mod quiz;
+pub mod quiz;
+pub mod migrations;
 mod runner;
 mod session;
 mod user_agent;
 
 use serde::Serialize;
 
-use crate::storage::SharedCredentialStore;
+use szu_core::storage::SharedCredentialStore;
 use client::{Client, Error};
 use duration::DurationCache;
 use model::*;
@@ -31,19 +32,19 @@ use tauri::{Emitter, Manager};
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
-pub(crate) struct UoocStore {
+pub struct UoocStore {
     credentials: SharedCredentialStore,
     service: OnceLock<Arc<Service>>,
 }
 impl UoocStore {
-    pub(crate) fn new(credentials: SharedCredentialStore) -> Self {
+    pub fn new(credentials: SharedCredentialStore) -> Self {
         Self {
             credentials,
             service: OnceLock::new(),
         }
     }
 }
-struct Runtime {
+pub struct Runtime {
     snapshot: Snapshot,
     workers: HashMap<String, (u64, CancellationToken)>,
     epoch: u64,
@@ -61,7 +62,7 @@ struct Runtime {
     /// 否则一次读取失败就会永久覆盖真实数据。
     persistence_blocked: bool,
 }
-pub(super) struct Service {
+pub struct Service {
     app: Option<tauri::AppHandle>,
     credentials: SharedCredentialStore,
     path: PathBuf,
@@ -76,22 +77,22 @@ pub(super) struct Service {
     ai: Mutex<ai::Config>,
     ai_permits: Semaphore,
     discussion_lock: tokio::sync::Mutex<()>,
-    pub(super) bank_building: Arc<tokio::sync::Mutex<()>>,
-    pub(crate) qa_db: tokio::sync::OnceCell<quiz::db::QaDatabase>,
+    pub bank_building: Arc<tokio::sync::Mutex<()>>,
+    pub qa_db: tokio::sync::OnceCell<quiz::db::QaDatabase>,
     bank_channel: Mutex<Option<tauri::ipc::Channel<model::BankRebuildProgress>>>,
     ai_channel: Mutex<Option<tauri::ipc::Channel<quiz::model::AiSessionEntry>>>,
-    pub(super) state_subscribers: crate::ipc_channel::SubscriberPool<UoocDeltaEvent>,
+    pub state_subscribers: szu_core::ipc_channel::SubscriberPool<UoocDeltaEvent>,
     /// 上次广播的状态签名（不含 revision），避免无变化时反复推整份快照。
     last_broadcast: Mutex<Option<String>>,
     assessments: Mutex<Assessments>,
     assessments_lock: tokio::sync::Mutex<()>,
-    pub(super) assessment_subscribers: crate::ipc_channel::SubscriberPool<UoocAssessmentsEvent>,
+    pub assessment_subscribers: szu_core::ipc_channel::SubscriberPool<UoocAssessmentsEvent>,
     exam_heartbeats: Mutex<HashMap<String, CancellationToken>>,
 }
 
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", content = "data", rename_all = "camelCase")]
-pub(crate) enum UoocDeltaEvent {
+pub enum UoocDeltaEvent {
     Initial(Box<model::Snapshot>),
     Snapshot(Box<model::Snapshot>),
 }
@@ -100,14 +101,14 @@ pub(crate) enum UoocDeltaEvent {
 /// 由后端缓存后经 Channel 推送变更。
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Assessments {
+pub struct Assessments {
     pub exams: Vec<ExamTask>,
     pub homeworks: Vec<HomeworkTask>,
 }
 
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", content = "data", rename_all = "camelCase")]
-pub(crate) enum UoocAssessmentsEvent {
+pub enum UoocAssessmentsEvent {
     Initial(Box<Assessments>),
     Snapshot(Box<Assessments>),
 }
@@ -176,11 +177,11 @@ impl Service {
             qa_db: tokio::sync::OnceCell::new(),
             bank_channel: Mutex::new(None),
             ai_channel: Mutex::new(None),
-            state_subscribers: crate::ipc_channel::SubscriberPool::new(),
+            state_subscribers: szu_core::ipc_channel::SubscriberPool::new(),
             last_broadcast: Mutex::new(None),
             assessments: Mutex::new(Assessments::default()),
             assessments_lock: tokio::sync::Mutex::new(()),
-            assessment_subscribers: crate::ipc_channel::SubscriberPool::new(),
+            assessment_subscribers: szu_core::ipc_channel::SubscriberPool::new(),
             exam_heartbeats: Mutex::new(HashMap::new()),
             permits: RwLock::new(Arc::new(Semaphore::new(saved.settings.concurrency))),
             client: RwLock::new(Arc::new(Client::new(jar)?)),
@@ -214,10 +215,10 @@ impl Service {
             }),
         }))
     }
-    pub(crate) fn snapshot(&self) -> Snapshot {
+    pub fn snapshot(&self) -> Snapshot {
         Self::visible_snapshot(&self.runtime.lock().unwrap())
     }
-    pub(crate) fn assessments(&self) -> Assessments {
+    pub fn assessments(&self) -> Assessments {
         self.assessments.lock().unwrap().clone()
     }
     fn publish_assessments(&self, next: Assessments) {
@@ -231,7 +232,7 @@ impl Service {
         self.assessment_subscribers
             .broadcast(&UoocAssessmentsEvent::Snapshot(Box::new(next)));
     }
-    pub(crate) async fn refresh_assessments(&self) -> Result<(), String> {
+    pub async fn refresh_assessments(&self) -> Result<(), String> {
         // 同一时刻只允许一个刷新在跑，避免首页与考试/作业面板同时触发重复请求。
         let _guard = self.assessments_lock.lock().await;
         if self.snapshot().session != SessionStatus::Ready {
@@ -331,7 +332,7 @@ impl Service {
             let _ = app.emit("uooc-state-changed", snapshot);
         }
     }
-    pub(crate) fn emit_bank_progress(&self, progress: &model::BankRebuildProgress) {
+    pub fn emit_bank_progress(&self, progress: &model::BankRebuildProgress) {
         if let Some(ref ch) = *self.bank_channel.lock().unwrap() {
             let _ = ch.send(progress.clone());
         }
@@ -339,7 +340,7 @@ impl Service {
             let _ = app.emit("uooc-bank-rebuild-progress", progress);
         }
     }
-    pub(crate) fn emit_ai_session(&self, entry: &quiz::model::AiSessionEntry) {
+    pub fn emit_ai_session(&self, entry: &quiz::model::AiSessionEntry) {
         if let Some(ref ch) = *self.ai_channel.lock().unwrap() {
             let _ = ch.send(entry.clone());
         }
@@ -516,10 +517,10 @@ impl Service {
         self.publish(&mut runtime);
         Ok(())
     }
-    pub(crate) async fn qa_api_key(&self) -> Option<String> {
+    pub async fn qa_api_key(&self) -> Option<String> {
         self.qa_api_key_for_server(None).await
     }
-    pub(crate) async fn qa_api_key_for_server(&self, server: Option<&str>) -> Option<String> {
+    pub async fn qa_api_key_for_server(&self, server: Option<&str>) -> Option<String> {
         let (server_url, key) = {
             let r = self.runtime.lock().unwrap();
             let target = server
@@ -539,29 +540,29 @@ impl Service {
         self.publish(&mut r);
         Some(new_key)
     }
-    pub(crate) fn save_qa_api_key(&self, key: String) -> Result<(), String> {
+    pub fn save_qa_api_key(&self, key: String) -> Result<(), String> {
         let trimmed = key.trim().to_string();
         let mut r = self.runtime.lock().unwrap();
         r.qa_api_key = if trimmed.is_empty() { None } else { Some(trimmed) };
         self.publish(&mut r);
         Ok(())
     }
-    pub(crate) fn reset_qa_api_key(&self) -> Result<(), String> {
+    pub fn reset_qa_api_key(&self) -> Result<(), String> {
         let mut r = self.runtime.lock().unwrap();
         r.qa_api_key = None;
         self.publish(&mut r);
         Ok(())
     }
-    pub(crate) fn log_debug(&self, stage: &str, message: impl Into<String>) {
+    pub fn log_debug(&self, stage: &str, message: impl Into<String>) {
         let msg = message.into();
         let Some(app) = &self.app else { return };
-        let Some(store) = app.try_state::<crate::campus_network::CampusNetworkStore>() else {
+        let Some(store) = app.try_state::<szu_core::campus_network::CampusNetworkStore>() else {
             return;
         };
-        crate::campus_network::diagnostics::record(
+        szu_core::campus_network::diagnostics::record(
             app,
             &store,
-            crate::campus_network::model::DebugLogEntry {
+            szu_core::campus_network::model::DebugLogEntry {
                 timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
                 level: "info".into(),
                 source: "uooc".into(),
@@ -571,7 +572,7 @@ impl Service {
             },
         );
     }
-    pub(crate) async fn get_qa_db(&self) -> Result<&quiz::db::QaDatabase, String> {
+    pub async fn get_qa_db(&self) -> Result<&quiz::db::QaDatabase, String> {
         self.qa_db
             .get_or_try_init(|| async {
                 let db_path = self.path.join("quiz_qa_bank.db");
@@ -579,10 +580,10 @@ impl Service {
             })
             .await
     }
-    pub(crate) async fn build_local_bank(self: &Arc<Self>) -> Result<usize, String> {
+    pub async fn build_local_bank(self: &Arc<Self>) -> Result<usize, String> {
         quiz::build_local_bank(self).await
     }
-    pub(crate) async fn build_local_bank_with_channel(
+    pub async fn build_local_bank_with_channel(
         self: &Arc<Self>,
         channel: Option<tauri::ipc::Channel<model::BankRebuildProgress>>,
     ) -> Result<usize, String> {
@@ -591,7 +592,7 @@ impl Service {
         let _ = self.bank_channel.lock().unwrap().take();
         res
     }
-    pub(crate) async fn full_qa_sync(self: &Arc<Self>) {
+    pub async fn full_qa_sync(self: &Arc<Self>) {
         let (_account_id, cids, qa_server_url) = {
             let r = self.runtime.lock().unwrap();
             let Some(user_id) = r.snapshot.user.as_ref().map(|u| u.id.clone()) else {
@@ -1012,7 +1013,7 @@ impl Service {
         platform::running(count, runtime.background_generation)
     }
 
-    pub(crate) async fn list_exams(&self, cid: Option<&str>) -> Result<Vec<ExamTask>, String> {
+    pub async fn list_exams(&self, cid: Option<&str>) -> Result<Vec<ExamTask>, String> {
         let cancel = CancellationToken::new();
         let client = self.client.read().unwrap().clone();
         let (courses, is_ready) = {
@@ -1131,7 +1132,7 @@ impl Service {
         Ok(all_tasks)
     }
 
-    pub(crate) async fn get_exam_paper(&self, cid: &str, task_id: &str) -> Result<ExamPaper, String> {
+    pub async fn get_exam_paper(&self, cid: &str, task_id: &str) -> Result<ExamPaper, String> {
         let cancel = CancellationToken::new();
         let client = self.client.read().unwrap().clone();
         {
@@ -1252,7 +1253,7 @@ impl Service {
         })
     }
 
-    pub(crate) async fn auto_ensure_course_evaluated(&self, cid: &str) -> Result<bool, String> {
+    pub async fn auto_ensure_course_evaluated(&self, cid: &str) -> Result<bool, String> {
         let cancel = CancellationToken::new();
         let client = self.client.read().unwrap().clone();
 
@@ -1287,7 +1288,7 @@ impl Service {
         Ok(true)
     }
 
-    pub(crate) async fn save_exam_draft(
+    pub async fn save_exam_draft(
         &self,
         cid: &str,
         task_id: &str,
@@ -1321,7 +1322,7 @@ impl Service {
         res.map(|_| ()).map_err(|e| format!("草稿保存失败: {}", e.message()))
     }
 
-    pub(crate) async fn submit_exam(
+    pub async fn submit_exam(
         &self,
         cid: &str,
         task_id: &str,
@@ -1387,7 +1388,7 @@ impl Service {
         Ok(if msg.is_empty() { "试卷已成功提交".into() } else { msg })
     }
 
-    pub(crate) async fn heartbeat_exam(
+    pub async fn heartbeat_exam(
         &self,
         cid: &str,
         task_id: &str,
@@ -1400,7 +1401,7 @@ impl Service {
             .map_err(|e| format!("防作弊心跳异常: {e:?}"))
     }
 
-    pub(crate) async fn list_quizzes(&self, cid: Option<&str>) -> Result<Vec<HomeworkTask>, String> {
+    pub async fn list_quizzes(&self, cid: Option<&str>) -> Result<Vec<HomeworkTask>, String> {
         let cancel = CancellationToken::new();
         let client = self.client.read().unwrap().clone();
         let (courses, is_ready) = {
@@ -1514,7 +1515,7 @@ impl Service {
         Ok(all_tasks)
     }
 
-    pub(crate) async fn list_homeworks(&self, cid: Option<&str>) -> Result<Vec<HomeworkTask>, String> {
+    pub async fn list_homeworks(&self, cid: Option<&str>) -> Result<Vec<HomeworkTask>, String> {
         let cancel = CancellationToken::new();
         let client = self.client.read().unwrap().clone();
         let (courses, is_ready) = {
@@ -1630,7 +1631,7 @@ impl Service {
         Ok(all_tasks)
     }
 
-    pub(crate) async fn match_paper_qa(
+    pub async fn match_paper_qa(
         &self,
         questions: Vec<quiz::model::Question>,
     ) -> Result<(quiz::model::Answers, Vec<quiz::model::Review>), String> {
@@ -1754,7 +1755,7 @@ impl Service {
         Ok((answers, reviews))
     }
 
-    pub(crate) async fn solve_paper_ai(
+    pub async fn solve_paper_ai(
         &self,
         questions: Vec<quiz::model::Question>,
     ) -> Result<(quiz::model::Answers, Vec<quiz::model::Review>), String> {
@@ -1772,7 +1773,7 @@ impl Service {
         Ok((answers, reviews))
     }
 
-    pub(crate) async fn solve_paper_ai_with_channel(
+    pub async fn solve_paper_ai_with_channel(
         &self,
         questions: Vec<quiz::model::Question>,
         channel: Option<tauri::ipc::Channel<quiz::model::AiSessionEntry>>,
@@ -1783,7 +1784,7 @@ impl Service {
         res
     }
 
-    pub(crate) async fn list_evals(&self, cid: Option<&str>) -> Result<Vec<PeerEvalTask>, String> {
+    pub async fn list_evals(&self, cid: Option<&str>) -> Result<Vec<PeerEvalTask>, String> {
         let cancel = CancellationToken::new();
         let client = self.client.read().unwrap().clone();
         let (courses, is_ready) = {
@@ -1859,7 +1860,7 @@ impl Service {
         Ok(results)
     }
 
-    pub(crate) async fn submit_eval(
+    pub async fn submit_eval(
         &self,
         cid: &str,
         tid: &str,
@@ -1877,7 +1878,7 @@ impl Service {
         Ok(if msg.is_empty() { "互评提交成功".into() } else { msg })
     }
 
-    pub(crate) async fn generate_subjective(
+    pub async fn generate_subjective(
         &self,
         stem: &str,
         context: Option<&str>,
@@ -1887,7 +1888,7 @@ impl Service {
         ai::generate_subjective_answer(self, stem, context, &reference_examples, &cancel).await
     }
 
-    pub(crate) async fn task_portal(
+    pub async fn task_portal(
         self: &Arc<Self>,
         parent: tauri::WebviewWindow,
         task_id: String,
@@ -1937,7 +1938,7 @@ impl Service {
     }
 }
 
-pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
+pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     let store = app.state::<UoocStore>();
     if store.service.get().is_some() {
         return Ok(());
@@ -1959,14 +1960,14 @@ pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     });
     Ok(())
 }
-pub(crate) fn service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
+pub fn service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
     app.state::<UoocStore>()
         .service
         .get()
         .cloned()
         .ok_or("UOOC 服务尚未初始化".into())
 }
-pub(crate) fn window_closed(app: &tauri::AppHandle, label: &str) {
+pub fn window_closed(app: &tauri::AppHandle, label: &str) {
     if let Ok(service) = service(app) {
         login::window_closed(&service, label);
         quiz::window_closed(&service, label);
@@ -1974,12 +1975,12 @@ pub(crate) fn window_closed(app: &tauri::AppHandle, label: &str) {
 }
 
 /// 设备同步：读取可同步的 UOOC 运行设置。
-pub(crate) fn synced_settings(app: &tauri::AppHandle) -> Result<model::Settings, String> {
+pub fn synced_settings(app: &tauri::AppHandle) -> Result<model::Settings, String> {
     Ok(service(app)?.snapshot().settings)
 }
 
 /// 设备同步：应用对端运行设置。走正常保存路径，包含持久化与广播。
-pub(crate) fn apply_synced_settings(
+pub fn apply_synced_settings(
     app: &tauri::AppHandle,
     settings: model::Settings,
 ) -> Result<(), String> {
@@ -1987,17 +1988,17 @@ pub(crate) fn apply_synced_settings(
 }
 
 /// 设备同步：AI 配置写入安全存储后刷新运行时缓存。
-pub(crate) fn reload_synced_ai(app: &tauri::AppHandle) -> Result<(), String> {
+pub fn reload_synced_ai(app: &tauri::AppHandle) -> Result<(), String> {
     service(app)?.reload_ai_from_store()
 }
 
 /// 设备同步：UOOC 会话写入安全存储后重建客户端，等待下一次刷新验证。
-pub(crate) fn reload_synced_session(app: &tauri::AppHandle) -> Result<(), String> {
+pub fn reload_synced_session(app: &tauri::AppHandle) -> Result<(), String> {
     service(app)?.apply_session_from_store()
 }
 
 /// 设备同步：题库快照（全部题目 + 全部提交试卷）。
-pub(crate) async fn qa_sync_snapshot(
+pub async fn qa_sync_snapshot(
     app: &tauri::AppHandle,
 ) -> Result<(Vec<quiz::qa::LocalBankQuestion>, Vec<quiz::qa::SubmittedPaperRecord>), String> {
     let service = service(app)?;
@@ -2008,7 +2009,7 @@ pub(crate) async fn qa_sync_snapshot(
 }
 
 /// 设备同步：写入对端题目。每条都会在本地重算向量特征，不接受对端提供的向量。
-pub(crate) async fn qa_sync_apply_questions(
+pub async fn qa_sync_apply_questions(
     app: &tauri::AppHandle,
     questions: Vec<quiz::qa::LocalBankQuestion>,
 ) -> Result<(), String> {
@@ -2024,7 +2025,7 @@ pub(crate) async fn qa_sync_apply_questions(
 }
 
 /// 设备同步：写入对端试卷快照。
-pub(crate) async fn qa_sync_apply_papers(
+pub async fn qa_sync_apply_papers(
     app: &tauri::AppHandle,
     papers: Vec<quiz::qa::SubmittedPaperRecord>,
 ) -> Result<(), String> {

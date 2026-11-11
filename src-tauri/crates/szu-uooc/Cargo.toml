@@ -1,0 +1,40 @@
+[package]
+name = "szu-uooc"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "泥深 UOOC 模块：课程进度、签到、测验与 AI 答题"
+
+[lib]
+name = "szu_uooc"
+path = "src/lib.rs"
+
+[dependencies]
+szu-core = { path = "../szu-core" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+reqwest = { workspace = true }
+cookie_store = { workspace = true }
+reqwest_cookie_store = { workspace = true }
+scraper = { workspace = true }
+mp4 = { workspace = true }
+m3u8-rs = { workspace = true }
+sha1 = { workspace = true }
+sha2 = { workspace = true }
+image = { workspace = true }
+regex = { workspace = true }
+base64 = { workspace = true }
+uuid = { workspace = true }
+async-openai = { workspace = true }
+rig-core = { workspace = true }
+schemars = { workspace = true }
+toasty = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

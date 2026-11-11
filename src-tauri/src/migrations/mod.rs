@@ -12,7 +12,6 @@ pub mod lms;
 pub mod mesh;
 pub mod oj;
 pub mod todos;
-pub mod uooc;
 
 #[cfg(test)]
 mod tests;

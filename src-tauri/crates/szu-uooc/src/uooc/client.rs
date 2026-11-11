@@ -5,7 +5,7 @@ use std::{collections::HashSet, sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct ThreadSummary {
+pub struct ThreadSummary {
     pub tid: String,
 }
 
@@ -116,17 +116,17 @@ fn thread_rows(value: &Value) -> Option<Vec<&Value>> {
     }
 }
 
-pub(super) const ORIGIN: &str = "https://www.uooc.net.cn";
-pub(super) const LOGIN: &str = "https://www.uooc.net.cn/user/login";
-pub(super) const LIST: &str = "/home/course/list";
+pub const ORIGIN: &str = "https://www.uooc.net.cn";
+pub const LOGIN: &str = "https://www.uooc.net.cn/user/login";
+pub const LIST: &str = "/home/course/list";
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) enum CourseSignin {
+pub enum CourseSignin {
     NotRequired,
     Signed,
     AlreadySigned,
 }
 #[derive(Clone, Debug, PartialEq)]
-pub(super) enum Error {
+pub enum Error {
     Cancelled,
     Unauthorized,
     Forbidden,
@@ -180,7 +180,7 @@ impl Error {
         }
     }
 }
-pub(super) struct Client {
+pub struct Client {
     http: reqwest::Client,
     pub jar: Arc<CookieStoreMutex>,
     base: String,
@@ -219,10 +219,10 @@ mod tests {
     }
 }
 impl Client {
-    pub(super) fn origin(&self) -> &str {
+    pub fn origin(&self) -> &str {
         &self.base
     }
-    pub(super) async fn quiz_list(
+    pub async fn quiz_list(
         &self,
         cid: &str,
         cancel: &CancellationToken,
@@ -277,7 +277,7 @@ impl Client {
         }
         Err(Error::Invalid)
     }
-    pub(super) async fn exam_list(
+    pub async fn exam_list(
         &self,
         cid: &str,
         cancel: &CancellationToken,
@@ -319,7 +319,7 @@ impl Client {
         }
         Ok(all)
     }
-    pub(super) async fn homework_list(
+    pub async fn homework_list(
         &self,
         cid: &str,
         cancel: &CancellationToken,
@@ -361,7 +361,7 @@ impl Client {
         }
         Ok(all)
     }
-    pub(super) async fn exist_eval(
+    pub async fn exist_eval(
         &self,
         cid: &str,
         cancel: &CancellationToken,
@@ -385,7 +385,7 @@ impl Client {
         }
         Ok(!val["data"].is_null())
     }
-    pub(super) async fn eval_list(
+    pub async fn eval_list(
         &self,
         cid: &str,
         cancel: &CancellationToken,
@@ -406,7 +406,7 @@ impl Client {
         }
         Ok(vec![])
     }
-    pub(super) async fn submit_eval_score(
+    pub async fn submit_eval_score(
         &self,
         cid: &str,
         tid: &str,
@@ -429,7 +429,7 @@ impl Client {
         )
         .await
     }
-    pub(super) async fn exam_task_info(
+    pub async fn exam_task_info(
         &self,
         tid: &str,
         cid: &str,
@@ -443,7 +443,7 @@ impl Client {
         )
         .await
     }
-    pub(super) async fn course_comment(
+    pub async fn course_comment(
         &self,
         cid: &str,
         cancel: &CancellationToken,
@@ -456,7 +456,7 @@ impl Client {
         )
         .await
     }
-    pub(super) async fn add_course_comment(
+    pub async fn add_course_comment(
         &self,
         cid: &str,
         score: u32,
@@ -475,7 +475,7 @@ impl Client {
         )
         .await
     }
-    pub(super) async fn set_know_review(
+    pub async fn set_know_review(
         &self,
         cid: &str,
         cancel: &CancellationToken,
@@ -488,7 +488,7 @@ impl Client {
         )
         .await
     }
-    pub(super) async fn exam_save(
+    pub async fn exam_save(
         &self,
         cid: Option<&str>,
         tid: &str,
@@ -504,7 +504,7 @@ impl Client {
         params.extend_from_slice(fields);
         self.request("/exam/save", &params, true, cancel).await
     }
-    pub(super) async fn exam_commit(
+    pub async fn exam_commit(
         &self,
         cid: Option<&str>,
         tid: &str,
@@ -520,7 +520,7 @@ impl Client {
         params.extend_from_slice(fields);
         self.request("/exam/commit", &params, true, cancel).await
     }
-    pub(super) async fn exam_heartbeat(
+    pub async fn exam_heartbeat(
         &self,
         cid: &str,
         tid: &str,
@@ -558,7 +558,7 @@ impl Client {
             Ok(false)
         }
     }
-    pub(super) async fn quiz_document(
+    pub async fn quiz_document(
         &self,
         task: &str,
         cancel: &CancellationToken,
@@ -568,7 +568,7 @@ impl Client {
             .await?;
         String::from_utf8(bytes).map_err(|_| Error::Invalid)
     }
-    pub(super) async fn quiz_http(
+    pub async fn quiz_http(
         &self,
         url: &str,
         fields: Option<&[(String, String)]>,
@@ -600,7 +600,7 @@ impl Client {
             Ok(bytes)
         }=>r}
     }
-    pub(super) async fn quiz_image(
+    pub async fn quiz_image(
         &self,
         url: &str,
         cancel: &CancellationToken,
@@ -655,9 +655,9 @@ impl Client {
     }
     pub fn with_base(jar: Arc<CookieStoreMutex>, base: &str) -> Result<Self, String> {
         #[cfg(target_os = "android")]
-        crate::platform_tls::initialize_platform_verifier()?;
-        let http = crate::netproxy::client_builder()
-            .cookie_provider(crate::webview_cookies::http_provider(jar.clone()))
+        szu_core::platform_tls::initialize_platform_verifier()?;
+        let http = szu_core::netproxy::client_builder()
+            .cookie_provider(szu_core::webview_cookies::http_provider(jar.clone()))
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(10))
             .redirect(reqwest::redirect::Policy::none())

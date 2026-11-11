@@ -5,7 +5,7 @@ use std::{
     path::Path,
 };
 
-pub(super) fn read<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, String> {
+pub fn read<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, String> {
     let file = match fs::File::open(path) {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -23,12 +23,12 @@ pub(super) fn read<T: DeserializeOwned>(path: &Path) -> Result<Option<T>, String
         .map_err(|_| "UOOC 本地数据损坏".into())
 }
 
-pub(super) fn write(path: &Path, data: &impl Serialize) -> Result<(), String> {
+pub fn write(path: &Path, data: &impl Serialize) -> Result<(), String> {
     let bytes = serde_json::to_vec(data).map_err(|_| "UOOC 数据序列化失败")?;
     write_bytes(path, &bytes)
 }
 
-pub(super) fn write_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
+pub fn write_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let parent = path.parent().ok_or("UOOC 数据目录无效")?;
     let temporary = parent.join(format!(".{}.tmp", uuid::Uuid::new_v4()));
     let result = (|| -> Result<(), Box<dyn std::error::Error>> {

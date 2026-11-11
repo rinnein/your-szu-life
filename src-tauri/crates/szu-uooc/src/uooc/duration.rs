@@ -10,7 +10,7 @@ use std::{
 use tokio_util::sync::CancellationToken;
 
 /// 视频时长缓存，底层持久化于 Toasty ORM SQLite 数据库 (VideoDuration 模型)。
-pub(super) struct DurationCache {
+pub struct DurationCache {
     db_path: PathBuf,
     db: tokio::sync::OnceCell<super::quiz::db::QaDatabase>,
     values: Mutex<HashMap<String, f64>>,
@@ -41,7 +41,7 @@ impl DurationCache {
         self.db
             .get_or_try_init(|| async {
                 let qa_db = super::quiz::db::QaDatabase::open(&self.db_path).await?;
-                let _ = crate::migrations::uooc::migrate_video_durations_if_needed(&self.db_path, &qa_db).await;
+                let _ = crate::uooc::migrations::migrate_video_durations_if_needed(&self.db_path, &qa_db).await;
                 if let Ok(loaded) = qa_db.load_all_video_durations().await {
                     let mut v = self.values.lock().unwrap();
                     for (k, val) in loaded {

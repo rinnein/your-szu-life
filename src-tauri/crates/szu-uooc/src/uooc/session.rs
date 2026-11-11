@@ -28,14 +28,14 @@ fn allowed(cookie: &cookie_store::Cookie<'_>) -> bool {
         _ => false,
     }
 }
-pub(super) fn load(raw: Option<&str>) -> Result<Arc<CookieStoreMutex>, String> {
-    let stored = crate::webview_cookies::load_jar(raw.unwrap_or(""))?;
-    if let Some((snapshot, scope)) = crate::webview_cookies::native_snapshot(&stored) {
-        if scope.kind != crate::webview_cookies::Kind::Uooc {
+pub fn load(raw: Option<&str>) -> Result<Arc<CookieStoreMutex>, String> {
+    let stored = szu_core::webview_cookies::load_jar(raw.unwrap_or(""))?;
+    if let Some((snapshot, scope)) = szu_core::webview_cookies::native_snapshot(&stored) {
+        if scope.kind != szu_core::webview_cookies::Kind::Uooc {
             return Err("UOOC 会话范围无效".into());
         }
         snapshot
-            .validate(&crate::webview_cookies::Scope::uooc())
+            .validate(&szu_core::webview_cookies::Scope::uooc())
             .map_err(String::from)?;
     }
     let mut jar = CookieStore::default();
@@ -48,21 +48,21 @@ pub(super) fn load(raw: Option<&str>) -> Result<Arc<CookieStoreMutex>, String> {
         let _ = jar.insert(cookie.clone(), &ORIGIN.parse().unwrap());
     }
     let jar = Arc::new(CookieStoreMutex::new(jar));
-    crate::webview_cookies::copy_snapshot(&stored, &jar);
+    szu_core::webview_cookies::copy_snapshot(&stored, &jar);
     Ok(jar)
 }
-pub(super) fn serialize(jar: &CookieStoreMutex) -> Result<String, String> {
-    crate::webview_cookies::serialize_jar(jar)
+pub fn serialize(jar: &CookieStoreMutex) -> Result<String, String> {
+    szu_core::webview_cookies::serialize_jar(jar)
 }
 
-pub(super) fn capture(window: &tauri::WebviewWindow) -> Result<Arc<CookieStoreMutex>, String> {
+pub fn capture(window: &tauri::WebviewWindow) -> Result<Arc<CookieStoreMutex>, String> {
     #[cfg(not(target_os = "android"))]
     let mut jar = CookieStore::default();
     #[cfg(target_os = "android")]
     {
-        let scope = crate::webview_cookies::Scope::uooc();
-        return crate::webview_cookies::project(
-            crate::webview_cookies::capture(window, &scope)?,
+        let scope = szu_core::webview_cookies::Scope::uooc();
+        return szu_core::webview_cookies::project(
+            szu_core::webview_cookies::capture(window, &scope)?,
             scope,
         );
     }
@@ -85,32 +85,32 @@ pub(super) fn capture(window: &tauri::WebviewWindow) -> Result<Arc<CookieStoreMu
     }
 }
 
-pub(super) fn install(
+pub fn install(
     window: &tauri::WebviewWindow,
     jar: &CookieStoreMutex,
     delete: bool,
 ) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
-        let scope = crate::webview_cookies::Scope::uooc();
+        let scope = szu_core::webview_cookies::Scope::uooc();
         if delete {
-            return crate::webview_cookies::clear(window, &scope);
+            return szu_core::webview_cookies::clear(window, &scope);
         }
-        if let Some(envelope) = crate::webview_cookies::SessionEnvelope::decode(&serialize(jar)?)? {
-            return crate::webview_cookies::replace(window, &scope, &envelope.webview);
+        if let Some(envelope) = szu_core::webview_cookies::SessionEnvelope::decode(&serialize(jar)?)? {
+            return szu_core::webview_cookies::replace(window, &scope, &envelope.webview);
         }
         let records = jar
             .lock()
             .map_err(|_| "UOOC 会话不可用")?
             .iter_any()
             .filter(|c| allowed(c))
-            .map(|c| crate::webview_cookies::Patch {
-                cookie: crate::webview_cookies::CookieRecord::from_stored(c)
+            .map(|c| szu_core::webview_cookies::Patch {
+                cookie: szu_core::webview_cookies::CookieRecord::from_stored(c)
                     .expect("allowed cookie domain"),
                 remove: false,
             })
             .collect::<Vec<_>>();
-        return crate::webview_cookies::apply(window, &scope, &records);
+        return szu_core::webview_cookies::apply(window, &scope, &records);
     }
     #[cfg(not(target_os = "android"))]
     {

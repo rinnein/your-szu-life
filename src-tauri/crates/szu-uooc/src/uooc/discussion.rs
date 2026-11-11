@@ -8,7 +8,7 @@ use chrono::Utc;
 use std::{sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 
-pub(super) fn cooldown_until(last_sent_at_ms: Option<i64>, settings: &super::model::Settings) -> Option<i64> {
+pub fn cooldown_until(last_sent_at_ms: Option<i64>, settings: &super::model::Settings) -> Option<i64> {
     last_sent_at_ms.map(|at| {
         at.saturating_add((settings.discussion_interval_min as i64).saturating_mul(60_000))
     })
@@ -185,7 +185,7 @@ async fn execute(
 }
 
 impl Service {
-    pub(super) async fn start_discussion_once(self: &Arc<Self>, cid: &str) -> Result<(), String> {
+    pub async fn start_discussion_once(self: &Arc<Self>, cid: &str) -> Result<(), String> {
         let _lock = self
             .discussion_lock
             .try_lock()
@@ -228,7 +228,7 @@ impl Service {
         })
     }
 
-    pub(super) async fn run_discussions(self: &Arc<Self>) {
+    pub async fn run_discussions(self: &Arc<Self>) {
         let Ok(_lock) = self.discussion_lock.try_lock() else {
             return;
         };

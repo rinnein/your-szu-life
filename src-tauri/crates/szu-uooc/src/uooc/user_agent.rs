@@ -1,8 +1,8 @@
 use tauri::Url;
 
-pub(super) const DESKTOP: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
+pub const DESKTOP: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 
-pub(super) fn is_login_redirect(from: &Url, location: &str) -> bool {
+pub fn is_login_redirect(from: &Url, location: &str) -> bool {
     from.join(location).is_ok_and(|target| {
         target.origin() == from.origin()
             && target.username().is_empty()
@@ -13,7 +13,7 @@ pub(super) fn is_login_redirect(from: &Url, location: &str) -> bool {
 
 #[cfg(any(target_os = "android", test))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Profile {
+pub enum Profile {
     Login,
     Desktop,
 }
@@ -37,20 +37,20 @@ fn profile(url: &Url) -> Option<Profile> {
 
 #[cfg(any(target_os = "android", test))]
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct Switch {
+pub struct Switch {
     pub id: u64,
     pub profile: Profile,
     pub url: Url,
 }
 #[cfg(any(target_os = "android", test))]
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum Decision {
+pub enum Decision {
     Allow,
     Block,
     Switch(Switch),
 }
 #[cfg(any(target_os = "android", test))]
-pub(super) struct Navigation {
+pub struct Navigation {
     applied: Profile,
     sequence: u64,
     pending: Option<Switch>,
@@ -115,7 +115,7 @@ impl Navigation {
 }
 
 #[cfg(target_os = "android")]
-pub(super) struct AndroidNavigation {
+pub struct AndroidNavigation {
     app: tauri::AppHandle,
     label: String,
     navigation: std::sync::Mutex<Navigation>,

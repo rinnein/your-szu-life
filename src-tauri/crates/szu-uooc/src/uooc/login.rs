@@ -7,7 +7,7 @@ use std::{sync::Arc, time::Duration};
 use tauri::{Manager, Url, WebviewWindow};
 use tokio_util::sync::CancellationToken;
 
-pub(super) struct Attempt {
+pub struct Attempt {
     pub label: String,
     parent: String,
     pub token: CancellationToken,
@@ -17,7 +17,7 @@ pub(super) struct Attempt {
 /// Keep this deliberately broad: the hash route and intermediate home pages
 /// vary between WebView versions, while the host is already constrained by
 /// the login navigation flow.
-pub(super) fn is_completion_url(url: &Url) -> bool {
+pub fn is_completion_url(url: &Url) -> bool {
     url.scheme() == "https"
         && url.host_str() == Some("www.uooc.net.cn")
         && url.port_or_known_default() == Some(443)
@@ -29,7 +29,7 @@ pub(super) fn is_completion_url(url: &Url) -> bool {
             || url.path().starts_with("/app/download/"))
 }
 
-pub(super) fn local_parent(parent: &WebviewWindow) -> Result<(), String> {
+pub fn local_parent(parent: &WebviewWindow) -> Result<(), String> {
     trusted_local_page(
         parent,
         Some("/study/uooc"),
@@ -37,7 +37,7 @@ pub(super) fn local_parent(parent: &WebviewWindow) -> Result<(), String> {
     )
 }
 
-pub(super) fn local_app_parent(parent: &WebviewWindow) -> Result<(), String> {
+pub fn local_app_parent(parent: &WebviewWindow) -> Result<(), String> {
     trusted_local_page(parent, None, "请从应用内页面管理 AI 连接配置")
 }
 
@@ -52,7 +52,7 @@ fn trusted_local_page(
     Ok(())
 }
 
-pub(super) async fn open(service: Arc<Service>, parent: WebviewWindow) -> Result<(), String> {
+pub async fn open(service: Arc<Service>, parent: WebviewWindow) -> Result<(), String> {
     local_parent(&parent)?;
     let (label, token, epoch) = {
         let mut runtime = service.runtime.lock().unwrap();
@@ -242,7 +242,7 @@ pub(super) async fn open(service: Arc<Service>, parent: WebviewWindow) -> Result
     Ok(())
 }
 
-pub(super) fn window_closed(service: &Arc<Service>, label: &str) {
+pub fn window_closed(service: &Arc<Service>, label: &str) {
     let attempt = {
         let mut runtime = service.runtime.lock().unwrap();
         if !runtime
@@ -274,7 +274,7 @@ pub(super) fn window_closed(service: &Arc<Service>, label: &str) {
     }
 }
 
-pub(super) async fn logout(service: Arc<Service>, window: WebviewWindow) -> Result<(), String> {
+pub async fn logout(service: Arc<Service>, window: WebviewWindow) -> Result<(), String> {
     let attempt;
     {
         let mut runtime = service.runtime.lock().unwrap();

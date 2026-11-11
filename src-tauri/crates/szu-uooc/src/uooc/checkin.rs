@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum CheckinStatus {
+pub enum CheckinStatus {
     Queued,
     Submitting,
     Verifying,
@@ -25,12 +25,12 @@ pub(crate) enum CheckinStatus {
 }
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum CheckinSource {
+pub enum CheckinSource {
     Automatic,
     Manual,
 }
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum Outcome {
+pub enum Outcome {
     Changed,
     AlreadySatisfied,
     NotRequired,
@@ -42,7 +42,7 @@ const POLL_INTERVAL: Duration = Duration::from_secs(2);
 const TIMEOUT: Duration = Duration::from_secs(60);
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CheckinState {
+pub struct CheckinState {
     pub id: String,
     pub status: CheckinStatus,
     pub source: CheckinSource,
@@ -50,7 +50,7 @@ pub(crate) struct CheckinState {
     pub updated_at_ms: i64,
 }
 #[derive(Clone)]
-pub(super) struct Job {
+pub struct Job {
     pub id: String,
     pub cid: String,
     pub account: String,
@@ -59,14 +59,14 @@ pub(super) struct Job {
     pub cancel: CancellationToken,
 }
 #[derive(Default)]
-pub(super) struct Checkins {
+pub struct Checkins {
     pub queue: VecDeque<Job>,
     pub active: Option<Job>,
     pub pumping: bool,
     pub attempted: HashSet<(String, String, chrono::NaiveDate)>,
     pub daily_scans: HashSet<(String, chrono::NaiveDate)>,
 }
-pub(super) fn cancel_locked(runtime: &mut Runtime, ids: &[String], message: &str) {
+pub fn cancel_locked(runtime: &mut Runtime, ids: &[String], message: &str) {
     for job in runtime
         .checkins
         .queue
@@ -89,7 +89,7 @@ pub(super) fn cancel_locked(runtime: &mut Runtime, ids: &[String], message: &str
     runtime.checkins.queue.retain(|j| !j.cancel.is_cancelled());
 }
 impl Service {
-    pub(super) fn enqueue_automatic_checkins(self: &Arc<Self>) {
+    pub fn enqueue_automatic_checkins(self: &Arc<Self>) {
         let snapshot = self.snapshot();
         let ids = snapshot
             .courses
@@ -107,7 +107,7 @@ impl Service {
             .collect();
         let _ = self.enqueue_checkins(ids, CheckinSource::Automatic);
     }
-    pub(crate) fn enqueue_checkins(
+    pub fn enqueue_checkins(
         self: &Arc<Self>,
         ids: Vec<String>,
         source: CheckinSource,
@@ -190,7 +190,7 @@ impl Service {
         }
         Ok(())
     }
-    pub(super) fn cancel_checkins(&self, ids: Vec<String>) {
+    pub fn cancel_checkins(&self, ids: Vec<String>) {
         let mut runtime = self.runtime.lock().unwrap();
         cancel_locked(&mut runtime, &ids, "签到已取消");
         self.publish(&mut runtime);
@@ -216,7 +216,7 @@ impl Service {
         }
         self.publish(&mut runtime);
     }
-    pub(super) fn checkin_current(&self, job: &Job) -> bool {
+    pub fn checkin_current(&self, job: &Job) -> bool {
         let runtime = self.runtime.lock().unwrap();
         !job.cancel.is_cancelled()
             && runtime.epoch == job.epoch
@@ -302,7 +302,7 @@ impl Service {
             let _ = self.sync_platform();
         }
     }
-    pub(super) async fn execute_checkin(
+    pub async fn execute_checkin(
         self: &Arc<Self>,
         job: &Job,
         interval: Duration,

@@ -372,7 +372,7 @@ mod tests {
 }
 
 fn media_client() -> Result<Client, String> {
-    crate::netproxy::blocking_client_builder()
+    szu_core::netproxy::blocking_client_builder()
         .user_agent(super::user_agent::DESKTOP)
         .timeout(Duration::from_secs(15))
         .connect_timeout(Duration::from_secs(8))
@@ -387,7 +387,7 @@ fn media_client() -> Result<Client, String> {
         .map_err(|_| "无法初始化视频元数据读取器".into())
 }
 
-pub(super) async fn probe(source: String, cancel: CancellationToken) -> Result<f64, String> {
+pub async fn probe(source: String, cancel: CancellationToken) -> Result<f64, String> {
     // Blocking HTTP and the MP4 reader are both created/dropped on the blocking pool.
     tokio::task::spawn_blocking(move || {
         let url = Url::parse(&source).map_err(|_| "视频地址无效")?;

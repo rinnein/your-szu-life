@@ -150,8 +150,8 @@ async fn test_uooc_video_duration_migration() {
     fs::write(&json_path, serde_json::to_vec(&map).unwrap()).unwrap();
     assert!(json_path.exists());
 
-    let db = crate::uooc::quiz::db::QaDatabase::open(&db_path).await.unwrap();
-    let migrated = super::uooc::migrate_video_durations_if_needed(&db_path, &db)
+    let db = szu_uooc::uooc::quiz::db::QaDatabase::open(&db_path).await.unwrap();
+    let migrated = szu_uooc::uooc::migrations::migrate_video_durations_if_needed(&db_path, &db)
         .await
         .unwrap();
 
@@ -173,7 +173,7 @@ fn test_uooc_legacy_files_cleanup() {
     assert!(p1.exists());
     assert!(p2.exists());
 
-    super::uooc::cleanup_legacy_uooc_files(dir.path());
+    szu_uooc::uooc::migrations::cleanup_legacy_uooc_files(dir.path());
 
     assert!(!p1.exists());
     assert!(!p2.exists());

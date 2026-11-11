@@ -1,5 +1,5 @@
 use super::*;
-use crate::storage::testing::MemoryCredentialStore;
+use szu_core::storage::testing::MemoryCredentialStore;
 use serde_json::{json, Value};
 use std::{
     io::{Read, Write},
@@ -9,10 +9,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub(super) fn root() -> PathBuf {
+pub fn root() -> PathBuf {
     std::env::temp_dir().join(format!("szu-uooc-test-{}", uuid::Uuid::new_v4()))
 }
-pub(super) fn course(cid: &str) -> Course {
+pub fn course(cid: &str) -> Course {
     Course {
         id: cid.into(),
         title: format!("课程 {cid}"),
@@ -23,7 +23,7 @@ pub(super) fn course(cid: &str) -> Course {
         status: "31".into(),
     }
 }
-pub(super) fn service_test(root: PathBuf) -> Arc<Service> {
+pub fn service_test(root: PathBuf) -> Arc<Service> {
     Service::new(None, Arc::new(MemoryCredentialStore::default()), root).unwrap()
 }
 
@@ -170,7 +170,7 @@ async fn duration_cache_single_flight_persists_and_does_not_cache_failures() {
     std::fs::write(&path, b"corrupt cache").unwrap();
     // 该场景模拟“进程重启后发现文件损坏”：清掉进程内句柄缓存，
     // 让打开逻辑重新走一次损坏隔离流程。
-    crate::migrations::db::reset_registry();
+    szu_core::migrations::db::reset_registry();
     let cache = DurationCache::new(path);
     assert_eq!(
         cache
@@ -212,7 +212,7 @@ fn cookies_keep_session_and_host_only_metadata_and_reject_other_domains() {
 }
 
 #[derive(Clone)]
-pub(super) struct Request {
+pub struct Request {
     pub method: String,
     pub path: String,
     pub body: String,
@@ -232,7 +232,7 @@ impl Request {
             .collect()
     }
 }
-pub(super) struct Server {
+pub struct Server {
     pub base: String,
     stop: Arc<AtomicBool>,
     thread: Option<thread::JoinHandle<()>>,
@@ -327,7 +327,7 @@ fn read_request(stream: &mut TcpStream) -> Option<Request> {
         }
     }
 }
-pub(super) fn ok(data: Value) -> Value {
+pub fn ok(data: Value) -> Value {
     json!({"code":1,"data":data})
 }
 
@@ -416,7 +416,7 @@ async fn login_redirects_and_download_redirects_are_distinguished_without_follow
     }
 }
 
-pub(super) async fn wait_finished(service: &Service) {
+pub async fn wait_finished(service: &Service) {
     let deadline = Instant::now() + Duration::from_secs(10);
     while !service.runtime.lock().unwrap().workers.is_empty() {
         assert!(Instant::now() < deadline, "tasks timed out");

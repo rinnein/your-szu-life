@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum Mode {
+pub enum Mode {
     Yolo,
     Approval,
     #[default]
@@ -11,7 +11,7 @@ pub(crate) enum Mode {
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum Stage {
+pub enum Stage {
     #[default]
     Idle,
     Preparing,
@@ -27,7 +27,7 @@ pub(crate) enum Stage {
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum Kind {
+pub enum Kind {
     Single,
     Multiple,
     Text,
@@ -35,13 +35,13 @@ pub(crate) enum Kind {
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct OptionItem {
+pub struct OptionItem {
     pub id: String,
     pub text: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Question {
+pub struct Question {
     pub id: String,
     pub text: String,
     pub kind: Kind,
@@ -50,10 +50,10 @@ pub(crate) struct Question {
     #[serde(default)]
     pub images: Vec<String>,
 }
-pub(crate) type Answers = BTreeMap<String, Vec<String>>;
+pub type Answers = BTreeMap<String, Vec<String>>;
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Review {
+pub struct Review {
     pub question_id: String,
     pub answers: Vec<String>,
     pub probabilities: BTreeMap<String, f64>,
@@ -61,7 +61,7 @@ pub(crate) struct Review {
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct AiSessionEntry {
+pub struct AiSessionEntry {
     pub batch_index: usize,
     pub question_ids: Vec<String>,
     pub question_titles: Vec<String>,
@@ -76,7 +76,7 @@ pub(crate) struct AiSessionEntry {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct QuizState {
+pub struct QuizState {
     pub account_id: String,
     pub cid: String,
     pub task_id: String,
@@ -101,7 +101,7 @@ pub(crate) struct QuizState {
     #[serde(default)]
     pub student_answers: Answers,
 }
-pub(crate) fn validate_answers(
+pub fn validate_answers(
     questions: &[Question],
     answers: &Answers,
     complete: bool,

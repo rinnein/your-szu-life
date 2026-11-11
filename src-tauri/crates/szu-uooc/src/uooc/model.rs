@@ -2,28 +2,28 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-pub(super) fn text(value: &Value) -> String {
+pub fn text(value: &Value) -> String {
     match value {
         Value::String(v) => v.clone(),
         Value::Number(v) => v.to_string(),
         _ => String::new(),
     }
 }
-pub(super) fn number(value: &Value) -> f64 {
+pub fn number(value: &Value) -> f64 {
     value
         .as_f64()
         .or_else(|| value.as_str()?.parse().ok())
         .filter(|v| v.is_finite())
         .unwrap_or(0.0)
 }
-pub(super) fn id(value: &Value) -> Option<String> {
+pub fn id(value: &Value) -> Option<String> {
     let id = text(value).parse::<u64>().ok()?;
     (id > 0).then(|| id.to_string())
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Course {
+pub struct Course {
     pub id: String,
     pub title: String,
     pub semester: String,
@@ -60,7 +60,7 @@ fn parse_courses_page(value: &Value) -> Result<(Vec<Course>, u64), String> {
 }
 
 /// 开课中（31）与复习模式（33）的课程，也是当前学习任务与页面展示的课程集合。
-pub(super) fn courses_page(value: &Value) -> Result<(Vec<Course>, u64), String> {
+pub fn courses_page(value: &Value) -> Result<(Vec<Course>, u64), String> {
     let (courses, pages) = parse_courses_page(value)?;
     let active = courses
         .into_iter()
@@ -70,13 +70,13 @@ pub(super) fn courses_page(value: &Value) -> Result<(Vec<Course>, u64), String> 
 }
 
 /// 用户“学过”的全部课程（含已结课/已退课），仅用于题库众包补齐时按 cid 询问服务端。
-pub(super) fn learned_courses_page(value: &Value) -> Result<(Vec<Course>, u64), String> {
+pub fn learned_courses_page(value: &Value) -> Result<(Vec<Course>, u64), String> {
     parse_courses_page(value)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Settings {
+pub struct Settings {
     pub concurrency: usize,
     pub report_interval_sec: u64,
     pub speed_multiplier: f64,
@@ -104,7 +104,7 @@ fn default_discussion_interval_min() -> u64 {
 fn default_qa_server_url() -> String {
     DEFAULT_QA_SERVER_URL.into()
 }
-pub(crate) fn normalize_qa_url(raw: &str) -> Result<String, String> {
+pub fn normalize_qa_url(raw: &str) -> Result<String, String> {
     let raw = raw.trim().trim_end_matches('/');
     if raw.is_empty() {
         return Ok(DEFAULT_QA_SERVER_URL.into());
@@ -155,7 +155,7 @@ impl Settings {
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum DiscussionStatus {
+pub enum DiscussionStatus {
     #[default]
     Idle,
     WaitingCooldown,
@@ -168,7 +168,7 @@ pub(crate) enum DiscussionStatus {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct DiscussionCourseState {
+pub struct DiscussionCourseState {
     pub status: DiscussionStatus,
     pub message: String,
     pub updated_at_ms: i64,
@@ -185,7 +185,7 @@ pub(crate) struct DiscussionCourseState {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct DiscussionStoreState {
+pub struct DiscussionStoreState {
     #[serde(default)]
     pub account_id: String,
     #[serde(default)]
@@ -195,14 +195,14 @@ pub(crate) struct DiscussionStoreState {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub(crate) struct User {
+pub struct User {
     pub id: String,
     pub name: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum SessionStatus {
+pub enum SessionStatus {
     #[default]
     Checking,
     Ready,
@@ -213,7 +213,7 @@ pub(crate) enum SessionStatus {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum TaskStatus {
+pub enum TaskStatus {
     Queued,
     Running,
     Paused,
@@ -234,7 +234,7 @@ impl TaskStatus {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct VideoState {
+pub struct VideoState {
     pub resource_id: String,
     pub title: String,
     pub status: TaskStatus,
@@ -249,7 +249,7 @@ pub(crate) struct VideoState {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CourseTask {
+pub struct CourseTask {
     pub course: Course,
     pub account_id: String,
     pub desired_running: bool,
@@ -262,7 +262,7 @@ pub(crate) struct CourseTask {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SavedState {
+pub struct SavedState {
     pub settings: Settings,
     pub tasks: Vec<CourseTask>,
     #[serde(default)]
@@ -277,7 +277,7 @@ pub(crate) struct SavedState {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Snapshot {
+pub struct Snapshot {
     pub revision: u64,
     pub session: SessionStatus,
     pub user: Option<User>,
@@ -319,7 +319,7 @@ impl Default for Snapshot {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ExamTask {
+pub struct ExamTask {
     pub id: String,
     pub title: String,
     pub cid: String,
@@ -360,7 +360,7 @@ pub(crate) struct ExamTask {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ExamPaper {
+pub struct ExamPaper {
     pub task_id: String,
     pub title: String,
     pub cid: String,
@@ -377,7 +377,7 @@ pub(crate) struct ExamPaper {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct HomeworkTask {
+pub struct HomeworkTask {
     pub id: String,
     pub title: String,
     pub cid: String,
@@ -426,7 +426,7 @@ pub(crate) struct HomeworkTask {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PeerSubmission {
+pub struct PeerSubmission {
     pub eval_id: String,
     #[serde(default)]
     pub student_task_id: Option<String>,
@@ -444,7 +444,7 @@ pub(crate) struct PeerSubmission {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PeerEvalTask {
+pub struct PeerEvalTask {
     pub cid: String,
     pub tid: String,
     pub title: String,
@@ -463,7 +463,7 @@ pub(crate) struct PeerEvalTask {
 }
 
 impl Snapshot {
-    pub(super) fn update_courses(&mut self, user: User, courses: Vec<Course>) {
+    pub fn update_courses(&mut self, user: User, courses: Vec<Course>) {
         for task in self
             .tasks
             .iter_mut()
@@ -479,7 +479,7 @@ impl Snapshot {
 }
 
 #[derive(Clone)]
-pub(super) struct Video {
+pub struct Video {
     pub cid: String,
     pub chapter: String,
     pub section: String,
@@ -494,7 +494,7 @@ pub(super) struct Video {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BankRebuildProgress {
+pub struct BankRebuildProgress {
     pub stage: String,
     pub cid: String,
     pub course_name: String,
@@ -509,14 +509,14 @@ pub(crate) struct BankRebuildProgress {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum TaskAction {
+pub enum TaskAction {
     Pause,
     Resume,
     Stop,
     Delete,
 }
 
-pub(super) fn multiplier(request: usize, target: f64) -> f64 {
+pub fn multiplier(request: usize, target: f64) -> f64 {
     match request {
         1 => 1.0_f64.min(target),
         2 => 1.5_f64.min(target),

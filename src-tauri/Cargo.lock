@@ -9058,6 +9058,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "szu-uooc"
+version = "0.14.0"
+dependencies = [
+ "async-openai",
+ "base64 0.22.1",
+ "chrono",
+ "cookie_store",
+ "image",
+ "log",
+ "m3u8-rs",
+ "mp4",
+ "regex",
+ "reqwest",
+ "reqwest_cookie_store",
+ "rig-core",
+ "schemars 1.2.3",
+ "scraper",
+ "serde",
+ "serde_json",
+ "sha1 0.10.7",
+ "sha2 0.10.9",
+ "szu-core",
+ "tauri",
+ "tempfile",
+ "time",
+ "toasty",
+ "tokio",
+ "tokio-util",
+ "uuid",
+]
+
+[[package]]
 name = "tagptr"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11779,6 +11811,7 @@ dependencies = [
  "szu-core",
  "szu-download",
  "szu-runtime",
+ "szu-uooc",
  "tauri",
  "tauri-build",
  "tauri-plugin-aptabase",

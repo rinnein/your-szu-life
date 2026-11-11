@@ -4,7 +4,7 @@ use super::{
     service,
 };
 #[tauri::command]
-pub(crate) fn subscribe_uooc_state(
+pub fn subscribe_uooc_state(
     app: tauri::AppHandle,
     channel: tauri::ipc::Channel<super::UoocDeltaEvent>,
 ) -> Result<(), String> {
@@ -19,7 +19,7 @@ pub(crate) fn subscribe_uooc_state(
 }
 
 #[tauri::command]
-pub(crate) async fn subscribe_uooc_assessments(
+pub async fn subscribe_uooc_assessments(
     app: tauri::AppHandle,
     channel: tauri::ipc::Channel<super::UoocAssessmentsEvent>,
 ) -> Result<(), String> {
@@ -33,12 +33,12 @@ pub(crate) async fn subscribe_uooc_assessments(
 }
 
 #[tauri::command]
-pub(crate) async fn refresh_uooc_assessments(app: tauri::AppHandle) -> Result<(), String> {
+pub async fn refresh_uooc_assessments(app: tauri::AppHandle) -> Result<(), String> {
     service(&app)?.refresh_assessments().await
 }
 
 #[tauri::command]
-pub(crate) fn get_uooc_ai_config(
+pub fn get_uooc_ai_config(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
 ) -> Result<super::ai::ConfigView, String> {
@@ -46,7 +46,7 @@ pub(crate) fn get_uooc_ai_config(
     Ok(service(&app)?.ai.lock().unwrap().view())
 }
 #[tauri::command]
-pub(crate) fn get_uooc_ai_connections(
+pub fn get_uooc_ai_connections(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
 ) -> Result<super::ai::ConnectionsView, String> {
@@ -54,7 +54,7 @@ pub(crate) fn get_uooc_ai_connections(
     Ok(service(&app)?.ai.lock().unwrap().connections())
 }
 #[tauri::command]
-pub(crate) fn save_uooc_ai_connections(
+pub fn save_uooc_ai_connections(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     connections: super::ai::ConnectionsInput,
@@ -71,7 +71,7 @@ pub(crate) fn save_uooc_ai_connections(
     Ok(old.connections())
 }
 #[tauri::command]
-pub(crate) fn save_uooc_ai_preferences(
+pub fn save_uooc_ai_preferences(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     preferences: super::ai::PreferencesInput,
@@ -88,7 +88,7 @@ pub(crate) fn save_uooc_ai_preferences(
     Ok(old.view())
 }
 #[tauri::command]
-pub(crate) async fn list_uooc_ai_models(
+pub async fn list_uooc_ai_models(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     provider: super::ai::ProviderKind,
@@ -104,7 +104,7 @@ pub(crate) async fn list_uooc_ai_models(
     .await
 }
 #[tauri::command]
-pub(crate) fn save_uooc_quiz_mode(
+pub fn save_uooc_quiz_mode(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     cid: String,
@@ -116,7 +116,7 @@ pub(crate) fn save_uooc_quiz_mode(
     Ok(service.snapshot())
 }
 #[tauri::command]
-pub(crate) fn save_uooc_quiz_answers(
+pub fn save_uooc_quiz_answers(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     cid: String,
@@ -129,7 +129,7 @@ pub(crate) fn save_uooc_quiz_answers(
     Ok(service.snapshot())
 }
 #[tauri::command]
-pub(crate) async fn control_uooc_quiz(
+pub async fn control_uooc_quiz(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     cid: String,
@@ -142,7 +142,7 @@ pub(crate) async fn control_uooc_quiz(
     Ok(service.snapshot())
 }
 #[tauri::command]
-pub(crate) async fn open_uooc_quiz_portal(
+pub async fn open_uooc_quiz_portal(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     cid: String,
@@ -151,19 +151,19 @@ pub(crate) async fn open_uooc_quiz_portal(
 }
 
 #[tauri::command]
-pub(crate) fn get_uooc_snapshot(app: tauri::AppHandle) -> Result<Snapshot, String> {
+pub fn get_uooc_snapshot(app: tauri::AppHandle) -> Result<Snapshot, String> {
     Ok(service(&app)?.snapshot())
 }
 
 #[tauri::command]
-pub(crate) async fn refresh_uooc_session(app: tauri::AppHandle) -> Result<Snapshot, String> {
+pub async fn refresh_uooc_session(app: tauri::AppHandle) -> Result<Snapshot, String> {
     let service = service(&app)?;
     service.refresh().await?;
     Ok(service.snapshot())
 }
 
 #[tauri::command]
-pub(crate) async fn open_uooc_login(
+pub async fn open_uooc_login(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
@@ -171,7 +171,7 @@ pub(crate) async fn open_uooc_login(
 }
 
 #[tauri::command]
-pub(crate) async fn logout_uooc(
+pub async fn logout_uooc(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
@@ -179,7 +179,7 @@ pub(crate) async fn logout_uooc(
 }
 
 #[tauri::command]
-pub(crate) fn save_uooc_settings(
+pub fn save_uooc_settings(
     app: tauri::AppHandle,
     settings: Settings,
 ) -> Result<Snapshot, String> {
@@ -189,7 +189,7 @@ pub(crate) fn save_uooc_settings(
 }
 
 #[tauri::command]
-pub(crate) fn start_uooc_courses(
+pub fn start_uooc_courses(
     app: tauri::AppHandle,
     course_ids: Vec<String>,
 ) -> Result<Snapshot, String> {
@@ -199,7 +199,7 @@ pub(crate) fn start_uooc_courses(
 }
 
 #[tauri::command]
-pub(crate) fn control_uooc_tasks(
+pub fn control_uooc_tasks(
     app: tauri::AppHandle,
     course_ids: Vec<String>,
     action: TaskAction,
@@ -210,7 +210,7 @@ pub(crate) fn control_uooc_tasks(
 }
 
 #[tauri::command]
-pub(crate) async fn refresh_uooc_progress(
+pub async fn refresh_uooc_progress(
     app: tauri::AppHandle,
     course_ids: Vec<String>,
 ) -> Result<Snapshot, String> {
@@ -226,7 +226,7 @@ pub(crate) async fn refresh_uooc_progress(
     Ok(service.snapshot())
 }
 #[tauri::command]
-pub(crate) fn start_uooc_checkin(
+pub fn start_uooc_checkin(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     course_ids: Vec<String>,
@@ -237,7 +237,7 @@ pub(crate) fn start_uooc_checkin(
     Ok(service.snapshot())
 }
 #[tauri::command]
-pub(crate) fn cancel_uooc_checkin(
+pub fn cancel_uooc_checkin(
     app: tauri::AppHandle,
     course_ids: Vec<String>,
 ) -> Result<Snapshot, String> {
@@ -247,7 +247,7 @@ pub(crate) fn cancel_uooc_checkin(
 }
 
 #[tauri::command]
-pub(crate) async fn start_uooc_discussion(
+pub async fn start_uooc_discussion(
     app: tauri::AppHandle,
     course_id: String,
 ) -> Result<Snapshot, String> {
@@ -257,7 +257,7 @@ pub(crate) async fn start_uooc_discussion(
 }
 
 #[tauri::command]
-pub(crate) async fn get_uooc_embedding_status(
+pub async fn get_uooc_embedding_status(
     app: tauri::AppHandle,
 ) -> Result<super::quiz::qa::EmbeddingModelStatus, String> {
     let service = service(&app)?;
@@ -266,7 +266,7 @@ pub(crate) async fn get_uooc_embedding_status(
 }
 
 #[tauri::command]
-pub(crate) async fn download_uooc_qa_vectors(
+pub async fn download_uooc_qa_vectors(
     app: tauri::AppHandle,
     server_url: Option<String>,
 ) -> Result<super::quiz::qa::EmbeddingModelStatus, String> {
@@ -286,7 +286,7 @@ pub(crate) async fn download_uooc_qa_vectors(
 }
 
 #[tauri::command]
-pub(crate) async fn search_uooc_qa_questions(
+pub async fn search_uooc_qa_questions(
     app: tauri::AppHandle,
     query: String,
     server_url: Option<String>,
@@ -308,7 +308,7 @@ pub(crate) async fn search_uooc_qa_questions(
 }
 
 #[tauri::command]
-pub(crate) async fn list_uooc_exams(
+pub async fn list_uooc_exams(
     app: tauri::AppHandle,
     cid: Option<String>,
 ) -> Result<Vec<super::model::ExamTask>, String> {
@@ -317,7 +317,7 @@ pub(crate) async fn list_uooc_exams(
 }
 
 #[tauri::command]
-pub(crate) async fn get_uooc_exam_paper(
+pub async fn get_uooc_exam_paper(
     app: tauri::AppHandle,
     cid: String,
     task_id: String,
@@ -327,7 +327,7 @@ pub(crate) async fn get_uooc_exam_paper(
 }
 
 #[tauri::command]
-pub(crate) async fn save_uooc_exam_draft(
+pub async fn save_uooc_exam_draft(
     app: tauri::AppHandle,
     cid: String,
     task_id: String,
@@ -338,7 +338,7 @@ pub(crate) async fn save_uooc_exam_draft(
 }
 
 #[tauri::command]
-pub(crate) async fn submit_uooc_exam(
+pub async fn submit_uooc_exam(
     app: tauri::AppHandle,
     cid: String,
     task_id: String,
@@ -350,7 +350,7 @@ pub(crate) async fn submit_uooc_exam(
 }
 
 #[tauri::command]
-pub(crate) async fn heartbeat_uooc_exam(
+pub async fn heartbeat_uooc_exam(
     app: tauri::AppHandle,
     cid: String,
     task_id: String,
@@ -361,7 +361,7 @@ pub(crate) async fn heartbeat_uooc_exam(
 
 /// 考试心跳由后端持有，前端打开试卷时 start、关闭/提交时 stop。
 #[tauri::command]
-pub(crate) fn start_uooc_exam_heartbeat(
+pub fn start_uooc_exam_heartbeat(
     app: tauri::AppHandle,
     cid: String,
     task_id: String,
@@ -393,7 +393,7 @@ pub(crate) fn start_uooc_exam_heartbeat(
 }
 
 #[tauri::command]
-pub(crate) fn stop_uooc_exam_heartbeat(
+pub fn stop_uooc_exam_heartbeat(
     app: tauri::AppHandle,
     cid: String,
     task_id: String,
@@ -411,7 +411,7 @@ pub(crate) fn stop_uooc_exam_heartbeat(
 }
 
 #[tauri::command]
-pub(crate) async fn sync_uooc_qa_bank(
+pub async fn sync_uooc_qa_bank(
     app: tauri::AppHandle,
     server_url: Option<String>,
 ) -> Result<usize, String> {
@@ -434,7 +434,7 @@ pub(crate) async fn sync_uooc_qa_bank(
 }
 
 #[tauri::command]
-pub(crate) async fn get_uooc_qa_account_status(
+pub async fn get_uooc_qa_account_status(
     app: tauri::AppHandle,
     server_url: Option<String>,
 ) -> Result<super::quiz::qa::QaAccountStatus, String> {
@@ -447,19 +447,19 @@ pub(crate) async fn get_uooc_qa_account_status(
 }
 
 #[tauri::command]
-pub(crate) fn save_uooc_qa_api_key(app: tauri::AppHandle, api_key: String) -> Result<(), String> {
+pub fn save_uooc_qa_api_key(app: tauri::AppHandle, api_key: String) -> Result<(), String> {
     let service = service(&app)?;
     service.save_qa_api_key(api_key)
 }
 
 #[tauri::command]
-pub(crate) fn reset_uooc_qa_api_key(app: tauri::AppHandle) -> Result<(), String> {
+pub fn reset_uooc_qa_api_key(app: tauri::AppHandle) -> Result<(), String> {
     let service = service(&app)?;
     service.reset_qa_api_key()
 }
 
 #[tauri::command]
-pub(crate) async fn start_uooc_qa_device_auth(
+pub async fn start_uooc_qa_device_auth(
     app: tauri::AppHandle,
     server_url: Option<String>,
 ) -> Result<super::quiz::qa::QaDeviceCodeResponse, String> {
@@ -471,7 +471,7 @@ pub(crate) async fn start_uooc_qa_device_auth(
 }
 
 #[tauri::command]
-pub(crate) async fn poll_uooc_qa_device_auth(
+pub async fn poll_uooc_qa_device_auth(
     app: tauri::AppHandle,
     device_code: String,
     server_url: Option<String>,
@@ -491,7 +491,7 @@ pub(crate) async fn poll_uooc_qa_device_auth(
 
 /// 设备码授权由后端按服务端 interval 轮询，前端只收 Channel。
 #[tauri::command]
-pub(crate) async fn watch_uooc_qa_device_auth(
+pub async fn watch_uooc_qa_device_auth(
     app: tauri::AppHandle,
     device_code: String,
     interval: Option<u64>,
@@ -519,7 +519,7 @@ pub(crate) async fn watch_uooc_qa_device_auth(
 }
 
 #[tauri::command]
-pub(crate) async fn upload_all_uooc_qa_bank(
+pub async fn upload_all_uooc_qa_bank(
     app: tauri::AppHandle,
     server_url: Option<String>,
 ) -> Result<usize, String> {
@@ -533,7 +533,7 @@ pub(crate) async fn upload_all_uooc_qa_bank(
 }
 
 #[tauri::command]
-pub(crate) async fn fetch_uooc_completed_quiz(
+pub async fn fetch_uooc_completed_quiz(
     app: tauri::AppHandle,
     cid: String,
     task_id: Option<String>,
@@ -547,14 +547,14 @@ pub(crate) async fn fetch_uooc_completed_quiz(
 }
 
 #[tauri::command]
-pub(crate) async fn get_uooc_local_bank_count(app: tauri::AppHandle) -> Result<usize, String> {
+pub async fn get_uooc_local_bank_count(app: tauri::AppHandle) -> Result<usize, String> {
     let service = service(&app)?;
     let qa_db = service.get_qa_db().await?;
     qa_db.count_questions().await
 }
 
 #[tauri::command]
-pub(crate) async fn get_uooc_local_bank_questions(
+pub async fn get_uooc_local_bank_questions(
     app: tauri::AppHandle,
 ) -> Result<Vec<super::quiz::qa::LocalBankQuestion>, String> {
     let service = service(&app)?;
@@ -577,7 +577,7 @@ pub(crate) async fn get_uooc_local_bank_questions(
 }
 
 #[tauri::command]
-pub(crate) async fn list_uooc_quizzes(
+pub async fn list_uooc_quizzes(
     app: tauri::AppHandle,
     cid: Option<String>,
 ) -> Result<Vec<super::model::HomeworkTask>, String> {
@@ -586,7 +586,7 @@ pub(crate) async fn list_uooc_quizzes(
 }
 
 #[tauri::command]
-pub(crate) async fn list_uooc_homeworks(
+pub async fn list_uooc_homeworks(
     app: tauri::AppHandle,
     cid: Option<String>,
 ) -> Result<Vec<super::model::HomeworkTask>, String> {
@@ -595,7 +595,7 @@ pub(crate) async fn list_uooc_homeworks(
 }
 
 #[tauri::command]
-pub(crate) async fn get_uooc_eval_list(
+pub async fn get_uooc_eval_list(
     app: tauri::AppHandle,
     cid: Option<String>,
 ) -> Result<Vec<super::model::PeerEvalTask>, String> {
@@ -604,7 +604,7 @@ pub(crate) async fn get_uooc_eval_list(
 }
 
 #[tauri::command]
-pub(crate) async fn submit_uooc_eval(
+pub async fn submit_uooc_eval(
     app: tauri::AppHandle,
     cid: String,
     tid: String,
@@ -617,7 +617,7 @@ pub(crate) async fn submit_uooc_eval(
 }
 
 #[tauri::command]
-pub(crate) async fn generate_uooc_subjective(
+pub async fn generate_uooc_subjective(
     app: tauri::AppHandle,
     stem: Option<String>,
     question: Option<super::quiz::model::Question>,
@@ -638,7 +638,7 @@ pub(crate) async fn generate_uooc_subjective(
 }
 
 #[tauri::command]
-pub(crate) async fn open_uooc_task_portal(
+pub async fn open_uooc_task_portal(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     task_id: String,
@@ -648,7 +648,7 @@ pub(crate) async fn open_uooc_task_portal(
 }
 
 #[tauri::command]
-pub(crate) async fn match_uooc_paper_qa(
+pub async fn match_uooc_paper_qa(
     app: tauri::AppHandle,
     questions: Vec<super::quiz::model::Question>,
 ) -> Result<(super::quiz::model::Answers, Vec<super::quiz::model::Review>), String> {
@@ -657,7 +657,7 @@ pub(crate) async fn match_uooc_paper_qa(
 }
 
 #[tauri::command]
-pub(crate) async fn solve_uooc_paper_ai(
+pub async fn solve_uooc_paper_ai(
     app: tauri::AppHandle,
     questions: Vec<super::quiz::model::Question>,
     on_event: tauri::ipc::Channel<super::quiz::model::AiSessionEntry>,
@@ -667,7 +667,7 @@ pub(crate) async fn solve_uooc_paper_ai(
 }
 
 #[tauri::command]
-pub(crate) async fn get_uooc_course_title(
+pub async fn get_uooc_course_title(
     app: tauri::AppHandle,
     cid: String,
 ) -> Result<String, String> {
@@ -691,7 +691,7 @@ pub(crate) async fn get_uooc_course_title(
 }
 
 #[tauri::command]
-pub(crate) async fn build_uooc_local_bank(
+pub async fn build_uooc_local_bank(
     app: tauri::AppHandle,
     on_progress: tauri::ipc::Channel<super::model::BankRebuildProgress>,
 ) -> Result<usize, String> {
@@ -700,20 +700,20 @@ pub(crate) async fn build_uooc_local_bank(
 }
 
 #[tauri::command]
-pub(crate) async fn clear_uooc_local_bank(app: tauri::AppHandle) -> Result<usize, String> {
+pub async fn clear_uooc_local_bank(app: tauri::AppHandle) -> Result<usize, String> {
     let service = service(&app)?;
     let count = if let Ok(qa_db) = service.get_qa_db().await {
         qa_db.clear_all_questions().await.unwrap_or(0)
     } else {
         0
     };
-    crate::migrations::uooc::cleanup_legacy_uooc_files(&service.path);
+    crate::uooc::migrations::cleanup_legacy_uooc_files(&service.path);
     service.log_debug("bank", format!("已清空本地题库（共 {count} 道题目）"));
     Ok(count)
 }
 
 #[tauri::command]
-pub(crate) async fn uooc_qa_http_request(
+pub async fn uooc_qa_http_request(
     request: super::quiz::qa::QaHttpRequest,
 ) -> Result<super::quiz::qa::QaHttpResponse, String> {
     super::quiz::qa::execute_qa_http_request(request).await

@@ -29,7 +29,7 @@ fn source(item: &Value) -> Option<String> {
         .find(|s| !s.is_empty())
         .map(str::to_owned)
 }
-pub(super) fn catalog_nodes(
+pub fn catalog_nodes(
     cid: &str,
     catalog: Vec<Value>,
 ) -> Result<VecDeque<(Value, Video)>, Error> {
@@ -62,7 +62,7 @@ pub(super) fn catalog_nodes(
     }
     Ok(queue)
 }
-pub(super) async fn discover(
+pub async fn discover(
     client: &Client,
     cid: &str,
     cancel: &CancellationToken,
@@ -170,7 +170,7 @@ pub(super) async fn discover(
     Ok((videos, completed, false))
 }
 
-pub(super) async fn run(
+pub async fn run(
     service: Arc<Service>,
     client: Arc<Client>,
     cid: String,

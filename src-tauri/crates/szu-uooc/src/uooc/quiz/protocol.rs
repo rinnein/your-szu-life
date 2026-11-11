@@ -4,7 +4,7 @@ use serde_json::Value;
 use sha1::{Digest, Sha1};
 use std::collections::HashSet;
 
-pub(crate) struct Paper {
+pub struct Paper {
     pub questions: Vec<Question>,
     pub signature: String,
     pub fields: Vec<(String, String)>,
@@ -33,7 +33,7 @@ fn text(e: ElementRef<'_>) -> String {
     walk(e, &mut out);
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
-pub(crate) fn parse(html: &str, url: &reqwest::Url, task_id: &str) -> Result<Paper, String> {
+pub fn parse(html: &str, url: &reqwest::Url, task_id: &str) -> Result<Paper, String> {
     let doc = Html::parse_document(html);
     let mut questions = vec![];
     let mut bindings = vec![];
@@ -239,10 +239,10 @@ impl Paper {
         Ok(fields)
     }
 }
-pub(super) fn resource_id(v: &Value) -> Option<String> {
+pub fn resource_id(v: &Value) -> Option<String> {
     super::super::model::id(&v["res_id"])
 }
-pub(super) fn verdict(bytes: &[u8]) -> Option<bool> {
+pub fn verdict(bytes: &[u8]) -> Option<bool> {
     fn message(text: &str) -> Option<bool> {
         if text.contains("请重新提交测验") || text.contains("测验未通过") {
             Some(false)

@@ -11,7 +11,7 @@ static HTML_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// 去除字符串中的所有 HTML 标签并解析常见实体字符，保证输出纯文本
-pub(crate) fn strip_html_tags(raw: &str) -> String {
+pub fn strip_html_tags(raw: &str) -> String {
     let stripped = HTML_TAG_RE.replace_all(raw, " ");
     let unescaped = stripped
         .replace("&nbsp;", " ")
@@ -28,7 +28,7 @@ pub(crate) fn strip_html_tags(raw: &str) -> String {
     unescaped.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-pub(crate) const EMBEDDING_DIMENSIONS: usize = 512;
+pub const EMBEDDING_DIMENSIONS: usize = 512;
 
 fn deserialize_flex_string<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
@@ -99,7 +99,7 @@ where
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub(crate) struct QaOption {
+pub struct QaOption {
     #[serde(default, deserialize_with = "deserialize_flex_string")]
     pub id: String,
     #[serde(default, deserialize_with = "deserialize_flex_string")]
@@ -107,7 +107,7 @@ pub(crate) struct QaOption {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub(crate) struct QaAnswer {
+pub struct QaAnswer {
     #[serde(default)]
     pub id: Option<i64>,
     #[serde(default, deserialize_with = "deserialize_flex_values")]
@@ -119,7 +119,7 @@ pub(crate) struct QaAnswer {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub(crate) struct QaQuestion {
+pub struct QaQuestion {
     #[serde(default)]
     pub id: Option<i64>,
     #[serde(default)]
@@ -141,7 +141,7 @@ pub(crate) struct QaQuestion {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub(crate) struct QaTaskGroup {
+pub struct QaTaskGroup {
     pub tid: String,
     #[serde(default)]
     pub cid: Option<String>,
@@ -150,7 +150,7 @@ pub(crate) struct QaTaskGroup {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub(crate) struct QaTaskResponse {
+pub struct QaTaskResponse {
     #[serde(default, rename = "taskGroup")]
     pub task_group: Option<QaTaskGroup>,
     #[serde(default)]
@@ -160,13 +160,13 @@ pub(crate) struct QaTaskResponse {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct QaUploadOption {
+pub struct QaUploadOption {
     pub id: String,
     pub text: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub(crate) struct QaUploadQuestion {
+pub struct QaUploadQuestion {
     pub question_id: String,
     #[serde(rename = "type")]
     pub question_type: String,
@@ -185,7 +185,7 @@ pub(crate) struct QaUploadQuestion {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub(crate) struct QaBatchUploadPayload {
+pub struct QaBatchUploadPayload {
     pub tid: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cid: Option<String>,
@@ -197,13 +197,13 @@ pub(crate) struct QaBatchUploadPayload {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub(crate) struct QaBatchUploadResponse {
+pub struct QaBatchUploadResponse {
     pub ok: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct LocalBankAnswer {
+pub struct LocalBankAnswer {
     #[serde(default)]
     pub id: Option<i64>,
     pub values: Vec<serde_json::Value>,
@@ -225,7 +225,7 @@ fn default_confidence() -> f64 {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct LocalBankQuestion {
+pub struct LocalBankQuestion {
     pub cid: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub course_name: Option<String>,
@@ -250,14 +250,14 @@ pub(crate) struct LocalBankQuestion {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub(crate) struct BankMatchItem {
+pub struct BankMatchItem {
     pub tid: String,
     pub question_id: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ExamViewDetails {
+pub struct ExamViewDetails {
     pub questions: Vec<Question>,
     pub answers: Answers,
     pub reviews: Vec<Review>,
@@ -271,7 +271,7 @@ pub(crate) struct ExamViewDetails {
 /// 试卷最后一次作答提交快照
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SubmittedPaperRecord {
+pub struct SubmittedPaperRecord {
     pub cid: String,
     pub tid: String,
     pub task_title: Option<String>,
@@ -281,7 +281,7 @@ pub(crate) struct SubmittedPaperRecord {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub(crate) struct BankMatchPayload {
+pub struct BankMatchPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cid: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -294,7 +294,7 @@ pub(crate) struct BankMatchPayload {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct MissingOnServerItem {
+pub struct MissingOnServerItem {
     pub tid: Option<String>,
     #[serde(alias = "question_id")]
     pub question_id: String,
@@ -302,14 +302,14 @@ pub(crate) struct MissingOnServerItem {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BankMatchResponse {
+pub struct BankMatchResponse {
     #[serde(default, alias = "missing_on_server")]
     pub missing_on_server: Vec<MissingOnServerItem>,
 }
 
 /// 已结课/复习模式之外的课程是否需要向共享题库贡献数据。
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum CourseShareNeed {
+pub enum CourseShareNeed {
     /// 服务端完全没有收录该 cid，需要从官方接口构建整门课程题库并上传。
     EntireCourse,
     /// 服务端已有该课程，但这些题组里存在缺少正确答案、需要补传的题目。
@@ -319,7 +319,7 @@ pub(crate) enum CourseShareNeed {
 }
 
 /// 按 cid 询问共享题库：课程不存在，或存在但仍有 `answer_request` 任务时，才需要本地构建。
-pub(crate) async fn course_share_need(
+pub async fn course_share_need(
     server_url: &str,
     api_key: Option<&str>,
     cid: &str,
@@ -404,7 +404,7 @@ pub(crate) async fn course_share_need(
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct EmbeddingModelStatus {
+pub struct EmbeddingModelStatus {
     pub status: String,
     pub cached_count: usize,
     pub total_dimension: usize,
@@ -414,7 +414,7 @@ pub(crate) struct EmbeddingModelStatus {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct QaSearchResultItem {
+pub struct QaSearchResultItem {
     pub question_id: String,
     pub tid: Option<String>,
     pub cid: Option<String>,
@@ -429,7 +429,7 @@ pub(crate) struct QaSearchResultItem {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct QaAccountStatus {
+pub struct QaAccountStatus {
     pub api_key: Option<String>,
     pub is_anonymous: bool,
     pub user_id: Option<String>,
@@ -440,7 +440,7 @@ pub(crate) struct QaAccountStatus {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct QaDeviceCodeResponse {
+pub struct QaDeviceCodeResponse {
     #[serde(alias = "device_code")]
     pub device_code: String,
     #[serde(alias = "user_code")]
@@ -457,7 +457,7 @@ pub(crate) struct QaDeviceCodeResponse {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct QaDeviceTokenPollResult {
+pub struct QaDeviceTokenPollResult {
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
@@ -467,7 +467,7 @@ pub(crate) struct QaDeviceTokenPollResult {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct QaHttpRequest {
+pub struct QaHttpRequest {
     pub url: String,
     pub method: String,
     #[serde(default)]
@@ -478,7 +478,7 @@ pub(crate) struct QaHttpRequest {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct QaHttpResponse {
+pub struct QaHttpResponse {
     pub status: u16,
     pub status_text: String,
     pub headers: BTreeMap<String, String>,
@@ -489,16 +489,16 @@ pub(crate) struct QaHttpResponse {
 ///
 /// 题库服务器地址由用户填写，本地/内网/校内网是否绕过代理统一由 netproxy
 /// 按请求目标判断，这里不需要（也不应该）自己区分。
-pub(crate) fn http_client() -> Result<reqwest::Client, String> {
+pub fn http_client() -> Result<reqwest::Client, String> {
     #[cfg(target_os = "android")]
-    crate::platform_tls::initialize_platform_verifier()?;
-    crate::netproxy::client_builder()
+    szu_core::platform_tls::initialize_platform_verifier()?;
+    szu_core::netproxy::client_builder()
         .timeout(Duration::from_secs(15))
         .build()
         .map_err(|e| format!("无法构建 HTTP 客户端: {e}"))
 }
 
-pub(crate) async fn execute_qa_http_request(
+pub async fn execute_qa_http_request(
     request: QaHttpRequest,
 ) -> Result<QaHttpResponse, String> {
     let client = http_client()?;
@@ -550,7 +550,7 @@ pub(crate) async fn execute_qa_http_request(
     })
 }
 
-pub(crate) async fn get_qa_account_status(
+pub async fn get_qa_account_status(
     server_url: &str,
     api_key: Option<&str>,
 ) -> Result<QaAccountStatus, String> {
@@ -598,7 +598,7 @@ pub(crate) async fn get_qa_account_status(
     }
 }
 
-pub(crate) fn resolve_auth_base(server_url: &str) -> String {
+pub fn resolve_auth_base(server_url: &str) -> String {
     let base = server_url.trim().trim_end_matches('/');
     if base.ends_with("/api/auth") {
         base.to_string()
@@ -609,7 +609,7 @@ pub(crate) fn resolve_auth_base(server_url: &str) -> String {
     }
 }
 
-pub(crate) fn resolve_api_base(server_url: &str) -> String {
+pub fn resolve_api_base(server_url: &str) -> String {
     let base = server_url.trim().trim_end_matches('/');
     if base.ends_with("/api/auth") {
         base.trim_end_matches("/auth").to_string()
@@ -620,7 +620,7 @@ pub(crate) fn resolve_api_base(server_url: &str) -> String {
     }
 }
 
-pub(crate) async fn request_device_code(server_url: &str) -> Result<QaDeviceCodeResponse, String> {
+pub async fn request_device_code(server_url: &str) -> Result<QaDeviceCodeResponse, String> {
     let auth_base = resolve_auth_base(server_url);
     let url = format!("{auth_base}/device/code");
     let client = http_client()?;
@@ -677,7 +677,7 @@ pub(crate) async fn request_device_code(server_url: &str) -> Result<QaDeviceCode
     Ok(code_resp)
 }
 
-pub(crate) async fn poll_device_token(
+pub async fn poll_device_token(
     server_url: &str,
     device_code: &str,
 ) -> Result<QaDeviceTokenPollResult, String> {
@@ -789,7 +789,7 @@ pub(crate) async fn poll_device_token(
 }
 
 /// Sanitize task id by stripping URL fragments or anchor parameters (e.g. `1243266098##anchor1086731163` or `1243266098%23%23...`)
-pub(crate) fn sanitize_task_id(tid: &str) -> &str {
+pub fn sanitize_task_id(tid: &str) -> &str {
     let mut s = tid.trim();
     if let Some(pos) = s.find("##") {
         s = &s[..pos];
@@ -805,12 +805,12 @@ pub(crate) fn sanitize_task_id(tid: &str) -> &str {
 
 /// Normalize stem according to uooc-qa-share specification:
 /// strip HTML tags, strip HTML entities, collapse whitespace, trim, lowercase.
-pub(crate) fn normalize_stem(raw: &str) -> String {
+pub fn normalize_stem(raw: &str) -> String {
     strip_html_tags(raw).to_lowercase()
 }
 
 /// Compute SHA-256 hash of normalized stem.
-pub(crate) fn hash_stem(raw: &str) -> String {
+pub fn hash_stem(raw: &str) -> String {
     let normalized = normalize_stem(raw);
     let mut hasher = Sha256::new();
     hasher.update(normalized.as_bytes());
@@ -818,7 +818,7 @@ pub(crate) fn hash_stem(raw: &str) -> String {
 }
 
 /// Compute a deterministic 512-dimensional L2-normalized semantic feature vector.
-pub(crate) fn compute_local_embedding(text: &str) -> Vec<f32> {
+pub fn compute_local_embedding(text: &str) -> Vec<f32> {
     let normalized = normalize_stem(text);
     let mut vector = vec![0.0_f32; EMBEDDING_DIMENSIONS];
     if normalized.is_empty() {
@@ -871,7 +871,7 @@ pub(crate) fn compute_local_embedding(text: &str) -> Vec<f32> {
 }
 
 /// Cosine similarity between two unit vectors (dot product).
-pub(crate) fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
+pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
     if a.len() != b.len() || a.is_empty() {
         return 0.0;
     }
@@ -880,7 +880,7 @@ pub(crate) fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
 }
 
 /// 构建用于计算语义向量的文本：将题干与各选项一并组装，提高向量检索的命中率。
-pub(crate) fn build_embedding_text(
+pub fn build_embedding_text(
     stem: Option<&str>,
     options: Option<&[QaUploadOption]>,
 ) -> String {
@@ -958,7 +958,7 @@ impl QuestionRagDocument {
     }
 }
 
-pub(crate) fn vector_to_blob(vec: &[f32]) -> Vec<u8> {
+pub fn vector_to_blob(vec: &[f32]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(vec.len() * 4);
     for f in vec {
         bytes.extend_from_slice(&f.to_le_bytes());
@@ -966,14 +966,14 @@ pub(crate) fn vector_to_blob(vec: &[f32]) -> Vec<u8> {
     bytes
 }
 
-pub(crate) fn blob_to_vector(bytes: &[u8]) -> Vec<f32> {
+pub fn blob_to_vector(bytes: &[u8]) -> Vec<f32> {
     bytes
         .chunks_exact(4)
         .map(|chunk| f32::from_le_bytes(chunk.try_into().unwrap_or_default()))
         .collect()
 }
 
-pub(crate) fn query_rag_candidates(
+pub fn query_rag_candidates(
     store: &InMemoryVectorStore<QuestionRagDocument>,
     query: &str,
     limit: usize,
@@ -1014,7 +1014,7 @@ fn cosine_similarity_f32_f64(a: &[f32], b: &[f64]) -> f64 {
 }
 
 /// Automatically acquire or verify an API key via /api/auth/anonymous-key.
-pub(crate) async fn ensure_api_key(server_url: &str, stored_key: Option<&str>) -> Option<String> {
+pub async fn ensure_api_key(server_url: &str, stored_key: Option<&str>) -> Option<String> {
     if let Some(key) = stored_key {
         let trimmed = key.trim();
         if !trimmed.is_empty() {
@@ -1045,7 +1045,7 @@ pub(crate) async fn ensure_api_key(server_url: &str, stored_key: Option<&str>) -
 }
 
 /// Query QA platform for questions and known answers of a task group.
-pub(crate) async fn query_task_answers(
+pub async fn query_task_answers(
     server_url: &str,
     api_key: Option<&str>,
     tid: &str,
@@ -1119,7 +1119,7 @@ pub(crate) async fn query_task_answers(
 }
 
 /// Upload question results in batch to /api/upload/batch.
-pub(crate) async fn upload_batch(
+pub async fn upload_batch(
     server_url: &str,
     api_key: Option<&str>,
     payload: &QaBatchUploadPayload,
@@ -1203,14 +1203,14 @@ pub(crate) async fn upload_batch(
 }
 
 #[derive(Default)]
-pub(crate) struct MatchResult {
+pub struct MatchResult {
     pub matched_answers: Answers,
     pub wrong_options: BTreeMap<String, Vec<String>>,
     pub reviews: Vec<Review>,
 }
 
 /// Match local paper questions with questions from the QA platform.
-pub(crate) fn match_answers(
+pub fn match_answers(
     qa_questions: &[QaQuestion],
     local_questions: &[Question],
 ) -> MatchResult {
@@ -1347,7 +1347,7 @@ pub(crate) fn match_answers(
     result
 }
 
-pub(crate) fn is_option_match(opt: &OptionItem, target: &str) -> bool {
+pub fn is_option_match(opt: &OptionItem, target: &str) -> bool {
     let t = target.trim();
     if t.is_empty() {
         return false;
@@ -1369,7 +1369,7 @@ pub(crate) fn is_option_match(opt: &OptionItem, target: &str) -> bool {
     !norm_opt.is_empty() && norm_opt == norm_target
 }
 
-pub(crate) fn map_answers_to_option_ids(
+pub fn map_answers_to_option_ids(
     answers: &[String],
     options: &[OptionItem],
 ) -> Vec<String> {
@@ -1484,7 +1484,7 @@ fn map_option_values(
 }
 
 /// 提取选项文本内容作为答案载体，实现跨批次、跨账号防选项乱序
-pub(crate) fn extract_answers_content(
+pub fn extract_answers_content(
     answers: &Answers,
     questions: &[Question],
 ) -> Answers {
@@ -1512,7 +1512,7 @@ pub(crate) fn extract_answers_content(
 // 本地题目 ID 库管理与自动匹配上传 (Bank Matching & Sync)
 // ─────────────────────────────────────────────────────────────
 
-pub(crate) fn bank_key(tid: &str, question_id: &str) -> String {
+pub fn bank_key(tid: &str, question_id: &str) -> String {
     format!("{tid}:{question_id}")
 }
 
@@ -1634,7 +1634,7 @@ fn normalize_answers_for_upload(
 /// 2. Choice answers (single/multiple) MUST contain only option IDs (e.g. ["A"], ["B"]), never option text.
 /// 3. Judge questions MUST have options A. 正确, B. 错误, and answers must be a single boolean [true] or [false].
 /// 4. Text questions MUST NOT have options, and blanks matches answer count.
-pub(crate) fn build_qa_upload_question(
+pub fn build_qa_upload_question(
     q: &Question,
     correct_answers: Option<&[String]>,
     wrong_answers: Option<&[String]>,
@@ -1716,7 +1716,7 @@ pub(crate) fn build_qa_upload_question(
     }
 }
 
-pub(crate) fn build_upload_question_from_local_bank(q: &LocalBankQuestion) -> QaUploadQuestion {
+pub fn build_upload_question_from_local_bank(q: &LocalBankQuestion) -> QaUploadQuestion {
     let clean_stem = q.stem.as_deref().map(strip_html_tags);
 
     let mut q_type = match q.question_type.as_str() {
@@ -1827,7 +1827,7 @@ pub(crate) fn build_upload_question_from_local_bank(q: &LocalBankQuestion) -> Qa
 }
 
 /// Helper to construct a `QaBatchUploadPayload` from questions, correct answers, and optional wrong answers.
-pub(crate) fn build_batch_upload_payload_with_details(
+pub fn build_batch_upload_payload_with_details(
     tid: &str,
     cid: Option<&str>,
     task_name: Option<&str>,
@@ -1860,7 +1860,7 @@ pub(crate) fn build_batch_upload_payload_with_details(
 }
 
 /// 录入已通过并确认答案（及已知错误选项）的测验试题到本地题库表，标记 uploaded 状态
-pub(crate) async fn record_passed_quiz_with_details(
+pub async fn record_passed_quiz_with_details(
     qa_db: &super::db::QaDatabase,
     cid: &str,
     task_id: &str,
@@ -2036,7 +2036,7 @@ pub(crate) async fn record_passed_quiz_with_details(
 
 /// 录入已通过并确认答案的测验试题到本地题库表，标记 uploaded 状态
 #[cfg(test)]
-pub(crate) async fn record_passed_quiz(
+pub async fn record_passed_quiz(
     qa_db: &super::db::QaDatabase,
     cid: &str,
     task_id: &str,
@@ -2059,7 +2059,7 @@ pub(crate) async fn record_passed_quiz(
 /// 针对本地维护的确认答案题目列表，调用 POST /api/automation/match 进行服务端缺失确认，
 /// 并自动将服务端缺失（或本地未上传）的题库打包上传至 /api/upload/batch。
 /// `force_upload` 为 true 时，本地已标记 uploaded 的题目也会重传，用于补齐服务端缺失的答案。
-pub(crate) async fn sync_missing_to_server(
+pub async fn sync_missing_to_server(
     qa_db: &super::db::QaDatabase,
     server_url: &str,
     api_key: Option<&str>,
@@ -2269,7 +2269,7 @@ pub(crate) async fn sync_missing_to_server(
 }
 
 /// 手动全量上传本地题库的所有题目至服务端，按 (cid, tid) 分组打包提交
-pub(crate) async fn upload_all_local_bank(
+pub async fn upload_all_local_bank(
     qa_db: &super::db::QaDatabase,
     server_url: &str,
     api_key: Option<&str>,
@@ -2326,12 +2326,12 @@ pub(crate) async fn upload_all_local_bank(
 }
 
 /// 解析 UOOC 官方 /exam/getTaskPaper 接口返回的标准无混淆题单（含全局真实单题 ID、选项和答案）
-pub(crate) fn parse_task_paper(raw: &[u8]) -> Option<(Vec<Question>, Answers)> {
+pub fn parse_task_paper(raw: &[u8]) -> Option<(Vec<Question>, Answers)> {
     let val: serde_json::Value = serde_json::from_slice(raw).ok()?;
     parse_task_paper_json(&val)
 }
 
-pub(crate) fn parse_task_paper_json(val: &serde_json::Value) -> Option<(Vec<Question>, Answers)> {
+pub fn parse_task_paper_json(val: &serde_json::Value) -> Option<(Vec<Question>, Answers)> {
     let list = val["data"]["questions"]
         .as_array()
         .or_else(|| val["questions"].as_array())
@@ -2467,7 +2467,7 @@ pub(crate) fn parse_task_paper_json(val: &serde_json::Value) -> Option<(Vec<Ques
 
 /// 将 DOM 解析的题目（携带表单提交 binding）与 getTaskPaper 解析的真实题单对齐
 /// 从而将 DOM 题目 ID 规范化为真实单题数字 ID，同时纯净化题干与选项文本
-pub(crate) fn align_paper_with_task_paper(
+pub fn align_paper_with_task_paper(
     paper_questions: &mut [Question],
     task_paper_questions: &[Question],
 ) {
@@ -2566,7 +2566,7 @@ fn parse_string_list(val: &serde_json::Value) -> Vec<String> {
 }
 
 /// 解析 /exam/view 返回的已提交测验详细数据（支持传入最后一次提交快照，兼容学生作答为空的情况）
-pub(crate) fn parse_exam_view_details_with_submitted(
+pub fn parse_exam_view_details_with_submitted(
     raw: &[u8],
     submitted: Option<&SubmittedPaperRecord>,
 ) -> Option<ExamViewDetails> {
@@ -2612,17 +2612,17 @@ pub(crate) fn parse_exam_view_details_with_submitted(
 
 /// 解析 /exam/view 返回的已提交测验详细数据（支持 JSON 和 HTML 两种形态）
 #[cfg(test)]
-pub(crate) fn parse_exam_view_details(raw: &[u8]) -> Option<ExamViewDetails> {
+pub fn parse_exam_view_details(raw: &[u8]) -> Option<ExamViewDetails> {
     parse_exam_view_details_with_submitted(raw, None)
 }
 
 /// 解析 /exam/view 返回的已提交测验数据（支持 JSON 和 HTML 两种形态）
 #[cfg(test)]
-pub(crate) fn parse_exam_view(raw: &[u8]) -> Option<(Vec<Question>, Answers)> {
+pub fn parse_exam_view(raw: &[u8]) -> Option<(Vec<Question>, Answers)> {
     parse_exam_view_details(raw).map(|d| (d.questions, d.answers))
 }
 
-pub(crate) fn parse_exam_view_json_details_with_submitted(
+pub fn parse_exam_view_json_details_with_submitted(
     val: &serde_json::Value,
     submitted: Option<&SubmittedPaperRecord>,
 ) -> Option<ExamViewDetails> {
@@ -3253,7 +3253,7 @@ fn extract_user_answer_tokens(text: &str, options: &[OptionItem], out: &mut Vec<
 }
 
 /// 将从 /exam/view 解析出的试题答案对齐到规范的单题列表（支持按 ID、题干或顺序匹配）
-pub(crate) fn align_view_answers_to_questions(
+pub fn align_view_answers_to_questions(
     view_questions: &[Question],
     view_answers: &Answers,
     target_questions: &[Question],
@@ -3322,7 +3322,7 @@ pub(crate) fn align_view_answers_to_questions(
 }
 
 /// 将从 /exam/view 解析出的详细数据（答案、排除评价、学生作答）精准对齐到目标试题列表
-pub(crate) fn align_view_details_to_questions(
+pub fn align_view_details_to_questions(
     view_details: &ExamViewDetails,
     target_questions: &[Question],
     out_answers: &mut Answers,
@@ -3378,7 +3378,7 @@ pub(crate) fn align_view_details_to_questions(
 // 本地题库向量缓存与向量检索 (Vector Cache & Search via Toasty SQLite)
 // ─────────────────────────────────────────────────────────────
 
-pub(crate) async fn get_vector_status(qa_db: &super::db::QaDatabase) -> EmbeddingModelStatus {
+pub async fn get_vector_status(qa_db: &super::db::QaDatabase) -> EmbeddingModelStatus {
     let count = qa_db.count_embedding_questions().await.unwrap_or(0);
     EmbeddingModelStatus {
         status: if count > 0 { "ready".into() } else { "empty".into() },
@@ -3394,7 +3394,7 @@ pub(crate) async fn get_vector_status(qa_db: &super::db::QaDatabase) -> Embeddin
 }
 
 /// 从服务端批量拉取题目并落库 SQLite 512 维特征向量
-pub(crate) async fn download_qa_vectors(
+pub async fn download_qa_vectors(
     qa_db: &super::db::QaDatabase,
     server_url: &str,
     api_key: Option<&str>,
@@ -3498,7 +3498,7 @@ pub(crate) async fn download_qa_vectors(
 }
 
 /// 本地完成 512 维向量计算后搜索题目（结合 SQLite 本地题库向量特征与远程服务端搜索）
-pub(crate) async fn search_questions_with_local_embedding(
+pub async fn search_questions_with_local_embedding(
     qa_db: &super::db::QaDatabase,
     server_url: &str,
     api_key: Option<&str>,
