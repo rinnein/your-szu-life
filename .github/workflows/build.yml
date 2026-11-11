@@ -5,6 +5,12 @@ name: Build and publish packages
 #   - push 版本 tag（v*）→ 发布正式 release（latest），并把同一次构建的资产
 #     同步到 canary，让测试版频道与 AUR 立刻拿到这个版本
 # 两种入口都会派发 AUR（只消费 canary tag）并回调 CNB 同步。
+#
+# tag 与 canary 的去重：同一提交先随 main push 构建发布过 canary，之后再补推
+# 版本 tag 时整套构建是重复劳动。detect job 用「canary tag 指向本次提交 +
+# canary release 资产齐全」判定已构建过：此时跳过 packages 构建，publish 直接
+# 下载 canary 资产发正式版，并跳过 canary 重发与 AUR 派发（AUR 由 canary 渠道
+# 供养，main push 那次已经派发过）；任何一项不满足则回退完整构建。
 # PR 的构建在 pr-build.yml 里，那个 workflow 没有任何发布 job。
 # push 只放宽到 main 与 v* tag：CNB 同步过来的 cnb/* 分支也是 push 事件，
 # 不限制的话推一次分支就会跑整套构建并覆盖 canary release。
@@ -22,9 +28,88 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  detect:
+    name: Resolve version & reuse check
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      reuse: ${{ steps.reuse.outputs.reuse }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up vp
+        uses: voidzero-dev/setup-vp@v1.22.0
+
+      - name: Read version from package.json
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(vp node -e "process.stdout.write(JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version)")"
+          if [ -z "$version" ]; then
+            echo "::error::package.json 缺少 version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Detect whether this commit was already published as canary
+        id: reuse
+        # 非 tag push 一律走完整构建；tag push 只有在 canary tag 指向同一提交、
+        # 且 canary release 已带上全部对应版本资产时才复用。
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF_TYPE" != "tag" ]; then
+            echo "reuse=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ "$tag_version" != "$VERSION" ]; then
+            echo "::notice::tag $GITHUB_REF_NAME 与 package.json 版本 $VERSION 不一致；发布名与资产名以 package.json 为准"
+          fi
+          # ls-remote 会把附注 tag 的对象 sha 与剥离后的 commit sha 都列出来
+          # （^{ } 后缀是 peeled 引用），取最后一行保证拿到的是 commit。
+          canary_sha="$(git ls-remote origin 'refs/tags/canary' 'refs/tags/canary^{}' | awk '{print $1}' | tail -1)"
+          if [ -z "$canary_sha" ]; then
+            echo "::notice::canary tag 不存在，走完整构建"
+            echo "reuse=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$canary_sha" != "$GITHUB_SHA" ]; then
+            echo "::notice::canary tag 指向 $canary_sha，不等于本次 tag 的提交 $GITHUB_SHA，走完整构建"
+            echo "reuse=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          expected=(
+            "your-szu-life_linux_x64_${VERSION}-release.deb"
+            "your-szu-life_linux_x64_${VERSION}-release.AppImage"
+            "your-szu-life_windows_x64_${VERSION}-release.msi"
+            "your-szu-life_android_arm64_${VERSION}-release.apk"
+            "your-szu-life_android_arm64_${VERSION}-release.apk.gz"
+          )
+          assets="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/canary" --jq '.assets[].name' 2>/dev/null || true)"
+          reuse=true
+          for name in "${expected[@]}"; do
+            if ! grep -qxF -- "$name" <<<"$assets"; then
+              echo "::notice::canary release 缺少资产 $name，走完整构建"
+              reuse=false
+            fi
+          done
+          if [ "$reuse" = "true" ]; then
+            echo "::notice::tag $GITHUB_REF_NAME 指向的提交已随 canary 构建发布，跳过构建并复用其资产"
+          fi
+          echo "reuse=$reuse" >> "$GITHUB_OUTPUT"
+
   packages:
     # 构建步骤与 PR 构建共用，见 build-packages.yml。这里的入口都是可信事件
     # （main push / 版本 tag / 手动触发），所以直接用仓库正式签名。
+    # 复用 canary 资产时整个构建被跳过，publish 改从 canary release 取资产。
+    needs: [detect]
+    if: needs.detect.outputs.reuse != 'true'
     permissions:
       contents: read
     uses: ./.github/workflows/build-packages.yml
@@ -34,7 +119,14 @@ jobs:
 
   publish:
     name: Publish release
-    needs: [packages]
+    needs: [detect, packages]
+    # packages 被跳过（复用 canary 资产）时也要继续发布，否则正式版发不出去。
+    if: >-
+      ${{
+        !cancelled() &&
+        needs.detect.result == 'success' &&
+        (needs.packages.result == 'success' || needs.packages.result == 'skipped')
+      }}
     # 发布代码在 .ci/publish-github-release.mjs：同样的「先删旧资产再上传」
     # 覆盖语义，稳定版与 canary 只是参数不同。
     runs-on: ubuntu-latest
@@ -54,9 +146,26 @@ jobs:
         uses: voidzero-dev/setup-vp@v1.22.0
 
       - name: Download this run's packages
+        if: needs.detect.outputs.reuse != 'true'
         uses: actions/download-artifact@v8
         with:
           path: packages
+
+      - name: Reuse canary assets
+        # 同一提交已随 canary 发布：直接从 canary release 下载资产充当本次的
+        # 待发布产物，后面两个发布步骤按正常流程走。资产名带 package.json
+        # 版本号，与 detect 的检查一致，旧的残留版本不会混进来。
+        if: needs.detect.outputs.reuse == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.detect.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p packages
+          gh release download canary --repo "$GITHUB_REPOSITORY" \
+            --pattern "*-${VERSION}-release.*" --dir packages --clobber
+          test "$(find packages -type f | wc -l)" -ge 5
+          ls -l packages
 
       - name: Generate stable release notes
         # changelogen（unjs/changelogen）按 tag 差异输出 commit 概要；找不到上一个
@@ -87,8 +196,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
-          VERSION: ${{ needs.packages.outputs.version }}
-          TITLE: v${{ needs.packages.outputs.version }}
+          VERSION: ${{ needs.detect.outputs.version }}
+          TITLE: v${{ needs.detect.outputs.version }}
           PRERELEASE: 'false'
           MAKE_LATEST: 'true'
           TARGET_COMMITISH: ${{ github.sha }}
@@ -98,13 +207,15 @@ jobs:
 
       - name: Publish canary release
         # 滚动 tag 指向本次构建的提交，旧资产全部替换，只保留本次的产物。
-        # tag push 时这里也让测试版频道与 AUR 直接拿到同一个版本。
+        # tag push 时这里也让测试版频道与 AUR 直接拿到同一个版本；复用 canary
+        # 资产时 canary 已经就是这份内容，重发一遍纯属多余，跳过。
+        if: github.ref_type != 'tag' || needs.detect.outputs.reuse != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: canary
-          VERSION: ${{ needs.packages.outputs.version }}
-          TITLE: canary v${{ needs.packages.outputs.version }}
+          VERSION: ${{ needs.detect.outputs.version }}
+          TITLE: canary v${{ needs.detect.outputs.version }}
           PRERELEASE: 'true'
           MAKE_LATEST: 'false'
           GENERATE_NOTES: 'false'
@@ -126,7 +237,15 @@ jobs:
   # 长期 PAT。任一凭据缺失时跳过派发，不影响 release 本身的发布。
   aur:
     name: Publish to AUR
-    needs: [publish]
+    needs: [publish, detect]
+    # AUR 的 your-szu-life-bin 只吃 canary：复用 canary 资产的 tag push 里，
+    # canary 渠道在 main push 那次已经发布并派发过 AUR，这里再派发是重复劳动。
+    if: >-
+      ${{
+        !cancelled() &&
+        needs.publish.result == 'success' &&
+        !(github.ref_type == 'tag' && needs.detect.outputs.reuse == 'true')
+      }}
     runs-on: ubuntu-latest
     steps:
       - name: Check AUR trigger credentials
