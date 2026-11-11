@@ -1,6 +1,8 @@
 [package]
 name = "your-szu-life"
-version = "0.14.0"
+# 应用版本以 package.json 为准（tauri.conf.json 的 version 指向它）；这里只继承
+# workspace 版本，并由 build.rs 在构建期校验两者一致。
+version.workspace = true
 description = "泥深 - 你的SZU助手"
 authors = ["you"]
 edition = "2021"

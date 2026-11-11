@@ -85,6 +85,11 @@ release. Add a tool name to select part of the graph. For example, run
   打印这些 cfg。`.env` 的编译期注入同理走 `emit_embedded_env()`。
 - 数据库迁移跟随模块（`<crate>/src/<module>/migrations.rs`），通用 SQLite 句柄工厂在
   `szu_core::migrations::db`。
+- 应用版本唯一来源是仓库根的 `package.json`（`tauri.conf.json` 的 `version` 指向它，
+  因此运行时 `package_info().version`、Android 的 `versionName/versionCode`、发布资产名
+  都跟着它走）。Cargo 的 `[workspace.package].version` 必须与它一致，app 的 `build.rs`
+  会在构建期直接报错；运行时不要再读 `CARGO_PKG_VERSION`，需要版本时用
+  `package_info().version`。
 - 命令注册：`#[tauri::command]` 跟随模块留在各自 crate，`src/build.rs` 的
   `AppManifest` 命令表、`permissions/default.toml` 与各 `commands.rs` 仍由
   `src/tests.rs` 的命令名守卫测试交叉校验。

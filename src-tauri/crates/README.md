@@ -40,6 +40,9 @@ your-szu-life (src/)     app：组合根、mcp 工具胶水、桌面托盘、命
   `cargo:rustc-env`。
 - **`include_str!` 跨仓库根**用 `concat!(env!("CARGO_MANIFEST_DIR"), "/../../../…")`，
   不要写死相对层数。
+- **应用版本**：唯一来源是仓库根 `package.json`（`tauri.conf.json` 的 `version` 指向它）。
+  运行时需要版本时用 `package_info().version`；Cargo 的 `[workspace.package].version`
+  必须与之一致，app 的 `build.rs` 会在构建期报错。
 - **命令注册**：`#[tauri::command]` 跟随模块留在各自 crate 里，app 的
   `generate_handler!` 用完整路径引用；`build.rs` 的 `AppManifest` 命令表与
   `permissions/default.toml` 仍由 `src/tests.rs` 的命令名守卫测试交叉校验。

@@ -71,3 +71,27 @@ fn configured_value(
         None => dotenv.get(name).cloned(),
     }
 }
+
+/// 校验 Cargo 侧的应用版本与 `package.json` 一致。
+///
+/// 应用对外暴露的版本**只有一个来源**：仓库根的 `package.json`
+/// （`tauri.conf.json` 的 `version` 指向它，因此运行时 `package_info().version`
+/// 也来自它）。Cargo 的 `[workspace.package].version` 只是构建元数据，必须跟着
+/// `package.json` 走；这里在构建期直接报错，避免发版时只改一处而导致两个版本并存。
+pub fn ensure_app_version_matches_package_json(package_json: &std::path::Path, cargo_version: &str) {
+    println!("cargo:rerun-if-changed={}", package_json.display());
+    let raw = std::fs::read_to_string(package_json)
+        .unwrap_or_else(|error| panic!("无法读取 {}: {error}", package_json.display()));
+    let parsed: serde_json::Value = serde_json::from_str(&raw)
+        .unwrap_or_else(|error| panic!("{} 不是合法 JSON: {error}", package_json.display()));
+    let package_version = parsed
+        .get("version")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_else(|| panic!("{} 缺少 version", package_json.display()));
+    assert!(
+        package_version == cargo_version,
+        "package.json 的 version ({package_version}) 与 Cargo 的版本 ({cargo_version}) 不一致：\
+         应用版本以 package.json 为准，请把 src-tauri/Cargo.toml 的 \
+         [workspace.package].version 改成同一个值"
+    );
+}

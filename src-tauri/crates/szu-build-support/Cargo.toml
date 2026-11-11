@@ -11,3 +11,4 @@ path = "src/lib.rs"
 
 [dependencies]
 dotenvy = "0.15"
+serde_json = { workspace = true }

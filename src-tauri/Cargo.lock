@@ -8979,6 +8979,7 @@ name = "szu-build-support"
 version = "0.14.0"
 dependencies = [
  "dotenvy",
+ "serde_json",
 ]
 
 [[package]]

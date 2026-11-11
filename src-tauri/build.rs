@@ -216,6 +216,11 @@ fn stage_android_sidecar_lib(manifest_dir: &Path, target: &str, sidecar: &Path) 
 
 fn main() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // 应用版本唯一来源是仓库根的 package.json（tauri.conf.json 的 version 指向它）。
+    szu_build_support::ensure_app_version_matches_package_json(
+        &manifest_dir.join("../package.json"),
+        env!("CARGO_PKG_VERSION"),
+    );
     szu_build_support::emit_embedded_env(&manifest_dir.join("../.env"));
 
     println!("cargo:rerun-if-changed=../package.json");
