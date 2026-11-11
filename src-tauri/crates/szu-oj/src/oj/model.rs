@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Site {
+pub struct Site {
     pub id: String,
     pub name: String,
     pub url: String,
@@ -15,7 +15,7 @@ pub(crate) struct Site {
 fn yes() -> bool {
     true
 }
-pub(super) fn defaults() -> Vec<Site> {
+pub fn defaults() -> Vec<Site> {
     [
         (53, "程设C(高研院)"),
         (55, "程序设计基础实验(C)"),
@@ -40,7 +40,7 @@ pub(super) fn defaults() -> Vec<Site> {
 pub use szu_core::storage::model::OjSecret as Secret;
 #[derive(Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum Session {
+pub enum Session {
     #[default]
     Disabled,
     Connecting,
@@ -51,7 +51,7 @@ pub(crate) enum Session {
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SiteView {
+pub struct SiteView {
     #[serde(flatten)]
     pub site: Site,
     pub enabled: bool,
@@ -65,7 +65,7 @@ pub(crate) struct SiteView {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SiteInput {
+pub struct SiteInput {
     pub id: Option<String>,
     pub name: String,
     pub url: String,
@@ -76,19 +76,19 @@ pub(crate) struct SiteInput {
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Captcha {
+pub struct Captcha {
     pub token: String,
     pub image: String,
 }
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Group {
+pub struct Group {
     pub id: String,
     pub name: String,
 }
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Contest {
+pub struct Contest {
     pub id: String,
     pub group_id: String,
     pub title: String,
@@ -111,7 +111,7 @@ impl Contest {
 }
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Problem {
+pub struct Problem {
     pub id: String,
     pub display_label: String,
     pub kind: u8,
@@ -134,13 +134,13 @@ pub(crate) struct Problem {
     pub output_file: Option<String>,
 }
 #[derive(Clone, Serialize, Deserialize, Debug)]
-pub(crate) struct Sample {
+pub struct Sample {
     pub input: String,
     pub output: String,
 }
 #[derive(Clone, Default, PartialEq, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct CompileOptions {
+pub struct CompileOptions {
     #[serde(default)]
     pub version: String,
     #[serde(default, alias = "enable_asan")]
@@ -149,7 +149,7 @@ pub(crate) struct CompileOptions {
     pub enable_lsan: bool,
 }
 impl CompileOptions {
-    pub(super) fn for_language(
+    pub fn for_language(
         language: &str,
         saved: Option<&Self>,
     ) -> Result<Option<Self>, String> {
@@ -173,14 +173,14 @@ impl CompileOptions {
         }
         Ok(Some(value))
     }
-    pub(super) fn wire(&self) -> Value {
+    pub fn wire(&self) -> Value {
         serde_json::json!({"version": self.version, "enable_asan": self.enable_asan, "enable_lsan": self.enable_lsan})
     }
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Preferences {
+pub struct Preferences {
     pub language: String,
     #[serde(default)]
     pub options_by_language: BTreeMap<String, CompileOptions>,
@@ -197,13 +197,13 @@ impl Default for Preferences {
     }
 }
 impl Preferences {
-    pub(super) fn options(&self) -> Result<Option<CompileOptions>, String> {
+    pub fn options(&self) -> Result<Option<CompileOptions>, String> {
         CompileOptions::for_language(&self.language, self.options_by_language.get(&self.language))
     }
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PreferencesInput {
+pub struct PreferencesInput {
     pub site_id: String,
     pub account: String,
     pub epoch: u64,
@@ -213,20 +213,20 @@ pub(crate) struct PreferencesInput {
 }
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CompanionStatus {
+pub struct CompanionStatus {
     pub connected: bool,
     pub active: bool,
     pub message: String,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct CompanionSubmission {
+pub struct CompanionSubmission {
     pub url: String,
     pub source_code: String,
 }
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CompanionResult {
+pub struct CompanionResult {
     pub site_id: String,
     pub contest_id: String,
     pub problem_key: String,
@@ -237,7 +237,7 @@ pub(crate) struct CompanionResult {
 
 #[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Draft {
+pub struct Draft {
     pub code: String,
     pub language: String,
     pub answer: Value,
@@ -247,7 +247,7 @@ pub(crate) struct Draft {
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Paper {
+pub struct Paper {
     pub contest: Contest,
     pub problems: Vec<Problem>,
     pub drafts: BTreeMap<String, Draft>,
@@ -260,7 +260,7 @@ pub(crate) struct Paper {
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Notice {
+pub struct Notice {
     pub id: String,
     pub site_id: String,
     pub account: String,
@@ -273,26 +273,26 @@ pub(crate) struct Notice {
 }
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Known {
+pub struct Known {
     pub contests: BTreeMap<String, Contest>,
     pub events: BTreeMap<String, i64>,
     pub initialized: bool,
 }
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct GroupCache {
+pub struct GroupCache {
     pub groups: Vec<Group>,
     pub updated_at: i64,
 }
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ContestCache {
+pub struct ContestCache {
     pub contests: Vec<Contest>,
     pub updated_at: i64,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Data {
+pub struct Data {
     pub version: u8,
     pub sites: Vec<Site>,
     pub drafts: BTreeMap<String, Draft>,
@@ -334,7 +334,7 @@ impl Default for Data {
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Snapshot {
+pub struct Snapshot {
     pub sites: Vec<SiteView>,
     pub notices: Vec<Notice>,
     pub companion_port: u16,
@@ -344,7 +344,7 @@ pub(crate) struct Snapshot {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct DraftInput {
+pub struct DraftInput {
     pub site_id: String,
     pub contest_id: String,
     pub problem_key: String,
@@ -354,17 +354,17 @@ pub(crate) struct DraftInput {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SubmitInput {
+pub struct SubmitInput {
     pub site_id: String,
     pub contest_id: String,
     pub problem_key: Option<String>,
     pub account: String,
     pub epoch: u64,
 }
-pub(super) fn scope(site: &str, account: &str) -> String {
+pub fn scope(site: &str, account: &str) -> String {
     serde_json::to_string(&(site, account)).unwrap()
 }
-pub(super) fn draft_key(
+pub fn draft_key(
     site: &str,
     account: &str,
     contest: &str,
@@ -373,7 +373,7 @@ pub(super) fn draft_key(
 ) -> String {
     serde_json::to_string(&(site, account, contest, problem, language)).unwrap()
 }
-pub(super) fn operation_key(
+pub fn operation_key(
     site: &str,
     account: &str,
     contest: &str,
@@ -381,6 +381,6 @@ pub(super) fn operation_key(
 ) -> String {
     serde_json::to_string(&(site, account, contest, problem)).unwrap()
 }
-pub(super) fn problem_key(p: &Problem) -> String {
+pub fn problem_key(p: &Problem) -> String {
     format!("{}:{}", p.kind, p.id)
 }

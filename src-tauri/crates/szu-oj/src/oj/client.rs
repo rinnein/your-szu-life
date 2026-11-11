@@ -5,14 +5,14 @@ use std::{sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
-pub(super) struct Client {
+pub struct Client {
     pub http: Http,
     pub jar: Arc<CookieStoreMutex>,
     pub base: Url,
     pub cancel: CancellationToken,
 }
 #[derive(Debug)]
-pub(super) struct Error {
+pub struct Error {
     pub message: String,
     pub status: Option<u16>,
     pub uncertain: bool,
@@ -52,7 +52,7 @@ fn response_text(bytes: &[u8]) -> String {
     }
     text
 }
-pub(super) fn normalize(raw: &str) -> Result<Url, String> {
+pub fn normalize(raw: &str) -> Result<Url, String> {
     let mut url = Url::parse(raw.trim()).map_err(|_| "OJ 地址无效")?;
     if !matches!(url.scheme(), "http" | "https")
         || url.host_str().is_none()
@@ -77,14 +77,14 @@ impl Client {
                 .map_err(|_| "OJ 会话数据无效")?
         };
         let jar = Arc::new(CookieStoreMutex::new(store));
-        let builder = crate::netproxy::client_builder()
+        let builder = szu_core::netproxy::client_builder()
             .cookie_provider(jar.clone())
             .redirect(reqwest::redirect::Policy::none())
             .timeout(Duration::from_secs(20))
             .connect_timeout(Duration::from_secs(8))
             .user_agent("SZULife/0.3 OJ");
         #[cfg(target_os = "android")]
-        crate::platform_tls::initialize_platform_verifier()?;
+        szu_core::platform_tls::initialize_platform_verifier()?;
         Ok(Self {
             // OJ 站点地址由用户填写：内网/校内网是否绕过代理交给 netproxy 判断。
             http: builder.build().map_err(|_| "无法建立 OJ 连接")?,

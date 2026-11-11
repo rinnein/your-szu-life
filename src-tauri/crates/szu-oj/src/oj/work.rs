@@ -2,7 +2,7 @@ use super::*;
 /// 测验完成度的缓存有效期；超过后在后台重验证。
 const PROGRESS_TTL_MS: i64 = 3_600_000;
 impl Service {
-    pub(super) async fn progress(
+    pub async fn progress(
         &self,
         id: &str,
         cid: &str,
@@ -42,7 +42,7 @@ impl Service {
     }
 
     /// 走网络计算测验完成度，写回内存与 SQLite，并推送事件。
-    pub(super) async fn compute_progress(
+    pub async fn compute_progress(
         &self,
         id: &str,
         e: &Entry,
@@ -176,7 +176,7 @@ impl Service {
         self.publish_deadlines();
     }
 
-    pub(super) async fn ranking(&self, id: &str, cid: &str, offset: u32) -> Result<Value, String> {
+    pub async fn ranking(&self, id: &str, cid: &str, offset: u32) -> Result<Value, String> {
         protocol::id(&json!(cid)).map_err(|e| e.message)?;
         if offset > 100_000 {
             return Err("排名分页超出范围".into());
@@ -323,12 +323,12 @@ impl Service {
             preferences,
         })
     }
-    pub(crate) async fn paper(&self, id: &str, cid: &str) -> Result<Paper, String> {
+    pub async fn paper(&self, id: &str, cid: &str) -> Result<Paper, String> {
         let e = self.entry(id)?;
         let _guard = e.gate.lock().await;
         self.paper_locked(id, &e, cid).await
     }
-    pub(super) fn save_draft(&self, mut input: DraftInput) -> Result<(), String> {
+    pub fn save_draft(&self, mut input: DraftInput) -> Result<(), String> {
         input.draft.options =
             CompileOptions::for_language(&input.draft.language, input.draft.options.as_ref())?;
         if serde_json::to_vec(&input.draft)
@@ -376,7 +376,7 @@ impl Service {
         Ok(())
     }
 
-    pub(super) fn draft_for_language(
+    pub fn draft_for_language(
         &self,
         id: &str,
         cid: &str,
@@ -390,10 +390,10 @@ impl Service {
             .get(&draft_key(id, &e.username, cid, pk, language))
             .cloned())
     }
-    pub(super) async fn submit(&self, input: SubmitInput) -> Result<Value, String> {
+    pub async fn submit(&self, input: SubmitInput) -> Result<Value, String> {
         self.submit_with_code(input, None).await
     }
-    pub(crate) async fn submit_with_code(
+    pub async fn submit_with_code(
         &self,
         input: SubmitInput,
         source_code: Option<String>,
@@ -545,7 +545,7 @@ impl Service {
             }
         }
     }
-    pub(crate) async fn records(
+    pub async fn records(
         &self,
         id: &str,
         cid: &str,
@@ -618,7 +618,7 @@ impl Service {
             .collect();
         Ok(json!({"records":records,"uncertain":uncertain}))
     }
-    pub(crate) async fn result(
+    pub async fn result(
         &self,
         id: &str,
         sid: &str,
@@ -662,7 +662,7 @@ impl Service {
             Ok(value)
         }
     }
-    pub(super) fn acknowledge(&self, id: &str, key: &str) -> Result<(), String> {
+    pub fn acknowledge(&self, id: &str, key: &str) -> Result<(), String> {
         let e = self.entry(id)?;
         let parts: (String, String, String, Option<String>) =
             serde_json::from_str(key).map_err(|_| "记录无效")?;
@@ -673,7 +673,7 @@ impl Service {
         r.data.uncertain.remove(key);
         self.persist(&r)
     }
-    pub(super) async fn send_companion(
+    pub async fn send_companion(
         &self,
         id: &str,
         cid: &str,
@@ -730,7 +730,7 @@ impl Service {
             })
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| e.message)?;
-        let http = crate::netproxy::client_builder()
+        let http = szu_core::netproxy::client_builder()
             .redirect(reqwest::redirect::Policy::none())
             .timeout(std::time::Duration::from_secs(5))
             .build()
@@ -766,7 +766,7 @@ impl Service {
     }
 }
 impl Service {
-    pub(super) async fn image(&self, id: &str, url: &str) -> Result<String, String> {
+    pub async fn image(&self, id: &str, url: &str) -> Result<String, String> {
         let e = self.entry(id)?;
         let url = reqwest::Url::parse(url).map_err(|_| "题目图片地址无效")?;
         if url.origin() != e.client.base.origin()

@@ -6,7 +6,7 @@ fn local(window: &tauri::WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 #[tauri::command]
-pub(crate) fn get_oj_snapshot(
+pub fn get_oj_snapshot(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
 ) -> Result<Snapshot, String> {
@@ -14,7 +14,7 @@ pub(crate) fn get_oj_snapshot(
     Ok(service(&app)?.snapshot())
 }
 #[tauri::command]
-pub(crate) fn subscribe_oj_state(
+pub fn subscribe_oj_state(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     channel: tauri::ipc::Channel<super::OjDeltaEvent>,
@@ -27,7 +27,7 @@ pub(crate) fn subscribe_oj_state(
     Ok(())
 }
 #[tauri::command]
-pub(crate) fn subscribe_oj_deadlines(
+pub fn subscribe_oj_deadlines(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     channel: tauri::ipc::Channel<super::OjDeadlinesEvent>,
@@ -40,7 +40,7 @@ pub(crate) fn subscribe_oj_deadlines(
     Ok(())
 }
 #[tauri::command]
-pub(crate) fn subscribe_oj_lists(
+pub fn subscribe_oj_lists(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     channel: tauri::ipc::Channel<super::OjListsEvent>,
@@ -53,7 +53,7 @@ pub(crate) fn subscribe_oj_lists(
     Ok(())
 }
 #[tauri::command]
-pub(crate) fn save_oj_site(
+pub fn save_oj_site(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     input: SiteInput,
@@ -62,7 +62,7 @@ pub(crate) fn save_oj_site(
     service(&app)?.save_site(input)
 }
 #[tauri::command]
-pub(crate) fn remove_oj_site(
+pub fn remove_oj_site(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     site_id: String,
@@ -71,7 +71,7 @@ pub(crate) fn remove_oj_site(
     service(&app)?.remove(&site_id)
 }
 #[tauri::command]
-pub(crate) async fn login_oj(
+pub async fn login_oj(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     site_id: String,
@@ -89,7 +89,7 @@ pub(crate) async fn login_oj(
     result
 }
 #[tauri::command]
-pub(crate) async fn get_oj_captcha(
+pub async fn get_oj_captcha(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     site_id: String,
@@ -110,7 +110,7 @@ pub(crate) async fn get_oj_captcha(
     s.challenge(&site_id, &e).await
 }
 #[tauri::command]
-pub(crate) async fn auto_recognize_oj_captcha(
+pub async fn auto_recognize_oj_captcha(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     site_id: String,
@@ -132,7 +132,7 @@ pub(crate) async fn auto_recognize_oj_captcha(
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(raw)
         .map_err(|_| "验证码编码无效")?;
-    let task = tauri::async_runtime::spawn_blocking(move || crate::ocr::recognize(&bytes));
+    let task = tauri::async_runtime::spawn_blocking(move || szu_runtime::ocr::recognize(&bytes));
     let answer_result = tokio::time::timeout(std::time::Duration::from_secs(15), task)
         .await
         .map_err(|_| "识别超时".to_string())?
@@ -150,7 +150,7 @@ pub(crate) async fn auto_recognize_oj_captcha(
     Ok(answer)
 }
 #[tauri::command]
-pub(crate) async fn get_oj_groups(
+pub async fn get_oj_groups(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     site_id: String,
@@ -162,7 +162,7 @@ pub(crate) async fn get_oj_groups(
         .await
 }
 #[tauri::command]
-pub(crate) async fn get_oj_contests(
+pub async fn get_oj_contests(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     site_id: String,
@@ -175,7 +175,7 @@ pub(crate) async fn get_oj_contests(
         .await
 }
 #[tauri::command]
-pub(crate) async fn get_oj_progress(
+pub async fn get_oj_progress(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     site_id: String,
@@ -196,7 +196,7 @@ pub(crate) async fn get_oj_progress(
         .await
 }
 #[tauri::command]
-pub(crate) async fn get_oj_ranking(
+pub async fn get_oj_ranking(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     site_id: String,
@@ -207,7 +207,7 @@ pub(crate) async fn get_oj_ranking(
     service(&app)?.ranking(&site_id, &contest_id, offset).await
 }
 #[tauri::command]
-pub(crate) async fn get_oj_paper(
+pub async fn get_oj_paper(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     site_id: String,
@@ -217,7 +217,7 @@ pub(crate) async fn get_oj_paper(
     service(&app)?.paper(&site_id, &contest_id).await
 }
 #[tauri::command]
-pub(crate) fn save_oj_draft(
+pub fn save_oj_draft(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     input: DraftInput,
@@ -226,7 +226,7 @@ pub(crate) fn save_oj_draft(
     service(&app)?.save_draft(input)
 }
 #[tauri::command]
-pub(crate) fn get_oj_draft(
+pub fn get_oj_draft(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     site_id: String,
@@ -238,7 +238,7 @@ pub(crate) fn get_oj_draft(
     service(&app)?.draft_for_language(&site_id, &contest_id, &problem_key, &language)
 }
 #[tauri::command]
-pub(crate) async fn submit_oj(
+pub async fn submit_oj(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     input: SubmitInput,
@@ -247,7 +247,7 @@ pub(crate) async fn submit_oj(
     service(&app)?.submit(input).await
 }
 #[tauri::command]
-pub(crate) async fn get_oj_records(
+pub async fn get_oj_records(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     site_id: String,
@@ -261,7 +261,7 @@ pub(crate) async fn get_oj_records(
         .await
 }
 #[tauri::command]
-pub(crate) async fn get_oj_result(
+pub async fn get_oj_result(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     site_id: String,
@@ -276,7 +276,7 @@ pub(crate) async fn get_oj_result(
 }
 /// 由后端负责判题轮询，前端只收 Channel；终态、通道关闭或重试耗尽时结束。
 #[tauri::command]
-pub(crate) async fn watch_oj_result(
+pub async fn watch_oj_result(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     site_id: String,
@@ -322,7 +322,7 @@ pub(crate) async fn watch_oj_result(
     Err("判题仍未结束，请稍后刷新判题；不会重新提交代码。".into())
 }
 #[tauri::command]
-pub(crate) fn acknowledge_oj_submission(
+pub fn acknowledge_oj_submission(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     site_id: String,
@@ -332,7 +332,7 @@ pub(crate) fn acknowledge_oj_submission(
     service(&app)?.acknowledge(&site_id, &key)
 }
 #[tauri::command]
-pub(crate) async fn send_oj_companion(
+pub async fn send_oj_companion(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     site_id: String,
@@ -346,7 +346,7 @@ pub(crate) async fn send_oj_companion(
         .await
 }
 #[tauri::command]
-pub(crate) async fn refresh_oj(
+pub async fn refresh_oj(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
@@ -355,7 +355,7 @@ pub(crate) async fn refresh_oj(
     Ok(())
 }
 #[tauri::command]
-pub(crate) fn read_oj_notice(
+pub fn read_oj_notice(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     id: String,
@@ -372,7 +372,7 @@ pub(crate) fn read_oj_notice(
     Ok(())
 }
 #[tauri::command]
-pub(crate) async fn load_oj_image(
+pub async fn load_oj_image(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     site_id: String,
@@ -382,7 +382,7 @@ pub(crate) async fn load_oj_image(
     service(&app)?.image(&site_id, &url).await
 }
 #[tauri::command]
-pub(crate) fn save_oj_preferences(
+pub fn save_oj_preferences(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     input: PreferencesInput,
@@ -391,7 +391,7 @@ pub(crate) fn save_oj_preferences(
     service(&app)?.save_preferences(input)
 }
 #[tauri::command]
-pub(crate) fn configure_oj_companion(
+pub fn configure_oj_companion(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     enabled: bool,
@@ -401,7 +401,7 @@ pub(crate) fn configure_oj_companion(
     service(&app)?.configure_companion(enabled, port)
 }
 #[tauri::command]
-pub(crate) fn set_oj_companion_status(
+pub fn set_oj_companion_status(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     port: u16,
@@ -415,7 +415,7 @@ pub(crate) fn set_oj_companion_status(
     Ok(())
 }
 #[tauri::command]
-pub(crate) fn activate_oj_companion(
+pub fn activate_oj_companion(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
@@ -424,7 +424,7 @@ pub(crate) fn activate_oj_companion(
         .map_err(|_| "无法通知主窗口".into())
 }
 #[tauri::command]
-pub(crate) async fn submit_oj_companion(
+pub async fn submit_oj_companion(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     input: CompanionSubmission,

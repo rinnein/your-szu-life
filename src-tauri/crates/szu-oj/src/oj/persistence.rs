@@ -1,7 +1,7 @@
 use super::model::Data;
 use std::path::Path;
 
-pub(super) fn read(path: &Path) -> Result<Data, String> {
+pub fn read(path: &Path) -> Result<Data, String> {
     // 1. 如果路径直接存在且为 json 文件（用于兼容历史格式测试），尝试解析
     if path.extension().is_some_and(|ext| ext == "json") && path.exists() {
         if let Ok(bytes) = std::fs::read(path) {
@@ -24,9 +24,9 @@ pub(super) fn read(path: &Path) -> Result<Data, String> {
         path.with_extension("sqlite")
     };
 
-    let res = crate::migrations::db::run_sync(async {
+    let res = szu_core::migrations::db::run_sync(async {
         let db = super::db::OjDatabase::open(&db_path).await?;
-        if let Ok(Some(migrated)) = crate::migrations::oj::migrate_oj_state_if_needed(&db_path, &db).await {
+        if let Ok(Some(migrated)) = crate::oj::migrations::migrate_oj_state_if_needed(&db_path, &db).await {
             return Ok(migrated);
         }
         db.load_data().await
@@ -37,16 +37,16 @@ pub(super) fn read(path: &Path) -> Result<Data, String> {
     res.map_err(|e| format!("无法读取 OJ 本地数据: {e}"))
 }
 
-pub(super) fn write(path: &Path, data: &Data) -> Result<(), String> {
+pub fn write(path: &Path, data: &Data) -> Result<(), String> {
     let db_path = if path.extension().is_some_and(|ext| ext == "sqlite") {
         path.to_path_buf()
     } else {
         path.with_extension("sqlite")
     };
 
-    crate::migrations::oj::cleanup_legacy_oj_files(&db_path);
+    crate::oj::migrations::cleanup_legacy_oj_files(&db_path);
 
-    crate::migrations::db::run_sync(async {
+    szu_core::migrations::db::run_sync(async {
         let db = super::db::OjDatabase::open(&db_path).await?;
         db.save_data(data).await
     })
@@ -60,38 +60,38 @@ fn progress_db_path(path: &Path) -> std::path::PathBuf {
     }
 }
 
-pub(super) fn read_progress(path: &Path) -> Result<Vec<super::db::ProgressRow>, String> {
+pub fn read_progress(path: &Path) -> Result<Vec<super::db::ProgressRow>, String> {
     let db_path = progress_db_path(path);
-    crate::migrations::db::run_sync(async {
+    szu_core::migrations::db::run_sync(async {
         let db = super::db::OjDatabase::open(&db_path).await?;
         db.load_progress().await
     })
 }
 
-pub(super) fn write_progress(
+pub fn write_progress(
     path: &Path,
     row: &super::db::ProgressRow,
 ) -> Result<(), String> {
     let db_path = progress_db_path(path);
-    crate::migrations::db::run_sync(async {
+    szu_core::migrations::db::run_sync(async {
         let db = super::db::OjDatabase::open(&db_path).await?;
         db.save_progress(row).await
     })
 }
 
-pub(super) fn delete_progress(path: &Path, id: &str) -> Result<(), String> {
+pub fn delete_progress(path: &Path, id: &str) -> Result<(), String> {
     let db_path = progress_db_path(path);
     let id = id.to_string();
-    crate::migrations::db::run_sync(async move {
+    szu_core::migrations::db::run_sync(async move {
         let db = super::db::OjDatabase::open(&db_path).await?;
         db.delete_progress(&id).await
     })
 }
 
-pub(super) fn delete_progress_for_site(path: &Path, site_id: &str) -> Result<(), String> {
+pub fn delete_progress_for_site(path: &Path, site_id: &str) -> Result<(), String> {
     let db_path = progress_db_path(path);
     let site_id = site_id.to_string();
-    crate::migrations::db::run_sync(async move {
+    szu_core::migrations::db::run_sync(async move {
         let db = super::db::OjDatabase::open(&db_path).await?;
         db.delete_progress_for_site(&site_id).await
     })

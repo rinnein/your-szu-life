@@ -1,0 +1,37 @@
+[package]
+name = "szu-oj"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "泥深 OJ 模块：测验列表、提交与监控"
+
+[lib]
+name = "szu_oj"
+path = "src/lib.rs"
+
+[build-dependencies]
+szu-build-support = { path = "../szu-build-support" }
+
+[dependencies]
+szu-core = { path = "../szu-core" }
+szu-runtime = { path = "../szu-runtime" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+reqwest = { workspace = true }
+cookie_store = { workspace = true }
+reqwest_cookie_store = { workspace = true }
+sha2 = { workspace = true }
+image = { workspace = true }
+base64 = { workspace = true }
+uuid = { workspace = true }
+toasty = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+# `ocr_recognize_runs_model` 依赖 runtime 的测试态 `store()`。
+szu-runtime = { path = "../szu-runtime", features = ["testing"] }

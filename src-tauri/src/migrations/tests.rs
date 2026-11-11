@@ -4,11 +4,11 @@ use tempfile::tempdir;
 
 #[tokio::test]
 async fn oj_persists_notice_read_state_and_group_cache() {
-    use crate::oj::model::{Group, GroupCache, Notice, Site};
+    use szu_oj::oj::model::{Group, GroupCache, Notice, Site};
 
     let dir = tempdir().unwrap();
     let db_path = dir.path().join("oj.sqlite");
-    let db = crate::oj::db::OjDatabase::open(&db_path).await.unwrap();
+    let db = szu_oj::oj::db::OjDatabase::open(&db_path).await.unwrap();
 
     let site = Site {
         id: "site".into(),
@@ -17,7 +17,7 @@ async fn oj_persists_notice_read_state_and_group_cache() {
         builtin: false,
         reminders: true,
     };
-    let mut data = crate::oj::model::Data {
+    let mut data = szu_oj::oj::model::Data {
         sites: vec![site],
         ..Default::default()
     };
@@ -63,7 +63,7 @@ async fn test_oj_state_migration() {
     let db_path = dir.path().join("oj.sqlite");
     let json_path = dir.path().join("oj.json");
 
-    let initial_data = crate::oj::model::Data {
+    let initial_data = szu_oj::oj::model::Data {
         version: 1,
         sites: vec![],
         drafts: BTreeMap::new(),
@@ -81,8 +81,8 @@ async fn test_oj_state_migration() {
     fs::write(&json_path, serde_json::to_vec(&initial_data).unwrap()).unwrap();
     assert!(json_path.exists());
 
-    let db = crate::oj::db::OjDatabase::open(&db_path).await.unwrap();
-    let migrated = super::oj::migrate_oj_state_if_needed(&db_path, &db)
+    let db = szu_oj::oj::db::OjDatabase::open(&db_path).await.unwrap();
+    let migrated = szu_oj::oj::migrations::migrate_oj_state_if_needed(&db_path, &db)
         .await
         .unwrap();
 

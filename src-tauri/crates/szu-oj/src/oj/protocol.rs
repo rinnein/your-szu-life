@@ -1,7 +1,7 @@
 use super::{client::Error, model::*};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
-pub(super) fn id(v: &Value) -> Result<String, Error> {
+pub fn id(v: &Value) -> Result<String, Error> {
     match v {
         Value::Number(n) if n.as_u64().is_some() => Ok(n.to_string()),
         Value::String(s)
@@ -12,22 +12,22 @@ pub(super) fn id(v: &Value) -> Result<String, Error> {
         _ => Err(Error::local("OJ 编号格式无效")),
     }
 }
-pub(super) fn text(v: &Value) -> String {
+pub fn text(v: &Value) -> String {
     v.as_str().unwrap_or_default().to_owned()
 }
-pub(super) fn timestamp(v: &Value) -> Result<i64, Error> {
+pub fn timestamp(v: &Value) -> Result<i64, Error> {
     let s = v.as_str().ok_or_else(|| Error::local("测验时间缺失"))?;
     chrono::DateTime::parse_from_rfc3339(s)
         .map(|t| t.timestamp_millis())
         .map_err(|_| Error::local("测验时间格式无效"))
 }
-pub(super) fn group(v: &Value) -> Result<Group, Error> {
+pub fn group(v: &Value) -> Result<Group, Error> {
     Ok(Group {
         id: id(&v["id"])?,
         name: text(&v["name"]),
     })
 }
-pub(super) fn ranking(raw: &Value, offset: u32) -> Result<Value, Error> {
+pub fn ranking(raw: &Value, offset: u32) -> Result<Value, Error> {
     let count = raw["count"]
         .as_u64()
         .ok_or_else(|| Error::local("排名总数缺失"))?;
@@ -47,7 +47,7 @@ pub(super) fn ranking(raw: &Value, offset: u32) -> Result<Value, Error> {
     }).collect::<Result<Vec<_>, Error>>()?;
     Ok(json!({"count":count,"rows":results}))
 }
-pub(super) fn contest(v: &Value) -> Result<Contest, Error> {
+pub fn contest(v: &Value) -> Result<Contest, Error> {
     Ok(Contest {
         id: id(&v["id"])?,
         group_id: id(if v["group"].is_object() {
@@ -73,7 +73,7 @@ fn number(v: &Value) -> f64 {
         .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
         .unwrap_or(0.)
 }
-pub(super) fn display_label(mut index: usize) -> String {
+pub fn display_label(mut index: usize) -> String {
     let mut bytes = Vec::new();
     loop {
         bytes.push(b'A' + (index % 26) as u8);
@@ -85,7 +85,7 @@ pub(super) fn display_label(mut index: usize) -> String {
     bytes.reverse();
     String::from_utf8(bytes).unwrap()
 }
-pub(super) fn problems(v: &Value) -> Result<Vec<Problem>, Error> {
+pub fn problems(v: &Value) -> Result<Vec<Problem>, Error> {
     let map = v["problem_json"]
         .as_object()
         .ok_or_else(|| Error::local("测验题型数据缺失"))?;
@@ -175,7 +175,7 @@ pub(super) fn problems(v: &Value) -> Result<Vec<Problem>, Error> {
 }
 
 /// Older deployments may ignore `problem` in list queries; always scope locally too.
-pub(super) fn record_for_problem(row: &Value, kind: u8, pid: &str) -> Option<Value> {
+pub fn record_for_problem(row: &Value, kind: u8, pid: &str) -> Option<Value> {
     if matches!(kind, 1 | 2) {
         let field = if kind == 1 {
             "choice_submission"
@@ -196,7 +196,7 @@ pub(super) fn record_for_problem(row: &Value, kind: u8, pid: &str) -> Option<Val
         (id(problem).ok().as_deref() == Some(pid)).then(|| row.clone())
     }
 }
-pub(super) fn noncode_body(
+pub fn noncode_body(
     contest: &str,
     problems: &[Problem],
     drafts: &BTreeMap<String, Draft>,
@@ -214,7 +214,7 @@ pub(super) fn noncode_body(
     }
     Ok(body)
 }
-pub(super) fn source_url(base: &str, contest: &str, problem: Option<&Problem>) -> String {
+pub fn source_url(base: &str, contest: &str, problem: Option<&Problem>) -> String {
     format!(
         "{base}#/contest/{contest}/{}",
         problem
@@ -222,7 +222,7 @@ pub(super) fn source_url(base: &str, contest: &str, problem: Option<&Problem>) -
             .unwrap_or_default()
     )
 }
-pub(super) fn companion(
+pub fn companion(
     site: &Site,
     contest: &Contest,
     p: &Problem,

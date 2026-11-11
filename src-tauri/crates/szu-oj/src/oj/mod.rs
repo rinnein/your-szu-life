@@ -1,8 +1,9 @@
 mod client;
-pub(crate) mod commands;
+pub mod commands;
 mod companion;
-pub(crate) mod db;
-pub(crate) mod model;
+pub mod db;
+pub mod model;
+pub mod migrations;
 mod monitor;
 mod persistence;
 mod preferences;
@@ -10,7 +11,9 @@ mod protocol;
 #[cfg(test)]
 mod tests;
 mod work;
-use crate::{campus_network, ocr, storage::SharedCredentialStore};
+use szu_core::campus_network;
+use szu_core::storage::SharedCredentialStore;
+use szu_runtime::ocr;
 use client::Client;
 use model::*;
 use serde::Serialize;
@@ -23,7 +26,7 @@ use std::{
 };
 use tauri::{Emitter, Manager};
 
-pub(crate) struct OjStore {
+pub struct OjStore {
     credentials: SharedCredentialStore,
     service: OnceLock<Arc<Service>>,
 }
@@ -35,10 +38,10 @@ impl OjStore {
         }
     }
 }
-pub(crate) struct Entry {
+pub struct Entry {
     client: Client,
-    pub(crate) epoch: u64,
-    pub(crate) username: String,
+    pub epoch: u64,
+    pub username: String,
     gate: tokio::sync::Mutex<()>,
     state: Mutex<Status>,
 }
@@ -54,37 +57,37 @@ struct Status {
     progress: BTreeMap<String, (i64, Value)>,
     judged_progress: BTreeMap<String, i64>,
 }
-pub(crate) struct Runtime {
+pub struct Runtime {
     data: Data,
     secrets: BTreeMap<String, Secret>,
-    pub(crate) entries: BTreeMap<String, Arc<Entry>>,
+    pub entries: BTreeMap<String, Arc<Entry>>,
     epoch: u64,
     companion_status: CompanionStatus,
     companion_requests: BTreeMap<String, i64>,
 }
-pub(crate) struct Service {
+pub struct Service {
     app: Option<tauri::AppHandle>,
     credentials: SharedCredentialStore,
     path: PathBuf,
-    pub(crate) runtime: Mutex<Runtime>,
-    pub(crate) state_subscribers: crate::ipc_channel::SubscriberPool<OjDeltaEvent>,
+    pub runtime: Mutex<Runtime>,
+    pub state_subscribers: szu_core::ipc_channel::SubscriberPool<OjDeltaEvent>,
     /// 后台重验证去重（键：groups:/contests:/progress:）。
     revalidating: Mutex<HashSet<String>>,
     /// 自引用，用于派生后台任务。
     self_weak: Mutex<Weak<Service>>,
     /// 上次广播的快照签名，避免 15 秒扫描重复推送。
     last_published: Mutex<Option<String>>,
-    pub(crate) deadline_subscribers: crate::ipc_channel::SubscriberPool<OjDeadlinesEvent>,
+    pub deadline_subscribers: szu_core::ipc_channel::SubscriberPool<OjDeadlinesEvent>,
     last_deadlines: Mutex<Option<String>>,
     /// 首页待办触发的进度补算去重。
     deadline_progress: Mutex<HashSet<String>>,
-    pub(crate) list_subscribers: crate::ipc_channel::SubscriberPool<OjListsEvent>,
+    pub list_subscribers: szu_core::ipc_channel::SubscriberPool<OjListsEvent>,
     last_lists: Mutex<Option<String>>,
 }
 
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", content = "data", rename_all = "camelCase")]
-pub(crate) enum OjDeltaEvent {
+pub enum OjDeltaEvent {
     Initial(Box<Snapshot>),
     Snapshot(Box<Snapshot>),
 }
@@ -92,7 +95,7 @@ pub(crate) enum OjDeltaEvent {
 /// 首页待办只需要的扁平截止项，避免把整份站点快照推给日历。
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct OjDeadline {
+pub struct OjDeadline {
     pub site_id: String,
     pub site_name: String,
     pub group_id: String,
@@ -109,7 +112,7 @@ pub(crate) struct OjDeadline {
 
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", content = "data", rename_all = "camelCase")]
-pub(crate) enum OjDeadlinesEvent {
+pub enum OjDeadlinesEvent {
     Initial(Box<Vec<OjDeadline>>),
     Snapshot(Box<Vec<OjDeadline>>),
 }
@@ -117,14 +120,14 @@ pub(crate) enum OjDeadlinesEvent {
 /// OJ 页面需要的班级/测验缓存。键为站点 ID 或 `site:group`。
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct OjLists {
+pub struct OjLists {
     pub groups: BTreeMap<String, Vec<Group>>,
     pub contests: BTreeMap<String, Vec<Contest>>,
 }
 
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", content = "data", rename_all = "camelCase")]
-pub(crate) enum OjListsEvent {
+pub enum OjListsEvent {
     Initial(Box<OjLists>),
     Snapshot(Box<OjLists>),
 }
@@ -199,14 +202,14 @@ impl Service {
                 companion_status: CompanionStatus::default(),
                 companion_requests: BTreeMap::new(),
             }),
-            state_subscribers: crate::ipc_channel::SubscriberPool::new(),
+            state_subscribers: szu_core::ipc_channel::SubscriberPool::new(),
             revalidating: Mutex::new(HashSet::new()),
             self_weak: Mutex::new(Weak::new()),
             last_published: Mutex::new(None),
-            deadline_subscribers: crate::ipc_channel::SubscriberPool::new(),
+            deadline_subscribers: szu_core::ipc_channel::SubscriberPool::new(),
             last_deadlines: Mutex::new(None),
             deadline_progress: Mutex::new(HashSet::new()),
-            list_subscribers: crate::ipc_channel::SubscriberPool::new(),
+            list_subscribers: szu_core::ipc_channel::SubscriberPool::new(),
             last_lists: Mutex::new(None),
         }))
     }
@@ -244,7 +247,7 @@ impl Service {
             let _ = app.emit("oj-state-changed", snapshot);
         }
     }
-    pub(crate) fn deadlines(&self) -> Vec<OjDeadline> {
+    pub fn deadlines(&self) -> Vec<OjDeadline> {
         let mut missing = Vec::new();
         let rows = {
             let r = self.runtime.lock().unwrap();
@@ -335,7 +338,7 @@ impl Service {
             });
         }
     }
-    pub(crate) fn publish_deadlines(&self) {
+    pub fn publish_deadlines(&self) {
         if self.deadline_subscribers.is_empty() {
             return;
         }
@@ -351,7 +354,7 @@ impl Service {
         self.deadline_subscribers
             .broadcast(&OjDeadlinesEvent::Snapshot(Box::new(rows)));
     }
-    pub(crate) fn lists(&self) -> OjLists {
+    pub fn lists(&self) -> OjLists {
         let r = self.runtime.lock().unwrap();
         OjLists {
             groups: r
@@ -369,7 +372,7 @@ impl Service {
         }
     }
     /// 档位变快时把每个站点的下次同步时间提前，避免刚打开 OJ 页仍等 1 小时。
-    pub(super) fn clamp_next_sync(&self, interval_ms: i64) {
+    pub fn clamp_next_sync(&self, interval_ms: i64) {
         let deadline = chrono::Utc::now().timestamp_millis() + interval_ms;
         let r = self.runtime.lock().unwrap();
         for entry in r.entries.values() {
@@ -379,7 +382,7 @@ impl Service {
             }
         }
     }
-    pub(crate) fn publish_lists(&self) {
+    pub fn publish_lists(&self) {
         if self.list_subscribers.is_empty() {
             return;
         }
@@ -395,7 +398,7 @@ impl Service {
         self.list_subscribers
             .broadcast(&OjListsEvent::Snapshot(Box::new(lists)));
     }
-    pub(crate) fn snapshot(&self) -> Snapshot {
+    pub fn snapshot(&self) -> Snapshot {
         let r = self.runtime.lock().unwrap();
         let mut sites: Vec<_> = r
             .data
@@ -937,7 +940,7 @@ impl Service {
     }
     /// 班级列表：命中缓存立即返回（无论多旧），过期条目后台重验证。
     /// `force` 用于页面“刷新”按钮，跳过缓存并阻塞拉取。
-    pub(crate) async fn groups(&self, id: &str, force: bool) -> Result<Vec<Group>, String> {
+    pub async fn groups(&self, id: &str, force: bool) -> Result<Vec<Group>, String> {
         if !force {
             if let Some((groups, updated_at)) = self.stored_groups(id) {
                 self.maybe_revalidate(format!("groups:{id}"), updated_at);
@@ -950,7 +953,7 @@ impl Service {
         Ok(groups)
     }
     /// 测验列表：与班级列表同样的缓存先行语义。
-    pub(crate) async fn contests(&self, id: &str, group: &str, force: bool) -> Result<Vec<Contest>, String> {
+    pub async fn contests(&self, id: &str, group: &str, force: bool) -> Result<Vec<Contest>, String> {
         protocol::id(&json!(group)).map_err(|e| e.message)?;
         let key = format!("{id}:{group}");
         if !force {
@@ -1125,7 +1128,7 @@ const LIST_CACHE_TTL_MS: i64 = 10 * 60 * 1000;
 fn list_cache_expired(updated_at: i64) -> bool {
     chrono::Utc::now().timestamp_millis() - updated_at > LIST_CACHE_TTL_MS
 }
-pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
+pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     let store = app.state::<OjStore>();
     let service = Service::new(
         Some(app.clone()),
@@ -1144,7 +1147,7 @@ pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     monitor::start(service);
     Ok(())
 }
-pub(crate) fn service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
+pub fn service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
     app.state::<OjStore>()
         .service
         .get()

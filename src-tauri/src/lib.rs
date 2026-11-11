@@ -10,7 +10,6 @@ mod lms;
 pub mod mcp;
 pub(crate) mod mesh;
 pub(crate) mod migrations;
-mod oj;
 mod settings_sync;
 mod todos;
 
@@ -24,6 +23,7 @@ pub(crate) use szu_core::{
 };
 pub(crate) use szu_download::{aria2, file_manager};
 pub(crate) use szu_runtime::{embedding_model, ocr};
+pub(crate) use szu_oj::oj;
 pub(crate) use szu_uooc::uooc;
 #[cfg(target_os = "android")]
 pub(crate) use szu_core::platform_tls;

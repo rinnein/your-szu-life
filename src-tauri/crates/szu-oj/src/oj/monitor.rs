@@ -1,6 +1,6 @@
 use super::*;
 use std::time::Duration;
-pub(super) fn changes(
+pub fn changes(
     known: &mut Known,
     contests: &[Contest],
     now: i64,
@@ -35,26 +35,26 @@ pub(super) fn changes(
     known.initialized = true;
     notices
 }
-pub(super) fn start(service: Arc<Service>) {
-    use crate::activity::ActivityTier;
+pub fn start(service: Arc<Service>) {
+    use szu_core::activity::ActivityTier;
     tauri::async_runtime::spawn(async move {
-        let mut last_tier = crate::activity::tier(Some("oj"));
+        let mut last_tier = szu_core::activity::tier(Some("oj"));
         // 启动时先扫一次，后续按当前档位节奏执行。
         service.scan(false).await;
         let mut last_scan = std::time::Instant::now();
         loop {
-            let interval = crate::activity::interval(
+            let interval = szu_core::activity::interval(
                 Some("oj"),
                 Duration::from_secs(15),
                 Duration::from_secs(60),
                 Duration::from_secs(300),
             );
-            let tier = crate::activity::tier(Some("oj"));
+            let tier = szu_core::activity::tier(Some("oj"));
             if tier != last_tier {
                 last_tier = tier;
                 if tier != ActivityTier::Background {
                     // 打开 OJ 页或回到前台时，把原本排到 1 小时后的同步提前。
-                    let sync_ms = crate::activity::interval(
+                    let sync_ms = szu_core::activity::interval(
                         Some("oj"),
                         Duration::from_secs(300),
                         Duration::from_secs(900),
@@ -69,7 +69,7 @@ pub(super) fn start(service: Arc<Service>) {
                 last_scan = std::time::Instant::now();
             }
             // 分块睡眠让「打开 OJ 页」或「回到前台」最多一个块后就能提速。
-            tokio::time::sleep(crate::activity::sleep_chunk(
+            tokio::time::sleep(szu_core::activity::sleep_chunk(
                 interval,
                 Duration::from_secs(15),
             ))
@@ -78,7 +78,7 @@ pub(super) fn start(service: Arc<Service>) {
     });
 }
 impl Service {
-    pub(crate) async fn scan(&self, force: bool) {
+    pub async fn scan(&self, force: bool) {
         let entries: Vec<_> = {
             let r = self.runtime.lock().unwrap();
             r.data
@@ -148,7 +148,7 @@ impl Service {
                         s.last_sync = Some(now);
                         // 打开 OJ 页时 5 分钟一拉；前台 15 分钟；后台 1 小时。
                         s.next_sync = now
-                            + crate::activity::interval(
+                            + szu_core::activity::interval(
                                 Some("oj"),
                                 Duration::from_secs(300),
                                 Duration::from_secs(900),
@@ -251,20 +251,20 @@ impl Service {
             self.notify(&notice);
         }
     }
-    pub(super) fn notify(&self, n: &Notice) {
+    pub fn notify(&self, n: &Notice) {
         let Some(app) = self.app.as_ref() else { return };
         let route = format!("/study/oj?site={}&contest={}", n.site_id, n.contest_id);
-        let payload = crate::notification::NotificationPayload::new(
-            crate::notification::NotificationCategory::Oj,
+        let payload = szu_core::notification::NotificationPayload::new(
+            szu_core::notification::NotificationCategory::Oj,
             &n.title,
             &n.message,
         )
         .route(route)
         .action_label("查看")
         .extra(serde_json::json!({ "ojNotice": n }));
-        crate::notification::notify(app, payload);
+        szu_core::notification::notify(app, payload);
     }
-    pub(super) fn cancel_notifications(&self, id: &str) {
+    pub fn cancel_notifications(&self, id: &str) {
         let mut r = self.runtime.lock().unwrap();
         let prefix = format!("{id}:");
         let ids: Vec<_> = r
@@ -286,7 +286,7 @@ impl Service {
     }
 
     /// 1 小时截止提醒已移入 todos 模块；清理旧版本留下的原生排程，避免升级后重复通知。
-    pub(super) fn cancel_legacy_scheduled(&self) {
+    pub fn cancel_legacy_scheduled(&self) {
         let mut r = self.runtime.lock().unwrap();
         if r.data.scheduled.is_empty() {
             return;

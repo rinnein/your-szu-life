@@ -1,7 +1,7 @@
 use super::*;
 use sha2::{Digest, Sha256};
 
-pub(super) fn target(sites: &[Site], raw: &str) -> Result<(String, String, String), String> {
+pub fn target(sites: &[Site], raw: &str) -> Result<(String, String, String), String> {
     if raw.len() > 4096 {
         return Err("题目链接过长".into());
     }
@@ -44,7 +44,7 @@ pub(super) fn target(sites: &[Site], raw: &str) -> Result<(String, String, Strin
     Ok((site.id.clone(), cid, format!("{}:{pid}", kind.1)))
 }
 impl Service {
-    pub(super) fn configure_companion(&self, enabled: bool, port: u16) -> Result<(), String> {
+    pub fn configure_companion(&self, enabled: bool, port: u16) -> Result<(), String> {
         if cfg!(mobile) {
             return Err("手机端不提供 cph-ng 联动".into());
         }
@@ -65,7 +65,7 @@ impl Service {
         self.publish();
         Ok(())
     }
-    pub(super) fn companion_status(&self, port: u16, status: CompanionStatus) {
+    pub fn companion_status(&self, port: u16, status: CompanionStatus) {
         let mut r = self.runtime.lock().unwrap();
         if r.data.companion_port != port || (!r.data.companion_enabled && status.connected) {
             return;
@@ -74,7 +74,7 @@ impl Service {
         drop(r);
         self.publish();
     }
-    pub(super) async fn companion_submit(
+    pub async fn companion_submit(
         &self,
         request: CompanionSubmission,
     ) -> Result<CompanionResult, String> {

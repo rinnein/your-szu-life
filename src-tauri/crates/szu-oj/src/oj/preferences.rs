@@ -1,6 +1,6 @@
 use super::*;
 impl Service {
-    pub(super) fn preferences_locked(r: &Runtime, id: &str, account: &str) -> Preferences {
+    pub fn preferences_locked(r: &Runtime, id: &str, account: &str) -> Preferences {
         if let Some(saved) = r.data.preferences.get(id) {
             return saved.clone();
         }
@@ -31,7 +31,7 @@ impl Service {
         }
         value
     }
-    pub(super) fn save_preferences(&self, input: PreferencesInput) -> Result<Preferences, String> {
+    pub fn save_preferences(&self, input: PreferencesInput) -> Result<Preferences, String> {
         if !["c", "cpp", "java", "py", "go", "js"].contains(&input.language.as_str()) {
             return Err("不支持的编程语言".into());
         }

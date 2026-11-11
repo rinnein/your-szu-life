@@ -10,7 +10,6 @@ pub mod enrollment;
 pub mod jxxk;
 pub mod lms;
 pub mod mesh;
-pub mod oj;
 pub mod todos;
 
 #[cfg(test)]

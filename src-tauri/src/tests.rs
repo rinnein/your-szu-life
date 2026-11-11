@@ -14,7 +14,7 @@ fn command_names_match_handlers_manifest_and_local_permissions() {
         include_str!("../crates/szu-core/src/demo/commands.rs"),
         include_str!("../crates/szu-core/src/campus_payments/commands.rs"),
         include_str!("../crates/szu-uooc/src/uooc/commands.rs"),
-        include_str!("oj/commands.rs"),
+        include_str!("../crates/szu-oj/src/oj/commands.rs"),
         include_str!("lms/commands.rs"),
         include_str!("jxxk/commands.rs"),
         include_str!("enrollment/commands.rs"),

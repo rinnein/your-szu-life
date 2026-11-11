@@ -161,6 +161,7 @@ szu-core = { path = "crates/szu-core" }
 szu-download = { path = "crates/szu-download" }
 szu-runtime = { path = "crates/szu-runtime" }
 szu-uooc = { path = "crates/szu-uooc" }
+szu-oj = { path = "crates/szu-oj" }
 tauri = { workspace = true }
 tauri-plugin-opener = { workspace = true }
 tauri-plugin-notification = { workspace = true }

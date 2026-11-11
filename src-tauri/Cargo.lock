@@ -9039,6 +9039,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "szu-oj"
+version = "0.14.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "cookie_store",
+ "image",
+ "log",
+ "reqwest",
+ "reqwest_cookie_store",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "szu-build-support",
+ "szu-core",
+ "szu-runtime",
+ "tauri",
+ "tempfile",
+ "toasty",
+ "tokio",
+ "tokio-util",
+ "uuid",
+]
+
+[[package]]
 name = "szu-runtime"
 version = "0.14.0"
 dependencies = [
@@ -11810,6 +11835,7 @@ dependencies = [
  "ssid",
  "szu-core",
  "szu-download",
+ "szu-oj",
  "szu-runtime",
  "szu-uooc",
  "tauri",

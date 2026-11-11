@@ -28,7 +28,7 @@ HTTP 401 permits one login recovery; generic 403/404 do not. Side-effecting
 requests are never automatically retried. A request journal is written before
 submission so an app crash also leaves a result requiring verification.
 
-OCR uses the shared `crate::ocr::recognize` service and the model declared in
+OCR uses the shared `szu_runtime::ocr::recognize` service and the model declared in
 `../../resources/ocr/ddddocr/model.json`. Cargo downloads and verifies the model
 at build time, then embeds it; no model or image is sent to an online solver.
 The raster captcha fixture contains no account information or challenge key.

@@ -49,7 +49,7 @@ pub struct OjProgressRecord {
 
 /// 持久化层与内存层之间的进度传输类型。
 #[derive(Clone, Debug)]
-pub(crate) struct ProgressRow {
+pub struct ProgressRow {
     pub id: String,
     pub site_id: String,
     pub account: String,
@@ -61,21 +61,21 @@ pub(crate) struct ProgressRow {
 
 #[derive(Clone)]
 pub struct OjDatabase {
-    pub(crate) db: toasty::Db,
+    pub db: toasty::Db,
 }
 
 impl OjDatabase {
     pub async fn open(db_path: &Path) -> Result<Self, String> {
-        let db = crate::migrations::db::open_sqlite_db(
+        let db = szu_core::migrations::db::open_sqlite_db(
             db_path,
             toasty::models!(OjNoticeRecord, OjStateRecord, OjProgressRecord),
-            Some(&crate::migrations::oj::OJ_MIGRATIONS),
+            Some(&crate::oj::migrations::OJ_MIGRATIONS),
         )
         .await?;
         Ok(Self { db })
     }
 
-    pub(crate) async fn load_data(&self) -> Result<Data, String> {
+    pub async fn load_data(&self) -> Result<Data, String> {
         let mut db = self.db.clone();
         let state_row = match OjStateRecord::get_by_id(&mut db, "current").await {
             Ok(row) => row,
@@ -146,7 +146,7 @@ impl OjDatabase {
         })
     }
 
-    pub(crate) async fn save_data(&self, data: &Data) -> Result<(), String> {
+    pub async fn save_data(&self, data: &Data) -> Result<(), String> {
         let sites_json = serde_json::to_string(&data.sites).unwrap_or_default();
         let drafts_json = serde_json::to_string(&data.drafts).unwrap_or_default();
         let known_json = serde_json::to_string(&data.known).unwrap_or_default();
@@ -248,7 +248,7 @@ impl OjDatabase {
         Ok(())
     }
 
-    pub(crate) async fn load_progress(&self) -> Result<Vec<ProgressRow>, String> {
+    pub async fn load_progress(&self) -> Result<Vec<ProgressRow>, String> {
         let mut db = self.db.clone();
         let rows = OjProgressRecord::all()
             .exec(&mut db)
@@ -271,7 +271,7 @@ impl OjDatabase {
             .collect())
     }
 
-    pub(crate) async fn save_progress(&self, row: &ProgressRow) -> Result<(), String> {
+    pub async fn save_progress(&self, row: &ProgressRow) -> Result<(), String> {
         let mut db = self.db.clone();
         match OjProgressRecord::get_by_id(&mut db, &row.id).await {
             Ok(mut existing) => {
@@ -305,7 +305,7 @@ impl OjDatabase {
         Ok(())
     }
 
-    pub(crate) async fn delete_progress(&self, id: &str) -> Result<(), String> {
+    pub async fn delete_progress(&self, id: &str) -> Result<(), String> {
         let mut db = self.db.clone();
         match OjProgressRecord::get_by_id(&mut db, id).await {
             Ok(row) => {
@@ -322,7 +322,7 @@ impl OjDatabase {
         Ok(())
     }
 
-    pub(crate) async fn delete_progress_for_site(&self, site_id: &str) -> Result<(), String> {
+    pub async fn delete_progress_for_site(&self, site_id: &str) -> Result<(), String> {
         let mut db = self.db.clone();
         let rows = OjProgressRecord::all()
             .exec(&mut db)

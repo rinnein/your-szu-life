@@ -1,5 +1,5 @@
 use super::*;
-use crate::storage::testing::MemoryCredentialStore;
+use szu_core::storage::testing::MemoryCredentialStore;
 use std::{
     io::{Read, Write},
     net::TcpListener,
@@ -111,7 +111,7 @@ fn url_validation_preserves_subpath() {
 fn credentials_survive_service_restart_through_encrypted_vault() {
     // 回归：OJ 账号原为单一 JSON 条目，改为加密文档后必须仍能跨重启还原账号与会话。
     // 直接驱动 vault 与文档层，不依赖全局单例。
-    use crate::storage::{
+    use szu_core::storage::{
         entries::{self, VaultDocument},
         vault::{Vault, KEY_LEN},
     };
