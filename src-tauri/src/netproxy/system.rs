@@ -115,7 +115,8 @@ fn no_proxy_matches(host: &str, list: &str) -> bool {
     })
 }
 
-/// 解析系统命令（`gsettings` / `kreadconfig` / `scutil` / `reg query`）返回的代理值。
+/// 解析系统设置里取到的代理值（`gsettings` / `kreadconfig` / `scutil` 的输出，
+/// 或 Windows 注册表中的 `ProxyServer`）。
 ///
 /// 形如 `http://host:port` 或 `host:port`（按 `default_scheme` 补协议）。
 #[cfg(any(target_os = "macos", target_os = "windows", test))]

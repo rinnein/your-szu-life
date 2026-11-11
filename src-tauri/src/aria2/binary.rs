@@ -75,7 +75,17 @@ pub fn find_aria2c_binary(_app: Option<&tauri::AppHandle>) -> Result<PathBuf, St
         }
 
         let which_cmd = if cfg!(windows) { "where" } else { "which" };
-        if let Ok(output) = std::process::Command::new(which_cmd).arg(bin_name).output() {
+        let mut which = std::process::Command::new(which_cmd);
+        which.arg(bin_name);
+        // 发布版是 GUI 子系统，控制台子进程会闪一个窗口；`where` 只在
+        // aria2c 不在上面那些固定位置时才走到这里，同样不该闪。
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            which.creation_flags(CREATE_NO_WINDOW);
+        }
+        if let Ok(output) = which.output() {
             if output.status.success() {
                 let path_str = String::from_utf8_lossy(&output.stdout)
                     .lines()

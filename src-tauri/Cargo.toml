@@ -124,6 +124,14 @@ webkit2gtk = { version = "2.0.2", features = ["v2_40"] }
 soup3 = "0.5"
 gtk = "0.18"
 
+# 系统代理探测直接在进程内读注册表（netproxy/windows.rs）。起 `reg query`
+# 子进程会在 GUI 子系统下闪控制台窗口，因此这里只要注册表 API 的 feature。
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_System_Registry",
+] }
+
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 wallpaper = "3.2"
