@@ -14,7 +14,7 @@ use tauri::Manager;
 use super::node::Node;
 use super::{bridge, MeshStore, CAMPUS_PROXY_PORT};
 
-pub(crate) fn refresh(app: &AppHandle, store: &Arc<MeshStore>, node: &Arc<Node>) {
+pub fn refresh(app: &AppHandle, store: &Arc<MeshStore>, node: &Arc<Node>) {
     if !super::campus_access_enabled() || local_on_campus(app) {
         clear(store);
         return;
@@ -43,7 +43,7 @@ pub(crate) fn refresh(app: &AppHandle, store: &Arc<MeshStore>, node: &Arc<Node>)
             store.set_campus_bridge(Some((ip, bridge)));
             match reqwest::Url::parse(&format!("http://127.0.0.1:{port}")) {
                 Ok(url) => {
-                    crate::netproxy::campus_access::set_egress(Some(url));
+                    szu_core::netproxy::campus_access::set_egress(Some(url));
                     log::info!("校园网访问出口已切换到 {ip}（本机回环端口 {port}）");
                 }
                 Err(_) => clear(store),
@@ -56,18 +56,18 @@ pub(crate) fn refresh(app: &AppHandle, store: &Arc<MeshStore>, node: &Arc<Node>)
     }
 }
 
-pub(crate) fn clear(store: &MeshStore) {
+pub fn clear(store: &MeshStore) {
     if store.campus_peer().is_some() {
         store.set_campus_bridge(None);
-        crate::netproxy::campus_access::set_egress(None);
+        szu_core::netproxy::campus_access::set_egress(None);
     }
 }
 
 fn local_on_campus(app: &AppHandle) -> bool {
-    let Some(store) = app.try_state::<crate::campus_network::CampusNetworkStore>() else {
+    let Some(store) = app.try_state::<szu_core::campus_network::CampusNetworkStore>() else {
         return false;
     };
-    crate::campus_network::service::get_network_overview(&store)
-        .map(|overview| overview.region != crate::campus_network::model::NetworkRegion::None)
+    szu_core::campus_network::service::get_network_overview(&store)
+        .map(|overview| overview.region != szu_core::campus_network::model::NetworkRegion::None)
         .unwrap_or(false)
 }

@@ -16,10 +16,10 @@ use tokio::net::{TcpListener as TokioTcpListener, TcpStream};
 use tokio::task::JoinHandle;
 
 use super::node::Node;
-use crate::ports;
+use szu_core::ports;
 
-pub(crate) struct Bridge {
-    pub(crate) local_addr: SocketAddr,
+pub struct Bridge {
+    pub local_addr: SocketAddr,
     task: JoinHandle<()>,
 }
 
@@ -30,7 +30,7 @@ impl Drop for Bridge {
 }
 
 /// 把虚拟网 `overlay_port` 上的入站连接转发到本机 `local_addr`。
-pub(crate) async fn inbound(
+pub async fn inbound(
     node: Arc<Node>,
     overlay_port: u16,
     local_addr: SocketAddr,
@@ -61,7 +61,7 @@ pub(crate) async fn inbound(
 }
 
 /// 在本机回环上开一个端口，每条连接都拨到虚拟网里的 `peer:overlay_port`。
-pub(crate) fn outbound(node: Arc<Node>, peer: Ipv4Addr, overlay_port: u16) -> Result<Bridge, String> {
+pub fn outbound(node: Arc<Node>, peer: Ipv4Addr, overlay_port: u16) -> Result<Bridge, String> {
     let (listener, _) = ports::bind_loopback(ports::PortService::Mesh, None)
         .map_err(|error| error.to_string())?;
     let local_addr = listener

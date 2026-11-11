@@ -10,7 +10,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, toasty::Model)]
-pub(crate) struct SyncItemRecord {
+pub struct SyncItemRecord {
     #[key]
     pub item_id: String,
     pub vector_json: String,
@@ -20,7 +20,7 @@ pub(crate) struct SyncItemRecord {
 }
 
 #[derive(Debug, toasty::Model)]
-pub(crate) struct SyncRowRecord {
+pub struct SyncRowRecord {
     #[key]
     pub row_key: String,
     pub content_hash: String,
@@ -31,24 +31,24 @@ pub(crate) struct SyncRowRecord {
 /// 每个设备一个计数器；比较两个向量即可判断「谁改过、是否并发」。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
-pub(crate) struct VersionVector(pub(crate) BTreeMap<String, u64>);
+pub struct VersionVector(pub BTreeMap<String, u64>);
 
 impl VersionVector {
-    pub(crate) fn bump(&mut self, device: &str) -> u64 {
+    pub fn bump(&mut self, device: &str) -> u64 {
         let next = self.0.get(device).copied().unwrap_or(0).saturating_add(1);
         self.0.insert(device.to_owned(), next);
         next
     }
 
     /// 自身是否覆盖对方（逐项 `>=`）。相等时两边互相覆盖。
-    pub(crate) fn covers(&self, other: &Self) -> bool {
+    pub fn covers(&self, other: &Self) -> bool {
         other
             .0
             .iter()
             .all(|(device, value)| self.0.get(device).copied().unwrap_or(0) >= *value)
     }
 
-    pub(crate) fn merge(&mut self, other: &Self) {
+    pub fn merge(&mut self, other: &Self) {
         for (device, value) in &other.0 {
             let entry = self.0.entry(device.clone()).or_insert(0);
             if *value > *entry {
@@ -59,35 +59,35 @@ impl VersionVector {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct ItemState {
-    pub(crate) vector: VersionVector,
-    pub(crate) hash: String,
-    pub(crate) conflict: bool,
+pub struct ItemState {
+    pub vector: VersionVector,
+    pub hash: String,
+    pub conflict: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct RowState {
-    pub(crate) hash: String,
-    pub(crate) conflict: bool,
+pub struct RowState {
+    pub hash: String,
+    pub conflict: bool,
 }
 
 #[derive(Clone)]
-pub(crate) struct SyncDatabase {
+pub struct SyncDatabase {
     db: toasty::Db,
 }
 
 impl SyncDatabase {
-    pub(crate) async fn open(root: &Path) -> Result<Self, String> {
-        let db = crate::migrations::db::open_sqlite_db(
+    pub async fn open(root: &Path) -> Result<Self, String> {
+        let db = szu_core::migrations::db::open_sqlite_db(
             &root.join("sync.sqlite"),
             toasty::models!(SyncItemRecord, SyncRowRecord),
-            Some(&crate::migrations::mesh::MESH_MIGRATIONS),
+            Some(&crate::mesh::migrations::MESH_MIGRATIONS),
         )
         .await?;
         Ok(Self { db })
     }
 
-    pub(crate) async fn load_items(&self) -> Result<BTreeMap<String, ItemState>, String> {
+    pub async fn load_items(&self) -> Result<BTreeMap<String, ItemState>, String> {
         let mut db = self.db.clone();
         let rows = SyncItemRecord::all()
             .exec(&mut db)
@@ -109,7 +109,7 @@ impl SyncDatabase {
             .collect())
     }
 
-    pub(crate) async fn save_item(&self, item_id: &str, state: &ItemState) -> Result<(), String> {
+    pub async fn save_item(&self, item_id: &str, state: &ItemState) -> Result<(), String> {
         let vector_json = serde_json::to_string(&state.vector)
             .map_err(|error| format!("同步向量序列化失败: {error}"))?;
         let now = now_ms();
@@ -141,7 +141,7 @@ impl SyncDatabase {
         Ok(())
     }
 
-    pub(crate) async fn load_rows(&self) -> Result<BTreeMap<String, RowState>, String> {
+    pub async fn load_rows(&self) -> Result<BTreeMap<String, RowState>, String> {
         let mut db = self.db.clone();
         let rows = SyncRowRecord::all()
             .exec(&mut db)
@@ -161,7 +161,7 @@ impl SyncDatabase {
             .collect())
     }
 
-    pub(crate) async fn save_row(&self, row_key: &str, state: &RowState) -> Result<(), String> {
+    pub async fn save_row(&self, row_key: &str, state: &RowState) -> Result<(), String> {
         let now = now_ms();
         let mut db = self.db.clone();
         match SyncRowRecord::get_by_row_key(&mut db, row_key).await {

@@ -16,12 +16,12 @@ use tokio::task::JoinHandle;
 
 use super::node::Node;
 use super::CAMPUS_PROXY_PORT;
-use crate::netproxy::model;
+use szu_core::netproxy::model;
 
 const MAX_HEADER: usize = 16 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
-pub(crate) async fn serve(node: Arc<Node>) -> Result<JoinHandle<()>, String> {
+pub async fn serve(node: Arc<Node>) -> Result<JoinHandle<()>, String> {
     let mut listener = node.bind_overlay(CAMPUS_PROXY_PORT).await?;
     Ok(tokio::spawn(async move {
         loop {
@@ -175,7 +175,7 @@ fn request_target(url: &reqwest::Url) -> String {
 }
 
 async fn connect(host: &str, port: u16) -> Result<TcpStream, String> {
-    let addrs = crate::netproxy::resolve_overlay_target(host).await?;
+    let addrs = szu_core::netproxy::resolve_overlay_target(host).await?;
     let mut last_error = None;
     for addr in addrs {
         match tokio::time::timeout(

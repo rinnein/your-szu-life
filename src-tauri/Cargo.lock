@@ -9129,6 +9129,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "szu-mesh"
+version = "0.14.0"
+dependencies = [
+ "argon2",
+ "axum",
+ "chrono",
+ "easytier",
+ "easytier-core",
+ "log",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "szu-core",
+ "szu-uooc",
+ "tauri",
+ "tempfile",
+ "toasty",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "szu-oj"
 version = "0.14.0"
 dependencies = [
@@ -11949,6 +11972,7 @@ dependencies = [
  "szu-enrollment",
  "szu-jxxk",
  "szu-lms",
+ "szu-mesh",
  "szu-oj",
  "szu-runtime",
  "szu-todos",

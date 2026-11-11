@@ -24,14 +24,14 @@ use super::items::{
 };
 use super::state::{ItemState, RowState, SyncDatabase, VersionVector};
 use crate::mesh::{api::TOKEN_HEADER, MeshStore};
-use crate::storage::SharedCredentialStore;
+use szu_core::storage::SharedCredentialStore;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const ROW_BATCH: usize = 200;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ItemMeta {
+pub struct ItemMeta {
     pub id: String,
     pub hash: String,
     pub vector: VersionVector,
@@ -40,7 +40,7 @@ pub(crate) struct ItemMeta {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ItemPayload {
+pub struct ItemPayload {
     pub hash: String,
     pub vector: VersionVector,
     #[serde(default)]
@@ -51,56 +51,56 @@ pub(crate) struct ItemPayload {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct RowDigest {
+pub struct RowDigest {
     pub key: String,
     pub hash: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BankDigest {
+pub struct BankDigest {
     pub questions: Vec<RowDigest>,
     pub papers: Vec<RowDigest>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SyncStateResponse {
+pub struct SyncStateResponse {
     pub items: Vec<ItemMeta>,
     pub bank: BankDigest,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BankRowsRequest {
+pub struct BankRowsRequest {
     pub questions: Vec<String>,
     pub papers: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BankRowsResponse {
-    pub questions: Vec<crate::uooc::quiz::qa::LocalBankQuestion>,
-    pub papers: Vec<crate::uooc::quiz::qa::SubmittedPaperRecord>,
+pub struct BankRowsResponse {
+    pub questions: Vec<szu_uooc::uooc::quiz::qa::LocalBankQuestion>,
+    pub papers: Vec<szu_uooc::uooc::quiz::qa::SubmittedPaperRecord>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BankApplyRequest {
-    pub questions: Vec<crate::uooc::quiz::qa::LocalBankQuestion>,
-    pub papers: Vec<crate::uooc::quiz::qa::SubmittedPaperRecord>,
+pub struct BankApplyRequest {
+    pub questions: Vec<szu_uooc::uooc::quiz::qa::LocalBankQuestion>,
+    pub papers: Vec<szu_uooc::uooc::quiz::qa::SubmittedPaperRecord>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct BankApplyResponse {
+pub struct BankApplyResponse {
     pub applied: usize,
     pub conflicts: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SyncSummary {
+pub struct SyncSummary {
     pub peers: usize,
     pub applied: usize,
     pub pushed: usize,
@@ -111,7 +111,7 @@ pub(crate) struct SyncSummary {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SyncItemView {
+pub struct SyncItemView {
     pub id: String,
     pub label: String,
     pub collection: bool,
@@ -121,7 +121,7 @@ pub(crate) struct SyncItemView {
 
 /// 一次比较的结论。`Adopt` 表示拉取对端，`Push` 表示把本机推过去。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum MergeDecision {
+pub enum MergeDecision {
     Same,
     Adopt,
     Push,
@@ -129,7 +129,7 @@ pub(crate) enum MergeDecision {
 }
 
 /// 纯函数：根据内容哈希与版本向量决定合并方向。
-pub(crate) fn decide(
+pub fn decide(
     local_hash: &str,
     local_vector: &VersionVector,
     remote_hash: &str,
@@ -163,7 +163,7 @@ struct PeerEndpoint {
     token: Arc<str>,
 }
 
-pub(crate) struct SyncStore {
+pub struct SyncStore {
     root: OnceLock<PathBuf>,
     credentials: OnceLock<SharedCredentialStore>,
     db: tokio::sync::OnceCell<SyncDatabase>,
@@ -172,7 +172,7 @@ pub(crate) struct SyncStore {
 }
 
 impl SyncStore {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             root: OnceLock::new(),
             credentials: OnceLock::new(),
@@ -182,7 +182,7 @@ impl SyncStore {
         }
     }
 
-    pub(crate) fn initialize(
+    pub fn initialize(
         &self,
         app: &AppHandle,
         credentials: SharedCredentialStore,
@@ -213,11 +213,11 @@ impl SyncStore {
                 .credentials
                 .get()
                 .cloned()
-                .unwrap_or_else(|| Arc::new(crate::storage::PlatformCredentialStore)),
+                .unwrap_or_else(|| Arc::new(szu_core::storage::PlatformCredentialStore)),
         }
     }
 
-    pub(crate) fn last_summary(&self) -> SyncSummary {
+    pub fn last_summary(&self) -> SyncSummary {
         self.last_summary
             .lock()
             .map(|summary| summary.clone())
@@ -231,12 +231,12 @@ impl SyncStore {
     }
 
     /// 一次完整同步：逐个对端交换整项配置与题库增量。
-    pub(crate) async fn run_pass(&self, app: &AppHandle) -> Result<SyncSummary, String> {
+    pub async fn run_pass(&self, app: &AppHandle) -> Result<SyncSummary, String> {
         let _guard = self.pass.lock().await;
         let mut summary = SyncSummary::default();
         let peers = peer_endpoints(app);
         summary.peers = peers.len();
-        let client = crate::netproxy::overlay_client_builder()
+        let client = szu_core::netproxy::overlay_client_builder()
             .timeout(REQUEST_TIMEOUT)
             .build()
             .map_err(|error| format!("同步客户端创建失败: {error}"))?;
@@ -251,7 +251,7 @@ impl SyncStore {
             }
         }
         if summary.applied > 0 || summary.bank_rows > 0 {
-            crate::onboarding::adopt_synced_items();
+            szu_core::onboarding::adopt_synced_items();
         }
         self.set_summary(summary.clone());
         Ok(summary)
@@ -603,7 +603,7 @@ impl SyncStore {
 
     // ---- 对等接口：由 `mesh::api` 调用 ----
 
-    pub(crate) async fn peer_state(&self, app: &AppHandle) -> Result<SyncStateResponse, String> {
+    pub async fn peer_state(&self, app: &AppHandle) -> Result<SyncStateResponse, String> {
         self.refresh_local_items(app).await?;
         let db = self.db().await?;
         let states = db.load_items().await?;
@@ -644,7 +644,7 @@ impl SyncStore {
         Ok(SyncStateResponse { items, bank })
     }
 
-    pub(crate) async fn peer_item(&self, app: &AppHandle, id: &str) -> Result<ItemPayload, String> {
+    pub async fn peer_item(&self, app: &AppHandle, id: &str) -> Result<ItemPayload, String> {
         if item_def(id).is_none() || id == UOOC_QA_BANK {
             return Err("未知的同步项".into());
         }
@@ -657,7 +657,7 @@ impl SyncStore {
         })
     }
 
-    pub(crate) async fn peer_apply_item(
+    pub async fn peer_apply_item(
         &self,
         app: &AppHandle,
         id: &str,
@@ -730,7 +730,7 @@ impl SyncStore {
         })
     }
 
-    pub(crate) async fn peer_bank_rows(
+    pub async fn peer_bank_rows(
         &self,
         app: &AppHandle,
         request: BankRowsRequest,
@@ -752,7 +752,7 @@ impl SyncStore {
         })
     }
 
-    pub(crate) async fn peer_apply_bank(
+    pub async fn peer_apply_bank(
         &self,
         app: &AppHandle,
         request: BankApplyRequest,
@@ -875,7 +875,7 @@ impl SyncStore {
         Ok(BankApplyResponse { applied, conflicts })
     }
 
-    pub(crate) async fn item_views(&self) -> Vec<SyncItemView> {
+    pub async fn item_views(&self) -> Vec<SyncItemView> {
         let Ok(db) = self.db().await else {
             return Vec::new();
         };
@@ -1018,8 +1018,8 @@ async fn fetch_rows(
 async fn apply_rows(
     client: &reqwest::Client,
     peer: &PeerEndpoint,
-    questions: &[crate::uooc::quiz::qa::LocalBankQuestion],
-    papers: &[crate::uooc::quiz::qa::SubmittedPaperRecord],
+    questions: &[szu_uooc::uooc::quiz::qa::LocalBankQuestion],
+    papers: &[szu_uooc::uooc::quiz::qa::SubmittedPaperRecord],
 ) -> Result<BankApplyResponse, String> {
     client
         .post(format!("http://127.0.0.1:{}/v1/sync/bank/apply", peer.port))
@@ -1064,7 +1064,7 @@ fn peer_endpoints(app: &AppHandle) -> Vec<PeerEndpoint> {
 }
 
 fn device_id() -> String {
-    crate::preferences::load::<String>(crate::preferences::SYNC_DEVICE_ID)
+    szu_core::preferences::load::<String>(szu_core::preferences::SYNC_DEVICE_ID)
         .ok()
         .flatten()
         .filter(|id| !id.trim().is_empty())

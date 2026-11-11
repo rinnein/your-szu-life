@@ -1,0 +1,31 @@
+[package]
+name = "szu-mesh"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "泥深设备自组网（EasyTier no-tun）与设置同步"
+
+[lib]
+name = "szu_mesh"
+path = "src/lib.rs"
+
+[dependencies]
+szu-core = { path = "../szu-core" }
+szu-uooc = { path = "../szu-uooc" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+axum = { workspace = true }
+toasty = { workspace = true }
+sha2 = { workspace = true }
+uuid = { workspace = true }
+argon2 = { workspace = true }
+easytier = { workspace = true }
+easytier-core = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

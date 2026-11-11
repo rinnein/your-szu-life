@@ -25,8 +25,8 @@ fn command_names_match_handlers_manifest_and_local_permissions() {
         include_str!("../crates/szu-core/src/analytics/commands.rs"),
         include_str!("../crates/szu-todos/src/todos/commands.rs"),
         include_str!("../crates/szu-core/src/netproxy/commands.rs"),
-        include_str!("mesh/commands.rs"),
-        include_str!("settings_sync/commands.rs"),
+        include_str!("../crates/szu-mesh/src/mesh/commands.rs"),
+        include_str!("../crates/szu-mesh/src/settings_sync/commands.rs"),
         include_str!("../crates/szu-core/src/ports/commands.rs"),
     ]
     .into_iter()

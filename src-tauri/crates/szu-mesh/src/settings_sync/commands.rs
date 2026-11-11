@@ -6,7 +6,7 @@ use super::engine::{SyncItemView, SyncStore};
 use super::SyncStatusView;
 
 #[tauri::command]
-pub(crate) async fn get_sync_status(
+pub async fn get_sync_status(
     app: AppHandle,
     store: State<'_, Arc<SyncStore>>,
 ) -> Result<SyncStatusView, String> {
@@ -14,14 +14,14 @@ pub(crate) async fn get_sync_status(
 }
 
 #[tauri::command]
-pub(crate) async fn get_sync_items(
+pub async fn get_sync_items(
     store: State<'_, Arc<SyncStore>>,
 ) -> Result<Vec<SyncItemView>, String> {
     Ok(store.item_views().await)
 }
 
 #[tauri::command]
-pub(crate) async fn trigger_sync(
+pub async fn trigger_sync(
     app: AppHandle,
     store: State<'_, Arc<SyncStore>>,
 ) -> Result<SyncStatusView, String> {

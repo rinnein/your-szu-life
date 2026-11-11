@@ -19,48 +19,48 @@ use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
 use super::node::Node;
-use crate::preferences;
+use szu_core::preferences;
 use crate::settings_sync::engine::{
     BankApplyRequest, BankRowsRequest, ItemPayload, SyncStore,
 };
 
-pub(crate) const TOKEN_HEADER: &str = "x-mesh-token";
+pub const TOKEN_HEADER: &str = "x-mesh-token";
 
 /// 任意两台设备之间的自我描述。
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PeerStatus {
-    pub(crate) device_id: String,
-    pub(crate) name: String,
-    pub(crate) platform: String,
-    pub(crate) app_version: String,
-    pub(crate) overlay_ip: Option<String>,
+pub struct PeerStatus {
+    pub device_id: String,
+    pub name: String,
+    pub platform: String,
+    pub app_version: String,
+    pub overlay_ip: Option<String>,
     /// 对端是否开启了设置同步（未开启时不会响应同步请求）。
     #[serde(default)]
-    pub(crate) sync_enabled: bool,
+    pub sync_enabled: bool,
     /// 对端是否开启了「校园网访问」。
     #[serde(default)]
-    pub(crate) campus_access: bool,
+    pub campus_access: bool,
     #[serde(default)]
-    pub(crate) on_campus: bool,
+    pub on_campus: bool,
     #[serde(default)]
-    pub(crate) region: String,
+    pub region: String,
     #[serde(default)]
-    pub(crate) network_state: String,
+    pub network_state: String,
     #[serde(default)]
-    pub(crate) ssid: Option<String>,
+    pub ssid: Option<String>,
 }
 
 #[derive(Clone)]
-pub(crate) struct ApiState {
-    pub(crate) token: Arc<str>,
-    pub(crate) app: tauri::AppHandle,
-    pub(crate) node: Arc<Node>,
-    pub(crate) device_id: Arc<str>,
-    pub(crate) device_name: Arc<str>,
+pub struct ApiState {
+    pub token: Arc<str>,
+    pub app: tauri::AppHandle,
+    pub node: Arc<Node>,
+    pub device_id: Arc<str>,
+    pub device_name: Arc<str>,
 }
 
-pub(crate) fn router(state: ApiState) -> Router {
+pub fn router(state: ApiState) -> Router {
     Router::new()
         .route("/v1/status", get(status))
         .route("/v1/sync/state", get(sync_state))
@@ -205,7 +205,7 @@ async fn build_status(state: &ApiState) -> Result<PeerStatus, String> {
 }
 
 /// 本机对外的自我描述。设备列表里的「本机」与 `/v1/status` 共用这一份。
-pub(crate) async fn local_status(
+pub async fn local_status(
     app: &tauri::AppHandle,
     node: &Node,
     device_id: &str,
@@ -239,12 +239,12 @@ pub(crate) async fn local_status(
 }
 
 fn campus_status(app: &tauri::AppHandle) -> (bool, String, String, Option<String>) {
-    use crate::campus_network::model::{NetworkConnectionState, NetworkRegion};
+    use szu_core::campus_network::model::{NetworkConnectionState, NetworkRegion};
 
-    let Some(store) = app.try_state::<crate::campus_network::CampusNetworkStore>() else {
+    let Some(store) = app.try_state::<szu_core::campus_network::CampusNetworkStore>() else {
         return (false, "none".into(), "unknown".into(), None);
     };
-    let Ok(overview) = crate::campus_network::service::get_network_overview(&store) else {
+    let Ok(overview) = szu_core::campus_network::service::get_network_overview(&store) else {
         return (false, "none".into(), "unknown".into(), None);
     };
     let region = match overview.region {
@@ -284,7 +284,7 @@ fn authorized(headers: &HeaderMap, expected: &str) -> bool {
 }
 
 /// 对等接口的认证 token：由网络密钥派生，只在内存中使用。
-pub(crate) fn derive_token(network_secret: &str) -> String {
+pub fn derive_token(network_secret: &str) -> String {
     use sha2::{Digest, Sha256};
     let digest = Sha256::digest(format!("{network_secret}:api:v1").as_bytes());
     let mut out = String::with_capacity(digest.len() * 2);

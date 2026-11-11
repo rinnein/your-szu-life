@@ -14,27 +14,27 @@ use tauri::Emitter;
 use super::api::{self, PeerStatus, TOKEN_HEADER};
 use super::node::Node;
 use super::{MeshStore, DEVICES_EVENT};
-use crate::activity;
+use szu_core::activity;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct MeshDeviceView {
-    pub(crate) device_id: String,
-    pub(crate) name: String,
-    pub(crate) platform: String,
-    pub(crate) app_version: String,
-    pub(crate) overlay_ip: Option<String>,
-    pub(crate) is_self: bool,
-    pub(crate) reachable: bool,
-    pub(crate) latency_ms: Option<u64>,
-    pub(crate) sync_enabled: bool,
-    pub(crate) campus_access: bool,
-    pub(crate) on_campus: bool,
-    pub(crate) region: String,
-    pub(crate) network_state: String,
-    pub(crate) ssid: Option<String>,
+pub struct MeshDeviceView {
+    pub device_id: String,
+    pub name: String,
+    pub platform: String,
+    pub app_version: String,
+    pub overlay_ip: Option<String>,
+    pub is_self: bool,
+    pub reachable: bool,
+    pub latency_ms: Option<u64>,
+    pub sync_enabled: bool,
+    pub campus_access: bool,
+    pub on_campus: bool,
+    pub region: String,
+    pub network_state: String,
+    pub ssid: Option<String>,
 }
 
 impl MeshDeviceView {
@@ -87,13 +87,13 @@ impl MeshDeviceView {
 }
 
 /// 后台刷新循环。由 [`super::start_with`] 启动，随节点一起 abort。
-pub(crate) async fn refresh_loop(
+pub async fn refresh_loop(
     app: tauri::AppHandle,
     store: Arc<MeshStore>,
     node: Arc<Node>,
     token: Arc<str>,
 ) {
-    let client = match crate::netproxy::overlay_client_builder()
+    let client = match szu_core::netproxy::overlay_client_builder()
         .timeout(REQUEST_TIMEOUT)
         .build()
     {
@@ -193,7 +193,7 @@ async fn fetch_status(client: &reqwest::Client, port: u16, token: &str) -> Optio
 }
 
 /// 设备列表里的本机视图（启动早期、刷新循环还没跑过时给前端用）。
-pub(crate) fn offline_self(device_id: &str, device_name: &str) -> MeshDeviceView {
+pub fn offline_self(device_id: &str, device_name: &str) -> MeshDeviceView {
     MeshDeviceView {
         device_id: device_id.to_owned(),
         name: device_name.to_owned(),

@@ -8,8 +8,8 @@
 //! 这里是全应用**唯一**一处派生组网身份的地方：网络名/密钥的算法、分隔符与长度
 //! 都只在这里定义，其它模块只消费 [`MeshIdentity`]。
 
-use crate::auth::model::StoredAccountProfile;
-use crate::storage::{CredentialStore, PlatformCredentialStore};
+use szu_core::auth::model::StoredAccountProfile;
+use szu_core::storage::{CredentialStore, PlatformCredentialStore};
 use argon2::{Algorithm, Argon2, Params, Version};
 use sha2::{Digest, Sha256};
 
@@ -20,17 +20,17 @@ const SECRET_LEN: usize = 32;
 const SECRET_SALT_LEN: usize = 16;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct MeshIdentity {
+pub struct MeshIdentity {
     /// 出现在 peer 列表里的网络名；不含任何明文账号信息。
-    pub(crate) network_name: String,
+    pub network_name: String,
     /// 握手与数据面加密用的网络密钥；只在本进程内使用。
-    pub(crate) network_secret: String,
+    pub network_secret: String,
     /// 当前设备身份对应的学号。用于显示与日志定位，不参与网络标识。
-    pub(crate) student_id: String,
+    pub student_id: String,
 }
 
 /// 读取本机账户资料并派生身份。资料不完整时返回用户可读的原因。
-pub(crate) fn derive_current() -> Result<MeshIdentity, String> {
+pub fn derive_current() -> Result<MeshIdentity, String> {
     let profile = PlatformCredentialStore
         .load_profile()
         .map_err(|error| format!("读取账户资料失败: {error}"))?
@@ -39,7 +39,7 @@ pub(crate) fn derive_current() -> Result<MeshIdentity, String> {
 }
 
 /// 由账户资料派生身份。纯函数，便于测试固定输入。
-pub(crate) fn derive(profile: &StoredAccountProfile) -> Result<MeshIdentity, String> {
+pub fn derive(profile: &StoredAccountProfile) -> Result<MeshIdentity, String> {
     let student_id = profile.student_id.trim();
     if student_id.is_empty() {
         return Err("账户资料缺少学号，无法启用设备同步".into());

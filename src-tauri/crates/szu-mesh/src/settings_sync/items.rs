@@ -14,30 +14,30 @@ use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use tauri::AppHandle;
 
-use crate::campus_payments::model::ElectricityLocationSettings;
-use crate::campus_network::model::DormCustomCredentials;
-use crate::storage::SharedCredentialStore;
-use crate::uooc::model::Settings as UoocSettings;
-use crate::uooc::quiz::qa::{LocalBankQuestion, SubmittedPaperRecord};
+use szu_core::campus_payments::model::ElectricityLocationSettings;
+use szu_core::campus_network::model::DormCustomCredentials;
+use szu_core::storage::SharedCredentialStore;
+use szu_uooc::uooc::model::Settings as UoocSettings;
+use szu_uooc::uooc::quiz::qa::{LocalBankQuestion, SubmittedPaperRecord};
 
-pub(crate) const UOOC_SESSION: &str = "uooc.session";
-pub(crate) const UOOC_AI: &str = "uooc.ai";
-pub(crate) const OJ_ACCOUNTS: &str = "oj.accounts";
-pub(crate) const DORM_CREDENTIALS: &str = "network.dorm.credentials";
-pub(crate) const STAFF_CREDENTIALS: &str = "network.staff.credentials";
-pub(crate) const ELECTRICITY_LOCATION: &str = "electricity.location";
-pub(crate) const UOOC_SETTINGS: &str = "uooc.settings";
-pub(crate) const UOOC_QA_BANK: &str = "uooc.qa_bank";
+pub const UOOC_SESSION: &str = "uooc.session";
+pub const UOOC_AI: &str = "uooc.ai";
+pub const OJ_ACCOUNTS: &str = "oj.accounts";
+pub const DORM_CREDENTIALS: &str = "network.dorm.credentials";
+pub const STAFF_CREDENTIALS: &str = "network.staff.credentials";
+pub const ELECTRICITY_LOCATION: &str = "electricity.location";
+pub const UOOC_SETTINGS: &str = "uooc.settings";
+pub const UOOC_QA_BANK: &str = "uooc.qa_bank";
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct ItemDef {
-    pub(crate) id: &'static str,
-    pub(crate) label: &'static str,
+pub struct ItemDef {
+    pub id: &'static str,
+    pub label: &'static str,
     /// 集合项不参与整项版本向量合并，走行级合并。
-    pub(crate) collection: bool,
+    pub collection: bool,
 }
 
-pub(crate) const ITEM_DEFS: [ItemDef; 8] = [
+pub const ITEM_DEFS: [ItemDef; 8] = [
     ItemDef {
         id: UOOC_SESSION,
         label: "UOOC 登录态",
@@ -80,18 +80,18 @@ pub(crate) const ITEM_DEFS: [ItemDef; 8] = [
     },
 ];
 
-pub(crate) fn item_def(id: &str) -> Option<ItemDef> {
+pub fn item_def(id: &str) -> Option<ItemDef> {
     ITEM_DEFS.iter().copied().find(|def| def.id == id)
 }
 
 #[derive(Clone)]
-pub(crate) struct ItemContext {
-    pub(crate) app: AppHandle,
-    pub(crate) credentials: SharedCredentialStore,
+pub struct ItemContext {
+    pub app: AppHandle,
+    pub credentials: SharedCredentialStore,
 }
 
 impl ItemContext {
-    pub(crate) async fn read(&self, id: &str) -> Result<Option<Value>, String> {
+    pub async fn read(&self, id: &str) -> Result<Option<Value>, String> {
         match id {
             UOOC_SESSION => Ok(self
                 .credentials
@@ -123,7 +123,7 @@ impl ItemContext {
             STAFF_CREDENTIALS => to_value(self.credentials.load_staff_credentials()?),
             ELECTRICITY_LOCATION => to_value(self.credentials.load_electricity_settings()?),
             UOOC_SETTINGS => {
-                let settings = crate::uooc::synced_settings(&self.app)?;
+                let settings = szu_uooc::uooc::synced_settings(&self.app)?;
                 Ok(Some(
                     serde_json::to_value(settings)
                         .map_err(|error| format!("UOOC 运行设置序列化失败: {error}"))?,
@@ -133,18 +133,18 @@ impl ItemContext {
         }
     }
 
-    pub(crate) async fn write(&self, id: &str, value: Value) -> Result<(), String> {
+    pub async fn write(&self, id: &str, value: Value) -> Result<(), String> {
         match id {
             UOOC_SESSION => {
                 let raw = expect_string(id, value)?;
                 self.credentials.save_uooc_session(&raw)?;
-                crate::uooc::reload_synced_session(&self.app)?;
+                szu_uooc::uooc::reload_synced_session(&self.app)?;
                 Ok(())
             }
             UOOC_AI => {
                 let raw = expect_string(id, value)?;
                 self.credentials.save_uooc_ai(&raw)?;
-                crate::uooc::reload_synced_ai(&self.app)?;
+                szu_uooc::uooc::reload_synced_ai(&self.app)?;
                 Ok(())
             }
             OJ_ACCOUNTS => self.write_oj_accounts(value),
@@ -166,7 +166,7 @@ impl ItemContext {
             UOOC_SETTINGS => {
                 let settings: UoocSettings = serde_json::from_value(value)
                     .map_err(|_| "UOOC 运行设置格式无效".to_string())?;
-                crate::uooc::apply_synced_settings(&self.app, settings)
+                szu_uooc::uooc::apply_synced_settings(&self.app, settings)
             }
             _ => Err(format!("未知的同步项: {id}")),
         }
@@ -201,27 +201,27 @@ impl ItemContext {
         self.credentials.save_oj_accounts(&raw)
     }
 
-    pub(crate) async fn bank_snapshot(&self) -> Result<BankSnapshot, String> {
-        let (questions, papers) = crate::uooc::qa_sync_snapshot(&self.app).await?;
+    pub async fn bank_snapshot(&self) -> Result<BankSnapshot, String> {
+        let (questions, papers) = szu_uooc::uooc::qa_sync_snapshot(&self.app).await?;
         Ok(BankSnapshot { questions, papers })
     }
 
-    pub(crate) async fn apply_questions(
+    pub async fn apply_questions(
         &self,
         questions: Vec<LocalBankQuestion>,
     ) -> Result<(), String> {
-        crate::uooc::qa_sync_apply_questions(&self.app, questions).await
+        szu_uooc::uooc::qa_sync_apply_questions(&self.app, questions).await
     }
 
-    pub(crate) async fn apply_papers(&self, papers: Vec<SubmittedPaperRecord>) -> Result<(), String> {
-        crate::uooc::qa_sync_apply_papers(&self.app, papers).await
+    pub async fn apply_papers(&self, papers: Vec<SubmittedPaperRecord>) -> Result<(), String> {
+        szu_uooc::uooc::qa_sync_apply_papers(&self.app, papers).await
     }
 }
 
 #[derive(Clone, Debug, Default)]
-pub(crate) struct BankSnapshot {
-    pub(crate) questions: Vec<LocalBankQuestion>,
-    pub(crate) papers: Vec<SubmittedPaperRecord>,
+pub struct BankSnapshot {
+    pub questions: Vec<LocalBankQuestion>,
+    pub papers: Vec<SubmittedPaperRecord>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -260,21 +260,21 @@ fn to_value<T: Serialize>(value: Option<T>) -> Result<Option<Value>, String> {
 }
 
 /// 整项内容哈希。值本身已经是稳定的 JSON 结构。
-pub(crate) fn content_hash(value: &Value) -> String {
+pub fn content_hash(value: &Value) -> String {
     let bytes = serde_json::to_vec(value).unwrap_or_default();
     sha256_hex(&bytes)
 }
 
-pub(crate) fn question_row_key(question: &LocalBankQuestion) -> String {
+pub fn question_row_key(question: &LocalBankQuestion) -> String {
     format!("q:{}", question.question_id)
 }
 
-pub(crate) fn paper_row_key(paper: &SubmittedPaperRecord) -> String {
-    format!("p:{}:{}", paper.cid, crate::uooc::quiz::qa::sanitize_task_id(&paper.tid))
+pub fn paper_row_key(paper: &SubmittedPaperRecord) -> String {
+    format!("p:{}:{}", paper.cid, szu_uooc::uooc::quiz::qa::sanitize_task_id(&paper.tid))
 }
 
 /// 题目行哈希。选项、作答顺序可能因设备不同而不同，这里先做规范化再哈希。
-pub(crate) fn question_hash(question: &LocalBankQuestion) -> String {
+pub fn question_hash(question: &LocalBankQuestion) -> String {
     let mut answers = question.answers.clone();
     answers.sort_by(|a, b| {
         a.id.cmp(&b.id)
@@ -299,12 +299,12 @@ pub(crate) fn question_hash(question: &LocalBankQuestion) -> String {
     sha256_hex(&bytes)
 }
 
-pub(crate) fn paper_hash(paper: &SubmittedPaperRecord) -> String {
+pub fn paper_hash(paper: &SubmittedPaperRecord) -> String {
     let bytes = serde_json::to_vec(paper).unwrap_or_default();
     sha256_hex(&bytes)
 }
 
-pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
+pub fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     let mut out = String::with_capacity(digest.len() * 2);
     for byte in digest {
@@ -317,8 +317,8 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::uooc::quiz::model::Question;
-    use crate::uooc::quiz::qa::{LocalBankAnswer, QaUploadOption};
+    use szu_uooc::uooc::quiz::model::Question;
+    use szu_uooc::uooc::quiz::qa::{LocalBankAnswer, QaUploadOption};
 
     fn question(stem: &str, answers: Vec<LocalBankAnswer>, uploaded: bool) -> LocalBankQuestion {
         LocalBankQuestion {
@@ -411,6 +411,6 @@ mod tests {
             answers: Default::default(),
             submitted_at_ms: 1,
         };
-        assert_eq!(paper_row_key(&paper), format!("p:c:{}", crate::uooc::quiz::qa::sanitize_task_id(" t/1 ")));
+        assert_eq!(paper_row_key(&paper), format!("p:c:{}", szu_uooc::uooc::quiz::qa::sanitize_task_id(" t/1 ")));
     }
 }

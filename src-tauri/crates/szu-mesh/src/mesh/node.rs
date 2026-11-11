@@ -18,7 +18,7 @@ use easytier_core::gateway::{DataPlaneTcpListener, DataPlaneTcpStream};
 use easytier_core::instance::manager::ConfigFileControl;
 
 use super::identity::MeshIdentity;
-use crate::ports;
+use szu_core::ports;
 
 /// 节点启动后等待虚拟 IP 分配的最长时间。
 const READY_TIMEOUT: Duration = Duration::from_secs(10);
@@ -32,23 +32,23 @@ const LISTENER_PORT_PREFERRED: u16 = ports::MESH_PORT_RANGE.0;
 const LISTENER_PORT_END: u16 = ports::MESH_PORT_RANGE.1;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct OverlayPeer {
-    pub(crate) peer_id: u32,
-    pub(crate) ipv4: Option<Ipv4Addr>,
-    pub(crate) hostname: String,
-    pub(crate) cost: i32,
-    pub(crate) latency_ms: Option<u64>,
+pub struct OverlayPeer {
+    pub peer_id: u32,
+    pub ipv4: Option<Ipv4Addr>,
+    pub hostname: String,
+    pub cost: i32,
+    pub latency_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct OverlaySelf {
-    pub(crate) peer_id: u32,
-    pub(crate) ipv4: Option<Ipv4Addr>,
-    pub(crate) hostname: String,
+pub struct OverlaySelf {
+    pub peer_id: u32,
+    pub ipv4: Option<Ipv4Addr>,
+    pub hostname: String,
 }
 
 /// 一个已经启动的 EasyTier 实例。Drop 前必须调用 [`Node::stop`]。
-pub(crate) struct Node {
+pub struct Node {
     manager: NativeInstanceManager,
     instance_id: uuid::Uuid,
     /// 启动时写死的虚拟 IP；DHCP 之后一般不变，但以 `self_info()` 的实时值为准。
@@ -56,7 +56,7 @@ pub(crate) struct Node {
 }
 
 impl Node {
-    pub(crate) async fn start(identity: &MeshIdentity, hostname: &str) -> Result<Self, String> {
+    pub async fn start(identity: &MeshIdentity, hostname: &str) -> Result<Self, String> {
         let rpc_port = ports::reserve_loopback(ports::PortService::Mesh, None)
             .map_err(|error| error.to_string())?
             .port;
@@ -111,7 +111,7 @@ impl Node {
         }
     }
 
-    pub(crate) async fn self_info(&self) -> Option<OverlaySelf> {
+    pub async fn self_info(&self) -> Option<OverlaySelf> {
         let instance = self.manager.instance(self.instance_id)?;
         let snapshot = instance.node_snapshot().await;
         Some(OverlaySelf {
@@ -125,7 +125,7 @@ impl Node {
         })
     }
 
-    pub(crate) async fn peers(&self) -> Vec<OverlayPeer> {
+    pub async fn peers(&self) -> Vec<OverlayPeer> {
         let Some(instance) = self.manager.instance(self.instance_id) else {
             return Vec::new();
         };
@@ -151,7 +151,7 @@ impl Node {
     }
 
     /// 在虚拟网的 `port` 上监听，只接受虚拟网内的连接。
-    pub(crate) async fn bind_overlay(&self, port: u16) -> Result<DataPlaneTcpListener, String> {
+    pub async fn bind_overlay(&self, port: u16) -> Result<DataPlaneTcpListener, String> {
         self.manager
             .data_plane_tcp_bind(&self.instance_id, port, DATA_PLANE_TIMEOUT)
             .await
@@ -159,7 +159,7 @@ impl Node {
     }
 
     /// 拨虚拟网内的 `peer:port`。
-    pub(crate) async fn connect_overlay(
+    pub async fn connect_overlay(
         &self,
         peer: Ipv4Addr,
         port: u16,
@@ -174,7 +174,7 @@ impl Node {
             .map_err(|error| format!("连接虚拟网 {peer}:{port} 失败: {error}"))
     }
 
-    pub(crate) async fn stop(&self) {
+    pub async fn stop(&self) {
         let _ = self
             .manager
             .delete_network_instances([self.instance_id])
@@ -266,7 +266,7 @@ fn preset_peers() -> Vec<String> {
         peers: Vec<String>,
     }
 
-    let parsed: PeersFile = match serde_json::from_str(include_str!("../../../easytier-peers.json")) {
+    let parsed: PeersFile = match serde_json::from_str(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../easytier-peers.json"))) {
         Ok(parsed) => parsed,
         Err(error) => {
             log::warn!("easytier-peers.json 无法解析，按空列表处理: {error}");

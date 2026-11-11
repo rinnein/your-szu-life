@@ -9,18 +9,18 @@ use std::time::Duration;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-pub(crate) mod commands;
-pub(crate) mod engine;
-pub(crate) mod items;
-pub(crate) mod state;
+pub mod commands;
+pub mod engine;
+pub mod items;
+pub mod state;
 
 use engine::{SyncItemView, SyncStore, SyncSummary};
 
-pub(crate) const STATUS_EVENT: &str = "sync-status-changed";
+pub const STATUS_EVENT: &str = "sync-status-changed";
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct SyncStatusView {
+pub struct SyncStatusView {
     pub enabled: bool,
     pub campus_access: bool,
     pub running: bool,
@@ -28,7 +28,7 @@ pub(crate) struct SyncStatusView {
     pub items: Vec<SyncItemView>,
 }
 
-pub(crate) fn initialize(app: &AppHandle, credentials: crate::storage::SharedCredentialStore) {
+pub fn initialize(app: &AppHandle, credentials: szu_core::storage::SharedCredentialStore) {
     let Some(store) = app.try_state::<Arc<SyncStore>>().map(|state| state.inner().clone()) else {
         return;
     };
@@ -47,7 +47,7 @@ pub(crate) fn initialize(app: &AppHandle, credentials: crate::storage::SharedCre
                 }
                 emit_status(&app, &store).await;
             }
-            let interval = crate::activity::interval(
+            let interval = szu_core::activity::interval(
                 Some("mesh"),
                 Duration::from_secs(60),
                 Duration::from_secs(180),
@@ -58,7 +58,7 @@ pub(crate) fn initialize(app: &AppHandle, credentials: crate::storage::SharedCre
     });
 }
 
-pub(crate) async fn status(app: &AppHandle, store: &SyncStore) -> SyncStatusView {
+pub async fn status(app: &AppHandle, store: &SyncStore) -> SyncStatusView {
     SyncStatusView {
         enabled: crate::mesh::enabled(),
         campus_access: crate::mesh::campus_access_enabled(),
@@ -68,12 +68,12 @@ pub(crate) async fn status(app: &AppHandle, store: &SyncStore) -> SyncStatusView
     }
 }
 
-pub(crate) async fn emit_status(app: &AppHandle, store: &SyncStore) {
+pub async fn emit_status(app: &AppHandle, store: &SyncStore) {
     let _ = app.emit(STATUS_EVENT, status(app, store).await);
 }
 
 /// 手动触发一次同步（向导与设置页的「立即同步」）。
-pub(crate) async fn trigger(app: &AppHandle, store: &SyncStore) -> Result<SyncStatusView, String> {
+pub async fn trigger(app: &AppHandle, store: &SyncStore) -> Result<SyncStatusView, String> {
     if !crate::mesh::enabled() {
         return Err("请先开启设备同步".into());
     }
