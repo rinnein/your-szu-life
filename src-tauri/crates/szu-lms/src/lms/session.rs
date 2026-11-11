@@ -12,7 +12,7 @@ use super::model::Profile;
 /// </script>
 /// ```
 /// `user.id` 是通知接口路径里的 uid。
-pub(super) fn parse_global_data(html: &str) -> Option<Profile> {
+pub fn parse_global_data(html: &str) -> Option<Profile> {
     let marker = "var globalData";
     let start = html.find(marker)? + marker.len();
     let open = html[start..].find('{')? + start;

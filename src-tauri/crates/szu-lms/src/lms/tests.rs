@@ -1,8 +1,8 @@
 use super::client::{Bootstrap, Client};
 use super::model::*;
 use super::session::parse_global_data;
-use crate::storage::testing::MemoryCredentialStore;
-use crate::storage::CredentialStore;
+use szu_core::storage::testing::MemoryCredentialStore;
+use szu_core::storage::CredentialStore;
 use serde_json::{json, Value};
 use std::{
     io::{Read as _, Write as _},

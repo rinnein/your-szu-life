@@ -5,8 +5,6 @@ mod app_content;
 #[cfg(desktop)]
 mod desktop;
 mod enrollment;
-mod jxxk;
-mod lms;
 pub mod mcp;
 pub(crate) mod mesh;
 pub(crate) mod migrations;
@@ -21,8 +19,10 @@ pub(crate) use szu_core::{
     ipc_channel, logging, netproxy, notification, onboarding, ports, preferences, settings,
     storage, webview_cookies,
 };
-pub(crate) use szu_download::{aria2, file_manager};
+pub(crate) use szu_download::file_manager;
 pub(crate) use szu_runtime::{embedding_model, ocr};
+pub(crate) use szu_jxxk::jxxk;
+pub(crate) use szu_lms::lms;
 pub(crate) use szu_oj::oj;
 pub(crate) use szu_uooc::uooc;
 #[cfg(target_os = "android")]

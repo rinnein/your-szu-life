@@ -9,9 +9,9 @@ use std::{
 };
 
 /// 督导巡课站点根地址。
-pub(super) const JXXK_ORIGIN: &str = "https://jxxk.szu.edu.cn/";
+pub const JXXK_ORIGIN: &str = "https://jxxk.szu.edu.cn/";
 /// authserver CAS 登录入口，巡课未登录时会被重定向到这里。
-pub(super) const AUTH_LOGIN: &str = "https://authserver.szu.edu.cn/authserver/login";
+pub const AUTH_LOGIN: &str = "https://authserver.szu.edu.cn/authserver/login";
 
 const MAX_REDIRECTS: usize = 15;
 const MAX_HTML_BYTES: u64 = 4 * 1024 * 1024;
@@ -26,7 +26,7 @@ const CODE_SESSION_EXPIRED: i64 = -10000;
 
 /// 会话引导结果。
 #[derive(Debug)]
-pub(super) enum Bootstrap {
+pub enum Bootstrap {
     /// 会话可用（cookie jar 中已有 token）。
     Established,
     /// 被重定向到 authserver 登录表单，需要先完成应用统一认证。
@@ -35,7 +35,7 @@ pub(super) enum Bootstrap {
 
 /// API 请求错误。
 #[derive(Debug)]
-pub(super) struct ApiError {
+pub struct ApiError {
     pub message: String,
 }
 
@@ -47,9 +47,9 @@ impl ApiError {
     }
 }
 
-pub(crate) struct Client {
+pub struct Client {
     http: Http,
-    pub(crate) jar: Arc<CookieStoreMutex>,
+    pub jar: Arc<CookieStoreMutex>,
     jxxk: Url,
     auth: Url,
     /// 业务请求所需的 token（JWT），从 cookie jar 中的 token cookie 提取。
@@ -59,7 +59,7 @@ pub(crate) struct Client {
 impl Client {
     /// `cookies` 是之前保存的巡课会话 jar（JSON，仅含 jxxk 域 cookie）；
     /// `sso` 保留统一认证的原生 Cookie 身份，只投影当前 HTTP 上下文。
-    pub(super) fn new(
+    pub fn new(
         jxxk_base: &str,
         auth_base: &str,
         cookies: Option<&str>,
@@ -85,17 +85,17 @@ impl Client {
         }
         let jar = Arc::new(CookieStoreMutex::new(store));
         if let Some(sso) = sso {
-            crate::webview_cookies::copy_snapshot(sso, &jar);
+            szu_core::webview_cookies::copy_snapshot(sso, &jar);
         }
-        let builder = crate::netproxy::client_builder()
-            .cookie_provider(crate::webview_cookies::http_provider(jar.clone()))
+        let builder = szu_core::netproxy::client_builder()
+            .cookie_provider(szu_core::webview_cookies::http_provider(jar.clone()))
             // CAS 跳转由模块自己逐跳跟随，便于识别登录表单并限定跳转目标。
             .redirect(reqwest::redirect::Policy::none())
             .timeout(Duration::from_secs(20))
             .connect_timeout(Duration::from_secs(10))
             .user_agent("SZULife/0.3 JXXK");
         #[cfg(target_os = "android")]
-        crate::platform_tls::initialize_platform_verifier()?;
+        szu_core::platform_tls::initialize_platform_verifier()?;
         let client = Self {
             http: builder
                 .build()
@@ -109,14 +109,14 @@ impl Client {
         Ok(client)
     }
 
-    pub(super) fn has_token(&self) -> bool {
+    pub fn has_token(&self) -> bool {
         self.token.lock().map(|t| t.is_some()).unwrap_or(false)
     }
 
     /// 当前校园网状态下巡课请求实际使用的 origin（overrides 的 origin 形态改写目标）。
     /// 校外/裸主机形态的规则只影响 DNS，返回 `None`。
     fn effective_endpoint(&self) -> Option<Url> {
-        crate::netproxy::origin_override_target(self.jxxk.host_str()?)
+        szu_core::netproxy::origin_override_target(self.jxxk.host_str()?)
     }
 
     /// 把 cookie 写进 jar，同时落在公开 origin 与改写后的 origin 上：
@@ -144,20 +144,20 @@ impl Client {
 
     /// 判断当前 token 是否即将到期（距过期不足 15 分钟，或无 exp 字段）。
     /// 只有确实需要续期时才触发网络 refreshToken，避免频繁刷新打爆平台或并发冲突。
-    pub(super) fn token_needs_refresh(&self) -> bool {
+    pub fn token_needs_refresh(&self) -> bool {
         let Some(token) = self.token() else {
             return false;
         };
         token_needs_refresh_for(&token)
     }
 
-    pub(super) fn token(&self) -> Option<String> {
+    pub fn token(&self) -> Option<String> {
         self.token.lock().ok().and_then(|t| t.clone())
     }
 
     /// 从 jar 中的 token cookie 恢复内存 token；过期 token 视为不存在，
     /// 避免「有旧 token 就跳过 CAS 重建」的死循环。
-    pub(crate) fn reload_token_from_jar(&self) {
+    pub fn reload_token_from_jar(&self) {
         let domain_suffix = self.jar_cookie_value(DOMAIN_COOKIE).unwrap_or_default();
         let name = format!("{TOKEN_COOKIE}_{domain_suffix}");
         let fresh = self
@@ -178,7 +178,7 @@ impl Client {
 
     /// 把新 token 写回 jar 的 token cookie（域后缀沿用 COLLEGE_UNIVERSITY_DOMAIN），
     /// 保证会话持久化后重启仍能恢复。
-    pub(super) fn store_token(&self, token: &str) {
+    pub fn store_token(&self, token: &str) {
         *self.token.lock().unwrap() = Some(token.to_owned());
         let suffix = self.jar_cookie_value(DOMAIN_COOKIE).unwrap_or_default();
         // Max-Age 与 JWT 有效期一致，cookie_store 重载后生命周期语义不漂移。
@@ -194,7 +194,7 @@ impl Client {
     /// 可能带父域（Domain=szu.edu.cn），按 host 精确过滤会把会话丢掉；
     /// 校内改写目标 origin 上的 cookie 同样要保留，否则校内建立的会话
     /// 重启后无法恢复。
-    pub(super) fn cookies(&self) -> Result<String, String> {
+    pub fn cookies(&self) -> Result<String, String> {
         let endpoint = self.effective_endpoint();
         let jar = self.jar.lock().map_err(|_| "巡课会话不可用".to_string())?;
         let mut filtered = cookie_store::CookieStore::default();
@@ -219,7 +219,7 @@ impl Client {
         url: Url,
     ) -> Result<(StatusCode, Url, Option<String>, Vec<String>, String), String> {
         let mut url = url;
-        crate::netproxy::rewrite_origin(&mut url);
+        szu_core::netproxy::rewrite_origin(&mut url);
         let mut response = self
             .http
             .get(url.clone())
@@ -275,7 +275,7 @@ impl Client {
 
     /// 跳转目标是否可信：巡课 / authserver 两个主 host，或深大自己的任意子域。
     /// 与畅课一致，CAS 链路经 `identity.szu.edu.cn`（Keycloak）中转。
-    pub(super) fn is_trusted_redirect(&self, url: &Url) -> bool {
+    pub fn is_trusted_redirect(&self, url: &Url) -> bool {
         let Some(host) = url.host_str().map(|h| h.trim_end_matches('.')) else {
             return false;
         };
@@ -300,7 +300,7 @@ impl Client {
     /// 入口是 `GET /university-sso/ava/sso`——官方登录页（/university-sso/ava/login）
     /// 只是设置 fromUrl cookie 后用 JS 跳到这里，带票据回来后由该端点下发
     /// token cookie。成功判据是最终落在巡课域且 cookie jar 中出现新鲜 token。
-    pub(super) async fn bootstrap(&self) -> Result<Bootstrap, String> {
+    pub async fn bootstrap(&self) -> Result<Bootstrap, String> {
         self.reload_token_from_jar();
         if self.has_token() {
             return Ok(Bootstrap::Established);
@@ -431,7 +431,7 @@ impl Client {
     }
 
     /// 用旧 token 换新 token（平台在到期前 900 秒会走同样的刷新）。
-    pub(super) async fn refresh_token(&self) -> Result<(), String> {
+    pub async fn refresh_token(&self) -> Result<(), String> {
         let Some(old) = self.token() else {
             return Err("当前没有可刷新的巡课 token".into());
         };
@@ -440,7 +440,7 @@ impl Client {
             .join("university-user/public/refreshToken")
             .map_err(|_| "刷新地址无效".to_string())?;
         let mut url = url;
-        crate::netproxy::rewrite_origin(&mut url);
+        szu_core::netproxy::rewrite_origin(&mut url);
         let response = self
             .http
             .post(url.clone())
@@ -474,7 +474,7 @@ impl Client {
 
     /// GET 一个巡课 JSON 接口，自动携带 token 请求头。
     /// 返回统一包裹的 `data` 字段；会话过期时 `session_expired` 为真。
-    pub(super) async fn get_json(
+    pub async fn get_json(
         &self,
         path: &str,
         query: &[(&str, String)],
@@ -484,7 +484,7 @@ impl Client {
             .join(path.trim_start_matches('/'))
             .map_err(|_| ApiError::local("接口地址无效"))?;
         let mut url = url;
-        crate::netproxy::rewrite_origin(&mut url);
+        szu_core::netproxy::rewrite_origin(&mut url);
         let query_clone = query
             .iter()
             .map(|(k, v)| format!("{k}={v}"))
@@ -533,7 +533,7 @@ impl Client {
     }
 
     /// GET 巡课域内的相对路径（自动带 token 头），返回响应体与 Content-Type。
-    pub(crate) async fn fetch_path(&self, path: &str) -> Result<(Vec<u8>, String), String> {
+    pub async fn fetch_path(&self, path: &str) -> Result<(Vec<u8>, String), String> {
         let url = self
             .jxxk
             .join(path.trim_start_matches('/'))
@@ -542,7 +542,7 @@ impl Client {
     }
 
     /// 拉取学年学期列表。
-    pub(super) async fn get_semesters(&self) -> Result<Vec<super::model::Semester>, String> {
+    pub async fn get_semesters(&self) -> Result<Vec<super::model::Semester>, String> {
         let value = self
             .post_json(
                 "university-basic/public/schoolYearSemester/pageByCondition",
@@ -563,7 +563,7 @@ impl Client {
             .join(path.trim_start_matches('/'))
             .map_err(|_| ApiError::local("接口地址无效"))?;
         let mut url = url;
-        crate::netproxy::rewrite_origin(&mut url);
+        szu_core::netproxy::rewrite_origin(&mut url);
         let display_url = url.to_string();
         let mut request = self
             .http
@@ -608,7 +608,7 @@ impl Client {
 
     /// GET 一个巡课域的绝对 URL（流代理用），返回响应体与 Content-Type。
     /// 仅放行深大域与校内合法目标，防止被当作任意代理使用。
-    pub(super) async fn fetch_stream(&self, url: &Url) -> Result<(Vec<u8>, String), String> {
+    pub async fn fetch_stream(&self, url: &Url) -> Result<(Vec<u8>, String), String> {
         let Some(host) = url.host_str().map(|h| h.trim_end_matches('.')) else {
             return Err("流地址缺少主机名".into());
         };
@@ -617,7 +617,7 @@ impl Client {
         }
         // 信任校验按原始 URL 做，实际连接走改写后的 origin（如校内 http 入口）。
         let mut url = url.clone();
-        crate::netproxy::rewrite_origin(&mut url);
+        szu_core::netproxy::rewrite_origin(&mut url);
         let mut request = self
             .http
             .get(url.clone())
@@ -679,7 +679,7 @@ fn normalize_base(raw: &str, message: &str) -> Result<Url, String> {
 }
 
 /// 从课次直播对象 JSON 中提取回放 mediaVideoId（mediaVideoIds[0]）。
-pub(crate) fn extract_media_video_id(live: &Value) -> Option<String> {
+pub fn extract_media_video_id(live: &Value) -> Option<String> {
     live.get("mediaVideoIds")
         .and_then(|v| v.as_array())
         .and_then(|ids| ids.first())
@@ -691,7 +691,7 @@ pub(crate) fn extract_media_video_id(live: &Value) -> Option<String> {
 /// best-effort 地从直播流接口响应中提取播放地址。
 /// 从直播流接口（university-live/protect/live/getLiveStream）提取播放地址。
 /// 奥威亚平台典型返回：数组或含 streams 的对象；字段含 hls / flv / wsFlv 与 signalName / streamName / streamLabel。
-pub(crate) fn parse_live_streams(data: &Value) -> Vec<LiveStreamSource> {
+pub fn parse_live_streams(data: &Value) -> Vec<LiveStreamSource> {
     // 优先采用 HLS（m3u8 协议，前端 hls.js 原生支持），其次兼容各种 FLV/直接播放链接
     const URL_KEYS: [&str; 7] = ["hls", "playUrl", "hlsUrl", "url", "flv", "flvUrl", "wsFlv"];
     const LABEL_KEYS: [&str; 5] = ["signalName", "streamName", "name", "label", "tag"];
@@ -767,7 +767,7 @@ pub(crate) fn parse_live_streams(data: &Value) -> Vec<LiveStreamSource> {
 
 /// 从 SSO 中转页 HTML 提取 `setCookie('name', 'value', ...)` 调用。
 /// 平台在票据校验完成后通过页面脚本（而非 Set-Cookie 响应头）下发 token。
-pub(super) fn extract_script_cookies(html: &str) -> Vec<(String, String)> {
+pub fn extract_script_cookies(html: &str) -> Vec<(String, String)> {
     let mut pairs = Vec::new();
     let mut search = html;
     while let Some(pos) = search.find("setCookie") {
@@ -819,7 +819,7 @@ fn read_quoted(s: &str) -> Option<(String, &str)> {
 
 /// 从页面正文提取 JWT 形态的 token（三段式 eyJ 开头）。中转页把 token 内嵌
 /// 在脚本里再以 document.cookie 拼接写入时，setCookie 模式无法覆盖。
-pub(super) fn extract_jwt_token(html: &str) -> Option<String> {
+pub fn extract_jwt_token(html: &str) -> Option<String> {
     let mut search = html;
     while let Some(pos) = search.find("eyJ") {
         let rest = &search[pos..];
@@ -843,7 +843,7 @@ pub(super) fn extract_jwt_token(html: &str) -> Option<String> {
 }
 
 /// 从中转页 HTML 提取 JS/meta 跳转目标（location.href/replace 与 meta refresh）。
-pub(super) fn extract_script_redirect(html: &str) -> Option<String> {
+pub fn extract_script_redirect(html: &str) -> Option<String> {
     for marker in [
         "window.location.href=",
         "window.location.href =",
@@ -881,7 +881,7 @@ pub(super) fn extract_script_redirect(html: &str) -> Option<String> {
 /// `<p class="nodata-tips">单点登录失败：feign接口失败：当前超过最大登录数</p>`。
 /// 样式表里会先出现 `.nodata-tips { ... }` 规则，因此逐个出现位置向后取
 /// 标签间文本，取第一个非空者。
-pub(super) fn extract_error_page_message(html: &str) -> Option<String> {
+pub fn extract_error_page_message(html: &str) -> Option<String> {
     let mut search = html;
     while let Some(pos) = search.find("nodata-tips") {
         let rest = &search[pos..];
@@ -921,7 +921,7 @@ fn token_is_fresh(token: &str) -> bool {
     }
 }
 
-pub(super) fn token_needs_refresh_for(token: &str) -> bool {
+pub fn token_needs_refresh_for(token: &str) -> bool {
     match token_exp(token) {
         Some(exp) => chrono::Utc::now().timestamp() + 900 >= exp,
         None => true,

@@ -4,16 +4,16 @@ use serde_json::Value;
 use std::{sync::Arc, time::Duration};
 
 /// 畅课站点根地址。
-pub(super) const LMS_ORIGIN: &str = "https://lms.szu.edu.cn/";
+pub const LMS_ORIGIN: &str = "https://lms.szu.edu.cn/";
 /// authserver CAS 登录入口，畅课未登录时会被重定向到这里。
-pub(super) const AUTH_LOGIN: &str = "https://authserver.szu.edu.cn/authserver/login";
+pub const AUTH_LOGIN: &str = "https://authserver.szu.edu.cn/authserver/login";
 
 const MAX_REDIRECTS: usize = 10;
 const MAX_RESPONSE_BYTES: u64 = 4 * 1024 * 1024;
 
 /// 会话引导结果。
 #[derive(Debug)]
-pub(super) enum Bootstrap {
+pub enum Bootstrap {
     /// 会话可用，附带你落在的畅课页面 HTML（内含 globalData）。
     Established(String),
     /// 被重定向到 authserver 登录表单，需要先完成应用统一认证。
@@ -22,7 +22,7 @@ pub(super) enum Bootstrap {
 
 /// API 请求错误。`session_expired` 为真表示畅课会话失效，可尝试重新引导。
 #[derive(Debug)]
-pub(super) struct ApiError {
+pub struct ApiError {
     pub message: String,
     pub session_expired: bool,
 }
@@ -36,9 +36,9 @@ impl ApiError {
     }
 }
 
-pub(super) struct Client {
+pub struct Client {
     http: Http,
-    pub(super) jar: Arc<CookieStoreMutex>,
+    pub jar: Arc<CookieStoreMutex>,
     lms: Url,
     auth: Url,
 }
@@ -46,7 +46,7 @@ pub(super) struct Client {
 impl Client {
     /// `cookies` 是之前保存的畅课会话 jar（JSON，仅含 lms 域 cookie）；
     /// `sso` 保留统一认证的原生 Cookie 身份，只投影当前 HTTP 上下文。
-    pub(super) fn new(
+    pub fn new(
         lms_base: &str,
         auth_base: &str,
         cookies: Option<&str>,
@@ -72,17 +72,17 @@ impl Client {
         }
         let jar = Arc::new(CookieStoreMutex::new(store));
         if let Some(sso) = sso {
-            crate::webview_cookies::copy_snapshot(sso, &jar);
+            szu_core::webview_cookies::copy_snapshot(sso, &jar);
         }
-        let builder = crate::netproxy::client_builder()
-            .cookie_provider(crate::webview_cookies::http_provider(jar.clone()))
+        let builder = szu_core::netproxy::client_builder()
+            .cookie_provider(szu_core::webview_cookies::http_provider(jar.clone()))
             // CAS 跳转由模块自己逐跳跟随，便于识别登录表单并限定跳转目标。
             .redirect(reqwest::redirect::Policy::none())
             .timeout(Duration::from_secs(20))
             .connect_timeout(Duration::from_secs(10))
             .user_agent("SZULife/0.3 LMS");
         #[cfg(target_os = "android")]
-        crate::platform_tls::initialize_platform_verifier()?;
+        szu_core::platform_tls::initialize_platform_verifier()?;
         Ok(Self {
             http: builder
                 .build()
@@ -96,7 +96,7 @@ impl Client {
     /// 保存 jar 中适用于畅课请求的 cookie（不含 authserver 会话，避免重复
     /// 保存主凭据）。用 `matches` 而非域名精确比较：服务端会话 cookie 可能
     /// 带父域，按 host 精确过滤会把会话丢掉（重启后每次重新登录）。
-    pub(super) fn cookies(&self) -> Result<String, String> {
+    pub fn cookies(&self) -> Result<String, String> {
         let jar = self.jar.lock().map_err(|_| "畅课会话不可用".to_string())?;
         let mut filtered = cookie_store::CookieStore::default();
         for cookie in jar.iter_any() {
@@ -153,7 +153,7 @@ impl Client {
     /// 畅课的 CAS 链路并不直达 authserver——中间经 `identity.szu.edu.cn`
     /// （Keycloak）broker 中转，因此必须放行整个 szu.edu.cn 域；
     /// 校外域一律拒绝，防止跟随任意重定向。
-    pub(super) fn is_trusted_redirect(&self, url: &Url) -> bool {
+    pub fn is_trusted_redirect(&self, url: &Url) -> bool {
         let Some(host) = url.host_str().map(|h| h.trim_end_matches('.')) else {
             return false;
         };
@@ -168,7 +168,7 @@ impl Client {
     /// 建立或恢复畅课会话：访问畅课首页并手动跟随 CAS 重定向。
     /// 会话有效时直接落在首页；会话失效但 authserver SSO 有效时经
     /// service ticket 自动重建；两者都失效时返回 [`Bootstrap::NeedsAuth`]。
-    pub(super) async fn bootstrap(&self) -> Result<Bootstrap, String> {
+    pub async fn bootstrap(&self) -> Result<Bootstrap, String> {
         let mut url = self.lms.clone();
         for _ in 0..=MAX_REDIRECTS {
             let (status, final_url, location, text) = self.fetch(url).await?;
@@ -218,7 +218,7 @@ impl Client {
     }
 
     /// GET 一个畅课 JSON 接口。会话失效（3xx/401）时 `session_expired` 为真。
-    pub(super) async fn get_json(
+    pub async fn get_json(
         &self,
         path: &str,
         query: &[(&str, String)],

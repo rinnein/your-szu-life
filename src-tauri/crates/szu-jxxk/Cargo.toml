@@ -1,0 +1,30 @@
+[package]
+name = "szu-jxxk"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "泥深监察巡课模块：课次回放、分片拉流与下载"
+
+[lib]
+name = "szu_jxxk"
+path = "src/lib.rs"
+
+[dependencies]
+szu-core = { path = "../szu-core" }
+szu-download = { path = "../szu-download" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+cookie_store = { workspace = true }
+reqwest_cookie_store = { workspace = true }
+base64 = { workspace = true }
+uuid = { workspace = true }
+toasty = { workspace = true }
+axum = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

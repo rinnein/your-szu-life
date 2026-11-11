@@ -105,10 +105,10 @@ pub(crate) fn download_and_install(
     let filename = format!("your-szu-life-installer-{safe_version}.msi");
     let dest_dir = std::env::temp_dir();
 
-    let aria_options = crate::aria2::DownloadJobOptions {
+    let aria_options = szu_download::aria2::DownloadJobOptions {
         uris: Vec::new(),
         prioritized_uris: candidates,
-        target: crate::aria2::DownloadTarget::local(
+        target: szu_download::aria2::DownloadTarget::local(
             dest_dir.clone(),
             dest_dir.to_string_lossy().into_owned(),
         ),
@@ -118,7 +118,7 @@ pub(crate) fn download_and_install(
         headers: Vec::new(),
     };
 
-    let aria_res = tauri::async_runtime::block_on(crate::aria2::download_with_aria2(
+    let aria_res = tauri::async_runtime::block_on(szu_download::aria2::download_with_aria2(
         APP_HANDLE.get(),
         aria_options,
         |prog| {

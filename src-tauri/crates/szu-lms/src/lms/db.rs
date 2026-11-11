@@ -12,15 +12,15 @@ pub struct LmsStateRecord {
 
 #[derive(Clone)]
 pub struct LmsDatabase {
-    pub(crate) db: toasty::Db,
+    pub db: toasty::Db,
 }
 
 impl LmsDatabase {
     pub async fn open(db_path: &Path) -> Result<Self, String> {
-        let db = crate::migrations::db::open_sqlite_db(
+        let db = szu_core::migrations::db::open_sqlite_db(
             db_path,
             toasty::models!(LmsStateRecord),
-            Some(&crate::migrations::lms::LMS_MIGRATIONS),
+            Some(&crate::lms::migrations::LMS_MIGRATIONS),
         )
         .await?;
         Ok(Self { db })
@@ -28,7 +28,7 @@ impl LmsDatabase {
 
     /// 读取缓存快照；首次使用（行不存在）返回默认值，其它错误必须上抛，
     /// 避免默认数据随后被写回磁盘覆盖真实状态。
-    pub(crate) async fn load_cache(&self) -> Result<Cache, String> {
+    pub async fn load_cache(&self) -> Result<Cache, String> {
         let mut db = self.db.clone();
         match LmsStateRecord::get_by_id(&mut db, "current").await {
             Ok(row) => serde_json::from_str(&row.payload_json)
@@ -41,7 +41,7 @@ impl LmsDatabase {
         }
     }
 
-    pub(crate) async fn save_cache(&self, cache: &Cache) -> Result<(), String> {
+    pub async fn save_cache(&self, cache: &Cache) -> Result<(), String> {
         let payload_json =
             serde_json::to_string(cache).map_err(|_| "畅课缓存序列化失败".to_string())?;
         let now = chrono::Utc::now().timestamp_millis();

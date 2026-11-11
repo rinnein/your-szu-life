@@ -1,12 +1,13 @@
 mod client;
-pub(crate) mod commands;
-pub(crate) mod db;
-pub(crate) mod download;
-pub(crate) mod model;
-pub(crate) mod stream;
+pub mod commands;
+pub mod db;
+pub mod download;
+pub mod model;
+pub mod migrations;
+pub mod stream;
 #[cfg(test)]
 mod tests;
-use crate::storage::SharedCredentialStore;
+use szu_core::storage::SharedCredentialStore;
 use client::Client;
 use model::*;
 use serde::{Deserialize, Serialize};
@@ -30,7 +31,7 @@ const REVALIDATE_STREAMS_MS: i64 = 0;
 /// 一张 CAS 票据并触发一次平台登录，冷却期内直接复用上次结果。
 const BOOTSTRAP_COOLDOWN_MS: u128 = 60_000;
 
-pub(crate) struct JxxkStore {
+pub struct JxxkStore {
     credentials: SharedCredentialStore,
     service: OnceLock<Arc<Service>>,
 }
@@ -58,7 +59,7 @@ struct Runtime {
     lists: HashMap<String, (i64, CachedList)>,
 }
 
-pub(crate) struct Service {
+pub struct Service {
     app: Option<tauri::AppHandle>,
     credentials: SharedCredentialStore,
     runtime: Mutex<Runtime>,
@@ -69,20 +70,20 @@ pub(crate) struct Service {
     /// 最近一次引导失败的时间与结果（冷却期内复用，见 BOOTSTRAP_COOLDOWN_MS）。
     last_bootstrap_failure: Mutex<Option<(std::time::Instant, BootstrapFailure)>>,
     /// 录像下载任务注册表。
-    pub(crate) downloads: Arc<download::DownloadRegistry>,
+    pub downloads: Arc<download::DownloadRegistry>,
     /// 本地 SQLite 缓存（jxxk/state.sqlite）。
     db: db::JxxkDatabase,
     /// 后台重验证去重锁。
     revalidating: Mutex<HashSet<String>>,
     /// 自引用，用于派生后台任务。
     self_weak: Mutex<Weak<Service>>,
-    pub(crate) state_subscribers: crate::ipc_channel::SubscriberPool<JxxkStateEvent>,
+    pub state_subscribers: szu_core::ipc_channel::SubscriberPool<JxxkStateEvent>,
     last_state: Mutex<Option<String>>,
 }
 
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", content = "data", rename_all = "camelCase")]
-pub(crate) enum JxxkStateEvent {
+pub enum JxxkStateEvent {
     Initial(Box<JxxkState>),
     Snapshot(Box<JxxkState>),
 }
@@ -136,7 +137,7 @@ impl Service {
         credentials: SharedCredentialStore,
         db_path: std::path::PathBuf,
     ) -> Result<Arc<Self>, String> {
-        let (db, entries) = crate::migrations::db::run_sync(async {
+        let (db, entries) = szu_core::migrations::db::run_sync(async {
             let database = db::JxxkDatabase::open(&db_path).await?;
             let entries = database.load_all().await?;
             Ok::<_, String>((database, entries))
@@ -185,7 +186,7 @@ impl Service {
             db,
             revalidating: Mutex::new(HashSet::new()),
             self_weak: Mutex::new(Weak::new()),
-            state_subscribers: crate::ipc_channel::SubscriberPool::new(),
+            state_subscribers: szu_core::ipc_channel::SubscriberPool::new(),
             last_state: Mutex::new(None),
         });
 
@@ -213,21 +214,21 @@ impl Service {
         Ok(service)
     }
 
-    pub(crate) fn is_revalidating(&self) -> bool {
+    pub fn is_revalidating(&self) -> bool {
         self.revalidating
             .lock()
             .map(|r| !r.is_empty())
             .unwrap_or(false)
     }
 
-    pub(crate) fn revalidating_keys(&self) -> Vec<String> {
+    pub fn revalidating_keys(&self) -> Vec<String> {
         self.revalidating
             .lock()
             .map(|r| r.iter().cloned().collect())
             .unwrap_or_default()
     }
 
-    pub(crate) fn snapshot(&self) -> Snapshot {
+    pub fn snapshot(&self) -> Snapshot {
         let r = self.runtime.lock().unwrap();
         let refreshing = self.is_revalidating();
         Snapshot {
@@ -243,7 +244,7 @@ impl Service {
         }
     }
 
-    pub(crate) fn state(&self) -> JxxkState {
+    pub fn state(&self) -> JxxkState {
         let r = self.runtime.lock().unwrap();
         let mut courses = BTreeMap::new();
         let mut lessons = BTreeMap::new();
@@ -278,7 +279,7 @@ impl Service {
         }
     }
 
-    pub(crate) fn publish_state(&self) {
+    pub fn publish_state(&self) {
         if self.state_subscribers.is_empty() {
             return;
         }
@@ -306,7 +307,7 @@ impl Service {
 
     /// 取或构建 HTTP 客户端。vault 中保存的巡课 cookie 会被恢复；
     /// 统一会话（authserver SSO）不存在时返回 None 并把状态标记为 NeedsAuth。
-    pub(crate) async fn client(&self) -> Option<Arc<Client>> {
+    pub async fn client(&self) -> Option<Arc<Client>> {
         if let Some(client) = self.client.lock().unwrap().clone() {
             return Some(client);
         }
@@ -317,7 +318,7 @@ impl Service {
             .ok()
             .flatten();
         let sso = match &self.app {
-            Some(app) => crate::auth::reusable_sso_jar(app)
+            Some(app) => szu_core::auth::reusable_sso_jar(app)
                 .map_err(|message| {
                     log::warn!("[jxxk] 统一会话不可用: {message}");
                     self.update(SessionState::NeedsAuth, &message);
@@ -403,7 +404,7 @@ impl Service {
 
     /// 确保数据可用：有本地缓存时立即返回（仅派发过期条目的后台重验证），
     /// 缓存完全不存在时阻塞建立会话并首拉学期列表。`force` 走阻塞式全量刷新。
-    pub(crate) async fn ensure(&self, force: bool) {
+    pub async fn ensure(&self, force: bool) {
         let has_cache = {
             let r = self.runtime.lock().unwrap();
             r.semesters.is_some() || !r.lists.is_empty()
@@ -658,7 +659,7 @@ impl Service {
     /// 检查缓存中是否有处于开课时间段但状态仍为「未开课」的课次：
     /// 在内存中乐观推进为「开课中」，若有变更则立即调用 `publish_state` 向前端广播。
     /// 返回受影响的课程 ID 列表（去重）。
-    pub(crate) fn promote_in_session_lessons(&self) -> Vec<String> {
+    pub fn promote_in_session_lessons(&self) -> Vec<String> {
         let now = chrono::Utc::now()
             .with_timezone(&chrono::FixedOffset::east_opt(8 * 3600).unwrap())
             .naive_local();
@@ -725,7 +726,7 @@ impl Service {
     /// 检查并自动触发命中时间段课次的 API 重验证：
     /// 1. 内存中乐观推进为「开课中」并立即向前端推送；
     /// 2. 随后自动发起对相关课程课次列表的后台刷新，成功后由 store_list 再次推送官方「直播中」标记。
-    pub(crate) async fn check_and_refresh_in_session_lessons(&self) {
+    pub async fn check_and_refresh_in_session_lessons(&self) {
         let affected = self.promote_in_session_lessons();
         for course_id in affected {
             self.maybe_revalidate(&format!("lessons:{course_id}"), 0);
@@ -733,17 +734,17 @@ impl Service {
     }
 
     /// 启动自适应后台轮询任务：定期检查未开课课次是否已到达上课时间。
-    pub(crate) fn start_background_monitor(self: &Arc<Self>) {
+    pub fn start_background_monitor(self: &Arc<Self>) {
         let weak = Arc::downgrade(self);
         tauri::async_runtime::spawn(async move {
             loop {
-                let interval = crate::activity::interval(
+                let interval = szu_core::activity::interval(
                     Some("jxxk"),
                     std::time::Duration::from_secs(15), // Active (在巡课页面)
                     std::time::Duration::from_secs(60), // Foreground (在应用其它页面)
                     std::time::Duration::from_secs(180), // Background (最小化/后台)
                 );
-                tokio::time::sleep(crate::activity::sleep_chunk(
+                tokio::time::sleep(szu_core::activity::sleep_chunk(
                     interval,
                     std::time::Duration::from_secs(15),
                 ))
@@ -885,7 +886,7 @@ impl Service {
     }
 
     /// 拉取课程列表（乐观缓存：命中即回，过期后台重验证）。
-    pub(crate) async fn list_courses(
+    pub async fn list_courses(
         &self,
         year_semester_id: Option<&str>,
         search_key: Option<&str>,
@@ -915,7 +916,7 @@ impl Service {
     }
 
     /// 拉取课次列表（乐观缓存：命中即回，过期后台重验证）。
-    pub(crate) async fn list_lessons(
+    pub async fn list_lessons(
         &self,
         course_id: &str,
         page_index: u32,
@@ -939,7 +940,7 @@ impl Service {
     }
 
     /// 拉取一节课的多角度视频信息（乐观缓存）。
-    pub(crate) async fn lesson_streams(&self, live_id: &str) -> Result<LessonStreams, String> {
+    pub async fn lesson_streams(&self, live_id: &str) -> Result<LessonStreams, String> {
         let key = format!("streams:{live_id}");
         self.cached_list(&key, async {
             self.network_streams(live_id).await.map(CachedList::Streams)
@@ -948,7 +949,7 @@ impl Service {
     }
 
     /// 获取一节课各画面的 HLS 播放地址（带签名时效，不缓存）。
-    pub(crate) async fn play_urls(&self, live_id: &str) -> Result<Vec<PlayUrlScreen>, String> {
+    pub async fn play_urls(&self, live_id: &str) -> Result<Vec<PlayUrlScreen>, String> {
         let streams = self.lesson_streams(live_id).await?;
         self.with_session_retry(|client| {
             let media_video_id = streams.media_video_id.clone();
@@ -967,7 +968,7 @@ impl Service {
     }
 
     /// 获取各画面的明文 mp4 下载直链。
-    pub(crate) async fn download_urls(
+    pub async fn download_urls(
         &self,
         media_video_id: &str,
     ) -> Result<Vec<DownloadUrl>, String> {
@@ -989,7 +990,7 @@ impl Service {
 
     /// 获取直播流地址。优先使用 getLiveStream 返回的实时流；
     /// 若为空或未推流，则从录播系统实时切片的 play_urls（HLS）兜底。
-    pub(crate) async fn live_stream(&self, live_id: &str) -> Result<Vec<LiveStreamSource>, String> {
+    pub async fn live_stream(&self, live_id: &str) -> Result<Vec<LiveStreamSource>, String> {
         let live_id = live_id.to_string();
         let direct_result = self
             .with_session_retry({
@@ -1049,7 +1050,7 @@ enum BootstrapFailure {
     Error(String),
 }
 
-pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
+pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     let store = app.state::<JxxkStore>();
     let db_path = app
         .path()
@@ -1065,7 +1066,7 @@ pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
         .map_err(|_| "巡课服务已初始化".to_string())
 }
 
-pub(crate) fn service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
+pub fn service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
     app.state::<JxxkStore>()
         .service
         .get()
@@ -1074,7 +1075,7 @@ pub(crate) fn service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
 }
 
 /// 供流代理使用：取客户端，必要时构建（不引导 CAS，签名 URL 本身可访问）。
-pub(crate) async fn client_for_stream(app: &tauri::AppHandle) -> Result<Arc<Client>, String> {
+pub async fn client_for_stream(app: &tauri::AppHandle) -> Result<Arc<Client>, String> {
     let service = service(app)?;
     service
         .client()

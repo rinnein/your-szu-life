@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 /// Unavailable 网络/接口临时故障。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum SessionState {
+pub enum SessionState {
     Ready,
     NeedsAuth,
     Unavailable,
@@ -14,7 +14,7 @@ pub(crate) enum SessionState {
 /// 返回给前端 / MCP 的快照。
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Snapshot {
+pub struct Snapshot {
     pub session: SessionState,
     pub message: String,
     /// 学年学期列表（未建立会话时为空）。
@@ -29,7 +29,7 @@ pub(crate) struct Snapshot {
 /// `courses` 的键是学期 ID，`lessons` 的键是课程 ID。
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct JxxkState {
+pub struct JxxkState {
     pub snapshot: Snapshot,
     pub courses: BTreeMap<String, CoursePage>,
     pub lessons: BTreeMap<String, LessonPage>,
@@ -39,7 +39,7 @@ pub(crate) struct JxxkState {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Semester {
+pub struct Semester {
     pub id: String,
     pub name: String,
     #[serde(default)]
@@ -49,7 +49,7 @@ pub(crate) struct Semester {
 }
 
 /// 学年学期列表解析：实测 `data` 直接就是数组；兼容分页包裹形状。
-pub(crate) fn parse_semester_list(value: &serde_json::Value) -> Result<Vec<Semester>, String> {
+pub fn parse_semester_list(value: &serde_json::Value) -> Result<Vec<Semester>, String> {
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct Page {
@@ -70,7 +70,7 @@ pub(crate) fn parse_semester_list(value: &serde_json::Value) -> Result<Vec<Semes
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Course {
+pub struct Course {
     pub id: String,
     pub name: String,
     #[serde(default)]
@@ -90,7 +90,7 @@ pub(crate) struct Course {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CoursePage {
+pub struct CoursePage {
     pub page_index: i64,
     pub page_size: i64,
     pub record_count: i64,
@@ -100,7 +100,7 @@ pub(crate) struct CoursePage {
 /// 课次：一门课程下的一次授课（直播或录播）。
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Lesson {
+pub struct Lesson {
     pub id: String,
     /// 课次名，如「数据结构第1周星期5第3-5节」。
     pub target_name: String,
@@ -124,7 +124,7 @@ pub(crate) struct Lesson {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct LessonPage {
+pub struct LessonPage {
     pub page_index: i64,
     pub page_size: i64,
     pub record_count: i64,
@@ -134,7 +134,7 @@ pub(crate) struct LessonPage {
 /// 单路画面（角度）描述。
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct VideoStream {
+pub struct VideoStream {
     pub id: i64,
     /// 官方名称：电脑画面 / 教师画面 / 学生画面 / 主画面。
     pub name: String,
@@ -155,7 +155,7 @@ pub(crate) struct VideoStream {
 /// 一节课的完整视频信息（video/page 单条记录的精简投影）。
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct LessonStreams {
+pub struct LessonStreams {
     /// 视频记录 id（官方播放页 URL 的 videoId）。
     pub video_id: String,
     /// 媒体视频 id（mediaVideoId），播放地址与下载直链都以它为参数。
@@ -173,7 +173,7 @@ pub(crate) struct LessonStreams {
 /// 播放地址接口里的一路画面。
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PlayUrlScreen {
+pub struct PlayUrlScreen {
     pub screen_tag: Option<String>,
     pub stream_name: Option<String>,
     #[serde(default)]
@@ -189,7 +189,7 @@ pub(crate) struct PlayUrlScreen {
 /// 下载直链接口里的一路画面。
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct DownloadUrl {
+pub struct DownloadUrl {
     pub stream_name: Option<String>,
     #[serde(default)]
     pub stream_no: Option<String>,
@@ -204,7 +204,7 @@ pub(crate) struct DownloadUrl {
 /// 直播流地址（best-effort 提取，接口结构未完全实测）。
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct LiveStreamSource {
+pub struct LiveStreamSource {
     pub url: String,
     /// 流标签（若有），如 TP/SP/PC/PRIMARY 或画质描述。
     #[serde(default)]
@@ -213,11 +213,11 @@ pub(crate) struct LiveStreamSource {
 
 /// 平台统一响应包裹的精简形状。`code` 在不同接口可能是数字或字符串。
 #[derive(Deserialize)]
-pub(crate) struct Envelope {
+pub struct Envelope {
     #[serde(default)]
     pub success: bool,
     #[serde(default)]
-    pub(crate) code: Option<serde_json::Value>,
+    pub code: Option<serde_json::Value>,
     #[serde(default)]
     pub message: String,
     #[serde(default)]
@@ -225,7 +225,7 @@ pub(crate) struct Envelope {
 }
 
 impl Envelope {
-    pub(crate) fn code_is(&self, expected: i64) -> bool {
+    pub fn code_is(&self, expected: i64) -> bool {
         match &self.code {
             Some(serde_json::Value::Number(n)) => n.as_i64() == Some(expected),
             Some(serde_json::Value::String(s)) => s.parse::<i64>().ok() == Some(expected),

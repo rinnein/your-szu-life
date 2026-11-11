@@ -9,16 +9,16 @@ use base64::Engine;
 use reqwest::Url;
 
 /// 播放器 hls.js 自定义 loader 的媒体地址前缀：`jxxk-media:<base64url(目标)>`。
-pub(crate) const MEDIA_SCHEME: &str = "jxxk-media:";
+pub const MEDIA_SCHEME: &str = "jxxk-media:";
 
 /// 把巡课域的绝对 https URL 编码为播放器媒体 URL。
-pub(crate) fn media_url(target: &str) -> String {
+pub fn media_url(target: &str) -> String {
     let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(target.as_bytes());
     format!("{MEDIA_SCHEME}{encoded}")
 }
 
 /// 解码播放器媒体 URL 中的目标地址。
-pub(crate) fn decode_media_url(raw: &str) -> Result<Url, String> {
+pub fn decode_media_url(raw: &str) -> Result<Url, String> {
     let encoded = raw
         .strip_prefix(MEDIA_SCHEME)
         .ok_or_else(|| "媒体地址缺少前缀".to_string())?
@@ -31,7 +31,7 @@ pub(crate) fn decode_media_url(raw: &str) -> Result<Url, String> {
 }
 
 /// 校验目标必须在深大域内（防止把应用内代理当作任意代理使用）。
-pub(crate) fn trusted_target(url: &Url) -> bool {
+pub fn trusted_target(url: &Url) -> bool {
     let Some(host) = url.host_str().map(|h| h.trim_end_matches('.')) else {
         return false;
     };
@@ -43,7 +43,7 @@ pub(crate) fn trusted_target(url: &Url) -> bool {
 }
 
 /// 重写 m3u8 中的 URI 引用（分片行、EXT-X-KEY 与 EXT-X-MAP 的 URI 属性）。
-pub(crate) fn rewrite_m3u8(base: &Url, body: &str) -> String {
+pub fn rewrite_m3u8(base: &Url, body: &str) -> String {
     let mut output = Vec::with_capacity(body.lines().count());
     for line in body.lines() {
         let rewritten = if let Some(uri) = attribute_uri(line) {

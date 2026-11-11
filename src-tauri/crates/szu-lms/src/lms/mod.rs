@@ -1,11 +1,12 @@
 mod client;
-pub(crate) mod commands;
-pub(crate) mod db;
-pub(crate) mod model;
+pub mod commands;
+pub mod db;
+pub mod model;
+pub mod migrations;
 mod session;
 #[cfg(test)]
 mod tests;
-use crate::storage::SharedCredentialStore;
+use szu_core::storage::SharedCredentialStore;
 use client::Client;
 use model::*;
 use serde::Serialize;
@@ -28,12 +29,12 @@ const REVALIDATE_COOLDOWN_MS: u128 = 60_000;
 
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", content = "data", rename_all = "camelCase")]
-pub(crate) enum LmsDeltaEvent {
+pub enum LmsDeltaEvent {
     Initial(Box<Snapshot>),
     Snapshot(Box<Snapshot>),
 }
 
-pub(crate) struct LmsStore {
+pub struct LmsStore {
     credentials: SharedCredentialStore,
     service: OnceLock<Arc<Service>>,
 }
@@ -52,7 +53,7 @@ struct Runtime {
     cache: Cache,
 }
 
-pub(crate) struct Service {
+pub struct Service {
     app: Option<tauri::AppHandle>,
     credentials: SharedCredentialStore,
     path: PathBuf,
@@ -65,7 +66,7 @@ pub(crate) struct Service {
     last_attempt: Mutex<Option<Instant>>,
     /// 自引用，用于派生后台任务。
     self_weak: Mutex<Weak<Service>>,
-    pub(crate) state_subscribers: crate::ipc_channel::SubscriberPool<LmsDeltaEvent>,
+    pub state_subscribers: szu_core::ipc_channel::SubscriberPool<LmsDeltaEvent>,
     last_published: Mutex<Option<String>>,
 }
 
@@ -75,7 +76,7 @@ impl Service {
         credentials: SharedCredentialStore,
         path: PathBuf,
     ) -> Result<Arc<Self>, String> {
-        let cache = crate::migrations::db::run_sync(async {
+        let cache = szu_core::migrations::db::run_sync(async {
             let database = db::LmsDatabase::open(&path).await?;
             database.load_cache().await
         })
@@ -98,12 +99,12 @@ impl Service {
             revalidating: AtomicBool::new(false),
             last_attempt: Mutex::new(None),
             self_weak: Mutex::new(Weak::new()),
-            state_subscribers: crate::ipc_channel::SubscriberPool::new(),
+            state_subscribers: szu_core::ipc_channel::SubscriberPool::new(),
             last_published: Mutex::new(None),
         }))
     }
 
-    pub(crate) fn snapshot(&self) -> Snapshot {
+    pub fn snapshot(&self) -> Snapshot {
         let r = self.runtime.lock().unwrap();
         Snapshot {
             session: r.session,
@@ -128,7 +129,7 @@ impl Service {
     /// 确保缓存数据可用：有本地缓存时立即返回（过期条目在后台重验证），
     /// 缓存完全不存在时才阻塞建立会话并首拉。`force` 走阻塞式强制刷新。
     /// 失败时只更新会话状态与错误信息，不清空已有缓存。
-    pub(crate) async fn ensure(&self, force: bool) {
+    pub async fn ensure(&self, force: bool) {
         if !force && self.has_cache() {
             self.maybe_revalidate();
             return;
@@ -219,7 +220,7 @@ impl Service {
             .ok()
             .flatten();
         let sso = match &self.app {
-            Some(app) => crate::auth::reusable_sso_jar(app)
+            Some(app) => szu_core::auth::reusable_sso_jar(app)
                 .map_err(|message| {
                     self.update(SessionState::NeedsAuth, &message, None);
                 })
@@ -340,7 +341,7 @@ impl Service {
         self.credentials.save_lms_session(&cookies)?;
         let path = self.path.clone();
         let cache = cache.clone();
-        crate::migrations::db::run_sync(async move {
+        szu_core::migrations::db::run_sync(async move {
             let database = db::LmsDatabase::open(&path).await?;
             database.save_cache(&cache).await
         })
@@ -352,7 +353,7 @@ enum BootstrapFailure {
     Error(String),
 }
 
-pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
+pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     let store = app.state::<LmsStore>();
     let service = Service::new(
         Some(app.clone()),
@@ -369,7 +370,7 @@ pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
         .map_err(|_| "畅课已初始化".to_string())
 }
 
-pub(crate) fn service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
+pub fn service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
     app.state::<LmsStore>()
         .service
         .get()

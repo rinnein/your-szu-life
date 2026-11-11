@@ -9039,6 +9039,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "szu-jxxk"
+version = "0.14.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "chrono",
+ "cookie_store",
+ "log",
+ "reqwest",
+ "reqwest_cookie_store",
+ "serde",
+ "serde_json",
+ "szu-core",
+ "szu-download",
+ "tauri",
+ "tempfile",
+ "toasty",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "szu-lms"
+version = "0.14.0"
+dependencies = [
+ "chrono",
+ "cookie_store",
+ "log",
+ "reqwest",
+ "reqwest_cookie_store",
+ "serde",
+ "serde_json",
+ "szu-core",
+ "tauri",
+ "tempfile",
+ "toasty",
+ "tokio",
+]
+
+[[package]]
 name = "szu-oj"
 version = "0.14.0"
 dependencies = [
@@ -11835,6 +11875,8 @@ dependencies = [
  "ssid",
  "szu-core",
  "szu-download",
+ "szu-jxxk",
+ "szu-lms",
  "szu-oj",
  "szu-runtime",
  "szu-uooc",

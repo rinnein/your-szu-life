@@ -352,7 +352,7 @@ fn temp_service_db_path(tag: &str) -> std::path::PathBuf {
 #[tokio::test]
 async fn seeded_cache_keys_include_prefix_and_hit_optimistically() {
     // 回归：播种曾用裸 id 作键，导致启动后缓存永不命中、重验证报「缓存键无效」。
-    let credentials: Arc<crate::storage::testing::MemoryCredentialStore> = Arc::default();
+    let credentials: Arc<szu_core::storage::testing::MemoryCredentialStore> = Arc::default();
     let service = super::Service::new(None, credentials, temp_service_db_path("seed")).unwrap();
     let course_page = CoursePage {
         page_index: 1,
@@ -393,11 +393,11 @@ async fn establish_persists_session_on_refresh_path() {
     let seen = Arc::new(Seen::default());
     let (client, _jxxk, _auth) = make_client(true, seen).await;
     client.bootstrap().await.unwrap();
-    let credentials: Arc<crate::storage::testing::MemoryCredentialStore> = Arc::default();
+    let credentials: Arc<szu_core::storage::testing::MemoryCredentialStore> = Arc::default();
     let service =
         super::Service::new(None, credentials.clone(), temp_service_db_path("refresh")).unwrap();
     service.establish(&client, false).await.unwrap();
-    use crate::storage::CredentialStore as _;
+    use szu_core::storage::CredentialStore as _;
     let saved = credentials.load_jxxk_session().unwrap().unwrap();
     assert!(saved.contains("rotated-token"), "轮换后的会话应已落盘");
 }
@@ -405,7 +405,7 @@ async fn establish_persists_session_on_refresh_path() {
 #[tokio::test]
 async fn cached_lists_serve_without_network() {
     // 乐观缓存：命中缓存列表的读取完全不触发网络（无 SSO/无客户端也能返回）。
-    let credentials: Arc<crate::storage::testing::MemoryCredentialStore> = Arc::default();
+    let credentials: Arc<szu_core::storage::testing::MemoryCredentialStore> = Arc::default();
     let service =
         super::Service::new(None, credentials, temp_service_db_path("optimistic")).unwrap();
     service.runtime.lock().unwrap().lists.insert(
@@ -437,7 +437,7 @@ async fn cached_lists_serve_without_network() {
 
 #[tokio::test]
 async fn in_session_lesson_is_promoted_and_broadcasted() {
-    let credentials: Arc<crate::storage::testing::MemoryCredentialStore> = Arc::default();
+    let credentials: Arc<szu_core::storage::testing::MemoryCredentialStore> = Arc::default();
     let service = super::Service::new(None, credentials, temp_service_db_path("promote")).unwrap();
 
     let now_cst = chrono::Utc::now()
@@ -537,7 +537,7 @@ async fn in_session_lesson_is_promoted_and_broadcasted() {
 
 #[tokio::test]
 async fn revalidating_state_marks_refreshing_and_revalidating_keys() {
-    let credentials: Arc<crate::storage::testing::MemoryCredentialStore> = Arc::default();
+    let credentials: Arc<szu_core::storage::testing::MemoryCredentialStore> = Arc::default();
     let service =
         super::Service::new(None, credentials, temp_service_db_path("reval-state")).unwrap();
 
@@ -614,7 +614,7 @@ async fn api_calls_require_token_header() {
 
 #[tokio::test]
 async fn trusted_redirects_cover_szu_subdomains_only() {
-    let _guard = crate::netproxy::TEST_ENV_LOCK.lock().unwrap();
+    let _guard = szu_core::netproxy::TEST_ENV_LOCK.lock().unwrap();
     let seen = Arc::new(Seen::default());
     let (client, _jxxk, _auth) = make_client(false, seen).await;
     let trusted = |raw: &str| client.is_trusted_redirect(&raw.parse().unwrap());
@@ -636,19 +636,19 @@ async fn trusted_redirects_cover_szu_subdomains_only() {
     .unwrap();
     let trusted_prod = |raw: &str| prod_client.is_trusted_redirect(&raw.parse().unwrap());
 
-    crate::netproxy::set_in_campus_network(true);
+    szu_core::netproxy::set_in_campus_network(true);
     assert!(trusted_prod("http://172.31.63.8:80/university-sso/ava/sso"));
     assert!(trusted_prod("http://172.31.63.8/university-sso/ava/sso"));
 
     // 校外网络下，不产生 origin override，非深大域的目标不被信任。
-    crate::netproxy::set_in_campus_network(false);
+    szu_core::netproxy::set_in_campus_network(false);
     assert!(!trusted_prod("http://172.31.63.8:80/"));
 }
 
 #[tokio::test]
 async fn cookies_preserves_override_target_cookies_on_campus() {
-    let _guard = crate::netproxy::TEST_ENV_LOCK.lock().unwrap();
-    crate::netproxy::set_in_campus_network(true);
+    let _guard = szu_core::netproxy::TEST_ENV_LOCK.lock().unwrap();
+    szu_core::netproxy::set_in_campus_network(true);
     let client = Client::new(
         super::client::JXXK_ORIGIN,
         super::client::AUTH_LOGIN,
@@ -665,7 +665,7 @@ async fn cookies_preserves_override_target_cookies_on_campus() {
     let json = client.cookies().unwrap();
     assert!(json.contains("test-jwt-token"));
 
-    crate::netproxy::set_in_campus_network(false);
+    szu_core::netproxy::set_in_campus_network(false);
 }
 
 #[test]
@@ -973,15 +973,15 @@ fn token_needs_refresh_distinguishes_fresh_and_expiring() {
 fn jxxk_strictly_follows_campus_dns_and_netproxy_egress() {
     // 验证 jxxk 业务域名与认证域名均严格命中 netproxy 校内域名判定
     assert!(
-        crate::netproxy::model::is_campus_domain("jxxk.szu.edu.cn"),
+        szu_core::netproxy::model::is_campus_domain("jxxk.szu.edu.cn"),
         "jxxk.szu.edu.cn 必须被判定为校内域名"
     );
     assert!(
-        crate::netproxy::model::is_campus_domain("authserver.szu.edu.cn"),
+        szu_core::netproxy::model::is_campus_domain("authserver.szu.edu.cn"),
         "authserver.szu.edu.cn 必须被判定为校内域名"
     );
     // 验证配置的校内主 DNS 包含深圳大学指定的 DNS 服务器
-    let dns_servers = crate::netproxy::model::campus_dns_servers();
+    let dns_servers = szu_core::netproxy::model::campus_dns_servers();
     assert!(
         dns_servers
             .iter()

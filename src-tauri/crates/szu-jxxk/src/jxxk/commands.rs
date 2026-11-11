@@ -9,7 +9,7 @@ fn local(window: &tauri::WebviewWindow) -> Result<(), String> {
 
 /// 获取巡课快照（会话状态与学年学期列表）。
 #[tauri::command]
-pub(crate) async fn get_jxxk_snapshot(
+pub async fn get_jxxk_snapshot(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
 ) -> Result<Snapshot, String> {
@@ -21,7 +21,7 @@ pub(crate) async fn get_jxxk_snapshot(
 
 /// 强制刷新巡课快照（重新建立会话并拉取学期列表）。
 #[tauri::command]
-pub(crate) async fn refresh_jxxk(
+pub async fn refresh_jxxk(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
 ) -> Result<Snapshot, String> {
@@ -33,7 +33,7 @@ pub(crate) async fn refresh_jxxk(
 
 /// 订阅巡课缓存（学期/课程/课次），供巡课页与首页按需更新。
 #[tauri::command]
-pub(crate) fn subscribe_jxxk_state(
+pub fn subscribe_jxxk_state(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     channel: tauri::ipc::Channel<JxxkStateEvent>,
@@ -47,7 +47,7 @@ pub(crate) fn subscribe_jxxk_state(
 
 /// 拉取课程列表。`year_semester_id` 传空表示全部学期。
 #[tauri::command]
-pub(crate) async fn jxxk_list_courses(
+pub async fn jxxk_list_courses(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     year_semester_id: Option<String>,
@@ -69,7 +69,7 @@ pub(crate) async fn jxxk_list_courses(
 
 /// 拉取课次列表（一门课程的直播与录播）。
 #[tauri::command]
-pub(crate) async fn jxxk_list_lessons(
+pub async fn jxxk_list_lessons(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     course_id: String,
@@ -85,7 +85,7 @@ pub(crate) async fn jxxk_list_lessons(
 
 /// 拉取一节课的多角度视频信息（教师/学生/电脑/主画面）。
 #[tauri::command]
-pub(crate) async fn jxxk_lesson_streams(
+pub async fn jxxk_lesson_streams(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     live_id: String,
@@ -97,7 +97,7 @@ pub(crate) async fn jxxk_lesson_streams(
 
 /// 获取一节课各画面的 HLS 播放地址（带签名时效，即取即用）。
 #[tauri::command]
-pub(crate) async fn jxxk_play_urls(
+pub async fn jxxk_play_urls(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     live_id: String,
@@ -109,7 +109,7 @@ pub(crate) async fn jxxk_play_urls(
 
 /// 获取各画面的明文 mp4 下载直链。
 #[tauri::command]
-pub(crate) async fn jxxk_download_urls(
+pub async fn jxxk_download_urls(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     media_video_id: String,
@@ -121,7 +121,7 @@ pub(crate) async fn jxxk_download_urls(
 
 /// 获取直播流地址。直播未开始或已结束时返回业务错误。
 #[tauri::command]
-pub(crate) async fn jxxk_live_stream(
+pub async fn jxxk_live_stream(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     live_id: String,
@@ -133,7 +133,7 @@ pub(crate) async fn jxxk_live_stream(
 
 /// 启动一个录像下载任务（后台执行），返回任务 id。
 #[tauri::command]
-pub(crate) async fn jxxk_download(
+pub async fn jxxk_download(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     file_url: String,
@@ -170,7 +170,7 @@ pub(crate) async fn jxxk_download(
 
 /// 订阅下载任务列表：立即推送当前快照，此后每次变化自动推送。
 #[tauri::command]
-pub(crate) fn subscribe_jxxk_downloads(
+pub fn subscribe_jxxk_downloads(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     channel: tauri::ipc::Channel<Vec<download::TaskView>>,
@@ -183,7 +183,7 @@ pub(crate) fn subscribe_jxxk_downloads(
 
 /// 列出全部下载任务快照。
 #[tauri::command]
-pub(crate) async fn jxxk_download_list(
+pub async fn jxxk_download_list(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
 ) -> Result<Vec<download::TaskView>, String> {
@@ -194,7 +194,7 @@ pub(crate) async fn jxxk_download_list(
 
 /// 暂停下载任务。
 #[tauri::command]
-pub(crate) async fn jxxk_download_pause(
+pub async fn jxxk_download_pause(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     task_id: String,
@@ -206,7 +206,7 @@ pub(crate) async fn jxxk_download_pause(
 
 /// 继续下载任务。
 #[tauri::command]
-pub(crate) async fn jxxk_download_resume(
+pub async fn jxxk_download_resume(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     task_id: String,
@@ -221,7 +221,7 @@ const MEDIA_CHUNK_B64_LEN: usize = 6000;
 
 /// 拉取一节课的平台生成字幕（WebVTT 文本）。
 #[tauri::command]
-pub(crate) async fn jxxk_subtitle(
+pub async fn jxxk_subtitle(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     media_video_id: String,
@@ -244,7 +244,7 @@ pub(crate) async fn jxxk_subtitle(
 /// 播放器媒体拉流：按 jxxk-media: 地址回源取 m3u8/分片/密钥，
 /// base64 后分片经 Channel 推送（避免大载荷走可能被拦的 ipc:// fetch）。
 #[tauri::command]
-pub(crate) async fn jxxk_fetch_media(
+pub async fn jxxk_fetch_media(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     url: String,
@@ -289,7 +289,7 @@ pub(crate) async fn jxxk_fetch_media(
 
 /// 删除下载任务（可选一并清理落盘文件）。
 #[tauri::command]
-pub(crate) async fn jxxk_download_remove(
+pub async fn jxxk_download_remove(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     task_id: String,

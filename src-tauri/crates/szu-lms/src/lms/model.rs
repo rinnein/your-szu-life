@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 /// 畅课（lms.szu.edu.cn）待办条目，来自 `GET /api/todos` 的 `todo_list`。
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) struct Todo {
+pub struct Todo {
     /// 课程选课编号（如 202620271150037000307）
     #[serde(default)]
     pub course_code: String,
@@ -43,7 +43,7 @@ pub(crate) struct Todo {
 /// 其余字段放进 `extra` 以免丢失。
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
-pub(crate) struct NotificationPayload {
+pub struct NotificationPayload {
     /// 活动 ID（作业/资料类通知）
     #[serde(default)]
     pub activity_id: Option<i64>,
@@ -88,7 +88,7 @@ pub(crate) struct NotificationPayload {
 /// 畅课站内通知，来自 `GET /ntf/users/{uid}/notifications`。
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) struct Notification {
+pub struct Notification {
     /// 通知 ID（如 MongoDB ObjectId）
     pub id: String,
     /// 通知类型（如 homework_expiring、activity_opened）
@@ -111,7 +111,7 @@ pub(crate) struct Notification {
 /// 通知接口的响应包装。
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
-pub(crate) struct NotificationsResponse {
+pub struct NotificationsResponse {
     /// 通知列表
     #[serde(default)]
     pub notifications: Vec<Notification>,
@@ -123,7 +123,7 @@ pub(crate) struct NotificationsResponse {
 /// 畅课用户资料，从页面内注入的 `globalData` 脚本解析得到。
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Profile {
+pub struct Profile {
     /// 用户数字 ID（通知接口路径中的 uid）
     pub uid: i64,
     /// 姓名
@@ -137,7 +137,7 @@ pub(crate) struct Profile {
 /// 待办接口的响应包装。
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
-pub(crate) struct TodosResponse {
+pub struct TodosResponse {
     /// 待办列表
     #[serde(default)]
     pub todo_list: Vec<Todo>,
@@ -146,7 +146,7 @@ pub(crate) struct TodosResponse {
 /// 本地缓存的一份数据快照（持久化到 state.sqlite）。
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Cache {
+pub struct Cache {
     /// 用户资料
     #[serde(default)]
     pub profile: Option<Profile>,
@@ -167,7 +167,7 @@ pub(crate) struct Cache {
 /// 会话状态：正常 / 需要重新统一认证 / 暂不可用（网络等错误）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum SessionState {
+pub enum SessionState {
     /// 会话正常
     Ready,
     /// 需要先完成应用统一认证（authserver 会话失效）
@@ -179,7 +179,7 @@ pub(crate) enum SessionState {
 /// 返回给前端 / MCP 的完整快照。
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Snapshot {
+pub struct Snapshot {
     /// 会话状态
     pub session: SessionState,
     /// 状态说明（失败原因等，正常时为空）

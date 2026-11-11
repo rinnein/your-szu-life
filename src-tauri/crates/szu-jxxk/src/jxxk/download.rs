@@ -15,7 +15,7 @@ use tauri::AppHandle;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum TaskStatus {
+pub enum TaskStatus {
     /// 已登记，aria2 任务尚未建立。
     Preparing,
     Downloading,
@@ -27,7 +27,7 @@ pub(crate) enum TaskStatus {
     Cancelled,
 }
 
-pub(crate) struct TaskState {
+pub struct TaskState {
     pub status: TaskStatus,
     pub downloaded: u64,
     pub total: u64,
@@ -48,7 +48,7 @@ pub(crate) struct TaskState {
 }
 
 /// 单个下载任务的共享核心。后台任务与命令通过它交互。
-pub(crate) struct TaskCore {
+pub struct TaskCore {
     pub app: Option<AppHandle>,
     pub registry: std::sync::Weak<DownloadRegistry>,
     pub id: String,
@@ -63,10 +63,10 @@ pub(crate) struct TaskCore {
     pub stream_name: String,
     pub file_name: String,
     /// 下载落点。由 `file_manager` 构造，是否中转由 aria2 下载层自行处理。
-    pub target: crate::aria2::DownloadTarget,
+    pub target: szu_download::aria2::DownloadTarget,
     pub file_url: String,
     pub expected_size: Option<u64>,
-    pub control: crate::aria2::DownloadControl,
+    pub control: szu_download::aria2::DownloadControl,
     /// 后台任务结束信号：remove 需等 aria2 真正停止后再删文件。
     /// run_download 持有发送端，结束时 drop 关闭通道即视为完成。
     pub done: Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
@@ -113,7 +113,7 @@ impl TaskCore {
         }
     }
 
-    pub(crate) fn set_status(&self, status: TaskStatus, error: Option<String>) {
+    pub fn set_status(&self, status: TaskStatus, error: Option<String>) {
         {
             let mut state = self.state.lock().unwrap();
             state.status = status;
@@ -143,7 +143,7 @@ impl TaskCore {
 
     /// 推送任务列表到订阅者，进度路径 500ms 节流。
     /// 锁仅在判定/刷新时间戳时持有，调用广播前立即释放，严防重入死锁。
-    pub(crate) fn broadcast_change(&self) {
+    pub fn broadcast_change(&self) {
         {
             let mut last = self.last_emit.lock().unwrap();
             if last.elapsed() < Duration::from_millis(500) {
@@ -154,7 +154,7 @@ impl TaskCore {
         self.notify_subscribers();
     }
 
-    pub(crate) fn broadcast_change_force(&self) {
+    pub fn broadcast_change_force(&self) {
         {
             let mut last = self.last_emit.lock().unwrap();
             *last = Instant::now();
@@ -176,7 +176,7 @@ impl TaskCore {
 /// 返回给前端的任务快照。
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct TaskView {
+pub struct TaskView {
     pub id: String,
     pub course_name: String,
     pub lesson_name: String,
@@ -203,19 +203,19 @@ pub(crate) struct TaskView {
 }
 
 #[derive(Default)]
-pub(crate) struct DownloadRegistry {
+pub struct DownloadRegistry {
     tasks: Mutex<Vec<Arc<TaskCore>>>,
     /// 任务列表订阅者：前端经 Channel 接收全量快照推送。
-    subscribers: crate::ipc_channel::SubscriberPool<Vec<TaskView>>,
+    subscribers: szu_core::ipc_channel::SubscriberPool<Vec<TaskView>>,
 }
 
 impl DownloadRegistry {
-    pub(crate) fn register(&self, core: Arc<TaskCore>) {
+    pub fn register(&self, core: Arc<TaskCore>) {
         self.tasks.lock().unwrap().insert(0, core);
         self.broadcast();
     }
 
-    pub(crate) fn get(&self, id: &str) -> Option<Arc<TaskCore>> {
+    pub fn get(&self, id: &str) -> Option<Arc<TaskCore>> {
         self.tasks
             .lock()
             .unwrap()
@@ -225,7 +225,7 @@ impl DownloadRegistry {
     }
 
     /// 摘除任务条目；后台任务随后自行退出。
-    pub(crate) fn detach(&self, id: &str) -> Option<Arc<TaskCore>> {
+    pub fn detach(&self, id: &str) -> Option<Arc<TaskCore>> {
         let mut tasks = self.tasks.lock().unwrap();
         let pos = tasks.iter().position(|task| task.id == id)?;
         let removed = tasks.remove(pos);
@@ -234,7 +234,7 @@ impl DownloadRegistry {
         Some(removed)
     }
 
-    pub(crate) fn list(&self) -> Vec<TaskView> {
+    pub fn list(&self) -> Vec<TaskView> {
         self.tasks
             .lock()
             .unwrap()
@@ -244,25 +244,25 @@ impl DownloadRegistry {
     }
 
     /// 订阅任务列表：立即推送当前快照，此后每次变化自动推送。
-    pub(crate) fn subscribe(&self, channel: tauri::ipc::Channel<Vec<TaskView>>) {
+    pub fn subscribe(&self, channel: tauri::ipc::Channel<Vec<TaskView>>) {
         channel.send(self.list()).ok();
         self.subscribers.subscribe(channel);
     }
 
     /// 广播任务列表快照到全部订阅者。
-    pub(crate) fn broadcast(&self) {
+    pub fn broadcast(&self) {
         self.subscribers.broadcast(&self.list());
     }
 }
 
-pub(crate) fn sanitize_filename(raw: &str) -> String {
-    crate::file_manager::paths::sanitize_segment(raw)
+pub fn sanitize_filename(raw: &str) -> String {
+    szu_download::file_manager::paths::sanitize_segment(raw)
 }
 
 /// 跨重启持久化的任务记录（存于 jxxk/state.sqlite，键 `task:<id>`）。
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct PersistedTask {
+pub struct PersistedTask {
     pub id: String,
     pub semester_name: String,
     pub course_name: String,
@@ -276,7 +276,7 @@ pub(crate) struct PersistedTask {
     pub dest_dir: String,
     /// 下载落点（含是否需要 SAF 复制）；旧记录为 `None`。
     #[serde(default)]
-    pub target: Option<crate::aria2::DownloadTarget>,
+    pub target: Option<szu_download::aria2::DownloadTarget>,
     pub file_url: String,
     pub expected_size: Option<u64>,
     pub status: TaskStatus,
@@ -334,7 +334,7 @@ fn persist_task(core: &TaskCore) {
 
 /// 从持久化记录重建任务核心（应用重启后恢复管理列表）。
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn task_core_from_record(
+pub fn task_core_from_record(
     app: Option<AppHandle>,
     record: PersistedTask,
     status: TaskStatus,
@@ -354,14 +354,14 @@ pub(crate) fn task_core_from_record(
         stream_name: record.stream_name,
         file_name: record.file_name,
         target: record.target.unwrap_or_else(|| {
-            crate::aria2::DownloadTarget::local(
+            szu_download::aria2::DownloadTarget::local(
                 PathBuf::from(&record.dest_dir),
                 record.dest_dir.clone(),
             )
         }),
         file_url: record.file_url.clone(),
         expected_size: record.expected_size,
-        control: crate::aria2::DownloadControl::new(),
+        control: szu_download::aria2::DownloadControl::new(),
         done: Mutex::new(None),
         needs_respawn: std::sync::atomic::AtomicBool::new(needs_respawn),
         latest_url: Mutex::new((record.file_url, Instant::now() - Duration::from_secs(3600))),
@@ -422,7 +422,7 @@ async fn resolve_download_url(app: AppHandle, task_id: String) -> Result<String,
         return Err(format!("下载地址不受信任: {host}"));
     }
     // 允许根据出网重写规则（如校内入口切换到 HTTP）改写实际提供给 aria2 的直链。
-    crate::netproxy::rewrite_origin(&mut parsed);
+    szu_core::netproxy::rewrite_origin(&mut parsed);
     let fresh = parsed.to_string();
 
     // 更新缓存
@@ -459,7 +459,7 @@ async fn ensure_download_server(app: &AppHandle) -> Result<u16, String> {
         }),
     );
     let (std_listener, allocation) =
-        crate::ports::bind_loopback(crate::ports::PortService::JxxkDownload, None)
+        szu_core::ports::bind_loopback(szu_core::ports::PortService::JxxkDownload, None)
             .map_err(|error| error.to_string())?;
     let port = allocation.port;
     let listener = tokio::net::TcpListener::from_std(std_listener)
@@ -475,7 +475,7 @@ async fn ensure_download_server(app: &AppHandle) -> Result<u16, String> {
 }
 
 /// 启动下载的入参。
-pub(crate) struct StartDownloadParams {
+pub struct StartDownloadParams {
     pub semester_name: String,
     pub course_name: String,
     pub teacher_name: String,
@@ -492,7 +492,7 @@ pub(crate) struct StartDownloadParams {
 }
 
 /// 启动一个下载任务：登记、派发后台执行，返回任务 id。
-pub(crate) async fn start_download(
+pub async fn start_download(
     app: &AppHandle,
     params: StartDownloadParams,
 ) -> Result<String, String> {
@@ -512,7 +512,7 @@ pub(crate) async fn start_download(
     // 目录规整：<统一文件目录>/jxxk/<学期>-<课程>(<老师>)/<选集>/
     // Android 上统一目录是 SAF 文档树，aria2 只能写暂存目录，完成后由
     // file_manager 发布到最终目录；桌面端暂存目录就是最终目录。
-    let module = crate::file_manager::model::ManagedModule::Jxxk;
+    let module = szu_download::file_manager::model::ManagedModule::Jxxk;
     let id = uuid::Uuid::new_v4().to_string();
     let mut group = params.semester_name.clone();
     if !group.is_empty() {
@@ -524,7 +524,7 @@ pub(crate) async fn start_download(
     }
     let group = sanitize_filename(&group);
     // 落点（含是否需要 SAF 中转）由 file_manager 决定，交给 aria2 下载层自行处理。
-    let target = crate::file_manager::download_target(
+    let target = szu_download::file_manager::download_target(
         app,
         module,
         &id,
@@ -558,7 +558,7 @@ pub(crate) async fn start_download(
         target,
         file_url: params.file_url.clone(),
         expected_size: params.expected_size,
-        control: crate::aria2::DownloadControl::new(),
+        control: szu_download::aria2::DownloadControl::new(),
         done: Mutex::new(None),
         needs_respawn: std::sync::atomic::AtomicBool::new(false),
         latest_url: Mutex::new((params.file_url, Instant::now())),
@@ -604,7 +604,7 @@ async fn run_download(app: AppHandle, core: Arc<TaskCore>) {
     // aria2 抓取本地入口链接：每次（重）请求都 302 到实时解析的新直链，
     // URL 过期只需重新请求入口，已下载分片全部保留。
     let entry_url = format!("http://127.0.0.1:{port}/jxxk-download/{}", core.id);
-    let options = crate::aria2::DownloadJobOptions {
+    let options = szu_download::aria2::DownloadJobOptions {
         uris: vec![entry_url],
         prioritized_uris: Vec::new(),
         target: core.target.clone(),
@@ -617,7 +617,7 @@ async fn run_download(app: AppHandle, core: Arc<TaskCore>) {
     let (done_tx, done_rx) = tokio::sync::oneshot::channel::<()>();
     *core.done.lock().unwrap() = Some(done_rx);
     let progress_core = core.clone();
-    let result = crate::aria2::download_with_aria2_controlled(
+    let result = szu_download::aria2::download_with_aria2_controlled(
         Some(&app),
         options,
         &core.control,
@@ -633,12 +633,12 @@ async fn run_download(app: AppHandle, core: Arc<TaskCore>) {
                     progress_core.broadcast_change();
                     return;
                 }
-                state.status = if update.phase == crate::aria2::DownloadPhase::Saving {
+                state.status = if update.phase == szu_download::aria2::DownloadPhase::Saving {
                     TaskStatus::Saving
                 } else {
                     TaskStatus::Downloading
                 };
-                if update.phase == crate::aria2::DownloadPhase::Saving {
+                if update.phase == szu_download::aria2::DownloadPhase::Saving {
                     if state.saving_since.is_none() {
                         state.saving_since = Some(chrono::Utc::now().timestamp_millis());
                     }
@@ -690,7 +690,7 @@ async fn run_download(app: AppHandle, core: Arc<TaskCore>) {
 }
 
 /// 暂停任务（aria2.pause 在下一轮询生效）。
-pub(crate) fn pause_task(registry: &DownloadRegistry, id: &str) -> Result<(), String> {
+pub fn pause_task(registry: &DownloadRegistry, id: &str) -> Result<(), String> {
     let core = registry.get(id).ok_or("任务不存在")?;
     let status = core.state.lock().unwrap().status;
     if !matches!(status, TaskStatus::Downloading | TaskStatus::Preparing) {
@@ -703,7 +703,7 @@ pub(crate) fn pause_task(registry: &DownloadRegistry, id: &str) -> Result<(), St
 
 /// 继续任务。应用重启后的中断任务（needs_respawn）重新拉起 aria2 下载
 /// （.aria2 控制文件仍在，aria2 --continue 从断点续传）。
-pub(crate) async fn resume_task(app: &AppHandle, id: &str) -> Result<(), String> {
+pub async fn resume_task(app: &AppHandle, id: &str) -> Result<(), String> {
     let service = super::service(app)?;
     let core = service.downloads.get(id).ok_or("任务不存在")?;
     let status = core.state.lock().unwrap().status;
@@ -735,7 +735,7 @@ pub(crate) async fn resume_task(app: &AppHandle, id: &str) -> Result<(), String>
 
 /// 删除任务：活动任务先取消，等 aria2 真正停止后再清理条目与文件
 /// （否则会删掉仍被写入的文件、留下重建的 .aria2 控制文件）。
-pub(crate) async fn remove_task(
+pub async fn remove_task(
     app: &AppHandle,
     id: &str,
     delete_file: bool,
@@ -773,14 +773,14 @@ pub(crate) async fn remove_task(
         if !lesson.is_empty() {
             files.push(format!("{lesson}.vtt"));
         }
-        crate::file_manager::delete_saved_files(&core.target, &files);
+        szu_download::file_manager::delete_saved_files(&core.target, &files);
         log::info!("[jxxk] 已删除任务与文件: {}", core.target.display_dir);
     }
     Ok(())
 }
 
 #[cfg(test)]
-pub(crate) fn test_task_core(
+pub fn test_task_core(
     registry: std::sync::Weak<DownloadRegistry>,
     status: TaskStatus,
 ) -> Arc<TaskCore> {
@@ -796,13 +796,13 @@ pub(crate) fn test_task_core(
         lesson_name: "第1节".to_string(),
         stream_name: "教师画面".to_string(),
         file_name: "教师画面.mp4".to_string(),
-        target: crate::aria2::DownloadTarget::local(
+        target: szu_download::aria2::DownloadTarget::local(
             std::env::temp_dir(),
             std::env::temp_dir().to_string_lossy(),
         ),
         file_url: "https://jxxk.szu.edu.cn/test.mp4".to_string(),
         expected_size: Some(1024),
-        control: crate::aria2::DownloadControl::new(),
+        control: szu_download::aria2::DownloadControl::new(),
         done: Mutex::new(None),
         needs_respawn: std::sync::atomic::AtomicBool::new(false),
         latest_url: Mutex::new((

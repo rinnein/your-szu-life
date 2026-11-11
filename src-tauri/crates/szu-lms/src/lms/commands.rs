@@ -8,7 +8,7 @@ fn local(window: &tauri::WebviewWindow) -> Result<(), String> {
 /// 获取畅课快照（会话状态、待办与通知）。有本地缓存时立即返回，
 /// 过期数据在后台刷新并通过 `lms-state-changed` 事件回填。
 #[tauri::command]
-pub(crate) async fn get_lms_snapshot(
+pub async fn get_lms_snapshot(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
 ) -> Result<Snapshot, String> {
@@ -19,7 +19,7 @@ pub(crate) async fn get_lms_snapshot(
 }
 /// 订阅畅课状态（Initial + 后续变更），供首页月历等长期消费者使用。
 #[tauri::command]
-pub(crate) fn subscribe_lms_state(
+pub fn subscribe_lms_state(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     channel: tauri::ipc::Channel<LmsDeltaEvent>,
@@ -32,7 +32,7 @@ pub(crate) fn subscribe_lms_state(
 }
 /// 强制刷新畅课数据（重新建立会话并拉取）。
 #[tauri::command]
-pub(crate) async fn refresh_lms(
+pub async fn refresh_lms(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
 ) -> Result<Snapshot, String> {

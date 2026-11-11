@@ -127,10 +127,10 @@ pub(crate) fn start_update(
             error: None,
         });
 
-        let aria_options = crate::aria2::DownloadJobOptions {
+        let aria_options = szu_download::aria2::DownloadJobOptions {
             uris: Vec::new(),
             prioritized_uris: candidates,
-            target: crate::aria2::DownloadTarget::local(
+            target: szu_download::aria2::DownloadTarget::local(
                 cache_dir.clone(),
                 cache_dir.to_string_lossy().into_owned(),
             ),
@@ -140,7 +140,7 @@ pub(crate) fn start_update(
             headers: Vec::new(),
         };
 
-        let aria_res = tauri::async_runtime::block_on(crate::aria2::download_with_aria2(
+        let aria_res = tauri::async_runtime::block_on(szu_download::aria2::download_with_aria2(
             APP_HANDLE.get(),
             aria_options,
             |prog| {

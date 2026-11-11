@@ -15,7 +15,7 @@ pub struct JxxkCacheRecord {
 }
 
 pub struct JxxkDatabase {
-    pub(crate) db: toasty::Db,
+    pub db: toasty::Db,
     /// 序列化写操作：get-then-create 在并发下会触发 UNIQUE 约束冲突。
     save_lock: tokio::sync::Mutex<()>,
 }
@@ -30,7 +30,7 @@ impl Clone for JxxkDatabase {
 }
 
 /// 单条缓存条目。
-pub(crate) struct CacheEntry {
+pub struct CacheEntry {
     pub id: String,
     pub payload_json: String,
     pub updated_at_ms: i64,
@@ -38,10 +38,10 @@ pub(crate) struct CacheEntry {
 
 impl JxxkDatabase {
     pub async fn open(db_path: &Path) -> Result<Self, String> {
-        let db = crate::migrations::db::open_sqlite_db(
+        let db = szu_core::migrations::db::open_sqlite_db(
             db_path,
             toasty::models!(JxxkCacheRecord),
-            Some(&crate::migrations::jxxk::JXXK_MIGRATIONS),
+            Some(&crate::jxxk::migrations::JXXK_MIGRATIONS),
         )
         .await?;
         Ok(Self {
@@ -52,7 +52,7 @@ impl JxxkDatabase {
 
     /// 读取全部缓存条目；库不存在/为空时返回空表，其它错误必须上抛，
     /// 避免空数据随后被写回磁盘覆盖真实缓存。
-    pub(crate) async fn load_all(&self) -> Result<Vec<CacheEntry>, String> {
+    pub async fn load_all(&self) -> Result<Vec<CacheEntry>, String> {
         let mut db = self.db.clone();
         let rows = JxxkCacheRecord::all()
             .exec(&mut db)
@@ -69,7 +69,7 @@ impl JxxkDatabase {
         Ok(entries)
     }
 
-    pub(crate) async fn save(&self, entry: &CacheEntry) -> Result<(), String> {
+    pub async fn save(&self, entry: &CacheEntry) -> Result<(), String> {
         // 序列化并发写：get-then-create 非原子。
         let _guard = self.save_lock.lock().await;
         let mut db = self.db.clone();
@@ -101,7 +101,7 @@ impl JxxkDatabase {
     }
 
     /// 删除缓存条目（任务记录移除时调用）。
-    pub(crate) async fn delete(&self, id: &str) -> Result<(), String> {
+    pub async fn delete(&self, id: &str) -> Result<(), String> {
         let mut db = self.db.clone();
         match JxxkCacheRecord::get_by_id(&mut db, id).await {
             Ok(row) => {
