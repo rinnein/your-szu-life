@@ -7,7 +7,6 @@
 pub use szu_core::migrations::db;
 
 pub mod mesh;
-pub mod todos;
 
 #[cfg(test)]
 mod tests;

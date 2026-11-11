@@ -2,31 +2,31 @@ use chrono::{NaiveDate, NaiveDateTime, TimeZone};
 use tauri::Manager;
 
 use super::model::{TodoItem, TodoKind};
-use crate::campus_payments::ElectricityStatusView;
-use crate::lms::model::Snapshot as LmsSnapshot;
-use crate::oj::OjDeadline;
-use crate::uooc::model::{SessionStatus, Snapshot as UoocSnapshot};
-use crate::uooc::Assessments;
+use szu_core::campus_payments::ElectricityStatusView;
+use szu_lms::lms::model::Snapshot as LmsSnapshot;
+use szu_oj::oj::OjDeadline;
+use szu_uooc::uooc::model::{SessionStatus, Snapshot as UoocSnapshot};
+use szu_uooc::uooc::Assessments;
 
 const DAY_MS: i64 = 86_400_000;
 
 /// 聚合全部来源。任一来源未初始化或暂不可用时跳过，不影响其它来源。
-pub(crate) fn aggregate(app: &tauri::AppHandle) -> Vec<TodoItem> {
+pub fn aggregate(app: &tauri::AppHandle) -> Vec<TodoItem> {
     let now = chrono::Utc::now().timestamp_millis();
     let mut items = Vec::new();
 
-    if let Ok(service) = crate::oj::service(app) {
+    if let Ok(service) = szu_oj::oj::service(app) {
         items.extend(from_oj(service.deadlines(), now));
     }
-    if let Ok(service) = crate::uooc::service(app) {
+    if let Ok(service) = szu_uooc::uooc::service(app) {
         items.extend(from_uooc(&service.snapshot(), &service.assessments(), now));
     }
-    if let Ok(service) = crate::lms::service(app) {
+    if let Ok(service) = szu_lms::lms::service(app) {
         items.extend(from_lms(&service.snapshot(), now));
     }
-    if let Some(store) = app.try_state::<crate::campus_payments::CampusPaymentsStore>() {
+    if let Some(store) = app.try_state::<szu_core::campus_payments::CampusPaymentsStore>() {
         items.extend(from_electricity(
-            &crate::campus_payments::electricity::status(&store.electricity),
+            &szu_core::campus_payments::electricity::status(&store.electricity),
             now,
         ));
     }
@@ -35,7 +35,7 @@ pub(crate) fn aggregate(app: &tauri::AppHandle) -> Vec<TodoItem> {
     items
 }
 
-pub(super) fn from_oj(deadlines: Vec<OjDeadline>, now: i64) -> Vec<TodoItem> {
+pub fn from_oj(deadlines: Vec<OjDeadline>, now: i64) -> Vec<TodoItem> {
     deadlines
         .into_iter()
         .filter(|contest| contest.end > now)
@@ -63,7 +63,7 @@ pub(super) fn from_oj(deadlines: Vec<OjDeadline>, now: i64) -> Vec<TodoItem> {
         .collect()
 }
 
-pub(super) fn from_uooc(
+pub fn from_uooc(
     snapshot: &UoocSnapshot,
     assessments: &Assessments,
     now: i64,
@@ -140,7 +140,7 @@ pub(super) fn from_uooc(
     items
 }
 
-fn exam_completed(exam: &crate::uooc::model::ExamTask) -> bool {
+fn exam_completed(exam: &szu_uooc::uooc::model::ExamTask) -> bool {
     exam.can_view
         || exam.status_code >= 20
         || exam.status_text == "已批改"
@@ -148,7 +148,7 @@ fn exam_completed(exam: &crate::uooc::model::ExamTask) -> bool {
         || (exam.chance > 0 && exam.submit_count >= exam.chance)
 }
 
-fn homework_completed(homework: &crate::uooc::model::HomeworkTask) -> bool {
+fn homework_completed(homework: &szu_uooc::uooc::model::HomeworkTask) -> bool {
     homework.can_view
         || homework.status_code >= 20
         || homework.status_text == "已批改"
@@ -156,8 +156,8 @@ fn homework_completed(homework: &crate::uooc::model::HomeworkTask) -> bool {
         || (homework.chance > 0 && homework.submit_count >= homework.chance)
 }
 
-pub(super) fn from_lms(snapshot: &LmsSnapshot, now: i64) -> Vec<TodoItem> {
-    if snapshot.session != crate::lms::model::SessionState::Ready {
+pub fn from_lms(snapshot: &LmsSnapshot, now: i64) -> Vec<TodoItem> {
+    if snapshot.session != szu_lms::lms::model::SessionState::Ready {
         return Vec::new();
     }
 
@@ -186,7 +186,7 @@ pub(super) fn from_lms(snapshot: &LmsSnapshot, now: i64) -> Vec<TodoItem> {
         .collect()
 }
 
-pub(super) fn from_electricity(status: &ElectricityStatusView, now: i64) -> Vec<TodoItem> {
+pub fn from_electricity(status: &ElectricityStatusView, now: i64) -> Vec<TodoItem> {
     if status.expired {
         return Vec::new();
     }
@@ -222,7 +222,7 @@ pub(super) fn from_electricity(status: &ElectricityStatusView, now: i64) -> Vec<
 
 /// UOOC 的时间是本地时间字符串：`2026-10-30 18:00:00`、`2026/10/14` 等。
 /// 仅日期的值按当天 23:59:59 处理，与前端 `new Date(...)` 的语义保持一致。
-pub(super) fn parse_uooc_datetime(raw: &str) -> Option<i64> {
+pub fn parse_uooc_datetime(raw: &str) -> Option<i64> {
     let normalized = raw.replace('/', "-");
     let trimmed = normalized.trim();
     if trimmed.is_empty() {

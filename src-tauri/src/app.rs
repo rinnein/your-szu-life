@@ -179,7 +179,12 @@ pub(crate) fn run() {
             }
             campus_network::monitor::start_dorm_monitor(app.handle().clone());
             #[cfg(desktop)]
-            crate::desktop::setup(app)?;
+            {
+                crate::desktop::setup(app)?;
+                // 待办快照变化时刷新托盘菜单。`szu-todos` 是独立 crate，不能反向
+                // 依赖 desktop，因此由 app 层注册回调。
+                crate::todos::set_tray_updater(crate::desktop::update_todo_menu);
+            }
             if let Err(error) = crate::mcp::initialize(app.handle()) {
                 log::error!("MCP 本地服务启动失败: {error}");
             }

@@ -3,12 +3,12 @@ use chrono::{Local, TimeZone};
 use super::aggregate::{from_electricity, from_lms, from_oj, from_uooc, parse_uooc_datetime};
 use super::model::{TodoItem, TodoKind};
 use super::reminder::plan_reminders;
-use crate::campus_payments::ElectricityStatusView;
-use crate::lms::model::{SessionState, Snapshot as LmsSnapshot, Todo as LmsTodo};
-use crate::notification::settings::NotificationSettings;
-use crate::oj::OjDeadline;
-use crate::uooc::model::{Course, ExamTask, SessionStatus, Snapshot as UoocSnapshot};
-use crate::uooc::Assessments;
+use szu_core::campus_payments::ElectricityStatusView;
+use szu_lms::lms::model::{SessionState, Snapshot as LmsSnapshot, Todo as LmsTodo};
+use szu_core::notification::settings::NotificationSettings;
+use szu_oj::oj::OjDeadline;
+use szu_uooc::uooc::model::{Course, ExamTask, SessionStatus, Snapshot as UoocSnapshot};
+use szu_uooc::uooc::Assessments;
 
 const MINUTE: i64 = 60_000;
 const HOUR: i64 = 60 * MINUTE;

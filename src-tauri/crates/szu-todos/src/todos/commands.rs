@@ -12,7 +12,7 @@ fn local(window: &tauri::WebviewWindow) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub(crate) fn subscribe_todos(
+pub fn subscribe_todos(
     window: tauri::WebviewWindow,
     app: AppHandle,
     channel: tauri::ipc::Channel<TodosEvent>,
@@ -32,7 +32,7 @@ pub(crate) fn subscribe_todos(
 }
 
 #[tauri::command]
-pub(crate) async fn refresh_todos(
+pub async fn refresh_todos(
     window: tauri::WebviewWindow,
     app: AppHandle,
 ) -> Result<(), String> {

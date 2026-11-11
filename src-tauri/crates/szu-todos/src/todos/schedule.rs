@@ -21,7 +21,7 @@ mod mobile {
     }
 
     pub(in crate::todos) async fn reconcile(app: &tauri::AppHandle, items: &[TodoItem]) {
-        let settings = crate::notification::settings::load(app);
+        let settings = szu_core::notification::settings::load(app);
         let Some(store) = app.try_state::<TodosStore>() else {
             return;
         };
@@ -126,7 +126,7 @@ mod mobile {
 }
 
 #[cfg(mobile)]
-pub(super) use mobile::reconcile;
+pub use mobile::reconcile;
 
 #[cfg(not(mobile))]
-pub(super) async fn reconcile(_app: &tauri::AppHandle, _items: &[super::model::TodoItem]) {}
+pub async fn reconcile(_app: &tauri::AppHandle, _items: &[super::model::TodoItem]) {}

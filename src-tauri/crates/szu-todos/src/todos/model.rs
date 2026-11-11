@@ -5,7 +5,7 @@ pub use szu_core::notification::TodoKind;
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct TodoItem {
+pub struct TodoItem {
     pub id: String,
     pub kind: TodoKind,
     pub title: String,
@@ -18,7 +18,7 @@ pub(crate) struct TodoItem {
 
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", content = "data", rename_all = "camelCase")]
-pub(crate) enum TodosEvent {
+pub enum TodosEvent {
     Initial(Box<Vec<TodoItem>>),
     Snapshot(Box<Vec<TodoItem>>),
 }
@@ -26,7 +26,7 @@ pub(crate) enum TodosEvent {
 /// 跨重启保存的提醒去重状态。
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ReminderState {
+pub struct ReminderState {
     /// 去重键 → 通知时间（Unix 毫秒）
     #[serde(default)]
     pub notified: BTreeMap<String, i64>,
@@ -35,7 +35,7 @@ pub(crate) struct ReminderState {
     pub scheduled: BTreeMap<String, i32>,
 }
 
-pub(crate) fn reminder_key(item: &TodoItem, offset_minutes: i64) -> String {
+pub fn reminder_key(item: &TodoItem, offset_minutes: i64) -> String {
     format!(
         "{}|{}|{}|{}",
         item.kind.key(),

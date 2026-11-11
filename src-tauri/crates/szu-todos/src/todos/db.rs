@@ -11,16 +11,16 @@ pub struct TodoStateRecord {
 }
 
 #[derive(Clone)]
-pub(crate) struct TodoDatabase {
-    pub(crate) db: toasty::Db,
+pub struct TodoDatabase {
+    pub db: toasty::Db,
 }
 
 impl TodoDatabase {
-    pub(crate) async fn open(db_path: &Path) -> Result<Self, String> {
-        let db = crate::migrations::db::open_sqlite_db(
+    pub async fn open(db_path: &Path) -> Result<Self, String> {
+        let db = szu_core::migrations::db::open_sqlite_db(
             db_path,
             toasty::models!(TodoStateRecord),
-            Some(&crate::migrations::todos::TODOS_MIGRATIONS),
+            Some(&crate::todos::migrations::TODOS_MIGRATIONS),
         )
         .await?;
         Ok(Self { db })
@@ -28,7 +28,7 @@ impl TodoDatabase {
 
     /// 读取提醒状态；首次使用（行不存在）返回默认值，其它错误必须上抛，
     /// 避免默认状态随后被写回磁盘覆盖真实去重记录。
-    pub(crate) async fn load_state(&self) -> Result<ReminderState, String> {
+    pub async fn load_state(&self) -> Result<ReminderState, String> {
         let mut db = self.db.clone();
         match TodoStateRecord::get_by_id(&mut db, "current").await {
             Ok(row) => serde_json::from_str(&row.payload_json)
@@ -41,7 +41,7 @@ impl TodoDatabase {
         }
     }
 
-    pub(crate) async fn save_state(&self, state: &ReminderState) -> Result<(), String> {
+    pub async fn save_state(&self, state: &ReminderState) -> Result<(), String> {
         let payload_json =
             serde_json::to_string(state).map_err(|_| "待办提醒状态序列化失败".to_string())?;
         let now = chrono::Utc::now().timestamp_millis();

@@ -4,25 +4,25 @@ use tauri::{AppHandle, Manager};
 
 use super::model::{reminder_key, ReminderState, TodoItem};
 use super::{aggregate, publish, refresh_sources, RefreshSource, TodosStore};
-use crate::notification::settings::NotificationSettings;
-use crate::notification::{NotificationCategory, NotificationPayload};
+use szu_core::notification::settings::NotificationSettings;
+use szu_core::notification::{NotificationCategory, NotificationPayload};
 
 const MINUTE_MS: i64 = 60_000;
 const DAY_MS: i64 = 86_400_000;
 /// 已通知记录按截止时间保留 30 天；更早的待办不会再次触发。
 const NOTIFIED_RETENTION_MS: i64 = 30 * DAY_MS;
 
-pub(super) fn start(app: AppHandle) {
+pub fn start(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut last_refresh = Instant::now() - Duration::from_secs(86_400);
         loop {
-            let interval = crate::activity::interval(
+            let interval = szu_core::activity::interval(
                 Some("todos"),
                 Duration::from_secs(30),
                 Duration::from_secs(60),
                 Duration::from_secs(120),
             );
-            let refresh_interval = crate::activity::interval(
+            let refresh_interval = szu_core::activity::interval(
                 Some("todos"),
                 Duration::from_secs(300),
                 Duration::from_secs(900),
@@ -33,7 +33,7 @@ pub(super) fn start(app: AppHandle) {
                 refresh_sources(&app, RefreshSource::Periodic).await;
             }
             tick(&app).await;
-            tokio::time::sleep(crate::activity::sleep_chunk(
+            tokio::time::sleep(szu_core::activity::sleep_chunk(
                 interval,
                 Duration::from_secs(15),
             ))
@@ -43,7 +43,7 @@ pub(super) fn start(app: AppHandle) {
 }
 
 /// 单次聚合 + 广播 + 提醒判定。命令层主动刷新后也会调用一次。
-pub(super) async fn tick(app: &AppHandle) {
+pub async fn tick(app: &AppHandle) {
     let items = aggregate::aggregate(app);
     publish(app, &items);
     evaluate(app, &items).await;
@@ -51,7 +51,7 @@ pub(super) async fn tick(app: &AppHandle) {
 }
 
 async fn evaluate(app: &AppHandle, items: &[TodoItem]) {
-    let settings = crate::notification::settings::load(app);
+    let settings = szu_core::notification::settings::load(app);
     let Some(store) = app.try_state::<TodosStore>() else {
         return;
     };
@@ -106,7 +106,7 @@ fn has_native_schedule(_app: &AppHandle, _item: &TodoItem, _offset_minutes: i64)
 ///
 /// 同一待办有多个阈值同时到达时只保留最接近截止的一档，其余一并标记为已通知，
 /// 避免应用离线一段时间后补发一串过期提醒。
-pub(super) fn plan_reminders(
+pub fn plan_reminders(
     items: &[TodoItem],
     settings: &NotificationSettings,
     now: i64,
@@ -164,10 +164,10 @@ fn dispatch(app: &AppHandle, item: &TodoItem, offset_minutes: i64) {
             "dueAtMs": item.due_at_ms,
             "offsetMinutes": offset_minutes,
         }));
-    crate::notification::notify(app, payload);
+    szu_core::notification::notify(app, payload);
 }
 
-pub(super) fn humanize_remaining(remaining_ms: i64) -> String {
+pub fn humanize_remaining(remaining_ms: i64) -> String {
     let minutes = (remaining_ms / MINUTE_MS).max(1);
     if minutes >= 1_440 {
         let days = minutes / 1_440;
@@ -192,7 +192,7 @@ pub(super) fn humanize_remaining(remaining_ms: i64) -> String {
 
 /// 供移动端排程复用：把提前量写成「N 天后截止」的文案。
 #[cfg(mobile)]
-pub(super) fn describe_offset(offset_minutes: i64) -> String {
+pub fn describe_offset(offset_minutes: i64) -> String {
     humanize_remaining(offset_minutes * MINUTE_MS)
 }
 

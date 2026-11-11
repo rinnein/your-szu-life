@@ -9173,6 +9173,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "szu-todos"
+version = "0.14.0"
+dependencies = [
+ "chrono",
+ "log",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "szu-build-support",
+ "szu-core",
+ "szu-lms",
+ "szu-oj",
+ "szu-uooc",
+ "tauri",
+ "tempfile",
+ "toasty",
+ "tokio",
+]
+
+[[package]]
 name = "szu-uooc"
 version = "0.14.0"
 dependencies = [
@@ -11931,6 +11951,7 @@ dependencies = [
  "szu-lms",
  "szu-oj",
  "szu-runtime",
+ "szu-todos",
  "szu-uooc",
  "tauri",
  "tauri-build",
