@@ -23,6 +23,9 @@ vi.mock("../auth", () => ({
 
 vi.mock("./api", () => api);
 
+// 向导挂载后会静默预热畅课/巡课；这里挡掉真实 IPC 分发。
+vi.mock("./prewarm", () => ({ prewarmSsoModules: vi.fn() }));
+
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (event: string, callback: (event: { payload: unknown }) => void) => {
     listeners.set(event, callback);

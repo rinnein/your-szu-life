@@ -15,8 +15,11 @@ const api = vi.hoisted(() => ({
   skipOnboardingStep: vi.fn(),
 }));
 
+const prewarm = vi.hoisted(() => ({ prewarmSsoModules: vi.fn() }));
+
 vi.mock("../auth", () => ({ useAuth: () => auth }));
 vi.mock("./api", () => api);
+vi.mock("./prewarm", () => prewarm);
 
 vi.mock("./registry", async () => {
   const { useRegisterNextAction } = await import("../step-next-action");
@@ -77,6 +80,7 @@ const state: OnboardingState = {
 describe("OnboardingWizard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    auth.state = { Authenticated: { studentId: "1234567890", name: "测试" } };
     api.completeOnboardingStep.mockResolvedValue(state);
     api.skipOnboardingStep.mockResolvedValue(state);
   });
@@ -146,5 +150,43 @@ describe("OnboardingWizard", () => {
     fireEvent.click(await screen.findByRole("button", { name: "下一步" }));
     await screen.findByText("appearance-step");
     expect(api.completeOnboardingStep).toHaveBeenCalledWith("dormitory");
+  });
+
+  it("prewarms the SSO-only modules once while the wizard stays open", async () => {
+    const { rerender } = render(
+      <OnboardingWizard
+        state={state}
+        canDismiss={false}
+        onDismiss={vi.fn()}
+        onFinished={vi.fn()}
+      />,
+    );
+    expect(prewarm.prewarmSsoModules).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(await screen.findByRole("button", { name: "下一步" }));
+    await screen.findByText("appearance-step");
+    rerender(
+      <OnboardingWizard
+        state={state}
+        canDismiss={false}
+        onDismiss={vi.fn()}
+        onFinished={vi.fn()}
+      />,
+    );
+
+    expect(prewarm.prewarmSsoModules).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not prewarm before the account is authenticated", () => {
+    auth.state = { Unauthenticated: null };
+    render(
+      <OnboardingWizard
+        state={state}
+        canDismiss={false}
+        onDismiss={vi.fn()}
+        onFinished={vi.fn()}
+      />,
+    );
+    expect(prewarm.prewarmSsoModules).not.toHaveBeenCalled();
   });
 });

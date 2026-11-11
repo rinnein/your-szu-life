@@ -8,6 +8,7 @@ import { useDemoModeActivation } from "../shell/use-demo-mode";
 import { useAuth } from "../auth";
 import type { StepNextAction } from "../step-next-action";
 import { completeOnboardingStep, skipOnboardingStep, type OnboardingState } from "./api";
+import { prewarmSsoModules } from "./prewarm";
 import { STEP_META } from "./registry";
 
 type StepPlan = {
@@ -47,6 +48,7 @@ export function OnboardingWizard({
   const [nextAction, setNextAction] = useState<StepNextAction | null>(null);
   const finished = useRef(false);
   const acting = useRef(false);
+  const prewarmed = useRef<string | null>(null);
 
   const registerNext = useCallback((action: StepNextAction | null) => {
     setNextAction(action);
@@ -133,6 +135,17 @@ export function OnboardingWizard({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authState, current, index, plan.length]);
+
+  // 统一认证完成后静默预热只依赖 authserver SSO 的畅课/巡课：用户还要走完剩下的
+  // 设置步骤，会话可以在这段时间里建好，进入首页时待办已包含畅课项。
+  // 以学号为键去重，向导中途退出重进（挂载时已登录）时也补跑一次。
+  const authenticatedStudentId =
+    "Authenticated" in authState ? authState.Authenticated.studentId : null;
+  useEffect(() => {
+    if (!authenticatedStudentId || prewarmed.current === authenticatedStudentId) return;
+    prewarmed.current = authenticatedStudentId;
+    prewarmSsoModules();
+  }, [authenticatedStudentId]);
 
   if (!current || !meta) {
     return (
