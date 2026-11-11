@@ -62,7 +62,10 @@ fn load_dotenv(path: &std::path::Path) -> std::collections::HashMap<String, Stri
         .unwrap_or_else(|error| panic!("failed to parse {}: {error}", path.display()))
 }
 
-fn configured_value(name: &str, dotenv: &std::collections::HashMap<String, String>) -> Option<String> {
+fn configured_value(
+    name: &str,
+    dotenv: &std::collections::HashMap<String, String>,
+) -> Option<String> {
     match std::env::var_os(name) {
         Some(value) => value.into_string().ok(),
         None => dotenv.get(name).cloned(),
