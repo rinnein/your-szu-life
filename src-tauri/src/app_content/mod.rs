@@ -1,13 +1,12 @@
 #[cfg(target_os = "android")]
 pub(crate) mod android_update;
 mod cache;
-mod channel;
+pub(crate) mod channel;
 pub(crate) mod commands;
 mod config;
 mod http;
 mod images;
-pub(crate) mod mcp;
-mod model;
+pub(crate) mod model;
 mod runtime;
 mod service;
 #[cfg(target_os = "windows")]
@@ -22,6 +21,16 @@ pub(crate) struct AppContentStore(Arc<service::ContentService>);
 impl AppContentStore {
     pub(crate) fn snapshot(&self) -> model::AppContentSnapshot {
         self.0.snapshot()
+    }
+
+    /// 切换更新渠道并返回切换后的快照。
+    pub(crate) fn set_channel(&self, channel: model::UpdateChannel) -> model::AppContentSnapshot {
+        self.0.set_channel(channel)
+    }
+
+    /// 立即刷新公共内容并返回最新快照。
+    pub(crate) fn refresh(&self) -> model::AppContentSnapshot {
+        self.0.refresh()
     }
 
     #[cfg(any(target_os = "android", target_os = "windows"))]

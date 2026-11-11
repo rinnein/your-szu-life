@@ -323,7 +323,7 @@ impl Service {
             preferences,
         })
     }
-    pub(super) async fn paper(&self, id: &str, cid: &str) -> Result<Paper, String> {
+    pub(crate) async fn paper(&self, id: &str, cid: &str) -> Result<Paper, String> {
         let e = self.entry(id)?;
         let _guard = e.gate.lock().await;
         self.paper_locked(id, &e, cid).await
@@ -393,7 +393,7 @@ impl Service {
     pub(super) async fn submit(&self, input: SubmitInput) -> Result<Value, String> {
         self.submit_with_code(input, None).await
     }
-    pub(super) async fn submit_with_code(
+    pub(crate) async fn submit_with_code(
         &self,
         input: SubmitInput,
         source_code: Option<String>,
@@ -545,7 +545,7 @@ impl Service {
             }
         }
     }
-    pub(super) async fn records(
+    pub(crate) async fn records(
         &self,
         id: &str,
         cid: &str,
@@ -618,7 +618,7 @@ impl Service {
             .collect();
         Ok(json!({"records":records,"uncertain":uncertain}))
     }
-    pub(super) async fn result(
+    pub(crate) async fn result(
         &self,
         id: &str,
         sid: &str,

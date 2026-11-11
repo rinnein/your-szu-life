@@ -124,7 +124,7 @@ async fn test_electricity_history_migration() {
     let db = crate::campus_payments::electricity::db::ElectricityDatabase::open(&db_path)
         .await
         .unwrap();
-    let migrated = super::electricity::migrate_electricity_history_if_needed(&db_path, &db)
+    let migrated = szu_core::migrations::electricity::migrate_electricity_history_if_needed(&db_path, &db)
         .await
         .unwrap();
 

@@ -1,44 +1,35 @@
 #![recursion_limit = "512"]
 
-pub(crate) mod activity;
-mod analytics;
 mod app;
 mod app_content;
-pub(crate) mod app_paths;
-pub(crate) mod appearance;
 pub(crate) mod aria2;
-mod auth;
-mod campus_network;
-mod campus_payments;
-mod demo;
 #[cfg(desktop)]
 mod desktop;
 mod embedding_model;
 mod enrollment;
 pub(crate) mod file_manager;
-pub(crate) mod ipc_channel;
 mod jxxk;
 mod lms;
 pub(crate) mod local_model;
-pub(crate) mod logging;
 pub mod mcp;
 pub(crate) mod mesh;
 pub(crate) mod migrations;
-pub(crate) mod netproxy;
-mod notification;
 mod ocr;
 mod oj;
-mod onboarding;
-#[cfg(target_os = "android")]
-mod platform_tls;
-mod ports;
-mod preferences;
-mod settings;
 mod settings_sync;
-mod storage;
 mod todos;
 mod uooc;
-pub(crate) mod webview_cookies;
+
+// 过渡期重导出：M2 把核心域搬进 `szu-core` 后，尚未搬走的模块仍以
+// `crate::<module>` 引用它们。全部功能模块下沉到各自 crate 后（M6）删除这段，
+// 让引用显式写成 `szu_core::<module>`。
+pub(crate) use szu_core::{
+    activity, analytics, app_paths, appearance, auth, campus_network, campus_payments, demo,
+    ipc_channel, logging, netproxy, notification, onboarding, ports, preferences, settings,
+    storage, webview_cookies,
+};
+#[cfg(target_os = "android")]
+pub(crate) use szu_core::platform_tls;
 
 pub use auth::{
     model::{AccountProfileInput, AccountProfileView, AuthState, UserDataView},

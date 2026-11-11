@@ -3,16 +3,16 @@ use std::collections::BTreeSet;
 #[test]
 fn command_names_match_handlers_manifest_and_local_permissions() {
     let commands: BTreeSet<_> = [
-        include_str!("activity/commands.rs"),
+        include_str!("../crates/szu-core/src/activity/commands.rs"),
         include_str!("app_content/commands.rs"),
-        include_str!("appearance/commands.rs"),
-        include_str!("auth/commands.rs"),
-        include_str!("onboarding/commands.rs"),
-        include_str!("storage/commands.rs"),
-        include_str!("settings/commands.rs"),
-        include_str!("campus_network/commands.rs"),
-        include_str!("demo/commands.rs"),
-        include_str!("campus_payments/commands.rs"),
+        include_str!("../crates/szu-core/src/appearance/commands.rs"),
+        include_str!("../crates/szu-core/src/auth/commands.rs"),
+        include_str!("../crates/szu-core/src/onboarding/commands.rs"),
+        include_str!("../crates/szu-core/src/storage/commands.rs"),
+        include_str!("../crates/szu-core/src/settings/commands.rs"),
+        include_str!("../crates/szu-core/src/campus_network/commands.rs"),
+        include_str!("../crates/szu-core/src/demo/commands.rs"),
+        include_str!("../crates/szu-core/src/campus_payments/commands.rs"),
         include_str!("uooc/commands.rs"),
         include_str!("oj/commands.rs"),
         include_str!("lms/commands.rs"),
@@ -21,19 +21,21 @@ fn command_names_match_handlers_manifest_and_local_permissions() {
         include_str!("file_manager/commands.rs"),
         include_str!("ocr/commands.rs"),
         include_str!("embedding_model/commands.rs"),
-        include_str!("notification/commands.rs"),
-        include_str!("analytics/commands.rs"),
+        include_str!("../crates/szu-core/src/notification/commands.rs"),
+        include_str!("../crates/szu-core/src/analytics/commands.rs"),
         include_str!("todos/commands.rs"),
-        include_str!("netproxy/commands.rs"),
+        include_str!("../crates/szu-core/src/netproxy/commands.rs"),
         include_str!("mesh/commands.rs"),
         include_str!("settings_sync/commands.rs"),
-        include_str!("ports/commands.rs"),
+        include_str!("../crates/szu-core/src/ports/commands.rs"),
     ]
     .into_iter()
     .flat_map(|source| source.lines())
     .filter_map(|line| {
         line.strip_prefix("pub(crate) fn ")
             .or_else(|| line.strip_prefix("pub(crate) async fn "))
+            .or_else(|| line.strip_prefix("pub fn "))
+            .or_else(|| line.strip_prefix("pub async fn "))
     })
     .filter_map(|line| line.split_once('(').map(|(name, _)| name.to_owned()))
     .chain(

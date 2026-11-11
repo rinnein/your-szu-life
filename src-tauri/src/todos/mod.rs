@@ -11,7 +11,6 @@ use crate::lms::model::{SessionState, Snapshot as LmsSnapshot};
 pub(crate) mod aggregate;
 pub(crate) mod commands;
 mod db;
-pub(crate) mod mcp;
 pub(crate) mod model;
 mod reminder;
 mod schedule;

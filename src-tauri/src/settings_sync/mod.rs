@@ -12,7 +12,6 @@ use tauri::{AppHandle, Emitter, Manager};
 pub(crate) mod commands;
 pub(crate) mod engine;
 pub(crate) mod items;
-pub(crate) mod mcp;
 pub(crate) mod state;
 
 use engine::{SyncItemView, SyncStore, SyncSummary};

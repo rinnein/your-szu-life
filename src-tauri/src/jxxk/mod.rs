@@ -2,7 +2,6 @@ mod client;
 pub(crate) mod commands;
 pub(crate) mod db;
 pub(crate) mod download;
-pub(crate) mod mcp;
 pub(crate) mod model;
 pub(crate) mod stream;
 #[cfg(test)]

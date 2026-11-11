@@ -404,7 +404,7 @@ impl Service {
         };
         result
     }
-    pub(super) async fn refresh_progress(self: &Arc<Self>, ids: Vec<String>, background: bool) {
+    pub(crate) async fn refresh_progress(self: &Arc<Self>, ids: Vec<String>, background: bool) {
         let mut pending = tokio::task::JoinSet::new();
         for cid in ids {
             let service = self.clone();

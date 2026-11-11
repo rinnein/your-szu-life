@@ -24,7 +24,6 @@ pub(crate) mod android;
 pub(crate) mod commands;
 #[cfg(not(target_os = "android"))]
 mod desktop;
-pub(crate) mod mcp;
 pub(crate) mod model;
 pub(crate) mod paths;
 #[cfg(test)]

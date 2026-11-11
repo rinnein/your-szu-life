@@ -1,7 +1,6 @@
 mod client;
 pub(crate) mod commands;
 pub(crate) mod db;
-pub(crate) mod mcp;
 pub(crate) mod model;
 mod session;
 #[cfg(test)]

@@ -5,37 +5,30 @@ description = "泥深 - 你的SZU助手"
 authors = ["you"]
 edition = "2021"
 
-[profile.dev]
-debug = "line-tables-only"
-
-[profile.dev.package."*"]
-debug = false
-
-[profile.test]
-debug = 0
-
-[profile.test.package."*"]
-debug = false
-
 [lib]
 name = "your_szu_life_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
-[build-dependencies]
-tauri-build = { version = "2", features = [] }
-dotenvy = "0.15"
-reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls"] }
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+# workspace 根就是 `src-tauri`，app 包本身是根 package。
+# 这样 `Cargo.lock` 仍在 `src-tauri/Cargo.lock`（`gen/android/app/build.gradle.kts`
+# 读 `../../Cargo.lock` 取 rustls-platform-verifier 版本）、`target/` 仍在
+# `src-tauri/target`（`gen/android/buildSrc` 的 `BuildTask.kt` 按
+# `rootDirRel = "../../../"` 找 `libyour_szu_life_lib.so`），Android 与 CI 的
+# 路径全部不需要改。
+[workspace]
+resolver = "2"
+members = ["crates/*"]
 
-[dependencies]
+[workspace.package]
+version = "0.14.0"
+edition = "2021"
+authors = ["you"]
+
+# 所有成员 crate 共用同一份依赖声明，避免版本与 feature 漂移。
+# 平台条件仍写在各 crate 自己的 `[target.'cfg(...)'.dependencies]` 里。
+[workspace.dependencies]
 tauri = { version = "2", features = ["tray-icon", "devtools"] }
 tauri-plugin-opener = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-semver = "1"
-chrono = { version = "0.4", features = ["clock"] }
-image = "0.25"
-time = { version = "0.3", features = ["formatting", "parsing", "local-offset"] }
 tauri-plugin-notification = "2.4.0"
 tauri-plugin-deep-link = "2"
 tauri-plugin-os = "2"
@@ -43,6 +36,12 @@ tauri-plugin-log = "2"
 tauri-plugin-clipboard-manager = "2"
 # 匿名统计。与项目 reqwest 的 rustls 后端保持一致，避免额外引入 native-tls。
 tauri-plugin-aptabase = { version = "1.3.0", default-features = false, features = ["rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+semver = "1"
+chrono = { version = "0.4", features = ["clock"] }
+image = "0.25"
+time = { version = "0.3", features = ["formatting", "parsing", "local-offset"] }
 log = "0.4"
 encoding_rs = "0.8"
 reqwest = { version = "0.13", default-features = false, features = [
@@ -128,8 +127,6 @@ easytier-core = { git = "https://github.com/EasyTier/EasyTier", rev = "2abb1676b
 # 日志与其它日志一样遵守调试页的保留级别和 target 过滤。不要依赖 tower/axum
 # 偶然带上的同名 feature。
 tracing = { version = "0.1", features = ["log"] }
-
-[target.'cfg(not(target_os = "android"))'.dependencies]
 keyring = { version = "3", features = [
   "linux-native",
   "sync-secret-service",
@@ -140,37 +137,130 @@ keyring = { version = "3", features = [
 ssid = "0.1"
 # 桌面端文件夹选择器走系统原生实现（Linux 使用 xdg-desktop-portal）；Android 由 SAF 桥负责。
 tauri-plugin-dialog = "2"
-
-[target.'cfg(target_os = "android")'.dependencies]
 android-native-keyring-store = "1.0.0"
 keyring-core = "1.0.0"
 jni = "0.21"
 jni022 = { package = "jni", version = "0.22" }
 ndk-context = "0.1.1"
 rustls-platform-verifier = "0.7"
-
-[target.'cfg(target_os = "linux")'.dependencies]
 webkit2gtk = { version = "2.0.2", features = ["v2_40"] }
 soup3 = "0.5"
 gtk = "0.18"
-
 # 系统代理探测直接在进程内读注册表（netproxy/windows.rs）。起 `reg query`
 # 子进程会在 GUI 子系统下闪控制台窗口，因此这里只要注册表 API 的 feature。
-[target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_System_Registry",
 ] }
-
-[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 wallpaper = "3.2"
+tempfile = "3"
 
-# 见 `vendor/proc-macro-crate/` 与 `Cargo.toml` 顶部说明：glib-macros 0.18 的
-# proc-macro-crate 2.0.2 用精确版本钉住 toml_datetime 0.6.3，与 EasyTier 依赖的
-# rust-i18n-support（toml ^0.8.8）冲突。本地副本只放宽这两处版本约束。
+[dependencies]
+szu-core = { path = "crates/szu-core" }
+tauri = { workspace = true }
+tauri-plugin-opener = { workspace = true }
+tauri-plugin-notification = { workspace = true }
+tauri-plugin-deep-link = { workspace = true }
+tauri-plugin-os = { workspace = true }
+tauri-plugin-log = { workspace = true }
+tauri-plugin-clipboard-manager = { workspace = true }
+tauri-plugin-aptabase = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+semver = { workspace = true }
+chrono = { workspace = true }
+image = { workspace = true }
+time = { workspace = true }
+log = { workspace = true }
+encoding_rs = { workspace = true }
+reqwest = { workspace = true }
+sha1 = { workspace = true }
+hmac = { workspace = true }
+md-5 = { workspace = true }
+base64 = { workspace = true }
+argon2 = { workspace = true }
+rand = { workspace = true }
+chacha20poly1305 = { workspace = true }
+uuid = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tokio-tungstenite = { workspace = true }
+cookie_store = { workspace = true }
+reqwest_cookie_store = { workspace = true }
+mp4 = { workspace = true }
+m3u8-rs = { workspace = true }
+scraper = { workspace = true }
+ddddocr-core = { workspace = true }
+ddddocr-tract2 = { workspace = true }
+sha2 = { workspace = true }
+flate2 = { workspace = true }
+calamine = { workspace = true }
+toasty = { workspace = true }
+imageproc = { workspace = true }
+des = { workspace = true }
+regex = { workspace = true }
+base16384 = { workspace = true }
+async-openai = { workspace = true }
+rig-core = { workspace = true }
+rig-rmcp = { workspace = true }
+rmcp = { workspace = true }
+schemars = { workspace = true }
+axum = { workspace = true }
+futures-util = { workspace = true }
+netdev = { workspace = true }
+easytier = { workspace = true }
+easytier-core = { workspace = true }
+tracing = { workspace = true }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+keyring = { workspace = true }
+ssid = { workspace = true }
+tauri-plugin-dialog = { workspace = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+android-native-keyring-store = { workspace = true }
+keyring-core = { workspace = true }
+jni = { workspace = true }
+jni022 = { workspace = true }
+ndk-context = { workspace = true }
+rustls-platform-verifier = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = { workspace = true }
+soup3 = { workspace = true }
+gtk = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { workspace = true }
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = { workspace = true }
+wallpaper = { workspace = true }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+dotenvy = "0.15"
+reqwest = { workspace = true }
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+
+# 见 `vendor/proc-macro-crate/` 与注释：glib-macros 0.18 的 proc-macro-crate 2.0.2
+# 用精确版本钉住 toml_datetime 0.6.3，与 EasyTier 依赖的 rust-i18n-support
+# （toml ^0.8.8）冲突。本地副本只放宽这两处版本约束。
 [patch.crates-io]
 proc-macro-crate = { path = "vendor/proc-macro-crate" }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.test]
+debug = 0
+
+[profile.test.package."*"]
+debug = false

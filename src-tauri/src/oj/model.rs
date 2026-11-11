@@ -37,15 +37,7 @@ pub(super) fn defaults() -> Vec<Site> {
     })
     .collect()
 }
-#[derive(Clone, Default, Serialize, Deserialize)]
-pub(crate) struct Secret {
-    pub username: String,
-    pub password: String,
-    #[serde(default)]
-    pub url: String,
-    #[serde(default)]
-    pub cookies: String,
-}
+pub use szu_core::storage::model::OjSecret as Secret;
 #[derive(Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum Session {

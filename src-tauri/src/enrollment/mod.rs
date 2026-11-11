@@ -9,8 +9,7 @@ mod contract;
 #[cfg(target_os = "linux")]
 mod linux_cookies;
 mod maintenance;
-pub(crate) mod mcp;
-mod model;
+pub(crate) mod model;
 mod official;
 mod platform;
 pub(crate) mod portal;

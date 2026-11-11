@@ -2,7 +2,6 @@ mod client;
 pub(crate) mod commands;
 mod companion;
 pub(crate) mod db;
-pub(crate) mod mcp;
 pub(crate) mod model;
 mod monitor;
 mod persistence;
@@ -36,10 +35,10 @@ impl OjStore {
         }
     }
 }
-struct Entry {
+pub(crate) struct Entry {
     client: Client,
-    epoch: u64,
-    username: String,
+    pub(crate) epoch: u64,
+    pub(crate) username: String,
     gate: tokio::sync::Mutex<()>,
     state: Mutex<Status>,
 }
@@ -55,10 +54,10 @@ struct Status {
     progress: BTreeMap<String, (i64, Value)>,
     judged_progress: BTreeMap<String, i64>,
 }
-struct Runtime {
+pub(crate) struct Runtime {
     data: Data,
     secrets: BTreeMap<String, Secret>,
-    entries: BTreeMap<String, Arc<Entry>>,
+    pub(crate) entries: BTreeMap<String, Arc<Entry>>,
     epoch: u64,
     companion_status: CompanionStatus,
     companion_requests: BTreeMap<String, i64>,
@@ -67,7 +66,7 @@ pub(crate) struct Service {
     app: Option<tauri::AppHandle>,
     credentials: SharedCredentialStore,
     path: PathBuf,
-    runtime: Mutex<Runtime>,
+    pub(crate) runtime: Mutex<Runtime>,
     pub(crate) state_subscribers: crate::ipc_channel::SubscriberPool<OjDeltaEvent>,
     /// 后台重验证去重（键：groups:/contests:/progress:）。
     revalidating: Mutex<HashSet<String>>,
@@ -938,7 +937,7 @@ impl Service {
     }
     /// 班级列表：命中缓存立即返回（无论多旧），过期条目后台重验证。
     /// `force` 用于页面“刷新”按钮，跳过缓存并阻塞拉取。
-    async fn groups(&self, id: &str, force: bool) -> Result<Vec<Group>, String> {
+    pub(crate) async fn groups(&self, id: &str, force: bool) -> Result<Vec<Group>, String> {
         if !force {
             if let Some((groups, updated_at)) = self.stored_groups(id) {
                 self.maybe_revalidate(format!("groups:{id}"), updated_at);
@@ -951,7 +950,7 @@ impl Service {
         Ok(groups)
     }
     /// 测验列表：与班级列表同样的缓存先行语义。
-    async fn contests(&self, id: &str, group: &str, force: bool) -> Result<Vec<Contest>, String> {
+    pub(crate) async fn contests(&self, id: &str, group: &str, force: bool) -> Result<Vec<Contest>, String> {
         protocol::id(&json!(group)).map_err(|e| e.message)?;
         let key = format!("{id}:{group}");
         if !force {

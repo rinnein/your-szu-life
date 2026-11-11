@@ -1,31 +1,7 @@
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// 待办注册项，与首页日历的 `ScheduleCategory` 逐字对应。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "kebab-case")]
-pub enum TodoKind {
-    OjQuiz,
-    UoocExam,
-    UoocHomework,
-    UoocCourseEnd,
-    LmsHomework,
-    ElectricityOutage,
-}
-
-impl TodoKind {
-    pub(crate) fn key(self) -> &'static str {
-        match self {
-            Self::OjQuiz => "oj-quiz",
-            Self::UoocExam => "uooc-exam",
-            Self::UoocHomework => "uooc-homework",
-            Self::UoocCourseEnd => "uooc-course-end",
-            Self::LmsHomework => "lms-homework",
-            Self::ElectricityOutage => "electricity-outage",
-        }
-    }
-}
+pub use szu_core::notification::TodoKind;
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]

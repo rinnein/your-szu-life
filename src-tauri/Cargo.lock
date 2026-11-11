@@ -8953,6 +8953,70 @@ dependencies = [
 ]
 
 [[package]]
+name = "szu-build-support"
+version = "0.14.0"
+
+[[package]]
+name = "szu-core"
+version = "0.14.0"
+dependencies = [
+ "android-native-keyring-store",
+ "argon2",
+ "base16384",
+ "base64 0.22.1",
+ "calamine",
+ "chacha20poly1305",
+ "chrono",
+ "cookie_store",
+ "des",
+ "encoding_rs",
+ "flate2",
+ "futures-util",
+ "gtk",
+ "hmac 0.12.1",
+ "image",
+ "imageproc",
+ "jni 0.21.1",
+ "jni 0.22.4",
+ "keyring",
+ "keyring-core",
+ "log",
+ "md-5",
+ "ndk-context",
+ "netdev",
+ "rand 0.9.5",
+ "regex",
+ "reqwest",
+ "reqwest_cookie_store",
+ "rustls-platform-verifier",
+ "schemars 1.2.3",
+ "scraper",
+ "serde",
+ "serde_json",
+ "sha1 0.10.7",
+ "sha2 0.10.9",
+ "soup3",
+ "ssid",
+ "szu-build-support",
+ "tauri",
+ "tauri-plugin-aptabase",
+ "tauri-plugin-log",
+ "tauri-plugin-notification",
+ "tauri-plugin-opener",
+ "tauri-plugin-os",
+ "tempfile",
+ "time",
+ "toasty",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
+ "uuid",
+ "wallpaper",
+ "webkit2gtk",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "tagptr"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11671,6 +11735,7 @@ dependencies = [
  "sha2 0.10.9",
  "soup3",
  "ssid",
+ "szu-core",
  "tauri",
  "tauri-build",
  "tauri-plugin-aptabase",

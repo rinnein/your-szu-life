@@ -107,7 +107,7 @@ impl Service {
             .collect();
         let _ = self.enqueue_checkins(ids, CheckinSource::Automatic);
     }
-    pub(super) fn enqueue_checkins(
+    pub(crate) fn enqueue_checkins(
         self: &Arc<Self>,
         ids: Vec<String>,
         source: CheckinSource,

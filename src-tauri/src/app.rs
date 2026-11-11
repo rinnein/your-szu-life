@@ -101,7 +101,7 @@ pub(crate) fn run() {
                 eprintln!("设置数据库初始化失败，本次使用默认设置: {error}");
             }
             // 旧的内部存储日志/模型要先搬到新位置，再初始化日志与模型服务。
-            crate::migrations::storage::migrate_legacy_storage(app.handle());
+            szu_core::migrations::storage::migrate_legacy_storage(app.handle());
             crate::logging::initialize(app.handle());
             if crate::analytics::app_key().is_empty() {
                 log::info!("未配置 Aptabase App Key，匿名统计已关闭");
@@ -123,7 +123,12 @@ pub(crate) fn run() {
             if let Err(error) = crate::embedding_model::initialize(app.handle()) {
                 log::error!("Embedding 模型服务初始化失败: {error}");
             }
-            if let Err(error) = crate::onboarding::initialize(app.handle()) {
+            // 本地模型来自 `szu-runtime`，core 不能反向依赖它们，因此就绪状态由这里探测后传入。
+            let local_models_ready = crate::ocr::status()
+                .is_ok_and(|status| status.status == "ready")
+                && crate::embedding_model::status()
+                    .is_ok_and(|status| status.status == "ready");
+            if let Err(error) = crate::onboarding::initialize(app.handle(), local_models_ready) {
                 log::warn!("初始化设置状态迁移失败，将在下次启动重试: {error}");
             }
             auth::webview::setup_login_injection(app.handle())?;

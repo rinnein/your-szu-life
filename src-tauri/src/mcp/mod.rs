@@ -4,6 +4,8 @@ pub mod server;
 pub mod service;
 pub mod tools;
 
+mod features;
+
 #[cfg(test)]
 mod tests;
 

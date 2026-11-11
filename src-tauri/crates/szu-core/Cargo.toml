@@ -1,0 +1,80 @@
+[package]
+name = "szu-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "泥深应用核心域：平台基础、凭据与统一认证、网络策略、校园网、电费与通知"
+
+[lib]
+name = "szu_core"
+path = "src/lib.rs"
+
+[build-dependencies]
+szu-build-support = { path = "../szu-build-support" }
+
+[dependencies]
+tauri = { workspace = true }
+tauri-plugin-notification = { workspace = true }
+tauri-plugin-log = { workspace = true }
+tauri-plugin-os = { workspace = true }
+tauri-plugin-opener = { workspace = true }
+tauri-plugin-aptabase = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+image = { workspace = true }
+time = { workspace = true }
+log = { workspace = true }
+encoding_rs = { workspace = true }
+reqwest = { workspace = true }
+sha1 = { workspace = true }
+hmac = { workspace = true }
+md-5 = { workspace = true }
+base64 = { workspace = true }
+argon2 = { workspace = true }
+rand = { workspace = true }
+chacha20poly1305 = { workspace = true }
+uuid = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tokio-tungstenite = { workspace = true }
+cookie_store = { workspace = true }
+reqwest_cookie_store = { workspace = true }
+scraper = { workspace = true }
+sha2 = { workspace = true }
+flate2 = { workspace = true }
+calamine = { workspace = true }
+toasty = { workspace = true }
+imageproc = { workspace = true }
+des = { workspace = true }
+regex = { workspace = true }
+futures-util = { workspace = true }
+base16384 = { workspace = true }
+schemars = { workspace = true }
+netdev = { workspace = true }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+keyring = { workspace = true }
+ssid = { workspace = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+android-native-keyring-store = { workspace = true }
+keyring-core = { workspace = true }
+jni = { workspace = true }
+jni022 = { workspace = true }
+ndk-context = { workspace = true }
+rustls-platform-verifier = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = { workspace = true }
+soup3 = { workspace = true }
+gtk = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { workspace = true }
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+wallpaper = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

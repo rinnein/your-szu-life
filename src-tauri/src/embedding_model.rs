@@ -12,7 +12,6 @@ pub(crate) type EmbeddingModelStatus = LocalModelStatus;
 static STORE: OnceLock<Arc<LocalModelStore>> = OnceLock::new();
 
 pub(crate) mod commands;
-pub(crate) mod mcp;
 
 pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     let manifest = Manifest::load(MANIFEST, "Embedding")?;

@@ -1,12 +1,11 @@
 mod ai;
-mod checkin;
+pub(crate) mod checkin;
 mod client;
 pub(crate) mod commands;
 pub(crate) mod db;
 mod discussion;
 mod duration;
 mod login;
-pub(crate) mod mcp;
 mod media;
 pub(crate) mod model;
 mod persistence;

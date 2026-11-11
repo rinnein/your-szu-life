@@ -6,23 +6,11 @@ use super::{
 use cookie_store::RawCookie;
 use cookie_store::{CookieDomain, CookieStore};
 use reqwest_cookie_store::CookieStoreMutex;
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 pub const VPN: &str = "https://webvpn.szu.edu.cn/";
 pub const EHALL: &str = "https://ehall.szu.edu.cn/jwapp/sys/xywccx/*default/index.do";
 pub const VPN_NAMES: [&str; 3] = ["_webvpn_key", "webvpn_username", "webvpn_username_NS_Sig"];
-#[derive(Default, Serialize, Deserialize)]
-pub struct Secrets {
-    pub student: String,
-    pub vpn: String,
-    pub campus: String,
-    pub webvpn: String,
-    pub ehall: String,
-    #[serde(default)]
-    pub academic_context: Option<serde_json::Value>,
-    pub campus_token: String,
-    pub webvpn_token: String,
-}
+pub use szu_core::storage::model::EnrollmentSecrets as Secrets;
 pub fn vpn_url(url: &reqwest::Url) -> bool {
     url.scheme() == "https"
         && url
@@ -278,21 +266,3 @@ pub fn gateway_only(source: &CookieStoreMutex) -> Result<String> {
     Ok(http)
 }
 
-impl Secrets {
-    pub(crate) fn validate_cookie_snapshots(&self) -> std::result::Result<(), String> {
-        use crate::webview_cookies::{Kind, SessionEnvelope};
-        for (raw, kind) in [
-            (&self.vpn, Kind::Gateway),
-            (&self.campus, Kind::Campus),
-            (&self.webvpn, Kind::Webvpn),
-            (&self.ehall, Kind::Academic),
-        ] {
-            if let Some(envelope) = SessionEnvelope::decode(raw)? {
-                if envelope.scope.kind != kind {
-                    return Err("学业认证 Cookie 范围无效".into());
-                }
-            }
-        }
-        Ok(())
-    }
-}
