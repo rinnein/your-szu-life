@@ -360,6 +360,7 @@ async fn start_inner(app: &AppHandle, store: &Arc<MeshStore>) -> Result<Running,
     store.replace_devices(vec![devices::offline_self(
         &device_id,
         &device_name,
+        &app.package_info().version.to_string(),
     )]);
 
     Ok(Running {

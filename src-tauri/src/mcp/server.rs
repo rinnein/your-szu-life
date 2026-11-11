@@ -40,7 +40,10 @@ impl ServerHandler for UnifiedSzuMcpService {
                 .enable_resources()
                 .build(),
         )
-        .with_server_info(Implementation::new("your-szu-life", env!("CARGO_PKG_VERSION")))
+        .with_server_info(Implementation::new(
+            "your-szu-life",
+            self.app.package_info().version.to_string(),
+        ))
         .with_instructions(
             "深圳大学生活助手（your-szu-life）本地公开 MCP 服务。提供深大统一认证、校园网认证、宿舍电费、选课与教务成绩、UOOC慕课答题、SZU OJ 在线评测、畅课待办与通知、首页待办聚合与截止提醒、督导巡课（课程直播/录播）、OCR 识别与页面直达能力。",
         )

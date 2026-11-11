@@ -193,12 +193,12 @@ async fn fetch_status(client: &reqwest::Client, port: u16, token: &str) -> Optio
 }
 
 /// 设备列表里的本机视图（启动早期、刷新循环还没跑过时给前端用）。
-pub fn offline_self(device_id: &str, device_name: &str) -> MeshDeviceView {
+pub fn offline_self(device_id: &str, device_name: &str, app_version: &str) -> MeshDeviceView {
     MeshDeviceView {
         device_id: device_id.to_owned(),
         name: device_name.to_owned(),
         platform: std::env::consts::OS.to_string(),
-        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        app_version: app_version.to_owned(),
         overlay_ip: None,
         is_self: true,
         reachable: false,

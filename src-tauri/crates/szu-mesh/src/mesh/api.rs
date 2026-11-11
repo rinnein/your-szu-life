@@ -221,7 +221,7 @@ pub async fn local_status(
         device_id: device_id.to_owned(),
         name: device_name.to_owned(),
         platform: std::env::consts::OS.to_string(),
-        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        app_version: app.package_info().version.to_string(),
         overlay_ip,
         sync_enabled: preferences::load::<bool>(preferences::SYNC_ENABLED)
             .ok()
