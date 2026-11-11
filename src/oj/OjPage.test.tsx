@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { ojProgressCache, progressScope } from "./progress-store";
 import { clearListCache } from "./list-cache";
+import { currentPageBackHandler } from "../page-back";
 import { listen } from "@tauri-apps/api/event";
 import OjPage, { SiteEditor } from "./OjPage";
 import { OjPaper } from "./OjPaper";
@@ -174,7 +175,11 @@ beforeEach(() => {
         { ...paper.contest, id: "1" },
         { ...paper.contest, id: "2", title: "未来测验", begin: paper.contest.now + 10000 },
       ];
-    if (command === "get_oj_groups") return [{ id: "2", name: "一班" }];
+    if (command === "get_oj_groups")
+      return [
+        { id: "2", name: "一班" },
+        { id: "3", name: "二班" },
+      ];
     if (command === "get_oj_paper") return structuredClone(paper);
     if (command === "get_oj_records") return { records: [], uncertain: [] };
     if (command === "submit_oj") return { id: 100 };
@@ -201,8 +206,73 @@ it("loads classes through the public page", async () => {
   search.site = "test";
   render(<OjPage />);
   expect(await screen.findByText("一班")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "查看测验" }));
-  expect(nav.push).toHaveBeenCalledWith("/study/oj?site=test&group=2");
+  fireEvent.click(screen.getAllByRole("button", { name: "查看测验" })[0]);
+  expect(nav.replace).toHaveBeenCalledWith("/study/oj?site=test&group=2", {
+    resetScroll: true,
+  });
+});
+it("enters the only class without a manual click", async () => {
+  search.site = "test";
+  const previous = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (command, args) =>
+    command === "get_oj_groups" ? [{ id: "2", name: "一班" }] : previous(command, args),
+  );
+  render(<OjPage />);
+  await waitFor(() =>
+    expect(nav.replace).toHaveBeenCalledWith("/study/oj?site=test&group=2", {
+      resetScroll: true,
+    }),
+  );
+});
+it("opens a contest inside the system's logical page", async () => {
+  search.site = "test";
+  search.group = "2";
+  const view = render(<OjPage />);
+  const list = await waitFor(() => {
+    const element = view.container.querySelector("m-list");
+    expect(element).not.toBeNull();
+    return element as HTMLElement;
+  });
+  await waitFor(() =>
+    expect(list.shadowRoot?.querySelectorAll('[role="listitem"]')).toHaveLength(2),
+  );
+  act(() => {
+    list.dispatchEvent(new CustomEvent("activate", { detail: { value: "1" } }));
+  });
+  expect(nav.replace).toHaveBeenCalledWith("/study/oj?site=test&group=2&contest=1", {
+    resetScroll: true,
+  });
+  expect(nav.push).not.toHaveBeenCalled();
+});
+it("returns from the workspace to the contest list before leaving the system", async () => {
+  search.site = "test";
+  search.group = "2";
+  search.contest = "1";
+  render(<OjPage />);
+  await screen.findByRole("heading", { name: "测验" });
+  // 顶栏返回与 Android 系统返回共用同一个页内处理器。
+  await waitFor(() => expect(currentPageBackHandler()).toBeTypeOf("function"));
+  fireEvent.click(screen.getByRole("button", { name: "返回测验列表" }));
+  expect(nav.replace).toHaveBeenCalledWith("/study/oj?site=test&group=2", {
+    resetScroll: true,
+  });
+  expect(nav.back).not.toHaveBeenCalled();
+});
+it("fills the class into a contest-only deep link", async () => {
+  search.site = "test";
+  search.contest = "1";
+  render(<OjPage />);
+  await screen.findByRole("heading", { name: "测验" });
+  await waitFor(() =>
+    expect(nav.replace).toHaveBeenCalledWith("/study/oj?site=test&group=2&contest=1"),
+  );
+});
+it("returns to the class list from the contest list", async () => {
+  search.site = "test";
+  search.group = "2";
+  render(<OjPage />);
+  fireEvent.click(await screen.findByRole("button", { name: "切换班级" }));
+  expect(nav.replace).toHaveBeenCalledWith("/study/oj?site=test", { resetScroll: true });
 });
 it("reuses the cached class list when the page is reopened", async () => {
   search.site = "test";

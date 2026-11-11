@@ -30,12 +30,15 @@ export function ModuleHeader({
   title,
   description,
   backLabel = "返回上一页",
+  onBack,
   actions,
   eyebrow,
 }: {
   title: string;
   description?: string;
   backLabel?: string;
+  /** 覆盖逻辑栈返回，用于把子状态收回页内（如 OJ 答题页回测验列表）。 */
+  onBack?: () => void;
   actions?: ReactNode;
   eyebrow?: string;
 }) {
@@ -45,6 +48,7 @@ export function ModuleHeader({
       description={description}
       eyebrow={eyebrow}
       backLabel={backLabel}
+      onBack={onBack}
       actions={actions}
     />
   );

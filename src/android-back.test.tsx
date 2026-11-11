@@ -12,6 +12,7 @@ import {
 } from "@tanstack/react-router";
 import { AndroidBackNavigation } from "./AndroidBackNavigation";
 import { LogicalNavigationProvider } from "./logical-navigation";
+import { usePageBackHandler } from "./page-back";
 import { BottomSheet, Button, Dialog, Drawer } from "material/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { activeOverlay, installAndroidBack, type AndroidBackBridge } from "./android-back";
@@ -298,6 +299,43 @@ it("connects real TanStack route resolution and survives StrictMode setup/cleanu
     await router.navigate({ to: "/settings" });
   });
   await waitFor(() => expect(bridge.postMessage).toHaveBeenLastCalledWith("route"));
+});
+
+it("lets an in-page back handler consume the gesture before the system closes the window", async () => {
+  const pageBack = vi.fn();
+  function Probe() {
+    const [active, setActive] = useState(true);
+    usePageBackHandler(active ? pageBack : undefined);
+    return (
+      <button type="button" onClick={() => setActive(false)}>
+        收起答题页
+      </button>
+    );
+  }
+  const root = createRootRoute({
+    component: () => (
+      <LogicalNavigationProvider>
+        <AndroidBackNavigation />
+        <Outlet />
+      </LogicalNavigationProvider>
+    ),
+  });
+  const oj = createRoute({ getParentRoute: () => root, path: "/study/oj", component: Probe });
+  const router = createRouter({
+    routeTree: root.addChildren([oj]),
+    history: createMemoryHistory({ initialEntries: ["/study/oj"] }),
+  });
+  render(<RouterProvider router={router} />);
+  await waitFor(() => expect(bridge.postMessage).toHaveBeenLastCalledWith("route"));
+
+  await back();
+  expect(pageBack).toHaveBeenCalledOnce();
+
+  // 收回子状态后处理器注销，下一次返回交回系统关闭子窗口。
+  fireEvent.click(screen.getByRole("button", { name: "收起答题页" }));
+  await waitFor(() => expect(bridge.postMessage).toHaveBeenLastCalledWith("system"));
+  await back();
+  expect(pageBack).toHaveBeenCalledOnce();
 });
 
 it("does not turn a stale overlay dismissal into a child-window route change", async () => {

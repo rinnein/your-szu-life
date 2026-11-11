@@ -7,6 +7,7 @@ import { Card, Checkbox, Dialog, LoadingIndicator, TextField, Button } from "mat
 import { Chip, bindField, toast } from "../ui";
 import { ModuleHeader, PageShell } from "../components";
 import { useLogicalNavigation } from "../logical-navigation";
+import { usePageBackHandler } from "../page-back";
 import { OjPaper } from "./OjPaper";
 import {
   type Site,
@@ -55,9 +56,16 @@ export default function OjPage() {
   const ocrStatus = useOcrModelStatus();
   const site = snapshot?.sites.find((s) => s.id === search.site);
   const isOverview = !search.site && !search.group && !search.contest && !search.problem;
+  // 系统子页把班级/测验/答题收在同一个逻辑页里，阶段切换只替换 URL 子状态。
+  const enabledSiteId = site?.enabled ? site.id : undefined;
+  const inDetail = Boolean(enabledSiteId && search.contest);
   useEffect(() => {
     if (!isOverview) setConfigurationOpen(false);
   }, [isOverview]);
+  // replace 不重挂载组件，阶段切换要自己清掉上一阶段的筛选词。
+  useEffect(() => {
+    setQuery("");
+  }, [search.site, search.group, search.contest]);
   useEffect(() => {
     if (search.site && search.group) {
       try {
@@ -113,17 +121,17 @@ export default function OjPage() {
   // 后端缓存刷新后直接更新当前列表，不再为每个 oj-cache-changed 重新 invoke。
   useEffect(() => {
     if (!site?.enabled || search.contest) return;
+    // 测验阶段也同步班级列表：只有单个班级时「切换班级」没有意义。
+    const channelGroups = lists.groups[site.id];
+    if (channelGroups) {
+      setGroups(channelGroups);
+      writeGroups(site.id, channelGroups);
+    }
     if (search.group) {
       const rows = lists.contests[`${site.id}:${search.group}`];
       if (rows) {
         setContests(rows);
         writeContests(site.id, search.group, rows);
-      }
-    } else {
-      const rows = lists.groups[site.id];
-      if (rows) {
-        setGroups(rows);
-        writeGroups(site.id, rows);
       }
     }
   }, [lists, site?.id, site?.enabled, search.group, search.contest]);
@@ -177,6 +185,14 @@ export default function OjPage() {
       active = false;
     };
   }, [site?.id, site?.username, site?.enabled, search.group, search.contest, refresh]);
+  // 系统只有一个班级时没有可选的余地：直接进入该班级，跳过手动点击。
+  // 等 busy 结束再判断，避免拿正在刷新的旧列表抢跑。
+  useEffect(() => {
+    if (!enabledSiteId || search.group || search.contest || busy || groups.length !== 1) return;
+    void nav.replace(route({ site: enabledSiteId, group: groups[0].id }), {
+      resetScroll: true,
+    });
+  }, [enabledSiteId, search.group, search.contest, busy, groups, nav]);
   useEffect(() => {
     if (ocrStatus?.status === "ready") setOcrRequired(false);
   }, [ocrStatus?.status]);
@@ -220,6 +236,14 @@ export default function OjPage() {
         writeGroups(site!.id, rows);
       }
     });
+  // 答题页是同一个逻辑页里的子状态：返回先收回测验列表，而不是退出系统。
+  const backToList = useCallback(async () => {
+    if (!enabledSiteId || !search.contest) return;
+    await nav.replace(route({ site: enabledSiteId, group: search.group }), {
+      resetScroll: true,
+    });
+  }, [enabledSiteId, nav, search.contest, search.group]);
+  usePageBackHandler(inDetail ? backToList : undefined);
   const items =
     snapshot?.sites.filter((s) =>
       `${s.name} ${s.url} ${s.username}`.toLowerCase().includes(query.toLowerCase()),
@@ -237,6 +261,8 @@ export default function OjPage() {
       <ModuleHeader
         title={site?.name ?? "OJ"}
         description={site ? site.url : "OJ · 班级、测验与练习"}
+        backLabel={inDetail ? "返回测验列表" : undefined}
+        onBack={inDetail ? () => void backToList() : undefined}
         actions={
           <>
             <Button
@@ -273,6 +299,16 @@ export default function OjPage() {
             >
               刷新
             </Button>
+            {enabledSiteId && search.group && !search.contest && groups.length !== 1 && (
+              <Button
+                variant="tonal"
+                onClick={() =>
+                  void nav.replace(route({ site: enabledSiteId }), { resetScroll: true })
+                }
+              >
+                切换班级
+              </Button>
+            )}
             {snapshot?.desktop && isOverview && (
               <Button
                 variant="tonal"
@@ -426,7 +462,11 @@ export default function OjPage() {
                       <div slot="actions">
                         <Button
                           variant="tonal"
-                          onClick={() => void nav.push(route({ site: site.id, group: g.id }))}
+                          onClick={() =>
+                            void nav.replace(route({ site: site.id, group: g.id }), {
+                              resetScroll: true,
+                            })
+                          }
                         >
                           查看测验
                         </Button>
@@ -443,7 +483,10 @@ export default function OjPage() {
                 contests={contests}
                 query={query}
                 onOpen={(contest) =>
-                  void nav.push(route({ site: site.id, group: search.group, contest: contest.id }))
+                  void nav.replace(
+                    route({ site: site.id, group: search.group, contest: contest.id }),
+                    { resetScroll: true },
+                  )
                 }
               />
             )}
@@ -462,6 +505,18 @@ export default function OjPage() {
             tab={search.tab}
             desktop={snapshot?.desktop ?? false}
             port={snapshot?.companionPort ?? 27121}
+            onGroupResolved={(groupId) => {
+              // 通知/待办深链只带 contest：补上班级后返回键才能回到该班的测验列表。
+              if (search.group || !search.contest) return;
+              void nav.replace(
+                route({
+                  site: site.id,
+                  group: groupId,
+                  contest: search.contest,
+                  problem: search.problem,
+                }),
+              );
+            }}
           />
         )}
         {edit && (
@@ -471,7 +526,9 @@ export default function OjPage() {
             saved={async (id) => {
               setEdit(undefined);
               await refresh();
-              await nav.push(route({ site: id }));
+              // 编辑的正是当前系统子页时留在本页，不再压一层窗口。
+              if (search.site === id) await nav.replace(route({ site: id }), { resetScroll: true });
+              else await nav.push(route({ site: id }));
             }}
           />
         )}

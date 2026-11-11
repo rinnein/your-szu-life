@@ -165,6 +165,7 @@ export function OjPaper({
   tab,
   desktop,
   port,
+  onGroupResolved,
 }: {
   site: Site;
   contestId: string;
@@ -173,6 +174,8 @@ export function OjPaper({
   tab: string;
   desktop: boolean;
   port: number;
+  /** 深链只有 contest、没有 group 时，用 paper 自带的班级补全 URL。 */
+  onGroupResolved?: (groupId: string) => void;
 }) {
   const nav = useLogicalNavigation();
   const [paper, setPaper] = useState<Paper>();
@@ -274,6 +277,14 @@ export function OjPaper({
       void flush().catch(() => {});
     };
   }, [load, flush]);
+  // 通知/待办深链只有 site + contest：paper 自带班级，用它把 URL 补全一次。
+  const resolvedGroup = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const group = paper?.contest.groupId;
+    if (groupId || !group || resolvedGroup.current === group) return;
+    resolvedGroup.current = group;
+    onGroupResolved?.(group);
+  }, [groupId, onGroupResolved, paper?.contest.groupId]);
   const applyPreferences = useCallback(
     async (preferences: Preferences) => {
       const current = loaded.current;
