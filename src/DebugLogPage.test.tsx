@@ -183,4 +183,22 @@ describe("debug log page", () => {
     });
     expect(navigate).not.toHaveBeenCalled();
   });
+
+  it("exits demo mode through set_demo_mode and shows the demo banner", async () => {
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_debug_mode") return { enabled: true, demoMode: true, logCount: 0 };
+      if (command === "get_analytics_settings") return { enabled: true };
+      if (command === "get_log_info") return mockLogInfo;
+      return undefined;
+    });
+
+    render(<DebugLogPage />);
+    expect(await screen.findByText("演示模式进行中")).toBeInTheDocument();
+
+    const exitButton = screen.getByRole("button", { name: /退出演示模式/ });
+    fireEvent.click(exitButton);
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("set_demo_mode", { enabled: false });
+    });
+  });
 });

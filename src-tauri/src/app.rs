@@ -1,6 +1,6 @@
 use crate::{
-    app_content, auth, campus_network, campus_payments, file_manager, jxxk, lms, netproxy, oj,
-    onboarding, settings,
+    app_content, auth, campus_network, campus_payments, demo, file_manager, jxxk, lms, netproxy,
+    oj, onboarding, settings,
     storage::{PlatformCredentialStore, SharedCredentialStore},
     uooc,
 };
@@ -155,6 +155,8 @@ pub(crate) fn run() {
             }
             if let Some(store) = app.try_state::<campus_network::CampusNetworkStore>() {
                 campus_network::diagnostics::initialize(app.handle(), &store);
+                demo::initialize(&store);
+
                 if let Ok(overview) = campus_network::service::get_network_overview(&store) {
                     netproxy::set_in_campus_network(
                         overview.region != campus_network::model::NetworkRegion::None,
@@ -364,6 +366,7 @@ pub(crate) fn run() {
             campus_network::commands::get_debug_mode,
             campus_network::commands::set_debug_mode,
             campus_network::commands::clear_debug_logs,
+            demo::commands::set_demo_mode,
             campus_network::commands::get_log_info,
             campus_network::commands::open_log_file,
             campus_network::commands::set_log_level,

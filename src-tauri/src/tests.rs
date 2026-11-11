@@ -11,6 +11,7 @@ fn command_names_match_handlers_manifest_and_local_permissions() {
         include_str!("storage/commands.rs"),
         include_str!("settings/commands.rs"),
         include_str!("campus_network/commands.rs"),
+        include_str!("demo/commands.rs"),
         include_str!("campus_payments/commands.rs"),
         include_str!("uooc/commands.rs"),
         include_str!("oj/commands.rs"),

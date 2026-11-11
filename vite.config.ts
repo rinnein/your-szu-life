@@ -1,4 +1,5 @@
 import { defineConfig, lazyPlugins } from "vite-plus";
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import tailwindcss from "@tailwindcss/vite";
@@ -13,6 +14,16 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   oxc: { target: WEBVIEW_TARGET },
   build: { target: WEBVIEW_TARGET, cssTarget: WEBVIEW_TARGET, cssMinify: "lightningcss" },
+  resolve: {
+    alias: [
+      {
+        // 演示模式：所有裸导入的 core（业务代码与官方插件）统一经 src/demo/shim.ts
+        // 分发 mock；shim 内部用包内真实路径转发其余导出，避免 alias 自环。
+        find: /^@tauri-apps\/api\/core$/,
+        replacement: fileURLToPath(new URL("./src/demo/shim.ts", import.meta.url)),
+      },
+    ],
+  },
   optimizeDeps: {
     // 只扫描应用入口；默认递归扫描 HTML 会把 output/playwright 中的浏览器资源也算进去。
     entries: ["index.html"],

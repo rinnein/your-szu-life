@@ -10,6 +10,7 @@ pub(crate) mod commands;
 pub(crate) mod mcp;
 
 pub(crate) const BASELINE_MARKER: &str = "__baseline__";
+pub(crate) const WELCOME: &str = "welcome";
 pub(crate) const AUTH: &str = "auth";
 pub(crate) const STORAGE: &str = "storage";
 pub(crate) const DORMITORY: &str = "dormitory";
@@ -53,7 +54,12 @@ pub(crate) struct OnboardingDefinition {
     pub skippable: bool,
 }
 
-pub(crate) const ONBOARDING_DEFINITION: [OnboardingDefinition; 7] = [
+pub(crate) const ONBOARDING_DEFINITION: [OnboardingDefinition; 8] = [
+    OnboardingDefinition {
+        id: WELCOME,
+        revision: 1,
+        skippable: false,
+    },
     OnboardingDefinition {
         id: AUTH,
         revision: 1,
@@ -136,21 +142,36 @@ pub(crate) fn compute_state(
     definitions: &[OnboardingDefinition],
     rows: &BTreeMap<String, (String, u32)>,
     has_profile: bool,
+    demo_active: bool,
 ) -> OnboardingStateView {
-    let steps: Vec<OnboardingStepView> = definitions
+    let satisfied: Vec<bool> = definitions
         .iter()
         .map(|definition| {
-            let stored = rows.get(definition.id);
-            let stored_status = stored.and_then(|(status, _)| OnboardingStatus::parse(status));
-            let satisfied = stored.is_some_and(|(status, revision)| {
+            rows.get(definition.id).is_some_and(|(status, revision)| {
                 *revision >= definition.revision
                     && OnboardingStatus::parse(status).is_some_and(|status| {
                         status != OnboardingStatus::Pending
                     })
-            });
-            let status = if satisfied {
-                stored_status.unwrap_or(OnboardingStatus::Configured)
+            })
+        })
+        .collect();
+    // 欢迎页只面向全新初始化：其它步骤已有进度（或资料已完整）的老用户不再呈现。
+    let has_progress = has_profile
+        || definitions
+            .iter()
+            .zip(&satisfied)
+            .any(|(definition, ok)| *ok && definition.id != WELCOME);
+    let steps: Vec<OnboardingStepView> = definitions
+        .iter()
+        .enumerate()
+        .map(|(index, definition)| {
+            let status = if satisfied[index] {
+                rows.get(definition.id)
+                    .and_then(|(status, _)| OnboardingStatus::parse(status))
+                    .unwrap_or(OnboardingStatus::Configured)
             } else if definition.id == AUTH && has_profile {
+                OnboardingStatus::Configured
+            } else if definition.id == WELCOME && has_progress {
                 OnboardingStatus::Configured
             } else {
                 OnboardingStatus::Pending
@@ -163,13 +184,20 @@ pub(crate) fn compute_state(
             }
         })
         .collect();
-    let needs_setup = steps
-        .iter()
-        .any(|step| step.status == OnboardingStatus::Pending);
-    let current_step = steps
-        .iter()
-        .find(|step| step.status == OnboardingStatus::Pending)
-        .map(|step| step.id.clone());
+    // 演示模式只在前端展示 mock 数据，不参与真实进度；此期间向导视为已完成，
+    // 退出演示后恢复原状，不动任何已保存的步骤行。
+    let needs_setup = !demo_active
+        && steps
+            .iter()
+            .any(|step| step.status == OnboardingStatus::Pending);
+    let current_step = if demo_active {
+        None
+    } else {
+        steps
+            .iter()
+            .find(|step| step.status == OnboardingStatus::Pending)
+            .map(|step| step.id.clone())
+    };
     OnboardingStateView {
         steps,
         needs_setup,
@@ -180,7 +208,7 @@ pub(crate) fn compute_state(
 pub(crate) fn state_view() -> Result<OnboardingStateView, String> {
     let has_profile = has_complete_profile();
     let rows = crate::preferences::load_onboarding_rows()?;
-    let state = compute_state(&ONBOARDING_DEFINITION, &rows, has_profile);
+    let state = compute_state(&ONBOARDING_DEFINITION, &rows, has_profile, crate::demo::is_enabled());
     // 资料已完整时把 auth 的派生结果补写回 DB，避免桌面端登录后重载又把它当未完成。
     if has_profile {
         if let Some(definition) = definition(AUTH) {
@@ -253,8 +281,11 @@ mod tests {
         let ids: Vec<_> = ONBOARDING_DEFINITION.iter().map(|item| item.id).collect();
         assert_eq!(
             ids,
-            vec![AUTH, STORAGE, DORMITORY, APPEARANCE, LOCAL_MODEL, AI, MCP]
+            vec![
+                WELCOME, AUTH, STORAGE, DORMITORY, APPEARANCE, LOCAL_MODEL, AI, MCP
+            ]
         );
+        assert!(!definition(WELCOME).unwrap().skippable);
         assert!(!definition(AUTH).unwrap().skippable);
         assert!(!definition(STORAGE).unwrap().skippable);
         assert!(definition(DORMITORY).unwrap().skippable);
@@ -278,6 +309,7 @@ mod tests {
                 (MCP, "configured", 1),
             ]),
             false,
+            false,
         );
         assert!(!state.needs_setup);
         assert_eq!(state.current_step, None);
@@ -286,7 +318,11 @@ mod tests {
     #[test]
     fn revision_bump_makes_a_completed_item_pending_again() {
         let mut definitions = ONBOARDING_DEFINITION;
-        definitions[5].revision = 2;
+        let ai_index = definitions
+            .iter()
+            .position(|item| item.id == AI)
+            .expect("AI 步骤应存在于定义中");
+        definitions[ai_index].revision = 2;
         let state = compute_state(
             &definitions,
             &rows(&[
@@ -299,6 +335,7 @@ mod tests {
                 (MCP, "configured", 1),
             ]),
             false,
+            false,
         );
         let ai = state.steps.iter().find(|step| step.id == AI).unwrap();
         assert_eq!(ai.status, OnboardingStatus::Pending);
@@ -308,7 +345,7 @@ mod tests {
 
     #[test]
     fn complete_profile_derives_auth_as_configured_without_a_row() {
-        let state = compute_state(&ONBOARDING_DEFINITION, &rows(&[]), true);
+        let state = compute_state(&ONBOARDING_DEFINITION, &rows(&[]), true, false);
         let auth = state.steps.iter().find(|step| step.id == AUTH).unwrap();
         assert_eq!(auth.status, OnboardingStatus::Configured);
         assert_eq!(state.current_step.as_deref(), Some(STORAGE));
@@ -320,8 +357,43 @@ mod tests {
             &ONBOARDING_DEFINITION,
             &rows(&[(AUTH, "pending", 1)]),
             false,
+            false,
         );
         let auth = state.steps.iter().find(|step| step.id == AUTH).unwrap();
         assert_eq!(auth.status, OnboardingStatus::Pending);
+    }
+
+    #[test]
+    fn fresh_install_starts_at_the_welcome_step() {
+        let state = compute_state(&ONBOARDING_DEFINITION, &rows(&[]), false, false);
+        assert!(state.needs_setup);
+        assert_eq!(state.current_step.as_deref(), Some(WELCOME));
+        let welcome = state.steps.iter().find(|step| step.id == WELCOME).unwrap();
+        assert_eq!(welcome.status, OnboardingStatus::Pending);
+    }
+
+    #[test]
+    fn existing_progress_skips_the_welcome_step() {
+        let state = compute_state(
+            &ONBOARDING_DEFINITION,
+            &rows(&[(STORAGE, "configured", 1)]),
+            false,
+            false,
+        );
+        let welcome = state.steps.iter().find(|step| step.id == WELCOME).unwrap();
+        assert_eq!(welcome.status, OnboardingStatus::Configured);
+        assert_eq!(state.current_step.as_deref(), Some(AUTH));
+    }
+
+    #[test]
+    fn demo_mode_defers_the_wizard_without_touching_rows() {
+        let rows = rows(&[(STORAGE, "configured", 1)]);
+        let state = compute_state(&ONBOARDING_DEFINITION, &rows, false, true);
+        assert!(!state.needs_setup);
+        assert_eq!(state.current_step, None);
+        // 步骤行保持原样，退出演示后恢复真实进度。
+        let resumed = compute_state(&ONBOARDING_DEFINITION, &rows, false, false);
+        assert!(resumed.needs_setup);
+        assert_eq!(resumed.current_step.as_deref(), Some(AUTH));
     }
 }

@@ -164,6 +164,7 @@ permissions = [
   "allow-get-debug-mode",
   "allow-set-debug-mode",
   "allow-clear-debug-logs",
+  "allow-set-demo-mode",
   "allow-get-log-info",
   "allow-open-log-file",
   "allow-set-log-level",

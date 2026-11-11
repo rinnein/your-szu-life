@@ -445,6 +445,7 @@ fn main() {
             "get_debug_mode",
             "set_debug_mode",
             "clear_debug_logs",
+            "set_demo_mode",
             "get_log_info",
             "open_log_file",
             "set_log_level",

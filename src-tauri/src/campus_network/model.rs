@@ -156,6 +156,7 @@ pub struct DormPortalSessionInfo {
 #[serde(rename_all = "camelCase")]
 pub struct DebugModeView {
     pub enabled: bool,
+    pub demo_mode: bool,
     pub log_count: usize,
 }
 

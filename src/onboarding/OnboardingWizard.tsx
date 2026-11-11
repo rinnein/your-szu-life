@@ -4,6 +4,7 @@ import { Button, Card, LoadingIndicator, Progress } from "material/react";
 import { toast } from "../ui";
 import { BrandMark } from "../components";
 import { PageSurface } from "../shell/PageSurface";
+import { useDemoModeActivation } from "../shell/use-demo-mode";
 import { useAuth } from "../auth";
 import type { StepNextAction } from "../step-next-action";
 import { completeOnboardingStep, skipOnboardingStep, type OnboardingState } from "./api";
@@ -36,6 +37,7 @@ export function OnboardingWizard({
   onFinished: () => void;
 }) {
   const { state: authState } = useAuth();
+  const handleBrandTap = useDemoModeActivation();
   const [plan, setPlan] = useState<StepPlan[]>(() =>
     buildPlan(state, !("Authenticated" in authState)),
   );
@@ -157,7 +159,14 @@ export function OnboardingWizard({
       <PageSurface fullscreen maxWidth="md">
         <div className="onboarding-wizard">
           <header className="flex flex-col items-center text-center gap-2">
-            <BrandMark large />
+            <button
+              type="button"
+              className="brand-mark-trigger"
+              aria-label="应用图标，连续点击 5 次进入演示模式"
+              onClick={handleBrandTap}
+            >
+              <BrandMark large />
+            </button>
             <h1 className="text-xl font-bold text-foreground">初始化设置</h1>
             <p className="text-sm text-muted">
               第 {index + 1} / {plan.length} 步 · {meta.label}

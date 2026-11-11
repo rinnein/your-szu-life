@@ -8,7 +8,7 @@ import { setAnalyticsEnabled as setAnalyticsTracking } from "./analytics";
 import { LuFileText, LuFolderOpen, LuPower, LuRefreshCw, LuTrash2 } from "react-icons/lu";
 import { isAndroidPlatform } from "./os-info";
 
-type DebugMode = { enabled: boolean; logCount: number };
+type DebugMode = { enabled: boolean; demoMode?: boolean; logCount: number };
 
 type LogFileInfo = {
   name: string;
@@ -187,8 +187,14 @@ export default function DebugLogPage() {
 
   const handleDisable = async () => {
     try {
-      await invoke("set_debug_mode", { enabled: false });
-      toast.info("调试模式已关闭");
+      if (mode.demoMode) {
+        // 演示模式基于调试模式：一并关闭并回到初始化向导。
+        await invoke("set_demo_mode", { enabled: false });
+        toast.info("已退出演示模式");
+      } else {
+        await invoke("set_debug_mode", { enabled: false });
+        toast.info("调试模式已关闭");
+      }
     } catch (cause) {
       toast.danger(`关闭调试模式失败: ${String(cause)}`);
     }
@@ -222,6 +228,14 @@ export default function DebugLogPage() {
 
   return (
     <div className="grid gap-6">
+      {mode.demoMode && (
+        <Banner status="warning" className="w-full">
+          <Banner.Title>演示模式进行中</Banner.Title>
+          <Banner.Description>
+            界面上的登录数据均为模拟数据，仅用于检查样式；退出后会回到初始化向导。
+          </Banner.Description>
+        </Banner>
+      )}
       {busy && !logInfo ? (
         <div className="flex items-center justify-center py-12">
           <LoadingIndicator size={40} />
@@ -394,7 +408,7 @@ export default function DebugLogPage() {
               onClick={() => void handleDisable()}
             >
               <LuPower className="size-4" />
-              <span>关闭调试模式</span>
+              <span>{mode.demoMode ? "退出演示模式" : "关闭调试模式"}</span>
             </Button>
           </div>
         </>

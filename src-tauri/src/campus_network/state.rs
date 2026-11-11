@@ -56,6 +56,13 @@ impl CampusNetworkStore {
             *evidence = RegionEvidence::default();
         }
     }
+    /// 调试模式原子量的跨模块读取/写入（演示模式需要同步它）。
+    pub(crate) fn debug_enabled(&self) -> bool {
+        self.debug_enabled.load(Ordering::Acquire)
+    }
+    pub(crate) fn force_debug_enabled(&self, enabled: bool) {
+        self.debug_enabled.store(enabled, Ordering::Release);
+    }
     pub(super) fn begin_login(&self) -> Result<LoginGuard, String> {
         self.operations.begin_login()
     }

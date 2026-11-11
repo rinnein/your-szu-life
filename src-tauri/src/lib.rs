@@ -10,6 +10,7 @@ pub(crate) mod aria2;
 mod auth;
 mod campus_network;
 mod campus_payments;
+mod demo;
 #[cfg(desktop)]
 mod desktop;
 mod embedding_model;

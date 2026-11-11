@@ -17,14 +17,15 @@ pub(crate) fn initialize(_app: &tauri::AppHandle, store: &CampusNetworkStore) {
     }
 }
 
-pub(super) fn mode_view(store: &CampusNetworkStore) -> DebugModeView {
+pub(crate) fn mode_view(store: &CampusNetworkStore) -> DebugModeView {
     DebugModeView {
         enabled: store.debug_enabled.load(Ordering::Acquire),
+        demo_mode: crate::demo::is_enabled(),
         log_count: 0,
     }
 }
 
-pub(super) fn set_mode(
+pub(crate) fn set_mode(
     app: &tauri::AppHandle,
     store: &CampusNetworkStore,
     enabled: bool,

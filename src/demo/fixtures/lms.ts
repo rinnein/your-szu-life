@@ -1,0 +1,65 @@
+import type { LmsSnapshot } from "../../lms/types";
+
+export const mockLmsSnapshot: LmsSnapshot = {
+  session: "ready",
+  message: "",
+  profile: { uid: 900001, name: "演示同学", userNo: "20250001" },
+  todos: [
+    {
+      course_code: "CS101",
+      course_id: 101,
+      course_name: "数据结构与算法",
+      course_type: 1,
+      end_time: new Date(Date.now() + 3 * 86_400_000).toISOString(),
+      id: 9001,
+      is_locked: false,
+      is_student: true,
+      prerequisites: [],
+      title: "第五周作业：二叉树",
+      type: "homework",
+    },
+    {
+      course_code: "CS205",
+      course_id: 205,
+      course_name: "操作系统",
+      course_type: 1,
+      end_time: new Date(Date.now() + 6 * 86_400_000).toISOString(),
+      id: 9002,
+      is_locked: false,
+      is_student: true,
+      prerequisites: [],
+      title: "实验三：进程调度",
+      type: "homework",
+    },
+  ],
+  notifications: [
+    {
+      id: "n-1",
+      type: "homework",
+      top: false,
+      timestamp: Date.now() - 3_600_000,
+      payload: {
+        course_id: 101,
+        course_name: "数据结构与算法",
+        homework_id: 9001,
+        homework_title: "第五周作业：二叉树",
+        submit_closed_time: new Date(Date.now() + 3 * 86_400_000).toISOString(),
+      },
+      unread: true,
+    },
+    {
+      id: "n-2",
+      type: "notice",
+      top: true,
+      timestamp: Date.now() - 86_400_000,
+      payload: {
+        activity_title: "关于期末考试安排的通知",
+        course_name: "操作系统",
+        created_at: new Date(Date.now() - 86_400_000).toISOString(),
+      },
+      unread: false,
+    },
+  ],
+  unreadCount: 1,
+  fetchedAt: Date.now() - 60_000,
+};
