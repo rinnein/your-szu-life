@@ -12,6 +12,7 @@ pub(crate) fn run() {
     let electricity_credentials = credentials.clone();
     let academic_credentials = credentials.clone();
     let proxy_credentials = credentials.clone();
+    let sync_credentials = credentials.clone();
     let (daily_writer, file_filter) = crate::logging::create_daily_writer();
     let file_dispatch = tauri_plugin_log::fern::Dispatch::new()
         .format(move |out, message, record| {
@@ -42,6 +43,8 @@ pub(crate) fn run() {
         .manage(settings::SettingsStore::new(Arc::new(
             PlatformCredentialStore,
         )))
+        .manage(Arc::new(crate::mesh::MeshStore::new()))
+        .manage(Arc::new(crate::settings_sync::engine::SyncStore::new()))
         .manage(netproxy::ProxyStore::new(proxy_credentials));
     // 必须最先注册：重复启动的进程在这里把参数交给已运行实例后退出。
     #[cfg(desktop)]
@@ -61,7 +64,7 @@ pub(crate) fn run() {
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([
-                    // 控制台/系统日志只收 Info 及以上：库的 DEBUG/TRACE 会把真机
+                    // 控制台/系统日志只收 Warn 及以上：库的 DEBUG/TRACE 会把真机
                     // logcat 刷到每秒上万行（Android 还会按每进程配额丢弃）。
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout)
                         .filter(crate::logging::quiet_targets),
@@ -71,7 +74,7 @@ pub(crate) fn run() {
                     .filter(file_filter),
                     // WebView 目标每转发一条日志都要过一次 JNI。若放行 `jni` 自己的
                     // 调试日志，「转发 → JNI 调用 → jni 日志 → 再转发」会互相放大，
-                    // 真机实测几秒内就把主线程压到 ANR。因此这里同样只收 Info 及以上。
+                    // 真机实测几秒内就把主线程压到 ANR。因此这里同样只收 Warn 及以上。
                     tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview)
                         .filter(crate::logging::quiet_targets),
                 ])
@@ -175,11 +178,21 @@ pub(crate) fn run() {
             if let Err(error) = crate::mcp::initialize(app.handle()) {
                 log::error!("MCP 本地服务启动失败: {error}");
             }
+            crate::mesh::initialize(app.handle());
+            crate::settings_sync::initialize(app.handle(), sync_credentials);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             crate::mcp::get_mcp_server_status,
             crate::mcp::set_mcp_server_enabled,
+            crate::mesh::commands::get_mesh_status,
+            crate::mesh::commands::list_mesh_devices,
+            crate::mesh::commands::set_mesh_enabled,
+            crate::mesh::commands::set_mesh_campus_access,
+            crate::mesh::commands::set_mesh_device_name,
+            crate::settings_sync::commands::get_sync_status,
+            crate::settings_sync::commands::get_sync_items,
+            crate::settings_sync::commands::trigger_sync,
             crate::ports::commands::take_port_notices,
             crate::enrollment::commands::enrollment_command,
             crate::enrollment::commands::open_academic_portal,
@@ -225,9 +238,6 @@ pub(crate) fn run() {
             oj::commands::read_oj_notice,
             crate::storage::commands::get_credential_storage_status,
             settings::commands::get_settings_snapshot,
-            settings::commands::export_settings,
-            settings::commands::preview_import_settings,
-            settings::commands::import_settings,
             crate::activity::commands::set_active_module,
             crate::appearance::commands::get_appearance,
             crate::appearance::commands::save_appearance,

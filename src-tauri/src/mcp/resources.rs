@@ -119,6 +119,26 @@ pub fn list_available_resources() -> Vec<Resource> {
             "返回平台默认目录、用户已选目录、各业务模块（如 jxxk 录像）的最终落盘路径与 Android 文件夹授权状态",
         )
         .with_mime_type("application/json"),
+        Resource::new("your-szu-life://data/mesh/status", "mesh_status")
+            .with_title("设备同步网络状态")
+            .with_description("返回设备同步开关、节点是否运行、本机虚拟 IP、设备名与最近错误")
+            .with_mime_type("application/json"),
+        Resource::new("your-szu-life://data/mesh/devices", "mesh_devices")
+            .with_title("同步网络内的设备列表")
+            .with_description("返回同一账号自组网内的设备名称、虚拟 IP、在线状态与校园网检测结果")
+            .with_mime_type("application/json"),
+        Resource::new("your-szu-life://data/mesh/campus-access", "mesh_campus_access")
+            .with_title("校园网访问状态")
+            .with_description("返回校园网访问开关、本机是否在校内、当前出口设备与各设备的校内检测结果")
+            .with_mime_type("application/json"),
+        Resource::new("your-szu-life://data/sync/status", "sync_status")
+            .with_title("设置同步状态")
+            .with_description("返回同步开关、最近一次同步的对端数量、应用/推送条数与冲突数")
+            .with_mime_type("application/json"),
+        Resource::new("your-szu-life://data/sync/items", "sync_items")
+            .with_title("可同步项状态")
+            .with_description("返回白名单内的可同步项及其状态（已同步 / 等待对端 / 冲突冻结）")
+            .with_mime_type("application/json"),
     ]
 }
 
@@ -287,6 +307,65 @@ pub async fn read_resource_by_uri(
             Ok(state) => serde_json::to_string_pretty(&state).unwrap_or_else(|_| "{}".to_string()),
             Err(_) => "{}".to_string(),
         },
+        "your-szu-life://data/mesh/status" => {
+            match app.try_state::<std::sync::Arc<crate::mesh::MeshStore>>() {
+                Some(store) => serde_json::to_string_pretty(&crate::mesh::status(&store))
+                    .unwrap_or_else(|_| "{}".to_string()),
+                None => "{}".to_string(),
+            }
+        }
+        "your-szu-life://data/mesh/devices" => {
+            match app.try_state::<std::sync::Arc<crate::mesh::MeshStore>>() {
+                Some(store) => serde_json::to_string_pretty(&store.devices())
+                    .unwrap_or_else(|_| "{}".to_string()),
+                None => "{}".to_string(),
+            }
+        }
+        "your-szu-life://data/mesh/campus-access" => {
+            match app.try_state::<std::sync::Arc<crate::mesh::MeshStore>>() {
+                Some(store) => {
+                    let devices = store.devices();
+                    let self_device = devices.iter().find(|device| device.is_self);
+                    let campus_devices: Vec<_> = devices
+                        .iter()
+                        .filter(|device| !device.is_self && device.reachable && device.on_campus)
+                        .map(|device| {
+                            serde_json::json!({
+                                "deviceId": device.device_id,
+                                "name": device.name,
+                                "overlayIp": device.overlay_ip,
+                                "campusAccess": device.campus_access,
+                            })
+                        })
+                        .collect();
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "enabled": crate::mesh::campus_access_enabled(),
+                        "running": crate::mesh::is_running(app),
+                        "localOnCampus": self_device.is_some_and(|device| device.on_campus),
+                        "egress": store.campus_peer().map(|ip| ip.to_string()),
+                        "campusDevices": campus_devices,
+                    }))
+                    .unwrap_or_else(|_| "{}".to_string())
+                }
+                None => "{}".to_string(),
+            }
+        }
+        "your-szu-life://data/sync/status" => {
+            match app.try_state::<std::sync::Arc<crate::settings_sync::engine::SyncStore>>() {
+                Some(store) => {
+                    let view = crate::settings_sync::status(app, &store).await;
+                    serde_json::to_string_pretty(&view).unwrap_or_else(|_| "{}".to_string())
+                }
+                None => "{}".to_string(),
+            }
+        }
+        "your-szu-life://data/sync/items" => {
+            match app.try_state::<std::sync::Arc<crate::settings_sync::engine::SyncStore>>() {
+                Some(store) => serde_json::to_string_pretty(&store.item_views().await)
+                    .unwrap_or_else(|_| "{}".to_string()),
+                None => "{}".to_string(),
+            }
+        }
         _ => {
             return Err(rmcp::ErrorData::new(
                 rmcp::model::ErrorCode::INVALID_REQUEST,

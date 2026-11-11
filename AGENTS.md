@@ -88,7 +88,7 @@ release. Add a tool name to select part of the graph. For example, run
 ### 2. 实现与技术选型约定
 
 - **协议框架**：统一使用 `rmcp` 宏体系（`#[rmcp::tool]` 与 `#[rmcp::tool_router]`），参数统一封装于 `rmcp::handler::server::wrapper::Parameters<T>`。
-- **端口与安全限制**：所有需要监听本机回环端口的本地服务统一由 `src-tauri/src/ports` 分配，端口段互不重叠：MCP `53901..=54000`、aria2 RPC `54001..=54100`、JXXK 录像下载入口 `54101..=54200`。MCP 优先使用设置中持久化的端口（`mcp.port`），被占用时切换到段内其它端口、永久保存新端口并通过 `app://port-notice` 弹模态框告知；任一端口段耗尽时记录 `log::error!` 并同样弹模态框。所有服务**仅监听本地回环地址 `127.0.0.1` / `localhost`**，绝对禁止对外网或局域网广播。
+- **端口与安全限制**：所有需要监听本机回环端口的本地服务统一由 `src-tauri/src/ports` 分配，端口段互不重叠：MCP `53901..=54000`、aria2 RPC `54001..=54100`、JXXK 录像下载入口 `54101..=54200`、设备自组网 `54201..=54300`。MCP 优先使用设置中持久化的端口（`mcp.port`），被占用时切换到段内其它端口、永久保存新端口并通过 `app://port-notice` 弹模态框告知；任一端口段耗尽时记录 `log::error!` 并同样弹模态框。所有服务**仅监听本地回环地址 `127.0.0.1` / `localhost`**，绝对禁止对外网或局域网广播。唯一显式例外是 EasyTier 的 P2P 监听器（必须绑 `0.0.0.0` 才能被对端直连），它只承载虚拟网握手与加密隧道，安全性由网络密钥承担。
 - **协议 URI Scheme 规范**：所有通过协议暴露的端点统一注册为 `your-szu-life://`，并严格区分两大 route 空间：
   - `your-szu-life://page/...`：用于控制客户端打开/激活特定前端页面（如 `page/workbench`, `page/auth`, `page/electricity` 等）。
   - `your-szu-life://data/...`：用于传递与订阅结构化数据/MCP Resources 资源（如 `data/auth/profile`, `data/electricity/status` 等）。
@@ -106,6 +106,17 @@ release. Add a tool name to select part of the graph. For example, run
 - [ ] 若涉及页面跳转或数据快照，已分别在 `your-szu-life://page/...` 与 `your-szu-life://data/...` 下补充对应 URI 契约。
 - [ ] 运行 `cargo test --manifest-path src-tauri/Cargo.toml` 验证 MCP 单元测试与 Schema 生成。
 - [ ] 本地 MCP 服务（HTTP/SSE 与 stdio）能够正常返回该工具的调用结果。
+
+---
+
+## 设备自组网、设置同步与校园网访问
+
+- **组网实现**：`src-tauri/src/mesh` 把 `easytier`（git 依赖，固定 rev）链进进程，始终 `no_tun`，不创建 TUN 设备、不使用 Android VpnService、不改系统路由/代理。对等设备之间的 TCP 走 `ffi-dataplane`（`data_plane_tcp_bind/connect`），两端再经 `bridge.rs` 桥到本机回环，因此 HTTP 服务与 `reqwest` 只认 `127.0.0.1`。预置 rendezvous 节点在根目录 `easytier-peers.json`；EasyTier 没有局域网自动发现，列表全部不可达时跨网设备无法互相发现。
+- **身份**：`mesh/identity.rs` 由 vault `fixed.account.profile` 派生 `network_name = your-szu-life:self:<sha256(学号)前16位>` 与 `network_secret = Argon2id(密码, salt=学号+校园卡号)`。改统一认证密码等于换网络，其它设备需先用新密码登录才能重新入网。
+- **同步白名单**：只有 `settings_sync/items.rs::ITEM_DEFS` 里的项会同步（UOOC 登录态/AI/运行设置/题库、OJ 账号密码、宿舍区与教工区「单独配置」凭据、宿舍信息）。`fixed.account.profile`、authserver 会话、lms/jxxk 会话与 `settings.sqlite` 本地偏好永不同步。整项用版本向量合并，题库按 `question_id` / `cid:clean_tid` 逐行三路合并；两端都改过且内容不同时该项/该行**冻结**，不再同步（没有解除入口）。
+- **校园网访问**：`netproxy/campus_access.rs` 是唯一决策点。在校时完全维持原有绕过/覆写逻辑；校外且存在可用在校设备时，`campus-network.json` 的直连白名单不再强制生效——校内目标先按普通策略走外网，对外探测（`host:port` 缓存 60 秒）确认不可达才改走 overlay 代理；非校内目标永远不经过 overlay。`overrides.fallback` 在校外继续生效。在校设备上的 `mesh/campus_proxy.rs` 只接受校内目标，且只在「校园网访问」开关打开时响应。
+- **日志**：EasyTier 只用 `tracing` 记录日志；仓库显式打开 `tracing` 的 `log` feature，未安装 tracing subscriber 时事件会转发给 `log`，因此与其它日志共用调试页的保留级别与 target 过滤。日志默认保留级别为 `WARN`。
+- **构建**：`no_tun` 组网依赖 `dhcp-ipv4`、`icmp-proxy` 与 `endpoint-discovery` 等 feature（前两个缺失会在创建实例时报 `this build does not include ...`，`mesh::node` 有对应的能力校验测试；`endpoint-discovery` 提供 TXT/SRV 与 HTTP(S) 节点发现，默认 STUN 的 `txt:stun*.easytier.cn` 依赖它）；`easytier-proto` 需要 `protoc`；`glib-macros` 的 `proc-macro-crate 2.0.2` 与 EasyTier 的 `rust-i18n-support` 在 `toml_datetime` 版本上冲突，仓库内 `src-tauri/vendor/proc-macro-crate` 只放宽了这两处版本约束（见 `Cargo.toml` 的 `[patch.crates-io]`），上游升级后应删除。
 
 ---
 

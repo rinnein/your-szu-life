@@ -21,6 +21,14 @@ pub(crate) const DEMO_ENABLED: &str = "demo.enabled";
 pub(crate) const FILE_DIRECTORY: &str = "file.directory";
 /// 应用内更新频道：`"stable"`（默认）或 `"canary"`。
 pub(crate) const UPDATE_CHANNEL: &str = "update.channel";
+/// 设备同步总开关。设备相关，不参与同步。
+pub(crate) const SYNC_ENABLED: &str = "sync.enabled";
+/// 「校园网访问」开关：本机不在校园网时借用同账号设备的校园网出口。
+pub(crate) const SYNC_CAMPUS_ACCESS: &str = "sync.campus_access";
+/// 本机在同步网络里的稳定标识（随机 UUID，首次启用时生成）。
+pub(crate) const SYNC_DEVICE_ID: &str = "sync.device_id";
+/// 用户可见的设备名，只影响设备列表展示。
+pub(crate) const SYNC_DEVICE_NAME: &str = "sync.device_name";
 
 static DATABASE: OnceLock<db::SettingsDatabase> = OnceLock::new();
 

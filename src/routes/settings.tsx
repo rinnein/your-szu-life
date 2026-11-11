@@ -10,7 +10,7 @@ export type SettingsTab =
   | "models"
   | "ai"
   | "mcp"
-  | "transfer"
+  | "sync"
   | "shortcuts"
   | "about"
   | "debug";
@@ -32,7 +32,7 @@ export const Route = createFileRoute("/settings")({
       "models",
       "ai",
       "mcp",
-      "transfer",
+      "sync",
       "shortcuts",
       "about",
       "debug",

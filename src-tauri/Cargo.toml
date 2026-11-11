@@ -98,6 +98,36 @@ schemars = { version = "1.0", features = ["derive"] }
 axum = "0.8"
 futures-util = "0.3"
 netdev = "0.46"
+# 设备自组网：进程内链接 EasyTier 核心，no-tun 模式不创建 TUN 设备、不依赖
+# Android VpnService；对等设备之间的 TCP 走 `ffi-dataplane` 的用户态数据面。
+# 固定在 2.7.0 的 commit 上，升级时需要重新核对 `mesh` 模块用到的 API。
+easytier = { git = "https://github.com/EasyTier/EasyTier", rev = "2abb1676b475947e46c527b57acc5f296cb48482", default-features = false, features = [
+  "management-rpc",
+  "ffi-dataplane",
+  "aes-gcm",
+  "websocket",
+  # 组网配置使用 dhcp = true 由虚拟网分配地址；不打开该 feature 时
+  # EasyTier 会在创建实例时报「this build does not include DHCP IPv4」。
+  "dhcp-ipv4",
+  "dhcp-ipv6",
+  # no_tun 模式下 EasyTier 会启动内置 packet proxy；缺这个 feature 时创建实例
+  # 会报「this build does not include packet proxy services」。
+  "icmp-proxy",
+  # 节点发现协议：TXT / SRV（dns-resolver）与 HTTP(S) endpoint 发现。默认 STUN
+  # 服务器是 `txt:stun*.easytier.cn` 形式，缺这个 feature 时解析会失败并刷日志。
+  "endpoint-discovery",
+] }
+# 数据面类型（DataPlaneTcpStream/Listener）与 ConfigFileControl 只在这里导出。
+easytier-core = { git = "https://github.com/EasyTier/EasyTier", rev = "2abb1676b475947e46c527b57acc5f296cb48482", default-features = false, features = [
+  "management-rpc",
+  "proxy-smoltcp-stack",
+  "aes-gcm",
+] }
+# EasyTier 只用 `tracing` 记录日志，本应用其余部分用 `log`。显式打开 tracing 的
+# `log` feature：在没有 tracing subscriber 时事件会转发给 `log`，因此 EasyTier 的
+# 日志与其它日志一样遵守调试页的保留级别和 target 过滤。不要依赖 tower/axum
+# 偶然带上的同名 feature。
+tracing = { version = "0.1", features = ["log"] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 keyring = { version = "3", features = [
@@ -135,6 +165,12 @@ windows-sys = { version = "0.61", features = [
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 wallpaper = "3.2"
+
+# 见 `vendor/proc-macro-crate/` 与 `Cargo.toml` 顶部说明：glib-macros 0.18 的
+# proc-macro-crate 2.0.2 用精确版本钉住 toml_datetime 0.6.3，与 EasyTier 依赖的
+# rust-i18n-support（toml ^0.8.8）冲突。本地副本只放宽这两处版本约束。
+[patch.crates-io]
+proc-macro-crate = { path = "vendor/proc-macro-crate" }
 
 [dev-dependencies]
 tempfile = "3"

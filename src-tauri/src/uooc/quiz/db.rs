@@ -148,6 +148,19 @@ impl QaDatabase {
         Ok(None)
     }
 
+    /// 查询全部提交试卷。设备同步用：按提交时间整表交换，再由调用方做行级合并。
+    pub async fn load_all_submitted_papers(&self) -> Result<Vec<SubmittedPaperRecord>, String> {
+        let mut db = self.db.clone();
+        let list = SubmittedPaper::all()
+            .exec(&mut db)
+            .await
+            .map_err(|e| format!("读取全部提交试卷失败: {e}"))?;
+        Ok(list
+            .into_iter()
+            .map(|r| self.row_to_submitted_paper_record(&r))
+            .collect())
+    }
+
     /// 查询某课程的所有提交试卷
     pub async fn load_all_submitted_papers_for_course(
         &self,

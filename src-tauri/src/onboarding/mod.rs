@@ -12,6 +12,7 @@ pub(crate) mod mcp;
 pub(crate) const BASELINE_MARKER: &str = "__baseline__";
 pub(crate) const WELCOME: &str = "welcome";
 pub(crate) const AUTH: &str = "auth";
+pub(crate) const SYNC: &str = "sync";
 pub(crate) const STORAGE: &str = "storage";
 pub(crate) const DORMITORY: &str = "dormitory";
 pub(crate) const APPEARANCE: &str = "appearance";
@@ -54,7 +55,7 @@ pub(crate) struct OnboardingDefinition {
     pub skippable: bool,
 }
 
-pub(crate) const ONBOARDING_DEFINITION: [OnboardingDefinition; 8] = [
+pub(crate) const ONBOARDING_DEFINITION: [OnboardingDefinition; 9] = [
     OnboardingDefinition {
         id: WELCOME,
         revision: 1,
@@ -64,6 +65,11 @@ pub(crate) const ONBOARDING_DEFINITION: [OnboardingDefinition; 8] = [
         id: AUTH,
         revision: 1,
         skippable: false,
+    },
+    OnboardingDefinition {
+        id: SYNC,
+        revision: 1,
+        skippable: true,
     },
     OnboardingDefinition {
         id: STORAGE,
@@ -227,6 +233,39 @@ pub(crate) fn state_view() -> Result<OnboardingStateView, String> {
     Ok(state)
 }
 
+/// 一次同步应用成功后，把已经被同步覆盖的步骤直接记为已完成。
+///
+/// 只处理「数据确实已经存在」的两项：宿舍信息与 AI 配置。其它步骤（文件目录、
+/// 外观、本地模型、MCP）都是设备相关的，绝不因为同步成功就跳过。
+pub(crate) fn adopt_synced_items() {
+    let facts = crate::migrations::onboarding::collect_existing_settings_facts();
+    let rows = crate::preferences::load_onboarding_rows().unwrap_or_default();
+    for (id, satisfied) in [
+        (DORMITORY, facts.has_electricity_location),
+        (AI, facts.has_ai_connection),
+    ] {
+        if !satisfied {
+            continue;
+        }
+        let Some(definition) = definition(id) else {
+            continue;
+        };
+        let already = rows.get(id).is_some_and(|(status, revision)| {
+            *revision >= definition.revision && status != OnboardingStatus::Pending.as_str()
+        });
+        if already {
+            continue;
+        }
+        if let Err(error) = crate::preferences::save_onboarding_step(
+            id,
+            OnboardingStatus::Configured.as_str(),
+            definition.revision,
+        ) {
+            log::warn!("同步完成后标记初始化步骤失败（{id}）: {error}");
+        }
+    }
+}
+
 pub(crate) fn complete_step(id: &str) -> Result<OnboardingStateView, String> {
     let definition = definition(id).ok_or_else(|| "未知的初始化设置项".to_string())?;
     crate::preferences::save_onboarding_step(
@@ -282,11 +321,12 @@ mod tests {
         assert_eq!(
             ids,
             vec![
-                WELCOME, AUTH, STORAGE, DORMITORY, APPEARANCE, LOCAL_MODEL, AI, MCP
+                WELCOME, AUTH, SYNC, STORAGE, DORMITORY, APPEARANCE, LOCAL_MODEL, AI, MCP
             ]
         );
         assert!(!definition(WELCOME).unwrap().skippable);
         assert!(!definition(AUTH).unwrap().skippable);
+        assert!(definition(SYNC).unwrap().skippable);
         assert!(!definition(STORAGE).unwrap().skippable);
         assert!(definition(DORMITORY).unwrap().skippable);
         assert!(!definition(APPEARANCE).unwrap().skippable);
@@ -301,6 +341,7 @@ mod tests {
             &ONBOARDING_DEFINITION,
             &rows(&[
                 (AUTH, "configured", 1),
+                (SYNC, "skipped", 1),
                 (STORAGE, "configured", 1),
                 (DORMITORY, "skipped", 1),
                 (APPEARANCE, "configured", 1),
@@ -327,6 +368,7 @@ mod tests {
             &definitions,
             &rows(&[
                 (AUTH, "configured", 1),
+                (SYNC, "configured", 1),
                 (STORAGE, "configured", 1),
                 (DORMITORY, "configured", 1),
                 (APPEARANCE, "configured", 1),
@@ -348,7 +390,8 @@ mod tests {
         let state = compute_state(&ONBOARDING_DEFINITION, &rows(&[]), true, false);
         let auth = state.steps.iter().find(|step| step.id == AUTH).unwrap();
         assert_eq!(auth.status, OnboardingStatus::Configured);
-        assert_eq!(state.current_step.as_deref(), Some(STORAGE));
+        // 新安装的同步步骤紧跟在认证之后，此时应为待完成。
+        assert_eq!(state.current_step.as_deref(), Some(SYNC));
     }
 
     #[test]

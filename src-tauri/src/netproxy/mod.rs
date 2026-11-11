@@ -14,6 +14,7 @@
 
 #[cfg(target_os = "android")]
 mod android;
+pub(crate) mod campus_access;
 mod cidr;
 pub(crate) mod commands;
 mod dns;
@@ -121,6 +122,20 @@ pub(crate) fn blocking_client_builder() -> reqwest::blocking::ClientBuilder {
         .dns_resolver(std::sync::Arc::new(dns::CampusResolver))
 }
 
+/// 虚拟网内部（127.0.0.1 桥接端口）专用客户端。
+///
+/// 这条出口只服务设备同步与校园网出口代理：目标固定是回环地址，不能套用系统
+/// 代理，也不需要校内 DNS 覆盖。放在这里是为了让「出网方式只有一处决定」这条
+/// 约束在叠加一层内部通道后依然成立。
+pub(crate) fn overlay_client_builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder().no_proxy()
+}
+
+/// 校园网出口代理解析目标用：校内域名优先问校内 DNS，其余走系统解析。
+pub(crate) async fn resolve_overlay_target(host: &str) -> Result<Vec<std::net::IpAddr>, String> {
+    dns::resolve_host(host).await
+}
+
 /// 请求时决策的代理拦截器。
 ///
 /// 装上它就意味着 reqwest 自己的环境变量/平台代理处理被关掉，全部改由
@@ -188,6 +203,12 @@ fn resolve_proxy(target: &Url) -> Option<Url> {
 /// 决策与来源。分开返回是为了让「只有环境变量代理才受 `no_proxy` 影响」这条
 /// 规则可以被准确表达，而不是把两件事混在一个布尔里。
 fn resolve_for(settings: &ProxySettings, target: &Url) -> Option<(Url, Source)> {
+    // 校外且外网探测确认连不上时，校内目标改走在校设备的出口。它优先于下面的
+    // 所有绕过规则，也优先于用户自己的代理：这条路径只对校内资源生效。
+    let egress = campus_access::egress();
+    if let Some(proxy) = campus_access::overlay_proxy_for(egress.as_ref(), target) {
+        return Some((proxy, Source::Overlay));
+    }
     let (proxy, source) = match settings.mode.as_str() {
         model::MODE_OFF => return None,
         model::MODE_MANUAL => (
@@ -200,7 +221,11 @@ fn resolve_for(settings: &ProxySettings, target: &Url) -> Option<(Url, Source)> 
             None => (system::env_proxy(target)?, Source::Environment),
         },
     };
-    if model::bypasses_proxy(target, settings) {
+    if model::bypasses_proxy(
+        target,
+        settings,
+        campus_access::overlay_active(egress.as_ref()),
+    ) {
         return None;
     }
     if source == Source::Environment && system::env_bypasses(target) {
@@ -240,6 +265,8 @@ enum Source {
     Platform,
     /// `http_proxy` 一类环境变量。
     Environment,
+    /// 校外借用的 EasyTier 校园网出口。
+    Overlay,
 }
 
 /// aria2 的命令行代理注入方式。

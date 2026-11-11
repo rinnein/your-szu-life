@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { LuCheck, LuGlobe, LuRotateCcw } from "react-icons/lu";
 import { Button, Card, Radio, Radios, Switch, TextField } from "material/react";
 import { Banner, bindField, toast } from "./ui";
+import { CampusAccessSettings } from "./CampusAccessSettings";
 
 /** 代理模式：关闭 / 自动（系统代理与环境变量）/ 手动。 */
 export type ProxyMode = "off" | "auto" | "manual";
@@ -260,6 +261,8 @@ export function NetworkSettings() {
           />
         </div>
       </Card>
+
+      <CampusAccessSettings />
 
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="filled" disabled={loading || busy} onClick={() => void save()}>

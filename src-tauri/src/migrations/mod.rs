@@ -4,6 +4,7 @@ pub mod jxxk;
 pub mod enrollment;
 pub mod keyring;
 pub mod lms;
+pub mod mesh;
 pub mod oj;
 pub mod onboarding;
 pub mod preferences;

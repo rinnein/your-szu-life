@@ -27,7 +27,7 @@ function buildPlan(state: OnboardingState, authLost: boolean): StepPlan[] {
 }
 
 export function OnboardingWizard({
-  state,
+  state: initialState,
   canDismiss,
   onDismiss,
   onFinished,
@@ -39,8 +39,9 @@ export function OnboardingWizard({
 }) {
   const { state: authState } = useAuth();
   const handleBrandTap = useDemoModeActivation();
+  const [state, setState] = useState<OnboardingState>(initialState);
   const [plan, setPlan] = useState<StepPlan[]>(() =>
-    buildPlan(state, !("Authenticated" in authState)),
+    buildPlan(initialState, !("Authenticated" in authState)),
   );
   const [index, setIndex] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -79,9 +80,25 @@ export function OnboardingWizard({
   const definition = current ? state.steps.find((step) => step.id === current.id) : undefined;
   const meta = current ? STEP_META[current.id] : undefined;
 
-  const next = () => {
-    if (index + 1 >= plan.length) finish();
+  const advance = (steps: StepPlan[]) => {
+    if (index + 1 >= steps.length) finish();
     else setIndex(index + 1);
+  };
+
+  const next = () => advance(plan);
+
+  // 同步步骤完成后可能把后面的宿舍/AI 步骤自动标记为已完成：这些步骤不再出现在
+  // 剩余计划里，因此每次拿到新的状态都要重建计划。
+  const applyState = (nextState: OnboardingState) => {
+    const satisfied = new Set(
+      nextState.steps.filter((step) => step.status !== "pending").map((step) => step.id),
+    );
+    const remaining = plan.filter(
+      (step, position) => position <= index || step.reauth || !satisfied.has(step.id),
+    );
+    setState(nextState);
+    setPlan(remaining);
+    advance(remaining);
   };
 
   const complete = async () => {
@@ -89,8 +106,11 @@ export function OnboardingWizard({
     acting.current = true;
     setBusy(true);
     try {
-      if (!current.reauth) await completeOnboardingStep(current.id);
-      next();
+      if (current.reauth) {
+        next();
+      } else {
+        applyState(await completeOnboardingStep(current.id));
+      }
     } catch (cause) {
       toast.danger("保存初始化设置进度失败", { description: String(cause) });
     } finally {
@@ -104,8 +124,7 @@ export function OnboardingWizard({
     acting.current = true;
     setBusy(true);
     try {
-      await skipOnboardingStep(current.id);
-      next();
+      applyState(await skipOnboardingStep(current.id));
     } catch (cause) {
       toast.danger("跳过设置项失败", { description: String(cause) });
     } finally {

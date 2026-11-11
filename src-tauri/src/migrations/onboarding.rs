@@ -107,7 +107,7 @@ pub(crate) fn apply_adoption_plan(
 pub(crate) fn adopt_existing_settings() -> Result<(), String> {
     let rows = crate::preferences::load_onboarding_rows()?;
     if rows.contains_key(BASELINE_MARKER) {
-        return Ok(());
+        return adopt_sync_step();
     }
     let facts = collect_existing_settings_facts();
     apply_adoption_plan(&facts, &rows, |id, revision| {
@@ -121,7 +121,39 @@ pub(crate) fn adopt_existing_settings() -> Result<(), String> {
         BASELINE_MARKER,
         OnboardingStatus::Configured.as_str(),
         1,
-    )
+    )?;
+    adopt_sync_step()
+}
+
+/// 新增的「自动同步」步骤对已经走完旧向导的安装不再打扰。
+///
+/// 判据是「除 sync 外的所有步骤都已完成/跳过」：全新安装此时还有待完成步骤，
+/// 迁移不会动它，向导里仍会在认证后出现同步步骤。
+fn adopt_sync_step() -> Result<(), String> {
+    use crate::onboarding::{definition, OnboardingStatus, ONBOARDING_DEFINITION, SYNC};
+    let rows = crate::preferences::load_onboarding_rows()?;
+    if rows.contains_key(SYNC) {
+        return Ok(());
+    }
+    let others_done = ONBOARDING_DEFINITION
+        .iter()
+        .filter(|step| step.id != SYNC)
+        .all(|step| {
+            rows.get(step.id).is_some_and(|(status, revision)| {
+                *revision >= step.revision && status != OnboardingStatus::Pending.as_str()
+            })
+        });
+    if !others_done {
+        return Ok(());
+    }
+    if let Some(step) = definition(SYNC) {
+        crate::preferences::save_onboarding_step(
+            SYNC,
+            OnboardingStatus::Skipped.as_str(),
+            step.revision,
+        )?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

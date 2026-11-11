@@ -1974,6 +1974,101 @@ pub(crate) fn window_closed(app: &tauri::AppHandle, label: &str) {
     }
 }
 
+/// 设备同步：读取可同步的 UOOC 运行设置。
+pub(crate) fn synced_settings(app: &tauri::AppHandle) -> Result<model::Settings, String> {
+    Ok(service(app)?.snapshot().settings)
+}
+
+/// 设备同步：应用对端运行设置。走正常保存路径，包含持久化与广播。
+pub(crate) fn apply_synced_settings(
+    app: &tauri::AppHandle,
+    settings: model::Settings,
+) -> Result<(), String> {
+    service(app)?.set_settings(settings)
+}
+
+/// 设备同步：AI 配置写入安全存储后刷新运行时缓存。
+pub(crate) fn reload_synced_ai(app: &tauri::AppHandle) -> Result<(), String> {
+    service(app)?.reload_ai_from_store()
+}
+
+/// 设备同步：UOOC 会话写入安全存储后重建客户端，等待下一次刷新验证。
+pub(crate) fn reload_synced_session(app: &tauri::AppHandle) -> Result<(), String> {
+    service(app)?.apply_session_from_store()
+}
+
+/// 设备同步：题库快照（全部题目 + 全部提交试卷）。
+pub(crate) async fn qa_sync_snapshot(
+    app: &tauri::AppHandle,
+) -> Result<(Vec<quiz::qa::LocalBankQuestion>, Vec<quiz::qa::SubmittedPaperRecord>), String> {
+    let service = service(app)?;
+    let db = service.get_qa_db().await?;
+    let questions = db.load_all_bank_questions().await?.into_values().collect();
+    let papers = db.load_all_submitted_papers().await?;
+    Ok((questions, papers))
+}
+
+/// 设备同步：写入对端题目。每条都会在本地重算向量特征，不接受对端提供的向量。
+pub(crate) async fn qa_sync_apply_questions(
+    app: &tauri::AppHandle,
+    questions: Vec<quiz::qa::LocalBankQuestion>,
+) -> Result<(), String> {
+    let service = service(app)?;
+    let db = service.get_qa_db().await?;
+    for question in questions {
+        let cid = (!question.cid.is_empty()).then(|| question.cid.clone());
+        let tid = (!question.tid.is_empty()).then(|| question.tid.clone());
+        db.upsert_bank_question(&question, cid.as_deref(), tid.as_deref())
+            .await?;
+    }
+    Ok(())
+}
+
+/// 设备同步：写入对端试卷快照。
+pub(crate) async fn qa_sync_apply_papers(
+    app: &tauri::AppHandle,
+    papers: Vec<quiz::qa::SubmittedPaperRecord>,
+) -> Result<(), String> {
+    let service = service(app)?;
+    let db = service.get_qa_db().await?;
+    for paper in papers {
+        db.save_submitted_paper(&paper).await?;
+    }
+    Ok(())
+}
+
+impl Service {
+    fn reload_ai_from_store(&self) -> Result<(), String> {
+        let ai = self
+            .credentials
+            .load_uooc_ai()?
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default();
+        *self.ai.lock().map_err(|_| "UOOC AI 配置锁失败")? = ai;
+        Ok(())
+    }
+
+    fn apply_session_from_store(self: &Arc<Self>) -> Result<(), String> {
+        let raw = self.credentials.load_uooc_session()?;
+        let jar = session::load(raw.as_deref())?;
+        let client = Arc::new(Client::new(jar)?);
+        *self
+            .client
+            .write()
+            .map_err(|_| "UOOC 客户端锁失败")? = client;
+        let mut runtime = self.runtime.lock().map_err(|_| "UOOC 状态锁失败")?;
+        if runtime.login.is_none() {
+            runtime.snapshot.session = SessionStatus::Checking;
+            runtime.snapshot.message = "已从其它设备同步 UOOC 登录态，等待验证".into();
+            runtime.session_cancel.cancel();
+            runtime.session_cancel = CancellationToken::new();
+            runtime.epoch = runtime.epoch.wrapping_add(1);
+            self.publish(&mut runtime);
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod checkin_tests;
 #[cfg(test)]

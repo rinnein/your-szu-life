@@ -2,7 +2,6 @@ import { useLogicalNavigation } from "./logical-navigation";
 import { useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  LuArrowUpDown,
   LuBell,
   LuBug,
   LuCpu,
@@ -11,6 +10,7 @@ import {
   LuInfo,
   LuKeyboard,
   LuPalette,
+  LuRefreshCw,
   LuServer,
   LuSparkles,
   LuUser,
@@ -22,7 +22,7 @@ import { useDebugMode } from "./shell/use-debug-mode";
 import { useAuth } from "./auth";
 import { AdaptiveTabs } from "./ui";
 import AiConnectionSettings from "./AiConnectionSettings";
-import SettingsTransfer from "./SettingsTransfer";
+import SettingsSync from "./SettingsSync";
 import { LocalModelsSettings } from "./LocalModelSettings";
 import McpSettings from "./McpSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
@@ -50,7 +50,7 @@ const SETTINGS_TABS: ReadonlyArray<{
   { id: "models", label: "本地模型", icon: LuCpu },
   { id: "ai", label: "AI配置", icon: LuSparkles },
   { id: "mcp", label: "MCP", icon: LuServer },
-  { id: "transfer", label: "设置迁移", icon: LuArrowUpDown },
+  { id: "sync", label: "同步", icon: LuRefreshCw },
   { id: "shortcuts", label: "快捷键", icon: LuKeyboard },
   { id: "about", label: "关于与更新", icon: LuInfo },
   { id: "debug", label: "调试", icon: LuBug, debugOnly: true },
@@ -152,7 +152,7 @@ export default function SettingsPage() {
           {activeTab === "models" && <LocalModelsSettings autoReturnKind={focus} />}
           {activeTab === "ai" && <AiConnectionSettings />}
           {activeTab === "mcp" && <McpSettings />}
-          {activeTab === "transfer" && <SettingsTransfer />}
+          {activeTab === "sync" && <SettingsSync />}
           {activeTab === "shortcuts" && <ShortcutsTable />}
           {activeTab === "about" && <AboutPage />}
           {activeTab === "debug" && <DebugLogPage />}

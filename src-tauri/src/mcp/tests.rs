@@ -37,6 +37,11 @@ fn test_resources_uris_and_metadata() {
     assert!(uris.contains(&"your-szu-life://data/network/proxy"));
     assert!(uris.contains(&"your-szu-life://data/settings/snapshot"));
     assert!(uris.contains(&"your-szu-life://data/onboarding/status"));
+    assert!(uris.contains(&"your-szu-life://data/mesh/status"));
+    assert!(uris.contains(&"your-szu-life://data/mesh/devices"));
+    assert!(uris.contains(&"your-szu-life://data/mesh/campus-access"));
+    assert!(uris.contains(&"your-szu-life://data/sync/status"));
+    assert!(uris.contains(&"your-szu-life://data/sync/items"));
 }
 
 #[test]
@@ -118,6 +123,13 @@ fn test_all_tools_registered() {
     assert!(tool_names.contains(&"todos_list"));
     assert!(tool_names.contains(&"todos_get_settings"));
     assert!(tool_names.contains(&"todos_set_settings"));
+
+    // 15. 设备自组网与设置同步
+    assert!(tool_names.contains(&"mesh_get_status"));
+    assert!(tool_names.contains(&"mesh_list_devices"));
+    assert!(tool_names.contains(&"mesh_get_campus_access"));
+    assert!(tool_names.contains(&"sync_get_status"));
+    assert!(tool_names.contains(&"sync_list_items"));
 
     // 验证每个工具都有描述且参数 schema 合法
     for tool in &tools {

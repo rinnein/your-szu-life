@@ -130,13 +130,15 @@ pub(crate) fn get_log_state() -> Arc<LogState> {
                     current_file: None,
                     startup_buffer: Vec::new(),
                 }),
-                active_level: AtomicU8::new(log::LevelFilter::Info as usize as u8),
+                // 默认只记录 WARN 及以上：常规使用时日志文件不再被 INFO 噪音填满，
+                // 需要排查时在调试页临时降到 INFO/DEBUG/TRACE。
+                active_level: AtomicU8::new(log::LevelFilter::Warn as usize as u8),
             })
         })
         .clone()
 }
 
-/// 控制台与 WebView 目标只收 Info 及以上。
+/// 控制台与 WebView 目标只收 Warn 及以上。
 ///
 /// 库（jni、reqwest、toasty 等）在 DEBUG/TRACE 下会持续输出：真机 logcat 会被刷到
 /// 每秒上万行，而 WebView 目标每转发一条都要过一次 JNI，`jni` 又会为这次调用再记一条
@@ -221,7 +223,7 @@ fn level_from_u8(val: u8) -> log::LevelFilter {
         3 => log::LevelFilter::Info,
         4 => log::LevelFilter::Debug,
         5 => log::LevelFilter::Trace,
-        _ => log::LevelFilter::Info,
+        _ => log::LevelFilter::Warn,
     }
 }
 
@@ -565,5 +567,35 @@ mod tests {
         assert!(!file1.exists(), "Oldest file should be deleted");
         assert!(file2.exists());
         assert!(file3.exists());
+    }
+
+    #[test]
+    fn default_level_is_warn() {
+        let state = get_log_state();
+        assert_eq!(
+            level_from_u8(state.active_level.load(Ordering::Acquire)),
+            log::LevelFilter::Warn
+        );
+    }
+
+    #[test]
+    fn quiet_targets_only_let_warn_and_above_through() {
+        let info = log::Metadata::builder()
+            .level(log::Level::Info)
+            .target("easytier_core::peer_manager")
+            .build();
+        let warn = log::Metadata::builder()
+            .level(log::Level::Warn)
+            .target("easytier_core::peer_manager")
+            .build();
+        assert!(!quiet_targets(&info));
+        assert!(quiet_targets(&warn));
+    }
+
+    #[test]
+    fn warn_survives_the_level_round_trip() {
+        let filter = parse_level("WARN").expect("WARN 是合法级别");
+        assert_eq!(level_to_str(filter), "WARN");
+        assert_eq!(level_from_u8(filter as usize as u8), log::LevelFilter::Warn);
     }
 }

@@ -25,7 +25,11 @@ export function moduleForPath(pathname: string): string | undefined {
  */
 export function ModuleActivityBridge() {
   const location = useLocation();
-  const module = moduleForPath(location.pathname);
+  // 设置页的 tab 在 search 里；只有「同步」tab 需要把设备探测提到 Active 档。
+  const settingsTab = (location.search as { tab?: string } | undefined)?.tab;
+  const module =
+    moduleForPath(location.pathname) ??
+    (location.pathname === "/settings" && settingsTab === "sync" ? "mesh" : undefined);
   useEffect(() => {
     if (!module) return;
     void invoke("set_active_module", { module, active: true }).catch(() => {});

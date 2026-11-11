@@ -25,6 +25,8 @@ fn command_names_match_handlers_manifest_and_local_permissions() {
         include_str!("analytics/commands.rs"),
         include_str!("todos/commands.rs"),
         include_str!("netproxy/commands.rs"),
+        include_str!("mesh/commands.rs"),
+        include_str!("settings_sync/commands.rs"),
         include_str!("ports/commands.rs"),
     ]
     .into_iter()

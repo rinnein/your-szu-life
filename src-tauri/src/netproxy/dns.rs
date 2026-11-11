@@ -73,8 +73,11 @@ impl Resolve for CampusResolver {
                 }
             }
 
-            // 2. 校内域名判定与校内 DNS 优先查询
-            if model::is_campus_domain(&host) {
+            // 2. 校内域名判定与校内 DNS 优先查询。校外借用在校园设备出口时，
+            //    目标由在校设备解析，本机再问校内 DNS 只会多等一次超时。
+            if model::is_campus_domain(&host)
+                && !crate::netproxy::campus_access::prefer_external_dns()
+            {
                 if let Ok(addrs) = campus_lookup(&host).await {
                     if !addrs.is_empty() {
                         return Ok(Box::new(addrs.into_iter().map(socket_addr)) as Addrs);
@@ -86,6 +89,29 @@ impl Resolve for CampusResolver {
             system_lookup(&host).await
         })
     }
+}
+
+/// 校园网出口代理用：按「校内域名优先校内 DNS、其余系统 DNS」解析。
+pub(crate) async fn resolve_host(host: &str) -> Result<Vec<IpAddr>, String> {
+    if let Ok(ip) = host.trim().parse::<IpAddr>() {
+        return Ok(vec![ip]);
+    }
+    if model::is_campus_domain(host) && is_in_campus_network() {
+        if let Ok(addrs) = campus_lookup(host).await {
+            if !addrs.is_empty() {
+                return Ok(addrs);
+            }
+        }
+    }
+    let host = host.to_owned();
+    tokio::task::spawn_blocking(move || {
+        (host.as_str(), 0)
+            .to_socket_addrs()
+            .map(|addrs| addrs.map(|socket| socket.ip()).collect::<Vec<_>>())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 /// 解析特殊重写规则指定的目标（支持直接填写 IP，或填写跳转域名如 c46.szu.edu.cn）。

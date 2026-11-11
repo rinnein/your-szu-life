@@ -399,6 +399,21 @@ pub(crate) fn is_campus_domain(host: &str) -> bool {
     campus_network().campus.matches_domain(host)
 }
 
+/// 该目标是否属于校内资源：`alwaysDirect`、校内网段与校内域名的并集。
+///
+/// 校外回退到 EasyTier 校园网出口时，只有这些目标会被交给在校设备；其余目标
+/// 永远按普通策略出网，绝不经过 overlay。
+pub(crate) fn is_campus_target(host: &str) -> bool {
+    let host = normalize_host(host);
+    if host.is_empty() {
+        return false;
+    }
+    let campus = campus_network();
+    campus.always_direct.matches(&host)
+        || campus.campus.matches(&host)
+        || campus.campus.matches_domain(&host)
+}
+
 fn campus_network() -> &'static CampusNetwork {
     static NETWORK: OnceLock<CampusNetwork> = OnceLock::new();
     NETWORK.get_or_init(|| {
@@ -428,7 +443,7 @@ fn host_matches_suffix(host: &str, entry: &str) -> bool {
 ///
 /// 这是全应用**唯一**一处判断「要不要绕过代理」的地方：各个业务模块只负责构建
 /// 客户端，绕不绕由这里按目标地址决定。
-pub(crate) fn bypasses_proxy(target: &Url, settings: &ProxySettings) -> bool {
+pub(crate) fn bypasses_proxy(target: &Url, settings: &ProxySettings, overlay: bool) -> bool {
     let Some(host) = target.host_str() else {
         // 没有主机名就无从判断，宁可不走代理。
         return true;
@@ -438,9 +453,11 @@ pub(crate) fn bypasses_proxy(target: &Url, settings: &ProxySettings) -> bool {
         return true;
     }
     let campus = campus_network();
+    // 校外借用了在校设备的出口（`overlay`）时，`campus-network.json` 的直连白名单
+    // 不再强制生效：先按普通策略走外网，探测确认连不上才改走 overlay。
     // 校内门户只能直连：它只在校园网内可达，代理到不了；这条优先于开关。
     if campus.always_direct.matches(&host) {
-        return true;
+        return !overlay;
     }
     // 本机与链路本地地址永远直连：代理到不了，也不该被代理。
     if host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local") {
@@ -448,7 +465,7 @@ pub(crate) fn bypasses_proxy(target: &Url, settings: &ProxySettings) -> bool {
     }
     // 校内网在用网段：由开关决定是否也交给代理。
     if campus.campus.matches(&host) {
-        return !settings.campus_through_proxy;
+        return !overlay && !settings.campus_through_proxy;
     }
     match host.parse::<std::net::IpAddr>() {
         Ok(std::net::IpAddr::V4(ip)) => {
@@ -625,7 +642,7 @@ mod tests {
             "http://printer.local/",
         ] {
             assert!(
-                bypasses_proxy(&Url::parse(target).unwrap(), &settings),
+                bypasses_proxy(&Url::parse(target).unwrap(), &settings, false),
                 "{target} 应直连"
             );
         }
@@ -637,7 +654,7 @@ mod tests {
             "http://192.169.0.1/",
         ] {
             assert!(
-                !bypasses_proxy(&Url::parse(target).unwrap(), &settings),
+                !bypasses_proxy(&Url::parse(target).unwrap(), &settings, false),
                 "{target} 应走代理"
             );
         }
@@ -762,7 +779,7 @@ mod tests {
             };
             for target in ["http://172.30.255.42:801/eportal/", "https://net.szu.edu.cn/"] {
                 assert!(
-                    bypasses_proxy(&Url::parse(target).unwrap(), &settings),
+                    bypasses_proxy(&Url::parse(target).unwrap(), &settings, false),
                     "{target} 开关为 {toggle} 时也必须直连"
                 );
             }
@@ -784,26 +801,27 @@ mod tests {
         ];
         for target in campus_targets {
             let url = Url::parse(target).unwrap();
-            assert!(bypasses_proxy(&url, &settings), "{target} 默认应直连");
+            assert!(bypasses_proxy(&url, &settings, false), "{target} 默认应直连");
         }
         settings.campus_through_proxy = true;
         for target in campus_targets {
             let url = Url::parse(target).unwrap();
-            assert!(!bypasses_proxy(&url, &settings), "{target} 开启后应走代理");
+            assert!(!bypasses_proxy(&url, &settings, false), "{target} 开启后应走代理");
         }
         settings.campus_through_proxy = false;
         // 不在白名单里的私有地址与回环地址始终直连，与开关无关。
         for target in ["http://127.0.0.1/", "http://10.0.0.1/"] {
             let url = Url::parse(target).unwrap();
-            assert!(bypasses_proxy(&url, &settings), "{target}");
+            assert!(bypasses_proxy(&url, &settings, false), "{target}");
             settings.campus_through_proxy = true;
-            assert!(bypasses_proxy(&url, &settings), "{target} 开关开启后仍直连");
+            assert!(bypasses_proxy(&url, &settings, false), "{target} 开关开启后仍直连");
             settings.campus_through_proxy = false;
         }
         // 公网站点不受开关影响。
         assert!(!bypasses_proxy(
             &Url::parse("https://github.com/").unwrap(),
-            &settings
+            &settings,
+            false
         ));
     }
 

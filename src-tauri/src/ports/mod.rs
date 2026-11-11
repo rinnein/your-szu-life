@@ -1,8 +1,8 @@
 //! 本地服务端口的统一分配与耗尽上报。
 //!
-//! 需要监听本机回环端口的服务（MCP、aria2 RPC、JXXK 录像下载入口）各自拥有
-//! 互不重叠的端口段，统一由本模块完成可用性探测、分配与耗尽上报。段与段不
-//! 重叠，因此不需要跨服务的进程内预留表。
+//! 需要监听本机回环端口的服务（MCP、aria2 RPC、JXXK 录像下载入口、设备自组网）
+//! 各自拥有互不重叠的端口段，统一由本模块完成可用性探测、分配与耗尽上报。段与
+//! 段不重叠，因此不需要跨服务的进程内预留表。
 //!
 //! MCP 需要稳定端口：调用方把上次保存的端口作为 `preferred` 传入，本模块优先
 //! 尝试它；被占用时再在段内寻找其它端口，由调用方负责持久化新端口并提示用户。
@@ -22,6 +22,9 @@ mod tests;
 pub(crate) const MCP_PORT_RANGE: (u16, u16) = (53901, 54000);
 pub(crate) const ARIA2_PORT_RANGE: (u16, u16) = (54001, 54100);
 pub(crate) const JXXK_DOWNLOAD_PORT_RANGE: (u16, u16) = (54101, 54200);
+/// 设备自组网：EasyTier 本地 RPC portal、overlay 入站/出站字节桥的监听端口。
+/// overlay 内的服务端口是虚拟网命名空间，不占用本机端口，因此不需要在这里分配。
+pub(crate) const MESH_PORT_RANGE: (u16, u16) = (54201, 54300);
 
 const NOTICE_EVENT: &str = "app://port-notice";
 
@@ -36,6 +39,7 @@ pub(crate) enum PortService {
     Mcp,
     Aria2,
     JxxkDownload,
+    Mesh,
 }
 
 impl PortService {
@@ -44,6 +48,7 @@ impl PortService {
             Self::Mcp => "MCP 本地服务",
             Self::Aria2 => "aria2 下载服务",
             Self::JxxkDownload => "JXXK 录像下载服务",
+            Self::Mesh => "设备同步服务",
         }
     }
 
@@ -52,6 +57,7 @@ impl PortService {
             Self::Mcp => MCP_PORT_RANGE,
             Self::Aria2 => ARIA2_PORT_RANGE,
             Self::JxxkDownload => JXXK_DOWNLOAD_PORT_RANGE,
+            Self::Mesh => MESH_PORT_RANGE,
         }
     }
 }

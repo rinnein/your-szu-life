@@ -116,6 +116,7 @@ jobs:
             libwebkit2gtk-4.1-dev \
             librsvg2-dev \
             libxdo-dev \
+            protobuf-compiler \
             wget
 
       - name: Install frontend dependencies
@@ -217,6 +218,12 @@ jobs:
             echo "ANDROID_NDK_ROOT=$ndk_dir"
             echo "NDK_HOME=$ndk_dir"
           } >> "$GITHUB_ENV"
+
+      # EasyTier 的 proto 构建需要 protoc（Windows 上 crates 会自行下载）。
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y protobuf-compiler
 
       - name: Set up Rust targets
         uses: dtolnay/rust-toolchain@stable

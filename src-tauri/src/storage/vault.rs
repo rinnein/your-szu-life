@@ -209,7 +209,8 @@ impl Vault {
         Ok(output)
     }
 
-    /// 用给定文档整体替换（导入设置时使用）。
+    /// 用给定文档整体替换。只用于测试里的整库写入；生产路径一律走 [`Self::update`]。
+    #[cfg(test)]
     pub(crate) fn replace(&self, document: VaultDocument) -> Result<(), String> {
         document.validate()?;
         write_document(&self.path(), &document, &self.key)?;
@@ -217,7 +218,7 @@ impl Vault {
         Ok(())
     }
 
-    /// 当前文档快照，供设置导出使用。
+    /// 当前文档快照，供设置快照接口使用。
     pub(crate) fn document(&self) -> Result<VaultDocument, String> {
         let guard = self.locked()?;
         Ok(guard.as_ref().expect("凭据文档已加载").clone())

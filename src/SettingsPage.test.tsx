@@ -86,6 +86,19 @@ describe("SettingsPage multi-tab and unified local model card", () => {
           campusThroughProxy: false,
         };
       }
+      if (command === "get_mesh_status") {
+        return {
+          enabled: false,
+          campusAccess: false,
+          running: false,
+          deviceId: "device-test",
+          deviceName: "测试设备",
+          overlayIp: null,
+          apiPort: null,
+          error: null,
+        };
+      }
+      if (command === "list_mesh_devices") return [];
       if (command === "get_mcp_server_status") {
         return {
           running: true,
@@ -113,7 +126,7 @@ describe("SettingsPage multi-tab and unified local model card", () => {
     expect(screen.getByRole("tab", { name: /本地模型/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /AI配置/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /MCP/ })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /设置迁移/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /同步/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /快捷键/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /关于/ })).toBeInTheDocument();
     // 调试是开发者 tab，只在调试模式启用后出现。
@@ -202,18 +215,18 @@ describe("SettingsPage multi-tab and unified local model card", () => {
     expect(screen.getByText("复制安装提示词")).toBeInTheDocument();
   });
 
-  it("switches to 设置迁移 tab and displays SettingsTransfer", async () => {
+  it("switches to 同步 tab and displays SettingsSync", async () => {
     const { testRouter } = renderRouterApp("/settings");
 
-    await screen.findByRole("tab", { name: /设置迁移/ });
-    fireEvent.click(screen.getByRole("tab", { name: /设置迁移/ }));
+    await screen.findByRole("tab", { name: /同步/ });
+    fireEvent.click(screen.getByRole("tab", { name: /同步/ }));
 
     await waitFor(() => {
-      expect(testRouter.state.location.search).toMatchObject({ tab: "transfer" });
+      expect(testRouter.state.location.search).toMatchObject({ tab: "sync" });
     });
 
-    expect(await screen.findByText("加密导出")).toBeInTheDocument();
-    expect(screen.getByText("导入到此设备")).toBeInTheDocument();
+    expect(await screen.findByText("设备同步")).toBeInTheDocument();
+    expect(screen.getByText("网络内的设备")).toBeInTheDocument();
   });
 
   it("switches to 快捷键 tab and displays ShortcutsTable", async () => {
