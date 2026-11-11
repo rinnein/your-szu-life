@@ -7,7 +7,7 @@ use std::{
 };
 use tokio::sync::Mutex;
 
-use crate::ports::{self, PortService};
+use szu_core::ports::{self, PortService};
 
 pub struct Aria2Process {
     pub port: u16,
@@ -60,8 +60,8 @@ const PROXY_ENV: [&str; 8] = [
     "FTP_PROXY",
 ];
 
-pub(super) fn proxy_injection(proxy: &crate::netproxy::Aria2Proxy) -> ProxyInjection {
-    use crate::netproxy::Aria2Proxy;
+pub(super) fn proxy_injection(proxy: &szu_core::netproxy::Aria2Proxy) -> ProxyInjection {
+    use szu_core::netproxy::Aria2Proxy;
     match proxy {
         // 显式空值 = 禁用 aria2 的全部代理；同时清掉环境变量，免得它自己又读回来。
         Aria2Proxy::Disabled => ProxyInjection {
@@ -89,7 +89,7 @@ impl Aria2Process {
         let secret = uuid::Uuid::new_v4().to_string();
         let log_path = std::env::temp_dir().join(format!("aria2c-{port}.log"));
 
-        let injection = proxy_injection(&crate::netproxy::aria2_proxy());
+        let injection = proxy_injection(&szu_core::netproxy::aria2_proxy());
         let mut cmd = Command::new(binary_path);
         cmd.stdin(Stdio::null())
             .stdout(Stdio::null())

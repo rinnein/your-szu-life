@@ -7,23 +7,23 @@ use std::{
 };
 use tauri::Emitter;
 
-const MANIFEST: &str = include_str!("../resources/ocr/ddddocr/model.json");
+const MANIFEST: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../resources/ocr/ddddocr/model.json"));
 const MAX_IMAGE_BYTES: usize = 1024 * 1024;
 
-pub(crate) type OcrModelStatus = LocalModelStatus;
+pub type OcrModelStatus = LocalModelStatus;
 
-pub(crate) struct OcrService {
-    pub(crate) model: Arc<LocalModelStore>,
-    pub(crate) engine: Mutex<Option<OcrRuntime>>,
+pub struct OcrService {
+    pub model: Arc<LocalModelStore>,
+    pub engine: Mutex<Option<OcrRuntime>>,
 }
 
 static STORE: OnceLock<Arc<OcrService>> = OnceLock::new();
 
-pub(crate) mod commands;
+pub mod commands;
 
-pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
+pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     let manifest = Manifest::load(MANIFEST, "OCR")?;
-    let cache = crate::app_paths::local_model_dir(app)?
+    let cache = szu_core::app_paths::local_model_dir(app)?
         .join("ocr")
         .join("ddddocr");
     fs::create_dir_all(&cache).map_err(|e| format!("无法创建 OCR 模型目录：{e}"))?;
@@ -59,10 +59,12 @@ fn store() -> Result<Arc<OcrService>, String> {
     if let Some(store) = STORE.get() {
         return Ok(store.clone());
     }
-    #[cfg(test)]
+    // `testing` 由兄弟 crate 的 dev-dependencies 打开：依赖 crate 不会被
+    // 编译成 `cfg(test)`，但兄弟 crate 的测试需要这里能自建临时模型缓存。
+    #[cfg(any(test, feature = "testing"))]
     {
         let manifest = Manifest::load(MANIFEST, "OCR")?;
-        let cache = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/model-cache");
+        let cache = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/model-cache");
         let model = Arc::new(LocalModelStore::new(
             manifest,
             cache,
@@ -80,16 +82,16 @@ fn store() -> Result<Arc<OcrService>, String> {
             .cloned()
             .ok_or_else(|| "OCR 模型服务尚未初始化".into());
     }
-    #[cfg(not(test))]
+    #[cfg(not(any(test, feature = "testing")))]
     Err("OCR 模型服务尚未初始化".into())
 }
 
-pub(crate) fn status() -> Result<OcrModelStatus, String> {
+pub fn status() -> Result<OcrModelStatus, String> {
     let service = store()?;
     Ok(service.model.status())
 }
 
-pub(crate) async fn download_command(
+pub async fn download_command(
     app: tauri::AppHandle,
     channel: Option<tauri::ipc::Channel<crate::local_model::ModelDownloadChannelEvent>>,
     force: bool,
@@ -102,7 +104,7 @@ pub(crate) async fn download_command(
     service.model.clone().download_command(app, channel, force).await
 }
 
-pub(crate) fn recognize(bytes: &[u8]) -> Result<String, String> {
+pub fn recognize(bytes: &[u8]) -> Result<String, String> {
     if bytes.len() > MAX_IMAGE_BYTES {
         return Err("验证码图片过大".into());
     }

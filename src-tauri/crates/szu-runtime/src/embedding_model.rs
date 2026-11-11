@@ -5,17 +5,17 @@ use std::{
 };
 use tauri::Emitter;
 
-const MANIFEST: &str = include_str!("../resources/embedding/bge-small-zh-v1.5/model.json");
+const MANIFEST: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../resources/embedding/bge-small-zh-v1.5/model.json"));
 
-pub(crate) type EmbeddingModelStatus = LocalModelStatus;
+pub type EmbeddingModelStatus = LocalModelStatus;
 
 static STORE: OnceLock<Arc<LocalModelStore>> = OnceLock::new();
 
-pub(crate) mod commands;
+pub mod commands;
 
-pub(crate) fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
+pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     let manifest = Manifest::load(MANIFEST, "Embedding")?;
-    let cache = crate::app_paths::local_model_dir(app)?
+    let cache = szu_core::app_paths::local_model_dir(app)?
         .join("embedding")
         .join("bge-small-zh-v1.5");
     fs::create_dir_all(&cache).map_err(|e| format!("无法创建 Embedding 模型目录：{e}"))?;
@@ -48,10 +48,12 @@ fn store() -> Result<Arc<LocalModelStore>, String> {
     if let Some(store) = STORE.get() {
         return Ok(store.clone());
     }
-    #[cfg(test)]
+    // `testing` 由兄弟 crate 的 dev-dependencies 打开：依赖 crate 不会被
+    // 编译成 `cfg(test)`，但兄弟 crate 的测试需要这里能自建临时模型缓存。
+    #[cfg(any(test, feature = "testing"))]
     {
         let manifest = Manifest::load(MANIFEST, "Embedding")?;
-        let cache = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/embedding-model-cache");
+        let cache = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/embedding-model-cache");
         let store = Arc::new(LocalModelStore::new(
             manifest,
             cache,
@@ -65,16 +67,16 @@ fn store() -> Result<Arc<LocalModelStore>, String> {
             .cloned()
             .ok_or_else(|| "Embedding 模型服务尚未初始化".into());
     }
-    #[cfg(not(test))]
+    #[cfg(not(any(test, feature = "testing")))]
     Err("Embedding 模型服务尚未初始化".into())
 }
 
-pub(crate) fn status() -> Result<EmbeddingModelStatus, String> {
+pub fn status() -> Result<EmbeddingModelStatus, String> {
     let store = store()?;
     Ok(store.status())
 }
 
-pub(crate) async fn download_command(
+pub async fn download_command(
     app: tauri::AppHandle,
     channel: Option<tauri::ipc::Channel<crate::local_model::ModelDownloadChannelEvent>>,
     force: bool,

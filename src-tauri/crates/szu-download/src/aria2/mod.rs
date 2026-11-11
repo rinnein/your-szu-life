@@ -1,12 +1,12 @@
-pub(crate) mod binary;
-pub(crate) mod client;
-pub(crate) mod downloader;
-pub(crate) mod process;
+pub mod binary;
+pub mod client;
+pub mod downloader;
+pub mod process;
 
 #[cfg(test)]
 mod tests;
 
-pub(crate) use downloader::{
+pub use downloader::{
     download_with_aria2, download_with_aria2_controlled, DownloadControl, DownloadJobOptions,
     DownloadPhase, DownloadTarget, PublishTarget,
 };

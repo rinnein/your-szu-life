@@ -4,7 +4,7 @@ use super::{paths, DirectorySelection, PickedDirectory};
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 
-pub(crate) async fn pick(app: &AppHandle) -> Result<Option<PickedDirectory>, String> {
+pub async fn pick(app: &AppHandle) -> Result<Option<PickedDirectory>, String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     let mut builder = app.dialog().file();
     if let Ok(default) = super::default_base_dir(app) {

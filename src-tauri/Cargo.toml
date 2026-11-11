@@ -158,6 +158,8 @@ tempfile = "3"
 
 [dependencies]
 szu-core = { path = "crates/szu-core" }
+szu-download = { path = "crates/szu-download" }
+szu-runtime = { path = "crates/szu-runtime" }
 tauri = { workspace = true }
 tauri-plugin-opener = { workspace = true }
 tauri-plugin-notification = { workspace = true }
@@ -252,6 +254,7 @@ proc-macro-crate = { path = "vendor/proc-macro-crate" }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+szu-runtime = { path = "crates/szu-runtime", features = ["testing"] }
 
 [profile.dev]
 debug = "line-tables-only"

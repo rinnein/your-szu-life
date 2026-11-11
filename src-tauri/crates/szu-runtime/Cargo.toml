@@ -1,0 +1,31 @@
+[package]
+name = "szu-runtime"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "泥深本地模型运行时：模型下载/校验、OCR 与向量模型服务"
+
+[lib]
+name = "szu_runtime"
+path = "src/lib.rs"
+
+[features]
+# 仅供兄弟 crate 的测试使用：让 `store()` 能自建临时模型缓存。
+testing = []
+
+[dependencies]
+szu-core = { path = "../szu-core" }
+szu-download = { path = "../szu-download" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+sha2 = { workspace = true }
+image = { workspace = true }
+ddddocr-core = { workspace = true }
+ddddocr-tract2 = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }

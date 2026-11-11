@@ -6,20 +6,20 @@
 use std::path::{Path, PathBuf};
 
 /// 统一目录的品牌子目录。
-pub(crate) const BRAND_DIR: &str = "泥深";
+pub const BRAND_DIR: &str = "泥深";
 
 /// 目录里是否存在任意子项（含隐藏文件）。
 ///
 /// Android 的目录枚举由 Kotlin 侧的 SAF 查询完成，这里只服务桌面端。
 #[cfg(not(target_os = "android"))]
-pub(crate) fn has_entries(dir: &Path) -> Result<bool, String> {
+pub fn has_entries(dir: &Path) -> Result<bool, String> {
     let mut entries =
         std::fs::read_dir(dir).map_err(|error| format!("无法读取目录 {}: {error}", dir.display()))?;
     Ok(entries.next().is_some())
 }
 
 /// 按「空目录直接使用、非空目录追加品牌子目录」的规则解析父目录。
-pub(crate) fn resolve_local_base(selected: &Path, has_entries: bool) -> PathBuf {
+pub fn resolve_local_base(selected: &Path, has_entries: bool) -> PathBuf {
     if has_entries {
         selected.join(BRAND_DIR)
     } else {
@@ -28,7 +28,7 @@ pub(crate) fn resolve_local_base(selected: &Path, has_entries: bool) -> PathBuf 
 }
 
 /// 拼接本地目录：忽略空片段。
-pub(crate) fn join_local(base: &Path, segments: &[&str]) -> PathBuf {
+pub fn join_local(base: &Path, segments: &[&str]) -> PathBuf {
     segments
         .iter()
         .filter(|segment| !segment.is_empty())
@@ -36,7 +36,7 @@ pub(crate) fn join_local(base: &Path, segments: &[&str]) -> PathBuf {
 }
 
 /// 拼接展示路径（Android 与桌面分别使用各自的路径分隔符）。
-pub(crate) fn join_display(root: &str, segment: &str) -> String {
+pub fn join_display(root: &str, segment: &str) -> String {
     let trimmed = root.trim_end_matches(['/', '\\']);
     if trimmed.is_empty() {
         segment.to_string()
@@ -47,7 +47,7 @@ pub(crate) fn join_display(root: &str, segment: &str) -> String {
 
 /// 拼接多个展示路径片段。
 #[cfg(target_os = "android")]
-pub(crate) fn join_display_segments(root: &str, segments: &[&str]) -> String {
+pub fn join_display_segments(root: &str, segments: &[&str]) -> String {
     segments
         .iter()
         .filter(|segment| !segment.is_empty())
@@ -56,7 +56,7 @@ pub(crate) fn join_display_segments(root: &str, segments: &[&str]) -> String {
 
 /// 拼接 SAF 树内相对路径（始终用 `/`，与文档 URI 无关）。
 #[cfg(any(target_os = "android", test))]
-pub(crate) fn join_relative(base: &str, segments: &[&str]) -> String {
+pub fn join_relative(base: &str, segments: &[&str]) -> String {
     let mut parts: Vec<&str> = Vec::new();
     if !base.is_empty() {
         parts.push(base);
@@ -66,7 +66,7 @@ pub(crate) fn join_relative(base: &str, segments: &[&str]) -> String {
 }
 
 /// 文件名/目录名清洗：去掉路径分隔符与文件系统保留字符。
-pub(crate) fn sanitize_segment(raw: &str) -> String {
+pub fn sanitize_segment(raw: &str) -> String {
     raw.chars()
         .map(|character| match character {
             '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
@@ -80,7 +80,7 @@ pub(crate) fn sanitize_segment(raw: &str) -> String {
 }
 
 /// 创建目录并写一个探针文件，确认真的可写。
-pub(crate) fn probe_writable(dir: &Path) -> Result<(), String> {
+pub fn probe_writable(dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dir)
         .map_err(|error| format!("无法创建目录 {}: {error}", dir.display()))?;
     let probe = dir.join(".泥深-write-test");

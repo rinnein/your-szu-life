@@ -2,19 +2,14 @@
 
 mod app;
 mod app_content;
-pub(crate) mod aria2;
 #[cfg(desktop)]
 mod desktop;
-mod embedding_model;
 mod enrollment;
-pub(crate) mod file_manager;
 mod jxxk;
 mod lms;
-pub(crate) mod local_model;
 pub mod mcp;
 pub(crate) mod mesh;
 pub(crate) mod migrations;
-mod ocr;
 mod oj;
 mod settings_sync;
 mod todos;
@@ -24,10 +19,12 @@ mod uooc;
 // `crate::<module>` 引用它们。全部功能模块下沉到各自 crate 后（M6）删除这段，
 // 让引用显式写成 `szu_core::<module>`。
 pub(crate) use szu_core::{
-    activity, analytics, app_paths, appearance, auth, campus_network, campus_payments, demo,
+    activity, analytics, appearance, auth, campus_network, campus_payments, demo,
     ipc_channel, logging, netproxy, notification, onboarding, ports, preferences, settings,
     storage, webview_cookies,
 };
+pub(crate) use szu_download::{aria2, file_manager};
+pub(crate) use szu_runtime::{embedding_model, ocr};
 #[cfg(target_os = "android")]
 pub(crate) use szu_core::platform_tls;
 

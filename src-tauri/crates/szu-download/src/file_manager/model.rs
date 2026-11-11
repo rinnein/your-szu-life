@@ -11,23 +11,23 @@ use serde::{Deserialize, Serialize};
 /// 新增模块时在这里加一个变体，并同步 `ALL`、`id` 与 `label`。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum ManagedModule {
+pub enum ManagedModule {
     /// 督导巡课录像。
     Jxxk,
 }
 
 impl ManagedModule {
-    pub(crate) const ALL: [Self; 1] = [Self::Jxxk];
+    pub const ALL: [Self; 1] = [Self::Jxxk];
 
     /// 落盘子目录名。
-    pub(crate) fn id(self) -> &'static str {
+    pub fn id(self) -> &'static str {
         match self {
             Self::Jxxk => "jxxk",
         }
     }
 
     /// 设置页展示名。
-    pub(crate) fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
             Self::Jxxk => "督导巡课录像",
         }
@@ -40,7 +40,7 @@ impl ManagedModule {
 /// URI —— Android 11 起只有 SAF 授权，没有按真实路径写入的权限。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-pub(crate) enum DirectorySelection {
+pub enum DirectorySelection {
     /// 桌面端绝对路径。
     Filesystem {
         /// 绝对路径。
@@ -56,7 +56,7 @@ pub(crate) enum DirectorySelection {
 }
 
 impl DirectorySelection {
-    pub(crate) fn android_tree(&self) -> Option<&str> {
+    pub fn android_tree(&self) -> Option<&str> {
         match self {
             Self::AndroidTree { uri } => Some(uri.as_str()),
             _ => None,
@@ -67,7 +67,7 @@ impl DirectorySelection {
 /// 已经确认并落库的目录配置。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct DirectoryConfig {
+pub struct DirectoryConfig {
     /// 选择来源。
     pub selection: DirectorySelection,
     /// Android 树内相对父目录：空串表示直接使用所选目录，`泥深` 表示追加品牌目录。
@@ -88,7 +88,7 @@ pub(crate) struct DirectoryConfig {
 /// 选择器返回、尚未落库的目录预览。
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct DirectoryPreview {
+pub struct DirectoryPreview {
     /// 确认时原样回传的选项。
     pub selection: DirectorySelection,
     /// 用户选中的目录。
@@ -106,7 +106,7 @@ pub(crate) struct DirectoryPreview {
 /// 单个模块的最终目录。
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ModuleDirectory {
+pub struct ModuleDirectory {
     /// 模块 id，如 `jxxk`。
     pub id: String,
     /// 模块展示名。
@@ -118,7 +118,7 @@ pub(crate) struct ModuleDirectory {
 /// 目录访问状态。
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct StorageAccess {
+pub struct StorageAccess {
     /// `granted` | `denied` | `notApplicable`
     pub state: String,
     /// 面向用户的补充说明。
@@ -128,7 +128,7 @@ pub(crate) struct StorageAccess {
 /// 文件目录模块的完整状态快照。
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct FileManagerState {
+pub struct FileManagerState {
     /// `android` | `windows` | `linux` | `macos`
     pub platform: String,
     /// 平台默认父目录（含「泥深」）。

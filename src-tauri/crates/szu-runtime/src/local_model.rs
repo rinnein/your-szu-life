@@ -10,13 +10,13 @@ use std::{
 };
 use tauri::Emitter;
 
-pub(crate) const GITHUB_ACCELERATORS: &str = include_str!("../../github-accelerator.json");
-pub(crate) const HUGGINGFACE_ACCELERATORS: &str =
-    include_str!("../../huggingface-accelerator.json");
+pub const GITHUB_ACCELERATORS: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../github-accelerator.json"));
+pub const HUGGINGFACE_ACCELERATORS: &str =
+    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../huggingface-accelerator.json"));
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct Manifest {
+pub struct Manifest {
     pub revision: String,
     pub sha256: String,
     pub bytes: u64,
@@ -24,7 +24,7 @@ pub(crate) struct Manifest {
 }
 
 impl Manifest {
-    pub(crate) fn load(json_str: &str, model_label: &str) -> Result<Self, String> {
+    pub fn load(json_str: &str, model_label: &str) -> Result<Self, String> {
         let manifest: Self = serde_json::from_str(json_str)
             .map_err(|e| format!("{model_label} 模型配置格式错误：{e}"))?;
         if manifest.revision.trim().is_empty() || manifest.sha256.len() != 64 || manifest.bytes == 0
@@ -44,7 +44,7 @@ impl Manifest {
         Ok(manifest)
     }
 
-    pub(crate) fn verify(&self, path: &Path) -> bool {
+    pub fn verify(&self, path: &Path) -> bool {
         let Ok(metadata) = fs::metadata(path) else {
             return false;
         };
@@ -70,7 +70,7 @@ impl Manifest {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct ModelDownloadProgress {
+pub struct ModelDownloadProgress {
     pub downloaded_bytes: u64,
     pub total_bytes: u64,
     pub speed_bytes_per_sec: u64,
@@ -86,14 +86,14 @@ pub(crate) struct ModelDownloadProgress {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "camelCase")]
-pub(crate) enum ModelDownloadChannelEvent {
+pub enum ModelDownloadChannelEvent {
     Status(LocalModelStatus),
     Progress(ModelDownloadProgress),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct LocalModelStatus {
+pub struct LocalModelStatus {
     pub status: String,
     pub revision: String,
     pub sha256: String,
@@ -105,7 +105,7 @@ pub(crate) struct LocalModelStatus {
     pub speed_bytes_per_sec: Option<u64>,
 }
 
-pub(crate) fn mirror_candidates(primary_url: &str) -> Vec<(String, Url)> {
+pub fn mirror_candidates(primary_url: &str) -> Vec<(String, Url)> {
     let mut mirrors = Vec::new();
     let Ok(primary) = Url::parse(primary_url) else {
         return mirrors;
@@ -148,18 +148,18 @@ pub(crate) fn mirror_candidates(primary_url: &str) -> Vec<(String, Url)> {
     mirrors
 }
 
-pub(crate) struct LocalModelStore {
-    pub(crate) manifest: Manifest,
-    pub(crate) cache: PathBuf,
-    pub(crate) state: Mutex<LocalModelStatus>,
-    pub(crate) operation: Mutex<()>,
-    pub(crate) model_name: &'static str,
-    pub(crate) progress_event: &'static str,
-    pub(crate) status_event: &'static str,
+pub struct LocalModelStore {
+    pub manifest: Manifest,
+    pub cache: PathBuf,
+    pub state: Mutex<LocalModelStatus>,
+    pub operation: Mutex<()>,
+    pub model_name: &'static str,
+    pub progress_event: &'static str,
+    pub status_event: &'static str,
 }
 
 impl LocalModelStore {
-    pub(crate) fn new(
+    pub fn new(
         manifest: Manifest,
         cache: PathBuf,
         model_name: &'static str,
@@ -188,11 +188,11 @@ impl LocalModelStore {
         }
     }
 
-    pub(crate) fn target(&self) -> PathBuf {
+    pub fn target(&self) -> PathBuf {
         self.cache.join(format!("{}.onnx", self.manifest.sha256))
     }
 
-    pub(crate) fn bytes(&self) -> Result<Vec<u8>, String> {
+    pub fn bytes(&self) -> Result<Vec<u8>, String> {
         let target = self.target();
         if !self.manifest.verify(&target) {
             return Err(format!("{}_missing", self.model_name.to_lowercase()));
@@ -200,11 +200,11 @@ impl LocalModelStore {
         fs::read(target).map_err(|_| format!("{}_invalid", self.model_name.to_lowercase()))
     }
 
-    pub(crate) fn status(&self) -> LocalModelStatus {
+    pub fn status(&self) -> LocalModelStatus {
         self.state.lock().unwrap().clone()
     }
 
-    pub(crate) fn set_status(&self, status: &str, source: Option<String>, error: Option<String>) {
+    pub fn set_status(&self, status: &str, source: Option<String>, error: Option<String>) {
         let mut value = self.state.lock().unwrap();
         value.status = status.into();
         value.source = source;
@@ -216,7 +216,7 @@ impl LocalModelStore {
         }
     }
 
-    pub(crate) fn refresh_from_disk(&self) {
+    pub fn refresh_from_disk(&self) {
         let target = self.target();
         if self.manifest.verify(&target) {
             self.set_status("ready", Some("cache".into()), None);
@@ -225,7 +225,7 @@ impl LocalModelStore {
         self.set_status("missing", None, None);
     }
 
-    pub(crate) fn download(
+    pub fn download(
         &self,
         app: Option<&tauri::AppHandle>,
         channel: Option<&tauri::ipc::Channel<ModelDownloadChannelEvent>>,
@@ -258,10 +258,10 @@ impl LocalModelStore {
             uris.push(mirror_url.to_string());
         }
 
-        let aria_options = crate::aria2::DownloadJobOptions {
+        let aria_options = szu_download::aria2::DownloadJobOptions {
             uris,
             prioritized_uris: Vec::new(),
-            target: crate::aria2::DownloadTarget::local(
+            target: szu_download::aria2::DownloadTarget::local(
                 self.cache.clone(),
                 self.cache.to_string_lossy().into_owned(),
             ),
@@ -275,7 +275,7 @@ impl LocalModelStore {
         let app_handle_opt = app.cloned();
         let channel_opt = channel.cloned();
 
-        let aria_res = tauri::async_runtime::block_on(crate::aria2::download_with_aria2(
+        let aria_res = tauri::async_runtime::block_on(szu_download::aria2::download_with_aria2(
             app,
             aria_options,
             move |prog| {
@@ -322,7 +322,7 @@ impl LocalModelStore {
         }
     }
 
-    pub(crate) async fn download_command(
+    pub async fn download_command(
         self: Arc<Self>,
         app: tauri::AppHandle,
         channel: Option<tauri::ipc::Channel<ModelDownloadChannelEvent>>,

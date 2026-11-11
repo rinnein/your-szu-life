@@ -9017,6 +9017,47 @@ dependencies = [
 ]
 
 [[package]]
+name = "szu-download"
+version = "0.14.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "futures-util",
+ "log",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "szu-build-support",
+ "szu-core",
+ "tauri",
+ "tauri-plugin-dialog",
+ "tempfile",
+ "tokio",
+ "tokio-tungstenite",
+ "uuid",
+]
+
+[[package]]
+name = "szu-runtime"
+version = "0.14.0"
+dependencies = [
+ "ddddocr-core",
+ "ddddocr-tract2",
+ "image",
+ "rand 0.9.5",
+ "reqwest",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "szu-core",
+ "szu-download",
+ "tauri",
+ "tokio",
+]
+
+[[package]]
 name = "tagptr"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11736,6 +11777,8 @@ dependencies = [
  "soup3",
  "ssid",
  "szu-core",
+ "szu-download",
+ "szu-runtime",
  "tauri",
  "tauri-build",
  "tauri-plugin-aptabase",

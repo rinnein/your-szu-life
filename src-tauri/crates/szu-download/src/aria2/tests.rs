@@ -4,7 +4,7 @@ use super::{
     downloader::{PROGRESS_POLL_INTERVAL_MS, verify_file_hash_and_size},
     process::{Aria2Lease, base_args, proxy_injection},
 };
-use crate::netproxy::Aria2Proxy;
+use szu_core::netproxy::Aria2Proxy;
 use std::io::Write;
 use std::path::Path;
 use tempfile::NamedTempFile;
@@ -86,7 +86,7 @@ async fn test_aria2_lease_lifecycle_rpc_and_reuse() {
     let secret1 = lease1.secret.clone();
     let port1 = lease1.port;
     assert!(
-        (crate::ports::ARIA2_PORT_RANGE.0..=crate::ports::ARIA2_PORT_RANGE.1).contains(&port1),
+        (szu_core::ports::ARIA2_PORT_RANGE.0..=szu_core::ports::ARIA2_PORT_RANGE.1).contains(&port1),
         "aria2 RPC 端口必须落在统一分配器划定的端口段内: {port1}"
     );
 

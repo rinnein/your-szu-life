@@ -47,14 +47,13 @@ pub fn find_aria2c_binary(_app: Option<&tauri::AppHandle>) -> Result<PathBuf, St
         }
 
         // 5. Development mode: check src-tauri/binaries/aria2c-<TARGET>
+        // 这两个值由本 crate 的 build.rs 注入（`tauri-build` 只注入给它自己的 crate）。
         let dev_bin_name = format!(
             "aria2c-{}{}",
-            env!("TAURI_ENV_TARGET_TRIPLE"),
+            env!("SZU_TARGET_TRIPLE"),
             if cfg!(windows) { ".exe" } else { "" }
         );
-        let dev_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("binaries")
-            .join(&dev_bin_name);
+        let dev_path = PathBuf::from(env!("SZU_BINARIES_DIR")).join(&dev_bin_name);
         if dev_path.is_file() {
             return Ok(dev_path);
         }

@@ -20,21 +20,21 @@ use tauri::{AppHandle, Emitter};
 #[cfg(not(target_os = "android"))]
 use tauri::Manager;
 
-pub(crate) mod android;
-pub(crate) mod commands;
+pub mod android;
+pub mod commands;
 #[cfg(not(target_os = "android"))]
 mod desktop;
-pub(crate) mod model;
-pub(crate) mod paths;
+pub mod model;
+pub mod paths;
 #[cfg(test)]
 mod tests;
 
 /// Android 上用于下载中转的缓存子目录名。
 #[cfg(target_os = "android")]
-pub(crate) const STAGING_DIR: &str = ".staging";
+pub const STAGING_DIR: &str = ".staging";
 
 /// 选择器返回、尚未落库的结果。
-pub(crate) struct PickedDirectory {
+pub struct PickedDirectory {
     pub selection: DirectorySelection,
     /// 所选目录的展示路径。
     pub display: String,
@@ -46,7 +46,7 @@ fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
-pub(crate) fn platform() -> &'static str {
+pub fn platform() -> &'static str {
     if cfg!(target_os = "android") {
         "android"
     } else if cfg!(target_os = "windows") {
@@ -60,14 +60,14 @@ pub(crate) fn platform() -> &'static str {
 
 /// 平台默认父目录（已包含「泥深」）。
 #[cfg(target_os = "android")]
-pub(crate) fn default_base_dir(_app: &AppHandle) -> Result<PathBuf, String> {
+pub fn default_base_dir(_app: &AppHandle) -> Result<PathBuf, String> {
     // SAF 负责授权与写入，这里只是选择器的初始位置与展示值。
     Ok(PathBuf::from("/storage/emulated/0/Download").join(paths::BRAND_DIR))
 }
 
 /// 平台默认父目录（已包含「泥深」）。
 #[cfg(not(target_os = "android"))]
-pub(crate) fn default_base_dir(app: &AppHandle) -> Result<PathBuf, String> {
+pub fn default_base_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let documents = app
         .path()
         .document_dir()
@@ -88,8 +88,8 @@ fn config_matches_platform(config: &DirectoryConfig) -> bool {
     config.selection.android_tree().is_none()
 }
 
-pub(crate) fn load_config() -> Option<DirectoryConfig> {
-    match crate::preferences::load::<DirectoryConfig>(crate::preferences::FILE_DIRECTORY) {
+pub fn load_config() -> Option<DirectoryConfig> {
+    match szu_core::preferences::load::<DirectoryConfig>(szu_core::preferences::FILE_DIRECTORY) {
         Ok(Some(config)) if config_matches_platform(&config) => Some(config),
         Ok(Some(config)) => {
             log::warn!("文件目录配置来自其它平台（{}），本次忽略", config.selected);
@@ -147,7 +147,7 @@ fn access_state(_config: Option<&DirectoryConfig>) -> StorageAccess {
     }
 }
 
-pub(crate) fn state(app: &AppHandle) -> Result<FileManagerState, String> {
+pub fn state(app: &AppHandle) -> Result<FileManagerState, String> {
     let config = load_config();
     let default_base = default_base_dir(app)?.to_string_lossy().into_owned();
     let base = config
@@ -196,7 +196,7 @@ fn preview_from(picked: PickedDirectory) -> DirectoryPreview {
 }
 
 /// 打开原生文件夹选择器并返回预览；用户取消时返回 `None`。
-pub(crate) async fn pick_directory(app: &AppHandle) -> Result<Option<DirectoryPreview>, String> {
+pub async fn pick_directory(app: &AppHandle) -> Result<Option<DirectoryPreview>, String> {
     #[cfg(target_os = "android")]
     let picked = android::pick(app).await?;
     #[cfg(not(target_os = "android"))]
@@ -206,7 +206,7 @@ pub(crate) async fn pick_directory(app: &AppHandle) -> Result<Option<DirectoryPr
 
 /// 恢复平台默认目录（仅桌面）；Android 必须由用户在系统选择器中授权。
 #[cfg(not(target_os = "android"))]
-pub(crate) fn use_default_directory(app: &AppHandle) -> Result<DirectoryPreview, String> {
+pub fn use_default_directory(app: &AppHandle) -> Result<DirectoryPreview, String> {
     let base = default_base_dir(app)?.to_string_lossy().into_owned();
     Ok(DirectoryPreview {
         modules: module_dirs(&base),
@@ -220,7 +220,7 @@ pub(crate) fn use_default_directory(app: &AppHandle) -> Result<DirectoryPreview,
 }
 
 #[cfg(target_os = "android")]
-pub(crate) fn use_default_directory(_app: &AppHandle) -> Result<DirectoryPreview, String> {
+pub fn use_default_directory(_app: &AppHandle) -> Result<DirectoryPreview, String> {
     Err("Android 上需要由系统文件夹选择器授权目录".to_string())
 }
 
@@ -300,19 +300,19 @@ fn prepare_config(
 }
 
 /// 确认并落库；成功后广播 `file-manager-changed`。
-pub(crate) fn save_directory(
+pub fn save_directory(
     app: &AppHandle,
     selection: DirectorySelection,
 ) -> Result<FileManagerState, String> {
     let config = prepare_config(app, &selection)?;
-    crate::preferences::save(crate::preferences::FILE_DIRECTORY, &config)?;
+    szu_core::preferences::save(szu_core::preferences::FILE_DIRECTORY, &config)?;
     let state = state(app)?;
     let _ = app.emit("file-manager-changed", &state);
     Ok(state)
 }
 
 /// 用户在确认框中取消时释放 SAF 持久授权，避免授权条目泄漏。
-pub(crate) fn release_pick(selection: &DirectorySelection) -> Result<(), String> {
+pub fn release_pick(selection: &DirectorySelection) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
         if let Some(uri) = selection.android_tree() {
@@ -401,7 +401,7 @@ fn download_target_impl(
 
 /// 构造某个模块的下载落点。是否中转、是否复制完全由本模块与 aria2 下载层决定，
 /// 调用方只把它塞进下载任务即可。
-pub(crate) fn download_target(
+pub fn download_target(
     app: &AppHandle,
     module: ManagedModule,
     task_id: &str,
@@ -415,7 +415,7 @@ pub(crate) fn download_target(
 /// 只处理当前下载对象：目标目录里存在 `<文件名>.aria2` 时才把控制文件与可能
 /// 只下载了一部分的 `<文件名>` 取回暂存目录；没有控制文件说明目标文件不是中断
 /// 的下载，不复制任何数据。
-pub(crate) fn seed_staging(publish: &PublishTarget, staging_file: &Path) -> Result<(), String> {
+pub fn seed_staging(publish: &PublishTarget, staging_file: &Path) -> Result<(), String> {
     #[cfg(target_os = "android")]
     {
         let file_name = staging_file
@@ -463,7 +463,7 @@ fn publishable_files(work_dir: &Path) -> Vec<String> {
 
 /// 把暂存目录里的文件复制到最终目录，并在复制前确认主文件完整。
 /// 桌面端是 no-op（暂存目录就是最终目录）。
-pub(crate) fn publish_staging(
+pub fn publish_staging(
     publish: &PublishTarget,
     work_dir: &Path,
     main_file: &str,
@@ -501,7 +501,7 @@ pub(crate) fn publish_staging(
 }
 
 /// 清理该任务的暂存目录。
-pub(crate) fn clear_staging(publish: &PublishTarget) {
+pub fn clear_staging(publish: &PublishTarget) {
     if let Err(error) = std::fs::remove_dir_all(&publish.staging_root) {
         if error.kind() != std::io::ErrorKind::NotFound {
             log::warn!(
@@ -513,7 +513,7 @@ pub(crate) fn clear_staging(publish: &PublishTarget) {
 }
 
 /// 删除任务保存的文件，统一处理本地直写与 SAF 已发布两种情况。
-pub(crate) fn delete_saved_files(target: &DownloadTarget, files: &[String]) {
+pub fn delete_saved_files(target: &DownloadTarget, files: &[String]) {
     if let Some(publish) = &target.publish {
         #[cfg(target_os = "android")]
         {

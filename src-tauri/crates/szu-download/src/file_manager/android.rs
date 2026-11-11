@@ -10,7 +10,7 @@ use serde::Deserialize;
 #[cfg(any(target_os = "android", test))]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct AndroidPickedDirectory {
+pub struct AndroidPickedDirectory {
     #[serde(default)]
     pub display_path: String,
     #[serde(default)]
@@ -20,7 +20,7 @@ pub(crate) struct AndroidPickedDirectory {
 }
 
 #[cfg(any(target_os = "android", test))]
-pub(crate) fn parse_picked_json(raw: &str) -> Result<AndroidPickedDirectory, String> {
+pub fn parse_picked_json(raw: &str) -> Result<AndroidPickedDirectory, String> {
     let parsed: AndroidPickedDirectory = serde_json::from_str(raw)
         .map_err(|error| format!("Android 目录选择结果无法解析：{error}"))?;
     if parsed.display_path.trim().is_empty() || parsed.tree_uri.trim().is_empty() {
@@ -188,7 +188,7 @@ mod android_impl {
         })
     }
 
-    pub(crate) async fn pick(app: &AppHandle) -> Result<Option<PickedDirectory>, String> {
+    pub async fn pick(app: &AppHandle) -> Result<Option<PickedDirectory>, String> {
         let (tx, rx) = oneshot::channel();
         {
             let mut guard = PICK_TX.lock().unwrap();
@@ -228,17 +228,17 @@ mod android_impl {
         }
     }
 
-    pub(crate) fn inspect(uri: &str) -> Result<super::AndroidPickedDirectory, String> {
+    pub fn inspect(uri: &str) -> Result<super::AndroidPickedDirectory, String> {
         let raw = call_string("inspectTree", &[uri])?;
         parse_picked_json(&raw)
     }
 
-    pub(crate) fn check_access(uri: &str) -> Result<bool, String> {
+    pub fn check_access(uri: &str) -> Result<bool, String> {
         call_boolean("checkAccess", &[uri])
     }
 
     /// Android 标准缓存目录（优先外部缓存，容量足够放录像）。
-    pub(crate) fn staging_root() -> Result<std::path::PathBuf, String> {
+    pub fn staging_root() -> Result<std::path::PathBuf, String> {
         let root = call_string("stagingRoot", &[])?;
         if root.trim().is_empty() {
             return Err("无法确定 Android 缓存目录".to_string());
@@ -247,7 +247,7 @@ mod android_impl {
     }
 
     /// 只取回断点续传需要的最小文件集合（控制文件存在时才取目标文件）。
-    pub(crate) fn export_resume_state(
+    pub fn export_resume_state(
         tree_uri: &str,
         relative_dir: &str,
         file_name: &str,
@@ -265,7 +265,7 @@ mod android_impl {
         }
     }
 
-    pub(crate) fn ensure_directory(uri: &str, relative_base: &str) -> Result<(), String> {
+    pub fn ensure_directory(uri: &str, relative_base: &str) -> Result<(), String> {
         let error = call_string("ensureDirectory", &[uri, relative_base])?;
         if error.is_empty() {
             Ok(())
@@ -274,7 +274,7 @@ mod android_impl {
         }
     }
 
-    pub(crate) fn publish_file(
+    pub fn publish_file(
         tree_uri: &str,
         relative_dir: &str,
         source: &std::path::Path,
@@ -292,7 +292,7 @@ mod android_impl {
         }
     }
 
-    pub(crate) fn delete_file(
+    pub fn delete_file(
         tree_uri: &str,
         relative_dir: &str,
         file_name: &str,
@@ -305,7 +305,7 @@ mod android_impl {
         }
     }
 
-    pub(crate) fn release(uri: &str) -> Result<(), String> {
+    pub fn release(uri: &str) -> Result<(), String> {
         call_void("releaseTree", &[uri])
     }
 
