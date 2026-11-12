@@ -30,3 +30,6 @@ easytier-core = { workspace = true }
 # `tracing` 记日志，没有该 feature 时事件不会转发给 `log`，调试页就看不到组网日志。
 tracing = { workspace = true }
 
+[dev-dependencies]
+tempfile = { workspace = true }
+

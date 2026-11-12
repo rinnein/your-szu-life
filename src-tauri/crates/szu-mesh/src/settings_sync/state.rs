@@ -198,6 +198,67 @@ fn now_ms() -> i64 {
 mod tests {
     use super::*;
 
+    // 迁移建出的表名必须与 toasty 模型派生的表名一致（sync_item_records /
+    // sync_row_records），否则所有读写都会以 "no such table" 失败。
+    #[tokio::test]
+    async fn sync_database_round_trips_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = SyncDatabase::open(dir.path()).await.unwrap();
+
+        let mut vector = VersionVector::default();
+        vector.bump("device-a");
+        db.save_item(
+            "uooc.session",
+            &ItemState {
+                vector: vector.clone(),
+                hash: "hash-a".into(),
+                conflict: false,
+            },
+        )
+        .await
+        .unwrap();
+        db.save_row(
+            "31:1",
+            &RowState {
+                hash: "row-a".into(),
+                conflict: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        // 更新既有行，覆盖 upsert 的 update 分支。
+        vector.bump("device-a");
+        db.save_item(
+            "uooc.session",
+            &ItemState {
+                vector: vector.clone(),
+                hash: "hash-b".into(),
+                conflict: true,
+            },
+        )
+        .await
+        .unwrap();
+
+        let items = db.load_items().await.unwrap();
+        let rows = db.load_rows().await.unwrap();
+        assert_eq!(
+            items.get("uooc.session"),
+            Some(&ItemState {
+                vector,
+                hash: "hash-b".into(),
+                conflict: true,
+            })
+        );
+        assert_eq!(
+            rows.get("31:1"),
+            Some(&RowState {
+                hash: "row-a".into(),
+                conflict: false,
+            })
+        );
+    }
+
     #[test]
     fn vector_bumps_are_per_device() {
         let mut vector = VersionVector::default();

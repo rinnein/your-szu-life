@@ -4,14 +4,15 @@ use toasty::migration::{MigrationFile, MigrationSet};
 pub static MESH_MIGRATIONS: MigrationSet = MigrationSet::new(&[MigrationFile::new(
     1,
     "0001_init_sync_state.sql",
-    "CREATE TABLE IF NOT EXISTS sync_items (
+    "CREATE TABLE IF NOT EXISTS sync_item_records (
         item_id TEXT PRIMARY KEY,
         vector_json TEXT NOT NULL,
         content_hash TEXT NOT NULL,
         conflict INTEGER NOT NULL,
         updated_at_ms INTEGER NOT NULL
     );
-    CREATE TABLE IF NOT EXISTS sync_rows (
+-- #[toasty::breakpoint]
+    CREATE TABLE IF NOT EXISTS sync_row_records (
         row_key TEXT PRIMARY KEY,
         content_hash TEXT NOT NULL,
         conflict INTEGER NOT NULL,
