@@ -689,6 +689,9 @@ impl Service {
         }
         self.cancel_notifications(&id);
         self.publish();
+        szu_core::settings_sync_signal::mark_dirty(
+            szu_core::settings_sync_items::OJ_ACCOUNTS,
+        );
         Ok(id)
     }
     fn remove(&self, id: &str) -> Result<(), String> {
@@ -723,6 +726,9 @@ impl Service {
         }
         self.cancel_notifications(id);
         self.publish();
+        szu_core::settings_sync_signal::mark_dirty(
+            szu_core::settings_sync_items::OJ_ACCOUNTS,
+        );
         Ok(())
     }
     fn update_status(&self, id: &str, e: &Entry, session: Session, message: &str) {

@@ -68,6 +68,7 @@ pub fn save_uooc_ai_connections(
         .save_uooc_ai(&serde_json::to_string(&next).map_err(|_| "无法序列化 AI 配置")?)
         .map_err(|_| "AI 配置无法写入系统密钥存储")?;
     *old = next;
+    szu_core::settings_sync_signal::mark_dirty(szu_core::settings_sync_items::UOOC_AI);
     Ok(old.connections())
 }
 #[tauri::command]
@@ -85,6 +86,7 @@ pub fn save_uooc_ai_preferences(
         .save_uooc_ai(&serde_json::to_string(&next).map_err(|_| "无法序列化 AI 配置")?)
         .map_err(|_| "AI 配置无法写入系统密钥存储")?;
     *old = next;
+    szu_core::settings_sync_signal::mark_dirty(szu_core::settings_sync_items::UOOC_AI);
     Ok(old.view())
 }
 #[tauri::command]
@@ -282,7 +284,10 @@ pub async fn download_uooc_qa_vectors(
         .into_iter()
         .map(|c| c.id)
         .collect();
-    super::quiz::qa::download_qa_vectors(qa_db, &url, api_key.as_deref(), &cids).await
+    let result =
+        super::quiz::qa::download_qa_vectors(qa_db, &url, api_key.as_deref(), &cids).await?;
+    szu_core::settings_sync_signal::mark_dirty(szu_core::settings_sync_items::UOOC_QA_BANK);
+    Ok(result)
 }
 
 #[tauri::command]
@@ -346,7 +351,9 @@ pub async fn submit_uooc_exam(
     questions: Option<Vec<super::quiz::model::Question>>,
 ) -> Result<String, String> {
     let service = service(&app)?;
-    service.submit_exam(&cid, &task_id, answers, questions).await
+    let result = service.submit_exam(&cid, &task_id, answers, questions).await?;
+    szu_core::settings_sync_signal::mark_dirty(szu_core::settings_sync_items::UOOC_QA_BANK);
+    Ok(result)
 }
 
 #[tauri::command]
@@ -421,7 +428,7 @@ pub async fn sync_uooc_qa_bank(
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
     let api_key = service.qa_api_key_for_server(Some(&url)).await;
-    super::quiz::qa::sync_missing_to_server(
+    let result = super::quiz::qa::sync_missing_to_server(
         qa_db,
         &url,
         api_key.as_deref(),
@@ -430,7 +437,9 @@ pub async fn sync_uooc_qa_bank(
         false,
         Some(&service),
     )
-    .await
+    .await?;
+    szu_core::settings_sync_signal::mark_dirty(szu_core::settings_sync_items::UOOC_QA_BANK);
+    Ok(result)
 }
 
 #[tauri::command]
@@ -529,7 +538,11 @@ pub async fn upload_all_uooc_qa_bank(
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| service.snapshot().settings.qa_server_url.clone());
     let api_key = service.qa_api_key_for_server(Some(&url)).await;
-    super::quiz::qa::upload_all_local_bank(qa_db, &url, api_key.as_deref(), Some(&service)).await
+    let result =
+        super::quiz::qa::upload_all_local_bank(qa_db, &url, api_key.as_deref(), Some(&service))
+            .await?;
+    szu_core::settings_sync_signal::mark_dirty(szu_core::settings_sync_items::UOOC_QA_BANK);
+    Ok(result)
 }
 
 #[tauri::command]
@@ -543,6 +556,7 @@ pub async fn fetch_uooc_completed_quiz(
     service
         .fetch_completed_quiz(&cid, task_id.as_deref(), resource_id.as_deref())
         .await?;
+    szu_core::settings_sync_signal::mark_dirty(szu_core::settings_sync_items::UOOC_QA_BANK);
     Ok(service.snapshot())
 }
 
@@ -696,7 +710,9 @@ pub async fn build_uooc_local_bank(
     on_progress: tauri::ipc::Channel<super::model::BankRebuildProgress>,
 ) -> Result<usize, String> {
     let service = service(&app)?;
-    service.build_local_bank_with_channel(Some(on_progress)).await
+    let result = service.build_local_bank_with_channel(Some(on_progress)).await?;
+    szu_core::settings_sync_signal::mark_dirty(szu_core::settings_sync_items::UOOC_QA_BANK);
+    Ok(result)
 }
 
 #[tauri::command]

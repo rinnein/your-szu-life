@@ -50,6 +50,7 @@ fn meaningful(raw: &str) -> Option<String> {
 }
 
 /// 组合 Android 的厂商与型号；型号已包含厂商前缀时只保留型号。
+#[cfg(any(target_os = "android", test))]
 fn combine_model(manufacturer: Option<String>, model: Option<String>) -> Option<String> {
     let model = model.and_then(|value| meaningful(&value));
     let manufacturer = manufacturer.and_then(|value| meaningful(&value));

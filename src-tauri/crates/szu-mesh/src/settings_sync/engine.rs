@@ -4,6 +4,7 @@
 //! 不再有“冲突冻结”：同一 key 的并发写入由 Loro 的 LWW 规则确定胜者，不同 key
 //! （不同 OJ 站点、不同题库行）独立合并。
 
+use std::collections::BTreeSet;
 use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
@@ -20,6 +21,28 @@ use szu_core::storage::SharedCredentialStore;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 pub const PROTOCOL: u32 = 2;
+
+/// 一次同步的范围。
+#[derive(Clone, Debug)]
+pub enum PassMode {
+    /// 完整检测：采集全部同步项并与所有对端交换。
+    Full,
+    /// 修改触发的增量检测：只采集指定项；没有实际变化时不发起对端请求。
+    Dirty(BTreeSet<String>),
+}
+
+impl PassMode {
+    fn force(&self) -> bool {
+        matches!(self, Self::Full)
+    }
+
+    fn filter(&self) -> Option<&BTreeSet<String>> {
+        match self {
+            Self::Full => None,
+            Self::Dirty(items) => Some(items),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -147,16 +170,26 @@ impl SyncStore {
     }
 
     /// 一次完整同步：先把本机改动并入文档，再逐对端交换增量并应用。
-    pub async fn run_pass(&self, app: &AppHandle) -> Result<SyncSummary, String> {
+    pub async fn run_pass(
+        &self,
+        app: &AppHandle,
+        mode: PassMode,
+    ) -> Result<SyncSummary, String> {
         // 只串行本机的完整轮次；出站 HTTP 不持有 `pass`，避免两台设备同时
         // 发起同步时互相等待对端 handler 造成的死锁。
         let _running = self.running.lock().await;
         let doc = self.doc(app).await?;
         let items = self.items(app);
+        let force = mode.force();
         let mut summary = SyncSummary::default();
         {
             let _pass = self.pass.lock().await;
-            summary.pushed = doc.collect_local(app, &items).await?;
+            summary.pushed = doc.collect_local(app, &items, mode.filter()).await?;
+        }
+        if !force && summary.pushed == 0 {
+            // 修改信号可能来自同步应用或重复通知：没有真正变化就不打扰对端。
+            self.set_summary(summary.clone());
+            return Ok(summary);
         }
 
         let peers = peer_endpoints(app);
@@ -233,7 +266,7 @@ impl SyncStore {
         }
         // 出站 HTTP 期间用户可能又改了本地配置：应用远端前再采集一次，
         // 让这些改动进入 Loro 后再按合并结果回写业务存储。
-        let _ = doc.collect_local(app, items).await?;
+        let _ = doc.collect_local(app, items, None).await?;
         let stats = doc.apply_remote(app, items).await?;
         summary.applied += stats.applied;
         summary.bank_rows += stats.bank_rows;
@@ -245,7 +278,7 @@ impl SyncStore {
     pub async fn peer_state(&self, app: &AppHandle) -> Result<SyncStateResponse, String> {
         let _pass = self.pass.lock().await;
         let doc = self.doc(app).await?;
-        let _ = doc.collect_local(app, &self.items(app)).await?;
+        let _ = doc.collect_local(app, &self.items(app), None).await?;
         Ok(SyncStateResponse {
             protocol: PROTOCOL,
             vv: encode_vv(&doc.oplog_vv()),
@@ -262,7 +295,7 @@ impl SyncStore {
         let _pass = self.pass.lock().await;
         let doc = self.doc(app).await?;
         let items = self.items(app);
-        doc.collect_local(app, &items).await?;
+        doc.collect_local(app, &items, None).await?;
         if !updates.is_empty() {
             doc.import(updates)?;
         }
@@ -399,7 +432,7 @@ fn peer_endpoints(app: &AppHandle) -> Vec<PeerEndpoint> {
     };
     mesh.devices()
         .into_iter()
-        .filter(|device| !device.is_self && device.reachable)
+        .filter(|device| !device.is_self && device.reachable && device.sync_enabled)
         .filter_map(|device| {
             let ip: Ipv4Addr = device.overlay_ip.as_deref()?.parse().ok()?;
             let port = mesh.bridge_port(&node, ip)?;
@@ -427,5 +460,17 @@ mod tests {
     #[test]
     fn invalid_version_vector_is_rejected() {
         assert!(decode_vv("not-base64!!").is_err());
+    }
+
+    #[test]
+    fn pass_mode_selects_force_and_filter() {
+        let mut items = BTreeSet::new();
+        items.insert("oj.accounts".to_owned());
+        let dirty = PassMode::Dirty(items);
+        assert!(!dirty.force());
+        assert_eq!(dirty.filter().map(|items| items.len()), Some(1));
+        let full = PassMode::Full;
+        assert!(full.force());
+        assert!(full.filter().is_none());
     }
 }

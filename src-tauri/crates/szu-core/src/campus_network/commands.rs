@@ -70,7 +70,9 @@ pub fn save_dorm_network_settings(
     input: DormNetworkSettingsInput,
     store: State<'_, CampusNetworkStore>,
 ) -> Result<DormNetworkSettingsView, String> {
-    service::save_dorm_network_settings(app, input, &store)
+    let view = service::save_dorm_network_settings(app, input, &store)?;
+    crate::settings_sync_signal::mark_dirty(crate::settings_sync_items::DORM_CREDENTIALS);
+    Ok(view)
 }
 
 #[tauri::command]
@@ -113,7 +115,9 @@ pub fn save_staff_network_settings(
     app: tauri::AppHandle,
     input: StaffNetworkSettingsInput,
 ) -> Result<StaffNetworkSettingsView, String> {
-    super::staff_login::save_settings(app, input)
+    let view = super::staff_login::save_settings(app, input)?;
+    crate::settings_sync_signal::mark_dirty(crate::settings_sync_items::STAFF_CREDENTIALS);
+    Ok(view)
 }
 #[tauri::command]
 pub fn get_staff_login_status(

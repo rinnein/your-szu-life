@@ -3,7 +3,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 use tauri::{AppHandle, Emitter, State};
 
-use super::engine::{SyncItemView, SyncStore};
+use super::engine::{PassMode, SyncItemView, SyncStore};
 use super::SyncStatusView;
 
 #[tauri::command]
@@ -62,7 +62,7 @@ pub async fn logout_uooc_with_mode(
             let app = app.clone();
             let syncing = store.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(error) = syncing.run_pass(&app).await {
+                if let Err(error) = syncing.run_pass(&app, PassMode::Full).await {
                     log::warn!("全局退出后立即同步失败: {error}");
                 }
                 super::emit_status(&app, &syncing).await;
@@ -86,6 +86,10 @@ pub async fn set_sync_item_enabled(
 ) -> Result<SyncStatusView, String> {
     let store = store.inner().clone();
     store.set_item_enabled(&id, enabled)?;
+    if enabled && crate::mesh::enabled() {
+        // 恢复同步后立即补拉该单项；由 settings_sync 的防抖循环执行。
+        szu_core::settings_sync_signal::request_full();
+    }
     let view = super::status(&app, &store).await;
     let _ = app.emit(super::STATUS_EVENT, view.clone());
     Ok(view)

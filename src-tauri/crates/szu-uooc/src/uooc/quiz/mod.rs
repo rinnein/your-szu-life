@@ -695,6 +695,7 @@ async fn submit(
             log::warn!("保存提交试卷快照失败: {error}");
         }
     }
+    szu_core::settings_sync_signal::mark_dirty(szu_core::settings_sync_items::UOOC_QA_BANK);
 
     let verdict = sent
         .as_ref()
@@ -751,7 +752,7 @@ async fn submit(
                 }
             }
         }
-
+        szu_core::settings_sync_signal::mark_dirty(szu_core::settings_sync_items::UOOC_QA_BANK);
         return Ok(TaskStatus::Failed);
     }
     update(service, ctx, |q| {
@@ -773,7 +774,7 @@ async fn submit(
 
             // 完成测验时，直接执行单个题组构建与同步
             let _ = build_single_task_group(service, &ctx.cid, &q.task_id, Some(true), BankSyncMode::Active).await;
-
+            szu_core::settings_sync_signal::mark_dirty(szu_core::settings_sync_items::UOOC_QA_BANK);
             return Ok(TaskStatus::Queued);
         }
         tokio::select! {biased;_=cancel.cancelled()=>return Err(Error::Cancelled),_=tokio::time::sleep(std::time::Duration::from_secs(2))=>{}}

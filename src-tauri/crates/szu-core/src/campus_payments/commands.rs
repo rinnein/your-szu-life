@@ -47,13 +47,17 @@ pub async fn save_electricity_settings(
     store: State<'_, CampusPaymentsStore>,
 ) -> Result<(), String> {
     let electricity_store = store.electricity.clone();
-    tauri::async_runtime::spawn_blocking(move || {
+    let result = tauri::async_runtime::spawn_blocking(move || {
         electricity::save_settings(&electricity_store, settings)?;
         electricity::emit_status(&app, &electricity_store);
         Ok(())
     })
     .await
-    .map_err(|_| "无法保存电费宿舍配置，请稍后重试。".to_owned())?
+    .map_err(|_| "无法保存电费宿舍配置，请稍后重试。".to_owned())?;
+    if result.is_ok() {
+        crate::settings_sync_signal::mark_dirty(crate::settings_sync_items::ELECTRICITY_LOCATION);
+    }
+    result
 }
 
 #[tauri::command]

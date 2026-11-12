@@ -515,6 +515,9 @@ impl Service {
         *self.permits.write().unwrap() = Arc::new(Semaphore::new(settings.concurrency));
         runtime.snapshot.settings = settings;
         self.publish(&mut runtime);
+        szu_core::settings_sync_signal::mark_dirty(
+            szu_core::settings_sync_items::UOOC_SETTINGS,
+        );
         Ok(())
     }
     pub async fn qa_api_key(&self) -> Option<String> {
@@ -645,6 +648,9 @@ impl Service {
                 self.log_debug("qa", format!("全量题库构建失败: {err}"));
             }
         }
+        szu_core::settings_sync_signal::mark_dirty(
+            szu_core::settings_sync_items::UOOC_QA_BANK,
+        );
     }
     fn start(self: &Arc<Self>, ids: Vec<String>) -> Result<(), String> {
         if ids.is_empty() {

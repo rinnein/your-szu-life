@@ -15,7 +15,7 @@ pub mod doc;
 pub mod engine;
 pub mod items;
 
-use engine::{SyncItemView, SyncStore, SyncSummary};
+use engine::{PassMode, SyncItemView, SyncStore, SyncSummary};
 
 pub const STATUS_EVENT: &str = "sync-status-changed";
 
@@ -37,16 +37,18 @@ pub fn initialize(app: &AppHandle, credentials: szu_core::storage::SharedCredent
         log::error!("设备同步模块初始化失败: {error}");
         return;
     }
-    let app = app.clone();
+    let periodic_app = app.clone();
+    let change_app = app.clone();
+    let periodic_store = store.clone();
     tauri::async_runtime::spawn(async move {
         // 等节点先把虚拟 IP 与设备列表准备好，再开始交换。
         tokio::time::sleep(Duration::from_secs(2)).await;
         loop {
             if crate::mesh::enabled() {
-                if let Err(error) = store.run_pass(&app).await {
+                if let Err(error) = periodic_store.run_pass(&periodic_app, PassMode::Full).await {
                     log::warn!("设备同步失败: {error}");
                 }
-                emit_status(&app, &store).await;
+                emit_status(&periodic_app, &periodic_store).await;
             }
             let interval = szu_core::activity::interval(
                 Some("mesh"),
@@ -55,6 +57,36 @@ pub fn initialize(app: &AppHandle, credentials: szu_core::storage::SharedCredent
                 Duration::from_secs(600),
             );
             tokio::time::sleep(interval).await;
+        }
+    });
+
+    // 同步项修改/设备上线触发：防抖合并后立即跑一次；完整请求走 Full，
+    // 单项修改只采集对应项，没有实际变化就不打扰对端。
+    let change_store = store.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            szu_core::settings_sync_signal::wait_for_change().await;
+            tokio::time::sleep(Duration::from_millis(700)).await;
+            let request = szu_core::settings_sync_signal::take();
+            if !crate::mesh::enabled() {
+                continue;
+            }
+            let full = request.full;
+            let mode = if full {
+                PassMode::Full
+            } else if !request.items.is_empty() {
+                PassMode::Dirty(request.items)
+            } else {
+                continue;
+            };
+            match change_store.run_pass(&change_app, mode).await {
+                Ok(summary) => {
+                    if full || summary.pushed > 0 {
+                        emit_status(&change_app, &change_store).await;
+                    }
+                }
+                Err(error) => log::warn!("设备同步失败: {error}"),
+            }
         }
     });
 }
@@ -78,7 +110,7 @@ pub async fn trigger(app: &AppHandle, store: &SyncStore) -> Result<SyncStatusVie
     if !crate::mesh::enabled() {
         return Err("请先开启设备同步".into());
     }
-    let summary = store.run_pass(app).await?;
+    let summary = store.run_pass(app, PassMode::Full).await?;
     let view = SyncStatusView {
         enabled: true,
         campus_access: crate::mesh::campus_access_enabled(),

@@ -15,14 +15,10 @@ use szu_core::storage::SharedCredentialStore;
 use szu_uooc::uooc::model::Settings as UoocSettings;
 use szu_uooc::uooc::quiz::qa::{LocalBankQuestion, SubmittedPaperRecord};
 
-pub const UOOC_SESSION: &str = "uooc.session";
-pub const UOOC_AI: &str = "uooc.ai";
-pub const OJ_ACCOUNTS: &str = "oj.accounts";
-pub const DORM_CREDENTIALS: &str = "network.dorm.credentials";
-pub const STAFF_CREDENTIALS: &str = "network.staff.credentials";
-pub const ELECTRICITY_LOCATION: &str = "electricity.location";
-pub const UOOC_SETTINGS: &str = "uooc.settings";
-pub const UOOC_QA_BANK: &str = "uooc.qa_bank";
+pub use szu_core::settings_sync_items::{
+    DORM_CREDENTIALS, ELECTRICITY_LOCATION, OJ_ACCOUNTS, STAFF_CREDENTIALS, UOOC_AI, UOOC_QA_BANK,
+    UOOC_SESSION, UOOC_SETTINGS,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub struct ItemDef {

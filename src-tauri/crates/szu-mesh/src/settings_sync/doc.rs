@@ -3,7 +3,7 @@
 //! 文档只保存 JSON 文本；真正的凭据仍由各模块的存储持有。检查点落盘前用设备
 //! 主密钥加密，因此 Loro snapshot 中的明文不会直接出现在磁盘上。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -220,17 +220,22 @@ impl SyncDoc {
     }
 
     /// 把本机业务值并入文档；返回提交到文档的项/行数量。
+    ///
+    /// `only` 为 `Some` 时只比较指定同步项，供“修改后立即同步”使用，避免
+    /// 修改 OJ 账号时也去扫描整个题库。
     pub async fn collect_local(
         &self,
         app: &AppHandle,
         items: &ItemContext,
+        only: Option<&BTreeSet<String>>,
     ) -> Result<usize, String> {
         let disabled = disabled_items();
         let mut pushed = 0usize;
         let mut baseline = self.baseline.lock().map_err(|_| "同步基线锁失败")?.clone();
 
         for def in ITEM_DEFS.iter().filter(|def| !def.collection) {
-            if disabled.iter().any(|id| id == def.id)
+            if !wanted(only, def.id)
+                || disabled.iter().any(|id| id == def.id)
                 || matches!(def.id, OJ_ACCOUNTS | UOOC_SESSION)
             {
                 continue;
@@ -247,7 +252,7 @@ impl SyncDoc {
             // 单值项取值为空时不删除共享值，避免“本机未配置”覆盖其它设备。
         }
 
-        if !disabled.iter().any(|id| id == OJ_ACCOUNTS) {
+        if wanted(only, OJ_ACCOUNTS) && !disabled.iter().any(|id| id == OJ_ACCOUNTS) {
             let local = items.read(OJ_ACCOUNTS).await?;
             let local = match local {
                 Some(Value::Object(map)) => map,
@@ -276,7 +281,7 @@ impl SyncDoc {
             }
         }
 
-        if !disabled.iter().any(|id| id == UOOC_QA_BANK) {
+        if wanted(only, UOOC_QA_BANK) && !disabled.iter().any(|id| id == UOOC_QA_BANK) {
             let bank = self.bank_map()?;
             let snapshot = items.bank_snapshot().await?;
             for question in snapshot.questions {
@@ -303,7 +308,7 @@ impl SyncDoc {
             }
         }
 
-        if !disabled.iter().any(|id| id == UOOC_SESSION) {
+        if wanted(only, UOOC_SESSION) && !disabled.iter().any(|id| id == UOOC_SESSION) {
             pushed += self.consume_pending_login(items).await?;
         }
 
@@ -703,6 +708,11 @@ fn quarantine(path: &Path) {
     }
 }
 
+/// 是否应处理某个同步项；`None` 表示完整同步。
+fn wanted(only: Option<&BTreeSet<String>>, id: &str) -> bool {
+    only.map_or(true, |items| items.contains(id))
+}
+
 /// 本机停用的同步项。
 pub fn disabled_items() -> Vec<String> {
     szu_core::preferences::load::<Vec<String>>(szu_core::preferences::SYNC_DISABLED_ITEMS)
@@ -757,6 +767,15 @@ mod tests {
     #[test]
     fn checkpoint_rejects_truncated_bytes() {
         assert!(unframe(b"short").is_err());
+    }
+
+    #[test]
+    fn item_filter_none_means_full_and_some_restricts() {
+        let mut only = BTreeSet::new();
+        only.insert("oj.accounts".to_owned());
+        assert!(wanted(None, "oj.accounts"));
+        assert!(wanted(Some(&only), "oj.accounts"));
+        assert!(!wanted(Some(&only), "uooc.session"));
     }
 }
 

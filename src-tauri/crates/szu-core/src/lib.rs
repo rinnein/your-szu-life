@@ -29,5 +29,7 @@ pub mod platform_tls;
 pub mod ports;
 pub mod preferences;
 pub mod settings;
+pub mod settings_sync_items;
+pub mod settings_sync_signal;
 pub mod storage;
 pub mod webview_cookies;

@@ -311,6 +311,10 @@ pub async fn start(app: &AppHandle, store: &Arc<MeshStore>) -> Result<(), String
         Ok(running) => {
             *guard = Some(running);
             emit_status(app, store);
+            if enabled() {
+                // 节点启动/重新启用同步时补一次完整交换；即使定时循环还在睡眠也能立即跟上。
+                szu_core::settings_sync_signal::request_full();
+            }
             Ok(())
         }
         Err(error) => {

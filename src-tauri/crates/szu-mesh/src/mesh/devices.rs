@@ -112,8 +112,13 @@ pub async fn refresh_loop(
         );
         match refresh_once(&app, &store, &node, &client, &token).await {
             Ok(devices) => {
+                let previous = store.devices();
                 if store.replace_devices(devices.clone()) {
                     let _ = app.emit(DEVICES_EVENT, &devices);
+                    if super::enabled() && has_new_online_peer(&previous, &devices) {
+                        // 只请求一次完整同步；防抖与串行化由 settings_sync 处理。
+                        szu_core::settings_sync_signal::request_full();
+                    }
                 }
                 // 设备/本机校园网状态都可能变化：每轮都重新决定是否借用出口。
                 super::campus::refresh(&app, &store, &node);
@@ -209,5 +214,106 @@ pub fn offline_self(device_id: &str, device_name: &str, app_version: &str) -> Me
         region: "unknown".into(),
         network_state: "unknown".into(),
         ssid: None,
+    }
+}
+
+/// 可参与同步的在线对端键：`(device_id, overlay_ip)`。
+fn online_peer_keys(devices: &[MeshDeviceView]) -> HashSet<(String, String)> {
+    devices
+        .iter()
+        .filter(|device| !device.is_self && device.reachable && device.sync_enabled)
+        .filter_map(|device| {
+            let overlay_ip = device.overlay_ip.clone()?;
+            (!device.device_id.is_empty()).then(|| (device.device_id.clone(), overlay_ip))
+        })
+        .collect()
+}
+
+/// 当前快照是否出现了上一轮没有的在线同步对端。
+fn has_new_online_peer(previous: &[MeshDeviceView], current: &[MeshDeviceView]) -> bool {
+    let before = online_peer_keys(previous);
+    online_peer_keys(current)
+        .iter()
+        .any(|peer| !before.contains(peer))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn device(
+        device_id: &str,
+        overlay_ip: &str,
+        is_self: bool,
+        reachable: bool,
+        sync_enabled: bool,
+        latency_ms: Option<u64>,
+    ) -> MeshDeviceView {
+        MeshDeviceView {
+            device_id: device_id.into(),
+            name: device_id.into(),
+            platform: "linux".into(),
+            app_version: "0.15.0".into(),
+            overlay_ip: Some(overlay_ip.into()),
+            is_self,
+            reachable,
+            latency_ms,
+            sync_enabled,
+            campus_access: false,
+            on_campus: false,
+            region: "none".into(),
+            network_state: "unknown".into(),
+            ssid: None,
+        }
+    }
+
+    fn peer(id: &str, ip: &str) -> MeshDeviceView {
+        device(id, ip, false, true, true, Some(10))
+    }
+
+    #[test]
+    fn new_online_sync_peer_triggers() {
+        let previous = vec![device("self", "10.0.0.1", true, true, true, None)];
+        let current = vec![
+            device("self", "10.0.0.1", true, true, true, None),
+            peer("peer-a", "10.0.0.2"),
+        ];
+        assert!(has_new_online_peer(&previous, &current));
+        assert!(!has_new_online_peer(&current, &current));
+    }
+
+    #[test]
+    fn latency_changes_do_not_trigger() {
+        let previous = vec![peer("peer-a", "10.0.0.2")];
+        let current = vec![device(
+            "peer-a",
+            "10.0.0.2",
+            false,
+            true,
+            true,
+            Some(99),
+        )];
+        assert!(!has_new_online_peer(&previous, &current));
+    }
+
+    #[test]
+    fn unreachable_unknown_or_sync_disabled_peers_do_not_trigger() {
+        let previous = Vec::new();
+        assert!(!has_new_online_peer(
+            &previous,
+            &[device("peer-a", "10.0.0.2", false, false, true, Some(1))]
+        ));
+        assert!(!has_new_online_peer(
+            &previous,
+            &[device("", "10.0.0.2", false, true, true, Some(1))]
+        ));
+        assert!(!has_new_online_peer(
+            &previous,
+            &[device("peer-a", "10.0.0.2", false, true, false, Some(1))]
+        ));
+        assert!(!has_new_online_peer(
+            &previous,
+            &[device("self", "10.0.0.1", true, true, true, None)]
+        ));
     }
 }

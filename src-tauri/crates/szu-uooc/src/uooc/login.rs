@@ -233,6 +233,9 @@ pub async fn open(service: Arc<Service>, parent: WebviewWindow) -> Result<(), St
                     &fingerprint,
                 );
             }
+            szu_core::settings_sync_signal::mark_dirty(
+                szu_core::settings_sync_items::UOOC_SESSION,
+            );
             let _ = window.destroy();
             let _ = parent.set_focus();
             let refresh_service = service.clone();
@@ -319,6 +322,9 @@ pub async fn logout(service: Arc<Service>, window: WebviewWindow) -> Result<(), 
     let _ = szu_core::preferences::save(
         szu_core::preferences::UOOC_LOGIN_PENDING,
         &String::new(),
+    );
+    szu_core::settings_sync_signal::mark_dirty(
+        szu_core::settings_sync_items::UOOC_SESSION,
     );
     let lease = service.native_session.clone().lock_owned().await;
     tauri::async_runtime::spawn_blocking(move || {
