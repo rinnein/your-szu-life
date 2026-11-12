@@ -155,6 +155,11 @@ jobs:
         # 同一提交已随 canary 发布：直接从 canary release 下载资产充当本次的
         # 待发布产物，后面两个发布步骤按正常流程走。资产名带 package.json
         # 版本号，与 detect 的检查一致，旧的残留版本不会混进来。
+        #
+        # glob 的版本前缀必须是 `_`：资产名是
+        # your-szu-life_<platform>_<arch>_<version>-release.<ext>，版本号紧跟在
+        # 下划线之后。写成 `*-${VERSION}-release.*` 会一个都匹配不到（gh 只会
+        # 报 "no assets match the file pattern"）。
         if: needs.detect.outputs.reuse == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -163,7 +168,7 @@ jobs:
           set -euo pipefail
           mkdir -p packages
           gh release download canary --repo "$GITHUB_REPOSITORY" \
-            --pattern "*-${VERSION}-release.*" --dir packages --clobber
+            --pattern "*_${VERSION}-release.*" --dir packages --clobber
           test "$(find packages -type f | wc -l)" -ge 5
           ls -l packages
 
