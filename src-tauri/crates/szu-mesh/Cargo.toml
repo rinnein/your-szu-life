@@ -11,8 +11,11 @@ path = "src/lib.rs"
 
 [dependencies]
 szu-core = { path = "../szu-core" }
+szu-oj = { path = "../szu-oj" }
 szu-uooc = { path = "../szu-uooc" }
 tauri = { workspace = true }
+loro = "1.17"
+base64 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
@@ -20,7 +23,6 @@ chrono = { workspace = true }
 tokio = { workspace = true }
 reqwest = { workspace = true }
 axum = { workspace = true }
-toasty = { workspace = true }
 sha2 = { workspace = true }
 uuid = { workspace = true }
 argon2 = { workspace = true }

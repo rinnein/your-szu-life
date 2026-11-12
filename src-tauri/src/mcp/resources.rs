@@ -361,7 +361,7 @@ pub async fn read_resource_by_uri(
         }
         "your-szu-life://data/sync/items" => {
             match app.try_state::<std::sync::Arc<szu_mesh::settings_sync::engine::SyncStore>>() {
-                Some(store) => serde_json::to_string_pretty(&store.item_views().await)
+                Some(store) => serde_json::to_string_pretty(&store.item_views(app).await)
                     .unwrap_or_else(|_| "{}".to_string()),
                 None => "{}".to_string(),
             }

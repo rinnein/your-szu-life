@@ -129,6 +129,8 @@ permissions = [
   "allow-get-sync-status",
   "allow-get-sync-items",
   "allow-trigger-sync",
+  "allow-logout-uooc-with-mode",
+  "allow-set-sync-item-enabled",
   "allow-get-auth-state",
   "allow-refresh-auth-session",
   "allow-get-account-profile",

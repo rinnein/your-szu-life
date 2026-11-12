@@ -37,11 +37,12 @@ const syncStatus = {
   enabled: true,
   campusAccess: false,
   running: true,
-  summary: { peers: 1, applied: 0, pushed: 1, conflicts: 0, bankRows: 2, errors: [] },
+  summary: { peers: 1, applied: 0, pushed: 1, bankRows: 2, errors: [] },
   items: [
-    { id: "uooc.session", label: "UOOC 登录态", collection: false, state: "synced" },
+    { id: "uooc.session", label: "UOOC 登录态", collection: false, state: "loggedOut" },
     { id: "oj.accounts", label: "OJ 账号密码", collection: false, state: "waiting" },
-    { id: "uooc.qa_bank", label: "UOOC 题库", collection: true, state: "conflict" },
+    { id: "uooc.qa_bank", label: "UOOC 题库", collection: true, state: "synced" },
+    { id: "uooc.ai", label: "UOOC AI 配置", collection: false, state: "disabled" },
   ],
 };
 
@@ -166,11 +167,21 @@ describe("SettingsSync", () => {
     });
   });
 
-  it("lists the whitelisted items and marks frozen conflicts", async () => {
-    vi.mocked(invoke).mockImplementation(async (command) => {
+  it("lists the whitelisted items with their Loro states and enables a disabled item", async () => {
+    const success = vi.spyOn(toast, "success").mockImplementation(() => undefined as never);
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
       if (command === "get_mesh_status") return enabledStatus;
       if (command === "get_sync_status") return syncStatus;
       if (command === "list_mesh_devices") return [];
+      if (command === "set_sync_item_enabled") {
+        expect(args).toMatchObject({ id: "uooc.ai", enabled: true });
+        return {
+          ...syncStatus,
+          items: syncStatus.items.map((item) =>
+            item.id === "uooc.ai" ? { ...item, state: "synced" } : item,
+          ),
+        };
+      }
       return undefined;
     });
 
@@ -179,7 +190,17 @@ describe("SettingsSync", () => {
     expect(await screen.findByText("UOOC 登录态")).toBeInTheDocument();
     expect(screen.getByText("OJ 账号密码")).toBeInTheDocument();
     expect(screen.getByText("UOOC 题库")).toBeInTheDocument();
-    expect(screen.getByText("冲突冻结")).toBeInTheDocument();
-    expect(screen.getByText(/有 1 项\/行冲突/)).toBeInTheDocument();
+    expect(screen.getByText("已全局退出")).toBeInTheDocument();
+    expect(screen.getByText("已停用")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /恢复同步/ }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("set_sync_item_enabled", {
+        id: "uooc.ai",
+        enabled: true,
+      });
+      expect(success).toHaveBeenCalled();
+    });
   });
 });

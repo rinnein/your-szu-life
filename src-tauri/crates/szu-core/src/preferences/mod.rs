@@ -29,6 +29,10 @@ pub const SYNC_CAMPUS_ACCESS: &str = "sync.campus_access";
 pub const SYNC_DEVICE_ID: &str = "sync.device_id";
 /// 用户可见的设备名，只影响设备列表展示。
 pub const SYNC_DEVICE_NAME: &str = "sync.device_name";
+/// 本机主动停用的同步项（不同步，仅本机生效）。
+pub const SYNC_DISABLED_ITEMS: &str = "sync.disabled_items";
+/// 最近一次显式 UOOC 登录对应的账户指纹；同步引擎消费后清空。
+pub const UOOC_LOGIN_PENDING: &str = "uooc.sync.login_pending";
 
 static DATABASE: OnceLock<db::SettingsDatabase> = OnceLock::new();
 

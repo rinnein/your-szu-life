@@ -943,6 +943,24 @@ pub fn save_settings(
     super::monitor::start_dorm_monitor(app.clone());
     Ok(view)
 }
+pub fn apply_synced_credentials(
+    app: tauri::AppHandle,
+    credentials: DormCustomCredentials,
+) -> Result<StaffNetworkSettingsView, String> {
+    let store = app
+        .try_state::<CampusNetworkStore>()
+        .ok_or("校园网状态不可用")?;
+    let current = || crate::auth::current_network_credentials(&app);
+    let view = settings::apply_credentials(
+        &store,
+        credentials,
+        &current,
+        &AppNetworkEvents(&app),
+    )?;
+    super::monitor::start_dorm_monitor(app.clone());
+    Ok(view)
+}
+
 pub fn apply(
     app: tauri::AppHandle,
     confirmation_token: Option<String>,

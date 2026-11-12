@@ -1992,9 +1992,87 @@ pub fn reload_synced_ai(app: &tauri::AppHandle) -> Result<(), String> {
     service(app)?.reload_ai_from_store()
 }
 
-/// 设备同步：UOOC 会话写入安全存储后重建客户端，等待下一次刷新验证。
+/// 设备同步：UOOC 是否处于服务端已验证的登录态。
+pub fn is_logged_in(app: &tauri::AppHandle) -> bool {
+    service(app)
+        .map(|service| service.snapshot().session == SessionStatus::Ready)
+        .unwrap_or(false)
+}
+
+/// 设备同步：写入对端登录态后，按正常登录流程重建客户端并立即验证。
 pub fn reload_synced_session(app: &tauri::AppHandle) -> Result<(), String> {
-    service(app)?.apply_session_from_store()
+    let service = service(app)?;
+    service.apply_session_from_store()?;
+    let refresh = service.clone();
+    tauri::async_runtime::spawn(async move {
+        let _ = refresh.refresh().await;
+        refresh.full_qa_sync().await;
+    });
+    Ok(())
+}
+
+/// 设备同步：应用其它设备的全局退出。
+///
+/// 复用正常退出的运行时清理，但不打开登录窗口；原生 WebView cookie 尽力清理。
+pub fn apply_synced_logout(app: &tauri::AppHandle) -> Result<(), String> {
+    let service = service(app)?;
+    let attempt;
+    {
+        let mut runtime = service.runtime.lock().map_err(|_| "UOOC 状态锁失败")?;
+        runtime.epoch = runtime.epoch.wrapping_add(1);
+        runtime.session_cancel.cancel();
+        runtime.session_cancel = CancellationToken::new();
+        Service::freeze(&mut runtime, TaskStatus::Stopped, "已在其它设备退出 UOOC 登录");
+        checkin::cancel_locked(&mut runtime, &[], "已在其它设备退出 UOOC 登录");
+        runtime.snapshot.progress.clear();
+        runtime.snapshot.checkins.clear();
+        for task in &mut runtime.snapshot.tasks {
+            task.desired_running = false;
+        }
+        attempt = runtime.login.take();
+        if let Some(attempt) = &attempt {
+            attempt.token.cancel();
+        }
+        runtime.snapshot.session = SessionStatus::LoginRequired;
+        runtime.snapshot.user = None;
+        runtime.snapshot.courses.clear();
+        runtime.snapshot.message = "已在其它设备退出 UOOC 登录".into();
+        service.publish(&mut runtime);
+    }
+    let _ = service.sync_platform();
+    if let Some(attempt) = attempt {
+        if let Some(login) = app.get_webview_window(&attempt.label) {
+            let _ = login.destroy();
+        }
+    }
+    let old = service.client();
+    *service.client.write().map_err(|_| "UOOC 客户端锁失败")? =
+        Arc::new(Client::new(session::load(None)?)?);
+    service.credentials.delete_uooc_session()?;
+    let _ = szu_core::preferences::save(
+        szu_core::preferences::UOOC_LOGIN_PENDING,
+        &String::new(),
+    );
+    // 与正常退出一样清理 WebView 中的 UOOC cookie；没有主窗口时只依赖 vault 状态。
+    let handle = app.clone();
+    let jar = old.jar.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(window) = handle.get_webview_window("main") {
+            if let Ok(native) = session::capture(&window) {
+                let _ = session::install(&window, &native, true);
+            }
+            let _ = session::install(&window, &jar, true);
+        }
+    });
+    Ok(())
+}
+
+/// 供同步模块调用的正常退出入口（`login` 模块保持私有）。
+pub async fn logout(
+    app: &tauri::AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<(), String> {
+    login::logout(service(app)?, window).await
 }
 
 /// 设备同步：题库快照（全部题目 + 全部提交试卷）。
@@ -2058,6 +2136,8 @@ impl Service {
             .map_err(|_| "UOOC 客户端锁失败")? = client;
         let mut runtime = self.runtime.lock().map_err(|_| "UOOC 状态锁失败")?;
         if runtime.login.is_none() {
+            runtime.snapshot.user = None;
+            runtime.snapshot.courses.clear();
             runtime.snapshot.session = SessionStatus::Checking;
             runtime.snapshot.message = "已从其它设备同步 UOOC 登录态，等待验证".into();
             runtime.session_cancel.cancel();

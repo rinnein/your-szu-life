@@ -1,5 +1,6 @@
 use super::*;
 use szu_core::storage::testing::MemoryCredentialStore;
+use szu_core::storage::CredentialStore;
 use std::{
     io::{Read, Write},
     net::TcpListener,
@@ -1353,4 +1354,43 @@ async fn progress_cache_survives_service_restart() {
             .unwrap()["accepted"],
         1
     );
+}
+
+#[test]
+fn reload_synced_accounts_rebuilds_entries_without_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let credentials = Arc::new(MemoryCredentialStore::default());
+    let service = Service::new(None, credentials.clone(), dir.path().join("state.json")).unwrap();
+    let site_id = "szu-53";
+    assert!(
+        !service
+            .snapshot()
+            .sites
+            .iter()
+            .find(|site| site.site.id == site_id)
+            .unwrap()
+            .enabled
+    );
+
+    let raw = r#"{"szu-53":{"username":"student","password":"fixture-password","url":"http://172.31.221.53/","cookies":""}}"#;
+    credentials.save_oj_accounts(&raw.to_owned()).unwrap();
+    service.reload_accounts_from_store().unwrap();
+    let view = service
+        .snapshot()
+        .sites
+        .into_iter()
+        .find(|site| site.site.id == site_id)
+        .unwrap();
+    assert!(view.enabled);
+    assert_eq!(view.username, "student");
+
+    credentials.save_oj_accounts(&"{}".to_owned()).unwrap();
+    service.reload_accounts_from_store().unwrap();
+    let view = service
+        .snapshot()
+        .sites
+        .into_iter()
+        .find(|site| site.site.id == site_id)
+        .unwrap();
+    assert!(!view.enabled);
 }

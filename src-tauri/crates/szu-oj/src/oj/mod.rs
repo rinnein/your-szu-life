@@ -497,6 +497,86 @@ impl Service {
         let _ = id;
         result
     }
+    /// 设备同步：重新读取 vault 中的账号并重建运行时 entries。
+    ///
+    /// 与 `save_site` 的“保存账号后”副作用对齐：移除/重建客户端、递增 epoch、
+    /// 删除身份变化站点的进度缓存、取消通知并广播快照。
+    fn reload_accounts_from_store(&self) -> Result<(), String> {
+        let secrets: BTreeMap<String, Secret> = self
+            .credentials
+            .load_oj_accounts()?
+            .map(|raw| serde_json::from_str(&raw).map_err(|_| "OJ 账号数据损坏".to_string()))
+            .transpose()?
+            .unwrap_or_default();
+        let mut r = self.runtime.lock().unwrap();
+        let mut changed = Vec::new();
+        let mut progress_changed = Vec::new();
+        let sites = r.data.sites.clone();
+        for site in &sites {
+            let old = r
+                .secrets
+                .get(&site.id)
+                .filter(|s| oj_secret_usable(site, s))
+                .cloned();
+            let new = secrets
+                .get(&site.id)
+                .filter(|s| oj_secret_usable(site, s))
+                .cloned();
+            let has_entry = r.entries.contains_key(&site.id);
+            let same = match (&old, &new) {
+                (Some(old), Some(new)) => oj_secret_same(old, new) && has_entry,
+                (None, None) => !has_entry,
+                _ => false,
+            };
+            if same {
+                continue;
+            }
+            let identity_changed = match (&old, &new) {
+                (Some(old), Some(new)) => old.username != new.username || old.url != new.url,
+                (None, None) => false,
+                _ => true,
+            };
+            if let Some(entry) = r.entries.remove(&site.id) {
+                entry.client.cancel.cancel();
+            }
+            r.epoch += 1;
+            if let Some(secret) = new {
+                match Client::new(&site.url, &secret.cookies) {
+                    Ok(client) => {
+                        let epoch = r.epoch;
+                        r.entries.insert(
+                            site.id.clone(),
+                            Arc::new(Entry {
+                                client,
+                                epoch,
+                                username: secret.username.clone(),
+                                gate: tokio::sync::Mutex::new(()),
+                                state: Mutex::new(Status::default()),
+                            }),
+                        );
+                    }
+                    Err(error) => log::warn!("重建 OJ 站点 {} 失败: {error}", site.id),
+                }
+            }
+            if identity_changed {
+                progress_changed.push(site.id.clone());
+            }
+            changed.push(site.id.clone());
+        }
+        r.secrets = secrets;
+        drop(r);
+        for id in progress_changed {
+            if let Err(error) = persistence::delete_progress_for_site(&self.path, &id) {
+                log::warn!("删除 OJ 进度缓存失败: {error}");
+            }
+        }
+        for id in changed {
+            self.cancel_notifications(&id);
+        }
+        self.publish();
+        Ok(())
+    }
+
     fn save_site(&self, input: SiteInput) -> Result<String, String> {
         let url = client::normalize(&input.url)?.to_string();
         let name = input.name.trim();
@@ -1156,5 +1236,18 @@ pub fn service(app: &tauri::AppHandle) -> Result<Arc<Service>, String> {
         .get()
         .cloned()
         .ok_or("OJ 服务尚未初始化".into())
+}
+
+/// 设备同步：账号写入 vault 后重新加载运行时 entries。
+pub fn reload_synced_accounts(app: &tauri::AppHandle) -> Result<(), String> {
+    service(app)?.reload_accounts_from_store()
+}
+
+fn oj_secret_usable(site: &Site, secret: &Secret) -> bool {
+    secret.url == site.url && !secret.username.is_empty() && !secret.password.is_empty()
+}
+
+fn oj_secret_same(a: &Secret, b: &Secret) -> bool {
+    a.username == b.username && a.password == b.password && a.url == b.url
 }
 

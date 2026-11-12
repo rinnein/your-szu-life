@@ -966,6 +966,20 @@ pub fn save_settings(
     Ok(())
 }
 
+/// 设备同步：应用对端宿舍信息。走正常保存路径，包含持久化、监控重置与广播。
+pub fn apply_synced_settings(
+    app: &AppHandle,
+    settings: ElectricityLocationSettings,
+) -> Result<(), String> {
+    let store = app
+        .try_state::<super::CampusPaymentsStore>()
+        .ok_or("电费状态不可用")?;
+    let electricity = store.electricity.clone();
+    save_settings(&electricity, settings)?;
+    emit_status(app, &electricity);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

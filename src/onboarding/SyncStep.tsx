@@ -44,10 +44,6 @@ export function SyncStep({ onComplete, registerNext }: StepProps) {
             toast.info("暂未发现其它设备", {
               description: "先继续完成初始化，之后在「设置 - 同步」里随时可以再次同步。",
             });
-          } else if (next.summary.conflicts > 0) {
-            toast.warning("同步完成，但有冲突项", {
-              description: `${next.summary.conflicts} 项因两端都改过而停止同步。`,
-            });
           } else {
             toast.success("已同步其它设备上的配置", {
               description: `拉取 ${next.summary.applied} 项、题库 ${next.summary.bankRows} 行。`,
@@ -99,7 +95,7 @@ export function SyncStep({ onComplete, registerNext }: StepProps) {
       )}
 
       {started && summary && (
-        <Banner status={summary.conflicts > 0 ? "warning" : "success"} className="mt-4">
+        <Banner status={summary.peers === 0 ? "info" : "success"} className="mt-4">
           <Banner.Title>
             {summary.peers === 0 ? "已开启同步，但还没有发现其它设备" : "同步完成"}
           </Banner.Title>

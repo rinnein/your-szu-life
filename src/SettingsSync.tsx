@@ -38,14 +38,13 @@ export type SyncItem = {
   id: string;
   label: string;
   collection: boolean;
-  state: "conflict" | "synced" | "waiting";
+  state: "synced" | "waiting" | "disabled" | "loggedOut";
 };
 
 export type SyncSummary = {
   peers: number;
   applied: number;
   pushed: number;
-  conflicts: number;
   bankRows: number;
   errors: string[];
 };
@@ -87,6 +86,7 @@ export default function SettingsSync() {
   const [toggling, setToggling] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [savingName, setSavingName] = useState(false);
+  const [enablingItem, setEnablingItem] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   const applyStatus = useCallback((next: MeshStatus) => {
@@ -161,9 +161,9 @@ export default function SettingsSync() {
     try {
       const next = await invoke<SyncStatus>("trigger_sync");
       setSync(next);
-      if (next.summary.conflicts > 0) {
-        toast.warning("同步完成，但有冲突项", {
-          description: `${next.summary.conflicts} 项因两端都改过而停止同步。`,
+      if (next.summary.errors.length > 0) {
+        toast.warning("同步完成，但有对端失败", {
+          description: next.summary.errors.join("；"),
         });
       } else if (next.summary.peers === 0) {
         toast.info("暂未发现其它设备", { description: "请确认另一台设备已登录并开启同步。" });
@@ -192,9 +192,22 @@ export default function SettingsSync() {
     }
   };
 
+  const enableItem = async (id: string) => {
+    setEnablingItem(id);
+    try {
+      const next = await invoke<SyncStatus>("set_sync_item_enabled", { id, enabled: true });
+      setSync(next);
+      toast.success("已恢复该项同步");
+    } catch (error) {
+      toast.danger("恢复同步失败", { description: errorMessage(error, "") });
+    } finally {
+      setEnablingItem(null);
+    }
+  };
+
   const peerCount = devices.filter((device) => !device.isSelf).length;
   const onlineCount = devices.filter((device) => !device.isSelf && device.reachable).length;
-  const conflictCount = (sync?.items ?? []).filter((item) => item.state === "conflict").length;
+  const disabledItems = (sync?.items ?? []).filter((item) => item.state === "disabled");
 
   return (
     <section aria-labelledby="settings-sync-title" className="grid gap-4">
@@ -203,7 +216,8 @@ export default function SettingsSync() {
           同步
         </h2>
         <p className="mt-1.5 text-sm leading-relaxed text-[var(--szu-muted)]">
-          同一账号的设备会自动组网，直接同步登录态、题库与已配置的账号密码。只在两台设备各自改过同一项时才会冲突，冲突项停止同步。
+          同一账号的设备会自动组网，通过 Loro CRDT 自动合并登录态、题库与已配置的账号密码。 不同 OJ
+          站点、不同题库行独立合并；同一项并发修改以最后一次写入为准，不再冻结整项。
         </p>
       </header>
 
@@ -334,24 +348,46 @@ export default function SettingsSync() {
               key={item.id}
               value={item.id}
               headline={item.label}
-              supportingText={item.collection ? "逐题合并" : "整项合并"}
+              supportingText={
+                item.state === "loggedOut"
+                  ? "全局退出标记"
+                  : item.state === "disabled"
+                    ? "本机已停用"
+                    : item.collection
+                      ? "逐题合并"
+                      : "整项合并"
+              }
               trailingText={
-                item.state === "conflict"
-                  ? "冲突冻结"
-                  : item.state === "synced"
-                    ? "已同步"
-                    : "等待对端"
+                item.state === "disabled"
+                  ? "已停用"
+                  : item.state === "loggedOut"
+                    ? "已全局退出"
+                    : item.state === "synced"
+                      ? "已同步"
+                      : "等待对端"
               }
             />
           ))}
         </List>
-        {conflictCount > 0 && (
-          <Banner status="warning" className="mt-3">
-            <Banner.Title>有 {conflictCount} 项/行冲突</Banner.Title>
-            <Banner.Description>
-              两端各自改过同一项，按约定该项停止同步。其余项目仍会继续同步。
-            </Banner.Description>
-          </Banner>
+        {disabledItems.length > 0 && (
+          <div className="mt-3 grid gap-2">
+            {disabledItems.map((item) => (
+              <div
+                key={item.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-separator px-4 py-3"
+              >
+                <span className="text-sm">{item.label} 已停止同步</span>
+                <Button
+                  variant="tonal"
+                  disabled={enablingItem !== null}
+                  onClick={() => void enableItem(item.id)}
+                >
+                  {enablingItem === item.id && <LoadingIndicator size={16} />}
+                  恢复同步
+                </Button>
+              </div>
+            ))}
+          </div>
         )}
       </Card>
 

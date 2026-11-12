@@ -95,6 +95,37 @@ pub fn save_dorm_network_settings(
     })
 }
 
+pub fn apply_synced_dorm_credentials(
+    app: tauri::AppHandle,
+    credentials: DormCustomCredentials,
+) -> Result<DormNetworkSettingsView, String> {
+    if !is_campus_card_number(&credentials.campus_card_number) || credentials.password.is_empty() {
+        return Err("校园卡号必须是 6 位数字且密码不能为空".into());
+    }
+    let store = app
+        .try_state::<CampusNetworkStore>()
+        .ok_or("校园网状态不可用")?;
+    store.operations.settings(|| {
+        store.credentials.save_dorm_credentials(&credentials)?;
+        let settings = dorm_settings(&store)?;
+        store
+            .auto_connect_suspended
+            .store(false, std::sync::atomic::Ordering::Release);
+        set_dorm_status(&app, |status| {
+            status.state = if settings.enabled {
+                DormLoginState::Monitoring
+            } else {
+                DormLoginState::Disabled
+            };
+            status.next_probe_at_ms = settings.enabled.then_some(now_ms());
+        });
+        start_dorm_monitor(app.clone());
+        let view = dorm_settings_view(&store, &settings)?;
+        let _ = app.emit("dorm-network-settings-changed", &view);
+        Ok(view)
+    })
+}
+
 pub fn get_dorm_login_status(
     store: &CampusNetworkStore,
 ) -> Result<DormLoginStatusView, String> {

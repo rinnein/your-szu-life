@@ -26,7 +26,6 @@ describe("SyncStep", () => {
             peers: 1,
             applied: 2,
             pushed: 0,
-            conflicts: 0,
             bankRows: 3,
             errors: [],
           },

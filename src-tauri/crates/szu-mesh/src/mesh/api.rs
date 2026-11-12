@@ -9,8 +9,9 @@
 use std::sync::Arc;
 
 use axum::{
-    extract::{DefaultBodyLimit, Path, State},
-    http::{HeaderMap, StatusCode},
+    body::{Body, Bytes},
+    extract::{DefaultBodyLimit, State},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -20,9 +21,7 @@ use tauri::Manager;
 
 use super::node::Node;
 use szu_core::preferences;
-use crate::settings_sync::engine::{
-    BankApplyRequest, BankRowsRequest, ItemPayload, SyncStore,
-};
+use crate::settings_sync::engine::{decode_vv, SyncStore};
 
 pub const TOKEN_HEADER: &str = "x-mesh-token";
 
@@ -63,15 +62,10 @@ pub struct ApiState {
 pub fn router(state: ApiState) -> Router {
     Router::new()
         .route("/v1/status", get(status))
-        .route("/v1/sync/state", get(sync_state))
-        .route(
-            "/v1/sync/item/{id}",
-            get(sync_get_item).post(sync_apply_item),
-        )
-        .route("/v1/sync/bank/rows", post(sync_bank_rows))
-        .route("/v1/sync/bank/apply", post(sync_bank_apply))
-        // 题库按 200 行一批交换，题干/选项较多时会超过 axum 默认的 2 MiB。
-        .layer(DefaultBodyLimit::max(16 * 1024 * 1024))
+        .route("/v2/sync/state", get(sync_state))
+        .route("/v2/sync/exchange", post(sync_exchange))
+        // Loro 初始全量历史可能较大；按 64 MiB 上限接收 updates。
+        .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
         .with_state(state)
 }
 
@@ -109,10 +103,10 @@ async fn sync_state(State(state): State<ApiState>, headers: HeaderMap) -> Respon
     }
 }
 
-async fn sync_get_item(
+async fn sync_exchange(
     State(state): State<ApiState>,
     headers: HeaderMap,
-    Path(id): Path<String>,
+    body: Bytes,
 ) -> Response {
     if !authorized(&headers, &state.token) {
         return (StatusCode::UNAUTHORIZED, "invalid mesh token").into_response();
@@ -123,70 +117,30 @@ async fn sync_get_item(
     let Some(store) = sync_store(&state.app) else {
         return (StatusCode::SERVICE_UNAVAILABLE, "sync unavailable").into_response();
     };
-    match store.peer_item(&state.app, &id).await {
-        Ok(value) => Json(value).into_response(),
+    let Some(encoded) = headers
+        .get("x-sync-vv")
+        .and_then(|value| value.to_str().ok())
+    else {
+        return (StatusCode::BAD_REQUEST, "missing x-sync-vv").into_response();
+    };
+    let from = match decode_vv(encoded) {
+        Ok(vv) => vv,
+        Err(error) => return (StatusCode::BAD_REQUEST, error).into_response(),
+    };
+    match store.peer_exchange(&state.app, from, &body).await {
+        Ok((updates, vv)) => {
+            let mut response = Response::new(Body::from(updates));
+            *response.status_mut() = StatusCode::OK;
+            response.headers_mut().insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/octet-stream"),
+            );
+            if let Ok(value) = HeaderValue::from_str(&vv) {
+                response.headers_mut().insert("x-sync-vv", value);
+            }
+            response
+        }
         Err(error) => (StatusCode::BAD_REQUEST, error).into_response(),
-    }
-}
-
-async fn sync_apply_item(
-    State(state): State<ApiState>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-    Json(payload): Json<ItemPayload>,
-) -> Response {
-    if !authorized(&headers, &state.token) {
-        return (StatusCode::UNAUTHORIZED, "invalid mesh token").into_response();
-    }
-    if let Err(response) = sync_available() {
-        return response;
-    }
-    let Some(store) = sync_store(&state.app) else {
-        return (StatusCode::SERVICE_UNAVAILABLE, "sync unavailable").into_response();
-    };
-    match store.peer_apply_item(&state.app, &id, payload).await {
-        Ok(value) => Json(value).into_response(),
-        Err(error) => (StatusCode::BAD_REQUEST, error).into_response(),
-    }
-}
-
-async fn sync_bank_rows(
-    State(state): State<ApiState>,
-    headers: HeaderMap,
-    Json(request): Json<BankRowsRequest>,
-) -> Response {
-    if !authorized(&headers, &state.token) {
-        return (StatusCode::UNAUTHORIZED, "invalid mesh token").into_response();
-    }
-    if let Err(response) = sync_available() {
-        return response;
-    }
-    let Some(store) = sync_store(&state.app) else {
-        return (StatusCode::SERVICE_UNAVAILABLE, "sync unavailable").into_response();
-    };
-    match store.peer_bank_rows(&state.app, request).await {
-        Ok(value) => Json(value).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error).into_response(),
-    }
-}
-
-async fn sync_bank_apply(
-    State(state): State<ApiState>,
-    headers: HeaderMap,
-    Json(request): Json<BankApplyRequest>,
-) -> Response {
-    if !authorized(&headers, &state.token) {
-        return (StatusCode::UNAUTHORIZED, "invalid mesh token").into_response();
-    }
-    if let Err(response) = sync_available() {
-        return response;
-    }
-    let Some(store) = sync_store(&state.app) else {
-        return (StatusCode::SERVICE_UNAVAILABLE, "sync unavailable").into_response();
-    };
-    match store.peer_apply_bank(&state.app, request).await {
-        Ok(value) => Json(value).into_response(),
-        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error).into_response(),
     }
 }
 

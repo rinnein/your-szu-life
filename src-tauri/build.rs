@@ -370,6 +370,8 @@ fn main() {
             "get_sync_status",
             "get_sync_items",
             "trigger_sync",
+            "logout_uooc_with_mode",
+            "set_sync_item_enabled",
             "set_active_module",
             "get_appearance",
             "save_appearance",

@@ -121,6 +121,8 @@ export default function UoocPage() {
   const [selectedQuiz, setSelectedQuiz] = useState<QuizState | null>(null);
   const [modalQuizCid, setModalQuizCid] = useState<string | null>(null);
   const [taskToDelete, setTaskToDelete] = useState<UoocTask | null>(null);
+  const [logoutOpen, setLogoutOpen] = useState(false);
+  const [logoutBusy, setLogoutBusy] = useState(false);
   const [confirmDeleteCompleted, setConfirmDeleteCompleted] = useState(false);
   const embeddingStatus = useEmbeddingModelStatus();
   const [embeddingModalOpen, setEmbeddingModalOpen] = useState(false);
@@ -293,6 +295,45 @@ export default function UoocPage() {
     }
   };
   /** 保存设置草稿；成功后草稿重新跟随服务端回声。 */
+  const requestLogout = async () => {
+    setError(undefined);
+    try {
+      const sync = await invoke<{
+        enabled: boolean;
+        items: { id: string; state: string }[];
+      }>("get_sync_status");
+      const item = sync.items.find((entry) => entry.id === "uooc.session");
+      if (!sync.enabled || item?.state === "disabled") {
+        await action("logout_uooc");
+        return;
+      }
+    } catch {
+      // 读不到同步状态时退回普通退出，不让退出被同步模块阻塞。
+      await action("logout_uooc");
+      return;
+    }
+    setLogoutOpen(true);
+  };
+
+  const confirmLogout = async (mode: "global" | "local") => {
+    setLogoutBusy(true);
+    try {
+      await invoke("logout_uooc_with_mode", { mode });
+      setLogoutOpen(false);
+      toast.success(mode === "global" ? "已全局退出 UOOC" : "已在本机退出 UOOC", {
+        description:
+          mode === "global"
+            ? "正在通知其它已连接设备退出登录。"
+            : "本机已停止同步 UOOC 登录态，其它设备不受影响。",
+      });
+    } catch (cause) {
+      const msg = typeof cause === "string" ? cause : "退出失败，请重试。";
+      toast.danger("退出 UOOC 失败", { description: msg });
+    } finally {
+      setLogoutBusy(false);
+    }
+  };
+
   const saveSettings = async () => {
     const ok = await action("save_uooc_settings", { settings });
     if (ok) draftDirty.current = false;
@@ -556,7 +597,7 @@ export default function UoocPage() {
                 刷新课程
               </Button>
               {snapshot?.user && (
-                <Button variant="text" disabled={busy} onClick={() => void action("logout_uooc")}>
+                <Button variant="text" disabled={busy} onClick={() => void requestLogout()}>
                   退出 UOOC
                 </Button>
               )}
@@ -1275,6 +1316,44 @@ export default function UoocPage() {
                     setModalQuizCid(null);
                   }}
                 />
+              </div>
+            </Dialog>,
+            document.body,
+          )}
+        {logoutOpen &&
+          typeof document !== "undefined" &&
+          createPortal(
+            <Dialog
+              open={logoutOpen}
+              headline="退出 UOOC 登录"
+              onClose={() => {
+                if (!logoutBusy) setLogoutOpen(false);
+              }}
+            >
+              <div>
+                设备同步已开启。全局退出会让所有同账号设备退出 UOOC 登录；仅本机退出会停止本机同步
+                UOOC 登录态，不影响其它设备。
+              </div>
+              <div slot="actions">
+                <Button variant="text" disabled={logoutBusy} onClick={() => setLogoutOpen(false)}>
+                  取消
+                </Button>
+                <Button
+                  variant="tonal"
+                  disabled={logoutBusy}
+                  onClick={() => void confirmLogout("local")}
+                >
+                  {logoutBusy && <LoadingIndicator size={16} />}
+                  仅本机退出
+                </Button>
+                <Button
+                  className="button-danger"
+                  variant="filled"
+                  disabled={logoutBusy}
+                  onClick={() => void confirmLogout("global")}
+                >
+                  全局退出
+                </Button>
               </div>
             </Dialog>,
             document.body,

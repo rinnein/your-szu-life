@@ -207,6 +207,8 @@ pub(crate) fn run() {
             szu_mesh::settings_sync::commands::get_sync_status,
             szu_mesh::settings_sync::commands::get_sync_items,
             szu_mesh::settings_sync::commands::trigger_sync,
+            szu_mesh::settings_sync::commands::logout_uooc_with_mode,
+            szu_mesh::settings_sync::commands::set_sync_item_enabled,
             szu_core::ports::commands::take_port_notices,
             szu_enrollment::enrollment::commands::enrollment_command,
             szu_enrollment::enrollment::commands::open_academic_portal,

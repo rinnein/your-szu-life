@@ -1,7 +1,8 @@
 //! 设备设置同步。
 //!
 //! 只同步 [`items::ITEM_DEFS`] 白名单里的内容；账号资料、统一认证会话与本地
-//! 偏好（外观、通知、代理等）永远不进入同步。冲突项冻结后不再同步。
+//! 偏好（外观、通知、代理等）永远不进入同步。跨设备合并由 Loro CRDT 负责：
+//! 同一 key 的并发写入按 LWW 收敛，不再冻结整项。
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -10,9 +11,9 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
 pub mod commands;
+pub mod doc;
 pub mod engine;
 pub mod items;
-pub mod state;
 
 use engine::{SyncItemView, SyncStore, SyncSummary};
 
@@ -64,7 +65,7 @@ pub async fn status(app: &AppHandle, store: &SyncStore) -> SyncStatusView {
         campus_access: crate::mesh::campus_access_enabled(),
         running: crate::mesh::is_running(app),
         summary: store.last_summary(),
-        items: store.item_views().await,
+        items: store.item_views(app).await,
     }
 }
 
@@ -83,7 +84,7 @@ pub async fn trigger(app: &AppHandle, store: &SyncStore) -> Result<SyncStatusVie
         campus_access: crate::mesh::campus_access_enabled(),
         running: crate::mesh::is_running(app),
         summary,
-        items: store.item_views().await,
+        items: store.item_views(app).await,
     };
     let _ = app.emit(STATUS_EVENT, view.clone());
     Ok(view)

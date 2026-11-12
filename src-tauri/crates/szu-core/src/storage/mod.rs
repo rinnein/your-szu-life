@@ -173,6 +173,28 @@ impl CredentialStorageStatus {
 
 pub mod commands;
 
+/// 当前账户的稳定指纹（学号散列前 16 个十六进制字符）。
+///
+/// 只用于本机隔离，不进入同步数据：同步检查点按账户分文件存放，切换账号后不会
+/// 复用上一个账号的凭据。
+pub fn account_fingerprint() -> Result<Option<String>, String> {
+    use sha2::{Digest, Sha256};
+    let Some(profile) = PlatformCredentialStore.load_profile()? else {
+        return Ok(None);
+    };
+    let student_id = profile.student_id.trim();
+    if student_id.is_empty() {
+        return Ok(None);
+    }
+    let digest = Sha256::digest(format!("your-szu-life:account:v1:{student_id}").as_bytes());
+    let mut out = String::with_capacity(16);
+    for byte in &digest[..8] {
+        use std::fmt::Write as _;
+        let _ = write!(out, "{byte:02x}");
+    }
+    Ok(Some(out))
+}
+
 /// 解析数据目录、准备主密钥并加载/迁移凭据文件。
 pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     use tauri::Manager;

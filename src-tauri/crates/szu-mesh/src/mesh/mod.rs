@@ -25,7 +25,6 @@ pub mod commands;
 pub mod devices;
 pub mod identity;
 pub mod node;
-pub mod migrations;
 
 /// 虚拟网内的同步接口端口（只在 overlay 命名空间里使用，不占本机端口）。
 pub const SYNC_API_PORT: u16 = 54301;

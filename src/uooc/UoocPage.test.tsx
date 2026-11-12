@@ -897,3 +897,42 @@ it("移动端提供左上角功能目录抽屉并能切换 tab，移除原本的
   });
   expect(drawer?.hasAttribute("open")).toBe(false);
 });
+
+it("asks for global or local UOOC logout when sync is enabled", async () => {
+  vi.mocked(invoke).mockImplementation(async (name, args) => {
+    if (name === "get_uooc_snapshot") return structuredClone(snapshot);
+    if (name === "get_sync_status")
+      return { enabled: true, items: [{ id: "uooc.session", state: "synced" }] };
+    if (name === "logout_uooc_with_mode") {
+      expect(args).toMatchObject({ mode: "global" });
+      return undefined;
+    }
+    return undefined;
+  });
+
+  mount("/study/uooc");
+  fireEvent.click(await screen.findByRole("button", { name: "退出 UOOC" }));
+
+  expect(await screen.findByText("退出 UOOC 登录")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "全局退出" }));
+
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("logout_uooc_with_mode", { mode: "global" }),
+  );
+});
+
+it("logs out directly when UOOC session sync is disabled", async () => {
+  vi.mocked(invoke).mockImplementation(async (name) => {
+    if (name === "get_uooc_snapshot") return structuredClone(snapshot);
+    if (name === "get_sync_status")
+      return { enabled: true, items: [{ id: "uooc.session", state: "disabled" }] };
+    if (name === "logout_uooc") return undefined;
+    return undefined;
+  });
+
+  mount("/study/uooc");
+  fireEvent.click(await screen.findByRole("button", { name: "退出 UOOC" }));
+
+  expect(screen.queryByText("退出 UOOC 登录")).not.toBeInTheDocument();
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith("logout_uooc", undefined));
+});

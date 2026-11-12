@@ -19,6 +19,11 @@ use std::{
 
 const MAGIC: &[u8; 8] = b"SZUVAULT";
 const VAULT_VERSION: u8 = 1;
+/// 通用加密 blob（目前用于设备同步的 Loro 检查点）。
+const BLOB_MAGIC: &[u8; 8] = b"SZUBLOB1";
+const BLOB_VERSION: u8 = 1;
+const BLOB_HEADER_LEN: usize = BLOB_MAGIC.len() + 1;
+const BLOB_MAX: usize = 64 * 1024 * 1024;
 pub const KEY_LEN: usize = 32;
 const NONCE_LEN: usize = 24;
 const TAG_LEN: usize = 16;
@@ -237,6 +242,55 @@ impl Vault {
         *self.locked()? = Some(document.clone());
         Ok(())
     }
+
+    /// 用设备主密钥加密任意本地 blob（设备同步检查点等）。
+    ///
+    /// 与凭据文档使用不同的 AAD，因此同一主密钥下的两类数据不能互相替换。
+    pub fn encrypt_bytes(&self, plain: &[u8]) -> Result<Vec<u8>, String> {
+        if plain.len() > BLOB_MAX {
+            return Err("待加密数据过大".into());
+        }
+        let mut nonce = [0u8; NONCE_LEN];
+        rand::rng().fill_bytes(&mut nonce);
+        let aad = blob_aad();
+        let encrypted = XChaCha20Poly1305::new((&self.key).into())
+            .encrypt(
+                XNonce::from_slice(&nonce),
+                Payload {
+                    msg: plain,
+                    aad: &aad,
+                },
+            )
+            .map_err(|_| "本地数据加密失败".to_string())?;
+        let mut bytes = Vec::with_capacity(BLOB_HEADER_LEN + NONCE_LEN + encrypted.len());
+        bytes.extend_from_slice(&aad);
+        bytes.extend_from_slice(&nonce);
+        bytes.extend_from_slice(&encrypted);
+        Ok(bytes)
+    }
+
+    /// 解密 [`Self::encrypt_bytes`] 产生的 blob。
+    pub fn decrypt_bytes(&self, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        if bytes.len() < BLOB_HEADER_LEN + NONCE_LEN + TAG_LEN || bytes.len() > BLOB_MAX + 256 {
+            return Err("本地数据格式无效".into());
+        }
+        if &bytes[..BLOB_MAGIC.len()] != BLOB_MAGIC {
+            return Err("本地数据格式无效".into());
+        }
+        if bytes[BLOB_MAGIC.len()] != BLOB_VERSION {
+            return Err("不支持的本地数据版本".into());
+        }
+        let nonce = &bytes[BLOB_HEADER_LEN..BLOB_HEADER_LEN + NONCE_LEN];
+        XChaCha20Poly1305::new((&self.key).into())
+            .decrypt(
+                XNonce::from_slice(nonce),
+                Payload {
+                    msg: &bytes[BLOB_HEADER_LEN + NONCE_LEN..],
+                    aad: &blob_aad(),
+                },
+            )
+            .map_err(|_| "本地数据已损坏或主密钥不匹配".to_string())
+    }
 }
 
 pub fn install(vault: Vault) -> Result<(), String> {
@@ -273,6 +327,13 @@ fn aad() -> Vec<u8> {
     let mut aad = Vec::with_capacity(HEADER_LEN);
     aad.extend_from_slice(MAGIC);
     aad.push(VAULT_VERSION);
+    aad
+}
+
+fn blob_aad() -> Vec<u8> {
+    let mut aad = Vec::with_capacity(BLOB_HEADER_LEN);
+    aad.extend_from_slice(BLOB_MAGIC);
+    aad.push(BLOB_VERSION);
     aad
 }
 
@@ -478,5 +539,21 @@ mod tests {
         vault.write_verified(&document).unwrap();
         let loaded = vault.document().unwrap();
         assert_eq!(loaded.entries.len(), 1);
+    }
+
+    #[test]
+    fn blob_encryption_round_trips_and_rejects_wrong_key() {
+        let (dir, vault) = vault();
+        let plain = b"loro checkpoint bytes";
+        let encrypted = vault.encrypt_bytes(plain).unwrap();
+        assert_eq!(vault.decrypt_bytes(&encrypted).unwrap(), plain);
+
+        let other = Vault::open(dir.path().to_path_buf(), [9u8; KEY_LEN]);
+        assert!(other.decrypt_bytes(&encrypted).is_err());
+
+        let mut tampered = encrypted;
+        let last = tampered.len() - 1;
+        tampered[last] ^= 0xff;
+        assert!(vault.decrypt_bytes(&tampered).is_err());
     }
 }

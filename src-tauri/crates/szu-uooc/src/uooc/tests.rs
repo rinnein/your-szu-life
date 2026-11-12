@@ -1,5 +1,6 @@
 use super::*;
 use szu_core::storage::testing::MemoryCredentialStore;
+use szu_core::storage::CredentialStore;
 use serde_json::{json, Value};
 use std::{
     io::{Read, Write},
@@ -2024,4 +2025,28 @@ async fn build_local_bank_only_builds_ended_course_when_server_needs_it() {
     assert!(uploaded_tids.contains(&"902".to_string()));
 
     let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn synced_session_enters_checking_and_clears_the_old_account() {
+    let credentials = Arc::new(MemoryCredentialStore::default());
+    let service = Service::new(None, credentials.clone(), root()).unwrap();
+    let raw = session::serialize(&session::load(None).unwrap()).unwrap();
+    credentials.save_uooc_session(&raw).unwrap();
+    {
+        let mut runtime = service.runtime.lock().unwrap();
+        runtime.snapshot.user = Some(User {
+            id: "old".into(),
+            name: "旧账号".into(),
+        });
+        runtime.snapshot.courses = vec![course("old")];
+    }
+
+    service.apply_session_from_store().unwrap();
+
+    let snapshot = service.snapshot();
+    assert_eq!(snapshot.session, SessionStatus::Checking);
+    assert!(snapshot.user.is_none());
+    assert!(snapshot.courses.is_empty());
+    assert!(snapshot.message.contains("等待验证"));
 }

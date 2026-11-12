@@ -22,7 +22,7 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.14.0"
+version = "0.15.0"
 edition = "2021"
 authors = ["you"]
 
@@ -150,10 +150,7 @@ soup3 = "0.5"
 gtk = "0.18"
 # 系统代理探测直接在进程内读注册表（netproxy/windows.rs）。起 `reg query`
 # 子进程会在 GUI 子系统下闪控制台窗口，因此这里只要注册表 API 的 feature。
-windows-sys = { version = "0.61", features = [
-  "Win32_Foundation",
-  "Win32_System_Registry",
-] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Registry"] }
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 wallpaper = "3.2"
 tempfile = "3"

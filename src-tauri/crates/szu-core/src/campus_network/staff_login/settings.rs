@@ -239,6 +239,70 @@ pub fn save(
     })
 }
 
+/// 设备同步：教工区自定义账号写入后，按正常保存路径刷新状态并广播。
+pub fn apply_credentials(
+    store: &CampusNetworkStore,
+    credentials: DormCustomCredentials,
+    current: &CredentialsProvider<'_>,
+    events: &dyn NetworkEvents,
+) -> Result<StaffNetworkSettingsView, String> {
+    if !is_campus_card_number(&credentials.campus_card_number)
+        || credentials.password.is_empty()
+        || credentials.password.len() > 1024
+    {
+        return Err("校园卡号须为 6 位数字，密码不能为空且不得超过 1024 字节".into());
+    }
+    store.operations.configure(|| {
+        let mut settings = load(store)?;
+        let previous = store
+            .credentials
+            .load_staff_credentials()
+            .map_err(|_| "无法读取教工区凭据")?;
+        let changed = previous.as_ref() != Some(&credentials);
+        store.staff.suspended.store(true, Ordering::Release);
+        store
+            .credentials
+            .save_staff_credentials(&credentials)
+            .map_err(|_| "保存教工区凭据失败")?;
+        store.staff.configured.store(true, Ordering::Relaxed);
+        if changed {
+            store.staff.needs_apply.store(true, Ordering::Release);
+            settings.revision = settings.revision.checked_add(1).ok_or("设置版本已溢出")?;
+        }
+        settings.pending_failure_notice = None;
+        persist(store, &settings)?;
+        store.staff.suspended.store(false, Ordering::Release);
+        *store
+            .staff
+            .confirmation
+            .lock()
+            .map_err(|_| "教工区确认锁失败")? = None;
+        let result = view(store, current)?;
+        store.change_staff_status(
+            |status| {
+                status.state = if result.needs_apply || !result.enabled {
+                    DormLoginState::Disabled
+                } else {
+                    DormLoginState::Monitoring
+                };
+                status.consecutive_failures = 0;
+                status.next_probe_at_ms = result.enabled.then_some(0);
+                status.message = Some(
+                    if result.needs_apply {
+                        "校园网账号已更新，等待手动应用"
+                    } else {
+                        "教工区账号已从其它设备同步"
+                    }
+                    .into(),
+                );
+            },
+            events,
+        );
+        events.staff_settings_changed(&result);
+        Ok(result)
+    })
+}
+
 /// No credential reads. Even a keyring failure leaves automatic login inhibited in this process.
 pub fn disable(
     store: &CampusNetworkStore,

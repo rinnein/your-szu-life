@@ -227,6 +227,12 @@ pub async fn open(service: Arc<Service>, parent: WebviewWindow) -> Result<(), St
                 runtime.login.take();
                 service.publish(&mut runtime);
             }
+            if let Ok(Some(fingerprint)) = szu_core::storage::account_fingerprint() {
+                let _ = szu_core::preferences::save(
+                    szu_core::preferences::UOOC_LOGIN_PENDING,
+                    &fingerprint,
+                );
+            }
             let _ = window.destroy();
             let _ = parent.set_focus();
             let refresh_service = service.clone();
@@ -310,6 +316,10 @@ pub async fn logout(service: Arc<Service>, window: WebviewWindow) -> Result<(), 
         .credentials
         .delete_uooc_session()
         .map_err(|_| "无法清除 UOOC 安全存储")?;
+    let _ = szu_core::preferences::save(
+        szu_core::preferences::UOOC_LOGIN_PENDING,
+        &String::new(),
+    );
     let lease = service.native_session.clone().lock_owned().await;
     tauri::async_runtime::spawn_blocking(move || {
         let _lease = lease;
