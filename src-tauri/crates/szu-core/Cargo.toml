@@ -16,6 +16,7 @@ szu-build-support = { path = "../szu-build-support" }
 tauri = { workspace = true }
 tauri-plugin-notification = { workspace = true }
 tauri-plugin-opener = { workspace = true }
+tauri-plugin-os = { workspace = true }
 tauri-plugin-aptabase = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

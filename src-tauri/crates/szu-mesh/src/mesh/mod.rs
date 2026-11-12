@@ -12,9 +12,10 @@
 
 use std::collections::{HashMap, HashSet};
 use std::net::Ipv4Addr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager};
 
 pub mod api;
@@ -36,6 +37,16 @@ pub const DEVICES_EVENT: &str = "mesh-devices-changed";
 
 pub const DEFAULT_DEVICE_NAME: &str = "我的设备";
 const MAX_DEVICE_NAME_CHARS: usize = 40;
+/// 系统完全拿不到可用名称时的回退词表；按设备 ID 确定性选词。
+const FALLBACK_NAMES: &[&str] = &[
+    "acorn", "amber", "aspen", "bamboo", "beacon", "birch", "breeze", "brook", "cedar",
+    "clover", "cobalt", "comet", "coral", "cove", "crystal", "dawn", "dune", "ember", "fern",
+    "field", "fjord", "forest", "frost", "garden", "glade", "harbor", "hazel", "hill", "ivory",
+    "jade", "lake", "lark", "leaf", "light", "lotus", "maple", "meadow", "mist", "moon", "moss",
+    "oak", "ocean", "olive", "orchid", "pearl", "pine", "rain", "reef", "river", "rose", "sage",
+    "shell", "sky", "snow", "sparrow", "spring", "star", "stone", "storm", "sun", "thunder",
+    "tide", "valley", "wave", "willow", "wind",
+];
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -68,6 +79,8 @@ pub struct MeshStore {
     campus_bridge: Mutex<Option<(Ipv4Addr, bridge::Bridge)>>,
     last_error: Mutex<Option<String>>,
     device_id: Mutex<Option<String>>,
+    /// 系统默认名每进程解析一次，避免 JNI/hostname 被状态刷新反复调用。
+    default_name: OnceLock<String>,
 }
 
 impl MeshStore {
@@ -79,6 +92,7 @@ impl MeshStore {
             campus_bridge: Mutex::new(None),
             last_error: Mutex::new(None),
             device_id: Mutex::new(None),
+            default_name: OnceLock::new(),
         }
     }
 
@@ -103,12 +117,15 @@ impl MeshStore {
     }
 
     pub fn device_name(&self) -> String {
-        szu_core::preferences::load::<String>(szu_core::preferences::SYNC_DEVICE_NAME)
-            .ok()
-            .flatten()
-            .map(|value| value.trim().to_owned())
-            .filter(|value| !value.is_empty())
-            .unwrap_or_else(|| DEFAULT_DEVICE_NAME.to_owned())
+        let saved =
+            szu_core::preferences::load::<String>(szu_core::preferences::SYNC_DEVICE_NAME)
+                .ok()
+                .flatten();
+        let default = self.default_name.get_or_init(|| {
+            let device_id = self.device_id().unwrap_or_else(|_| "local".to_owned());
+            resolve_default_name(szu_core::device::system_name(), &device_id)
+        });
+        resolve_device_name(saved, default.clone())
     }
 
     pub fn devices(&self) -> Vec<devices::MeshDeviceView> {
@@ -418,6 +435,33 @@ pub fn normalize_device_name(raw: &str) -> Result<String, String> {
     Ok(name.to_owned())
 }
 
+fn resolve_device_name(saved: Option<String>, default: String) -> String {
+    saved
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty() && value != DEFAULT_DEVICE_NAME)
+        .unwrap_or(default)
+}
+
+fn resolve_default_name(system_name: Option<String>, device_id: &str) -> String {
+    let name = system_name
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.chars().take(MAX_DEVICE_NAME_CHARS).collect::<String>())
+        .filter(|value| !value.is_empty());
+    name.unwrap_or_else(|| fallback_word(device_id).to_owned())
+}
+
+fn fallback_word(device_id: &str) -> &'static str {
+    if FALLBACK_NAMES.is_empty() {
+        return DEFAULT_DEVICE_NAME;
+    }
+    let digest = Sha256::digest(device_id.as_bytes());
+    let mut bytes = [0u8; 8];
+    bytes.copy_from_slice(&digest[..8]);
+    let index = u64::from_be_bytes(bytes) as usize % FALLBACK_NAMES.len();
+    FALLBACK_NAMES[index]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -427,5 +471,44 @@ mod tests {
         assert_eq!(normalize_device_name("  床垫  ").unwrap(), "床垫");
         assert!(normalize_device_name("   ").is_err());
         assert!(normalize_device_name(&"名".repeat(MAX_DEVICE_NAME_CHARS + 1)).is_err());
+    }
+
+    #[test]
+    fn custom_device_name_wins_and_legacy_default_is_ignored() {
+        assert_eq!(
+            resolve_device_name(Some("  书桌  ".into()), "hostname".into()),
+            "书桌"
+        );
+        assert_eq!(
+            resolve_device_name(Some(DEFAULT_DEVICE_NAME.into()), "hostname".into()),
+            "hostname"
+        );
+        assert_eq!(resolve_device_name(None, "hostname".into()), "hostname");
+        assert_eq!(
+            resolve_device_name(Some("   ".into()), "hostname".into()),
+            "hostname"
+        );
+    }
+
+    #[test]
+    fn default_name_uses_system_name_and_truncates() {
+        assert_eq!(
+            resolve_default_name(Some("my-laptop".into()), "device-a"),
+            "my-laptop"
+        );
+        let long = "x".repeat(MAX_DEVICE_NAME_CHARS + 20);
+        let resolved = resolve_default_name(Some(long), "device-a");
+        assert_eq!(resolved.chars().count(), MAX_DEVICE_NAME_CHARS);
+    }
+
+    #[test]
+    fn default_name_falls_back_to_a_stable_word() {
+        let first = resolve_default_name(None, "device-a");
+        assert!(FALLBACK_NAMES.contains(&first.as_str()));
+        assert_eq!(first, resolve_default_name(None, "device-a"));
+        assert_eq!(
+            resolve_default_name(Some("   ".into()), "device-a"),
+            first
+        );
     }
 }

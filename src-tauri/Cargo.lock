@@ -9609,6 +9609,7 @@ dependencies = [
  "tauri-plugin-aptabase",
  "tauri-plugin-notification",
  "tauri-plugin-opener",
+ "tauri-plugin-os",
  "tempfile",
  "time",
  "toasty",
