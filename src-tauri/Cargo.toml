@@ -9,7 +9,9 @@ edition = "2021"
 
 [lib]
 name = "your_szu_life_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# staticlib 只给 iOS/iPadOS 用，本仓库没有该目标；保留它会让每次构建额外
+# 归档一个约 600MB 的 `.a`。Android 用 cdylib，桌面的 main.rs 用 rlib。
+crate-type = ["cdylib", "rlib"]
 
 # workspace 根就是 `src-tauri`，app 包本身是根 package。
 # 这样 `Cargo.lock` 仍在 `src-tauri/Cargo.lock`（`gen/android/app/build.gradle.kts`
@@ -208,6 +210,20 @@ proc-macro-crate = { path = "vendor/proc-macro-crate" }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+
+[profile.release]
+# 体积优化，按 Tauri 官方 size 指南（https://tauri.app/concept/size/）。
+# 桌面与 Android 都走 release 发布，因此统一在这里配置。
+codegen-units = 1
+lto = true
+opt-level = "s"
+# 剥掉符号表：Android 的 cdylib 实测 187MB → 109MB，APK 里的同名 `.so` 同样受益。
+# 应用日志不依赖符号（没有 panic hook、也不读 backtrace），只影响原生 crash 的
+# tombstone 符号化。
+strip = true
+# 官方指南还建议 `panic = "abort"`，这里刻意不开：szu-core / szu-download 的
+# JNI 桥接与校园网轮询靠 `catch_unwind` 把 panic 降级成错误，abort 会让一次
+# panic 直接终止整个应用进程。
 
 [profile.dev]
 debug = "line-tables-only"
