@@ -101,7 +101,7 @@ export function NetworkSettings() {
     };
   }, []);
 
-  const buildInput = () => ({
+  const buildInput = (campusThroughProxyOverride?: boolean) => ({
     mode,
     protocol,
     host: host.trim(),
@@ -109,7 +109,8 @@ export function NetworkSettings() {
     username: username.trim(),
     // 留空表示沿用已保存的密码；清空用户名会一并清掉密码。
     password: password === "" ? null : password,
-    campusThroughProxy,
+    // 保存按钮不应改变绕过开关；使用最近一次落盘值。
+    campusThroughProxy: campusThroughProxyOverride ?? saved.campusThroughProxy,
   });
 
   const save = async () => {
@@ -119,9 +120,27 @@ export function NetworkSettings() {
         settings: buildInput(),
       });
       applyView(view);
-      toast.success("网络设置已保存", { description: "新的代理设置已对后续请求生效。" });
+      toast.success("代理设置已保存", { description: "新的代理设置已对后续请求生效。" });
     } catch (error) {
-      toast.danger("保存网络设置失败", { description: errorText(error) });
+      toast.danger("保存代理设置失败", { description: errorText(error) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggleBypass = async (next: boolean) => {
+    if (loading || busy) return;
+    setCampusThroughProxy(next);
+    setBusy(true);
+    try {
+      const view = await invoke<ProxySettingsView>("save_proxy_settings", {
+        settings: buildInput(next),
+      });
+      applyView(view);
+      toast.success(next ? "已开启校内网代理" : "已关闭校内网代理");
+    } catch (error) {
+      setCampusThroughProxy(!next);
+      toast.danger("保存绕过设置失败", { description: errorText(error) });
     } finally {
       setBusy(false);
     }
@@ -151,7 +170,6 @@ export function NetworkSettings() {
     setPort(String(DEFAULT_VIEW.port));
     setUsername(DEFAULT_VIEW.username);
     setPassword("");
-    setCampusThroughProxy(DEFAULT_VIEW.campusThroughProxy);
   };
 
   const manual = mode === "manual";
@@ -178,66 +196,80 @@ export function NetworkSettings() {
             {MODE_OPTIONS.find((option) => option.value === mode)?.description}
           </p>
         </div>
-      </Card>
 
-      {manual && (
-        <Card variant="outlined">
-          <div slot="headline">代理服务器</div>
-          {manual && protocol === "socks5" && (
-            <Banner status="warning">
-              <Banner.Title>应用内下载不会走 SOCKS5</Banner.Title>
-              <Banner.Description>
-                aria2 不支持 SOCKS 代理，因此应用更新与本地模型下载会绕开这个代理。
-                若下载也需要代理，请改用 HTTP 代理。
-              </Banner.Description>
-            </Banner>
-          )}
-          <div className="space-y-4 pt-2">
-            <Radios
-              aria-label="代理协议"
-              value={protocol}
-              disabled={loading}
-              onChange={(event) => setProtocol(event.detail.value as ProxyProtocol)}
-            >
-              <Radio value="http">HTTP</Radio>
-              <Radio value="socks5">SOCKS5</Radio>
-            </Radios>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <TextField
-                label="服务器地址"
-                value={host}
+        {manual && (
+          <Card variant="outlined" className="mt-5">
+            <div slot="headline">代理服务器</div>
+            {protocol === "socks5" && (
+              <Banner status="warning">
+                <Banner.Title>应用内下载不会走 SOCKS5</Banner.Title>
+                <Banner.Description>
+                  aria2 不支持 SOCKS 代理，因此应用更新与本地模型下载会绕开这个代理。
+                  若下载也需要代理，请改用 HTTP 代理。
+                </Banner.Description>
+              </Banner>
+            )}
+            <div className="space-y-4 pt-2">
+              <Radios
+                aria-label="代理协议"
+                value={protocol}
                 disabled={loading}
-                {...bindField(setHost)}
-                supportingText="主机名或 IP，不要带协议前缀"
-              />
-              <TextField
-                label="端口"
-                type="number"
-                value={port}
-                disabled={loading}
-                {...bindField(setPort)}
-                supportingText="1 - 65535"
-              />
+                onChange={(event) => setProtocol(event.detail.value as ProxyProtocol)}
+              >
+                <Radio value="http">HTTP</Radio>
+                <Radio value="socks5">SOCKS5</Radio>
+              </Radios>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <TextField
+                  label="服务器地址"
+                  value={host}
+                  disabled={loading}
+                  {...bindField(setHost)}
+                  supportingText="主机名或 IP，不要带协议前缀"
+                />
+                <TextField
+                  label="端口"
+                  type="number"
+                  value={port}
+                  disabled={loading}
+                  {...bindField(setPort)}
+                  supportingText="1 - 65535"
+                />
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <TextField
+                  label="用户名（可选）"
+                  value={username}
+                  disabled={loading}
+                  {...bindField(setUsername)}
+                />
+                <TextField
+                  label="密码（可选）"
+                  type="password"
+                  value={password}
+                  disabled={loading}
+                  {...bindField(setPassword)}
+                  supportingText={saved.hasPassword ? "留空表示沿用已保存的密码" : undefined}
+                />
+              </div>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <TextField
-                label="用户名（可选）"
-                value={username}
-                disabled={loading}
-                {...bindField(setUsername)}
-              />
-              <TextField
-                label="密码（可选）"
-                type="password"
-                value={password}
-                disabled={loading}
-                {...bindField(setPassword)}
-                supportingText={saved.hasPassword ? "留空表示沿用已保存的密码" : undefined}
-              />
-            </div>
-          </div>
-        </Card>
-      )}
+          </Card>
+        )}
+
+        <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-separator pt-4">
+          <Button variant="filled" disabled={loading || busy} onClick={() => void save()}>
+            <LuCheck aria-hidden="true" />
+            保存
+          </Button>
+          <Button variant="tonal" disabled={loading || busy} onClick={() => void test()}>
+            测试连接
+          </Button>
+          <Button variant="text" disabled={loading || busy} onClick={reset}>
+            <LuRotateCcw aria-hidden="true" />
+            恢复默认
+          </Button>
+        </div>
+      </Card>
 
       <Card variant="outlined">
         <div slot="headline">绕过设置</div>
@@ -253,9 +285,9 @@ export function NetworkSettings() {
           </div>
           <Switch
             checked={campusThroughProxy}
-            disabled={loading}
+            disabled={loading || busy}
             onChange={(event: any) =>
-              setCampusThroughProxy(Boolean(event.detail?.checked ?? event.target?.checked))
+              void toggleBypass(Boolean(event.detail?.checked ?? event.target?.checked))
             }
             aria-label="校内网也走代理"
           />
@@ -263,20 +295,6 @@ export function NetworkSettings() {
       </Card>
 
       <CampusAccessSettings />
-
-      <div className="flex flex-wrap items-center gap-3">
-        <Button variant="filled" disabled={loading || busy} onClick={() => void save()}>
-          <LuCheck aria-hidden="true" />
-          保存
-        </Button>
-        <Button variant="tonal" disabled={loading || busy} onClick={() => void test()}>
-          测试连接
-        </Button>
-        <Button variant="text" disabled={loading || busy} onClick={reset}>
-          <LuRotateCcw aria-hidden="true" />
-          恢复默认
-        </Button>
-      </div>
     </div>
   );
 }
