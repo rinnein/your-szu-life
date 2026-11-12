@@ -105,6 +105,9 @@ jobs:
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
+          # EasyTier 的 proto 构建调用系统 protoc；well-known types
+          # （google/protobuf/*.proto）由 libprotobuf-dev 提供，只装
+          # protobuf-compiler 时 protoc 会报 "google/protobuf/descriptor.proto: File not found"。
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y \
             aria2 \
@@ -112,6 +115,7 @@ jobs:
             curl \
             file \
             libayatana-appindicator3-dev \
+            libprotobuf-dev \
             libssl-dev \
             libwebkit2gtk-4.1-dev \
             librsvg2-dev \
@@ -220,10 +224,11 @@ jobs:
           } >> "$GITHUB_ENV"
 
       # EasyTier 的 proto 构建需要 protoc（Windows 上 crates 会自行下载）。
+      # libprotobuf-dev 提供 protoc 需要的 google/protobuf/*.proto（well-known types）。
       - name: Install protoc
         run: |
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y protobuf-compiler
+          sudo apt-get install --no-install-recommends -y protobuf-compiler libprotobuf-dev
 
       - name: Set up Rust targets
         uses: dtolnay/rust-toolchain@stable

@@ -17,6 +17,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
 chrono = { workspace = true }
+# school_cookies 的 Windows/macOS 分支用 time 设置 Cookie 过期时间。
+time = { workspace = true }
 tokio = { workspace = true }
 reqwest = { workspace = true }
 cookie_store = { workspace = true }
