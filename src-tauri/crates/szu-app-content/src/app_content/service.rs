@@ -1,8 +1,8 @@
 use super::{
     cache::Cache,
     config::{ContentConfig, Sources},
-    http::{PublicHttp, RequestKind},
-    images::normalize_image,
+    http::{PublicHttp, RequestKind, content_error},
+    images::{normalize_image, validate_public_image},
     model::*,
     runtime::{AutomaticSchedule, Clock, ImageSlots, SingleFlight},
 };
@@ -15,6 +15,9 @@ use std::{
 };
 
 type ImageFlight = Arc<SingleFlight<Result<Vec<u8>, ContentError>>>;
+
+/// 第三方图片缓存作用域。与公告图片分开，公告刷新时不会误删题库/更新日志图片。
+const PUBLIC_IMAGE_SCOPE: &str = "remote-images-v1";
 
 /// 一次更新检查的结果。`fallback` 表示稳定版频道因暂无正式版而回退了测试版。
 #[derive(Clone)]
@@ -1011,6 +1014,46 @@ impl ContentService {
             self.require_image(url.as_str())?;
             // The cache keeps the normalized copy, so cached reads skip decoding and resizing.
             self.cache.save_image(&scope, url.as_str(), &bytes);
+            Ok(bytes)
+        })
+    }
+
+    /// 第三方图片（题库、更新日志、贡献者头像等）：
+    /// 只允许公网地址，统一走 `szu_core::resource_proxy` 的 netproxy 出口；
+    /// 不缩放、不重编码，保留题目图表清晰度。
+    pub fn load_public_image(&self, value: &str) -> Result<Vec<u8>, ContentError> {
+        let url = web_url(value)?;
+        // 在进入缓存与并发队列之前先用公网策略拒绝内网/回环地址。
+        szu_core::resource_proxy::validate_url(
+            url.as_str(),
+            szu_core::resource_proxy::ResourceAccess::Public,
+        )
+        .map_err(content_error)?;
+        let flight = self
+            .image_flights
+            .lock()
+            .unwrap()
+            .entry(url.to_string())
+            .or_default()
+            .clone();
+        flight.run(|| {
+            let _slot = self.image_slots.acquire();
+            if let Some(bytes) = self.cache.load_image_with_limit(
+                PUBLIC_IMAGE_SCOPE,
+                url.as_str(),
+                PUBLIC_IMAGE_LIMIT,
+            ) {
+                if let Ok(bytes) = validate_public_image(&bytes) {
+                    return Ok(bytes);
+                }
+            }
+            let response = self
+                .http
+                .get(&url, RequestKind::PublicImage, IMAGE_DOWNLOAD_LIMIT)?
+                .successful(RequestKind::PublicImage)?;
+            let bytes = validate_public_image(&response.body)?;
+            self.cache
+                .save_image(PUBLIC_IMAGE_SCOPE, url.as_str(), &bytes);
             Ok(bytes)
         })
     }

@@ -7,7 +7,10 @@ pub enum RequestKind {
     Json,
     Github,
     CnbWeb,
+    /// 公告/更新日志等可信内容源的图片（允许内网地址）。
     Image,
+    /// 任意第三方图片（只允许公网地址，防 SSRF）。
+    PublicImage,
 }
 
 pub struct HttpResponse {
@@ -37,31 +40,33 @@ impl HttpResponse {
     }
 }
 
+pub fn content_error(error: szu_core::resource_proxy::ResourceError) -> ContentError {
+    use szu_core::resource_proxy::ResourceErrorKind;
+    let kind = match error.kind {
+        ResourceErrorKind::Invalid | ResourceErrorKind::Denied => ErrorKind::InvalidData,
+        ResourceErrorKind::TooLarge => ErrorKind::TooLarge,
+        ResourceErrorKind::Network => ErrorKind::Network,
+        ResourceErrorKind::Http => ErrorKind::Http,
+        ResourceErrorKind::Unavailable => ErrorKind::Unavailable,
+    };
+    ContentError::new(kind, error.message)
+}
+
 pub trait PublicHttp: Send + Sync {
     fn get(&self, url: &Url, kind: RequestKind, limit: usize)
     -> Result<HttpResponse, ContentError>;
 }
 
-/// Image endpoints commonly answer with a redirect to the real asset (random-picture
-/// APIs, CDNs), so image requests follow hops explicitly. Every hop still has to be a
-/// plain HTTP(S) URL without credentials, and the chain is bounded.
-const MAX_IMAGE_REDIRECTS: usize = 5;
-
-pub fn check_image_redirect(previous: usize, target: &Url) -> Result<(), ContentError> {
-    if previous >= MAX_IMAGE_REDIRECTS {
-        return Err(ContentError::new(ErrorKind::Http, "头图重定向次数过多"));
-    }
-    web_url(target.as_str()).map(|_| ())
-}
-
 pub struct PublicClient {
     client: Result<Client, ContentError>,
+    user_agent: String,
 }
 
 impl PublicClient {
     pub fn new(version: &str) -> Self {
         Self {
             client: Self::build(version),
+            user_agent: format!("your-szu-life/{version}"),
         }
     }
 
@@ -76,8 +81,6 @@ impl PublicClient {
             .timeout(Duration::from_secs(15))
             .cookie_store(false)
             .referer(false)
-            // A redirect is a non-success response, not permission to proxy another URL.
-            // Image hops are followed by `get` itself, where each Location is validated.
             .redirect(reqwest::redirect::Policy::none())
             .retry(reqwest::retry::never())
             .build()
@@ -97,33 +100,42 @@ impl PublicHttp for PublicClient {
             RequestKind::Json => "application/json",
             RequestKind::Github => "application/vnd.github+json",
             RequestKind::CnbWeb => "application/vnd.cnb.web+json",
-            RequestKind::Image => "image/png,image/jpeg,image/gif,image/webp",
-        };
-        let client = self.client.as_ref().map_err(Clone::clone)?;
-        let mut target = url.clone();
-        let mut hops = 0;
-        let response = loop {
-            let response = client
-                .get(target.clone())
-                .header("Accept", accept)
-                .send()
-                .map_err(|_| ContentError::new(ErrorKind::Network, "请求失败或超时，请检查网络"))?;
-            let redirect = matches!(response.status().as_u16(), 301 | 302 | 303 | 307 | 308);
-            if kind != RequestKind::Image || !redirect {
-                break response;
+            RequestKind::Image | RequestKind::PublicImage => {
+                "image/png,image/jpeg,image/gif,image/webp,image/bmp,image/avif"
             }
-            let location = response
-                .headers()
-                .get("location")
-                .and_then(|value| value.to_str().ok())
-                .ok_or_else(|| ContentError::invalid("头图重定向缺少地址"))?;
-            let next = target
-                .join(location)
-                .map_err(|_| ContentError::invalid("头图重定向地址无效"))?;
-            check_image_redirect(hops, &next)?;
-            hops += 1;
-            target = next;
         };
+        // 图片统一走 szu-core 的资源代理：netproxy 出口、逐跳校验重定向、不携带 Cookie/Referer。
+        if matches!(kind, RequestKind::Image | RequestKind::PublicImage) {
+            let access = if kind == RequestKind::Image {
+                szu_core::resource_proxy::ResourceAccess::Trusted
+            } else {
+                szu_core::resource_proxy::ResourceAccess::Public
+            };
+            let response = szu_core::resource_proxy::fetch_blocking(
+                szu_core::resource_proxy::ResourceRequest {
+                    url: url.as_str(),
+                    access,
+                    accept,
+                    limit,
+                    user_agent: &self.user_agent,
+                },
+            )
+            .map_err(content_error)?;
+            return Ok(HttpResponse {
+                status: 200,
+                body: response.bytes,
+                content_type: response.content_type,
+                has_next_page: false,
+                retry_at: None,
+            });
+        }
+
+        let client = self.client.as_ref().map_err(Clone::clone)?;
+        let response = client
+            .get(url.clone())
+            .header("Accept", accept)
+            .send()
+            .map_err(|_| ContentError::new(ErrorKind::Network, "请求失败或超时，请检查网络"))?;
         let status = response.status().as_u16();
         let content_type = response
             .headers()

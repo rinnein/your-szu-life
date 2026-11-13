@@ -1,6 +1,7 @@
 import { Markdown } from "@tanstack/markdown/react";
 import type { ComponentPropsWithoutRef } from "react";
 import { toast } from "../ui";
+import { RemoteImage } from "../resources/remote";
 import { openPublicUrl } from "./external";
 
 function safeHttpUrl(value: string): string | null {
@@ -44,9 +45,27 @@ function ChangelogLink({ href, children, ...rest }: ComponentPropsWithoutRef<"a"
   );
 }
 
-function ChangelogImage({ src, alt, ...rest }: ComponentPropsWithoutRef<"img">) {
+function ChangelogImage({
+  src,
+  alt,
+  className,
+  width,
+  height,
+  style,
+}: ComponentPropsWithoutRef<"img">) {
   if (!src) return null;
-  return <img src={src} alt={alt ?? ""} loading="lazy" referrerPolicy="no-referrer" {...rest} />;
+  return (
+    <RemoteImage
+      src={src}
+      kind="image"
+      alt={alt ?? ""}
+      className={className}
+      width={width}
+      height={height}
+      style={style}
+      loading="lazy"
+    />
+  );
 }
 
 const COMPONENTS = { a: ChangelogLink, img: ChangelogImage };

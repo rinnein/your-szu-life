@@ -7,6 +7,8 @@ pub const DAY_MS: u64 = 24 * 60 * 60 * 1000;
 pub const JSON_LIMIT: usize = 1024 * 1024;
 /// Final image size handed to the WebView (and stored in the cache).
 pub const IMAGE_LIMIT: usize = 4 * 1024 * 1024;
+/// 第三方图片（题库、更新日志等）的最终大小上限；不重新编码，保留原始清晰度。
+pub const PUBLIC_IMAGE_LIMIT: usize = 8 * 1024 * 1024;
 /// Raw image responses may be much larger: they are decoded, downscaled and re-encoded
 /// before they reach the WebView, so the download cap is independent of `IMAGE_LIMIT`.
 pub const IMAGE_DOWNLOAD_LIMIT: usize = 16 * 1024 * 1024;

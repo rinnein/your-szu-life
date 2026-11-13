@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { DimmedHtmlText } from "./DimmedHtmlText";
+import { RemoteImage } from "../resources/remote";
 
 export type RichImage = {
   pic_id?: string;
@@ -115,18 +116,33 @@ export function RichText({
     );
     occurrence += 1;
     if (resolved) {
-      nodes.push(
-        <img
-          key={`image-${match.index}`}
-          src={resolved}
-          alt={alt || "题目图片"}
-          loading="lazy"
-          className={
-            imageClassName ??
-            "my-2 max-h-96 max-w-full rounded-lg border border-separator/40 object-contain"
-          }
-        />,
-      );
+      const imageClass =
+        imageClassName ??
+        "my-2 max-h-96 max-w-full rounded-lg border border-separator/40 object-contain";
+      if (resolved.startsWith("data:") || resolved.startsWith("blob:")) {
+        nodes.push(
+          <img
+            key={`image-${match.index}`}
+            src={resolved}
+            alt={alt || "题目图片"}
+            loading="lazy"
+            className={imageClass}
+          />,
+        );
+      } else {
+        // 远程图片统一走 Rust 资源代理，避免 WebView 的 CORS/防盗链限制。
+        nodes.push(
+          <RemoteImage
+            key={`image-${match.index}`}
+            src={resolved}
+            kind="image"
+            alt={alt || "题目图片"}
+            loading="lazy"
+            className={imageClass}
+            fallback={alt ? <span>{alt}</span> : null}
+          />,
+        );
+      }
     } else if (alt) {
       nodes.push(<span key={`alt-${match.index}`}>{alt}</span>);
     }

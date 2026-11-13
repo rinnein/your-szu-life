@@ -142,6 +142,10 @@ describe("AnnouncementBoard compact bar & modal", () => {
     );
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect((createObjectURL.mock.calls[0][0] as Blob).type).toBe("image/png");
+    expect(invoke).toHaveBeenCalledWith("load_remote_resource", {
+      url: "https://example.com/one.png",
+      kind: "announcement",
+    });
 
     unmount();
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:announcement");

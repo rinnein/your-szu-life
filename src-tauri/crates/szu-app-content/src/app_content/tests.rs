@@ -610,24 +610,24 @@ fn test_cnb_fallback_when_github_fails() {
 }
 
 #[test]
-fn image_redirects_stop_at_the_hop_limit_and_reject_unsafe_targets() {
-    use super::http::check_image_redirect;
+fn public_images_accept_common_formats_and_reject_html() {
+    use super::images::validate_public_image;
+    use image::{DynamicImage, ImageFormat, RgbaImage};
+    use std::io::Cursor;
 
-    let image = reqwest::Url::parse("https://tc.lolicc.cc/pic/a.png").unwrap();
-    assert!(check_image_redirect(0, &image).is_ok());
-    assert!(check_image_redirect(4, &image).is_ok());
-    assert!(check_image_redirect(5, &image).is_err());
+    let mut png = Vec::new();
+    DynamicImage::ImageRgba8(RgbaImage::new(1, 1))
+        .write_to(&mut Cursor::new(&mut png), ImageFormat::Png)
+        .unwrap();
+    assert!(validate_public_image(&png).is_ok());
 
-    for target in [
-        "javascript:alert(1)",
-        "file:///etc/passwd",
-        "http://user:pass@example.com/a.png",
-    ] {
-        assert!(
-            check_image_redirect(0, &reqwest::Url::parse(target).unwrap()).is_err(),
-            "expected redirect target to be rejected: {target}"
-        );
-    }
+    let mut bmp = Vec::new();
+    DynamicImage::ImageRgba8(RgbaImage::new(1, 1))
+        .write_to(&mut Cursor::new(&mut bmp), ImageFormat::Bmp)
+        .unwrap();
+    assert!(validate_public_image(&bmp).is_ok());
+
+    assert!(validate_public_image(b"<html><body>not an image</body></html>").is_err());
 }
 
 #[test]
@@ -1330,4 +1330,82 @@ fn cnb_mirror_respects_update_channel() {
     let snapshot = service(false, UpdateChannel::Stable).refresh();
     assert!(snapshot.update_channel_fallback);
     assert_eq!(snapshot.update.data.as_ref().unwrap().latest_ver, "0.9.9");
+}
+
+#[test]
+fn public_image_proxy_caches_and_rejects_private_hosts() {
+    use super::{
+        config::ContentConfig,
+        http::{HttpResponse, PublicHttp, RequestKind},
+        model::*,
+        runtime::Clock,
+        service::ContentService,
+    };
+    use std::sync::{Arc, Mutex};
+
+    struct ImageHttp {
+        calls: Arc<Mutex<usize>>,
+    }
+    impl PublicHttp for ImageHttp {
+        fn get(
+            &self,
+            url: &reqwest::Url,
+            kind: RequestKind,
+            _limit: usize,
+        ) -> Result<HttpResponse, ContentError> {
+            assert_eq!(kind, RequestKind::PublicImage);
+            assert_eq!(url.host_str(), Some("www.uooc.net.cn"));
+            *self.calls.lock().unwrap() += 1;
+            let mut png = Vec::new();
+            image::DynamicImage::ImageRgba8(image::RgbaImage::new(1, 1))
+                .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+                .unwrap();
+            Ok(HttpResponse {
+                status: 200,
+                body: png,
+                content_type: Some("image/png".into()),
+                has_next_page: false,
+                retry_at: None,
+            })
+        }
+    }
+
+    struct ZeroClock;
+    impl Clock for ZeroClock {
+        fn now_ms(&self) -> u64 {
+            0
+        }
+    }
+
+    let dir = std::env::temp_dir().join(format!(
+        "test-public-image-{}",
+        uuid::Uuid::new_v4()
+    ));
+    let calls = Arc::new(Mutex::new(0));
+    let service = ContentService::new(
+        ContentConfig::new("0.1.0".into(), None, None, None),
+        Arc::new(ImageHttp {
+            calls: calls.clone(),
+        }),
+        Arc::new(ZeroClock),
+        Some(dir.clone()),
+        UpdateChannel::Stable,
+        |_| {},
+    );
+
+    let url = "https://www.uooc.net.cn/a.png";
+    let first = service.load_public_image(url).unwrap();
+    let second = service.load_public_image(url).unwrap();
+    assert_eq!(first, second);
+    assert_eq!(*calls.lock().unwrap(), 1, "第二次读取应命中缓存");
+
+    assert!(
+        service.load_public_image("http://127.0.0.1/a.png").is_err(),
+        "公网图片代理必须拒绝回环地址"
+    );
+    assert!(
+        service.load_public_image("http://intranet/a.png").is_err(),
+        "公网图片代理必须拒绝单标签内网主机"
+    );
+    let _ = std::fs::remove_dir_all(dir);
 }

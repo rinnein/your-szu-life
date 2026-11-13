@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useState } from "react";
 import { Card, LoadingIndicator, Button } from "material/react";
 import { Banner } from "../ui";
+import { useRemoteImage } from "../resources/remote";
 import { LuArrowLeft, LuArrowRight, LuChevronRight, LuImage, LuMegaphone } from "react-icons/lu";
 import { useAppContent } from "./context";
 import { contentTime } from "./external";
@@ -25,23 +25,6 @@ export function resolveAnnouncementLink(link: string): AnnouncementLinkTarget {
   return { kind: "external", url: trimmed };
 }
 
-export function imageMimeType(bytes: ArrayBuffer): string | undefined {
-  if (bytes.byteLength < 12) return undefined;
-  const head = new Uint8Array(bytes, 0, 12);
-  const startsWith = (...signature: number[]) =>
-    signature.every((value, index) => head[index] === value);
-  if (startsWith(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return "image/png";
-  if (startsWith(0xff, 0xd8, 0xff)) return "image/jpeg";
-  if (startsWith(0x47, 0x49, 0x46, 0x38)) return "image/gif";
-  const isWebp =
-    startsWith(0x52, 0x49, 0x46, 0x46) &&
-    head[8] === 0x57 &&
-    head[9] === 0x45 &&
-    head[10] === 0x42 &&
-    head[11] === 0x50;
-  return isWebp ? "image/webp" : undefined;
-}
-
 export function AnnouncementImage({
   url: sourceUrl,
   title,
@@ -49,43 +32,18 @@ export function AnnouncementImage({
   url?: string | null;
   title: string;
 }) {
-  const url = sourceUrl?.trim();
-  const [image, setImage] = useState<{ url: string; src?: string; failed?: boolean }>();
-  const request = useRef<{ url: string; promise: Promise<ArrayBuffer> } | undefined>(undefined);
+  const url = sourceUrl?.trim() ?? "";
+  const { src, failed } = useRemoteImage(url || undefined, "announcement");
+  const [broken, setBroken] = useState(false);
   useEffect(() => {
-    if (!url) return;
-    let active = true;
-    let objectUrl: string | undefined;
-    if (request.current?.url !== url) {
-      request.current = { url, promise: invoke<ArrayBuffer>("load_announcement_image", { url }) };
-    }
-    void request.current.promise
-      .then((bytes) => {
-        if (!active || !(bytes instanceof ArrayBuffer)) return;
-        const type = imageMimeType(bytes);
-        if (!type) throw new Error("Invalid native image response");
-        objectUrl = URL.createObjectURL(new Blob([bytes], { type }));
-        setImage({ url, src: objectUrl });
-      })
-      .catch(() => {
-        if (active) setImage({ url, failed: true });
-      });
-    return () => {
-      active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
+    setBroken(false);
   }, [url]);
 
-  const current = image?.url === url ? image : undefined;
+  const failedNow = Boolean(url) && (failed || broken);
   return (
     <span className="announcement-image">
-      {current?.src && !current.failed ? (
-        <img
-          src={current.src}
-          alt={title + "头图"}
-          loading="lazy"
-          onError={() => setImage({ url: current.url, failed: true })}
-        />
+      {url && src && !failedNow ? (
+        <img src={src} alt={title + "头图"} loading="lazy" onError={() => setBroken(true)} />
       ) : (
         <span
           className="announcement-image-placeholder"
@@ -93,17 +51,13 @@ export function AnnouncementImage({
           aria-label={
             !url
               ? title + "暂无头图"
-              : current?.failed
+              : failedNow
                 ? title + "头图加载失败"
                 : "正在加载" + title + "头图"
           }
         >
-          {!url || current?.failed ? (
-            <LuImage aria-hidden="true" />
-          ) : (
-            <LoadingIndicator size={16} />
-          )}
-          <span>{!url ? "暂无头图" : current?.failed ? "头图暂不可用" : "正在加载头图"}</span>
+          {!url || failedNow ? <LuImage aria-hidden="true" /> : <LoadingIndicator size={16} />}
+          <span>{!url ? "暂无头图" : failedNow ? "头图暂不可用" : "正在加载头图"}</span>
         </span>
       )}
     </span>

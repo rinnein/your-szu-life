@@ -84,10 +84,19 @@ impl Cache {
     }
 
     pub fn load_image(&self, scope: &str, url: &str) -> Option<Vec<u8>> {
+        self.load_image_with_limit(scope, url, IMAGE_LIMIT)
+    }
+
+    pub fn load_image_with_limit(
+        &self,
+        scope: &str,
+        url: &str,
+        limit: usize,
+    ) -> Option<Vec<u8>> {
         let _guard = self.io.lock().unwrap();
         read_limited(
             &self.path(scope, &format!("images/{}.image", cache_key(url)))?,
-            IMAGE_LIMIT,
+            limit,
         )
     }
 

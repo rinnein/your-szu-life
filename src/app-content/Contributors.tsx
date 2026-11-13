@@ -4,6 +4,7 @@ import { Button, LoadingIndicator } from "material/react";
 import { LuArrowUpRight, LuUsers } from "react-icons/lu";
 import { Card } from "../components";
 import { Avatar, Banner, toast } from "../ui";
+import { useRemoteImage } from "../resources/remote";
 import {
   staticContributors,
   type StaticContributors as StaticContributorsData,
@@ -14,6 +15,33 @@ import type { Contributor, ContributorsSnapshot, Repository } from "./types";
 function openContributor(url: string) {
   void openPublicUrl(url).catch(() =>
     toast.danger("无法打开系统浏览器", { description: "请稍后重试。" }),
+  );
+}
+
+function ContributorAvatar({ contributor }: { contributor: Contributor }) {
+  // 构建期快照的头像已经打包成应用内资源，只有运行时 GitHub 头像需要走资源代理。
+  if (!/^https?:/i.test(contributor.avatarUrl)) {
+    return (
+      <Avatar
+        size="sm"
+        src={contributor.avatarUrl}
+        alt={contributor.login + "头像"}
+        fallback={contributor.login.slice(0, 2).toUpperCase()}
+      />
+    );
+  }
+  return <ProxiedContributorAvatar contributor={contributor} />;
+}
+
+function ProxiedContributorAvatar({ contributor }: { contributor: Contributor }) {
+  const { src } = useRemoteImage(contributor.avatarUrl, "image");
+  return (
+    <Avatar
+      size="sm"
+      src={src}
+      alt={contributor.login + "头像"}
+      fallback={contributor.login.slice(0, 2).toUpperCase()}
+    />
   );
 }
 
@@ -43,12 +71,7 @@ function ContributorsList({ contributors }: { contributors: Contributor[] }) {
             onClick={() => openContributor(contributor.url)}
             aria-label={contributor.login + " 的 GitHub 主页"}
           >
-            <Avatar
-              size="sm"
-              src={contributor.avatarUrl}
-              alt={contributor.login + "头像"}
-              fallback={contributor.login.slice(0, 2).toUpperCase()}
-            />
+            <ContributorAvatar contributor={contributor} />
             <span>{contributor.login}</span>
           </Button>
         </li>

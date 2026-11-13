@@ -99,3 +99,35 @@ pub fn normalize_image(
 fn has_transparency(image: &image::DynamicImage) -> bool {
     image.to_rgba8().pixels().any(|pixel| pixel[3] != 255)
 }
+
+/// 第三方图片（题库、更新日志等）：只校验格式与大小，不缩放、不重编码，
+/// 保留题目图表与截图的原始清晰度。
+pub fn validate_public_image(bytes: &[u8]) -> Result<Vec<u8>, ContentError> {
+    if bytes.len() > PUBLIC_IMAGE_LIMIT {
+        return Err(ContentError::new(
+            ErrorKind::TooLarge,
+            "图片超过 8 MiB 限制",
+        ));
+    }
+    let format = image::guess_format(bytes).ok();
+    let supported = matches!(
+        format,
+        Some(
+            ImageFormat::Png
+                | ImageFormat::Jpeg
+                | ImageFormat::Gif
+                | ImageFormat::WebP
+                | ImageFormat::Bmp
+        )
+    ) || looks_like_avif(bytes);
+    if !supported {
+        return Err(ContentError::invalid("图片格式不受支持"));
+    }
+    Ok(bytes.to_vec())
+}
+
+fn looks_like_avif(bytes: &[u8]) -> bool {
+    bytes.len() >= 12
+        && &bytes[4..8] == b"ftyp"
+        && (&bytes[8..12] == b"avif" || &bytes[8..12] == b"avis")
+}

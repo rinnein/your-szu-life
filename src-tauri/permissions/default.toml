@@ -117,7 +117,7 @@ permissions = [
   "allow-refresh-app-content",
   "allow-set-update-channel",
   "allow-get-contributors",
-  "allow-load-announcement-image",
+  "allow-load-remote-resource",
   "allow-start-in-app-update",
   "allow-get-credential-storage-status",
   "allow-get-settings-snapshot",

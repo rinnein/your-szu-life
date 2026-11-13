@@ -1,14 +1,36 @@
 /** @vitest-environment jsdom */
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { invoke } from "@tauri-apps/api/core";
 import { ChangelogMarkdown } from "./ChangelogMarkdown";
 import { openPublicUrl } from "./external";
 
 vi.mock("./external", () => ({
   openPublicUrl: vi.fn().mockResolvedValue(undefined),
 }));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+}));
+
+const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0])
+  .buffer;
+
+beforeEach(() => {
+  Object.defineProperty(URL, "createObjectURL", {
+    value: vi.fn(() => "blob:changelog-image"),
+    configurable: true,
+    writable: true,
+  });
+  Object.defineProperty(URL, "revokeObjectURL", {
+    value: vi.fn(),
+    configurable: true,
+    writable: true,
+  });
+  vi.mocked(invoke).mockResolvedValue(pngBytes);
+});
 
 afterEach(() => {
   cleanup();
@@ -43,14 +65,19 @@ describe("ChangelogMarkdown", () => {
     expect(container.querySelector("a")).toBeNull();
   });
 
-  it("lazy-loads images and keeps alt text", () => {
+  it("lazy-loads images through the rust proxy and keeps alt text", async () => {
     const { container } = render(
       <ChangelogMarkdown source={"![截图](https://example.com/a.png)"} />,
     );
 
+    await waitFor(() => expect(container.querySelector("img")).not.toBeNull());
     const image = container.querySelector("img");
-    expect(image).toHaveAttribute("src", "https://example.com/a.png");
+    expect(image).toHaveAttribute("src", "blob:changelog-image");
     expect(image).toHaveAttribute("alt", "截图");
     expect(image).toHaveAttribute("loading", "lazy");
+    expect(invoke).toHaveBeenCalledWith("load_remote_resource", {
+      url: "https://example.com/a.png",
+      kind: "image",
+    });
   });
 });

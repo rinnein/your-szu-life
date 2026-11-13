@@ -358,7 +358,7 @@ fn main() {
             "refresh_app_content",
             "set_update_channel",
             "get_contributors",
-            "load_announcement_image",
+            "load_remote_resource",
             "start_in_app_update",
             "get_credential_storage_status",
             "get_settings_snapshot",

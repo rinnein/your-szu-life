@@ -28,6 +28,7 @@ pub mod onboarding;
 pub mod platform_tls;
 pub mod ports;
 pub mod preferences;
+pub mod resource_proxy;
 pub mod settings;
 pub mod settings_sync_items;
 pub mod settings_sync_signal;

@@ -45,15 +45,29 @@ pub async fn get_contributors(
         .map_err(|_| "贡献者加载任务未能完成".to_owned())
 }
 
+/// 前端资源加载策略：
+/// - `announcement`：公告/更新日志等可信内容源，仅允许当前公告图片，允许内网地址；
+/// - `image`：任意第三方公网图片（题库、更新日志、头像等），拒绝内网/回环地址。
+#[derive(Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RemoteResourceKind {
+    Announcement,
+    Image,
+}
+
 #[tauri::command]
-pub async fn load_announcement_image(
+pub async fn load_remote_resource(
     store: State<'_, AppContentStore>,
     url: String,
+    kind: RemoteResourceKind,
 ) -> Result<tauri::ipc::Response, ContentError> {
     let service = store.0.clone();
-    let bytes = tauri::async_runtime::spawn_blocking(move || service.load_image(&url))
-        .await
-        .map_err(|_| ContentError::new(ErrorKind::Unavailable, "头图加载任务未能完成"))??;
+    let bytes = tauri::async_runtime::spawn_blocking(move || match kind {
+        RemoteResourceKind::Announcement => service.load_image(&url),
+        RemoteResourceKind::Image => service.load_public_image(&url),
+    })
+    .await
+    .map_err(|_| ContentError::new(ErrorKind::Unavailable, "图片加载任务未能完成"))??;
     // Raw bytes reach the frontend as an ArrayBuffer, so it can build a Blob URL
     // without a base64 round trip.
     Ok(tauri::ipc::Response::new(bytes))

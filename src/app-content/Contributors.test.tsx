@@ -80,7 +80,10 @@ describe("LiveContributors", () => {
     fireEvent.click(retry);
 
     expect(await screen.findByText("alice")).toBeInTheDocument();
-    expect(invoke).toHaveBeenCalledTimes(2);
+    const contributorCalls = vi
+      .mocked(invoke)
+      .mock.calls.filter(([command]) => command === "get_contributors");
+    expect(contributorCalls).toHaveLength(2);
   });
 });
 
