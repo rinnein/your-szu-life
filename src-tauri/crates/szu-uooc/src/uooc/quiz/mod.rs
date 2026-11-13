@@ -2,6 +2,7 @@ pub mod db;
 pub mod model;
 pub mod qa;
 pub mod protocol;
+pub mod richtext;
 #[cfg(test)]
 mod tests;
 use self::model::*;
@@ -118,6 +119,10 @@ pub fn saved(
     for q in copy.values_mut() {
         for question in &mut q.questions {
             for image in &mut question.images {
+                // 空字符串是「抓图失败/已被限制」的占位，用于维持与 Markdown 图片顺序的对应关系。
+                if image.is_empty() {
+                    continue;
+                }
                 if !image.starts_with("data:image/") {
                     return Err("试题图片缓存格式无效".into());
                 }
@@ -136,7 +141,10 @@ pub fn restore_media(states: &mut BTreeMap<String, QuizState>, root: &std::path:
     for q in states.values_mut() {
         for question in &mut q.questions {
             let mut missing = false;
-            question.images.retain_mut(|image| {
+            for image in question.images.iter_mut() {
+                if image.is_empty() {
+                    continue;
+                }
                 let restored = image
                     .strip_prefix("cached:")
                     .filter(|hash| hash.len() == 40 && hash.bytes().all(|c| c.is_ascii_hexdigit()))
@@ -153,16 +161,15 @@ pub fn restore_media(states: &mut BTreeMap<String, QuizState>, root: &std::path:
                             None
                         }
                     });
-                if let Some(value) =
-                    restored.filter(|v| v.starts_with("data:image/") && v.len() <= 2 * 1024 * 1024)
-                {
-                    *image = value;
-                    true
-                } else {
-                    missing = true;
-                    false
+                match restored.filter(|v| v.starts_with("data:image/") && v.len() <= 2 * 1024 * 1024) {
+                    Some(value) => *image = value,
+                    None => {
+                        // 用空占位代替删除，避免后面的图片与 Markdown 引用错位。
+                        *image = String::new();
+                        missing = true;
+                    }
                 }
-            });
+            }
             if missing {
                 // 图片缓存丢了不代表作答/判分结果失效。保持 signature 与 stage 不变，
                 // 只提示图片需要重新加载，避免每次启动都把测验状态打回未作答。
@@ -171,6 +178,74 @@ pub fn restore_media(states: &mut BTreeMap<String, QuizState>, root: &std::path:
         }
     }
 }
+/// 从题干与选项的 Markdown 图片中抓取图片，按出现顺序填充 `Question.images`。
+///
+/// 顺序必须保持「题干 → 各选项」，与 `question.images` 的既有约定一致。
+/// `strict` 为 true 时单张失败即报错（自动答题）；否则跳过失败图片（考试试卷展示）。
+pub(crate) async fn hydrate_question_images(
+    client: &Client,
+    questions: &mut [Question],
+    cancel: &CancellationToken,
+    strict: bool,
+) -> Result<usize, Error> {
+    fn fetchable(src: &str) -> bool {
+        let lower = src.to_ascii_lowercase();
+        lower.starts_with("http://")
+            || lower.starts_with("https://")
+            || lower.starts_with("data:image/")
+    }
+    let mut total = 0usize;
+    for q in questions.iter_mut() {
+        if !q.images.is_empty() {
+            continue;
+        }
+        let mut urls: Vec<String> = richtext::find_markdown_images(&q.text)
+            .into_iter()
+            .map(|image| image.src)
+            .filter(|src| fetchable(src))
+            .collect();
+        for option in &q.options {
+            urls.extend(
+                richtext::find_markdown_images(&option.text)
+                    .into_iter()
+                    .map(|image| image.src)
+                    .filter(|src| fetchable(src)),
+            );
+        }
+        if urls.len() > 12 {
+            if strict {
+                return Err(Error::Quiz("单题图片数量超过支持范围".into()));
+            }
+            urls.truncate(12);
+        }
+        for url in urls {
+            match client.quiz_image(&url, cancel).await {
+                Ok(image) => {
+                    total += image.len();
+                    if total > 6 * 1024 * 1024 {
+                        if strict {
+                            return Err(Error::Quiz("试卷图片过多，请使用官网处理".into()));
+                        }
+                        log::debug!("试卷图片超过大小限制，已跳过后续图片: {url}");
+                        // 保留空占位，维持与 Markdown 图片出现顺序的对应关系。
+                        q.images.push(String::new());
+                    } else {
+                        q.images.push(image);
+                    }
+                }
+                Err(error) => {
+                    if strict {
+                        return Err(error);
+                    }
+                    log::debug!("试题图片加载失败，已跳过: {url} ({error:?})");
+                    q.images.push(String::new());
+                }
+            }
+        }
+    }
+    Ok(total)
+}
+
 async fn paper(
     client: &Client,
     task: &str,
@@ -191,17 +266,10 @@ async fn paper(
         }
     }
 
-    let mut size = 0;
-    for (q, urls) in paper.questions.iter_mut().zip(&paper.image_urls) {
-        for url in urls {
-            let image = client.quiz_image(url, cancel).await?;
-            size += image.len();
-            if size > 6 * 1024 * 1024 {
-                return Err(Error::Quiz("试卷图片过多，请使用官网处理".into()));
-            }
-            q.images.push(image);
-        }
-    }
+    // getTaskPaper 可能返回带 HTML `<img>` 的题干，统一转成 Markdown 再抓图。
+    qa::normalize_question_rich_text(&mut paper.questions, client.origin());
+
+    hydrate_question_images(client, &mut paper.questions, cancel, true).await?;
     paper.signature = format!(
         "{:x}",
         Sha1::digest(
@@ -748,7 +816,14 @@ async fn submit(
                         &details.answers,
                         &details.wrong_answers,
                     );
-                    let _ = qa::upload_batch(&qa_url, qa_key.as_deref(), &payload, Some(service)).await;
+                    if let Ok(res) = qa::upload_batch(&qa_url, qa_key.as_deref(), &payload, Some(service)).await {
+                        if res.ok && !details.questions.is_empty() {
+                            if let Ok(qa_db) = service.get_qa_db().await {
+                                let qids: Vec<String> = details.questions.iter().map(|q| q.id.clone()).collect();
+                                let _ = qa::apply_upload_response_to_bank(qa_db, clean_tid, &res, &qids).await;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1247,6 +1322,7 @@ impl Service {
 
         // 优先直接获取已完成试卷内容，避免打开试卷时阻塞进行耗时的向量特征构建与网络同步
         let mut details = fetch_task_group_content(&client, cid, clean_tid, is_finished, submitted.as_ref(), &cancel).await?;
+        qa::normalize_question_rich_text(&mut details.questions, client.origin());
 
         if details.questions.is_empty() {
             let (_, fallback_details) = build_single_task_group(self, cid, clean_tid, Some(is_finished), BankSyncMode::Active).await?;
@@ -1607,6 +1683,7 @@ pub async fn build_single_task_group(
     let mut details = fetch_task_group_content(&client, cid, clean_tid, is_finished, submitted.as_ref(), &cancel)
         .await
         .unwrap_or_default();
+    qa::normalize_question_rich_text(&mut details.questions, client.origin());
 
     for (q_idx, q) in details.questions.iter().enumerate() {
         let snippet = q.text.chars().take(40).collect::<String>();
@@ -1736,6 +1813,17 @@ pub async fn build_single_task_group(
                     }
                 }
 
+                let mut canonicalizer = richtext::LocalTextCanonicalizer::new();
+                let stem_text = canonicalizer.canonicalize(&q.text);
+                let options: Vec<qa::QaUploadOption> = q
+                    .options
+                    .iter()
+                    .map(|o| qa::QaUploadOption {
+                        id: richtext::clean_rich_text(&o.id),
+                        text: canonicalizer.canonicalize(&o.text),
+                    })
+                    .collect();
+                let images = canonicalizer.into_images();
                 let b_q = qa::LocalBankQuestion {
                     cid: cid.to_string(),
                     course_name: Some(course_title.clone()),
@@ -1743,23 +1831,12 @@ pub async fn build_single_task_group(
                     task_name: Some(task_title.clone()),
                     question_id: q.id.clone(),
                     question_type: q_type_str.into(),
-                    stem: if q.text.trim().is_empty() { None } else { Some(qa::strip_html_tags(&q.text)) },
-                    options: if q.options.is_empty() {
-                        None
-                    } else {
-                        Some(
-                            q.options
-                                .iter()
-                                .map(|o| qa::QaUploadOption {
-                                    id: qa::strip_html_tags(&o.id),
-                                    text: qa::strip_html_tags(&o.text),
-                                })
-                                .collect(),
-                        )
-                    },
+                    stem: if stem_text.trim().is_empty() { None } else { Some(stem_text) },
+                    options: if options.is_empty() { None } else { Some(options) },
                     blanks: q.blanks,
                     answers: bank_answers,
                     correct_answers: ans,
+                    images,
                     uploaded: false,
                     updated_at_ms: std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -1830,7 +1907,7 @@ pub async fn build_single_task_group(
             if res.ok && !details.questions.is_empty() {
                 if let Ok(qa_db) = service.get_qa_db().await {
                     let qids: Vec<String> = details.questions.iter().map(|q| q.id.clone()).collect();
-                    let _ = qa_db.mark_questions_uploaded(&qids).await;
+                    let _ = qa::apply_upload_response_to_bank(qa_db, clean_tid, &res, &qids).await;
                 }
             }
         }

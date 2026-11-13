@@ -37,7 +37,8 @@ import { openPublicUrl } from "../app-content/external";
 import { normalizeQaBaseUrl } from "./qaAuthClient";
 import type { LocalBankQuestion, QuizState, UoocCourse } from "./types";
 import { BankRebuildModal } from "./BankRebuildModal";
-import { DimmedHtmlText, useHtmlTagVisibility } from "./DimmedHtmlText";
+import { useHtmlTagVisibility } from "./DimmedHtmlText";
+import { RichText, plainTextFromRich } from "./RichText";
 import { stripHtml } from "./QuizPanel";
 
 export type EmbeddingVectorStatus = {
@@ -66,6 +67,7 @@ export type QaSearchResultItem = {
   similarity: number;
   answers: string[];
   options?: { id: string; text: string }[];
+  images?: { pic_id?: string; picId?: string; url: string }[];
   source: string;
 };
 
@@ -95,7 +97,7 @@ function isOptionSelected(
   if (!Array.isArray(values)) return false;
   const optIdLower = optId.toLowerCase();
   const optTextTrim = optText.trim();
-  const cleanOpt = stripHtml(optText);
+  const cleanOpt = plainTextFromRich(optText);
   return values.some((val) => {
     if (typeof val === "boolean" || qType === "judge") {
       if (
@@ -119,7 +121,7 @@ function isOptionSelected(
     }
     const valStr = String(val).trim();
     if (valStr.toLowerCase() === optIdLower) return true;
-    const cleanVal = stripHtml(valStr);
+    const cleanVal = plainTextFromRich(valStr);
     if (
       valStr === optTextTrim ||
       (cleanOpt.length > 0 && cleanOpt === cleanVal) ||
@@ -148,7 +150,7 @@ function formatAnswerValues(
           return "B. 错误";
       }
       const valStr = String(v).trim();
-      const cleanVal = stripHtml(valStr);
+      const cleanVal = plainTextFromRich(valStr);
       const matchedOpt = options?.find((o) => {
         if (o.id === valStr || o.id.toLowerCase() === valStr.toLowerCase()) return true;
         if (o.text.trim() === valStr) return true;
@@ -307,7 +309,7 @@ export function BankQuestionCardItem({
       </div>
 
       <p className="font-medium whitespace-pre-wrap text-foreground">
-        <DimmedHtmlText text={question.stem || "（题干未录入）"} />
+        <RichText text={question.stem || "（题干未录入）"} images={question.images} />
       </p>
 
       {/* 选项列表 */}
@@ -335,7 +337,7 @@ export function BankQuestionCardItem({
               >
                 <span className="font-bold shrink-0">{opt.id}.</span>
                 <span className="flex-1">
-                  <DimmedHtmlText text={opt.text} />
+                  <RichText text={opt.text} images={question.images} />
                 </span>
                 {isCorrect && (
                   <span className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-green-600 dark:text-green-400 shrink-0">
@@ -968,6 +970,11 @@ export function UoocQaSettings({
         questionType: item.questionType,
         stem: item.stem,
         options: item.options?.map((o) => ({ id: o.id, text: o.text })),
+        images: item.images?.map((image) => ({
+          pic_id: image.pic_id,
+          picId: image.picId,
+          url: image.url,
+        })),
         correctAnswers: item.answers,
         answers: item.answers.map((a) => ({
           values: [a],

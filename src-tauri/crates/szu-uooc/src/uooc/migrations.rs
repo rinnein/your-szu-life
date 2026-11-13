@@ -64,6 +64,10 @@ pub static UOOC_MIGRATIONS: MigrationSet = MigrationSet::new(&[MigrationFile::ne
         duration REAL NOT NULL,
         updated_at_ms INTEGER NOT NULL
     );",
+), MigrationFile::new(
+    2,
+    "0002_bank_question_images.sql",
+    "ALTER TABLE bank_questions ADD COLUMN images_json TEXT;",
 )]);
 
 /// 检查并迁移遗留的 UOOC 视频时长缓存 (video-durations.json / durations.json -> quiz_qa_bank.db)

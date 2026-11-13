@@ -1246,6 +1246,13 @@ impl Service {
             return Err("无法获取试卷题目，可能考试/测验尚未开始或需要官方页面处理".into());
         }
 
+        // `/exam/view`、`getTaskPaper` 的题干可能是富 HTML，先统一成 Markdown 富文本。
+        quiz::qa::normalize_question_rich_text(&mut questions, client.origin());
+
+        // 题干/选项中的 Markdown 图片在展示与 AI 作答前水合为 data URI；
+        // 单张失败不阻塞整张试卷。
+        let _ = quiz::hydrate_question_images(&client, &mut questions, &cancel, false).await;
+
         // 打开试卷时不执行阻断式匹配题库与向量嵌入搜索，保持毫秒级打开；用户进入试卷后可手动点击“匹配题库”
         Ok(ExamPaper {
             task_id: task_id.to_string(),
@@ -1889,9 +1896,11 @@ impl Service {
         stem: &str,
         context: Option<&str>,
         reference_examples: Vec<ai::ReferenceExample>,
+        images: &[String],
     ) -> Result<String, String> {
         let cancel = CancellationToken::new();
-        ai::generate_subjective_answer(self, stem, context, &reference_examples, &cancel).await
+        ai::generate_subjective_answer(self, stem, context, &reference_examples, images, &cancel)
+            .await
     }
 
     pub async fn task_portal(

@@ -1,4 +1,8 @@
 use super::model::{Answers, Kind, OptionItem, Question, Review};
+use super::richtext::{
+    clean_rich_text, prepare_rich_text_for_upload, strip_markdown_images, BankImage,
+    UploadContext, UploadImage,
+};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -119,6 +123,14 @@ pub struct QaAnswer {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct QaImage {
+    #[serde(rename = "pic_id")]
+    pub pic_id: String,
+    #[serde(default)]
+    pub url: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct QaQuestion {
     #[serde(default)]
     pub id: Option<i64>,
@@ -136,6 +148,8 @@ pub struct QaQuestion {
     pub options: Option<Vec<QaOption>>,
     #[serde(default)]
     pub answers: Vec<QaAnswer>,
+    #[serde(default)]
+    pub images: Vec<QaImage>,
     #[serde(default, rename = "stemEmbedding")]
     pub stem_embedding: Option<Vec<f32>>,
 }
@@ -194,11 +208,20 @@ pub struct QaBatchUploadPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub course_name: Option<String>,
     pub questions: Vec<QaUploadQuestion>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub images: Option<Vec<UploadImage>>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct QaBatchUploadResponse {
     pub ok: bool,
+    #[serde(default)]
+    pub error: Option<String>,
+    /// 服务端会返回剥离图片后的正式题目文本（`#<pic_id>`）与图片库映射。
+    #[serde(default)]
+    pub questions: Vec<QaQuestion>,
+    #[serde(default)]
+    pub images: Vec<QaImage>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -245,6 +268,9 @@ pub struct LocalBankQuestion {
     pub answers: Vec<LocalBankAnswer>,
     #[serde(default)]
     pub correct_answers: Vec<String>,
+    /// 题目图片缓存：未上传时 `temp_pic_id → URL`，上传成功后 `pic_id → URL`。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<BankImage>,
     pub uploaded: bool,
     pub updated_at_ms: i64,
 }
@@ -425,6 +451,8 @@ pub struct QaSearchResultItem {
     pub source: String,
     #[serde(default)]
     pub options: Option<Vec<QaUploadOption>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<QaImage>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -804,9 +832,9 @@ pub fn sanitize_task_id(tid: &str) -> &str {
 }
 
 /// Normalize stem according to uooc-qa-share specification:
-/// strip HTML tags, strip HTML entities, collapse whitespace, trim, lowercase.
+/// strip Markdown images (drop alt), strip HTML tags/entities, collapse whitespace, lowercase.
 pub fn normalize_stem(raw: &str) -> String {
-    strip_html_tags(raw).to_lowercase()
+    super::richtext::normalize_stem(raw)
 }
 
 /// Compute SHA-256 hash of normalized stem.
@@ -815,6 +843,11 @@ pub fn hash_stem(raw: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(normalized.as_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+/// 文本是否包含 Markdown 图片语法。
+pub fn has_markdown_images(text: &str) -> bool {
+    !super::richtext::find_markdown_images(text).is_empty()
 }
 
 /// Compute a deterministic 512-dimensional L2-normalized semantic feature vector.
@@ -886,7 +919,8 @@ pub fn build_embedding_text(
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
     if let Some(s) = stem {
-        let trimmed = s.trim();
+        let without_images = super::richtext::strip_markdown_images(s, true);
+        let trimmed = without_images.trim();
         if !trimmed.is_empty() {
             parts.push(trimmed.to_string());
         }
@@ -896,7 +930,8 @@ pub fn build_embedding_text(
         let mut opt_lines: Vec<String> = Vec::new();
         for opt in opts {
             let id = opt.id.trim();
-            let text = opt.text.trim();
+            let without_images = super::richtext::strip_markdown_images(&opt.text, true);
+            let text = without_images.trim();
             if text.is_empty() {
                 continue;
             }
@@ -1199,6 +1234,12 @@ pub async fn upload_batch(
 
     let data = serde_json::from_slice::<QaBatchUploadResponse>(&resp_bytes)
         .map_err(|e| format!("解析上报结果失败: {e}，响应原内容: {resp_text}"))?;
+    if !data.ok {
+        log::warn!(
+            "题库上传被服务端拒绝: {}",
+            data.error.as_deref().unwrap_or("未知原因")
+        );
+    }
     Ok(data)
 }
 
@@ -1219,6 +1260,8 @@ pub fn match_answers(
     for local_q in local_questions {
         let local_hash = hash_stem(&local_q.text);
         let local_norm = normalize_stem(&local_q.text);
+        // 纯图片题/空题干的规范化结果为空，若参与 stem 匹配会让所有空题干互相命中。
+        let allow_stem_match = !local_norm.is_empty();
 
         // Find best match in qa_questions:
         // 1. Direct question_id equality (or substring)
@@ -1233,14 +1276,16 @@ pub fn match_answers(
                     return true;
                 }
             }
-            if let Some(ref sh) = qa.stem_hash {
-                if sh == &local_hash {
-                    return true;
+            if allow_stem_match {
+                if let Some(ref sh) = qa.stem_hash {
+                    if sh == &local_hash {
+                        return true;
+                    }
                 }
-            }
-            if let Some(ref stem) = qa.stem {
-                if normalize_stem(stem) == local_norm {
-                    return true;
+                if let Some(ref stem) = qa.stem {
+                    if normalize_stem(stem) == local_norm {
+                        return true;
+                    }
                 }
             }
             false
@@ -1409,7 +1454,7 @@ fn map_option_values(
         let norm_v = normalize_stem(v_trim);
         let mut matched_opt = local_options.iter().find(|o| {
             let norm_o = normalize_stem(&o.text);
-            if norm_o == norm_v || o.text.trim() == v_trim {
+            if !norm_o.is_empty() && (norm_o == norm_v || o.text.trim() == v_trim) {
                 return true;
             }
             if norm_v.len() >= 4 && (norm_o.contains(&norm_v) || norm_v.contains(&norm_o)) {
@@ -1426,7 +1471,8 @@ fn map_option_values(
                     let norm_old = normalize_stem(&old_qa_opt.text);
                     matched_opt = local_options.iter().find(|o| {
                         let norm_o = normalize_stem(&o.text);
-                        norm_o == norm_old || o.text.trim() == old_qa_opt.text.trim()
+                        !norm_old.is_empty()
+                            && (norm_o == norm_old || o.text.trim() == old_qa_opt.text.trim())
                     });
                 }
             }
@@ -1572,11 +1618,13 @@ fn normalize_answers_for_upload(
                 continue;
             }
 
-            // 2. 匹配选项文本内容
+            // 2. 匹配选项文本内容（忽略 Markdown 图片与 HTML 差异）
             let raw_clean = strip_html_tags(raw_trim);
+            let raw_norm = normalize_stem(raw_trim);
             if let Some(opt) = clean_opts.iter().find(|o| {
                 o.text.trim() == raw_clean
                     || o.text.replace(' ', "") == raw_clean.replace(' ', "")
+                    || (!raw_norm.is_empty() && normalize_stem(&o.text) == raw_norm)
             }) {
                 if !chosen_ids.contains(&opt.id) {
                     chosen_ids.push(opt.id.clone());
@@ -1630,7 +1678,8 @@ fn normalize_answers_for_upload(
 }
 
 /// Helper to construct a `QaUploadQuestion` adhering to uooc-qa-share specifications:
-/// 1. HTML tags in stem and options are strictly stripped.
+/// 1. HTML tags in stem and options are strictly stripped; Markdown images are preserved
+///    and rewritten to the request's `temp_pic_id` references.
 /// 2. Choice answers (single/multiple) MUST contain only option IDs (e.g. ["A"], ["B"]), never option text.
 /// 3. Judge questions MUST have options A. 正确, B. 错误, and answers must be a single boolean [true] or [false].
 /// 4. Text questions MUST NOT have options, and blanks matches answer count.
@@ -1639,8 +1688,27 @@ pub fn build_qa_upload_question(
     correct_answers: Option<&[String]>,
     wrong_answers: Option<&[String]>,
     with_embedding: bool,
+    ctx: &mut UploadContext,
 ) -> QaUploadQuestion {
-    let clean_stem = strip_html_tags(&q.text);
+    let upload_stem = prepare_rich_text_for_upload(&q.text, &[], ctx);
+
+    let mut prepared_options: Vec<QaUploadOption> = q
+        .options
+        .iter()
+        .enumerate()
+        .map(|(idx, opt)| {
+            let id = clean_rich_text(&opt.id);
+            let id = if id.is_empty() {
+                ((b'A' + idx as u8) as char).to_string()
+            } else {
+                id
+            };
+            QaUploadOption {
+                id,
+                text: prepare_rich_text_for_upload(&opt.text, &[], ctx),
+            }
+        })
+        .collect();
 
     let mut q_type = match q.kind {
         Kind::Multiple => "multiple",
@@ -1648,9 +1716,9 @@ pub fn build_qa_upload_question(
         Kind::Single => "single",
     };
 
-    if q.kind == Kind::Single && q.options.len() == 2 {
-        let opt0 = strip_html_tags(&q.options[0].text).to_lowercase();
-        let opt1 = strip_html_tags(&q.options[1].text).to_lowercase();
+    if q.kind == Kind::Single && prepared_options.len() == 2 {
+        let opt0 = strip_markdown_images(&prepared_options[0].text, false).to_lowercase();
+        let opt1 = strip_markdown_images(&prepared_options[1].text, false).to_lowercase();
         let is_judge = (opt0.contains("正确") || opt0.contains("对") || opt0 == "t" || opt0 == "true" || opt0 == "a")
             && (opt1.contains("错误") || opt1.contains("错") || opt1 == "f" || opt1 == "false" || opt1 == "b");
         if is_judge {
@@ -1665,20 +1733,14 @@ pub fn build_qa_upload_question(
         ];
         (opts.clone(), Some(opts))
     } else if q_type == "text" {
+        prepared_options.clear();
         (Vec::new(), None)
     } else {
         let mut opts = Vec::new();
         let mut seen = std::collections::HashSet::new();
-        for (idx, opt) in q.options.iter().enumerate() {
-            let opt_id = strip_html_tags(&opt.id);
-            let opt_id = if opt_id.is_empty() {
-                ((b'A' + idx as u8) as char).to_string()
-            } else {
-                opt_id
-            };
-            let opt_text = strip_html_tags(&opt.text);
-            if !opt_text.is_empty() && seen.insert(opt_id.clone()) {
-                opts.push(QaUploadOption { id: opt_id, text: opt_text });
+        for opt in prepared_options.drain(..) {
+            if !opt.text.is_empty() && seen.insert(opt.id.clone()) {
+                opts.push(opt);
             }
         }
         let payload_opts = if opts.len() >= 2 { Some(opts.clone()) } else { None };
@@ -1695,7 +1757,7 @@ pub fn build_qa_upload_question(
     };
 
     let embedding_text = build_embedding_text(
-        if clean_stem.is_empty() { None } else { Some(&clean_stem) },
+        if upload_stem.is_empty() { None } else { Some(&upload_stem) },
         options_for_payload.as_deref(),
     );
     let embedding = if with_embedding && !embedding_text.is_empty() {
@@ -1707,7 +1769,7 @@ pub fn build_qa_upload_question(
     QaUploadQuestion {
         question_id: q.id.clone(),
         question_type: q_type.to_string(),
-        stem: if clean_stem.is_empty() { None } else { Some(clean_stem) },
+        stem: if upload_stem.is_empty() { None } else { Some(upload_stem) },
         options: options_for_payload,
         blanks,
         correct_answers: norm_correct,
@@ -1716,8 +1778,34 @@ pub fn build_qa_upload_question(
     }
 }
 
-pub fn build_upload_question_from_local_bank(q: &LocalBankQuestion) -> QaUploadQuestion {
-    let clean_stem = q.stem.as_deref().map(strip_html_tags);
+pub fn build_upload_question_from_local_bank(
+    q: &LocalBankQuestion,
+    ctx: &mut UploadContext,
+) -> QaUploadQuestion {
+    let upload_stem = q
+        .stem
+        .as_deref()
+        .map(|stem| prepare_rich_text_for_upload(stem, &q.images, ctx))
+        .unwrap_or_default();
+    let mut prepared_options: Vec<QaUploadOption> = q
+        .options
+        .as_deref()
+        .unwrap_or_default()
+        .iter()
+        .enumerate()
+        .map(|(idx, opt)| {
+            let id = clean_rich_text(&opt.id);
+            let id = if id.is_empty() {
+                ((b'A' + idx as u8) as char).to_string()
+            } else {
+                id
+            };
+            QaUploadOption {
+                id,
+                text: prepare_rich_text_for_upload(&opt.text, &q.images, ctx),
+            }
+        })
+        .collect();
 
     let mut q_type = match q.question_type.as_str() {
         "11" | "multiple" => "multiple",
@@ -1726,17 +1814,13 @@ pub fn build_upload_question_from_local_bank(q: &LocalBankQuestion) -> QaUploadQ
         _ => "single",
     };
 
-    if q_type == "single" {
-        if let Some(ref opts) = q.options {
-            if opts.len() == 2 {
-                let opt0 = strip_html_tags(&opts[0].text).to_lowercase();
-                let opt1 = strip_html_tags(&opts[1].text).to_lowercase();
-                if (opt0.contains("正确") || opt0.contains("对") || opt0 == "t" || opt0 == "true" || opt0 == "a")
-                    && (opt1.contains("错误") || opt1.contains("错") || opt1 == "f" || opt1 == "false" || opt1 == "b")
-                {
-                    q_type = "judge";
-                }
-            }
+    if q_type == "single" && prepared_options.len() == 2 {
+        let opt0 = strip_markdown_images(&prepared_options[0].text, false).to_lowercase();
+        let opt1 = strip_markdown_images(&prepared_options[1].text, false).to_lowercase();
+        if (opt0.contains("正确") || opt0.contains("对") || opt0 == "t" || opt0 == "true" || opt0 == "a")
+            && (opt1.contains("错误") || opt1.contains("错") || opt1 == "f" || opt1 == "false" || opt1 == "b")
+        {
+            q_type = "judge";
         }
     }
 
@@ -1747,22 +1831,14 @@ pub fn build_upload_question_from_local_bank(q: &LocalBankQuestion) -> QaUploadQ
         ];
         (opts.clone(), Some(opts))
     } else if q_type == "text" {
+        prepared_options.clear();
         (Vec::new(), None)
     } else {
         let mut opts = Vec::new();
         let mut seen = std::collections::HashSet::new();
-        if let Some(ref raw_opts) = q.options {
-            for (idx, opt) in raw_opts.iter().enumerate() {
-                let opt_id = strip_html_tags(&opt.id);
-                let opt_id = if opt_id.is_empty() {
-                    ((b'A' + idx as u8) as char).to_string()
-                } else {
-                    opt_id
-                };
-                let opt_text = strip_html_tags(&opt.text);
-                if !opt_text.is_empty() && seen.insert(opt_id.clone()) {
-                    opts.push(QaUploadOption { id: opt_id, text: opt_text });
-                }
+        for opt in prepared_options.drain(..) {
+            if !opt.text.is_empty() && seen.insert(opt.id.clone()) {
+                opts.push(opt);
             }
         }
         let payload_opts = if opts.len() >= 2 { Some(opts.clone()) } else { None };
@@ -1805,7 +1881,7 @@ pub fn build_upload_question_from_local_bank(q: &LocalBankQuestion) -> QaUploadQ
     };
 
     let embedding_text = build_embedding_text(
-        clean_stem.as_deref(),
+        if upload_stem.is_empty() { None } else { Some(&upload_stem) },
         options_for_payload.as_deref(),
     );
     let embedding = if !embedding_text.is_empty() {
@@ -1817,7 +1893,7 @@ pub fn build_upload_question_from_local_bank(q: &LocalBankQuestion) -> QaUploadQ
     QaUploadQuestion {
         question_id: q.question_id.clone(),
         question_type: q_type.to_string(),
-        stem: clean_stem,
+        stem: if upload_stem.is_empty() { None } else { Some(upload_stem) },
         options: options_for_payload,
         blanks,
         correct_answers: norm_correct,
@@ -1836,6 +1912,7 @@ pub fn build_batch_upload_payload_with_details(
     answers: &Answers,
     wrong_answers: &Answers,
 ) -> QaBatchUploadPayload {
+    let mut ctx = UploadContext::new();
     let upload_questions: Vec<QaUploadQuestion> = questions
         .iter()
         .map(|q| {
@@ -1846,9 +1923,10 @@ pub fn build_batch_upload_payload_with_details(
             } else {
                 wrong_answers.get(&q.id).map(|v| v.as_slice())
             };
-            build_qa_upload_question(q, q_answers, q_wrongs, true)
+            build_qa_upload_question(q, q_answers, q_wrongs, true, &mut ctx)
         })
         .collect();
+    let images = ctx.into_images();
 
     QaBatchUploadPayload {
         tid: tid.to_string(),
@@ -1856,6 +1934,7 @@ pub fn build_batch_upload_payload_with_details(
         task_name: task_name.map(str::to_string),
         course_name: course_name.map(str::to_string),
         questions: upload_questions,
+        images,
     }
 }
 
@@ -2000,6 +2079,18 @@ pub async fn record_passed_quiz_with_details(
             }
         }
 
+        let mut canonicalizer = super::richtext::LocalTextCanonicalizer::new();
+        let stem_text = canonicalizer.canonicalize(&q.text);
+        let options: Vec<QaUploadOption> = q
+            .options
+            .iter()
+            .map(|o| QaUploadOption {
+                id: super::richtext::clean_rich_text(&o.id),
+                text: canonicalizer.canonicalize(&o.text),
+            })
+            .collect();
+        let images = canonicalizer.into_images();
+
         let record = LocalBankQuestion {
             cid: cid.to_string(),
             course_name: c_name,
@@ -2007,23 +2098,12 @@ pub async fn record_passed_quiz_with_details(
             task_name: None,
             question_id: q.id.clone(),
             question_type: q_type_str.into(),
-            stem: if q.text.trim().is_empty() { None } else { Some(strip_html_tags(&q.text)) },
-            options: if q.options.is_empty() {
-                None
-            } else {
-                Some(
-                    q.options
-                        .iter()
-                        .map(|o| QaUploadOption {
-                            id: strip_html_tags(&o.id),
-                            text: strip_html_tags(&o.text),
-                        })
-                        .collect(),
-                )
-            },
+            stem: if stem_text.trim().is_empty() { None } else { Some(stem_text) },
+            options: if options.is_empty() { None } else { Some(options) },
             blanks: q.blanks,
             answers: bank_answers,
             correct_answers: ans,
+            images,
             uploaded: already_uploaded,
             updated_at_ms: now,
         };
@@ -2068,7 +2148,7 @@ pub async fn sync_missing_to_server(
     force_upload: bool,
     service: Option<&crate::uooc::Service>,
 ) -> Result<usize, String> {
-    let mut bank = qa_db.load_all_bank_questions().await.unwrap_or_default();
+    let bank = qa_db.load_all_bank_questions().await.unwrap_or_default();
     if bank.is_empty() {
         return Ok(0);
     }
@@ -2238,29 +2318,27 @@ pub async fn sync_missing_to_server(
     for (t, qs) in by_tid {
         let first_cid = qs.first().map(|q| q.cid.clone());
         let first_course_name = qs.first().and_then(|q| q.course_name.clone());
+        let mut ctx = UploadContext::new();
+        let upload_questions: Vec<QaUploadQuestion> = qs
+            .iter()
+            .map(|q| build_upload_question_from_local_bank(q, &mut ctx))
+            .collect();
         let upload_payload = QaBatchUploadPayload {
-            tid: t,
+            tid: t.clone(),
             cid: first_cid,
             task_name: None,
             course_name: first_course_name,
-            questions: qs
-                .iter()
-                .map(build_upload_question_from_local_bank)
-                .collect(),
+            questions: upload_questions,
+            images: ctx.into_images(),
         };
 
         if let Ok(res) = upload_batch(server_url, api_key, &upload_payload, service).await {
             if res.ok {
-                let mut qids = Vec::new();
-                for q in qs {
-                    let k = bank_key(&q.tid, &q.question_id);
-                    if let Some(item) = bank.get_mut(&k) {
-                        item.uploaded = true;
-                        uploaded_count += 1;
-                        qids.push(q.question_id.clone());
-                    }
-                }
-                let _ = qa_db.mark_questions_uploaded(&qids).await;
+                // 优先用响应里的正式 pic_id 回写题目文本与图片缓存；
+                // 响应缺少某些题目时仍标记上传成功，保留本地 temp 引用。
+                let qids: Vec<String> = qs.iter().map(|q| q.question_id.clone()).collect();
+                uploaded_count +=
+                    apply_upload_response_to_bank(qa_db, &t, &res, &qids).await;
             }
         }
     }
@@ -2275,7 +2353,7 @@ pub async fn upload_all_local_bank(
     api_key: Option<&str>,
     service: Option<&crate::uooc::Service>,
 ) -> Result<usize, String> {
-    let mut bank = qa_db.load_all_bank_questions().await.unwrap_or_default();
+    let bank = qa_db.load_all_bank_questions().await.unwrap_or_default();
     if bank.is_empty() {
         return Ok(0);
     }
@@ -2291,9 +2369,10 @@ pub async fn upload_all_local_bank(
     let mut total_uploaded = 0;
     for ((cid, tid), questions) in grouped {
         let first_course_name = questions.first().and_then(|q| q.course_name.clone());
+        let mut ctx = UploadContext::new();
         let upload_questions: Vec<QaUploadQuestion> = questions
             .iter()
-            .map(build_upload_question_from_local_bank)
+            .map(|q| build_upload_question_from_local_bank(q, &mut ctx))
             .collect();
 
         let payload = QaBatchUploadPayload {
@@ -2302,6 +2381,7 @@ pub async fn upload_all_local_bank(
             task_name: None,
             course_name: first_course_name,
             questions: upload_questions,
+            images: ctx.into_images(),
         };
 
         let res = upload_batch(server_url, api_key, &payload, service)
@@ -2309,20 +2389,100 @@ pub async fn upload_all_local_bank(
             .map_err(|e| format!("全量上传任务 {tid} 失败: {e}"))?;
 
         if res.ok {
-            let mut qids = Vec::new();
-            for q in questions {
-                let k = bank_key(&q.tid, &q.question_id);
-                if let Some(item) = bank.get_mut(&k) {
-                    item.uploaded = true;
-                    total_uploaded += 1;
-                    qids.push(q.question_id.clone());
-                }
-            }
-            let _ = qa_db.mark_questions_uploaded(&qids).await;
+            let qids: Vec<String> = questions.iter().map(|q| q.question_id.clone()).collect();
+            total_uploaded += apply_upload_response_to_bank(qa_db, &tid, &res, &qids).await;
         }
     }
 
     Ok(total_uploaded)
+}
+
+/// 把上传响应中的正式题目文本与图片库映射回写到本地题库。
+///
+/// 服务端会把 `temp_pic_id` 改写成正式 `pic_id`，这里用响应覆盖本地文本，
+/// 并把图片缓存从 `temp_pic_id → URL` 更新为 `pic_id → URL`。
+/// 返回成功回写的题目数量；响应不含 `questions` 时返回 0，由调用方退回只标记 uploaded。
+pub async fn apply_upload_response_to_bank(
+    qa_db: &super::db::QaDatabase,
+    tid: &str,
+    response: &QaBatchUploadResponse,
+    expected_question_ids: &[String],
+) -> usize {
+    let pic_urls: std::collections::HashMap<&str, &str> = response
+        .images
+        .iter()
+        .map(|image| (image.pic_id.as_str(), image.url.as_str()))
+        .collect();
+    let mut applied = 0;
+    let mut applied_ids = std::collections::HashSet::new();
+    for question in &response.questions {
+        let Some(question_id) = question.question_id.as_deref() else {
+            continue;
+        };
+        applied_ids.insert(question_id.to_string());
+        let stem = question.stem.clone().unwrap_or_default();
+        let options: Option<Vec<QaUploadOption>> = question.options.as_ref().map(|opts| {
+            opts.iter()
+                .map(|opt| QaUploadOption {
+                    id: opt.id.clone(),
+                    text: opt.text.clone(),
+                })
+                .collect()
+        });
+        let mut refs = super::richtext::referenced_pic_ids(&stem);
+        if let Some(opts) = &options {
+            for opt in opts {
+                refs.extend(super::richtext::referenced_pic_ids(&opt.text));
+            }
+        }
+        refs.sort();
+        refs.dedup();
+        let images: Vec<BankImage> = refs
+            .iter()
+            .filter_map(|pic_id| {
+                pic_urls.get(pic_id.as_str()).map(|url| BankImage {
+                    pic_id: pic_id.clone(),
+                    url: url.to_string(),
+                })
+            })
+            .collect();
+        // 引用没有全部命中映射时保留旧缓存，避免把图片 URL 清空。
+        let images_opt = if refs.is_empty() || images.len() == refs.len() {
+            Some(images)
+        } else {
+            None
+        };
+        match qa_db
+            .apply_uploaded_question(
+                tid,
+                question_id,
+                question.question_type.as_deref(),
+                &stem,
+                options.as_deref(),
+                images_opt.as_deref(),
+            )
+            .await
+        {
+            Ok(true) => applied += 1,
+            Ok(false) => {}
+            Err(error) => {
+                log::warn!("回写上传题目失败 [{question_id}]: {error}");
+            }
+        }
+    }
+
+    // 服务端没有返回某些题目的正式文本（旧版本/部分成功）时，仍标记上传成功，
+    // 保留本地 temp_pic_id 引用；后续重传会自动重新映射。
+    let missing: Vec<String> = expected_question_ids
+        .iter()
+        .filter(|question_id| !applied_ids.contains(*question_id))
+        .cloned()
+        .collect();
+    if !missing.is_empty() {
+        let _ = qa_db.mark_questions_uploaded(&missing).await;
+        applied += missing.len();
+    }
+    applied
 }
 
 /// 解析 UOOC 官方 /exam/getTaskPaper 接口返回的标准无混淆题单（含全局真实单题 ID、选项和答案）
@@ -2467,6 +2627,17 @@ pub fn parse_task_paper_json(val: &serde_json::Value) -> Option<(Vec<Question>, 
 
 /// 将 DOM 解析的题目（携带表单提交 binding）与 getTaskPaper 解析的真实题单对齐
 /// 从而将 DOM 题目 ID 规范化为真实单题数字 ID，同时纯净化题干与选项文本
+/// 把题目与选项中的原始 HTML（尤其是 `<img>`）规范化为 Markdown 富文本。
+/// 用于 `/exam/view`、`/exam/getTaskPaper` 等返回富 HTML 的来源。
+pub fn normalize_question_rich_text(questions: &mut [Question], base: &str) {
+    for question in questions {
+        question.text = super::richtext::html_images_to_markdown(&question.text, Some(base));
+        for option in &mut question.options {
+            option.text = super::richtext::html_images_to_markdown(&option.text, Some(base));
+        }
+    }
+}
+
 pub fn align_paper_with_task_paper(
     paper_questions: &mut [Question],
     task_paper_questions: &[Question],
@@ -2514,15 +2685,16 @@ pub fn align_paper_with_task_paper(
             // 更新为全局真实单题数字 ID
             dom_q.id = tp_q.id.clone();
 
-            // 若 tp_q 拥有纯净题干，补充题干
-            if !tp_q.text.is_empty() {
+            // 若 tp_q 拥有纯净题干，补充题干；但 DOM 题干已含图片时不能覆盖，
+            // 否则 Markdown 图片引用会丢失（getTaskPaper 只提供纯文本）。
+            if !tp_q.text.is_empty() && !has_markdown_images(&dom_q.text) {
                 dom_q.text = tp_q.text.clone();
             }
 
             // 更新选项文本：通过 ID 或相对顺序把纯净文本对齐进 DOM 选项
             for dom_opt in dom_q.options.iter_mut() {
                 if let Some(tp_opt) = tp_q.options.iter().find(|o| o.id.eq_ignore_ascii_case(&dom_opt.id)) {
-                    if !tp_opt.text.is_empty() {
+                    if !tp_opt.text.is_empty() && !has_markdown_images(&dom_opt.text) {
                         dom_opt.text = tp_opt.text.clone();
                     }
                 }
@@ -3479,6 +3651,14 @@ pub async fn download_qa_vectors(
                     .filter(|a| a.is_correct)
                     .flat_map(|a| a.values.clone())
                     .collect();
+                let images: Vec<BankImage> = q
+                    .images
+                    .iter()
+                    .map(|image| BankImage {
+                        pic_id: image.pic_id.clone(),
+                        url: image.url.clone(),
+                    })
+                    .collect();
 
                 let _ = qa_db.upsert_server_question(
                     if cid.is_empty() { None } else { Some(&cid) },
@@ -3487,6 +3667,7 @@ pub async fn download_qa_vectors(
                     q.question_type.as_deref().unwrap_or("single"),
                     &stem_text,
                     clean_opts.as_deref(),
+                    &images,
                     &answers,
                     &embedding,
                 ).await;
@@ -3548,6 +3729,14 @@ pub async fn search_questions_with_local_embedding(
                 },
                 source: "题库向量检索".into(),
                 options: item.options.clone(),
+                images: item
+                    .images
+                    .iter()
+                    .map(|image| QaImage {
+                        pic_id: image.pic_id.clone(),
+                        url: image.url.clone(),
+                    })
+                    .collect(),
             });
         }
     }
@@ -3598,6 +3787,14 @@ pub async fn search_questions_with_local_embedding(
                 answers,
                 source: "题库语义检索".into(),
                 options: clean_opts,
+                images: q
+                    .images
+                    .iter()
+                    .map(|image| QaImage {
+                        pic_id: image.pic_id.clone(),
+                        url: image.url.clone(),
+                    })
+                    .collect(),
             });
         }
     }
@@ -3655,6 +3852,19 @@ pub async fn search_questions_with_local_embedding(
                                             .collect()
                                     })
                                     .unwrap_or_default();
+                                let images = row["images"]
+                                    .as_array()
+                                    .map(|arr| {
+                                        arr.iter()
+                                            .filter_map(|image| {
+                                                Some(QaImage {
+                                                    pic_id: image["pic_id"].as_str()?.to_string(),
+                                                    url: image["url"].as_str().unwrap_or("").to_string(),
+                                                })
+                                            })
+                                            .collect()
+                                    })
+                                    .unwrap_or_default();
                                 results.push(QaSearchResultItem {
                                     question_id: qid,
                                     tid: row["tid"].as_str().map(str::to_string),
@@ -3665,6 +3875,7 @@ pub async fn search_questions_with_local_embedding(
                                     answers,
                                     source: "服务端共享题库".into(),
                                     options: opts,
+                                    images,
                                 });
                             }
                         }
@@ -3720,7 +3931,7 @@ mod tests {
         };
         // Answer given as option text content
         let answers_text = vec!["初等变换不改变矩阵的秩".to_string()];
-        let upload_q = build_qa_upload_question(&q_choice, Some(&answers_text), None, false);
+        let upload_q = build_qa_upload_question(&q_choice, Some(&answers_text), None, false, &mut UploadContext::new());
 
         assert_eq!(upload_q.stem.as_deref(), Some("以下关于矩阵初等变换的说法中正确的是？"));
         let opts = upload_q.options.unwrap();
@@ -3742,7 +3953,7 @@ mod tests {
             images: vec![],
         };
         let answers_judge = vec!["正确".to_string()];
-        let upload_judge = build_qa_upload_question(&q_judge, Some(&answers_judge), None, false);
+        let upload_judge = build_qa_upload_question(&q_judge, Some(&answers_judge), None, false, &mut UploadContext::new());
         assert_eq!(upload_judge.question_type, "judge");
         assert_eq!(upload_judge.correct_answers, Some(vec![serde_json::Value::Bool(true)]));
 
@@ -3756,7 +3967,7 @@ mod tests {
             images: vec![],
         };
         let answers_fill = vec!["牛顿-莱布尼茨".to_string()];
-        let upload_text = build_qa_upload_question(&q_text, Some(&answers_fill), None, false);
+        let upload_text = build_qa_upload_question(&q_text, Some(&answers_fill), None, false, &mut UploadContext::new());
         assert_eq!(upload_text.question_type, "text");
         assert!(upload_text.options.is_none());
         assert_eq!(upload_text.blanks, Some(1));
@@ -3776,9 +3987,10 @@ mod tests {
         let nested = "<p><span style=\"color: red;\"><strong>微积分基本定理</strong></span></p>";
         assert_eq!(normalize_stem(nested), "微积分基本定理");
 
-        // 验证数学不等号不会被当成标签切除
+        // 必须与上游 normalizeStem 完全一致：其 stripHtml 使用宽松的 `<[^>]*>`，
+        // 因此 `x < y 且 z >` 之间的内容也会被当作标签片段移除。
         let math_stem = "若 x < y 且 z > 0，则下列结论正确的是？";
-        assert_eq!(normalize_stem(math_stem), "若 x < y 且 z > 0，则下列结论正确的是？");
+        assert_eq!(normalize_stem(math_stem), "若 x 0，则下列结论正确的是？");
     }
 
     #[test]
@@ -3827,6 +4039,7 @@ mod tests {
                         confidence: Some(1.0),
                     },
                 ],
+                images: Vec::new(),
                 stem_embedding: None,
             },
             QaQuestion {
@@ -3845,6 +4058,7 @@ mod tests {
                         confidence: Some(0.5),
                     },
                 ],
+                images: Vec::new(),
                 stem_embedding: None,
             },
         ];
@@ -4237,6 +4451,7 @@ mod tests {
                     confidence: Some(0.5),
                 },
             ],
+            images: Vec::new(),
             stem_embedding: None,
         }];
 
@@ -4672,6 +4887,7 @@ mod tests {
             blanks: 0,
             answers: vec![],
             correct_answers: vec!["B".into()],
+            images: Vec::new(),
             uploaded: false,
             updated_at_ms: chrono::Utc::now().timestamp_millis(),
         };
@@ -4691,6 +4907,7 @@ mod tests {
             blanks: 0,
             answers: vec![],
             correct_answers: vec!["A".into()],
+            images: Vec::new(),
             uploaded: false,
             updated_at_ms: chrono::Utc::now().timestamp_millis(),
         };
@@ -4753,7 +4970,7 @@ mod tests {
         assert!(item1.answers.iter().all(|a| !a.is_correct));
 
         // 生成上传 payload 时，未确定正确答案时应上传 wrong_answers
-        let upload_q1 = build_upload_question_from_local_bank(item1);
+        let upload_q1 = build_upload_question_from_local_bank(item1, &mut UploadContext::new());
         assert_eq!(upload_q1.correct_answers, None);
         assert_eq!(upload_q1.wrong_answers, Some(vec!["C".into(), "D".into()]));
 
@@ -4783,7 +5000,7 @@ mod tests {
         assert_eq!(item2.answers[0].values, vec![serde_json::Value::String("B".into())]);
 
         // 生成上传 payload 时，已确定正确答案时 wrong_answers 必须为 None
-        let upload_q2 = build_upload_question_from_local_bank(item2);
+        let upload_q2 = build_upload_question_from_local_bank(item2, &mut UploadContext::new());
         assert_eq!(upload_q2.correct_answers, Some(vec!["B".into()]));
         assert_eq!(upload_q2.wrong_answers, None);
     }
@@ -4945,6 +5162,7 @@ mod tests {
             blanks: 0,
             answers: vec![],
             correct_answers: vec!["表情说".into()],
+            images: Vec::new(),
             uploaded: false,
             updated_at_ms: chrono::Utc::now().timestamp_millis(),
         };
@@ -4955,5 +5173,106 @@ mod tests {
 
         let bank = qa_db.load_all_bank_questions().await.expect("加载题目成功");
         assert!(bank.contains_key("1163945558:226322426"));
+    }
+
+    #[tokio::test]
+    async fn upload_response_rewrites_temp_ids_and_keeps_official_refs_on_rebuild() {
+        use tempfile::tempdir;
+        let dir = tempdir().unwrap();
+        let db = super::super::db::QaDatabase::open(&dir.path().join("bank.db"))
+            .await
+            .expect("初始化题库");
+
+        let mut local = LocalBankQuestion {
+            cid: "c1".into(),
+            course_name: None,
+            tid: "t1".into(),
+            task_name: None,
+            question_id: "q1".into(),
+            question_type: "single".into(),
+            stem: Some("如图 ![图](#<1>) 求面积".into()),
+            options: Some(vec![
+                QaUploadOption { id: "A".into(), text: "![选项图](#<1>)".into() },
+                QaUploadOption { id: "B".into(), text: "选项B".into() },
+            ]),
+            blanks: 0,
+            answers: vec![],
+            correct_answers: vec!["A".into()],
+            images: vec![BankImage {
+                pic_id: "1".into(),
+                url: "https://a.com/1.png".into(),
+            }],
+            uploaded: false,
+            updated_at_ms: 1,
+        };
+        db.upsert_bank_question(&local, Some("c1"), Some("t1"))
+            .await
+            .unwrap();
+
+        let response = QaBatchUploadResponse {
+            ok: true,
+            error: None,
+            questions: vec![QaQuestion {
+                id: Some(1),
+                tid: Some("t1".into()),
+                question_id: Some("q1".into()),
+                question_type: Some("single".into()),
+                stem: Some("如图 ![图](#<pic_uuid>) 求面积".into()),
+                stem_hash: None,
+                options: Some(vec![
+                    QaOption { id: "A".into(), text: "![选项图](#<pic_uuid>)".into() },
+                    QaOption { id: "B".into(), text: "选项B".into() },
+                ]),
+                answers: vec![],
+                images: vec![],
+                stem_embedding: None,
+            }],
+            images: vec![QaImage {
+                pic_id: "pic_uuid".into(),
+                url: "https://a.com/1.png".into(),
+            }],
+        };
+        let applied =
+            apply_upload_response_to_bank(&db, "t1", &response, &["q1".to_string()]).await;
+        assert_eq!(applied, 1);
+
+        let bank = db.load_all_bank_questions().await.unwrap();
+        let stored = bank.get("t1:q1").unwrap();
+        assert_eq!(
+            stored.stem.as_deref(),
+            Some("如图 ![图](#<pic_uuid>) 求面积")
+        );
+        assert!(stored.uploaded);
+        assert_eq!(
+            stored.images,
+            vec![BankImage {
+                pic_id: "pic_uuid".into(),
+                url: "https://a.com/1.png".into(),
+            }]
+        );
+        assert_eq!(stored.correct_answers, vec!["A".to_string()]);
+
+        // 重建题库仍用本地 temp 引用；内容一致时必须保留正式 pic_id 与上传状态。
+        local.uploaded = false;
+        local.updated_at_ms = 2;
+        db.upsert_bank_question(&local, Some("c1"), Some("t1"))
+            .await
+            .unwrap();
+        let bank = db.load_all_bank_questions().await.unwrap();
+        let stored = bank.get("t1:q1").unwrap();
+        assert!(stored.stem.as_deref().unwrap().contains("#<pic_uuid>"));
+        assert_eq!(stored.images[0].pic_id, "pic_uuid");
+        assert!(stored.uploaded);
+
+        // 内容变化后应回到未上传状态，并写入新的本地 temp 引用。
+        local.stem = Some("如图 ![图](#<1>) 求体积".into());
+        local.updated_at_ms = 3;
+        db.upsert_bank_question(&local, Some("c1"), Some("t1"))
+            .await
+            .unwrap();
+        let bank = db.load_all_bank_questions().await.unwrap();
+        let stored = bank.get("t1:q1").unwrap();
+        assert!(stored.stem.as_deref().unwrap().contains("#<1>"));
+        assert!(!stored.uploaded);
     }
 }

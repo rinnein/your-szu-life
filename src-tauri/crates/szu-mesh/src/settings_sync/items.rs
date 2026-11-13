@@ -302,6 +302,7 @@ mod tests {
             blanks: 0,
             answers: Vec::new(),
             correct_answers: Vec::new(),
+            images: Vec::new(),
             uploaded: false,
             updated_at_ms: 1,
         };

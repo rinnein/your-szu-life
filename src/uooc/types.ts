@@ -165,6 +165,12 @@ export type QuizStage =
   | "failed"
   | "manual"
   | "disabled";
+export type QuestionImage = {
+  pic_id?: string;
+  picId?: string;
+  url: string;
+};
+
 export type QuizQuestion = {
   id: string;
   text: string;
@@ -455,6 +461,7 @@ export type LocalBankQuestion = {
   blanks?: number | null;
   answers?: LocalBankAnswer[];
   correctAnswers?: string[];
+  images?: QuestionImage[];
   uploaded: boolean;
   updatedAtMs: number;
   courseName?: string | null;

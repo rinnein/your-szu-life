@@ -43,12 +43,29 @@ pub struct BankQuestion {
     #[index]
     pub stem_hash: String,
     pub options_json: Option<String>,
+    /// 题目图片缓存：未上传时是 `temp_pic_id → URL`，上传成功后是 `pic_id → URL`。
+    pub images_json: Option<String>,
     pub answers_json: String,
     pub correct_answers_json: Option<String>,
     pub blanks: i64,
     pub uploaded: bool,
     pub embedding_blob: Option<Vec<u8>>,
     pub updated_at_ms: i64,
+}
+
+/// 判断两组选项在「忽略图片 URL 与 HTML」的语义下是否一致。
+fn options_equivalent(left: Option<&[QaUploadOption]>, right: Option<&[QaUploadOption]>) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(a), Some(b)) => {
+            a.len() == b.len()
+                && a.iter().zip(b).all(|(x, y)| {
+                    x.id.eq_ignore_ascii_case(&y.id)
+                        && super::qa::normalize_stem(&x.text) == super::qa::normalize_stem(&y.text)
+                })
+        }
+        _ => false,
+    }
 }
 
 /// 异步 Toasty ORM 题库数据库封装
@@ -198,53 +215,93 @@ impl QaDatabase {
         cid: Option<&str>,
         tid: Option<&str>,
     ) -> Result<(), String> {
-        let stem = q.stem.clone().unwrap_or_default();
-        let stem_h = hash_stem(&stem);
-        let options_json = q.options.as_ref().map(|opts| serde_json::to_string(opts).unwrap_or_default());
+        let new_stem = q.stem.clone().unwrap_or_default();
+        let new_options_json = q.options.as_ref().map(|opts| serde_json::to_string(opts).unwrap_or_default());
         let answers_json = serde_json::to_string(&q.answers).unwrap_or_default();
         let correct_answers_json = if q.correct_answers.is_empty() {
             None
         } else {
             Some(serde_json::to_string(&q.correct_answers).unwrap_or_default())
         };
-
-        let clean_opts: Option<Vec<QaUploadOption>> = q.options.as_ref().map(|opts| {
-            opts.iter().map(|o| QaUploadOption { id: o.id.clone(), text: o.text.clone() }).collect()
-        });
-        let embed_text = super::qa::build_embedding_text(Some(&stem), clean_opts.as_deref());
-        let vec_f32 = super::qa::compute_local_embedding(&embed_text);
-        let computed_blob = super::qa::vector_to_blob(&vec_f32);
+        let new_images_json = if q.images.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(&q.images).unwrap_or_default())
+        };
 
         let mut db = self.db.clone();
         match BankQuestion::get_by_question_id(&mut db, &q.question_id).await {
             Ok(mut existing) => {
+                let existing_options: Option<Vec<QaUploadOption>> = existing
+                    .options_json
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str(s).ok());
+                let same_content = !new_stem.is_empty()
+                    && super::richtext::rich_text_equivalent(&new_stem, &existing.stem)
+                    && options_equivalent(q.options.as_deref(), existing_options.as_deref());
+                // 已上传且内容未变时保留服务端的正式 pic_id 引用与图片缓存，
+                // 避免每次重建题库都把图片退回本地 temp_pic_id。
+                let keep_uploaded_content = existing.uploaded && same_content;
+
+                let next_stem = if new_stem.is_empty() || keep_uploaded_content {
+                    existing.stem.clone()
+                } else {
+                    new_stem.clone()
+                };
+                let next_options = if keep_uploaded_content || q.options.is_none() {
+                    existing.options_json.clone()
+                } else {
+                    new_options_json
+                };
+                let next_images = if keep_uploaded_content {
+                    existing.images_json.clone()
+                } else {
+                    new_images_json
+                        .clone()
+                        .or_else(|| existing.images_json.clone())
+                };
+                let next_uploaded = if new_stem.is_empty() {
+                    existing.uploaded
+                } else if existing.uploaded {
+                    // 内容变化后需要重新同步；内容一致则继续保持已上传状态。
+                    if same_content { true } else { q.uploaded }
+                } else {
+                    q.uploaded
+                };
                 let next_cid = cid.map(str::to_string).or_else(|| existing.cid.clone());
                 let next_tid = tid.map(str::to_string).or_else(|| existing.tid.clone());
                 let next_cname = q.course_name.clone().or_else(|| existing.course_name.clone());
                 let next_tname = q.task_name.clone().or_else(|| existing.task_name.clone());
-                let embedding_blob = existing.embedding_blob.clone().or(Some(computed_blob));
-                // 重建题库时新解析经常拿不到标准答案/作答记录；这些字段必须沿用旧值，
-                // 否则每次打开页面重建都会把已经积累的答案抹掉。
                 let next_correct =
                     correct_answers_json.or_else(|| existing.correct_answers_json.clone());
+                // 重建题库时新解析经常拿不到标准答案/作答记录；这些字段必须沿用旧值，
+                // 否则每次打开页面重建都会把已经积累的答案抹掉。
                 let next_answers = if q.answers.is_empty() {
                     existing.answers_json.clone()
                 } else {
                     answers_json
                 };
-                let next_options = options_json.or_else(|| existing.options_json.clone());
-                let next_stem = if stem.is_empty() {
-                    existing.stem.clone()
-                } else {
-                    stem
-                };
                 let next_stem_hash = if next_stem.is_empty() {
                     existing.stem_hash.clone()
                 } else {
-                    stem_h
+                    hash_stem(&next_stem)
                 };
-                let was_uploaded = existing.uploaded;
                 let next_updated_at = q.updated_at_ms.max(existing.updated_at_ms);
+                let embedding_blob = if keep_uploaded_content && existing.embedding_blob.is_some() {
+                    existing.embedding_blob.clone()
+                } else {
+                    let final_options: Option<Vec<QaUploadOption>> = next_options
+                        .as_deref()
+                        .and_then(|s| serde_json::from_str(s).ok())
+                        .or_else(|| q.options.clone());
+                    let embed_text = super::qa::build_embedding_text(
+                        if next_stem.is_empty() { None } else { Some(&next_stem) },
+                        final_options.as_deref(),
+                    );
+                    Some(super::qa::vector_to_blob(
+                        &super::qa::compute_local_embedding(&embed_text),
+                    ))
+                };
 
                 toasty::update!(existing {
                     cid: next_cid,
@@ -255,10 +312,11 @@ impl QaDatabase {
                     stem: next_stem,
                     stem_hash: next_stem_hash,
                     options_json: next_options,
+                    images_json: next_images,
                     answers_json: next_answers,
                     correct_answers_json: next_correct,
                     blanks: q.blanks as i64,
-                    uploaded: was_uploaded || q.uploaded,
+                    uploaded: next_uploaded,
                     embedding_blob,
                     updated_at_ms: next_updated_at,
                 })
@@ -267,6 +325,14 @@ impl QaDatabase {
                 .map_err(|e| format!("更新题库题目失败: {e}"))?;
             }
             Err(error) if error.is_record_not_found() => {
+                let stem_hash = hash_stem(&new_stem);
+                let embed_text = super::qa::build_embedding_text(
+                    if new_stem.is_empty() { None } else { Some(&new_stem) },
+                    q.options.as_deref(),
+                );
+                let embedding_blob = Some(super::qa::vector_to_blob(
+                    &super::qa::compute_local_embedding(&embed_text),
+                ));
                 toasty::create!(BankQuestion {
                     question_id: q.question_id.clone(),
                     cid: cid.map(str::to_string),
@@ -274,14 +340,15 @@ impl QaDatabase {
                     course_name: q.course_name.clone(),
                     task_name: q.task_name.clone(),
                     question_type: q.question_type.clone(),
-                    stem,
-                    stem_hash: stem_h,
-                    options_json,
+                    stem: new_stem,
+                    stem_hash,
+                    options_json: new_options_json,
+                    images_json: new_images_json,
                     answers_json,
                     correct_answers_json,
                     blanks: q.blanks as i64,
                     uploaded: q.uploaded,
-                    embedding_blob: Some(computed_blob),
+                    embedding_blob,
                     updated_at_ms: q.updated_at_ms,
                 })
                 .exec(&mut db)
@@ -294,6 +361,80 @@ impl QaDatabase {
         }
 
         Ok(())
+    }
+
+    /// 上传成功后用服务端返回的正式文本覆盖本地题目。
+    ///
+    /// 只更新题干/选项/图片/类型与上传状态，保留本地答案、blanks 等字段；
+    /// `images` 为 None 表示保留现有图片缓存（服务端响应缺少完整映射时）。
+    pub async fn apply_uploaded_question(
+        &self,
+        tid: &str,
+        question_id: &str,
+        question_type: Option<&str>,
+        stem: &str,
+        options: Option<&[QaUploadOption]>,
+        images: Option<&[super::richtext::BankImage]>,
+    ) -> Result<bool, String> {
+        let mut db = self.db.clone();
+        match BankQuestion::get_by_question_id(&mut db, question_id).await {
+            Ok(mut existing) => {
+                let next_tid = existing.tid.clone().or_else(|| Some(tid.to_string()));
+                let next_type = question_type
+                    .map(str::to_string)
+                    .filter(|value| !value.trim().is_empty())
+                    .unwrap_or_else(|| existing.question_type.clone());
+                let options_json = options.map(|opts| serde_json::to_string(opts).unwrap_or_default());
+                let next_options = options_json.or_else(|| existing.options_json.clone());
+                let next_images = match images {
+                    Some(images) => {
+                        if images.is_empty() {
+                            None
+                        } else {
+                            Some(serde_json::to_string(images).unwrap_or_default())
+                        }
+                    }
+                    None => existing.images_json.clone(),
+                };
+                let next_stem = if stem.is_empty() {
+                    existing.stem.clone()
+                } else {
+                    stem.to_string()
+                };
+                let final_options: Option<Vec<QaUploadOption>> = next_options
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str(s).ok());
+                let embed_text = super::qa::build_embedding_text(
+                    if next_stem.is_empty() { None } else { Some(&next_stem) },
+                    final_options.as_deref(),
+                );
+                let embedding_blob =
+                    Some(super::qa::vector_to_blob(&super::qa::compute_local_embedding(&embed_text)));
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as i64)
+                    .unwrap_or(0);
+                let stem_hash = super::qa::hash_stem(&next_stem);
+
+                toasty::update!(existing {
+                    tid: next_tid,
+                    question_type: next_type,
+                    stem: next_stem,
+                    stem_hash: stem_hash,
+                    options_json: next_options,
+                    images_json: next_images,
+                    uploaded: true,
+                    embedding_blob,
+                    updated_at_ms: now,
+                })
+                .exec(&mut db)
+                .await
+                .map_err(|e| format!("回写上传题目失败: {e}"))?;
+                Ok(true)
+            }
+            Err(error) if error.is_record_not_found() => Ok(false),
+            Err(error) => Err(format!("读取题库题目失败: {error}")),
+        }
     }
 
     /// 获取题库总题数
@@ -319,6 +460,7 @@ impl QaDatabase {
             let options: Option<Vec<QaUploadOption>> = r.options_json.as_deref().and_then(|s| serde_json::from_str(s).ok());
             let answers: Vec<LocalBankAnswer> = serde_json::from_str(&r.answers_json).unwrap_or_default();
             let correct_answers: Vec<String> = r.correct_answers_json.as_deref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or_default();
+            let images: Vec<super::richtext::BankImage> = r.images_json.as_deref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or_default();
 
             let q_item = LocalBankQuestion {
                 cid: r.cid.clone().unwrap_or_default(),
@@ -332,6 +474,7 @@ impl QaDatabase {
                 blanks: r.blanks.max(0) as usize,
                 answers,
                 correct_answers,
+                images,
                 uploaded: r.uploaded,
                 updated_at_ms: r.updated_at_ms,
             };
@@ -443,6 +586,7 @@ impl QaDatabase {
             let options: Option<Vec<QaUploadOption>> = r.options_json.as_deref().and_then(|s| serde_json::from_str(s).ok());
             let answers: Vec<LocalBankAnswer> = serde_json::from_str(&r.answers_json).unwrap_or_default();
             let correct_answers: Vec<String> = r.correct_answers_json.as_deref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or_default();
+            let images: Vec<super::richtext::BankImage> = r.images_json.as_deref().and_then(|s| serde_json::from_str(s).ok()).unwrap_or_default();
 
             let q_item = LocalBankQuestion {
                 cid: r.cid.clone().unwrap_or_default(),
@@ -456,6 +600,7 @@ impl QaDatabase {
                 blanks: r.blanks.max(0) as usize,
                 answers,
                 correct_answers,
+                images,
                 uploaded: r.uploaded,
                 updated_at_ms: r.updated_at_ms,
             };
@@ -516,11 +661,17 @@ impl QaDatabase {
         question_type: &str,
         stem: &str,
         options: Option<&[QaUploadOption]>,
+        images: &[super::richtext::BankImage],
         answers: &[String],
         embedding: &[f32],
     ) -> Result<(), String> {
         let stem_h = hash_stem(stem);
         let options_json = options.map(|opts| serde_json::to_string(opts).unwrap_or_default());
+        let images_json = if images.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(images).unwrap_or_default())
+        };
         let correct_answers_json = if answers.is_empty() {
             None
         } else {
@@ -540,6 +691,7 @@ impl QaDatabase {
                 let next_correct =
                     correct_answers_json.or_else(|| existing.correct_answers_json.clone());
                 let next_options = options_json.or_else(|| existing.options_json.clone());
+                let next_images = images_json.or_else(|| existing.images_json.clone());
                 toasty::update!(existing {
                     cid: next_cid,
                     tid: next_tid,
@@ -547,6 +699,7 @@ impl QaDatabase {
                     stem: stem.to_string(),
                     stem_hash: stem_h,
                     options_json: next_options,
+                    images_json: next_images,
                     correct_answers_json: next_correct,
                     embedding_blob: Some(embedding_blob),
                     updated_at_ms: now,
@@ -566,6 +719,7 @@ impl QaDatabase {
                     stem: stem.to_string(),
                     stem_hash: stem_h,
                     options_json,
+                    images_json,
                     answers_json: "[]".to_string(),
                     correct_answers_json,
                     blanks: 0,

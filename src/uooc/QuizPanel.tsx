@@ -16,7 +16,8 @@ import {
 } from "material/react";
 import { Banner, Chip, bindField, toast } from "../ui";
 import { LuBot, LuCircleCheck, LuClock, LuDatabase, LuSparkles } from "react-icons/lu";
-import { DimmedHtmlText, useHtmlTagVisibility } from "./DimmedHtmlText";
+import { useHtmlTagVisibility } from "./DimmedHtmlText";
+import { RichText, countRichImages, plainTextFromRich } from "./RichText";
 import type { AiSessionEntry, QuizAnswers, QuizQuestion, QuizState, UoocSnapshot } from "./types";
 
 export function getQuizCacheKey(
@@ -1062,6 +1063,15 @@ export function QuizPanel({
                 r.answers.length > 0,
             );
 
+            const stemImageCount = countRichImages(q.text);
+            const optionImageOffsets = new Map<string, number>();
+            let nextImageOffset = stemImageCount;
+            for (const option of q.options) {
+              optionImageOffsets.set(option.id, nextImageOffset);
+              nextImageOffset += countRichImages(option.text);
+            }
+            const consumedImages = nextImageOffset;
+
             return (
               <div
                 key={q.id}
@@ -1078,20 +1088,23 @@ export function QuizPanel({
                   <span className="font-mono text-xs text-muted">ID: {q.id}</span>
                 </div>
 
-                {/* 题干文本（dim 暗淡虚化 HTML 标签） */}
+                {/* 题干文本（富文本：Markdown 图片 + 旧 HTML 淡化显示） */}
                 <p className="font-medium whitespace-pre-wrap text-foreground">
-                  <DimmedHtmlText text={q.text} />
+                  <RichText text={q.text} dataImages={q.images} imageOffset={0} />
                 </p>
 
-                {/* 题目附带图片 */}
-                {q.images.map((src, index) => (
-                  <img
-                    key={index}
-                    src={src}
-                    alt={`第 ${i + 1} 题图片 ${index + 1}`}
-                    className="max-h-96 max-w-full rounded-lg border border-separator/40 object-contain"
-                  />
-                ))}
+                {/* 兼容旧数据：文本里没有 Markdown 引用时仍展示剩余图片 */}
+                {consumedImages < q.images.length &&
+                  q.images
+                    .slice(consumedImages)
+                    .map((src, index) => (
+                      <img
+                        key={index}
+                        src={src}
+                        alt={`第 ${i + 1} 题图片 ${consumedImages + index + 1}`}
+                        className="max-h-96 max-w-full rounded-lg border border-separator/40 object-contain"
+                      />
+                    ))}
 
                 {/* 2 & 3 & 4. 选项列表交互：标注器直接显示在选项旁边 */}
                 {q.kind === "single" ? (
@@ -1122,7 +1135,7 @@ export function QuizPanel({
                         <Radio
                           key={o.id}
                           value={o.id}
-                          label={stripHtml(o.text) || o.id}
+                          label={plainTextFromRich(o.text) || o.id}
                           className={`flex items-start gap-2.5 rounded-lg border p-2.5 transition-colors cursor-pointer ${borderStyle}`}
                         >
                           <span
@@ -1131,7 +1144,11 @@ export function QuizPanel({
                             className="option-prefix font-bold text-foreground shrink-0 text-xs"
                           />
                           <span className="flex-1 text-xs text-foreground/90">
-                            <DimmedHtmlText text={o.text} />
+                            <RichText
+                              text={o.text}
+                              dataImages={q.images}
+                              imageOffset={optionImageOffsets.get(o.id) ?? 0}
+                            />
                           </span>
 
                           {/* 选项右侧标注器：标准答案 / 排除答案 / AI判定 / 用户已选 */}
@@ -1180,7 +1197,7 @@ export function QuizPanel({
                         <Checkbox
                           key={o.id}
                           value={o.id}
-                          aria-label={stripHtml(o.text) || o.id}
+                          aria-label={plainTextFromRich(o.text) || o.id}
                           checked={isBoxChecked}
                           disabled={disabled || quiz.stage === "passed"}
                           onChange={(e: any) => {
@@ -1199,7 +1216,11 @@ export function QuizPanel({
                             className="option-prefix font-bold text-foreground shrink-0 text-xs"
                           />
                           <span className="flex-1 text-xs text-foreground/90">
-                            <DimmedHtmlText text={o.text} />
+                            <RichText
+                              text={o.text}
+                              dataImages={q.images}
+                              imageOffset={optionImageOffsets.get(o.id) ?? 0}
+                            />
                           </span>
 
                           {/* 选项右侧标注器：标准答案 / 排除答案 / AI判定 / 用户已选 */}

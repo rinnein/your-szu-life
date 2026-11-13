@@ -4,7 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { Card, Dialog, LoadingIndicator, Progress, Button } from "material/react";
 import { Chip, ScrollShadow } from "../ui";
 import { LuBookOpen, LuCheck, LuCircleCheck, LuCircleHelp, LuFileText } from "react-icons/lu";
-import { DimmedHtmlText } from "./DimmedHtmlText";
+import { plainTextFromRich } from "./RichText";
 
 export type BankRebuildProgress = {
   stage: "start" | "course" | "task" | "question" | "task_complete" | "complete" | "error";
@@ -301,7 +301,7 @@ export function BankRebuildModal({
                                           ID: {q.id}
                                         </span>
                                         <span className="truncate text-muted text-[11px]">
-                                          <DimmedHtmlText text={q.stem} />
+                                          {plainTextFromRich(q.stem)}
                                         </span>
                                       </div>
                                       <span className="text-[10px] text-success shrink-0 font-medium">

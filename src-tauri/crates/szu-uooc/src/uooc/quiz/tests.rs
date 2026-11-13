@@ -315,6 +315,8 @@ fn cached_question_images_restore_and_corruption_invalidates_approval() {
     assert_eq!(broken["7/42"].stage, Stage::AwaitingApproval);
     assert_eq!(broken["7/42"].signature, "approved");
     assert!(broken["7/42"].message.contains("图片缓存"));
+    // 用空占位代替删除，保持后续图片与 Markdown 引用顺序一致。
+    assert_eq!(broken["7/42"].questions[0].images, [String::new()]);
     assert!(!file.exists());
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -496,6 +498,104 @@ async fn jev_uses_systemone_and_requests_only_one_main_model_recheck() {
 }
 
 #[tokio::test]
+async fn ai_injects_labeled_question_images_and_degrades_when_unsupported() {
+    let root = root();
+    let service = service_test(root.clone());
+    ready(&service);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let bodies = Arc::new(Mutex::new(Vec::<String>::new()));
+    let n = calls.clone();
+    let recorded = bodies.clone();
+    let server = Server::bytes(move |request| {
+        if request.path != "/chat/completions" {
+            return (404, b"".to_vec(), String::new());
+        }
+        let body: Value = serde_json::from_str(&request.body).unwrap();
+        let content = body["messages"][1]["content"].clone();
+        recorded.lock().unwrap().push(content.to_string());
+        if content.to_string().contains("image_url") {
+            assert_eq!(n.fetch_add(1, Ordering::SeqCst), 0);
+            return (
+                400,
+                serde_json::to_vec(&json!({
+                    "error": {
+                        "message": "this model does not support image input",
+                        "type": "invalid_request_error"
+                    }
+                }))
+                .unwrap(),
+                "Content-Type: application/json\r\n".into(),
+            );
+        }
+        (
+            200,
+            serde_json::to_vec(&completion("a")).unwrap(),
+            "Content-Type: application/json\r\n".into(),
+        )
+    });
+    {
+        let mut c = service.ai.lock().unwrap();
+        c.main = ai::Provider {
+            base_url: server.base.clone(),
+            model: "test".into(),
+            key: "main-key".into(),
+        };
+        c.jev_enabled = false;
+        c.web_search = false;
+    }
+    let question = Question {
+        id: "q1".into(),
+        text: "如图 ![曲线图](https://www.uooc.net.cn/a.png) 求面积".into(),
+        kind: Kind::Single,
+        options: vec![
+            OptionItem {
+                id: "A".into(),
+                text: "![选项图](https://www.uooc.net.cn/b.png)".into(),
+            },
+            OptionItem {
+                id: "B".into(),
+                text: "2".into(),
+            },
+        ],
+        blanks: 0,
+        images: vec![
+            "data:image/png;base64,AAAA".into(),
+            "data:image/png;base64,BBBB".into(),
+        ],
+    };
+
+    let (answers, reviews, _sessions, error) = ai::generate(
+        &service,
+        &[question],
+        &std::collections::BTreeMap::new(),
+        &CancellationToken::new(),
+        None,
+    )
+    .await;
+
+    assert!(error.is_none());
+    assert_eq!(answers["q1"], ["A"]);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    let bodies = bodies.lock().unwrap();
+    assert_eq!(bodies.len(), 2);
+    assert!(bodies[0].contains("[题目 q1 题干图片 1/1]"));
+    assert!(bodies[0].contains("[题目 q1 选项 A 图片 1/1]"));
+    assert!(bodies[0].contains("data:image/png;base64,AAAA"));
+    // 降级重试不再包含任何图片或 Markdown 图片语法。
+    assert!(!bodies[1].contains("image_url"));
+    assert!(!bodies[1].contains("data:image"));
+    assert!(!bodies[1].contains("![曲线图]"));
+    assert!(bodies[1].contains("曲线图"));
+    assert!(bodies[1].contains("求面积"));
+    assert!(reviews
+        .iter()
+        .any(|review| review.message.contains("不支持图片输入")));
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
 async fn bank_upsert_keeps_confirmed_answers_and_uploaded_flag() {
     use super::qa::{LocalBankAnswer, LocalBankQuestion, QaUploadOption};
 
@@ -531,6 +631,7 @@ async fn bank_upsert_keeps_confirmed_answers_and_uploaded_flag() {
             confidence: 1.0,
         }],
         correct_answers: vec!["A".into()],
+        images: Vec::new(),
         uploaded: true,
         updated_at_ms: 1,
     };

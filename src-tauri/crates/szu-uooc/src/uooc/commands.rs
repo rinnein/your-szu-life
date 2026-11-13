@@ -639,15 +639,23 @@ pub async fn generate_uooc_subjective(
     reference_examples: Option<Vec<super::ai::ReferenceExample>>,
 ) -> Result<String, String> {
     let service = service(&app)?;
-    let actual_stem = if let Some(s) = stem.filter(|s| !s.trim().is_empty()) {
-        s
+    let (actual_stem, images) = if let Some(s) = stem.filter(|s| !s.trim().is_empty()) {
+        (
+            s,
+            question.map(|q| q.images).unwrap_or_default(),
+        )
     } else if let Some(q) = question {
-        q.text
+        (q.text, q.images)
     } else {
         return Err("缺少题目题干 (stem 或 question)".to_string());
     };
     service
-        .generate_subjective(&actual_stem, context.as_deref(), reference_examples.unwrap_or_default())
+        .generate_subjective(
+            &actual_stem,
+            context.as_deref(),
+            reference_examples.unwrap_or_default(),
+            &images,
+        )
         .await
 }
 

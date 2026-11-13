@@ -132,7 +132,7 @@ impl UnifiedSzuMcpService {
 
     #[tool(
         name = "uooc_solve_question_with_ai",
-        description = "结合 UOOC 题库 RAG 知识检索与配置的 AI 大模型推理，自动解答试卷题目并生成解析"
+        description = "结合 UOOC 题库 RAG 知识检索与配置的 AI 大模型推理，自动解答试卷题目并生成解析；题目 images 会按题目/选项归属注入模型上下文，模型不支持图片时自动降级为纯文本"
     )]
     pub async fn uooc_solve_question_with_ai(
         &self,

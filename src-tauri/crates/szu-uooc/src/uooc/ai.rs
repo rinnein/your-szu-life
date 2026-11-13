@@ -2,8 +2,108 @@ use super::{quiz::model::*, Service};
 use async_openai::{config::OpenAIConfig, types::chat::CreateChatCompletionRequest};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{collections::BTreeMap, time::Duration};
+use std::collections::{BTreeMap, HashSet};
+use std::sync::{LazyLock, Mutex};
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
+
+/// 进程内记录「当前模型不支持图片输入」，避免每个批次都先失败再降级。
+static VISION_UNSUPPORTED_MODELS: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+fn vision_model_key(provider: &Provider) -> String {
+    format!("{}\u{1}{}", provider.base_url.trim(), provider.model.trim())
+}
+
+fn vision_is_disabled(provider: &Provider) -> bool {
+    VISION_UNSUPPORTED_MODELS
+        .lock()
+        .ok()
+        .is_some_and(|models| models.contains(&vision_model_key(provider)))
+}
+
+fn mark_vision_disabled(provider: &Provider) {
+    if let Ok(mut models) = VISION_UNSUPPORTED_MODELS.lock() {
+        models.insert(vision_model_key(provider));
+    }
+}
+
+/// 判断错误是否明确指向「模型不支持图片/多模态输入」，避免把普通 400 误判成视觉问题。
+fn looks_like_vision_unsupported(message: &str) -> bool {
+    let lower = message.to_lowercase();
+    let image_hint = lower.contains("image")
+        || lower.contains("vision")
+        || lower.contains("multimodal")
+        || lower.contains("图片")
+        || lower.contains("图像");
+    let reject_hint = lower.contains("unsupported")
+        || lower.contains("not support")
+        || lower.contains("does not support")
+        || lower.contains("only text")
+        || lower.contains("text only")
+        || lower.contains("invalid content")
+        || lower.contains("不支持")
+        || lower.contains("仅支持文本");
+    image_hint && reject_hint
+}
+
+/// 按「题干 → 各选项」的顺序生成图片标注，必须与 `Question.images` 的水合顺序一致。
+fn question_image_labels(q: &Question) -> Vec<String> {
+    let stem_images = super::quiz::richtext::find_markdown_images(&q.text).len();
+    let mut labels = Vec::new();
+    if stem_images > 0 {
+        for index in 0..stem_images {
+            labels.push(format!(
+                "[题目 {} 题干图片 {}/{}]",
+                q.id,
+                index + 1,
+                stem_images
+            ));
+        }
+    }
+    for option in &q.options {
+        let option_images = super::quiz::richtext::find_markdown_images(&option.text).len();
+        if option_images > 0 {
+            for index in 0..option_images {
+                labels.push(format!(
+                    "[题目 {} 选项 {} 图片 {}/{}]",
+                    q.id,
+                    option.id,
+                    index + 1,
+                    option_images
+                ));
+            }
+        }
+    }
+    if labels.len() != q.images.len() {
+        // 图片抓取失败或历史数据没有 Markdown 引用时，退化为通用标注。
+        labels = (0..q.images.len())
+            .map(|index| {
+                format!(
+                    "[题目 {} 图片 {}/{}]",
+                    q.id,
+                    index + 1,
+                    q.images.len()
+                )
+            })
+            .collect();
+    }
+    labels
+}
+
+fn strip_image_content_parts(content: &mut Vec<Value>, labels: &HashSet<String>) {
+    content.retain(|part| {
+        if part.get("type").and_then(Value::as_str) == Some("image_url") {
+            return false;
+        }
+        if let Some(text) = part.get("text").and_then(Value::as_str) {
+            if labels.contains(text) {
+                return false;
+            }
+        }
+        true
+    });
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -846,13 +946,28 @@ async fn answer_batch(
     in_memory_rag: Option<&super::quiz::qa::InMemoryVectorStore<super::quiz::qa::QuestionRagDocument>>,
     cancel: &CancellationToken,
     on_progress: Option<&(dyn Fn(&str, &str) + Send + Sync)>,
-) -> Result<(BTreeMap<String, Vec<String>>, BTreeMap<String, String>, String, String), String> {
+) -> Result<
+    (
+        BTreeMap<String, Vec<String>>,
+        BTreeMap<String, String>,
+        String,
+        String,
+        bool,
+    ),
+    String,
+> {
     let p = &config.main;
     if p.model.is_empty() {
         return Err("请选择主模型".into());
     }
 
     let mut q_items = Vec::new();
+    let model_text = |raw: &str| -> String {
+        super::quiz::richtext::strip_markdown_images(
+            &super::quiz::richtext::clean_rich_text(raw),
+            true,
+        )
+    };
     for q in questions {
         let wrongs = wrong_options_map.get(&q.id);
         let mut excluded_options = Vec::new();
@@ -862,7 +977,7 @@ async fn answer_batch(
                     .options
                     .iter()
                     .find(|o| super::quiz::qa::is_option_match(o, w))
-                    .map(|o| super::quiz::qa::strip_html_tags(&o.text))
+                    .map(|o| model_text(&o.text))
                     .unwrap_or_default();
                 excluded_options.push(json!({
                     "id": w,
@@ -878,17 +993,22 @@ async fn answer_batch(
             .map(|o| {
                 json!({
                     "id": o.id,
-                    "text": super::quiz::qa::strip_html_tags(&o.text),
+                    "text": model_text(&o.text),
                 })
             })
             .collect();
 
         let mut item = json!({
             "id": q.id,
-            "text": super::quiz::qa::strip_html_tags(&q.text),
+            "text": model_text(&q.text),
             "kind": q.kind,
             "options": clean_opts,
             "blanks": q.blanks,
+            "image_count": q
+                .images
+                .iter()
+                .filter(|image| !image.trim().is_empty())
+                .count(),
         });
         if !excluded_options.is_empty() {
             item["excluded_options"] = json!(excluded_options);
@@ -929,11 +1049,29 @@ async fn answer_batch(
         cb(&prompt_str, &initial_log);
     }
 
-    let mut content = vec![json!({"type": "text", "text": prompt_str.clone()})];
+    let mut image_parts: Vec<Value> = Vec::new();
+    let mut image_labels: HashSet<String> = HashSet::new();
     for q in questions {
-        for image in &q.images {
-            content.push(json!({"type": "image_url", "image_url": {"url": image}}));
+        let labels = question_image_labels(q);
+        for (index, image) in q.images.iter().enumerate() {
+            // 空字符串是抓图失败的占位；跳过它但要保留序号对应关系。
+            if image.trim().is_empty() {
+                continue;
+            }
+            let label = labels.get(index).cloned().unwrap_or_else(|| {
+                format!("[题目 {} 图片 {}/{}]", q.id, index + 1, q.images.len())
+            });
+            image_labels.insert(label.clone());
+            image_parts.push(json!({"type": "text", "text": label}));
+            image_parts.push(json!({"type": "image_url", "image_url": {"url": image}}));
         }
+    }
+    let has_images = !image_parts.is_empty();
+    let vision_blocked = has_images && vision_is_disabled(p);
+    let mut images_omitted = has_images && vision_blocked;
+    let mut content = vec![json!({"type": "text", "text": prompt_str.clone()})];
+    if !vision_blocked {
+        content.extend(image_parts.clone());
     }
 
     let format_instructions = if config.include_reasoning {
@@ -973,6 +1111,7 @@ async fn answer_batch(
 5. 文本填空题按 blanks 数量在数组中依次返回对应空的填空答案；\n\
 6. 无法确定的题目返回空数组 []；\n\
 7. 必须返回包含全部题目 ID 的 answers 对象；\n\
+8. 用户消息中可能在题目 JSON 之后附带图片，每张图片前都有 `[题目 <id> 题干图片 n/N]` 或 `[题目 <id> 选项 X 图片 n/N]` 文本标注。图片只属于该标注对应的题目与位置，绝对不要把它用于其他题目；若题目没有图片标注，不要臆测图片内容；\n\
 {search_instruction}"
     );
 
@@ -1081,14 +1220,39 @@ async fn answer_batch(
         let result = match resp_result {
             Ok(r) => r,
             Err(e) => {
-                if tools.is_some() && e.to_string().to_lowercase().contains("tool") {
+                let error_text = e.to_string();
+                let lower = error_text.to_lowercase();
+                let tool_failure = tools.is_some() && lower.contains("tool");
+                let vision_failure = !vision_blocked && looks_like_vision_unsupported(&error_text);
+                if tool_failure || vision_failure {
                     let mut fallback_obj = req_obj.clone();
-                    if let Some(map) = fallback_obj.as_object_mut() {
-                        map.remove("tools");
+                    if tool_failure {
+                        if let Some(map) = fallback_obj.as_object_mut() {
+                            map.remove("tools");
+                        }
+                    }
+                    if vision_failure {
+                        // 模型不支持图片：记住该模型，去掉所有图片/标注部件后重试一次。
+                        mark_vision_disabled(p);
+                        images_omitted = true;
+                        if let Some(messages) =
+                            fallback_obj.get_mut("messages").and_then(Value::as_array_mut)
+                        {
+                            for message in messages {
+                                if let Some(content) = message
+                                    .get_mut("content")
+                                    .and_then(Value::as_array_mut)
+                                {
+                                    strip_image_content_parts(content, &image_labels);
+                                }
+                            }
+                        }
                     }
                     let fb_req: CreateChatCompletionRequest = serde_json::from_value(fallback_obj)
                         .map_err(|_| "无法构建降级 AI 请求")?;
-                    chat.create(fb_req).await.map_err(|err| format!("AI 请求失败: {err}"))?
+                    chat.create(fb_req)
+                        .await
+                        .map_err(|err| format!("AI 请求失败: {err}"))?
                 } else {
                     return Err(format!("AI 请求失败，请检查模型与配置: {e}"));
                 }
@@ -1284,7 +1448,13 @@ async fn answer_batch(
         raw.to_string()
     };
 
-    Ok((final_answers, final_reasons, prompt_str, full_raw))
+    Ok((
+        final_answers,
+        final_reasons,
+        prompt_str,
+        full_raw,
+        images_omitted,
+    ))
 }
 
 pub fn interpret_jev(
@@ -1442,7 +1612,7 @@ pub async fn generate(
         drop(permit);
 
         match res {
-            Ok((batch_answers, batch_reasons, prompt_str, raw_resp)) => {
+            Ok((batch_answers, batch_reasons, prompt_str, raw_resp, images_omitted)) => {
                 session_entry.status = "completed".into();
                 session_entry.prompt = prompt_str;
                 session_entry.response = raw_resp;
@@ -1451,11 +1621,39 @@ pub async fn generate(
                 for q in *chunk {
                     let mut selected = batch_answers.get(&q.id).cloned().unwrap_or_default();
                     let reason_opt = batch_reasons.get(&q.id).cloned();
+                    if images_omitted && !q.images.is_empty() {
+                        let text_without_images = super::quiz::richtext::strip_markdown_images(
+                            &super::quiz::richtext::clean_rich_text(&q.text),
+                            true,
+                        );
+                        let only_images = text_without_images.trim().is_empty()
+                            && q.options.iter().all(|option| {
+                                super::quiz::richtext::strip_markdown_images(&option.text, true)
+                                    .trim()
+                                    .is_empty()
+                            });
+                        all_reviews.push(Review {
+                            question_id: q.id.clone(),
+                            answers: selected.clone(),
+                            message: if only_images {
+                                format!(
+                                    "当前模型不支持图片输入，题目仅含图片，无法可靠作答（共 {} 张图片）",
+                                    q.images.len()
+                                )
+                            } else {
+                                format!(
+                                    "当前模型不支持图片输入，已按纯文本作答（本题含 {} 张图片）",
+                                    q.images.len()
+                                )
+                            },
+                            ..Default::default()
+                        });
+                    }
                     if config.jev_enabled && q.kind != Kind::Text && q.kind != Kind::Subjective {
                         if !q.images.is_empty() {
                             all_reviews.push(Review {
                                 question_id: q.id.clone(),
-                                message: "题目包含图片，未经过 Jev 复核".into(),
+                                message: "题目包含图片，Jev 不支持图片输入，未经复核".into(),
                                 answers: selected.clone(),
                                 ..Default::default()
                             });
@@ -1492,7 +1690,8 @@ pub async fn generate(
                                     }
                                 };
 
-                                let (re_map, _re_reasons, re_prompt, re_raw) = match answer_batch(
+                                let (re_map, _re_reasons, re_prompt, re_raw, _re_omitted) =
+                                    match answer_batch(
                                     &config,
                                     std::slice::from_ref(q),
                                     wrong_options_map,
@@ -1578,6 +1777,7 @@ pub async fn generate_subjective_answer(
     stem: &str,
     context: Option<&str>,
     reference_examples: &[ReferenceExample],
+    images: &[String],
     cancel: &CancellationToken,
 ) -> Result<String, String> {
     let config = service.ai.lock().unwrap().clone();
@@ -1586,6 +1786,10 @@ pub async fn generate_subjective_answer(
         return Err("请先在设置中选择主模型".into());
     }
     let client = sdk(p)?;
+    let model_stem = super::quiz::richtext::strip_markdown_images(
+        &super::quiz::richtext::clean_rich_text(stem),
+        true,
+    );
     let mut ref_text = String::new();
     if !reference_examples.is_empty() {
         ref_text.push_str("\n【参考真题与考点】:\n");
@@ -1608,34 +1812,71 @@ pub async fn generate_subjective_answer(
         1. 紧扣题意，结构清晰，分点论述（如必要可包含小标题或要点序号）；\n\
         2. 语言规范、学术严谨、表达流畅；\n\
         3. 直接输出作答内容正文，不要包含多余的客套话或'好的'等无关前缀。",
-        stem,
+        model_stem,
         context.map(|c| format!("【补充材料/要求】\n{c}\n")).unwrap_or_default(),
         ref_text
     );
-    let request = CreateChatCompletionRequest {
-        model: p.model.clone(),
-        messages: vec![
-            async_openai::types::chat::ChatCompletionRequestMessage::System(
-                async_openai::types::chat::ChatCompletionRequestSystemMessageArgs::default()
-                    .content("你是专业严谨的大学课程主观题解题专家，请给出专业、详尽、高质量的作答。")
-                    .build()
-                    .map_err(|e| e.to_string())?,
-            ),
-            async_openai::types::chat::ChatCompletionRequestMessage::User(
-                async_openai::types::chat::ChatCompletionRequestUserMessageArgs::default()
-                    .content(prompt)
-                    .build()
-                    .map_err(|e| e.to_string())?,
-            ),
-        ],
-        ..Default::default()
-    };
+    let mut content = vec![json!({"type": "text", "text": prompt})];
+    let has_images = images.iter().any(|image| !image.trim().is_empty());
+    let vision_blocked = has_images && vision_is_disabled(p);
+    if !vision_blocked {
+        for (index, image) in images.iter().enumerate() {
+            if image.trim().is_empty() {
+                continue;
+            }
+            content.push(json!({
+                "type": "text",
+                "text": format!("[主观题图片 {}/{}]", index + 1, images.len())
+            }));
+            content.push(json!({"type": "image_url", "image_url": {"url": image}}));
+        }
+    }
+    let mut request_obj = json!({
+        "model": p.model,
+        "messages": [
+            {
+                "role": "system",
+                "content": "你是专业严谨的大学课程主观题解题专家，请给出专业、详尽、高质量的作答。"
+            },
+            { "role": "user", "content": content }
+        ]
+    });
+    let mut request: CreateChatCompletionRequest = serde_json::from_value(request_obj.clone())
+        .map_err(|e| format!("无法构建主观题请求: {e}"))?;
     let chat = client.chat();
-    let resp = tokio::select! {
+    let mut resp = tokio::select! {
         biased;
         _ = cancel.cancelled() => return Err("已取消".into()),
-        r = chat.create(request) => r.map_err(|e| format!("AI 模型请求失败: {e}"))?,
+        r = chat.create(request) => r,
     };
+    if let Err(error) = &resp {
+        if !vision_blocked && looks_like_vision_unsupported(&error.to_string()) {
+            // 模型不支持图片：去掉图片后重试一次，并记住该模型。
+            mark_vision_disabled(p);
+            if let Some(messages) = request_obj.get_mut("messages").and_then(Value::as_array_mut) {
+                for message in messages {
+                    if let Some(content) = message.get_mut("content").and_then(Value::as_array_mut)
+                    {
+                        content.retain(|part| {
+                            part.get("type").and_then(Value::as_str) != Some("image_url")
+                                && !part
+                                    .get("text")
+                                    .and_then(Value::as_str)
+                                    .is_some_and(|text| text.starts_with("[主观题图片 "))
+                        });
+                    }
+                }
+            }
+            request = serde_json::from_value(request_obj)
+                .map_err(|_| "无法构建降级主观题请求".to_string())?;
+            resp = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return Err("已取消".into()),
+                r = chat.create(request) => r,
+            };
+        }
+    }
+    let resp = resp.map_err(|e| format!("AI 模型请求失败: {e}"))?;
     let ans = resp
         .choices
         .first()
