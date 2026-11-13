@@ -1276,7 +1276,9 @@ async fn deadlines_only_probe_started_contests() {
             contest("99", now + 60_000, now + 120_000, now),
         ],
     );
-    let rows = s.deadlines();
+    let view = s.deadlines_view();
+    assert!(view.complete);
+    let rows = view.rows;
     assert_eq!(rows.len(), 2);
     assert!(rows.iter().all(|r| !r.has_progress));
     // 条件等待：已开始测验的进度补算完成（详情 + self_rank 都到达）。
@@ -1301,6 +1303,30 @@ async fn deadlines_only_probe_started_contests() {
         paths.contains("contests/12/"),
         "已开始测验应补算进度: {paths}"
     );
+}
+
+#[tokio::test]
+async fn deadlines_view_is_only_complete_with_cached_sites() {
+    let (_dir, s) = setup();
+    // 没有已登录的站点：无法断言任何待办已经关闭。
+    assert!(!s.deadlines_view().complete);
+
+    let id = s.save_site(input("http://127.0.0.1:1")).unwrap();
+    // 有账号但没有缓存、会话也未建立：该站点的视图不完整。
+    assert!(!s.deadlines_view().complete);
+
+    s.store_groups(
+        &id,
+        &[Group {
+            id: "1".into(),
+            name: "班级".into(),
+        }],
+    );
+    // 还缺该 group 的测验缓存。
+    assert!(!s.deadlines_view().complete);
+
+    s.store_contests(&format!("{id}:1"), &[]);
+    assert!(s.deadlines_view().complete);
 }
 
 #[tokio::test]

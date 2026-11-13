@@ -19,7 +19,7 @@ pub fn subscribe_todos(
 ) -> Result<(), String> {
     local(&window)?;
     let store = app.state::<TodosStore>();
-    let items = aggregate::aggregate(&app);
+    let items = aggregate::aggregate(&app).items;
     let _ = channel.send(TodosEvent::Initial(Box::new(items)));
     store.subscribers.subscribe(channel);
 

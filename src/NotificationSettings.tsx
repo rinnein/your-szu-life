@@ -316,10 +316,13 @@ export function NotificationSettings() {
               <span>提前提醒时间</span>
             </div>
             <p className="text-xs text-muted-foreground">
-              同一待办在每个已勾选的时间点各提醒一次；应用离线期间错过的多个时间点只补发最接近截止的一档。
+              待办首次出现时立即提醒一次（始终开启）；之后在每个已勾选的时间点各提醒一次。应用离线期间错过的多个时间点只补发最接近截止的一档。
             </p>
           </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
+            <Checkbox checked disabled>
+              初次探测到时
+            </Checkbox>
             {TODO_LEAD_PRESETS.map((preset) => (
               <Checkbox
                 key={preset.minutes}
@@ -335,8 +338,8 @@ export function NotificationSettings() {
             ))}
           </div>
           {!loading && config.todo.enabled && config.todo.leadMinutes.length === 0 && (
-            <Banner status="warning">
-              <span>未选择任何提醒时间，待办不会发送截止提醒。</span>
+            <Banner status="info">
+              <span>未勾选任何提前提醒时间，待办将只在初次探测到时提醒一次。</span>
             </Banner>
           )}
         </div>

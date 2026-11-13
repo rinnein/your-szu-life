@@ -104,6 +104,10 @@ pub enum UoocDeltaEvent {
 pub struct Assessments {
     pub exams: Vec<ExamTask>,
     pub homeworks: Vec<HomeworkTask>,
+    /// 是否已经成功拉取过一次完整列表。重启后内存列表为空但会话可能仍是 Ready，
+    /// 不能把空列表当作「全部考试/作业都已关闭」。
+    #[serde(skip)]
+    pub loaded: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -240,7 +244,11 @@ impl Service {
         }
         let exams = self.list_exams(None).await?;
         let homeworks = self.list_homeworks(None).await?;
-        self.publish_assessments(Assessments { exams, homeworks });
+        self.publish_assessments(Assessments {
+            exams,
+            homeworks,
+            loaded: true,
+        });
         Ok(())
     }
     fn visible_snapshot(runtime: &Runtime) -> Snapshot {

@@ -110,6 +110,16 @@ pub struct OjDeadline {
     pub has_progress: bool,
 }
 
+/// 截止项视图。
+///
+/// `complete` 表示每个已配置站点都贡献了缓存视图：只有此时「列表里没有某项」
+/// 才能被上层当作「该项已关闭」，用于清理待办提醒记录。
+#[derive(Clone, Debug, Default)]
+pub struct OjDeadlineView {
+    pub rows: Vec<OjDeadline>,
+    pub complete: bool,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", content = "data", rename_all = "camelCase")]
 pub enum OjDeadlinesEvent {
@@ -248,15 +258,26 @@ impl Service {
         }
     }
     pub fn deadlines(&self) -> Vec<OjDeadline> {
+        self.deadlines_view().rows
+    }
+    pub fn deadlines_view(&self) -> OjDeadlineView {
         let now = chrono::Utc::now().timestamp_millis();
         let mut missing = Vec::new();
+        let mut complete = true;
+        let mut sites = 0usize;
         let rows = {
             let r = self.runtime.lock().unwrap();
             let mut rows = Vec::new();
             for site in &r.data.sites {
                 let Some(entry) = r.entries.get(&site.id) else {
+                    // 从未使用过的站点（例如内置但未登录的 OJ）没有缓存，也不会有待办；
+                    // 但「用过又登出」的站点仍有缓存，它的视图无法确认，必须判定不完整。
+                    if r.data.groups.contains_key(&site.id) {
+                        complete = false;
+                    }
                     continue;
                 };
+                sites += 1;
                 let (session, offset, progress) = {
                     let state = entry.state.lock().unwrap();
                     (state.session, state.offset, state.progress.clone())
@@ -264,9 +285,11 @@ impl Service {
                 let has_cache = r.data.groups.contains_key(&site.id);
                 // 会话未建立但已有本地缓存时仍展示；完全没有缓存才跳过。
                 if session != Session::Ready && !has_cache {
+                    complete = false;
                     continue;
                 }
                 let Some(groups) = r.data.groups.get(&site.id) else {
+                    complete = false;
                     continue;
                 };
                 for group in &groups.groups {
@@ -275,6 +298,7 @@ impl Service {
                         .contests
                         .get(&format!("{}:{}", site.id, group.id))
                     else {
+                        complete = false;
                         continue;
                     };
                     for contest in &contests.contests {
@@ -318,7 +342,10 @@ impl Service {
         };
         // 首页日历不再自己请求进度：缺进度时在后台补算，算完由 emit_progress 再推一次。
         self.kick_missing_progress(missing);
-        rows
+        OjDeadlineView {
+            rows,
+            complete: sites > 0 && complete,
+        }
     }
     fn kick_missing_progress(&self, requests: Vec<(String, String, String, u64)>) {
         if requests.is_empty() {

@@ -1,11 +1,12 @@
+use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager};
 
-use super::model::{reminder_key, ReminderState, TodoItem};
+use super::model::{item_key, reminder_key, ReminderState, TodoItem};
 use super::{aggregate, publish, refresh_sources, RefreshSource, TodosStore};
 use szu_core::notification::settings::NotificationSettings;
-use szu_core::notification::{NotificationCategory, NotificationPayload};
+use szu_core::notification::{NotificationCategory, NotificationPayload, TodoKind};
 
 const MINUTE_MS: i64 = 60_000;
 const DAY_MS: i64 = 86_400_000;
@@ -44,13 +45,13 @@ pub fn start(app: AppHandle) {
 
 /// 单次聚合 + 广播 + 提醒判定。命令层主动刷新后也会调用一次。
 pub async fn tick(app: &AppHandle) {
-    let items = aggregate::aggregate(app);
+    let aggregate::Aggregate { items, trusted } = aggregate::aggregate(app);
     publish(app, &items);
-    evaluate(app, &items).await;
+    evaluate(app, &items, &trusted).await;
     super::schedule::reconcile(app, &items).await;
 }
 
-async fn evaluate(app: &AppHandle, items: &[TodoItem]) {
+async fn evaluate(app: &AppHandle, items: &[TodoItem], trusted: &HashSet<TodoKind>) {
     let settings = szu_core::notification::settings::load(app);
     let Some(store) = app.try_state::<TodosStore>() else {
         return;
@@ -59,9 +60,20 @@ async fn evaluate(app: &AppHandle, items: &[TodoItem]) {
 
     let (pending, changed) = {
         let mut state = store.state.lock().unwrap();
-        let before = state.notified.len();
+        let before_notified = state.notified.clone();
+        let before_discovered = state.discovered.clone();
+        let before_baseline = (
+            state.discovery_baseline_version,
+            state.baselined_kinds.clone(),
+        );
+        establish_discovery_baseline(items, trusted, &mut state);
         let pending = plan_reminders(items, &settings, now, &mut state);
-        let changed = !pending.is_empty() || state.notified.len() != before;
+        prune_closed(items, trusted, now, &mut state);
+        let changed = !pending.is_empty()
+            || state.notified != before_notified
+            || state.discovered != before_discovered
+            || state.discovery_baseline_version != before_baseline.0
+            || state.baselined_kinds != before_baseline.1;
         (pending, changed)
     };
 
@@ -77,9 +89,11 @@ async fn evaluate(app: &AppHandle, items: &[TodoItem]) {
     }
 
     for (item, offset) in pending {
-        // Android 上该提醒已交给系统原生排程，避免前台运行时再发一次 Snackbar/系统通知。
-        if has_native_schedule(app, &item, offset) {
-            continue;
+        if let Some(offset) = offset {
+            // Android 上该提醒已交给系统原生排程，避免前台运行时再发一次 Snackbar/系统通知。
+            if has_native_schedule(app, &item, offset) {
+                continue;
+            }
         }
         dispatch(app, &item, offset);
     }
@@ -102,8 +116,36 @@ fn has_native_schedule(_app: &AppHandle, _item: &TodoItem, _offset_minutes: i64)
     false
 }
 
+/// 升级迁移：旧版本状态（`discovery_baseline_version == 0`）第一次看到某个来源的
+/// 完整视图时，把当前已有待办静默写入 `discovered`，避免升级瞬间补发一批通知。
+/// 新安装的 `Default` 已是 1，因此第一批待办会正常触发「初次探测到」。
+pub fn establish_discovery_baseline(
+    items: &[TodoItem],
+    trusted: &HashSet<TodoKind>,
+    state: &mut ReminderState,
+) {
+    if state.discovery_baseline_version >= 1 {
+        return;
+    }
+
+    let mut kinds: std::collections::BTreeSet<TodoKind> = trusted.iter().copied().collect();
+    kinds.extend(items.iter().map(|item| item.kind));
+    for kind in kinds {
+        if !state.baselined_kinds.insert(kind) {
+            continue;
+        }
+        for item in items.iter().filter(|item| item.kind == kind) {
+            state
+                .discovered
+                .entry(item_key(item))
+                .or_insert(item.due_at_ms);
+        }
+    }
+}
+
 /// 纯函数：根据当前待办与设置计算本轮要发送的提醒，并就地更新去重状态。
 ///
+/// 返回值的第二个字段为 `None` 时表示「初次探测到」，`Some(minutes)` 表示提前量。
 /// 同一待办有多个阈值同时到达时只保留最接近截止的一档，其余一并标记为已通知，
 /// 避免应用离线一段时间后补发一串过期提醒。
 pub fn plan_reminders(
@@ -111,8 +153,8 @@ pub fn plan_reminders(
     settings: &NotificationSettings,
     now: i64,
     state: &mut ReminderState,
-) -> Vec<(TodoItem, i64)> {
-    if !settings.enabled || !settings.todo.enabled || settings.todo.lead_minutes.is_empty() {
+) -> Vec<(TodoItem, Option<i64>)> {
+    if !settings.enabled || !settings.todo.enabled {
         return Vec::new();
     }
 
@@ -121,6 +163,22 @@ pub fn plan_reminders(
         if item.due_at_ms <= now || !settings.is_todo_kind_enabled(item.kind) {
             continue;
         }
+
+        let key = item_key(item);
+        if !state.discovered.contains_key(&key) {
+            state.discovered.insert(key, item.due_at_ms);
+            // 初次探测立即提醒；把本轮已经到达的提前量一并标记，
+            // 避免同一待办在下一次 tick 再补一条截止提醒。
+            for offset in &settings.todo.lead_minutes {
+                if item.due_at_ms - *offset * MINUTE_MS <= now {
+                    state.notified.insert(reminder_key(item, *offset), now);
+                }
+            }
+            pending.push((item.clone(), None));
+            continue;
+        }
+        // 截止时间可能被延长；记录最新值供关闭后的兜底清理使用。
+        state.discovered.insert(key, item.due_at_ms);
 
         let mut reached: Vec<(i64, String)> = settings
             .todo
@@ -138,7 +196,7 @@ pub fn plan_reminders(
         for (_, key) in reached {
             state.notified.insert(key, now);
         }
-        pending.push((item.clone(), chosen_offset));
+        pending.push((item.clone(), Some(chosen_offset)));
     }
 
     let horizon = now - NOTIFIED_RETENTION_MS;
@@ -148,22 +206,70 @@ pub fn plan_reminders(
     pending
 }
 
-fn dispatch(app: &AppHandle, item: &TodoItem, offset_minutes: i64) {
+/// 可信来源中已经不在当前列表里的待办视为「确认关闭」，连同类名下所有提醒记录一起删除。
+/// 下次同一 `kind|id` 再次出现时 `discovered` 为空，会重新按「初次探测到」处理；
+/// 已发过的提前量也随之作废重发。
+///
+/// 网络失败 / 5xx / 登录失效会让来源不进入 `trusted`，因此不会误清理。
+pub fn prune_closed(
+    items: &[TodoItem],
+    trusted: &HashSet<TodoKind>,
+    now: i64,
+    state: &mut ReminderState,
+) {
+    let horizon = now - NOTIFIED_RETENTION_MS;
+    let trusted_keys: HashSet<&str> = trusted.iter().map(|kind| kind.key()).collect();
+    let live: HashSet<String> = items.iter().map(item_key).collect();
+
+    state.notified.retain(|key, _| {
+        if let Some(item_key) = notified_item_key(key) {
+            let trusted_kind = item_key
+                .split_once('|')
+                .is_some_and(|(kind, _)| trusted_keys.contains(kind));
+            if trusted_kind && !live.contains(item_key) {
+                return false;
+            }
+        }
+        key_due_at_ms(key).is_none_or(|due_at| due_at >= horizon)
+    });
+
+    state.discovered.retain(|key, due_at| {
+        if live.contains(key) {
+            // 仍然存在的待办永远保留；截止时间可能已经延长，不能按旧 due 兜底清掉。
+            return true;
+        }
+        let trusted_kind = key
+            .split_once('|')
+            .is_some_and(|(kind, _)| trusted_keys.contains(kind));
+        if trusted_kind {
+            return false;
+        }
+        *due_at >= horizon
+    });
+}
+
+fn dispatch(app: &AppHandle, item: &TodoItem, offset_minutes: Option<i64>) {
     let now = chrono::Utc::now().timestamp_millis();
     let remaining = (item.due_at_ms - now).max(0);
-    let body = match item.subtitle.as_deref() {
-        Some(subtitle) => format!("{subtitle} · {}", humanize_remaining(remaining)),
-        None => humanize_remaining(remaining),
+    let remaining_text = humanize_remaining(remaining);
+    let body = match (item.subtitle.as_deref(), offset_minutes) {
+        (Some(subtitle), Some(_)) => format!("{subtitle} · {remaining_text}"),
+        (Some(subtitle), None) => format!("{subtitle} · 初次探测到 · {remaining_text}"),
+        (None, Some(_)) => remaining_text,
+        (None, None) => format!("初次探测到 · {remaining_text}"),
     };
+    let mut extra = serde_json::json!({
+        "todoId": item.id,
+        "todoKind": item.kind,
+        "dueAtMs": item.due_at_ms,
+    });
+    if let Some(offset) = offset_minutes {
+        extra["offsetMinutes"] = serde_json::json!(offset);
+    }
     let payload = NotificationPayload::new(NotificationCategory::Todo, &item.title, body)
         .route(item.route.clone())
         .action_label("查看")
-        .extra(serde_json::json!({
-            "todoId": item.id,
-            "todoKind": item.kind,
-            "dueAtMs": item.due_at_ms,
-            "offsetMinutes": offset_minutes,
-        }));
+        .extra(extra);
     szu_core::notification::notify(app, payload);
 }
 
@@ -194,6 +300,13 @@ pub fn humanize_remaining(remaining_ms: i64) -> String {
 #[cfg(mobile)]
 pub fn describe_offset(offset_minutes: i64) -> String {
     humanize_remaining(offset_minutes * MINUTE_MS)
+}
+
+/// 提前量键格式为 `kind|id|due_at_ms|offset`；去掉最后两段得到 `kind|id`。
+fn notified_item_key(key: &str) -> Option<&str> {
+    let (rest, _offset) = key.rsplit_once('|')?;
+    let (item_key, _due_at) = rest.rsplit_once('|')?;
+    Some(item_key)
 }
 
 /// 去重键格式为 `kind|id|due_at_ms|offset`；取出 due_at_ms 用于按截止时间清理。

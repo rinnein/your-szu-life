@@ -235,7 +235,7 @@ pub async fn read_resource_by_uri(
             }
         }
         "your-szu-life://data/todos" => {
-            let items = szu_todos::todos::aggregate::aggregate(app);
+            let items = szu_todos::todos::aggregate::aggregate(app).items;
             serde_json::to_string_pretty(&items).unwrap_or_else(|_| "[]".to_string())
         }
         "your-szu-life://data/todos/notification-settings" => {

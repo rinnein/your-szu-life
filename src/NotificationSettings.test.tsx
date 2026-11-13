@@ -139,6 +139,10 @@ describe("NotificationSettings component", () => {
     for (const name of ["2 天前", "1 小时前", "30 分钟前", "15 分钟前", "5 分钟前"]) {
       expect(screen.getByRole("checkbox", { name })).not.toBeChecked();
     }
+
+    const discovery = screen.getByRole("checkbox", { name: "初次探测到时" });
+    expect(discovery).toBeChecked();
+    expect(discovery).toBeDisabled();
   });
 
   it("saves per-item todo switches", async () => {
@@ -186,7 +190,7 @@ describe("NotificationSettings component", () => {
     });
 
     render(<NotificationSettings />);
-    expect(await screen.findByText(/待办不会发送截止提醒/)).toBeInTheDocument();
+    expect(await screen.findByText(/将只在初次探测到时提醒一次/)).toBeInTheDocument();
   });
 
   it("disables todo controls when the todo master switch is off", async () => {
@@ -199,5 +203,9 @@ describe("NotificationSettings component", () => {
       expect(screen.getByRole("switch", { name: "开关OJ 测验提醒" })).toBeDisabled();
     });
     expect(screen.getByRole("checkbox", { name: "7 天前" })).toBeDisabled();
+
+    const discovery = screen.getByRole("checkbox", { name: "初次探测到时" });
+    expect(discovery).toBeChecked();
+    expect(discovery).toBeDisabled();
   });
 });

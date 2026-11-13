@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use chrono::{NaiveDate, NaiveDateTime, TimeZone};
 use tauri::Manager;
 
@@ -10,29 +12,84 @@ use szu_uooc::uooc::Assessments;
 
 const DAY_MS: i64 = 86_400_000;
 
+/// 一次聚合的结果。
+///
+/// `trusted` 表示本次聚合中「当前视图完整」的来源：只有这些来源名下缺失的待办
+/// 才能被当作「确认关闭」并清理提醒记录。网络失败、5xx、登录失效都会让对应来源
+/// 不进入该集合，避免把暂时不可用的待办误判为已关闭。
+#[derive(Clone, Debug, Default)]
+pub struct Aggregate {
+    pub items: Vec<TodoItem>,
+    pub trusted: HashSet<TodoKind>,
+}
+
 /// 聚合全部来源。任一来源未初始化或暂不可用时跳过，不影响其它来源。
-pub fn aggregate(app: &tauri::AppHandle) -> Vec<TodoItem> {
+pub fn aggregate(app: &tauri::AppHandle) -> Aggregate {
     let now = chrono::Utc::now().timestamp_millis();
     let mut items = Vec::new();
+    let mut trusted = HashSet::new();
 
     if let Ok(service) = szu_oj::oj::service(app) {
-        items.extend(from_oj(service.deadlines(), now));
+        let view = service.deadlines_view();
+        // OJ 缓存只在扫描成功时整体替换；缓存完整时，列表里缺失即代表
+        // 截止、全部通过或被服务端移除。
+        if view.complete {
+            trusted.insert(TodoKind::OjQuiz);
+        }
+        items.extend(from_oj(view.rows, now));
     }
     if let Ok(service) = szu_uooc::uooc::service(app) {
-        items.extend(from_uooc(&service.snapshot(), &service.assessments(), now));
+        let snapshot = service.snapshot();
+        let assessments = service.assessments();
+        trusted.extend(uooc_trusted_kinds(&snapshot, &assessments));
+        items.extend(from_uooc(&snapshot, &assessments, now));
     }
     if let Ok(service) = szu_lms::lms::service(app) {
-        items.extend(from_lms(&service.snapshot(), now));
+        let snapshot = service.snapshot();
+        if lms_trusted(&snapshot) {
+            trusted.insert(TodoKind::LmsHomework);
+        }
+        items.extend(from_lms(&snapshot, now));
     }
     if let Some(store) = app.try_state::<szu_core::campus_payments::CampusPaymentsStore>() {
-        items.extend(from_electricity(
-            &szu_core::campus_payments::electricity::status(&store.electricity),
-            now,
-        ));
+        let status = szu_core::campus_payments::electricity::status(&store.electricity);
+        if electricity_trusted(&status) {
+            trusted.insert(TodoKind::ElectricityOutage);
+        }
+        items.extend(from_electricity(&status, now));
     }
 
     items.sort_by_key(|item| item.due_at_ms);
-    items
+    Aggregate { items, trusted }
+}
+
+/// UOOC 的课程列表与 `Ready` 在同一次成功请求里更新；考试/作业列表还要等待
+/// `refresh_assessments` 全量成功。否则重启后内存中的空列表会被误当成
+/// 「全部考试/作业都已完成」。
+pub fn uooc_trusted_kinds(
+    snapshot: &UoocSnapshot,
+    assessments: &Assessments,
+) -> Vec<TodoKind> {
+    if snapshot.session != SessionStatus::Ready {
+        return Vec::new();
+    }
+    let mut kinds = vec![TodoKind::UoocCourseEnd];
+    if assessments.loaded {
+        kinds.push(TodoKind::UoocExam);
+        kinds.push(TodoKind::UoocHomework);
+    }
+    kinds
+}
+
+/// 畅课刷新失败只会把 session 设为 `Unavailable` 并保留旧缓存，
+/// 此时不能把缺失项当作已关闭。
+pub fn lms_trusted(snapshot: &LmsSnapshot) -> bool {
+    snapshot.session == szu_lms::lms::model::SessionState::Ready && snapshot.fetched_at.is_some()
+}
+
+/// 只有有效、且与当前宿舍设置匹配的缓存才能确认「没有断电预测」。
+pub fn electricity_trusted(status: &ElectricityStatusView) -> bool {
+    !status.expired && status.remaining.is_some()
 }
 
 pub fn from_oj(deadlines: Vec<OjDeadline>, now: i64) -> Vec<TodoItem> {

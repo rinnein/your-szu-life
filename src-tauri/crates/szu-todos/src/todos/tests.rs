@@ -1,8 +1,13 @@
+use std::collections::HashSet;
+
 use chrono::{Local, TimeZone};
 
-use super::aggregate::{from_electricity, from_lms, from_oj, from_uooc, parse_uooc_datetime};
-use super::model::{TodoItem, TodoKind};
-use super::reminder::plan_reminders;
+use super::aggregate::{
+    electricity_trusted, from_electricity, from_lms, from_oj, from_uooc, lms_trusted,
+    parse_uooc_datetime, uooc_trusted_kinds,
+};
+use super::model::{item_key, ReminderState, TodoItem, TodoKind};
+use super::reminder::{establish_discovery_baseline, plan_reminders, prune_closed};
 use szu_core::campus_payments::ElectricityStatusView;
 use szu_lms::lms::model::{SessionState, Snapshot as LmsSnapshot, Todo as LmsTodo};
 use szu_core::notification::settings::NotificationSettings;
@@ -29,6 +34,15 @@ fn item(id: &str, kind: TodoKind, due_at_ms: i64) -> TodoItem {
         external_url: None,
         urgent: false,
     }
+}
+
+/// 已经见过这些待办的状态：用于只验证提前量逻辑的用例。
+fn seen_state(items: &[TodoItem]) -> ReminderState {
+    let mut state = ReminderState::default();
+    for item in items {
+        state.discovered.insert(item_key(item), item.due_at_ms);
+    }
+    state
 }
 
 fn oj_deadline(id: &str, end: i64, accepted: i64, total: i64) -> OjDeadline {
@@ -113,6 +127,7 @@ fn uooc_aggregates_course_end_and_unfinished_exams() {
             exam("done", "2099-12-31 18:00:00", 20, false),
         ],
         homeworks: Vec::new(),
+        loaded: true,
     };
 
     let items = from_uooc(&snapshot, &assessments, now());
@@ -214,20 +229,20 @@ fn reminders_fire_once_per_lead_time() {
     settings.todo.lead_minutes = vec![7 * 24 * 60, 3 * 24 * 60];
     let due = now() + 8 * DAY;
     let items = vec![item("t", TodoKind::OjQuiz, due)];
-    let mut state = Default::default();
+    let mut state = seen_state(&items);
 
     assert!(plan_reminders(&items, &settings, now(), &mut state).is_empty());
 
     let at_seven_days = due - 7 * DAY;
     let pending = plan_reminders(&items, &settings, at_seven_days, &mut state);
     assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].1, 7 * 24 * 60);
+    assert_eq!(pending[0].1, Some(7 * 24 * 60));
     assert!(plan_reminders(&items, &settings, at_seven_days, &mut state).is_empty());
 
     let at_three_days = due - 3 * DAY;
     let pending = plan_reminders(&items, &settings, at_three_days, &mut state);
     assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].1, 3 * 24 * 60);
+    assert_eq!(pending[0].1, Some(3 * 24 * 60));
     assert_eq!(state.notified.len(), 2);
 }
 
@@ -236,12 +251,12 @@ fn reminders_collapse_missed_lead_times_to_the_most_urgent() {
     let settings = NotificationSettings::default();
     let due = now() + DAY - MINUTE;
     let items = vec![item("t", TodoKind::UoocHomework, due)];
-    let mut state = Default::default();
+    let mut state = seen_state(&items);
 
     // 默认勾选的 7天/3天/1天三档都已到达，只发最接近截止的 1 天档。
     let pending = plan_reminders(&items, &settings, now(), &mut state);
     assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].1, 24 * 60);
+    assert_eq!(pending[0].1, Some(24 * 60));
     assert_eq!(state.notified.len(), 3);
     assert!(plan_reminders(&items, &settings, now(), &mut state).is_empty());
 }
@@ -252,21 +267,21 @@ fn reminders_respect_kind_module_switch_and_past_due() {
     let due = now() + 5 * MINUTE;
     let items = vec![item("t", TodoKind::LmsHomework, due)];
 
-    let mut disabled_kind = Default::default();
+    let mut disabled_kind = seen_state(&items);
     settings.todo.lms_homework = false;
     assert!(plan_reminders(&items, &settings, now(), &mut disabled_kind).is_empty());
     assert!(disabled_kind.notified.is_empty());
 
     settings.todo.lms_homework = true;
     settings.todo.enabled = false;
-    let mut disabled_module = Default::default();
+    let mut disabled_module = seen_state(&items);
     assert!(plan_reminders(&items, &settings, now(), &mut disabled_module).is_empty());
 
     settings.todo.enabled = true;
-    let mut enabled = Default::default();
+    let mut enabled = seen_state(&items);
     assert_eq!(plan_reminders(&items, &settings, now(), &mut enabled).len(), 1);
 
-    let mut past = Default::default();
+    let mut past = seen_state(&items);
     assert!(plan_reminders(&items, &settings, due, &mut past).is_empty());
 }
 
@@ -275,8 +290,8 @@ fn reminders_rearm_when_deadline_changes() {
     let mut settings = NotificationSettings::default();
     settings.todo.lead_minutes = vec![24 * 60];
     let old_due = now() + DAY;
-    let mut state = Default::default();
     let items = vec![item("t", TodoKind::OjQuiz, old_due)];
+    let mut state = seen_state(&items);
     assert_eq!(plan_reminders(&items, &settings, now(), &mut state).len(), 1);
 
     let moved = vec![item("t", TodoKind::OjQuiz, old_due + HOUR)];
@@ -284,6 +299,227 @@ fn reminders_rearm_when_deadline_changes() {
         plan_reminders(&moved, &settings, now() + HOUR, &mut state).len(),
         1
     );
+}
+
+#[test]
+fn discovery_reminder_fires_once_when_item_first_seen() {
+    let mut settings = NotificationSettings::default();
+    settings.todo.lead_minutes = vec![24 * 60];
+    let due = now() + 2 * DAY;
+    let items = vec![item("t", TodoKind::OjQuiz, due)];
+    let mut state = ReminderState::default();
+
+    let pending = plan_reminders(&items, &settings, now(), &mut state);
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].1, None);
+    assert!(state.discovered.contains_key(&item_key(&items[0])));
+
+    assert!(plan_reminders(&items, &settings, now(), &mut state).is_empty());
+}
+
+#[test]
+fn discovery_reminder_swallows_lead_times_already_reached() {
+    let mut settings = NotificationSettings::default();
+    settings.todo.lead_minutes = vec![24 * 60, 60];
+    let due = now() + 5 * MINUTE;
+    let items = vec![item("t", TodoKind::UoocExam, due)];
+    let mut state = ReminderState::default();
+
+    let pending = plan_reminders(&items, &settings, now(), &mut state);
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].1, None);
+    // 两档都已到达，但随初次探测一起吞掉，不会立刻再补一条。
+    assert_eq!(state.notified.len(), 2);
+    assert!(plan_reminders(&items, &settings, now(), &mut state).is_empty());
+}
+
+#[test]
+fn discovery_reminder_works_without_lead_minutes() {
+    let mut settings = NotificationSettings::default();
+    settings.todo.lead_minutes.clear();
+    let due = now() + DAY;
+    let items = vec![item("t", TodoKind::LmsHomework, due)];
+    let mut state = ReminderState::default();
+
+    let pending = plan_reminders(&items, &settings, now(), &mut state);
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].1, None);
+}
+
+#[test]
+fn fresh_install_notifies_for_the_first_batch() {
+    let mut settings = NotificationSettings::default();
+    settings.todo.lead_minutes.clear();
+    let due = now() + DAY;
+    let items = vec![item("t", TodoKind::OjQuiz, due)];
+    let mut state = ReminderState::default();
+    let trusted = HashSet::from([TodoKind::OjQuiz]);
+
+    establish_discovery_baseline(&items, &trusted, &mut state);
+    assert!(state.discovered.is_empty());
+    assert_eq!(plan_reminders(&items, &settings, now(), &mut state).len(), 1);
+}
+
+#[test]
+fn legacy_state_establishes_silent_discovery_baseline_per_kind() {
+    let mut settings = NotificationSettings::default();
+    settings.todo.lead_minutes.clear();
+    let existing = item("old", TodoKind::OjQuiz, now() + DAY);
+    let items = vec![existing.clone()];
+    let mut state = ReminderState {
+        discovery_baseline_version: 0,
+        ..ReminderState::default()
+    };
+    let trusted = HashSet::from([TodoKind::OjQuiz]);
+
+    establish_discovery_baseline(&items, &trusted, &mut state);
+    assert!(state.discovered.contains_key(&item_key(&existing)));
+    assert!(state.baselined_kinds.contains(&TodoKind::OjQuiz));
+    // 基线只记录，不产生通知。
+    assert!(plan_reminders(&items, &settings, now(), &mut state).is_empty());
+
+    // 同一来源之后新增的待办照常提醒。
+    let fresh = item("new", TodoKind::OjQuiz, now() + DAY);
+    let pending = plan_reminders(&[fresh], &settings, now(), &mut state);
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].1, None);
+}
+
+#[test]
+fn closed_item_clears_records_and_rearms_on_reappearance() {
+    let mut settings = NotificationSettings::default();
+    settings.todo.lead_minutes = vec![24 * 60];
+    let due = now() + DAY;
+    let items = vec![item("t", TodoKind::OjQuiz, due)];
+    let mut state = ReminderState::default();
+    assert_eq!(plan_reminders(&items, &settings, now(), &mut state).len(), 1);
+    assert_eq!(state.discovered.len(), 1);
+    assert_eq!(state.notified.len(), 1);
+
+    prune_closed(&[], &HashSet::from([TodoKind::OjQuiz]), now(), &mut state);
+    assert!(state.discovered.is_empty());
+    assert!(state.notified.is_empty());
+
+    let pending = plan_reminders(&items, &settings, now(), &mut state);
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].1, None);
+}
+
+#[test]
+fn untrusted_source_keeps_records() {
+    let mut settings = NotificationSettings::default();
+    settings.todo.lead_minutes.clear();
+    let items = vec![item("t", TodoKind::UoocExam, now() + DAY)];
+    let mut state = ReminderState::default();
+    plan_reminders(&items, &settings, now(), &mut state);
+
+    prune_closed(&[], &HashSet::from([TodoKind::OjQuiz]), now(), &mut state);
+    assert!(state.discovered.contains_key(&item_key(&items[0])));
+    assert!(plan_reminders(&items, &settings, now(), &mut state).is_empty());
+}
+
+#[test]
+fn closed_item_pruning_is_scoped_to_the_trusted_kind() {
+    let mut settings = NotificationSettings::default();
+    settings.todo.lead_minutes.clear();
+    let oj = item("oj", TodoKind::OjQuiz, now() + DAY);
+    let uooc = item("uooc", TodoKind::UoocExam, now() + DAY);
+    let items = vec![oj.clone(), uooc.clone()];
+    let mut state = ReminderState::default();
+    plan_reminders(&items, &settings, now(), &mut state);
+
+    prune_closed(&[], &HashSet::from([TodoKind::OjQuiz]), now(), &mut state);
+    assert!(!state.discovered.contains_key(&item_key(&oj)));
+    assert!(state.discovered.contains_key(&item_key(&uooc)));
+}
+
+#[test]
+fn discovered_records_fall_back_to_the_due_horizon() {
+    let mut state = ReminderState::default();
+    let old = item("old", TodoKind::UoocExam, now() - 31 * DAY);
+    let fresh = item("fresh", TodoKind::UoocExam, now() + DAY);
+    state.discovered.insert(item_key(&old), old.due_at_ms);
+    state.discovered.insert(item_key(&fresh), fresh.due_at_ms);
+
+    prune_closed(&[], &HashSet::new(), now(), &mut state);
+    assert!(!state.discovered.contains_key(&item_key(&old)));
+    assert!(state.discovered.contains_key(&item_key(&fresh)));
+}
+
+#[test]
+fn live_items_are_never_pruned_by_the_due_horizon() {
+    let item = item("t", TodoKind::UoocExam, now() - 31 * DAY);
+    let items = vec![item.clone()];
+    let mut state = ReminderState::default();
+    state.discovered.insert(item_key(&item), item.due_at_ms);
+
+    // 截止时间可能被延长；只要仍在当前列表里，就不能按旧 due 丢掉探测记录。
+    prune_closed(&items, &HashSet::new(), now(), &mut state);
+    assert!(state.discovered.contains_key(&item_key(&item)));
+}
+
+#[test]
+fn source_trust_requires_a_complete_current_view() {
+    let mut snapshot = UoocSnapshot::default();
+    snapshot.session = SessionStatus::Ready;
+    assert_eq!(
+        uooc_trusted_kinds(&snapshot, &Assessments::default()),
+        vec![TodoKind::UoocCourseEnd]
+    );
+    let loaded = Assessments {
+        exams: Vec::new(),
+        homeworks: Vec::new(),
+        loaded: true,
+    };
+    assert_eq!(
+        uooc_trusted_kinds(&snapshot, &loaded),
+        vec![
+            TodoKind::UoocCourseEnd,
+            TodoKind::UoocExam,
+            TodoKind::UoocHomework
+        ]
+    );
+    snapshot.session = SessionStatus::NetworkError;
+    assert!(uooc_trusted_kinds(&snapshot, &loaded).is_empty());
+
+    assert!(!lms_trusted(&lms_snapshot_with(SessionState::Ready, None)));
+    assert!(lms_trusted(&lms_snapshot_with(SessionState::Ready, Some(now()))));
+    assert!(!lms_trusted(&lms_snapshot_with(
+        SessionState::Unavailable,
+        Some(now())
+    )));
+
+    let valid = ElectricityStatusView {
+        remaining: Some(3.25),
+        observed_date: None,
+        expires_at_ms: None,
+        expired: false,
+        low: false,
+        estimated_days_left: None,
+        warning_reason: None,
+    };
+    assert!(electricity_trusted(&valid));
+    let expired = ElectricityStatusView {
+        expired: true,
+        ..valid.clone()
+    };
+    assert!(!electricity_trusted(&expired));
+    let missing = ElectricityStatusView {
+        remaining: None,
+        ..valid
+    };
+    assert!(!electricity_trusted(&missing));
+}
+
+#[test]
+fn legacy_reminder_state_json_defaults_to_pre_baseline_version() {
+    let legacy: ReminderState =
+        serde_json::from_str(r#"{"notified":{"oj-quiz|t|1|60":1},"scheduled":{}}"#).unwrap();
+    // 旧版本 JSON 缺少新字段：字段级 default 给 0，与全新安装的 Default(1) 不同。
+    assert_eq!(legacy.discovery_baseline_version, 0);
+    assert!(legacy.discovered.is_empty());
+    assert!(legacy.baselined_kinds.is_empty());
+    assert_eq!(ReminderState::default().discovery_baseline_version, 1);
 }
 
 #[tokio::test]
@@ -298,11 +534,17 @@ async fn reminder_state_roundtrips_through_sqlite() {
     let mut state = super::model::ReminderState::default();
     state.notified.insert("oj-quiz|t|1|60".into(), 42);
     state.scheduled.insert("oj-quiz|t|1|60".into(), 7);
+    state.discovered.insert("oj-quiz|t".into(), 1_700_000_000_000);
+    state.baselined_kinds.insert(TodoKind::OjQuiz);
+    state.discovery_baseline_version = 0;
     database.save_state(&state).await.unwrap();
 
     let loaded = database.load_state().await.unwrap();
     assert_eq!(loaded.notified["oj-quiz|t|1|60"], 42);
     assert_eq!(loaded.scheduled["oj-quiz|t|1|60"], 7);
+    assert_eq!(loaded.discovered["oj-quiz|t"], 1_700_000_000_000);
+    assert!(loaded.baselined_kinds.contains(&TodoKind::OjQuiz));
+    assert_eq!(loaded.discovery_baseline_version, 0);
 }
 
 fn lms_snapshot_with(session: SessionState, fetched_at: Option<i64>) -> LmsSnapshot {
