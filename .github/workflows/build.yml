@@ -10,7 +10,8 @@ name: Build and publish packages
 # 版本 tag 时整套构建是重复劳动。detect job 用「canary tag 指向本次提交 +
 # canary release 资产齐全」判定已构建过：此时跳过 packages 构建，publish 直接
 # 下载 canary 资产发正式版，并跳过 canary 重发与 AUR 派发（AUR 由 canary 渠道
-# 供养，main push 那次已经派发过）；任何一项不满足则回退完整构建。
+# 供养，main push 那次已经派发过）；CNB 同步不受影响，仍然触发（sync-cnb 的
+# 显式 if 会退出 skip 沿 needs 闭包的传播）。任何一项不满足则回退完整构建。
 # PR 的构建在 pr-build.yml 里，那个 workflow 没有任何发布 job。
 # push 只放宽到 main 与 v* tag：CNB 同步过来的 cnb/* 分支也是 push 事件，
 # 不限制的话推一次分支就会跑整套构建并覆盖 canary release。
@@ -316,6 +317,16 @@ jobs:
   sync-cnb:
     name: Trigger CNB sync
     needs: [publish]
+    # 复用 canary 资产的 tag push 里 packages 被跳过，GitHub 的 skip 会沿
+    # needs 传递闭包扩散（publish 靠自己的 !cancelled() 才幸免，但跳过的
+    # packages 仍在 sync-cnb 的闭包里）：不写显式条件时隐式 success() 会把
+    # 这里一并跳过，正式版就不会同步到 CNB。!cancelled() 退出传播，
+    # 再用 publish.result == 'success' 保留「发布成功才同步」的严格性。
+    if: >-
+      ${{
+        !cancelled() &&
+        needs.publish.result == 'success'
+      }}
     runs-on: ubuntu-latest
     steps:
       - name: Trigger CNB github-to-cnb pipeline
