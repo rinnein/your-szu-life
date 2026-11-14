@@ -189,20 +189,20 @@ impl Client {
         self.insert_cookie(&raw);
     }
 
-    /// 保存 jar 中适用于巡课请求的 cookie（不含 authserver 会话，避免重复
-    /// 保存主凭据）。用 `matches` 而非域名精确比较：平台的 token cookie
-    /// 可能带父域（Domain=szu.edu.cn），按 host 精确过滤会把会话丢掉；
-    /// 校内改写目标 origin 上的 cookie 同样要保留，否则校内建立的会话
-    /// 重启后无法恢复。
+    /// 保存 jar 中属于巡课站点（公开 origin 与校内改写 origin）的 cookie，
+    /// 不含 authserver 会话（避免重复保存主凭据）。只能按**域**匹配：
+    /// `Cookie::matches` 会连 path 一起比较，token 等会话 cookie 若带非 `/`
+    /// 的 Path 就会被当成不适用而丢掉（重启后会话无法恢复）。也正因为平台
+    /// cookie 可能带父域（Domain=szu.edu.cn），不能用 host 精确比较。
     pub fn cookies(&self) -> Result<String, String> {
         let endpoint = self.effective_endpoint();
         let jar = self.jar.lock().map_err(|_| "巡课会话不可用".to_string())?;
         let mut filtered = cookie_store::CookieStore::default();
         for cookie in jar.iter_any() {
-            if !cookie.is_expired() && cookie.matches(&self.jxxk) {
+            if !cookie.is_expired() && cookie.domain.matches(&self.jxxk) {
                 let _ = filtered.insert_raw(&cookie.clone().into(), &self.jxxk);
             } else if let Some(endpoint) = &endpoint {
-                if !cookie.is_expired() && cookie.matches(endpoint) {
+                if !cookie.is_expired() && cookie.domain.matches(endpoint) {
                     let _ = filtered.insert_raw(&cookie.clone().into(), endpoint);
                 }
             }
@@ -995,5 +995,48 @@ mod tests {
         );
         assert_eq!(extract_error_page_message("<p>没有提示段落</p>"), None);
         assert_eq!(extract_error_page_message(""), None);
+    }
+
+    /// 会话 token cookie 可能限定在子路径（如 `/api`）。落盘只能按域过滤：
+    /// `Cookie::matches` 会按站点基址 `/` 做 path 匹配并把会话丢掉。
+    #[test]
+    fn cookies_keeps_path_scoped_token_cookie() {
+        let client = Client::new(
+            "https://jxxk.szu.edu.cn/",
+            "https://authserver.szu.edu.cn/authserver/login",
+            None,
+            None,
+        )
+        .unwrap();
+        let raw = cookie_store::RawCookie::parse(
+            "COLLEGE_UNIVERSITY_TOKEN_test=abc; Path=/api; HttpOnly",
+        )
+        .unwrap();
+        client
+            .jar
+            .lock()
+            .unwrap()
+            .insert_raw(&raw, &client.jxxk)
+            .unwrap();
+        let saved = client.cookies().unwrap();
+        assert!(
+            saved.contains("COLLEGE_UNIVERSITY_TOKEN_test"),
+            "path 限定会话 cookie 必须落盘: {saved}"
+        );
+        let restored = Client::new(
+            "https://jxxk.szu.edu.cn/",
+            "https://authserver.szu.edu.cn/authserver/login",
+            Some(&saved),
+            None,
+        )
+        .unwrap();
+        let api = restored.jxxk.join("api/patrol/lesson").unwrap();
+        let jar = restored.jar.lock().unwrap();
+        assert!(
+            jar.iter_any().any(|cookie| {
+                cookie.name() == "COLLEGE_UNIVERSITY_TOKEN_test" && cookie.matches(&api)
+            }),
+            "恢复后的 jar 必须把会话带到 /api 下的接口"
+        );
     }
 }

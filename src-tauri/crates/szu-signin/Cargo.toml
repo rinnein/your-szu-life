@@ -1,0 +1,34 @@
+[package]
+name = "szu-signin"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "泥深签到/打卡模块：畅课与 SZU 考勤签到、课表缓存与待办探测"
+
+[lib]
+name = "szu_signin"
+path = "src/lib.rs"
+
+[dependencies]
+szu-core = { path = "../szu-core" }
+szu-lms = { path = "../szu-lms" }
+szu-mesh = { path = "../szu-mesh" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+schemars = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true }
+rand = { workspace = true }
+toasty = { workspace = true }
+base64 = { workspace = true }
+image = { workspace = true }
+sha2 = { workspace = true }
+uuid = { workspace = true }
+reqwest = { workspace = true }
+cookie_store = { workspace = true }
+reqwest_cookie_store = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

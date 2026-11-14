@@ -31,6 +31,9 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const LISTENER_PORT_PREFERRED: u16 = ports::MESH_PORT_RANGE.0;
 const LISTENER_PORT_END: u16 = ports::MESH_PORT_RANGE.1;
 
+/// 主网实例名。临时房间（签到码共享等）用第二个实例，见 [`Node::start_named`]。
+pub const DEFAULT_INSTANCE_NAME: &str = "your-szu-life-mesh";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OverlayPeer {
     pub peer_id: u32,
@@ -57,11 +60,21 @@ pub struct Node {
 
 impl Node {
     pub async fn start(identity: &MeshIdentity, hostname: &str) -> Result<Self, String> {
+        Self::start_named(identity, hostname, DEFAULT_INSTANCE_NAME).await
+    }
+
+    /// 以自定义网络身份与实例名启动第二个 EasyTier 实例（临时房间场景）。
+    /// 多实例在 manager 里按 uuid 并存，端口各自独立挑选。
+    pub async fn start_named(
+        identity: &MeshIdentity,
+        hostname: &str,
+        instance_name: &str,
+    ) -> Result<Self, String> {
         let rpc_port = ports::reserve_loopback(ports::PortService::Mesh, None)
             .map_err(|error| error.to_string())?
             .port;
         let listener_port = pick_listener_port();
-        let toml = build_config(identity, hostname, rpc_port, listener_port);
+        let toml = build_config_named(instance_name, identity, hostname, rpc_port, listener_port);
         let config = TomlConfig::new_from_str(&toml)
             .map_err(|error| format!("设备同步网络配置无效: {error:#}"))?;
         let manager = native_instance_manager();
@@ -192,7 +205,26 @@ fn parse_inet_address(value: &impl std::fmt::Display) -> Option<Ipv4Addr> {
         .and_then(|address| address.parse().ok())
 }
 
+/// 主网配置入口（node 测试使用）；运行时统一走 [`build_config_named`]。
+#[cfg(test)]
 fn build_config(
+    identity: &MeshIdentity,
+    hostname: &str,
+    rpc_port: u16,
+    listener_port: u16,
+) -> String {
+    build_config_named(
+        DEFAULT_INSTANCE_NAME,
+        identity,
+        hostname,
+        rpc_port,
+        listener_port,
+    )
+}
+
+/// 组装一份 EasyTier TOML 配置；`instance_name` 只用于管理器内的展示区分。
+pub(crate) fn build_config_named(
+    instance_name: &str,
     identity: &MeshIdentity,
     hostname: &str,
     rpc_port: u16,
@@ -200,7 +232,7 @@ fn build_config(
 ) -> String {
     let peers = preset_peers();
     let mut out = String::new();
-    out.push_str("instance_name = \"your-szu-life-mesh\"\n");
+    out.push_str(&format!("instance_name = \"{}\"\n", escape_toml(instance_name)));
     out.push_str(&format!("hostname = \"{}\"\n", escape_toml(hostname)));
     out.push_str("dhcp = true\n");
     out.push_str(&format!(
@@ -245,7 +277,7 @@ fn escape_toml(value: &str) -> String {
 }
 
 /// 固定挑一个可用的 0.0.0.0 TCP 端口，UDP 复用同一端口号。
-fn pick_listener_port() -> u16 {
+pub(crate) fn pick_listener_port() -> u16 {
     for port in LISTENER_PORT_PREFERRED..=LISTENER_PORT_END {
         if let Ok(listener) = std::net::TcpListener::bind(("0.0.0.0", port)) {
             drop(listener);

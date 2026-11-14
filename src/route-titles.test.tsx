@@ -37,6 +37,7 @@ it("sets the document title from each route and updates it on tab replacement an
     ["/life", "生活"],
     ["/settings", "账户设置"],
     ["/study/class-timetable", "上课时间表"],
+    ["/study/signin", "签到打卡"],
     ["/study/uooc", "UOOC刷课"],
     ["/study/oj", "OJ · 编程练习"],
     ["/study/academic", "学业完成查询"],

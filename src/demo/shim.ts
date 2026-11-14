@@ -32,6 +32,7 @@ import {
   mockOjSnapshot,
 } from "./fixtures/oj";
 import { mockLmsSnapshot } from "./fixtures/lms";
+import { mockSigninBuildings } from "./fixtures/signin";
 import { mockJxxkSnapshot } from "./fixtures/patrol";
 import { mockEnrollmentSnapshot } from "./fixtures/enrollment";
 import { mockTodoItems } from "./fixtures/todos";
@@ -121,6 +122,33 @@ const mockHandlers: Record<string, MockHandler> = {
   // 畅课。
   get_lms_snapshot: () => mockLmsSnapshot,
   refresh_lms: () => mockLmsSnapshot,
+
+  // 签到/打卡：演示模式下列表为空、提交静默成功（不会触达真实接口）。
+  signin_get_buildings: () => mockSigninBuildings,
+  signin_get_timetable: () => ({ fetched_at_ms: 0, sessions: [] }),
+  signin_get_lms_rollcalls: () => [],
+  signin_resolve_radar_point: () => ({
+    latitude: 22.528,
+    longitude: 113.94,
+    label: "致理楼",
+    source: "fallback",
+    fenceRadiusM: 130,
+  }),
+  signin_submit_lms_number: () => undefined,
+  signin_submit_lms_radar: () => ({
+    latitude: 22.528,
+    longitude: 113.94,
+    label: "致理楼",
+    source: "fallback",
+    fenceRadiusM: 130,
+  }),
+  signin_submit_lms_qr: () => undefined,
+  signin_submit_szu: () => undefined,
+  signin_get_last_photo: () => ({ hasPhoto: false }),
+  signin_qr_room_join: () => undefined,
+  signin_qr_room_leave: () => undefined,
+  signin_qr_room_share: () => ({ shared: false }),
+  subscribe_signin_qr_events: () => undefined,
 
   // 巡课。
   get_jxxk_snapshot: () => mockJxxkSnapshot,

@@ -18,6 +18,7 @@ use std::{
 struct Request {
     path: String,
     headers: std::collections::BTreeMap<String, String>,
+    body: Vec<u8>,
 }
 impl Request {
     fn cookies(&self) -> Vec<(String, String)> {
@@ -124,12 +125,14 @@ fn read_request(stream: &mut std::net::TcpStream) -> Option<Request> {
             if bytes.len() >= end + 4 + length {
                 let mut lines = header.lines();
                 let request_line = lines.next()?;
+                let body = bytes[end + 4..].to_vec();
                 return Some(Request {
                     path: request_line.split_whitespace().nth(1)?.into(),
                     headers: lines
                         .filter_map(|line| line.split_once(':'))
                         .map(|(k, v)| (k.trim().to_ascii_lowercase(), v.trim().into()))
                         .collect(),
+                    body,
                 });
             }
         }
@@ -426,4 +429,223 @@ async fn trusted_redirects_cover_szu_subdomains_only() {
     ));
     assert!(!trusted("https://evil.example.com/"));
     assert!(!trusted("https://szu.edu.cn.evil.com/"));
+}
+
+// ---------------------------------------------------------------------------
+// 点名（签到）接口
+// ---------------------------------------------------------------------------
+
+fn rollcalls_body() -> Value {
+    json!({
+        "rollcalls": [
+            {
+                "rollcall_id": 123,
+                "is_number": false,
+                "is_radar": true,
+                "course_id": 32176,
+                "course_title": "概率论与数理统计",
+                "student_rollcall_id": 777,
+                "type": "radar",
+                "status": "on_call"
+            },
+            {
+                "rollcall_id": 456,
+                "is_number": true,
+                "is_radar": false,
+                "course_id": 31746,
+                "course_title": "数据库系统",
+                "student_rollcall_id": 778,
+                "type": "number",
+                "status": "on_call_fine"
+            }
+        ]
+    })
+}
+
+/// 点名接口专用的 mock 站点：lms + authserver 双站，记录 PUT 请求体。
+struct RollcallMock {
+    _lms: Server,
+    _auth: Server,
+    captured: Arc<Mutex<Vec<(String, Value)>>>,
+}
+
+async fn make_rollcall_service(with_session: bool) -> (std::sync::Arc<super::Service>, RollcallMock) {
+    let captured: Arc<Mutex<Vec<(String, Value)>>> = Arc::new(Mutex::new(Vec::new()));
+    let capture = captured.clone();
+    let auth_server = Server::start("127.0.0.2", move |_auth_base| {
+        Box::new(move |request: Request| {
+            if request.path.starts_with("/authserver/login") && request.has_cookie("CASTGC") {
+                let service = request
+                    .path
+                    .split_once("service=")
+                    .map(|(_, value)| value.to_owned())
+                    .unwrap_or_default();
+                (
+                    302,
+                    vec![("Location".into(), format!("{service}&ticket=ST-test-ticket"))],
+                    Vec::new(),
+                )
+            } else {
+                (
+                    200,
+                    vec![],
+                    b"<html><div class='login-main'><form id='pwdFromId'></form></div></html>"
+                        .to_vec(),
+                )
+            }
+        })
+    });
+    let auth_base = auth_server.base.clone();
+    let lms_server = Server::start("127.0.0.1", move |lms_base| {
+        let lms_base = lms_base.to_string();
+        let auth_login = format!("{auth_base}/authserver/login");
+        Box::new(move |request: Request| {
+            if request.path.starts_with("/api/rollcall/") && request.path.contains("answer") {
+                let body = serde_json::from_slice::<Value>(&request.body).unwrap_or(Value::Null);
+                capture.lock().unwrap().push((request.path.clone(), body));
+                (200, vec![], b"{}".to_vec())
+            } else if request.path.starts_with("/api/radar/rollcalls") {
+                if request.has_cookie("LMS_SESSION") {
+                    (200, vec![], serde_json::to_vec(&rollcalls_body()).unwrap())
+                } else {
+                    (302, vec![("Location".into(), lms_base.to_string())], Vec::new())
+                }
+            } else if request.path.starts_with("/api/todos") {
+                (200, vec![], serde_json::to_vec(&todos_body()).unwrap())
+            } else if request.path.starts_with("/ntf/users/12345/notifications") {
+                (
+                    200,
+                    vec![],
+                    serde_json::to_vec(&notifications_body()).unwrap(),
+                )
+            } else if request.has_cookie("LMS_SESSION") || request.path.contains("ticket=") {
+                (
+                    200,
+                    vec![(
+                        "Set-Cookie".into(),
+                        "LMS_SESSION=established-session; Path=/".into(),
+                    )],
+                    html_page().into_bytes(),
+                )
+            } else {
+                (
+                    302,
+                    vec![(
+                        "Location".into(),
+                        format!("{auth_login}?service={lms_base}/"),
+                    )],
+                    Vec::new(),
+                )
+            }
+        })
+    });
+
+    let credentials = test_store();
+    if with_session {
+        // 预置会话 cookie，让 bootstrap 直接落在首页。
+        let mut store = cookie_store::CookieStore::default();
+        store
+            .parse(
+                "LMS_SESSION=established-session; Path=/",
+                &lms_server.base.parse().unwrap(),
+            )
+            .unwrap();
+        let mut bytes = vec![];
+        cookie_store::serde::json::save_incl_expired_and_nonpersistent(&store, &mut bytes)
+            .unwrap();
+        credentials
+            .save_lms_session(&String::from_utf8(bytes).unwrap())
+            .unwrap();
+    }
+    let service = super::Service::with_bases(
+        None,
+        credentials,
+        temp_db_path("rollcall"),
+        lms_server.base.clone(),
+        format!("{}/authserver/login", auth_server.base),
+    )
+    .unwrap();
+    (
+        service,
+        RollcallMock {
+            _lms: lms_server,
+            _auth: auth_server,
+            captured,
+        },
+    )
+}
+
+#[tokio::test]
+async fn rollcall_list_parses_and_caches() {
+    let (service, _mock) = make_rollcall_service(true).await;
+    let items = service.rollcall_list(true).await.expect("列表应可拉取");
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0].rollcall_id, 123);
+    assert!(items[0].is_radar);
+    assert_eq!(items[0].method(), super::rollcall::RollcallMethod::Radar);
+    // 第二次非强制走缓存，不再发请求。
+    let cached = service.rollcall_list(false).await.expect("缓存命中");
+    assert_eq!(cached.len(), 2);
+}
+
+#[tokio::test]
+async fn rollcall_list_without_session_reports_needs_auth() {
+    let (service, _mock) = make_rollcall_service(false).await;
+    let error = service.rollcall_list(true).await.expect_err("无会话应失败");
+    assert!(error.contains("统一认证"), "错误应说明需要认证: {error}");
+}
+
+#[tokio::test]
+async fn submit_number_sends_expected_body() {
+    let (service, mock) = make_rollcall_service(true).await;
+    service
+        .submit_number(123, "0837", "device-uuid-1")
+        .await
+        .expect("数字签到应成功");
+    let captured = mock.captured.lock().unwrap();
+    let (path, body) = &captured[0];
+    assert!(path.contains("/api/rollcall/123/answer_number_rollcall"), "{path}");
+    assert_eq!(body["deviceId"], "device-uuid-1");
+    assert_eq!(body["numberCode"], "0837");
+}
+
+#[tokio::test]
+async fn submit_radar_sends_signal_and_reading() {
+    let (service, mock) = make_rollcall_service(true).await;
+    // 先建立会话，让资料里有 uid。
+    service.rollcall_list(true).await.expect("先拉一次建立会话");
+    let reading = super::rollcall::RadarReading {
+        latitude: 22.528_123,
+        longitude: 113.940_456,
+        ..Default::default()
+    };
+    service
+        .submit_radar(123, &reading, "device-uuid-1", None)
+        .await
+        .expect("雷达签到应成功");
+    let captured = mock.captured.lock().unwrap();
+    let (path, body) = &captured[0];
+    assert!(path.contains("/api/rollcall/123/answer"), "{path}");
+    // 纯 GPS 模式（深大）不带 radarSignal（H5 源码确认 beacon-only）。
+    assert!(body.get("radarSignal").is_none());
+    assert!((body["latitude"].as_f64().unwrap() - 22.528_123).abs() < 1e-9);
+    assert!((body["longitude"].as_f64().unwrap() - 113.940_456).abs() < 1e-9);
+    assert_eq!(body["deviceId"], "device-uuid-1");
+}
+
+#[tokio::test]
+async fn submit_qr_sends_only_data_and_device_id() {
+    let (service, mock) = make_rollcall_service(true).await;
+    service
+        .submit_qr(123, "qrcode-data", "device-uuid-1")
+        .await
+        .expect("二维码签到应成功");
+    let captured = mock.captured.lock().unwrap();
+    let (path, body) = &captured[0];
+    assert!(path.contains("/api/rollcall/123/answer_qr_rollcall"), "{path}");
+    // H5 scanner 页确认：请求体只有 {data, deviceId}，create_time/hash 不提交。
+    assert_eq!(body["data"], "qrcode-data");
+    assert_eq!(body["deviceId"], "device-uuid-1");
+    assert!(body.get("create_time").is_none());
+    assert!(body.get("hash").is_none());
 }

@@ -18,6 +18,8 @@ pub enum TodoKind {
     UoocCourseEnd,
     LmsHomework,
     ElectricityOutage,
+    /// 签到/打卡（课程开始、课中与结束窗口内探测到的待签点名）。
+    Checkin,
 }
 
 impl TodoKind {
@@ -29,6 +31,7 @@ impl TodoKind {
             Self::UoocCourseEnd => "uooc-course-end",
             Self::LmsHomework => "lms-homework",
             Self::ElectricityOutage => "electricity-outage",
+            Self::Checkin => "checkin",
         }
     }
 }

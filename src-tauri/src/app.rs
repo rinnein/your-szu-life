@@ -6,6 +6,7 @@ use szu_core::{
 use szu_download::file_manager;
 use szu_jxxk::jxxk;
 use szu_lms::lms;
+use szu_signin::signin;
 use szu_oj::oj;
 use szu_uooc::uooc;
 use std::sync::Arc;
@@ -39,6 +40,7 @@ pub(crate) fn run() {
         .manage(uooc::UoocStore::new(credentials.clone()))
         .manage(oj::OjStore::new(credentials.clone()))
         .manage(lms::LmsStore::new(credentials.clone()))
+        .manage(signin::SigninStore::new(credentials.clone()))
         .manage(jxxk::JxxkStore::new(credentials.clone()))
         .manage(campus_network::CampusNetworkStore::new(credentials))
         .manage(campus_payments::CampusPaymentsStore::new(
@@ -145,6 +147,16 @@ pub(crate) fn run() {
             }
             if let Err(error) = lms::initialize(app.handle()) {
                 log::error!("畅课服务初始化失败: {error}");
+            }
+            if let Err(error) = signin::initialize(app.handle()) {
+                log::error!("签到服务初始化失败: {error}");
+            }
+            signin::start_probe_loop(app.handle());
+            #[cfg(mobile)]
+            {
+                app.handle()
+                    .plugin(tauri_plugin_barcode_scanner::init())
+                    .unwrap_or_else(|error| log::error!("条码扫描插件注册失败: {error}"));
             }
             if let Err(error) = szu_todos::todos::initialize(app.handle()) {
                 log::error!("待办服务初始化失败: {error}");
@@ -347,6 +359,20 @@ pub(crate) fn run() {
             lms::commands::get_lms_snapshot,
             lms::commands::subscribe_lms_state,
             lms::commands::refresh_lms,
+            signin::commands::signin_get_buildings,
+            signin::commands::signin_get_qw_status,
+            signin::commands::signin_get_timetable,
+            signin::commands::signin_get_lms_rollcalls,
+            signin::commands::signin_resolve_radar_point,
+            signin::commands::signin_submit_lms_number,
+            signin::commands::signin_submit_lms_radar,
+            signin::commands::signin_submit_lms_qr,
+            signin::commands::signin_submit_szu,
+            signin::commands::signin_get_last_photo,
+            signin::commands::signin_qr_room_join,
+            signin::commands::signin_qr_room_leave,
+            signin::commands::signin_qr_room_share,
+            signin::commands::subscribe_signin_qr_events,
             jxxk::commands::get_jxxk_snapshot,
             jxxk::commands::subscribe_jxxk_state,
             jxxk::commands::refresh_jxxk,

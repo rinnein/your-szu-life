@@ -9,14 +9,15 @@ describe("prewarmSsoModules", () => {
     vi.clearAllMocks();
   });
 
-  it("starts both module bootstraps without waiting for either", () => {
+  it("starts all module bootstraps without waiting for either", () => {
     vi.mocked(invoke).mockResolvedValue(undefined);
 
     prewarmSsoModules();
 
-    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(invoke).toHaveBeenCalledTimes(3);
     expect(invoke).toHaveBeenCalledWith("get_lms_snapshot");
     expect(invoke).toHaveBeenCalledWith("get_jxxk_snapshot");
+    expect(invoke).toHaveBeenCalledWith("signin_get_qw_status");
   });
 
   it("swallows failures so a failed prewarm never surfaces in the wizard", async () => {
@@ -25,6 +26,6 @@ describe("prewarmSsoModules", () => {
     prewarmSsoModules();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(invoke).toHaveBeenCalledTimes(3);
   });
 });

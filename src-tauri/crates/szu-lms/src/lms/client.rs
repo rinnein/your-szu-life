@@ -41,6 +41,9 @@ pub struct Client {
     pub jar: Arc<CookieStoreMutex>,
     lms: Url,
     auth: Url,
+    /// 服务端滚动会话标识（响应头 `x-session-id` 回显；H5 前端在后续请求
+    /// 原样带回）。cookie 才是鉴权主体，这里做保真回放。
+    session_id: std::sync::Mutex<Option<String>>,
 }
 
 impl Client {
@@ -90,17 +93,20 @@ impl Client {
             jar,
             lms,
             auth,
+            session_id: std::sync::Mutex::new(None),
         })
     }
 
-    /// 保存 jar 中适用于畅课请求的 cookie（不含 authserver 会话，避免重复
-    /// 保存主凭据）。用 `matches` 而非域名精确比较：服务端会话 cookie 可能
-    /// 带父域，按 host 精确过滤会把会话丢掉（重启后每次重新登录）。
+    /// 保存 jar 中属于畅课域的 cookie（不含 authserver 会话，避免重复保存
+    /// 主凭据）。只能按**域**匹配：`Cookie::matches` 会连 path 一起比较，
+    /// 服务端会话 cookie 若带非 `/` 的 Path 就会被当成不适用而丢掉（重启后
+    /// 每次都要重新登录）。也正因为服务端 cookie 可能带父域，不能用 host
+    /// 精确比较。
     pub fn cookies(&self) -> Result<String, String> {
         let jar = self.jar.lock().map_err(|_| "畅课会话不可用".to_string())?;
         let mut filtered = cookie_store::CookieStore::default();
         for cookie in jar.iter_any() {
-            if !cookie.is_expired() && cookie.matches(&self.lms) {
+            if !cookie.is_expired() && cookie.domain.matches(&self.lms) {
                 let _ = filtered.insert_raw(&cookie.clone().into(), &self.lms);
             }
         }
@@ -227,14 +233,18 @@ impl Client {
             .lms
             .join(path.trim_start_matches('/'))
             .map_err(|_| ApiError::local("接口地址无效"))?;
-        let response = self
+        let mut request = self
             .http
             .request(Method::GET, url)
             .query(query)
-            .header("Referer", self.lms.as_str())
-            .send()
+            .header("Referer", self.lms.as_str());
+        if let Some(session) = self.session_id.lock().unwrap().as_deref() {
+            request = request.header("x-session-id", session);
+        }
+        let response = request.send()
             .await
             .map_err(|_| ApiError::local("无法连接畅课，请检查校园网或代理设置"))?;
+        self.capture_session(&response);
         let status = response.status();
         let bytes = response
             .bytes()
@@ -254,6 +264,88 @@ impl Client {
         }
         serde_json::from_slice(&bytes).map_err(|_| ApiError::local("畅课接口响应格式不兼容"))
     }
+
+    /// 记录响应头里滚动后的会话标识，供下一个请求回带（H5 前端行为）。
+    fn capture_session(&self, response: &reqwest::Response) {
+        if let Some(session) = response
+            .headers()
+            .get("x-session-id")
+            .and_then(|value| value.to_str().ok())
+            .filter(|value| !value.is_empty())
+        {
+            *self.session_id.lock().unwrap() = Some(session.to_owned());
+        }
+    }
+
+    /// PUT 一个 JSON 体到畅课接口（点名应答等 XHR 写操作）。
+    /// 非成功状态码原样抛错（错误正文尽量带出来），会话失效时 `session_expired` 为真。
+    pub async fn put_json(
+        &self,
+        path: &str,
+        query: &[(&str, String)],
+        body: &Value,
+    ) -> Result<Value, ApiError> {
+        let url = self
+            .lms
+            .join(path.trim_start_matches('/'))
+            .map_err(|_| ApiError::local("接口地址无效"))?;
+        let mut request = self
+            .http
+            .request(Method::PUT, url)
+            .query(query)
+            .header("Referer", self.lms.as_str())
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("Accept", "application/json");
+        if let Some(session) = self.session_id.lock().unwrap().as_deref() {
+            request = request.header("x-session-id", session);
+        }
+        let response = request.json(body).send()
+            .await
+            .map_err(|_| ApiError::local("无法连接畅课，请检查校园网或代理设置"))?;
+        self.capture_session(&response);
+        let status = response.status();
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|_| ApiError::local("畅课响应读取中断"))?;
+        if status.is_redirection() || status == StatusCode::UNAUTHORIZED {
+            return Err(ApiError {
+                message: "畅课会话已失效".into(),
+                session_expired: true,
+            });
+        }
+        if !status.is_success() {
+            let text = String::from_utf8_lossy(&bytes);
+            return Err(ApiError::local(extract_server_message(
+                status.as_u16(),
+                &text,
+            )));
+        }
+        // 应答可能是空体（部分端点）。
+        if bytes.is_empty() {
+            return Ok(Value::Null);
+        }
+        serde_json::from_slice(&bytes).map_err(|_| ApiError::local("畅课接口响应格式不兼容"))
+    }
+}
+
+/// 从错误响应里提取服务端给出的可读原因（如 `radar_out_of_rollcall_scope`）。
+fn extract_server_message(status: u16, text: &str) -> String {
+    let parsed: Result<Value, _> = serde_json::from_str(text);
+    if let Ok(value) = parsed {
+        for key in ["message", "error", "error_message"] {
+            if let Some(message) = value.get(key).and_then(Value::as_str) {
+                if !message.is_empty() {
+                    return format!("畅课服务返回 HTTP {status}: {message}");
+                }
+            }
+        }
+    }
+    if text.trim().is_empty() {
+        format!("畅课服务返回 HTTP {status}")
+    } else {
+        format!("畅课服务返回 HTTP {status}: {}", text.trim())
+    }
 }
 
 fn normalize_base(raw: &str, message: &str) -> Result<Url, String> {
@@ -269,4 +361,50 @@ fn normalize_base(raw: &str, message: &str) -> Result<Url, String> {
     let path = format!("{}/", url.path().trim_end_matches('/'));
     url.set_path(&path);
     Ok(url)
+}
+
+#[cfg(test)]
+mod cookie_persistence_tests {
+    use super::*;
+
+    /// 会话 cookie 可能限定在子路径（如 `/api`）。落盘只能按域过滤：
+    /// `Cookie::matches` 会按站点基址 `/` 做 path 匹配并把会话丢掉。
+    #[test]
+    fn cookies_keeps_path_scoped_session_cookie() {
+        let client = Client::new(
+            "https://lms.szu.edu.cn/",
+            "https://authserver.szu.edu.cn/authserver/login",
+            None,
+            None,
+        )
+        .unwrap();
+        let raw =
+            cookie_store::RawCookie::parse("LMS_SESSION=abc; Path=/api; Secure; HttpOnly")
+                .unwrap();
+        client
+            .jar
+            .lock()
+            .unwrap()
+            .insert_raw(&raw, &client.lms)
+            .unwrap();
+        let saved = client.cookies().unwrap();
+        assert!(
+            saved.contains("LMS_SESSION"),
+            "path 限定会话 cookie 必须落盘: {saved}"
+        );
+        let restored = Client::new(
+            "https://lms.szu.edu.cn/",
+            "https://authserver.szu.edu.cn/authserver/login",
+            Some(&saved),
+            None,
+        )
+        .unwrap();
+        let api = restored.lms.join("api/todos").unwrap();
+        let jar = restored.jar.lock().unwrap();
+        assert!(
+            jar.iter_any()
+                .any(|cookie| cookie.name() == "LMS_SESSION" && cookie.matches(&api)),
+            "恢复后的 jar 必须把会话带到 /api 下的接口"
+        );
+    }
 }

@@ -15,6 +15,7 @@ szu-build-support = { path = "../szu-build-support" }
 [dependencies]
 szu-core = { path = "../szu-core" }
 szu-lms = { path = "../szu-lms" }
+szu-signin = { path = "../szu-signin" }
 szu-oj = { path = "../szu-oj" }
 szu-uooc = { path = "../szu-uooc" }
 tauri = { workspace = true }

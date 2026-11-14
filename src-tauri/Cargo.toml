@@ -24,7 +24,7 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.15.1"
+version = "0.16.0"
 edition = "2021"
 authors = ["you"]
 
@@ -167,6 +167,7 @@ szu-mesh = { path = "crates/szu-mesh" }
 szu-enrollment = { path = "crates/szu-enrollment" }
 szu-jxxk = { path = "crates/szu-jxxk" }
 szu-lms = { path = "crates/szu-lms" }
+szu-signin = { path = "crates/szu-signin" }
 szu-oj = { path = "crates/szu-oj" }
 szu-uooc = { path = "crates/szu-uooc" }
 tauri = { workspace = true }
@@ -192,6 +193,11 @@ axum = { workspace = true }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 tauri-plugin-dialog = { workspace = true }
+
+# 二维码签到扫码：官方插件仅提供移动端实现（Android ML Kit / iOS AVFoundation），
+# 桌面端不编译也不注册，见 capabilities/barcode-scanner.json 的平台限定。
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-barcode-scanner = "2"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { workspace = true }

@@ -14,6 +14,7 @@ impl UnifiedSzuMcpService {
             + Self::uooc_tools()
             + Self::oj_tools()
             + Self::lms_tools()
+            + Self::signin_tools()
             + Self::jxxk_tools()
             + Self::ocr_tools()
             + Self::embedding_tools()

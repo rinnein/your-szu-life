@@ -134,7 +134,7 @@ pub fn validate_value(key: &str, value: Value) -> Result<(), String> {
                 sessions.validate_cookie_snapshots()?;
             }
         }
-        UOOC_AI | LMS_SESSION | JXXK_SESSION => {
+        UOOC_AI | LMS_SESSION | JXXK_SESSION | QW_SESSION => {
             serde_json::from_value::<String>(value).map_err(|_| "设置格式无效")?;
         }
         OJ_ACCOUNTS => {
@@ -193,6 +193,9 @@ pub const UOOC_SESSION: &str = "runtime.uooc.session";
 pub const LMS_SESSION: &str = "runtime.lms.session";
 /// 督导巡课（jxxk.szu.edu.cn）会话 jar。仅由 authserver CAS 会话派生，可随时重建。
 pub const JXXK_SESSION: &str = "runtime.jxxk.session";
+/// 企业微信应用统一网关（qw.szu.edu.cn）会话 jar，考勤签到等模块共用。
+/// 仅由 authserver CAS 会话派生，可随时重建。
+pub const QW_SESSION: &str = "runtime.qw.session";
 pub const OJ_ACCOUNTS: &str = "fixed.oj.accounts";
 pub const OJ_SESSIONS: &str = "runtime.oj.sessions";
 pub const ACADEMIC_SESSIONS: &str = "runtime.academic.sessions";
@@ -206,7 +209,7 @@ pub const ELECTRICITY_MONITOR: &str = "runtime.electricity.monitor";
 pub const PROXY_SETTINGS: &str = "fixed.network.proxy";
 
 /// 设置导出与本地凭据文档共享的完整键集合。
-pub const ALL_KEYS: [&str; 17] = [
+pub const ALL_KEYS: [&str; 18] = [
     PROFILE,
     PENDING_AUTH,
     AUTH_SESSION,
@@ -214,6 +217,7 @@ pub const ALL_KEYS: [&str; 17] = [
     UOOC_SESSION,
     LMS_SESSION,
     JXXK_SESSION,
+    QW_SESSION,
     OJ_ACCOUNTS,
     OJ_SESSIONS,
     ACADEMIC_SESSIONS,
@@ -357,6 +361,7 @@ pub fn read_entry(store: &dyn CredentialStore, key: &str) -> Result<Option<Value
         UOOC_SESSION => value!(store.load_uooc_session()),
         LMS_SESSION => value!(store.load_lms_session()),
         JXXK_SESSION => value!(store.load_jxxk_session()),
+        QW_SESSION => value!(store.load_qw_session()),
         ACADEMIC_SESSIONS => value!(store.load_academic_sessions()),
         DORM_SETTINGS => value!(store.load_dorm_settings()),
         DORM_CREDENTIALS => value!(store.load_dorm_credentials()),

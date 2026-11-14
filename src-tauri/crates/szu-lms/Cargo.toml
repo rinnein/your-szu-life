@@ -21,4 +21,6 @@ reqwest = { workspace = true }
 cookie_store = { workspace = true }
 reqwest_cookie_store = { workspace = true }
 toasty = { workspace = true }
+# 点名雷达签到的 radarSignal 签名（md5(message+deviceId+uid+timestamp)）。
+md-5 = { workspace = true }
 

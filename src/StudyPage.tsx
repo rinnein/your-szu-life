@@ -11,6 +11,7 @@ import {
   FaClipboardList,
   FaCode,
   FaGraduationCap,
+  FaMapLocationDot,
   FaVideo,
 } from "react-icons/fa6";
 
@@ -32,6 +33,12 @@ const STUDY_FEATURES: readonly Feature[] = [
     icon: FaCirclePlay,
     description: "优课在线视频任务",
     to: "/study/uooc",
+  },
+  {
+    label: "签到/打卡",
+    icon: FaMapLocationDot,
+    description: "畅课与 SZU 考勤签到",
+    to: "/study/signin",
   },
   {
     label: "畅课 lms",

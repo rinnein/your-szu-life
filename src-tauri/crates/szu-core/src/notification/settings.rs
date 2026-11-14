@@ -42,6 +42,8 @@ pub struct TodoNotificationSettings {
     pub lms_homework: bool,
     /// 电费预估断电日期
     pub electricity_outage: bool,
+    /// 签到/打卡（点名开始与进行中提醒）
+    pub checkin: bool,
     /// 已启用的提前量（分钟）
     pub lead_minutes: Vec<i64>,
 }
@@ -56,6 +58,7 @@ impl Default for TodoNotificationSettings {
             uooc_course_end: true,
             lms_homework: true,
             electricity_outage: true,
+            checkin: true,
             lead_minutes: DEFAULT_TODO_LEAD_MINUTES.to_vec(),
         }
     }
@@ -79,6 +82,7 @@ impl TodoNotificationSettings {
             TodoKind::UoocCourseEnd => self.uooc_course_end,
             TodoKind::LmsHomework => self.lms_homework,
             TodoKind::ElectricityOutage => self.electricity_outage,
+            TodoKind::Checkin => self.checkin,
         }
     }
 }
@@ -299,6 +303,7 @@ mod tests {
                 uooc_course_end: false,
                 lms_homework: true,
                 electricity_outage: false,
+                checkin: true,
                 lead_minutes: vec![60, 5],
             },
         };

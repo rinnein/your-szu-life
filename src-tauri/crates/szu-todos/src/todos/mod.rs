@@ -144,6 +144,11 @@ pub async fn refresh_sources(app: &AppHandle, source: RefreshSource) {
             let _ = service.refresh_assessments().await;
         }
     }
+    // 签到探测的节拍由课表窗口驱动（szu-signin 调度器 + probe_if_due 的
+    // 窗口门控）：自动刷新在窗外完全不动网络；用户主动刷新（force）始终拉取。
+    if let Ok(service) = szu_signin::signin::service(app) {
+        service.probe_if_due(source.force()).await;
+    }
 }
 
 /// 首页订阅是否应该为畅课自动登录：只有「完全没有缓存 + 明确未登录 + 页面订阅」。

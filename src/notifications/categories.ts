@@ -5,6 +5,7 @@ import {
   LuCode,
   LuFileText,
   LuGraduationCap,
+  LuMapPinCheck,
   LuWifi,
   LuZap,
 } from "react-icons/lu";
@@ -81,14 +82,15 @@ export const NOTIFICATION_CATEGORIES: readonly NotificationCategoryMeta[] = [
   },
 ];
 
-/** 待办提醒的六个注册项，与后端 `TodoKind` 及首页日历分类一一对应。 */
+/** 待办提醒的注册项，与后端 `TodoKind` 及首页日历分类一一对应。 */
 export type TodoConfigKey =
   | "ojQuiz"
   | "uoocExam"
   | "uoocHomework"
   | "uoocCourseEnd"
   | "lmsHomework"
-  | "electricityOutage";
+  | "electricityOutage"
+  | "checkin";
 
 export interface TodoNotificationItemMeta {
   key: TodoConfigKey;
@@ -133,6 +135,12 @@ export const TODO_NOTIFICATION_ITEMS: readonly TodoNotificationItemMeta[] = [
     title: "电费预估断电",
     description: "宿舍电量预计耗尽日期提醒",
     icon: LuZap,
+  },
+  {
+    key: "checkin",
+    title: "签到",
+    description: "课程开始、课中与结束窗口内探测到待签点名时立即提醒",
+    icon: LuMapPinCheck,
   },
 ];
 

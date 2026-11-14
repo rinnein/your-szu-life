@@ -23,6 +23,7 @@ import { Route as StudyEnrollmentRouteImport } from './routes/study/enrollment'
 import { Route as StudyLmsRouteImport } from './routes/study/lms'
 import { Route as StudyOjRouteImport } from './routes/study/oj'
 import { Route as StudyPatrolRouteImport } from './routes/study/patrol'
+import { Route as StudySigninRouteImport } from './routes/study/signin'
 import { Route as StudyUoocRouteImport } from './routes/study/uooc'
 import { Route as LifeCampusPaymentsIndexRouteImport } from './routes/life/campus-payments/index'
 import { Route as LifeCampusPaymentsCardRouteImport } from './routes/life/campus-payments/card'
@@ -107,6 +108,11 @@ const StudyOjRoute = StudyOjRouteImport.update({
 const StudyPatrolRoute = StudyPatrolRouteImport.update({
   id: '/patrol',
   path: '/patrol',
+  getParentRoute: () => StudyRouteRoute,
+} as any)
+const StudySigninRoute = StudySigninRouteImport.update({
+  id: '/signin',
+  path: '/signin',
   getParentRoute: () => StudyRouteRoute,
 } as any)
 const StudyUoocRoute = StudyUoocRouteImport.update({
@@ -202,6 +208,7 @@ export interface FileRoutesByFullPath {
   '/study/lms': typeof StudyLmsRoute
   '/study/oj': typeof StudyOjRoute
   '/study/patrol': typeof StudyPatrolRoute
+  '/study/signin': typeof StudySigninRoute
   '/study/uooc': typeof StudyUoocRoute
   '/life/': typeof LifeIndexRoute
   '/study/': typeof StudyIndexRoute
@@ -229,6 +236,7 @@ export interface FileRoutesByTo {
   '/study/lms': typeof StudyLmsRoute
   '/study/oj': typeof StudyOjRoute
   '/study/patrol': typeof StudyPatrolRoute
+  '/study/signin': typeof StudySigninRoute
   '/study/uooc': typeof StudyUoocRoute
   '/life': typeof LifeIndexRoute
   '/study': typeof StudyIndexRoute
@@ -261,6 +269,7 @@ export interface FileRoutesById {
   '/study/lms': typeof StudyLmsRoute
   '/study/oj': typeof StudyOjRoute
   '/study/patrol': typeof StudyPatrolRoute
+  '/study/signin': typeof StudySigninRoute
   '/study/uooc': typeof StudyUoocRoute
   '/life/': typeof LifeIndexRoute
   '/study/': typeof StudyIndexRoute
@@ -294,6 +303,7 @@ export interface FileRouteTypes {
     | '/study/lms'
     | '/study/oj'
     | '/study/patrol'
+    | '/study/signin'
     | '/study/uooc'
     | '/life/'
     | '/study/'
@@ -321,6 +331,7 @@ export interface FileRouteTypes {
     | '/study/lms'
     | '/study/oj'
     | '/study/patrol'
+    | '/study/signin'
     | '/study/uooc'
     | '/life'
     | '/study'
@@ -352,6 +363,7 @@ export interface FileRouteTypes {
     | '/study/lms'
     | '/study/oj'
     | '/study/patrol'
+    | '/study/signin'
     | '/study/uooc'
     | '/life/'
     | '/study/'
@@ -476,6 +488,13 @@ declare module '@tanstack/react-router' {
       path: '/patrol'
       fullPath: '/study/patrol'
       preLoaderRoute: typeof StudyPatrolRouteImport
+      parentRoute: typeof StudyRouteRoute
+    }
+    '/study/signin': {
+      id: '/study/signin'
+      path: '/signin'
+      fullPath: '/study/signin'
+      preLoaderRoute: typeof StudySigninRouteImport
       parentRoute: typeof StudyRouteRoute
     }
     '/study/uooc': {
@@ -653,6 +672,7 @@ interface StudyRouteRouteChildren {
   StudyLmsRoute: typeof StudyLmsRoute
   StudyOjRoute: typeof StudyOjRoute
   StudyPatrolRoute: typeof StudyPatrolRoute
+  StudySigninRoute: typeof StudySigninRoute
   StudyUoocRoute: typeof StudyUoocRoute
   StudyIndexRoute: typeof StudyIndexRoute
   StudyPatrolCourseRoute: typeof StudyPatrolCourseRoute
@@ -667,6 +687,7 @@ const StudyRouteRouteChildren: StudyRouteRouteChildren = {
   StudyLmsRoute: StudyLmsRoute,
   StudyOjRoute: StudyOjRoute,
   StudyPatrolRoute: StudyPatrolRoute,
+  StudySigninRoute: StudySigninRoute,
   StudyUoocRoute: StudyUoocRoute,
   StudyIndexRoute: StudyIndexRoute,
   StudyPatrolCourseRoute: StudyPatrolCourseRoute,

@@ -4,7 +4,8 @@ export type ScheduleCategory =
   | "uooc-exam"
   | "uooc-homework"
   | "uooc-course-end"
-  | "lms-homework";
+  | "lms-homework"
+  | "checkin";
 
 export interface ScheduleItem {
   id: string;

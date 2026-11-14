@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "barcode-scanner",
+  "description": "签到二维码扫码（仅移动端窗口可用）",
+  "platforms": ["android", "iOS"],
+  "windows": ["main", "feature-*"],
+  "permissions": ["barcode-scanner:allow-scan", "barcode-scanner:allow-cancel"]
+}

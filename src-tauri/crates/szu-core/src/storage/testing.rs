@@ -13,6 +13,8 @@ pub struct MemoryCredentialStore {
     raw: Mutex<HashMap<&'static str, String>>,
     pub fail_settings_save: AtomicBool,
     pub fail_settings_load: AtomicBool,
+    /// 模拟各站点会话（qw/lms/jxxk）写入失败，用于验证落盘失败不能谎报 Ready。
+    pub fail_session_save: AtomicBool,
     pub dorm_credential_reads: AtomicUsize,
 }
 
@@ -46,6 +48,13 @@ impl MemoryCredentialStore {
         {
             return Err("simulated settings write failure".into());
         }
+        if matches!(
+            key,
+            SecretKey::QwSession | SecretKey::LmsSession | SecretKey::JxxkSession
+        ) && self.fail_session_save.load(Ordering::Relaxed)
+        {
+            return Err("simulated session write failure".into());
+        }
         self.raw.lock().unwrap().insert(
             key.legacy_name(),
             serde_json::to_string(value).map_err(|error| error.to_string())?,
@@ -78,6 +87,7 @@ impl CredentialStore for MemoryCredentialStore {
     stored_value!(load_uooc_ai, save_uooc_ai, String, UoocAi);
     stored_value!(load_uooc_session, save_uooc_session, String, UoocSession);
     stored_value!(load_lms_session, save_lms_session, String, LmsSession);
+    stored_value!(load_qw_session, save_qw_session, String, QwSession);
     stored_value!(load_jxxk_session, save_jxxk_session, String, JxxkSession);
     fn delete_uooc_session(&self) -> Result<(), String> {
         self.delete(SecretKey::UoocSession)

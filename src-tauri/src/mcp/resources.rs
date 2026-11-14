@@ -57,6 +57,18 @@ pub fn list_available_resources() -> Vec<Resource> {
         .with_title("畅课站内通知")
         .with_description("返回畅课最近站内通知（作业截止提醒、资料发布等）与未读数")
         .with_mime_type("application/json"),
+        Resource::new("your-szu-life://data/signin/pending", "signin_pending")
+            .with_title("待签到列表")
+            .with_description(
+                "返回当前待签到的畅课点名列表与签到模块缓存视图（含 rollcall_id、签到方式与状态）",
+            )
+            .with_mime_type("application/json"),
+        Resource::new("your-szu-life://data/signin/timetable", "signin_timetable")
+            .with_title("签到课表缓存")
+            .with_description(
+                "返回签到模块缓存的 SZU 考勤课表（课次时间、楼栋/教室与解析出的楼栋坐标）",
+            )
+            .with_mime_type("application/json"),
         Resource::new("your-szu-life://data/todos", "todos")
             .with_title("首页待办聚合")
             .with_description(
@@ -230,6 +242,33 @@ pub async fn read_resource_by_uri(
                     "notifications": snapshot.notifications,
                 }))
                 .unwrap_or_else(|_| "{}".to_string())
+            } else {
+                "{}".to_string()
+            }
+        }
+        "your-szu-life://data/signin/pending" => {
+            if let Ok(service) = szu_signin::signin::service(app) {
+                if let Ok(lms) = service.lms_service() {
+                    if let Ok(rollcalls) = lms.rollcall_list(false).await {
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "rollcalls": rollcalls,
+                            "pending_view": service.checkin_view(),
+                        }))
+                        .unwrap_or_else(|_| "{}".to_string())
+                    } else {
+                        "{}".to_string()
+                    }
+                } else {
+                    "{}".to_string()
+                }
+            } else {
+                "{}".to_string()
+            }
+        }
+        "your-szu-life://data/signin/timetable" => {
+            if let Ok(service) = szu_signin::signin::service(app) {
+                serde_json::to_string_pretty(&service.timetable_snapshot())
+                    .unwrap_or_else(|_| "{}".to_string())
             } else {
                 "{}".to_string()
             }

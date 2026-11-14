@@ -16,6 +16,7 @@ pub(crate) mod file_manager;
 pub(crate) mod jxxk;
 pub(crate) mod lms;
 pub(crate) mod mesh;
+pub(crate) mod signin;
 pub(crate) mod netproxy;
 pub(crate) mod notification;
 pub(crate) mod ocr;

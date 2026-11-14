@@ -3,6 +3,7 @@ pub mod commands;
 pub mod db;
 pub mod model;
 pub mod migrations;
+pub mod rollcall;
 mod session;
 #[cfg(test)]
 mod tests;
@@ -57,6 +58,9 @@ pub struct Service {
     app: Option<tauri::AppHandle>,
     credentials: SharedCredentialStore,
     path: PathBuf,
+    /// 畅课与统一认证的站点基址；生产固定为常量，测试注入 mock 地址。
+    lms_base: String,
+    auth_base: String,
     runtime: Mutex<Runtime>,
     /// 串行化网络刷新，避免并发命令重复拉取。
     gate: tokio::sync::Mutex<()>,
@@ -66,6 +70,8 @@ pub struct Service {
     last_attempt: Mutex<Option<Instant>>,
     /// 自引用，用于派生后台任务。
     self_weak: Mutex<Weak<Service>>,
+    /// 点名（签到）列表缓存。
+    pub rollcall_cache: rollcall::RollcallCache,
     pub state_subscribers: szu_core::ipc_channel::SubscriberPool<LmsDeltaEvent>,
     last_published: Mutex<Option<String>>,
 }
@@ -75,6 +81,23 @@ impl Service {
         app: Option<tauri::AppHandle>,
         credentials: SharedCredentialStore,
         path: PathBuf,
+    ) -> Result<Arc<Self>, String> {
+        Self::with_bases(
+            app,
+            credentials,
+            path,
+            client::LMS_ORIGIN.to_string(),
+            client::AUTH_LOGIN.to_string(),
+        )
+    }
+
+    /// 测试注入 mock 站点基址用；生产行为与 [`Service::new`] 一致。
+    fn with_bases(
+        app: Option<tauri::AppHandle>,
+        credentials: SharedCredentialStore,
+        path: PathBuf,
+        lms_base: String,
+        auth_base: String,
     ) -> Result<Arc<Self>, String> {
         let cache = szu_core::migrations::db::run_sync(async {
             let database = db::LmsDatabase::open(&path).await?;
@@ -90,6 +113,8 @@ impl Service {
             app,
             credentials,
             path,
+            lms_base,
+            auth_base,
             runtime: Mutex::new(Runtime {
                 session,
                 message: String::new(),
@@ -99,6 +124,7 @@ impl Service {
             revalidating: AtomicBool::new(false),
             last_attempt: Mutex::new(None),
             self_weak: Mutex::new(Weak::new()),
+            rollcall_cache: rollcall::RollcallCache::default(),
             state_subscribers: szu_core::ipc_channel::SubscriberPool::new(),
             last_published: Mutex::new(None),
         }))
@@ -230,8 +256,8 @@ impl Service {
         };
         Some(
             Client::new(
-                client::LMS_ORIGIN,
-                client::AUTH_LOGIN,
+                &self.lms_base,
+                &self.auth_base,
                 cookies.as_deref(),
                 sso.as_deref(),
             )

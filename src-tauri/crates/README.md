@@ -15,11 +15,13 @@ szu-core                 平台基础 / 凭据与统一认证 / 网络代理 / �
   ├─ szu-app-content     公告、贡献者、应用内更新
   ├─ szu-enrollment      抢课与学业门户
   ├─ szu-jxxk            监察巡课（回放、拉流、下载）
-  ├─ szu-lms             畅课
+  ├─ szu-lms             畅课（点名/签到接口在此）
   ├─ szu-oj              OJ 刷题伴侣
   ├─ szu-uooc            UOOC
-  ├─ szu-todos           待办聚合（依赖 oj / lms / uooc）
-  └─ szu-mesh            EasyTier 组网 + 设置同步（依赖 uooc）
+  ├─ szu-todos           待办聚合（依赖 oj / lms / uooc / signin）
+  ├─ szu-mesh            EasyTier 组网 + 设置同步（依赖 uooc）
+  │    └─ qr_room        临时消息房间（第二 EasyTier 实例，签到码共享用）
+  └─ szu-signin          签到/打卡（依赖 lms 的点名接口与 mesh 的 qr_room）
 your-szu-life (src/)     app：组合根、mcp 工具胶水、桌面托盘、命令名守卫测试
 ```
 

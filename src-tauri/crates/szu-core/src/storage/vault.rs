@@ -29,7 +29,7 @@ const NONCE_LEN: usize = 24;
 const TAG_LEN: usize = 16;
 const HEADER_LEN: usize = MAGIC.len() + 1;
 const VAULT_FILE: &str = "vault.bin";
-const VAULT_KEY_ENTRY: &str = "vault-key";
+pub const VAULT_KEY_ENTRY: &str = "vault-key";
 
 /// 旧版钥匙环分块标记；读取与清理都集中在本文件。
 pub const LEGACY_CHUNK_PREFIX: &str = "__CHUNKED__:";
@@ -44,7 +44,8 @@ fn keyring_entry(service: &str, user: &str) -> Result<keyring::Entry, String> {
 }
 
 #[cfg(not(target_os = "android"))]
-fn read_keyring_secret(service: &str, user: &str) -> Result<Option<Vec<u8>>, String> {
+/// 只读诊断用；生产写入路径走 [`load_or_create_key`]。
+pub fn read_keyring_secret(service: &str, user: &str) -> Result<Option<Vec<u8>>, String> {
     match keyring_entry(service, user)?.get_secret() {
         Ok(secret) => Ok(Some(secret)),
         Err(keyring::Error::NoEntry) => Ok(None),
@@ -87,7 +88,8 @@ fn android_entry(service: &str, user: &str) -> Result<keyring_core::Entry, Strin
 }
 
 #[cfg(target_os = "android")]
-fn read_keyring_secret(service: &str, user: &str) -> Result<Option<Vec<u8>>, String> {
+/// 只读诊断用；生产写入路径走 [`load_or_create_key`]。
+pub fn read_keyring_secret(service: &str, user: &str) -> Result<Option<Vec<u8>>, String> {
     match android_entry(service, user)?.get_secret() {
         Ok(secret) => Ok(Some(secret)),
         Err(keyring_core::Error::NoEntry) => Ok(None),

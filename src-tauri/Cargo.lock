@@ -6142,7 +6142,7 @@ version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
 dependencies = [
- "proc-macro-crate 2.0.2",
+ "proc-macro-crate 3.5.0",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -9529,7 +9529,7 @@ dependencies = [
 
 [[package]]
 name = "szu-app-content"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "flate2",
  "image",
@@ -9551,7 +9551,7 @@ dependencies = [
 
 [[package]]
 name = "szu-build-support"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "dotenvy",
  "serde_json",
@@ -9559,7 +9559,7 @@ dependencies = [
 
 [[package]]
 name = "szu-core"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "android-native-keyring-store",
  "base16384",
@@ -9613,7 +9613,7 @@ dependencies = [
 
 [[package]]
 name = "szu-download"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -9637,7 +9637,7 @@ dependencies = [
 
 [[package]]
 name = "szu-enrollment"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -9667,7 +9667,7 @@ dependencies = [
 
 [[package]]
 name = "szu-jxxk"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -9688,11 +9688,12 @@ dependencies = [
 
 [[package]]
 name = "szu-lms"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "chrono",
  "cookie_store",
  "log",
+ "md-5",
  "reqwest",
  "reqwest_cookie_store",
  "serde",
@@ -9705,7 +9706,7 @@ dependencies = [
 
 [[package]]
 name = "szu-mesh"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "argon2",
  "axum",
@@ -9731,7 +9732,7 @@ dependencies = [
 
 [[package]]
 name = "szu-oj"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -9757,7 +9758,7 @@ dependencies = [
 
 [[package]]
 name = "szu-runtime"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "ddddocr-core",
  "ddddocr-tract2",
@@ -9775,8 +9776,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "szu-signin"
+version = "0.16.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "cookie_store",
+ "image",
+ "log",
+ "rand 0.9.5",
+ "reqwest",
+ "reqwest_cookie_store",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "szu-core",
+ "szu-lms",
+ "szu-mesh",
+ "tauri",
+ "tempfile",
+ "toasty",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "szu-todos"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "chrono",
  "log",
@@ -9787,6 +9814,7 @@ dependencies = [
  "szu-core",
  "szu-lms",
  "szu-oj",
+ "szu-signin",
  "szu-uooc",
  "tauri",
  "tauri-plugin-notification",
@@ -9798,7 +9826,7 @@ dependencies = [
 
 [[package]]
 name = "szu-uooc"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "async-openai",
  "base64 0.22.1",
@@ -10059,6 +10087,20 @@ dependencies = [
  "tauri-plugin",
  "time",
  "tokio",
+]
+
+[[package]]
+name = "tauri-plugin-barcode-scanner"
+version = "2.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b57ad7e6ed3e8927205dade785400d9829b8208f59cfe24324fcb324f61482b2"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -12625,7 +12667,7 @@ dependencies = [
 
 [[package]]
 name = "your-szu-life"
-version = "0.15.1"
+version = "0.16.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -12648,11 +12690,13 @@ dependencies = [
  "szu-mesh",
  "szu-oj",
  "szu-runtime",
+ "szu-signin",
  "szu-todos",
  "szu-uooc",
  "tauri",
  "tauri-build",
  "tauri-plugin-aptabase",
+ "tauri-plugin-barcode-scanner",
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-deep-link",
  "tauri-plugin-dialog",

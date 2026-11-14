@@ -29,6 +29,7 @@ pub enum SecretKey {
     UoocSession,
     LmsSession,
     JxxkSession,
+    QwSession,
     UoocAi,
     OjAccounts,
     AcademicSessions,
@@ -51,6 +52,7 @@ impl SecretKey {
             Self::UoocSession => entries::UOOC_SESSION,
             Self::LmsSession => entries::LMS_SESSION,
             Self::JxxkSession => entries::JXXK_SESSION,
+            Self::QwSession => entries::QW_SESSION,
             Self::UoocAi => entries::UOOC_AI,
             Self::OjAccounts => entries::OJ_ACCOUNTS,
             Self::AcademicSessions => entries::ACADEMIC_SESSIONS,
@@ -75,6 +77,7 @@ impl SecretKey {
             Self::UoocSession => "uooc-session",
             Self::LmsSession => "lms-session",
             Self::JxxkSession => "jxxk-session",
+            Self::QwSession => "qw-session",
             Self::UoocAi => "uooc-ai",
             Self::OjAccounts => "oj-accounts",
             Self::AcademicSessions => "academic-sessions",
@@ -98,6 +101,7 @@ impl SecretKey {
             "uooc-session" => Self::UoocSession,
             "lms-session" => Self::LmsSession,
             "jxxk-session" => Self::JxxkSession,
+            "qw-session" => Self::QwSession,
             "oj-accounts" => Self::OjAccounts,
             "academic-sessions" => Self::AcademicSessions,
             "dorm-network-settings" => Self::DormNetworkSettings,
@@ -126,6 +130,8 @@ pub trait CredentialStore: Send + Sync {
     fn delete_uooc_session(&self) -> Result<(), String>;
     fn load_lms_session(&self) -> Result<Option<String>, String>;
     fn save_lms_session(&self, session: &String) -> Result<(), String>;
+    fn load_qw_session(&self) -> Result<Option<String>, String>;
+    fn save_qw_session(&self, session: &String) -> Result<(), String>;
     fn load_jxxk_session(&self) -> Result<Option<String>, String>;
     fn save_jxxk_session(&self, session: &String) -> Result<(), String>;
     fn load_profile(&self) -> Result<Option<StoredAccountProfile>, String>;
@@ -285,6 +291,7 @@ impl CredentialStore for PlatformCredentialStore {
     stored_value!(load_uooc_ai, save_uooc_ai, String, UoocAi);
     stored_value!(load_uooc_session, save_uooc_session, String, UoocSession);
     stored_value!(load_lms_session, save_lms_session, String, LmsSession);
+    stored_value!(load_qw_session, save_qw_session, String, QwSession);
     stored_value!(load_jxxk_session, save_jxxk_session, String, JxxkSession);
     stored_value!(load_profile, save_profile, StoredAccountProfile, Profile);
     stored_value!(
@@ -369,4 +376,27 @@ pub mod testing;
 #[cfg(all(test, target_os = "linux"))]
 pub fn read_saved_session_for_diagnostic() -> Option<AuthSessionSecret> {
     vault::vault()?.load(entries::AUTH_SESSION).ok().flatten()
+}
+
+/// 只读诊断入口（跨 crate 版本）：直接从系统密钥环取主密钥并加载真实
+/// 统一认证会话。**绝不写入**——密钥缺失时返回 None 而不是生成新钥，
+/// 避免破坏用户现有 vault 的可解密性。调用方必须先通过环境变量显式授权。
+#[cfg(target_os = "linux")]
+pub fn load_saved_session_readonly() -> Option<AuthSessionSecret> {
+    let key = vault::read_keyring_secret(SERVICE_NAME, vault::VAULT_KEY_ENTRY)
+        .ok()?
+        .filter(|bytes| bytes.len() == vault::KEY_LEN)?;
+    let key: [u8; vault::KEY_LEN] = key.try_into().ok()?;
+    let data_root = std::env::var("XDG_DATA_HOME")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .map(|home| std::path::PathBuf::from(home).join(".local/share"))
+        })?;
+    let dir = data_root.join("in.rinne.your-szu-life").join("credentials");
+    let vault = vault::Vault::open(dir, key);
+    vault.load(entries::AUTH_SESSION).ok().flatten()
 }

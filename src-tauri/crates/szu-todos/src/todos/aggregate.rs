@@ -51,6 +51,14 @@ pub fn aggregate(app: &tauri::AppHandle) -> Aggregate {
         }
         items.extend(from_lms(&snapshot, now));
     }
+    if let Ok(service) = szu_signin::signin::service(app) {
+        // 探测成功后 fresh 视图才可信；窗口外无待签项也视为「确认没有」。
+        let view = service.checkin_view();
+        if view.complete {
+            trusted.insert(TodoKind::Checkin);
+        }
+        items.extend(from_checkin(view.items, now));
+    }
     if let Some(store) = app.try_state::<szu_core::campus_payments::CampusPaymentsStore>() {
         let status = szu_core::campus_payments::electricity::status(&store.electricity);
         if electricity_trusted(&status) {
@@ -239,6 +247,25 @@ pub fn from_lms(snapshot: &LmsSnapshot, now: i64) -> Vec<TodoItem> {
                 )),
                 urgent: due_at - now < DAY_MS,
             })
+        })
+        .collect()
+}
+
+/// 签到待签项（探测循环已按窗口收敛，这里只做剩余时间过滤与转换）。
+pub fn from_checkin(items: Vec<szu_signin::signin::CheckinTodoItem>, now: i64) -> Vec<TodoItem> {
+    items
+        .into_iter()
+        .filter(|item| item.due_at_ms > now)
+        .map(|item| TodoItem {
+            id: item.id,
+            kind: TodoKind::Checkin,
+            title: item.title,
+            subtitle: item.subtitle.or_else(|| Some("签到".into())),
+            due_at_ms: item.due_at_ms,
+            route: item.route,
+            external_url: None,
+            // 签到窗口只有几分钟，全部按紧急样式展示。
+            urgent: true,
         })
         .collect()
 }
