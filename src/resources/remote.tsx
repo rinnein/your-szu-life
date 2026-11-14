@@ -52,6 +52,25 @@ function cacheKey(url: string, kind: RemoteResourceKind): string {
   return `${kind}\u0000${url}`;
 }
 
+/**
+ * 把 native IPC 交付的原始字节统一成 ArrayBuffer。
+ * 桌面端走自定义协议 fetch 得到的是 ArrayBuffer；Android 只能走 postMessage 桥，
+ * ≥1024 字节的 raw 响应经 channel-fetch 回退时会被序列化成 JSON number array。
+ */
+function toArrayBuffer(bytes: unknown): ArrayBuffer {
+  if (bytes instanceof ArrayBuffer) return bytes;
+  if (ArrayBuffer.isView(bytes)) {
+    const view = bytes as Uint8Array;
+    return view.byteOffset === 0 &&
+      view.byteLength === view.buffer.byteLength &&
+      view.buffer instanceof ArrayBuffer
+      ? view.buffer
+      : view.slice().buffer;
+  }
+  if (Array.isArray(bytes)) return Uint8Array.from(bytes).buffer;
+  throw new Error("Invalid native resource response");
+}
+
 function acquire(url: string, kind: RemoteResourceKind): Promise<string> {
   const key = cacheKey(url, kind);
   const existing = objectUrls.get(key);
@@ -60,14 +79,12 @@ function acquire(url: string, kind: RemoteResourceKind): Promise<string> {
     return existing.promise;
   }
   const entry: CachedImage = { promise: Promise.resolve(""), refs: 1 };
-  entry.promise = invoke<ArrayBuffer>("load_remote_resource", { url, kind })
+  entry.promise = invoke<unknown>("load_remote_resource", { url, kind })
     .then((bytes) => {
-      if (!(bytes instanceof ArrayBuffer)) {
-        throw new Error("Invalid native resource response");
-      }
-      const type = imageMimeType(bytes);
+      const buffer = toArrayBuffer(bytes);
+      const type = imageMimeType(buffer);
       if (!type) throw new Error("Unsupported resource type");
-      const src = URL.createObjectURL(new Blob([bytes], { type }));
+      const src = URL.createObjectURL(new Blob([buffer], { type }));
       entry.resolved = src;
       return src;
     })

@@ -81,4 +81,16 @@ describe("RemoteImage", () => {
     render(<RemoteImage src="https://a.com/private.png" alt="加载失败图片" />);
     expect(await screen.findByText("加载失败图片")).toBeInTheDocument();
   });
+
+  it("accepts number-array payloads delivered by the android postMessage ipc", async () => {
+    // Android 端 raw IPC 响应经 postMessage 回退时会序列化成 JSON number array，而不是 ArrayBuffer。
+    vi.mocked(invoke).mockResolvedValueOnce(Array.from(new Uint8Array(pngBytes)));
+    render(<RemoteImage src="https://a.com/bytes.png" alt="数组图片" />);
+    await waitFor(() => expect(screen.queryByRole("img", { name: "数组图片" })).not.toBeNull());
+    expect(screen.getByRole("img", { name: "数组图片" })).toHaveAttribute(
+      "src",
+      "blob:remote-image",
+    );
+    expect(createObjectURL).toHaveBeenCalledWith(expect.objectContaining({ type: "image/png" }));
+  });
 });

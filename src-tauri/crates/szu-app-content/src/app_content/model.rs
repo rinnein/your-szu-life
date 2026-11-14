@@ -296,15 +296,12 @@ impl Document for Announcements {
         for unit in &self.announcements {
             if unit.title.trim().is_empty()
                 || unit.title.len() > 1024
-                || unit.desc.is_some() == unit.goto.is_some()
                 || unit
                     .desc
                     .as_ref()
                     .is_some_and(|desc| desc.len() > 64 * 1024)
             {
-                return Err(ContentError::invalid(
-                    "公告需要标题，以及且仅有 desc / goto 中的一项",
-                ));
+                return Err(ContentError::invalid("公告需要有效标题"));
             }
             if let Some(pic) = unit.pic.as_deref().filter(|pic| !pic.trim().is_empty()) {
                 web_url(pic)?;
