@@ -131,7 +131,7 @@ describe("LogicalNavigationProvider toast error", () => {
   });
 });
 
-describe("desktop push opens a feature window", () => {
+describe("desktop navigation and pin", () => {
   const createdWindows: { label: string; options: Record<string, unknown> }[] = [];
 
   // 用 function 声明实现：`new WebviewWindow(...)` 需要真实的构造语义。
@@ -150,23 +150,32 @@ describe("desktop push opens a feature window", () => {
     } as unknown as typeof WebviewWindow);
   }
 
+  function mockRouter({ href = "/" }: { href?: string } = {}) {
+    const navigate = vi.fn().mockResolvedValue(undefined);
+    const back = vi.fn();
+    vi.mocked(useRouter).mockReturnValue({
+      history: { canGoBack: () => true, back },
+      navigate,
+      state: { location: { href } },
+    } as unknown as ReturnType<typeof useRouter>);
+    return { navigate, back };
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
     createdWindows.length = 0;
     (window as { __TAURI_INTERNALS__?: object }).__TAURI_INTERNALS__ = {};
     vi.mocked(supportsMultipleWindows).mockResolvedValue(true);
     vi.mocked(getCurrentWebviewWindow).mockReturnValue({
+      activityName: vi.fn(() => Promise.resolve("main")),
       onCloseRequested: vi.fn(() => Promise.resolve(() => {})),
     } as unknown as ReturnType<typeof getCurrentWebviewWindow>);
-    const navigate = vi.fn();
-    vi.mocked(useRouter).mockReturnValue({
-      history: { canGoBack: () => false, back: vi.fn() },
-      navigate,
-    } as unknown as ReturnType<typeof useRouter>);
   });
 
   afterEach(() => {
     cleanup();
+    delete (window as { __TAURI_INTERNALS__?: object; SzuApplicationBack?: object })
+      .SzuApplicationBack;
     delete (window as { __TAURI_INTERNALS__?: object }).__TAURI_INTERNALS__;
   });
 
@@ -179,8 +188,34 @@ describe("desktop push opens a feature window", () => {
     );
   }
 
-  it("creates a feature window carrying the child identity", async () => {
+  function PinConsumer() {
+    const nav = useLogicalNavigation();
+    return (
+      <button type="button" onClick={() => void nav.pin()}>
+        Pin
+      </button>
+    );
+  }
+
+  it("desktop push navigates inside the window", async () => {
     mockCreatedWindow("created");
+    const { navigate } = mockRouter();
+    render(
+      <LogicalNavigationProvider>
+        <PushConsumer path="/study/oj?site=szu-67" />
+      </LogicalNavigationProvider>,
+    );
+
+    screen.getByRole("button", { name: "Navigate" }).click();
+
+    await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: "/study/oj?site=szu-67" }));
+    expect(createdWindows).toHaveLength(0);
+  });
+
+  it("android push keeps opening a feature window", async () => {
+    (window as { SzuApplicationBack?: object }).SzuApplicationBack = { postMessage: vi.fn() };
+    mockCreatedWindow("created");
+    const { navigate } = mockRouter();
     render(
       <LogicalNavigationProvider>
         <PushConsumer path="/study/oj?site=szu-67" />
@@ -193,25 +228,66 @@ describe("desktop push opens a feature window", () => {
     const { label, options } = createdWindows[0];
     expect(label).toMatch(/^feature-/);
     expect(options.url).toBe("/study/oj?site=szu-67&__szu_window=child");
+    expect(options.activityName).toBe("FeatureActivity");
     // 窗口创建成功时不应再走窗口内导航。
-    expect(vi.mocked(useRouter().navigate as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
   });
 
-  it("falls back to toast when window creation fails", async () => {
-    const dangerSpy = vi.spyOn(toast, "danger").mockReturnValue("toast-id");
-    mockCreatedWindow("error");
+  it("desktop pin opens the current page in a feature window and goes back", async () => {
+    mockCreatedWindow("created");
+    const { navigate, back } = mockRouter({ href: "/study/uooc?tab=tasks" });
     render(
       <LogicalNavigationProvider>
-        <PushConsumer path="/study/oj" />
+        <PinConsumer />
       </LogicalNavigationProvider>,
     );
 
-    screen.getByRole("button", { name: "Navigate" }).click();
+    screen.getByRole("button", { name: "Pin" }).click();
+
+    await vi.waitFor(() => expect(createdWindows).toHaveLength(1));
+    const { label, options } = createdWindows[0];
+    expect(label).toMatch(/^feature-/);
+    expect(options.url).toBe("/study/uooc?tab=tasks&__szu_window=child");
+    // 主窗口退回上一级逻辑页面（back），而不是做窗口内 push。
+    await vi.waitFor(() => expect(back).toHaveBeenCalled());
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("desktop pin falls back to toast when window creation fails", async () => {
+    const dangerSpy = vi.spyOn(toast, "danger").mockReturnValue("toast-id");
+    mockCreatedWindow("error");
+    const { back } = mockRouter({ href: "/study/uooc" });
+    render(
+      <LogicalNavigationProvider>
+        <PinConsumer />
+      </LogicalNavigationProvider>,
+    );
+
+    screen.getByRole("button", { name: "Pin" }).click();
 
     await vi.waitFor(() => {
-      expect(dangerSpy).toHaveBeenCalledWith("页面未打开", {
-        description: "无法打开独立页面，请重试；当前页面已保留。",
+      expect(dangerSpy).toHaveBeenCalledWith("页面未固定", {
+        description: "无法以独立窗口打开当前页面，请重试；当前页面已保留。",
       });
     });
+    expect(back).not.toHaveBeenCalled();
+  });
+
+  it("child window pin is a no-op", async () => {
+    window.history.replaceState(null, "", "?__szu_window=child");
+    mockCreatedWindow("created");
+    const { back } = mockRouter({ href: "/study/uooc?__szu_window=child" });
+    render(
+      <LogicalNavigationProvider>
+        <PinConsumer />
+      </LogicalNavigationProvider>,
+    );
+
+    screen.getByRole("button", { name: "Pin" }).click();
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(createdWindows).toHaveLength(0);
+    expect(back).not.toHaveBeenCalled();
+    window.history.replaceState(null, "", "/");
   });
 });

@@ -7,7 +7,11 @@ import { PageDrawerProvider } from "../shell/PageDrawerContext";
 import { TopAppBar } from "../shell/TopAppBar";
 
 const nav = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }));
-vi.mock("../logical-navigation", () => ({ useLogicalNavigation: () => nav }));
+vi.mock("../logical-navigation", () => ({
+  useLogicalNavigation: () => nav,
+  isChildDocument: () => false,
+  nativeRuntime: () => false,
+}));
 
 const sampleItems: AdaptiveTabItem[] = [
   { value: "overview", label: "概览" },

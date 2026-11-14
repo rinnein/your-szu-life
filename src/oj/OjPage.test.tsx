@@ -29,7 +29,11 @@ const { search, nav, auth } = vi.hoisted(() => ({
 }));
 vi.mock("../auth", () => ({ useAuth: () => auth }));
 vi.mock("@tanstack/react-router", () => ({ useSearch: () => search }));
-vi.mock("../logical-navigation", () => ({ useLogicalNavigation: () => nav }));
+vi.mock("../logical-navigation", () => ({
+  useLogicalNavigation: () => nav,
+  isChildDocument: () => false,
+  nativeRuntime: () => false,
+}));
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
   Channel: class MockChannel {

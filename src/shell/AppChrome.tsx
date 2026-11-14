@@ -3,6 +3,7 @@ import { startChildWindowTitleSync } from "./child-window-title";
 import { AppNavigation } from "./AppNavigation";
 import { PageTransition } from "../motion/PageTransition";
 import { useNativeChromeColors } from "./native-chrome";
+import { isChildDocument, nativeRuntime } from "../logical-navigation";
 
 /**
  * 应用外壳：导航 + 转场 + 内容区。
@@ -19,9 +20,12 @@ export function AppChrome({ children }: { children: ReactNode }) {
   useNativeChromeColors();
   // 子窗口标题与路由保持一致（仅桌面 feature 窗口生效）。
   useEffect(() => startChildWindowTitleSync(), []);
+  // 桌面的 pin/feature 子窗口是独立页面，不渲染全局导航（Android 的
+  // FeatureActivity 同样带 child 参数，但保持底栏不变）。
+  const desktopChild = isChildDocument() && nativeRuntime() && !window.SzuApplicationBack;
   return (
-    <div className="app-frame">
-      <AppNavigation />
+    <div className="app-frame" data-child-window={desktopChild || undefined}>
+      {!desktopChild && <AppNavigation />}
       <main className="app-content">
         <PageTransition>{children}</PageTransition>
       </main>

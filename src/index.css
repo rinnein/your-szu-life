@@ -89,6 +89,11 @@ html[data-szu-native-toolbar="true"] [data-webview-navigation] {
   --app-nav-bar-height: 0px;
 }
 
+/* 桌面 pin/feature 子窗口不渲染全局导航，底部留白与导航栏高度一并归零 */
+:root:has(.app-frame[data-child-window]) {
+  --app-nav-bar-height: 0px;
+}
+
 /* 全局图标与文字排版：防止 SVG 因 Tailwind v4 Preflight 设为 block 而与相邻文字换行 */
 svg {
   display: inline-block;
@@ -1381,6 +1386,11 @@ p {
    * （见 src/StudyPage.tsx 的占位提示与 src/app-content/UpdateNotice.tsx）。
    */
   container-type: inline-size;
+}
+
+/* 桌面 pin/feature 子窗口不渲染底部导航栏，去掉为其预留的底部空间。 */
+.app-frame[data-child-window] .app-content {
+  padding-block-end: 0;
 }
 
 /* 宽屏：侧边导航栏，内容区左移。 */

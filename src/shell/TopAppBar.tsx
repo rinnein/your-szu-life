@@ -1,7 +1,7 @@
 import { type ReactNode } from "react";
 import { TopAppBar as MaterialTopAppBar } from "material/react";
-import { LuArrowLeft, LuMenu, LuSearch } from "react-icons/lu";
-import { useLogicalNavigation } from "../logical-navigation";
+import { LuArrowLeft, LuMenu, LuPin, LuSearch } from "react-icons/lu";
+import { isChildDocument, nativeRuntime, useLogicalNavigation } from "../logical-navigation";
 import { openCommandPalette } from "../command-palette";
 import { usePageDrawer } from "./PageDrawerContext";
 
@@ -44,6 +44,9 @@ export function TopAppBar({
   const navigation = useLogicalNavigation();
   const drawer = usePageDrawer();
   const hasDrawer = (showDrawer ?? (drawer && drawer.sections.length > 0)) && Boolean(drawer);
+  // pin 仅在桌面主窗口的子页面出现：hub 页无返回键、子窗口已是独立页面、
+  // Android 的子逻辑页面走 FeatureActivity。
+  const pinnable = showBack && nativeRuntime() && !window.SzuApplicationBack && !isChildDocument();
 
   return (
     <>
@@ -78,6 +81,18 @@ export function TopAppBar({
           }
           trailing={
             <span className="top-app-bar-actions">
+              {pinnable && (
+                <button
+                  type="button"
+                  data-webview-navigation
+                  className="top-app-bar-icon-button top-app-bar-pin"
+                  aria-label="固定为独立窗口"
+                  title="在新窗口固定打开此页面"
+                  onClick={() => void navigation.pin()}
+                >
+                  <LuPin aria-hidden="true" size={20} />
+                </button>
+              )}
               {actions}
               <button
                 type="button"

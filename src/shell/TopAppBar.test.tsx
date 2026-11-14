@@ -11,6 +11,14 @@ import { mockElementRects } from "../test-layout";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  WebviewWindow: vi.fn(),
+  getCurrentWebviewWindow: vi.fn(() => ({
+    activityName: vi.fn(() => Promise.resolve("main")),
+    onCloseRequested: vi.fn(() => Promise.resolve(() => {})),
+    setTitle: vi.fn(() => Promise.resolve()),
+  })),
+}));
 
 function renderAt(path: string) {
   const history = createMemoryHistory({
@@ -81,6 +89,19 @@ describe("TopAppBar", () => {
         ?.querySelector(".mtrl-top-app-bar")
         ?.classList.contains("mtrl-top-app-bar--scrolled"),
     ).toBe(false);
+  });
+
+  it("shows the pin action on desktop child pages only", async () => {
+    (window as { __TAURI_INTERNALS__?: object }).__TAURI_INTERNALS__ = {};
+    renderAt("/study/uooc");
+    expect(await screen.findByRole("button", { name: "固定为独立窗口" })).toBeInTheDocument();
+    cleanup();
+
+    // hub 页（无返回键）不出现 pin 按钮。
+    renderAt("/study");
+    await screen.findByRole("button", { name: "打开命令面板搜索" });
+    expect(screen.queryByRole("button", { name: "固定为独立窗口" })).not.toBeInTheDocument();
+    delete (window as { __TAURI_INTERNALS__?: object }).__TAURI_INTERNALS__;
   });
 
   it("opens the command palette from the search action on every page", async () => {

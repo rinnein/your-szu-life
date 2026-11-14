@@ -21,6 +21,7 @@ describe("HomeCalendarWidget", () => {
     vi.setSystemTime(new Date(2026, 9, 28, 12, 0, 0));
     vi.spyOn(navigationModule, "useLogicalNavigation").mockReturnValue({
       push: pushMock,
+      pin: vi.fn(),
       replace: vi.fn(),
       back: vi.fn(),
       canBack: () => false,

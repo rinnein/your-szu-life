@@ -65,6 +65,7 @@ export function logicalBackAction(hasParent: boolean, child: boolean) {
 function nativeRuntime() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
+export { nativeRuntime };
 export async function openLogicalWindow(path: string) {
   const url = new URL(path, window.location.origin);
   if (url.origin !== window.location.origin || !path.startsWith("/") || path.startsWith("//"))
@@ -100,6 +101,11 @@ type NavigationAction = "push" | "replace" | "back";
 
 export type Navigation = {
   push: (path: string) => Promise<void>;
+  /**
+   * 把当前逻辑页面固定为独立窗口（仅桌面）：新开 feature-* 窗口后，
+   * 主窗口退回上一级逻辑页面。
+   */
+  pin: () => Promise<void>;
   replace: (path: string, options?: { resetScroll?: boolean }) => Promise<void>;
   back: () => Promise<void>;
   canBack: () => boolean;
@@ -320,9 +326,9 @@ export function LogicalNavigationProvider({ children }: { children: ReactNode })
       saveCurrentScroll();
       record("push");
       try {
-        // 桌面端与 Android 一致：子逻辑页面以独立窗口打开（桌面为 feature-* WebviewWindow，
-        // Android 为 FeatureActivity）；浏览器等不支持多窗口的环境退回窗口内叠加导航。
-        if (nativeRuntime() && (await supportsMultipleWindows())) {
+        // Android：子逻辑页面以 FeatureActivity 打开；桌面端在窗口内叠加导航，
+        // 需要独立窗口时经顶栏 pin 按钮显式固定（见 pin()）。
+        if (nativeRuntime() && window.SzuApplicationBack && (await supportsMultipleWindows())) {
           await openLogicalWindow(path);
         } else {
           await router.navigate({ to: path });
@@ -337,6 +343,24 @@ export function LogicalNavigationProvider({ children }: { children: ReactNode })
     },
     [record, router, saveCurrentScroll],
   );
+  const pin = useCallback(async () => {
+    if (child || window.SzuApplicationBack || !nativeRuntime()) return;
+    if (opening.current) return;
+    opening.current = true;
+    saveCurrentScroll();
+    try {
+      const href = router.state.location?.href;
+      if (!href) return;
+      await openLogicalWindow(href);
+      await back();
+    } catch {
+      toast.danger("页面未固定", {
+        description: "无法以独立窗口打开当前页面，请重试；当前页面已保留。",
+      });
+    } finally {
+      opening.current = false;
+    }
+  }, [back, child, router, saveCurrentScroll]);
   useEffect(() => {
     if (!nativeRuntime() || window.SzuApplicationBack) return;
     let disposed = false;
@@ -361,13 +385,14 @@ export function LogicalNavigationProvider({ children }: { children: ReactNode })
   const value = useMemo(
     () => ({
       push,
+      pin,
       replace,
       back,
       canBack: () => child || router.history.canGoBack(),
       lastAction: readLastAction,
       recordAction: record,
     }),
-    [push, replace, back, child, router, readLastAction, record],
+    [push, pin, replace, back, child, router, readLastAction, record],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
