@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Card, Checkbox, LoadingIndicator, TextField, Button } from "material/react";
 import { Banner, bindField, toast } from "./ui";
 import { useRegisterNextAction, type StepNextAction } from "./step-next-action";
-import type { AiConnections } from "./uooc/types";
+import type { AiConnections } from "./uooc/state/types";
 
 type ConnectionDraft = {
   connections: AiConnections;

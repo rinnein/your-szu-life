@@ -77,7 +77,7 @@ describe("NotificationCenter", () => {
         category: "uooc",
         title: "UOOC 测验需要处理",
         body: "计算机网络课程有未完成的测验",
-        route: "/study/uooc?tab=tasks",
+        route: "/study/uooc?tab=courses",
         actionLabel: "查看测验",
       },
     });
@@ -93,7 +93,7 @@ describe("NotificationCenter", () => {
 
     const options = vi.mocked(toast.info).mock.calls[0][1] as { onAction: () => void };
     options.onAction();
-    expect(nav.push).toHaveBeenCalledWith("/study/uooc?tab=tasks");
+    expect(nav.push).toHaveBeenCalledWith("/study/uooc?tab=courses");
   });
 
   it("uses a warning snackbar for electricity and network categories", async () => {
@@ -163,7 +163,7 @@ describe("NotificationCenter", () => {
       notification: { extra: { uoocCourse: "12345" } },
     });
 
-    expect(nav.replace).toHaveBeenCalledWith("/study/uooc?tab=tasks&course=12345");
+    expect(nav.replace).toHaveBeenCalledWith("/study/uooc?tab=courses&course=12345");
     expect(nav.push).not.toHaveBeenCalled();
   });
 

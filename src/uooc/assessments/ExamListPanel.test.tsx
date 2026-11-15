@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { invoke } from "@tauri-apps/api/core";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { ExamListPanel } from "./ExamListPanel";
-import type { ExamPaper, ExamTask, UoocCourse } from "./types";
+import type { ExamPaper, ExamTask, UoocCourse } from "../state/types";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 

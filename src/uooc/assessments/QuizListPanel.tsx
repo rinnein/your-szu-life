@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, Divider, LoadingIndicator, Select, SelectOption, Button } from "material/react";
-import { Banner, Chip, toast } from "../ui";
+import { Banner, Chip, toast } from "../../ui";
 import { LuBookOpen, LuCalendar, LuCircleCheck, LuRotateCw } from "react-icons/lu";
 import { ExamPaperModal } from "./ExamPaperModal";
-import type { HomeworkTask, QuizState, UoocCourse, UoocSnapshot } from "./types";
+import type { HomeworkTask, QuizState, UoocCourse, UoocSnapshot } from "../state/types";
 
 interface QuizListPanelProps {
   courses: UoocCourse[];

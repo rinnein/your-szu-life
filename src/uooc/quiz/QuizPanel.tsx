@@ -14,11 +14,11 @@ import {
   TextField,
   Button,
 } from "material/react";
-import { Banner, Chip, bindField, toast } from "../ui";
+import { Banner, Chip, bindField, toast } from "../../ui";
 import { LuBot, LuCircleCheck, LuClock, LuDatabase, LuSparkles } from "react-icons/lu";
 import { useHtmlTagVisibility } from "./DimmedHtmlText";
 import { RichText, countRichImages, plainTextFromRich } from "./RichText";
-import type { AiSessionEntry, QuizAnswers, QuizQuestion, QuizState, UoocSnapshot } from "./types";
+import type { AiSessionEntry, QuizAnswers, QuizQuestion, QuizState, UoocSnapshot } from "../state/types";
 
 export function getQuizCacheKey(
   accountId?: string,

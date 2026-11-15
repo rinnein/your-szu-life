@@ -64,7 +64,7 @@ export function NotificationCenter() {
 
       const course = extra.uoocCourse;
       if (typeof course === "string" && /^\d+$/.test(course)) {
-        navigate(`/study/uooc?tab=tasks&course=${course}`);
+        navigate(`/study/uooc?tab=courses&course=${course}`);
         return;
       }
 

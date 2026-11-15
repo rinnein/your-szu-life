@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { errorMessage as errorMessageText } from "./async-state";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { Dialog, Button } from "material/react";
@@ -69,13 +70,22 @@ export function ModelDownloadModal({
 
   const { progress, setProgress } = useModelDownloadProgress(kind);
 
-  const [downloading, setDownloading] = useState(false);
+  /**
+   * 下载过程的单一状态：idle → downloading → ready / failed。
+   * 失败时清掉 progress，避免「有进度残留 + 未就绪」把派生的 isDownloading 锁死在 true。
+   */
+  type Phase = "idle" | "downloading" | "failed";
+  const [phase, setPhase] = useState<Phase>("idle");
   const [errorMessage, setErrorMessage] = useState<string>();
   const [navigating, setNavigating] = useState(false);
 
   const isReady = status?.status === "ready";
+  // 本组件发起（phase）、后端已有下载会话（status）或已有活跃进度（progress 未就绪）
+  // 都视作下载中；失败会清 progress 并显式进入 failed，因此不会再被进度残留锁死。
   const isDownloading =
-    downloading || status?.status === "downloading" || (progress !== null && !isReady);
+    phase === "downloading" ||
+    status?.status === "downloading" ||
+    (progress !== null && !isReady && phase !== "failed");
 
   const downloadedBytes = progress?.downloadedBytes ?? status?.downloadedBytes ?? 0;
   const totalBytes =
@@ -83,7 +93,7 @@ export function ModelDownloadModal({
   const speedBytesPerSec = progress?.speedBytesPerSec ?? status?.speedBytesPerSec ?? 0;
 
   const startDownload = async () => {
-    setDownloading(true);
+    setPhase("downloading");
     setErrorMessage(undefined);
     try {
       const channel = createTaskChannel<ModelDownloadChannelEvent>((event) => {
@@ -94,10 +104,12 @@ export function ModelDownloadModal({
       await invoke(info.downloadCommand, { onEvent: channel });
       onSuccess?.();
     } catch (error) {
-      setErrorMessage(String(error));
-    } finally {
-      setDownloading(false);
+      setErrorMessage(errorMessageText(error, "下载或校验失败，请检查网络连接后重试"));
+      setProgress(null);
+      setPhase("failed");
+      return;
     }
+    setPhase("idle");
   };
 
   const goToSettings = async () => {
@@ -155,7 +167,7 @@ export function ModelDownloadModal({
           </Banner>
         )}
 
-        {(errorMessage || status?.status === "error") && (
+        {phase === "failed" && (
           <Banner status="danger">
             <Banner.Title>下载遇到问题</Banner.Title>
             <Banner.Description>
@@ -187,7 +199,7 @@ export function ModelDownloadModal({
           {!isReady && (
             <Button
               size="xs"
-              disabled={isDownloading || isDownloading}
+              disabled={isDownloading}
               onClick={() => void startDownload()}
             >
               <LuDownload aria-hidden="true" /> 立即下载

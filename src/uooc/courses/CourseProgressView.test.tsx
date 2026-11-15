@@ -3,8 +3,8 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { CourseProgressView } from "./CourseProgressView";
-import { courseSchedule } from "./course-schedule";
-import type { ProgressEntry, UoocCourse } from "./types";
+import { courseSchedule } from "../state/course-schedule";
+import type { ProgressEntry, UoocCourse } from "../state/types";
 
 Element.prototype.getAnimations = () => [];
 beforeEach(() =>

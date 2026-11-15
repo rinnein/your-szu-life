@@ -99,7 +99,7 @@ fn update(service: &Service, ctx: &Context, edit: impl FnOnce(&mut QuizState)) {
         service.publish(&mut r);
     }
     if let (Some(app), Some(body)) = (&service.app, notify) {
-        let route = format!("/study/uooc?tab=tasks&course={}", ctx.cid);
+        let route = format!("/study/uooc?tab=courses&course={}", ctx.cid);
         let payload = szu_core::notification::NotificationPayload::new(
             szu_core::notification::NotificationCategory::Uooc,
             "UOOC 测验需要处理",

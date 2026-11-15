@@ -3,9 +3,9 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
-import { toast } from "../ui";
+import { toast } from "../../ui";
 import { AiSettings } from "./AiSettings";
-import type { AiConfig } from "./types";
+import type { AiConfig } from "../state/types";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 const config: AiConfig = {
   main: { baseUrl: "https://example.org/v1", model: "", hasKey: true },

@@ -84,6 +84,9 @@ export function compatibilityThemeTokens(tokens: Record<string, string>): Record
     ["info", 18, "surface"],
     ["tertiary", 20, "surface"],
     ["on-surface", 8, "surface-container-high"],
+    // bg-*-soft 状态底色与卡片/图标按钮 hover 用到的双角色混合，首帧就给旧内核备好。
+    ["on-surface", 6, "surface"],
+    ["on-surface", 8, "surface"],
     ["on-tertiary-container", 8, "tertiary-container"],
     ...Array.from({ length: 12 }, (_, i): [string, number, string] => [
       `accent-${String(i + 1).padStart(2, "0")}`,

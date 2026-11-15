@@ -2050,3 +2050,100 @@ fn synced_session_enters_checking_and_clears_the_old_account() {
     assert!(snapshot.courses.is_empty());
     assert!(snapshot.message.contains("等待验证"));
 }
+
+#[test]
+fn set_settings_allows_discussion_fields_while_workers_run() {
+    let service = service_test(root());
+    {
+        let mut runtime = service.runtime.lock().unwrap();
+        runtime
+            .workers
+            .insert("42".into(), (1, CancellationToken::new()));
+    }
+    // 讨论开关、文案与间隔随时可改：worker 启动时已拷贝运行设置，讨论每次都读最新快照。
+    service
+        .set_settings(Settings {
+            discussion_enabled: false,
+            discussion_content: "换一条文案".into(),
+            discussion_interval_min: 45,
+            ..Settings::default()
+        })
+        .unwrap();
+    let snapshot = service.snapshot();
+    assert!(!snapshot.settings.discussion_enabled);
+    assert_eq!(snapshot.settings.discussion_content, "换一条文案");
+    assert_eq!(snapshot.settings.discussion_interval_min, 45);
+    // 题库服务地址同样不受 worker 影响。
+    service
+        .set_settings(Settings {
+            qa_server_url: "http://127.0.0.1:9".into(),
+            ..Settings::default()
+        })
+        .unwrap();
+    assert_eq!(
+        service.snapshot().settings.qa_server_url,
+        "http://127.0.0.1:9"
+    );
+}
+
+#[test]
+fn set_settings_rejects_runtime_fields_while_workers_run() {
+    let service = service_test(root());
+    {
+        let mut runtime = service.runtime.lock().unwrap();
+        runtime
+            .workers
+            .insert("42".into(), (1, CancellationToken::new()));
+    }
+    let base = service.snapshot().settings;
+    let bump = |update: fn(&mut Settings)| {
+        let mut settings = base.clone();
+        update(&mut settings);
+        settings
+    };
+    let cases = [
+        ("并发数", bump(|s| s.concurrency += 1)),
+        ("上报间隔", bump(|s| s.report_interval_sec += 1)),
+        ("目标倍率", bump(|s| s.speed_multiplier += 0.5)),
+        ("仅预览", bump(|s| s.dry_run = !s.dry_run)),
+    ];
+    for (label, settings) in cases {
+        let error = service.set_settings(settings).unwrap_err();
+        assert!(
+            error.contains("暂停"),
+            "{label} 的报错应要求先暂停任务：{error}"
+        );
+    }
+    // 未变的运行字段 + 修改讨论字段不受影响（上一条用例已覆盖），此处只断言错误文案点名四个字段。
+    let error = service
+        .set_settings(Settings {
+            concurrency: 9,
+            ..Settings::default()
+        })
+        .unwrap_err();
+    assert!(error.contains("目标倍率"));
+}
+
+#[test]
+fn set_settings_only_rebuilds_permits_when_concurrency_changes() {
+    let service = service_test(root());
+    let before = service.permits.read().unwrap().clone();
+    // 无 worker 且并发数未变：不替换信号量（Arc::ptr_eq 判断同一份实例）。
+    service
+        .set_settings(Settings {
+            discussion_interval_min: 45,
+            ..Settings::default()
+        })
+        .unwrap();
+    assert!(Arc::ptr_eq(&before, &service.permits.read().unwrap()));
+    // 并发数变化才替换。
+    service
+        .set_settings(Settings {
+            concurrency: 5,
+            ..Settings::default()
+        })
+        .unwrap();
+    let after = service.permits.read().unwrap().clone();
+    assert!(!Arc::ptr_eq(&before, &after));
+    assert_eq!(after.available_permits(), 5);
+}

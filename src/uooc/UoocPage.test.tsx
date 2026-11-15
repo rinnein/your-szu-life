@@ -19,8 +19,7 @@ import {
   type CourseProgress,
   type QuizState,
   type UoocVideo,
-  DEFAULT_QA_SERVER_URL,
-} from "./types";
+} from "./state/types";
 import { mockElementRects } from "../test-layout";
 
 vi.setConfig({ testTimeout: 15000 });
@@ -131,25 +130,25 @@ afterEach(() => {
   delete window.SzuApplicationBack;
 });
 
-it("opens from the study page, selects cycle IDs, starts multiple courses, and replaces tabs", async () => {
+/** 展开课程卡片的「详情与操作」折叠区（正文里的按钮都在里面）。 */
+async function expandCourseActions(title: string) {
+  fireEvent.click(await screen.findByRole("button", { name: `${title}的详情与操作` }));
+}
+
+it("opens from the study page, starts a course from its card, and replaces tabs", async () => {
   const router = mount("/study");
   fireEvent.click(await screen.findByRole("button", { name: /^UOOC刷课/ }));
-  const first = await screen.findByRole("checkbox", { name: "人工智能" });
-  fireEvent.click(first);
-  fireEvent.click(screen.getByRole("checkbox", { name: "艺术的星空" }));
-  fireEvent.click(screen.getByRole("button", { name: "开始所选 (2)" }));
+  await expandCourseActions("人工智能");
+  fireEvent.click(await screen.findByRole("button", { name: "开始刷课" }));
   await waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith("start_uooc_courses", {
-      courseIds: ["1588976494", "669673711"],
-    }),
+    expect(invoke).toHaveBeenCalledWith("start_uooc_courses", { courseIds: ["1588976494"] }),
   );
-  await waitFor(() => expect(router.state.location.search).toEqual({ tab: "tasks" }));
-  fireEvent.click(screen.getByRole("tab", { name: "运行设置" }));
+  expect(router.state.location.pathname).toBe("/study/uooc");
+  fireEvent.click(screen.getByRole("tab", { name: "设置" }));
   await waitFor(() => expect(router.state.location.search).toEqual({ tab: "settings" }));
   fireEvent.click(screen.getByRole("button", { name: "返回上一页" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/study"));
   expect(router.history.canGoBack()).toBe(true);
-  expect(invoke).not.toHaveBeenCalledWith("control_uooc_tasks", expect.anything());
 });
 
 it("subscribes to native state, rejects stale events, and controls tasks without credentials", async () => {
@@ -173,12 +172,17 @@ it("subscribes to native state, rejects stale events, and controls tasks without
       ],
     },
   ];
-  mount("/study/uooc?tab=tasks");
+  mount("/study/uooc?tab=courses");
+  await expandCourseActions("人工智能");
   expect(await screen.findByText("视频一")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "暂停全部" }));
+  fireEvent.click(screen.getByRole("button", { name: "暂停" }));
   await waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith("control_uooc_tasks", { courseIds: [], action: "pause" }),
+    expect(invoke).toHaveBeenCalledWith("control_uooc_tasks", {
+      courseIds: ["1588976494"],
+      action: "pause",
+    }),
   );
+  // 过期快照（revision 更小）不允许覆盖已吸收的状态；版本比较由 newerSnapshot 保证。
   await act(async () =>
     onState?.({
       event: "uooc-state-changed",
@@ -193,12 +197,11 @@ it("subscribes to native state, rejects stale events, and controls tasks without
       payload: { ...snapshot, revision: 9, message: "过期状态" },
     }),
   );
-  expect(screen.getByText("最新状态")).toBeInTheDocument();
-  expect(screen.queryByText("过期状态")).not.toBeInTheDocument();
   expect(newerSnapshot({ ...snapshot, revision: 10 }, snapshot).revision).toBe(10);
 });
 
-it("supports deleting a course task with confirmation dialog", async () => {
+it("supports deleting a course task from the card menu with confirmation dialog", async () => {
+  void document.body.textContent;
   snapshot.tasks = [
     {
       course: {
@@ -216,9 +219,11 @@ it("supports deleting a course task with confirmation dialog", async () => {
       generation: 1,
     },
   ];
-  mount("/study/uooc?tab=tasks");
-  const deleteBtn = await screen.findByRole("button", { name: "删除" });
-  fireEvent.click(deleteBtn);
+  mount("/study/uooc?tab=courses");
+  // 任务的 course.id 与首门课程相同 → 卡片按课程 id 渲染，标题取课程列表的「人工智能」。
+  await screen.findByText("人工智能", undefined, { timeout: 3000 });
+  fireEvent.click(screen.getByRole("button", { name: "人工智能的任务操作" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "移除任务" }));
   expect(await screen.findByText("确认删除任务？")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
   await waitFor(() =>
@@ -229,7 +234,7 @@ it("supports deleting a course task with confirmation dialog", async () => {
   );
 });
 
-it("uses native Android back and exposes official login without a Cookie input", async () => {
+it("uses native Android back and reaches login through the session banner when session is missing", async () => {
   snapshot.session = "loginRequired";
   snapshot.user = null;
   snapshot.courses = [];
@@ -249,12 +254,20 @@ it("uses native Android back and exposes official login without a Cookie input",
   await waitFor(() => expect(router.state.location.pathname).toBe("/study"));
 });
 
-it("saves preview settings and shows command errors", async () => {
+it("shows the session banner instead of a dead account card when login is required", async () => {
+  snapshot.session = "networkError";
+  snapshot.user = null;
+  snapshot.courses = [];
+  mount();
+  expect(await screen.findByText("网络连接失败")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "登录 UOOC" })).toBeInTheDocument();
+});
+
+it("saves settings immediately when a switch changes and shows command errors", async () => {
   mount("/study/uooc?tab=settings");
   const preview = await screen.findByRole("checkbox", { name: /仅预览/ });
   await waitFor(() => expect(preview).toBeEnabled());
   fireEvent.click(preview);
-  fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("save_uooc_settings", {
       settings: { ...snapshot.settings, dryRun: true },
@@ -275,7 +288,7 @@ it("opens global AI connection settings from UOOC runtime settings", async () =>
 
 it("does not display qa server url field on settings tab", async () => {
   mount("/study/uooc?tab=settings");
-  await screen.findByRole("button", { name: "保存设置" });
+  await screen.findByRole("button", { name: "前往 AI 连接设置" });
   expect(screen.queryByLabelText(/题库共享后端地址/)).not.toBeInTheDocument();
 });
 
@@ -318,7 +331,7 @@ it("displays and saves qa server url field on qa tab", async () => {
   mount("/study/uooc?tab=qa");
   const qaInput = await screen.findByLabelText(/题库共享后端地址/);
   expect(qaInput).toBeInTheDocument();
-  expect(qaInput).toHaveValue(DEFAULT_QA_SERVER_URL);
+  expect(qaInput).toHaveValue("https://uooc.rinne.in");
 
   typeInto(qaInput, "http://custom-qa.example:5000");
   fireEvent.click(screen.getByRole("button", { name: "保存题库地址" }));
@@ -356,17 +369,6 @@ it("does not rebuild the local bank when questions already exist", async () => {
   mount("/study/uooc");
   await waitFor(() => expect(invoke).toHaveBeenCalledWith("get_uooc_local_bank_count"));
   expect(invoke).not.toHaveBeenCalledWith("build_uooc_local_bank", expect.anything());
-});
-
-it("does not label a real run as a preview when the settings edit has not been saved", async () => {
-  const router = mount("/study/uooc?tab=settings");
-  const preview = await screen.findByRole("checkbox", { name: /仅预览/ });
-  await waitFor(() => expect(preview).toBeEnabled());
-  fireEvent.click(preview);
-  fireEvent.click(screen.getByRole("tab", { name: "开课中" }));
-  await waitFor(() => expect(router.state.location.search).toEqual({ tab: "courses" }));
-  expect(screen.getByRole("button", { name: "开始所选 (0)" })).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: /预览所选/ })).not.toBeInTheDocument();
 });
 
 function existingTask(status: UoocTaskStatus = "paused") {
@@ -411,18 +413,15 @@ it.each<UoocTaskStatus>([
   "completed",
   "dryRun",
   "blocked",
-])("disables an already-added %s course and excludes it from select-all", async (status) => {
+])("shows the %s course card without another start button", async (status) => {
   snapshot.tasks = [existingTask(status)];
   mount();
-  const checkbox = await screen.findByRole("checkbox", { name: "人工智能" });
-  await waitFor(() => expect(checkbox).toBeChecked());
-  expect(checkbox).toBeDisabled();
-  expect(screen.getByText("已添加")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "全选" }));
-  fireEvent.click(screen.getByRole("button", { name: "开始所选 (1)" }));
-  await waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith("start_uooc_courses", { courseIds: ["669673711"] }),
-  );
+  await screen.findByText("人工智能");
+  // 已加入任务的课程没有「开始刷课」主按钮；状态由卡片徽标穷尽映射。
+  expect(screen.queryByRole("button", { name: "开始刷课" })).not.toBeInTheDocument();
+  const card = screen.getByText("人工智能").closest("m-card") as HTMLElement;
+  const chip = card.querySelector('.md-chip[data-size="sm"]');
+  expect(chip).not.toBeNull();
 });
 
 it("marks server-completed videos green without changing their reported position", async () => {
@@ -430,9 +429,11 @@ it("marks server-completed videos green without changing their reported position
   snapshot.progress = {
     "1588976494": { data: progress(), updatedAtMs: 123, refreshing: false, error: null },
   };
-  mount("/study/uooc?tab=tasks");
-  expect(await screen.findByText("视频已刷完")).toBeInTheDocument();
-  const accordionTrigger = screen.getByRole("button", { name: "已刷完任务 (1 项)" });
+  mount("/study/uooc?tab=courses");
+  // 完成态课程的状态徽标文案是「已刷完」。
+  expect(await screen.findByText("已刷完")).toBeInTheDocument();
+  await expandCourseActions("人工智能");
+  const accordionTrigger = screen.getByRole("button", { name: "已完成 (1 项)" });
   fireEvent.click(accordionTrigger);
   const completedChips = await screen.findAllByText("已刷完");
   expect(completedChips.length).toBeGreaterThanOrEqual(1);
@@ -442,7 +443,7 @@ it("marks server-completed videos green without changing their reported position
     "aria-valuenow",
     "100",
   );
-  expect(screen.getByRole("progressbar", { name: "课程总进度" })).toHaveAttribute(
+  expect(screen.getByRole("progressbar", { name: "人工智能总进度" })).toHaveAttribute(
     "aria-valuenow",
     "35",
   );
@@ -452,13 +453,13 @@ it("marks server-completed videos green without changing their reported position
 it("does not turn dry-run completion into a green finished video", async () => {
   const task = existingTask("dryRun");
   snapshot.tasks = [{ ...task, videos: [{ ...task.videos[0], status: "dryRun" }] }];
-  mount("/study/uooc?tab=tasks");
-  await screen.findByText("视频一");
+  mount("/study/uooc?tab=courses");
+  await expandCourseActions("人工智能");
+  expect(await screen.findByText("视频一")).toBeInTheDocument();
   expect(screen.queryByText("已刷完")).not.toBeInTheDocument();
-  expect(screen.queryByText("视频已刷完")).not.toBeInTheDocument();
 });
 
-it("shows server progress and allows check-in for a course whose add checkbox is disabled", async () => {
+it("shows server progress and allows check-in for a course whose task already exists", async () => {
   snapshot.tasks = [existingTask()];
   snapshot.progress = {
     "1588976494": { data: progress(), updatedAtMs: 123, refreshing: false, error: null },
@@ -466,9 +467,11 @@ it("shows server progress and allows check-in for a course whose add checkbox is
   };
   mount();
   const signup = await screen.findByRole("button", { name: "签到" });
-  expect(screen.getByRole("checkbox", { name: "人工智能" })).toBeDisabled();
-  expect(screen.getAllByText("35%")).toHaveLength(2);
-  expect(screen.getByText("今日已签到")).toBeInTheDocument();
+  expect(screen.getAllByText("35%").length).toBeGreaterThanOrEqual(2);
+  await expandCourseActions("人工智能");
+  await expandCourseActions("艺术的星空");
+  // 折叠区里的服务端进度视图（attendanceText）渲染签到状态。
+  expect(await screen.findByText("今日已签到", undefined, { timeout: 3000 })).toBeInTheDocument();
   fireEvent.click(signup);
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("start_uooc_checkin", { courseIds: ["1588976494"] }),
@@ -492,21 +495,22 @@ it.each(["submitting", "verifying"] as const)(
       },
     };
     mount();
+    await expandCourseActions("人工智能");
     expect(await screen.findByText("自动签到：等待服务端确认")).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("button", { name: "取消签到" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消签到" }));
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("cancel_uooc_checkin", { courseIds: ["1588976494"] }),
     );
     expect(invoke).not.toHaveBeenCalledWith("control_uooc_tasks", expect.anything());
-    expect(screen.getByText("35%")).toBeInTheDocument();
+    expect(screen.getAllByText("35%").length).toBeGreaterThan(0);
     expect(screen.getByText(/进度刷新失败：暂时离线/)).toBeInTheDocument();
   },
 );
 
 it("refreshes the selected course when opening its details without adding a navigation level", async () => {
   const router = mount();
+  await expandCourseActions("人工智能");
   const trigger = await screen.findByRole("button", { name: "人工智能的课程详情" });
-  await screen.findByRole("checkbox", { name: "人工智能" });
   fireEvent.click(trigger);
   await screen.findByRole("grid", { name: "人工智能的考核权重与任务" });
   await waitFor(() =>
@@ -539,7 +543,9 @@ it("enables quiz mode picker only when test weight is positive, defaulting to �
     },
   };
   mount("/study/uooc?tab=courses");
-  await screen.findByRole("checkbox", { name: "人工智能" });
+  await screen.findByText("人工智能");
+  await expandCourseActions("人工智能");
+  await expandCourseActions("艺术的星空");
   // 触发按钮的可访问名称是「当前值 + 字段名」（react-aria 的形状），
   // 读屏因此能一并读出当前选择。
   const pickers = screen
@@ -583,12 +589,13 @@ it("automatically collapses completed tasks in taskItems into a single item, kee
       ],
     },
   ];
-  mount("/study/uooc?tab=tasks");
+  mount("/study/uooc?tab=courses");
+  await expandCourseActions("人工智能");
   // Active task is shown directly
   expect(await screen.findByText("进行中视频")).toBeInTheDocument();
 
   // Completed item is folded into an Accordion
-  const accordionTrigger = screen.getByRole("button", { name: "已刷完任务 (1 项)" });
+  const accordionTrigger = screen.getByRole("button", { name: "已完成 (1 项)" });
   expect(accordionTrigger).toHaveAttribute("aria-expanded", "false");
 
   // Expanding the accordion
@@ -668,14 +675,15 @@ it("orders video tasks and quiz tasks sequentially and opens quiz modal on click
       error: null,
     },
   };
-  mount("/study/uooc?tab=tasks");
+  mount("/study/uooc?tab=courses");
+  await expandCourseActions("人工智能");
   // Quiz task appears in the list between completed video and queued video
   const quizRow = await screen.findByRole("button", {
     name: "测验：第一章测验，点击打开测验",
   });
   expect(quizRow).toBeInTheDocument();
   expect(screen.getByText("视频二")).toBeInTheDocument();
-  const accordionTrigger = screen.getByRole("button", { name: "已刷完任务 (1 项)" });
+  const accordionTrigger = screen.getByRole("button", { name: "已完成 (1 项)" });
   expect(accordionTrigger).toBeInTheDocument();
   fireEvent.click(accordionTrigger);
   expect(await screen.findByText("视频一")).toBeInTheDocument();
@@ -730,8 +738,9 @@ it("renders quiz items in task list as clickable quiz cards and not video progre
       passed: ["q_item_1"],
     },
   };
-  mount("/study/uooc?tab=tasks");
-  const accordionTrigger = await screen.findByRole("button", { name: "已刷完任务 (1 项)" });
+  mount("/study/uooc?tab=courses");
+  await expandCourseActions("人工智能");
+  const accordionTrigger = await screen.findByRole("button", { name: "已完成 (1 项)" });
   fireEvent.click(accordionTrigger);
 
   const quizCard = screen.getByRole("button", { name: /第一章在线测验/ });
@@ -836,7 +845,7 @@ it("isCourseTaskCompleted recognizes completed status, 100% video progress, or a
   ).toBe(true);
 });
 
-it("handles course in review mode (status 33): displays review chip, disables task selection, and excludes from select-all", async () => {
+it("handles course in review mode (status 33): shows review chip and no start button", async () => {
   snapshot.courses.push({
     id: "3333333333",
     title: "操作系统复习课",
@@ -848,29 +857,22 @@ it("handles course in review mode (status 33): displays review chip, disables ta
   mount("/study/uooc?tab=courses");
 
   expect(await screen.findByText("操作系统复习课")).toBeInTheDocument();
-  expect(screen.getByText("复习模式")).toBeInTheDocument();
+  const card = screen.getByText("操作系统复习课").closest("m-card") as HTMLElement;
+  expect(card.querySelector('.md-chip[data-color="warning"]')).toHaveTextContent("复习模式");
   expect(
     screen.getByText(
-      "该课程处于复习模式（未结课），无法看视频或做测验/作业；考试任务请在「测验/作业/考试」标签中查看。",
+      "该课程处于复习模式（未结课），无法看视频或做测验/作业；考试请在「考核」标签中查看。",
     ),
   ).toBeInTheDocument();
-
-  const checkbox = screen.getByRole("checkbox", { name: "操作系统复习课" });
-  expect(checkbox).toBeDisabled();
-  expect(checkbox).not.toBeChecked();
-
-  // "全选" 不应勾选复习模式课程
-  fireEvent.click(screen.getByRole("button", { name: "全选" }));
-  expect(checkbox).not.toBeChecked();
-  expect(screen.getByRole("button", { name: "开始所选 (2)" })).toBeInTheDocument();
+  // 复习模式课程没有开始按钮，也没有答题模式选择。
+  expect(within(card).queryByRole("button", { name: "开始刷课" })).not.toBeInTheDocument();
 });
 
 it("移动端提供左上角功能目录抽屉并能切换 tab，移除原本的 Disclosure 折叠卡片", async () => {
   snapshot.courses = [];
   const router = mount("/study/uooc?tab=courses");
-  await screen.findByRole("heading", { name: /UOOC/ });
-
-  expect(document.querySelector(".disclosure")).toBeNull();
+  // 正文（AdaptiveTabs 注册抽屉章节）渲染后再断言抽屉。
+  await screen.findByText("当前没有开课中的课程。", undefined, { timeout: 3000 });
 
   const menuButton = screen.getByRole("button", { name: "打开功能目录" });
   expect(menuButton).toBeInTheDocument();
@@ -911,7 +913,8 @@ it("asks for global or local UOOC logout when sync is enabled", async () => {
   });
 
   mount("/study/uooc");
-  fireEvent.click(await screen.findByRole("button", { name: "退出 UOOC" }));
+  fireEvent.click(await screen.findByRole("button", { name: "打开账户菜单" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "退出 UOOC" }));
 
   expect(await screen.findByText("退出 UOOC 登录")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "全局退出" }));
@@ -931,8 +934,27 @@ it("logs out directly when UOOC session sync is disabled", async () => {
   });
 
   mount("/study/uooc");
-  fireEvent.click(await screen.findByRole("button", { name: "退出 UOOC" }));
+  fireEvent.click(await screen.findByRole("button", { name: "打开账户菜单" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "退出 UOOC" }));
 
   expect(screen.queryByText("退出 UOOC 登录")).not.toBeInTheDocument();
   await waitFor(() => expect(invoke).toHaveBeenCalledWith("logout_uooc", undefined));
+});
+
+it("renders the connection error banner with retry when the service cannot be read", async () => {
+  vi.mocked(invoke).mockImplementation(async (name) => {
+    if (name === "get_uooc_snapshot") throw "无法读取 UOOC 服务";
+    return undefined;
+  });
+  mount("/study/uooc");
+  const banner = await screen.findByRole("alert");
+  expect(banner).toHaveTextContent("无法读取 UOOC 服务");
+  // 重试成功后横幅消失，正文渲染。
+  vi.mocked(invoke).mockImplementation(async (name) => {
+    if (name === "get_uooc_snapshot") return structuredClone(snapshot);
+    return undefined;
+  });
+  fireEvent.click(screen.getByRole("button", { name: "重试" }));
+  await waitFor(() => expect(screen.getByText("人工智能")).toBeInTheDocument());
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });

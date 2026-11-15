@@ -9,10 +9,10 @@ import {
   SelectOption,
   Button,
 } from "material/react";
-import { Banner, Chip, toast } from "../ui";
+import { Banner, Chip, toast } from "../../ui";
 import { LuBookOpen, LuCalendar, LuCircleCheck, LuClock, LuRotateCw } from "react-icons/lu";
 import { ExamPaperModal } from "./ExamPaperModal";
-import type { ExamTask, UoocCourse } from "./types";
+import type { ExamTask, UoocCourse } from "../state/types";
 
 interface ExamListPanelProps {
   courses: UoocCourse[];

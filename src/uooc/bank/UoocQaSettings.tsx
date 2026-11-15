@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
-import { createTaskChannel } from "../tauri-channel";
+import { createTaskChannel } from "../../tauri-channel";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { DEFAULT_QA_SERVER_URL } from "./constants";
+import { DEFAULT_QA_SERVER_URL } from "../state/constants";
 import {
   ButtonGroup,
   Card,
@@ -14,7 +14,7 @@ import {
   TextField,
   Button,
 } from "material/react";
-import { Banner, Chip, Pagination, bindField, toast } from "../ui";
+import { Banner, Chip, Pagination, bindField, toast } from "../../ui";
 import {
   LuCircleCheck,
   LuClock,
@@ -33,13 +33,13 @@ import {
   LuUpload,
   LuUser,
 } from "react-icons/lu";
-import { openPublicUrl } from "../app-content/external";
-import { normalizeQaBaseUrl } from "./qaAuthClient";
-import type { LocalBankQuestion, QuizState, UoocCourse } from "./types";
+import { openPublicUrl } from "../../app-content/external";
+import { normalizeQaBaseUrl } from "../state/qaAuthClient";
+import type { LocalBankQuestion, QuizState, UoocCourse } from "../state/types";
 import { BankRebuildModal } from "./BankRebuildModal";
-import { useHtmlTagVisibility } from "./DimmedHtmlText";
-import { RichText, plainTextFromRich } from "./RichText";
-import { stripHtml } from "./QuizPanel";
+import { useHtmlTagVisibility } from "../quiz/DimmedHtmlText";
+import { RichText, plainTextFromRich } from "../quiz/RichText";
+import { stripHtml } from "../quiz/QuizPanel";
 
 export type EmbeddingVectorStatus = {
   status: "ready" | "empty" | "downloading" | string;

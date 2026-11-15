@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useChannelSubscription } from "../tauri-channel";
+import { useChannelSubscription } from "../../tauri-channel";
 import type { ExamTask, HomeworkTask } from "./types";
 
 export type UoocAssessments = {

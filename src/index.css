@@ -45,6 +45,32 @@
   --color-separator: var(--mtrl-sys-color-outline-variant);
   --color-border: var(--mtrl-sys-color-outline-variant);
   --color-focus: var(--mtrl-sys-color-primary);
+  /*
+   * 状态着色底：与 `.md-chip` / `.banner-*` 用的是同一组表达式，页面里需要
+   * 「成功 / 需处理 / 失败」底色时用 bg-*-soft，不要再写 bg-success/10 这类
+   * 带透明度修饰的颜色（同一语义曾出现过十几种深浅）。
+   * 表达式必须留在普通声明里：兼容管线按表达式给旧内核生成回退变量，写进
+   * 自定义属性会让回退失效（自定义属性不会因取值无效而回落到上一条声明）。
+   */
+  --color-success-soft: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-success) 18%,
+    var(--mtrl-sys-color-surface)
+  );
+  --color-warning-soft: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-warning) 20%,
+    var(--mtrl-sys-color-surface)
+  );
+  --color-danger-soft: var(--mtrl-sys-color-error-container);
+}
+
+/*
+ * 嵌套圆角：卡片（12px）与对话框（28px）内的块按「外圆角 − 内边距」取值，
+ * 两者算出来都不超过 4px，统一落到 MD3 的 extra-small。工具类是 rounded-inner。
+ */
+@theme inline {
+  --radius-inner: var(--mtrl-sys-shape-corner-extra-small, 4px);
 }
 
 /* Only a mounted native toolbar may replace the page's navigation controls. */
@@ -1836,8 +1862,9 @@ m-top-app-bar::part(trailing) {
 
 .section-title {
   margin: 0 0 6px;
-  font-size: 1.25rem;
-  font-weight: 600;
+  /* 与应用内区块标题（h2 text-lg font-medium）一致的一档。 */
+  font-size: 1.125rem;
+  font-weight: 500;
   letter-spacing: -0.01em;
 }
 
@@ -2049,6 +2076,8 @@ m-top-app-bar::part(trailing) {
   font-size: 0.75rem;
   line-height: 1rem;
   font-weight: 500;
+  /* 标签里常是计数与分数，等宽数字避免数值变化时宽度抖动。 */
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -2189,19 +2218,38 @@ m-top-app-bar::part(trailing) {
 }
 
 /* 收起时仅折叠高度，不移出无障碍树（与 HeroUI 的 Accordion 行为一致）。 */
+/*
+ * 面板折叠用 grid 0fr → 1fr：收起态 0fr 行 + 内层 min-height: 0 让轨道真正
+ * 收到 0；面板自身 overflow: hidden 兜住内层溢出。grid-template-rows 的过渡
+ * 在 Chromium 107+ 有动画，更旧的内核直开直关，功能不受影响（能力门控：
+ * 不为旧内核加降级副本）。
+ *
+ * 展开态限高 min(100rem, 75dvh)：内容没超阈值时照常全展开、由页面滚动；
+ * 超长内容（几十个视频的已完成列表）在面板内滚动，避免单卡占满整页。
+ * dvh 由兼容管线给旧内核生成 --szu-viewport-height 回退。
+ */
 .disclosure-panel {
+  display: grid;
+  grid-template-rows: 0fr;
   overflow: hidden;
-  max-block-size: 0;
   opacity: 0;
   transition:
-    max-block-size 240ms cubic-bezier(0.2, 0, 0, 1),
+    grid-template-rows 240ms cubic-bezier(0.2, 0, 0, 1),
     opacity 180ms;
+}
+
+.disclosure-panel > .disclosure-content {
+  /* 0fr 轨道的自动最小尺寸来自网格项；清掉它轨道才能收到 0。 */
+  min-height: 0;
 }
 
 .disclosure-panel[data-open],
 .disclosure[data-open] > .disclosure-panel {
-  max-block-size: 100rem;
+  grid-template-rows: 1fr;
   opacity: 1;
+  max-block-size: min(100rem, 75dvh);
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
 
 .disclosure-indicator {

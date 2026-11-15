@@ -22,6 +22,11 @@ export default defineConfig(async () => ({
         find: /^@tauri-apps\/api\/core$/,
         replacement: fileURLToPath(new URL("./src/demo/shim.ts", import.meta.url)),
       },
+      {
+        // 演示模式下 listen 无 IPC 可订阅，替身直接返回不落地的取消函数。
+        find: /^@tauri-apps\/api\/event$/,
+        replacement: fileURLToPath(new URL("./src/demo/event-shim.ts", import.meta.url)),
+      },
     ],
   },
   optimizeDeps: {

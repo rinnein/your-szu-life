@@ -261,7 +261,7 @@ export function AppearanceSettings({
                 maxValue={1440}
                 step={1}
                 disabled={busy}
-                onChange={setWallpaperPollMinutes}
+                onCommit={setWallpaperPollMinutes}
                 description="范围 1 - 1440 分钟；启用自动取色后按此间隔检查壁纸。"
               />
             )}

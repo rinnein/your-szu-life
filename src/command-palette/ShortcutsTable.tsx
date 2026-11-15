@@ -31,7 +31,7 @@ export const SHORTCUT_ENTRIES: ShortcutEntry[] = [
     shortcut: "uooc / mooc",
     name: "UOOC任务tab",
     description: "优课在线平时视频任务",
-    target: "/study/uooc?tab=tasks",
+    target: "/study/uooc?tab=courses",
   },
   {
     shortcut: "net / xyw",

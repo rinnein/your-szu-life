@@ -47,7 +47,14 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 function isTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  if (typeof window === "undefined") return false;
+  // 演示模式（无真实 IPC）：外观读取走 demo shim 的 get_appearance mock。
+  try {
+    if (window.localStorage.getItem("demo.enabled") === "true") return true;
+  } catch {
+    // localStorage 不可用时按真实环境判断。
+  }
+  return "__TAURI_INTERNALS__" in window;
 }
 
 function systemPrefersDark(): boolean {

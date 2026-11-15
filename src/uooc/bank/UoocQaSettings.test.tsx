@@ -1,17 +1,17 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { typeInto } from "../ui/testing";
+import { typeInto } from "../../ui/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
-import { toast } from "../ui";
+import { toast } from "../../ui";
 import {
   UoocQaSettings,
   DEFAULT_QA_SERVER_URL,
   type EmbeddingVectorStatus,
   type QaAccountStatus,
 } from "./UoocQaSettings";
-import { openPublicUrl } from "../app-content/external";
+import { openPublicUrl } from "../../app-content/external";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -20,7 +20,7 @@ vi.mock("@tauri-apps/api/core", () => ({
   },
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
-vi.mock("../app-content/external", () => ({ openPublicUrl: vi.fn() }));
+vi.mock("../../app-content/external", () => ({ openPublicUrl: vi.fn() }));
 
 const initialStatus: EmbeddingVectorStatus = {
   status: "empty",

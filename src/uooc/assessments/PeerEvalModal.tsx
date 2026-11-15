@@ -10,9 +10,9 @@ import {
   TextField,
   Button,
 } from "material/react";
-import { Banner, Chip, NumberField, bindField, toast } from "../ui";
+import { Banner, Chip, NumberField, bindField, toast } from "../../ui";
 import { LuCheck, LuSend, LuSparkles, LuUsers } from "react-icons/lu";
-import type { PeerEvalTask, PeerSubmission, UoocCourse } from "./types";
+import type { PeerEvalTask, PeerSubmission, UoocCourse } from "../state/types";
 
 interface PeerEvalModalProps {
   isOpen: boolean;

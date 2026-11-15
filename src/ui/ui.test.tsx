@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import "../test-setup-element-internals";
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   Avatar,
@@ -142,9 +142,9 @@ describe("Pagination", () => {
 
 describe("NumberField", () => {
   it("clamps to the range", () => {
-    const onChange = vi.fn();
+    const onCommit = vi.fn();
     render(
-      <NumberField value={1} minValue={1} maxValue={5} onChange={onChange}>
+      <NumberField value={1} minValue={1} maxValue={5} onCommit={onCommit}>
         <NumberField.Group>
           <NumberField.DecrementButton />
           <NumberField.Input />
@@ -156,7 +156,23 @@ describe("NumberField", () => {
     expect(screen.getByRole("button", { name: "减少" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "增加" })).toBeEnabled();
     screen.getByRole("button", { name: "增加" }).click();
-    expect(onChange).toHaveBeenCalledWith(2);
+    expect(onCommit).toHaveBeenCalledWith(2);
+  });
+
+  it("keeps typing unclamped and commits on blur", () => {
+    const onCommit = vi.fn();
+    render(
+      <NumberField value={10} minValue={1} maxValue={99} step={1} onCommit={onCommit}>
+        <NumberField.Group>
+          <NumberField.Input />
+        </NumberField.Group>
+      </NumberField>,
+    );
+    const input = document.querySelector(".number-stepper-input") as HTMLInputElement;
+    // 键入中间值 1 也会上报（不做每键钳制），最终提交时才钳制。
+    fireEvent.input(input, { target: { value: "1" } });
+    fireEvent.blur(input, { target: { value: "999" } });
+    expect(onCommit).toHaveBeenLastCalledWith(99);
   });
 });
 

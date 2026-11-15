@@ -65,7 +65,7 @@ export const COMMAND_LIST: CommandItem[] = [
     shortcuts: ["uooc", "mooc"],
     description: "优课在线视频学习与平时任务",
     category: "学习",
-    target: "/study/uooc?tab=tasks",
+    target: "/study/uooc?tab=courses",
     icon: FaCirclePlay,
     keywords: ["youke", "shuake", "renwu", "video"],
   },

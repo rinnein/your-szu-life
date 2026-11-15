@@ -1,7 +1,7 @@
 import { LoadingIndicator, Progress } from "material/react";
-import { Chip } from "../ui";
-import { attendanceText, type ProgressEntry, type UoocCourse } from "./types";
-import { courseSchedule } from "./course-schedule";
+import { Chip } from "../../ui";
+import { attendanceText, type ProgressEntry, type UoocCourse } from "../state/types";
+import { courseSchedule } from "../state/course-schedule";
 import { CourseProgressDetails, formatPercent } from "./CourseProgressDetails";
 
 export function CourseProgressView({

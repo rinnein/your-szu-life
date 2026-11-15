@@ -1,30 +1,17 @@
+import { ONE_DAY_MS, clearPostponed, isPostponed, postpone } from "../reminder-postpone";
+
+/** 更新提示的推迟记录 key；沿用历史存储键，已推迟的用户不会被换键重置。 */
 export const UPDATE_POSTPONED_KEY = "update_reminder_postponed_until";
-export const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+export { ONE_DAY_MS };
 
 export function isUpdatePostponed(): boolean {
-  try {
-    const raw = localStorage.getItem(UPDATE_POSTPONED_KEY);
-    if (!raw) return false;
-    const until = Number(raw);
-    if (!Number.isFinite(until)) return false;
-    return Date.now() < until;
-  } catch {
-    return false;
-  }
+  return isPostponed(UPDATE_POSTPONED_KEY);
 }
 
 export function postponeUpdateReminder(durationMs: number = ONE_DAY_MS): void {
-  try {
-    localStorage.setItem(UPDATE_POSTPONED_KEY, (Date.now() + durationMs).toString());
-  } catch {
-    // Ignore storage quota or disabled localStorage exceptions
-  }
+  postpone(UPDATE_POSTPONED_KEY, durationMs);
 }
 
 export function clearPostponedUpdateReminder(): void {
-  try {
-    localStorage.removeItem(UPDATE_POSTPONED_KEY);
-  } catch {
-    // Ignore
-  }
+  clearPostponed(UPDATE_POSTPONED_KEY);
 }

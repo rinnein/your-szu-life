@@ -1,11 +1,11 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { typeInto } from "../ui/testing";
+import { typeInto } from "../../ui/testing";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { QuizPanel, getQuizCacheKey, loadQuizCache, saveQuizCache, stripHtml } from "./QuizPanel";
-import type { QuizState, UoocSnapshot } from "./types";
+import type { QuizState, UoocSnapshot } from "../state/types";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(() => Promise.resolve(() => {})) }));
 beforeEach(() => {

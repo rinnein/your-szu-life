@@ -4,7 +4,7 @@ import type {
   ProgressMetric,
   UoocSnapshot,
   UoocTask,
-} from "../../uooc/types";
+} from "../../uooc/state/types";
 import { mockProfile } from "./auth";
 
 const okMetric = (percent: number, count: number, total: number): ProgressMetric => ({
@@ -149,3 +149,11 @@ export const mockUoocAssessments = {
     },
   ],
 };
+
+export const mockUoocAiConfig = {
+  main: { baseUrl: "https://api.example.org/v1", model: "demo-model", hasKey: true },
+  jev: { baseUrl: "https://api.typesafe.ai/v1", model: "jev-demo", hasKey: false },
+  jevEnabled: false,
+  confidence: 0.8,
+  defaultMode: "supervised",
+} as const;

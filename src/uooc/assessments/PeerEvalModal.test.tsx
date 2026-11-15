@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { invoke } from "@tauri-apps/api/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { PeerEvalModal } from "./PeerEvalModal";
-import type { PeerEvalTask, UoocCourse } from "./types";
+import type { PeerEvalTask, UoocCourse } from "../state/types";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 

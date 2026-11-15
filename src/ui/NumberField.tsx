@@ -8,6 +8,10 @@ interface NumberFieldContextValue {
   disabled: boolean;
   inputId: string;
   setValue: (next: number) => void;
+  /** 失焦 / 回车 / 步进时提交；键入过程只发 onChange（可以还未落在范围内）。 */
+  commit: (next: number) => void;
+  /** 把当前输入文本解析为提交值；解析失败时回落到受控 value。 */
+  parse: (text: string) => number;
 }
 
 const NumberFieldContext = createContext<NumberFieldContextValue | null>(null);
@@ -29,6 +33,10 @@ function clamp(value: number, min: number, max: number) {
  * 一条描边包住「减号 / 数值 / 加号」，两侧按钮与数值之间用短竖线分隔，
  * 与 material 的图标按钮和输入框保持同一套视觉语言。
  *
+ * 键入过程只触发 `onChange`（此时值可能还没输完，不做钳制）；步进按钮、
+ * 失焦与回车触发 `onCommit`（先钳制到范围并对齐 step 小数）。只关心结果、
+ * 不关心中间态的场景只传 `onCommit` 即可。
+ *
  * 默认直接渲染成 `[− | 数值 | +]`；需要自定义结构时（例如把按钮换成别的控件）
  * 可以用 `NumberField.Group` 与 `NumberField.DecrementButton` 等子组件自行拼装。
  */
@@ -41,6 +49,7 @@ function NumberStepperRoot({
   max,
   step = 1,
   onChange,
+  onCommit,
   disabled,
   isDisabled,
   className,
@@ -55,6 +64,7 @@ function NumberStepperRoot({
   max?: number;
   step?: number;
   onChange?: (value: number) => void;
+  onCommit?: (value: number) => void;
   disabled?: boolean;
   isDisabled?: boolean;
   className?: string;
@@ -66,6 +76,9 @@ function NumberStepperRoot({
   const hi = maxValue ?? max ?? Number.MAX_SAFE_INTEGER;
   const isOff = Boolean(disabled || isDisabled);
 
+  const decimals = String(step).split(".")[1]?.length ?? 0;
+  const quantize = (next: number) => Number(clamp(next, lo, hi).toFixed(decimals));
+
   return (
     <NumberFieldContext.Provider
       value={{
@@ -75,10 +88,13 @@ function NumberStepperRoot({
         step,
         disabled: isOff,
         inputId,
-        setValue: (next: number) => {
-          const clamped = clamp(next, lo, hi);
-          const decimals = String(step).split(".")[1]?.length ?? 0;
-          onChange?.(Number(clamped.toFixed(decimals)));
+        // 键入过程：不钳制，让「正在输入 12」经过「1」这个中间值。
+        setValue: (next: number) => onChange?.(next),
+        // 提交：钳制 + 对齐 step 小数。
+        commit: (next: number) => onCommit?.(quantize(next)),
+        parse: (text: string) => {
+          const parsed = Number(text);
+          return Number.isFinite(parsed) ? parsed : value;
         },
       }}
     >
@@ -106,14 +122,14 @@ const Group = ({ children, className }: { children: ReactNode; className?: strin
 );
 
 function DecrementButton() {
-  const { value, min, step, disabled, setValue } = useStepper();
+  const { value, min, step, disabled, commit } = useStepper();
   return (
     <button
       type="button"
       className="number-stepper-button"
       aria-label="减少"
       disabled={disabled || value <= min}
-      onClick={() => setValue(value - step)}
+      onClick={() => commit(value - step)}
     >
       −
     </button>
@@ -121,14 +137,14 @@ function DecrementButton() {
 }
 
 function IncrementButton() {
-  const { value, max, step, disabled, setValue } = useStepper();
+  const { value, max, step, disabled, commit } = useStepper();
   return (
     <button
       type="button"
       className="number-stepper-button"
       aria-label="增加"
       disabled={disabled || value >= max}
-      onClick={() => setValue(value + step)}
+      onClick={() => commit(value + step)}
     >
       +
     </button>
@@ -136,7 +152,7 @@ function IncrementButton() {
 }
 
 function Input() {
-  const { value, min, max, step, disabled, inputId, setValue } = useStepper();
+  const { value, min, max, step, disabled, inputId, setValue, commit, parse } = useStepper();
   return (
     <input
       id={inputId}
@@ -150,6 +166,13 @@ function Input() {
       onChange={(event) => {
         const parsed = Number(event.target.value);
         if (Number.isFinite(parsed)) setValue(parsed);
+      }}
+      onBlur={(event) => commit(parse(event.target.value))}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        commit(parse((event.target as HTMLInputElement).value));
+        (event.target as HTMLInputElement).blur();
       }}
     />
   );

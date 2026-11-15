@@ -1,5 +1,5 @@
-import { Disclosure, Table } from "../ui";
-import type { CourseProgress, ProgressMetric } from "./types";
+import { Disclosure, Table } from "../../ui";
+import type { CourseProgress, ProgressMetric } from "../state/types";
 
 export const formatNumber = (value: number | null | undefined) =>
   value == null ? "—" : new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(value);

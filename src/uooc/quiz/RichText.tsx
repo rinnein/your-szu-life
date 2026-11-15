@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { DimmedHtmlText } from "./DimmedHtmlText";
-import { RemoteImage } from "../resources/remote";
+import { RemoteImage } from "../../resources/remote";
 
 export type RichImage = {
   pic_id?: string;

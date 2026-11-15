@@ -119,6 +119,8 @@ describe("AppearanceSettings", () => {
 
     const input = await screen.findByLabelText("检查间隔（分钟）");
     typeInto(input, "10");
+    // NumberField 失焦才提交，typeInto 派发的 change 不算提交。
+    fireEvent.blur(input, { target: { value: "10" } });
     await waitFor(() => expect(mocks.setWallpaperPollMinutes).toHaveBeenCalledWith(10));
   });
 

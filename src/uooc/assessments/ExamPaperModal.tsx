@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { Dialog, LoadingIndicator, Button } from "material/react";
-import { createTaskChannel } from "../tauri-channel";
-import { Banner, toast } from "../ui";
-import { QuizPanel, type QuizReview } from "./QuizPanel";
+import { createTaskChannel } from "../../tauri-channel";
+import { Banner, toast } from "../../ui";
+import { QuizPanel, type QuizReview } from "../quiz/QuizPanel";
 import type {
   AiSessionEntry,
   ExamPaper,
@@ -13,7 +13,7 @@ import type {
   QuizAnswers,
   QuizQuestion,
   QuizState,
-} from "./types";
+} from "../state/types";
 
 interface ExamPaperModalProps {
   exam: ExamTask | HomeworkTask | null;

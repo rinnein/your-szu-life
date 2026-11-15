@@ -24,6 +24,7 @@ import {
   mockStaffStatus,
 } from "./fixtures/campus-network";
 import { mockUoocAssessments, mockUoocSnapshot } from "./fixtures/uooc";
+import { mockUoocAiConfig } from "./fixtures/uooc";
 import {
   mockOjContests,
   mockOjGroups,
@@ -102,6 +103,46 @@ const mockHandlers: Record<string, MockHandler> = {
   // UOOC。
   get_uooc_snapshot: () => mockUoocSnapshot,
   refresh_uooc_progress: () => mockUoocSnapshot,
+  subscribe_uooc_state: (args) => {
+    const channel = channelFrom(args);
+    if (channel) void channel.send({ type: "snapshot", data: mockUoocSnapshot });
+    return null;
+  },
+  get_uooc_ai_config: () => mockUoocAiConfig,
+  get_debug_mode: () => ({ enabled: false }),
+  get_uooc_local_bank_count: () => 12,
+  get_uooc_embedding_status: () => ({
+    status: "ready",
+    cachedCount: 12,
+    totalDimension: 512,
+    updatedAtMs: 1,
+    message: "",
+  }),
+  get_uooc_qa_account_status: () => ({
+    isAnonymous: true,
+    permissionLevel: "anonymous",
+    canOverwrite: false,
+  }),
+  get_uooc_local_bank_questions: () => [],
+  get_appearance: () => ({
+    mode: "dark",
+    seed: "#5d5fef",
+    seedSource: "default",
+    autoWallpaper: false,
+    wallpaperPollMinutes: 15,
+    variant: "tonal-spot",
+  }),
+  list_uooc_quizzes: () => mockUoocAssessments.homeworks ?? [],
+  list_uooc_exams: () => mockUoocAssessments.exams ?? [],
+  list_uooc_homeworks: () => mockUoocAssessments.homeworks ?? [],
+  save_uooc_settings: () => mockUoocSnapshot,
+  control_uooc_tasks: () => mockUoocSnapshot,
+  start_uooc_checkin: () => mockUoocSnapshot,
+  cancel_uooc_checkin: () => mockUoocSnapshot,
+  refresh_uooc_session: () => mockUoocSnapshot,
+  open_uooc_login: () => unavailable("open_uooc_login"),
+  logout_uooc: () => undefined,
+  get_sync_status: () => ({ enabled: false, items: [] }),
   subscribe_uooc_assessments: (args) => {
     const channel = channelFrom(args);
     if (channel) void channel.send({ type: "initial", data: mockUoocAssessments });

@@ -7,7 +7,7 @@ import { invoke } from "@tauri-apps/api/core";
 import AiConnectionSettings from "./AiConnectionSettings";
 import { toast } from "./ui";
 import type { StepNextAction } from "./step-next-action";
-import type { AiConnections } from "./uooc/types";
+import type { AiConnections } from "./uooc/state/types";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 

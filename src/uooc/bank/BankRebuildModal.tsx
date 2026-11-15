@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { listen } from "@tauri-apps/api/event";
 import { Card, Dialog, LoadingIndicator, Progress, Button } from "material/react";
-import { Chip, ScrollShadow } from "../ui";
+import { Chip, ScrollShadow } from "../../ui";
 import { LuBookOpen, LuCheck, LuCircleCheck, LuCircleHelp, LuFileText } from "react-icons/lu";
-import { plainTextFromRich } from "./RichText";
+import { plainTextFromRich } from "../quiz/RichText";
 
 export type BankRebuildProgress = {
   stage: "start" | "course" | "task" | "question" | "task_complete" | "complete" | "error";

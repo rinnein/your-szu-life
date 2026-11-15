@@ -58,10 +58,10 @@ it("includes the study hub for an OJ deep link", () => {
 });
 
 it("derives the parent chain from the nested route path", () => {
-  expect(initialLogicalEntries("https://tauri.localhost/study/uooc?tab=tasks")).toEqual([
+  expect(initialLogicalEntries("https://tauri.localhost/study/uooc?tab=courses")).toEqual([
     "/",
     "/study",
-    "/study/uooc?tab=tasks",
+    "/study/uooc?tab=courses",
   ]);
   expect(initialLogicalEntries("https://tauri.localhost/life")).toEqual(["/", "/life"]);
   expect(initialLogicalEntries("https://tauri.localhost/life/campus-payments/electricity")).toEqual(
@@ -235,7 +235,7 @@ describe("desktop navigation and pin", () => {
 
   it("desktop pin opens the current page in a feature window and goes back", async () => {
     mockCreatedWindow("created");
-    const { navigate, back } = mockRouter({ href: "/study/uooc?tab=tasks" });
+    const { navigate, back } = mockRouter({ href: "/study/uooc?tab=courses" });
     render(
       <LogicalNavigationProvider>
         <PinConsumer />
@@ -247,7 +247,7 @@ describe("desktop navigation and pin", () => {
     await vi.waitFor(() => expect(createdWindows).toHaveLength(1));
     const { label, options } = createdWindows[0];
     expect(label).toMatch(/^feature-/);
-    expect(options.url).toBe("/study/uooc?tab=tasks&__szu_window=child");
+    expect(options.url).toBe("/study/uooc?tab=courses&__szu_window=child");
     // 主窗口退回上一级逻辑页面（back），而不是做窗口内 push。
     await vi.waitFor(() => expect(back).toHaveBeenCalled());
     expect(navigate).not.toHaveBeenCalled();

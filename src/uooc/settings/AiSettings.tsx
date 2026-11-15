@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, Checkbox, LoadingIndicator, Select, SelectOption, Button } from "material/react";
-import { Banner, NumberField, bindField, toast } from "../ui";
-import type { AiConfig, QuizMode } from "./types";
+import { Banner, NumberField, bindField, toast } from "../../ui";
+import type { AiConfig, QuizMode } from "../state/types";
 
 export const modeLabels: Record<QuizMode, string> = {
   supervised: "手动答题",

@@ -517,15 +517,27 @@ impl Service {
         settings.validate()?;
         settings.qa_server_url = normalize_qa_url(&settings.qa_server_url)?;
         let mut runtime = self.runtime.lock().unwrap();
-        if !runtime.workers.is_empty() {
-            return Err("请先暂停全部任务再修改设置".into());
+        // 运行中的 worker 启动时已拷贝一份运行设置（runner::run 的 settings 参数），
+        // 只有这四个字段会被正在跑的任务读取；讨论与题库地址每次都读最新快照，
+        // 可以随时改。permits 只在并发数真的变化时才替换，否则正在等待许可的
+        // worker 会拿到一份与 snapshot 脱节的旧信号量、突破新的并发上限。
+        if runtime.snapshot.settings.concurrency != settings.concurrency {
+            if !runtime.workers.is_empty() {
+                return Err("并发数、上报间隔、目标倍率与仅预览需要先暂停全部任务再修改".into());
+            }
+            *self.permits.write().unwrap() = Arc::new(Semaphore::new(settings.concurrency));
+        } else if !runtime.workers.is_empty() {
+            let current = &runtime.snapshot.settings;
+            if current.report_interval_sec != settings.report_interval_sec
+                || current.speed_multiplier != settings.speed_multiplier
+                || current.dry_run != settings.dry_run
+            {
+                return Err("并发数、上报间隔、目标倍率与仅预览需要先暂停全部任务再修改".into());
+            }
         }
-        *self.permits.write().unwrap() = Arc::new(Semaphore::new(settings.concurrency));
         runtime.snapshot.settings = settings;
         self.publish(&mut runtime);
-        szu_core::settings_sync_signal::mark_dirty(
-            szu_core::settings_sync_items::UOOC_SETTINGS,
-        );
+        szu_core::settings_sync_signal::mark_dirty(szu_core::settings_sync_items::UOOC_SETTINGS);
         Ok(())
     }
     pub async fn qa_api_key(&self) -> Option<String> {
