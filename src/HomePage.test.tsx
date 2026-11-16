@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
@@ -379,7 +379,9 @@ describe("frontend smoke tests", () => {
     fireEvent.click(screen.getByRole("tab", { name: "宿舍区" }));
     const toggle = screen.getByRole("switch", { name: "开启宿舍区自动登录" });
     fireEvent.click(toggle);
-    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
+    // 两个区域面板常驻挂载，按面板收窄查询。
+    const dormPanel = document.querySelector('[data-region-panel="dormitory"]');
+    fireEvent.click(within(dormPanel as HTMLElement).getByRole("button", { name: "保存设置" }));
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("save_dorm_network_settings", expect.anything()),
     );

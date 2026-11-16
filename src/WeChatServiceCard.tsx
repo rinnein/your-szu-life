@@ -3,6 +3,7 @@ import { Card, Button } from "material/react";
 import { QRCodeSVG } from "qrcode.react";
 import { LuCopy } from "react-icons/lu";
 import { copyText } from "./clipboard";
+import { toast } from "./ui";
 import { WECHAT_SERVICES } from "./campus-payments";
 
 export function WeChatServiceCard({
@@ -14,15 +15,11 @@ export function WeChatServiceCard({
 }) {
   const data = WECHAT_SERVICES.find((x) => x.id === service)!;
   const [copying, setCopying] = useState(false);
-  const [message, setMessage] = useState<string>();
   const copy = async () => {
+    if (copying) return;
     setCopying(true);
-    setMessage(undefined);
-    setMessage(
-      (await copyText(data.url))
-        ? "链接已复制，请在微信内粘贴打开。"
-        : "无法自动复制，请长按或选择下方完整链接手动复制。",
-    );
+    if (await copyText(data.url)) toast.success("链接已复制，请在微信内粘贴打开");
+    else toast.warning("无法自动复制，请长按或选择下方完整链接手动复制");
     setCopying(false);
   };
   return (
@@ -47,11 +44,6 @@ export function WeChatServiceCard({
           <LuCopy aria-hidden="true" />
           {copying ? "正在复制…" : "复制链接"}
         </Button>
-        {message && (
-          <p className="payments-copy-message" role="status">
-            {message}
-          </p>
-        )}
         <code className="payments-link" tabIndex={0} aria-label={data.title + "完整链接"}>
           {data.url}
         </code>

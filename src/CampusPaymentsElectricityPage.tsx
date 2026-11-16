@@ -5,7 +5,7 @@ import { Banner, bindField, toast } from "./ui";
 import { LuZap } from "react-icons/lu";
 import { copyText } from "./clipboard";
 import { ElectricityDetails } from "./ElectricityDetails";
-import { Card as UiCard, SkeletonCard } from "./components";
+import { Card as UiCard, EmptyState, SkeletonCard } from "./components";
 import {
   getElectricityConstants,
   getElectricityRoomFloor,
@@ -15,11 +15,19 @@ import {
   type ElectricityRecharge,
 } from "./electricity";
 import {
-  ElectricityLocationConfirmDialog,
   ElectricityLocationFields,
   isElectricitySelectionAvailable,
   type ElectricityCampus as Campus,
 } from "./electricity-location";
+
+/** 宿舍选项加载：未需要（已存配置且未编辑）/ 加载中 / 就绪 / 失败（可重试）。 */
+type OptionsState =
+  | { status: "hidden" }
+  | { status: "loading" }
+  | { status: "ready" }
+  | { status: "error"; message: string };
+/** 数据操作占用：查询（含保存）/ 刷新（非强制）/ 强制刷新，转圈只落在发起动作的按钮上。 */
+type Pending = null | "query" | "refresh" | "force";
 
 export default function CampusPaymentsElectricityPage() {
   const [campuses, setCampuses] = useState<Campus[]>([]);
@@ -33,18 +41,17 @@ export default function CampusPaymentsElectricityPage() {
   const [result, setResult] = useState<Result>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
-  const [loadingOptions, setLoadingOptions] = useState(false);
-  const [optionsReady, setOptionsReady] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [options, setOptions] = useState<OptionsState>({ status: "hidden" });
+  const [pending, setPending] = useState<Pending>(null);
   const [editing, setEditing] = useState(false);
   const [rate, setRate] = useState<number>();
+  const [rateError, setRateError] = useState(false);
   const [savedSettings, setSavedSettings] = useState<Settings>();
   const [importText, setImportText] = useState("");
-  const [shareMessage, setShareMessage] = useState("");
   const [exportText, setExportText] = useState("");
   const [sharing, setSharing] = useState(false);
   const [retrying, setRetrying] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [optionsAttempt, setOptionsAttempt] = useState(0);
   const requestId = useRef(0);
   useEffect(() => {
     let active = true;
@@ -53,7 +60,7 @@ export default function CampusPaymentsElectricityPage() {
         if (active) setRate(constants?.yuanPerKwh);
       })
       .catch(() => {
-        if (active) setError("无法加载电价换算比例，请重新打开模块。");
+        if (active) setRateError(true);
       });
     return () => {
       active = false;
@@ -82,7 +89,7 @@ export default function CampusPaymentsElectricityPage() {
         }
         setSavedSettings(saved);
         setLoading(false);
-        setBusy(true);
+        setPending("query");
         const id = ++requestId.current;
         // Cache reads are independent of portal options and refresh requests.
         // Even offline, a previously visited room can render immediately.
@@ -105,12 +112,12 @@ export default function CampusPaymentsElectricityPage() {
           if (active && id === requestId.current)
             setError(typeof e === "string" ? e : "本次更新未完成，已有记录仍可查看。");
         } finally {
-          if (active && id === requestId.current) setBusy(false);
+          if (active && id === requestId.current) setPending(null);
         }
       } catch (e) {
         if (active) {
           setError(typeof e === "string" ? e : "无法读取宿舍配置。");
-          setBusy(false);
+          setPending(null);
         }
       } finally {
         if (active) setLoading(false);
@@ -123,32 +130,35 @@ export default function CampusPaymentsElectricityPage() {
     };
   }, []);
   useEffect(() => {
-    if (loading || (savedSettings && !editing)) {
-      setLoadingOptions(false);
+    const needed = !loading && (!savedSettings || editing);
+    if (!needed) {
+      setOptions({ status: "hidden" });
       return;
     }
     let active = true;
-    setLoadingOptions(true);
+    setOptions({ status: "loading" });
     optionsRequest.current ??= invoke<Campus[]>("get_electricity_options");
     void optionsRequest.current
       .then((next) => {
         if (active) {
           setCampuses(Array.isArray(next) ? next : []);
-          setOptionsReady(true);
+          setOptions({ status: "ready" });
         }
       })
       .catch((e) => {
         optionsRequest.current = undefined;
-        if (active) setError(typeof e === "string" ? e : "无法加载宿舍选项，请连接校园网后重试。");
-      })
-      .finally(() => {
-        if (active) setLoadingOptions(false);
+        if (active)
+          setOptions({
+            status: "error",
+            message: typeof e === "string" ? e : "无法加载宿舍选项，请连接校园网后重试。",
+          });
       });
     return () => {
       active = false;
     };
-  }, [loading, savedSettings, editing]);
+  }, [loading, savedSettings, editing, optionsAttempt]);
   const roomFloor = getElectricityRoomFloor(settings.roomName);
+  const optionsNeeded = !savedSettings || editing;
   const canQuery = Boolean(
     settings.campusId &&
     settings.areaId &&
@@ -157,19 +167,23 @@ export default function CampusPaymentsElectricityPage() {
     roomFloor !== null &&
     isElectricitySelectionAvailable(campuses, settings),
   );
+  const formDisabled =
+    loading || pending !== null || sharing || (optionsNeeded && options.status !== "ready");
+  // 修改草稿时保留上次查询结果供参照（结果区标明所属宿舍），仅作废在途请求。
   const changeLocation = (next: Settings) => {
     requestId.current += 1;
-    setResult(undefined);
     setError(undefined);
     setSettings(next);
   };
+  const restoreSaved = () => {
+    if (!savedSettings) return;
+    requestId.current += 1;
+    setSettings(savedSettings);
+  };
   const submit = async () => {
-    if (!canQuery) {
-      setConfirmOpen(false);
-      return;
-    }
+    if (!canQuery || pending) return;
     const id = ++requestId.current;
-    setBusy(true);
+    setPending("query");
     setError(undefined);
     try {
       const normalized = { ...settings, roomName: settings.roomName.trim() };
@@ -200,8 +214,7 @@ export default function CampusPaymentsElectricityPage() {
         toast.danger("查询未完成，配置尚未保存", { description: msg });
       }
     } finally {
-      if (id === requestId.current) setBusy(false);
-      setConfirmOpen(false);
+      if (id === requestId.current) setPending(null);
     }
   };
   const requestSubmit = () => {
@@ -214,22 +227,20 @@ export default function CampusPaymentsElectricityPage() {
       toast.warning(msg);
       return;
     }
-    // 已保存的配置直接刷新即可，只有正在填写/修改的范围需要再确认一次。
-    if (savedSettings && !editing) {
-      void submit();
-      return;
-    }
-    setConfirmOpen(true);
+    void submit();
   };
-  const refreshLatest = async () => {
-    if (!savedSettings || busy) return;
+  // 非强制刷新走后端缓存策略（每天 23:59 左右更新）；强制刷新直连门户，
+  // 只在结果区提供，避免与表单区的主操作重复。
+  const refreshLatest = async (forceRefresh: boolean) => {
+    if (!savedSettings || pending) return;
+    const kind = forceRefresh ? "force" : "refresh";
     const id = ++requestId.current;
-    setBusy(true);
+    setPending(kind);
     setError(undefined);
     try {
       const next = await invoke<Result>("query_electricity", {
         input: savedSettings,
-        forceRefresh: true,
+        forceRefresh,
       });
       if (id === requestId.current) {
         setResult(next);
@@ -239,38 +250,41 @@ export default function CampusPaymentsElectricityPage() {
       if (id === requestId.current)
         setError(typeof e === "string" ? e : "更新未完成，已有记录仍可查看。");
     } finally {
-      if (id === requestId.current) setBusy(false);
+      if (id === requestId.current) setPending(null);
     }
   };
   const exportConfig = async () => {
+    if (sharing) return;
     setSharing(true);
-    setShareMessage("");
     setExportText("");
     try {
       const text = await invoke<string>("export_electricity_settings");
-      if (await copyText(text)) setShareMessage("宿舍配置已复制。");
+      if (await copyText(text)) toast.success("宿舍配置已复制");
       else {
         setExportText(text);
-        setShareMessage("无法自动复制，请选择下方配置码手动复制。");
+        toast.warning("无法自动复制，请在下方配置码手动复制");
       }
     } catch (e) {
-      setShareMessage(typeof e === "string" ? e : "导出失败，请重试。");
+      toast.danger("导出失败", { description: typeof e === "string" ? e : undefined });
     } finally {
       setSharing(false);
     }
   };
   const importConfig = async () => {
+    if (sharing) return;
     setSharing(true);
-    setShareMessage("");
     try {
       const imported = await invoke<Settings>("import_electricity_settings", { text: importText });
+      const normalized = { ...imported, roomName: imported.roomName.trim() };
       requestId.current += 1;
-      setSettings(imported);
+      setError(undefined);
+      setSettings(normalized);
       setEditing(true);
-      setResult(undefined);
-      setShareMessage("已填入宿舍配置，点击查询电费保存并查询。");
+      toast.success("已填入宿舍配置，点击查询电费保存并查询");
     } catch (e) {
-      setShareMessage(typeof e === "string" ? e : "导入失败，请检查配置码。");
+      toast.danger("导入失败，请检查配置码", {
+        description: typeof e === "string" ? e : undefined,
+      });
     } finally {
       setSharing(false);
     }
@@ -293,11 +307,11 @@ export default function CampusPaymentsElectricityPage() {
       setRetrying(false);
     }
   };
-  const formDisabled =
-    loading ||
-    busy ||
-    sharing ||
-    ((!savedSettings || editing) && (loadingOptions || !optionsReady));
+  const retryOptions = () => {
+    optionsRequest.current = undefined;
+    setOptionsAttempt((n) => n + 1);
+  };
+
   return (
     <div className="electricity-page">
       <Card className="payments-card" variant="outlined">
@@ -309,7 +323,13 @@ export default function CampusPaymentsElectricityPage() {
           查询近期开销和当前剩余电量；宿舍配置保存在本机安全存储，也可导出分享。
         </div>
         <div>
-          {(loading || loadingOptions) && (
+          {loading && (
+            <div className="electricity-loading" aria-live="polite">
+              <LoadingIndicator size={16} aria-label="正在读取宿舍配置" />
+              <span>正在读取宿舍配置…</span>
+            </div>
+          )}
+          {options.status === "loading" && (
             <div className="electricity-loading" aria-live="polite">
               <LoadingIndicator size={16} aria-label="正在加载电费宿舍选项" />
               <span>正在加载宿舍选项…</span>
@@ -322,7 +342,7 @@ export default function CampusPaymentsElectricityPage() {
               requestSubmit();
             }}
           >
-            {(!savedSettings || editing) && (
+            {optionsNeeded && (
               <ElectricityLocationFields
                 campuses={campuses}
                 value={settings}
@@ -342,40 +362,57 @@ export default function CampusPaymentsElectricityPage() {
               <Button
                 type="button"
                 variant="text"
-                disabled={busy || sharing}
-                onClick={() => setSettings(savedSettings)}
+                disabled={pending !== null || sharing}
+                onClick={restoreSaved}
               >
                 使用上次配置
               </Button>
             )}
             <p className="text-sm text-muted">展示最近 31 天的用电与充值记录。</p>
             <div className="electricity-actions">
-              <Button type="submit" variant="filled" disabled={formDisabled || !canQuery}>
-                {busy && <LoadingIndicator size={16} />}
-                {busy ? "查询中…" : "查询电费"}
-              </Button>
+              {optionsNeeded && (
+                <Button type="submit" variant="filled" disabled={formDisabled || !canQuery}>
+                  {pending === "query" && <LoadingIndicator size={16} />}
+                  查询电费
+                </Button>
+              )}
               {savedSettings && !editing && (
                 <Button
                   type="button"
-                  variant="outlined"
+                  variant="filled"
                   disabled={formDisabled}
-                  onClick={() => void refreshLatest()}
+                  onClick={() => void refreshLatest(false)}
                 >
-                  刷新最新数据
+                  {pending === "refresh" && <LoadingIndicator size={16} />}
+                  刷新数据
                 </Button>
               )}
               {savedSettings && (
                 <Button
                   type="button"
                   variant="outlined"
-                  disabled={busy || sharing}
-                  onClick={() => setEditing(!editing)}
+                  disabled={pending !== null || sharing}
+                  onClick={() => {
+                    // 收起时恢复已保存配置：草稿不会与已存配置静默分叉，
+                    // 结果区的数据也随之与配置一致。
+                    if (editing) restoreSaved();
+                    setEditing(!editing);
+                  }}
                 >
                   {editing ? "收起配置" : "修改宿舍配置"}
                 </Button>
               )}
             </div>
           </form>
+          {options.status === "error" && optionsNeeded && (
+            <Banner status="danger" className="mt-4">
+              <Banner.Title>宿舍选项加载失败</Banner.Title>
+              <Banner.Description>{options.message}</Banner.Description>
+              <Button variant="text" onClick={retryOptions}>
+                重试
+              </Button>
+            </Banner>
+          )}
           <div className="mt-4 flex flex-col gap-3">
             {savedSettings && (
               <Button
@@ -386,7 +423,7 @@ export default function CampusPaymentsElectricityPage() {
                 导出宿舍配置并复制
               </Button>
             )}
-            {(!savedSettings || editing) && (
+            {optionsNeeded && (
               <>
                 <TextField
                   label="宿舍配置码"
@@ -404,7 +441,6 @@ export default function CampusPaymentsElectricityPage() {
                 </Button>
               </>
             )}
-            {shareMessage && <p role="status">{shareMessage}</p>}
             {exportText && <TextField label="可复制的宿舍配置码" value={exportText} readonly />}
           </div>
           {error && (
@@ -419,11 +455,17 @@ export default function CampusPaymentsElectricityPage() {
         <ElectricityDetails
           result={result}
           rate={rate}
+          rateError={rateError}
+          dormLabel={
+            savedSettings ? `${savedSettings.buildingName} ${savedSettings.roomName}` : undefined
+          }
+          onForceRefresh={savedSettings ? () => void refreshLatest(true) : undefined}
+          refreshing={pending === "force"}
           retryRecharges={() => void retryRecharges()}
           retrying={retrying}
         />
       )}
-      {(loading || (busy && !result)) && (
+      {(loading || ((pending === "query" || pending === "refresh") && !result)) && (
         <div className="grid gap-4" role="status" aria-label="正在加载电费数据">
           <div className="grid gap-3 sm:grid-cols-2">
             {[0, 1, 2, 3].map((item) => (
@@ -438,17 +480,12 @@ export default function CampusPaymentsElectricityPage() {
           </UiCard>
         </div>
       )}
-      <ElectricityLocationConfirmDialog
-        open={confirmOpen}
-        campuses={campuses}
-        value={settings}
-        busy={busy}
-        confirmLabel="确认并查询"
-        onClose={() => {
-          if (!busy) setConfirmOpen(false);
-        }}
-        onConfirm={() => void submit()}
-      />
+      {savedSettings && !editing && !result && !error && !loading && pending === null && (
+        <EmptyState
+          title="尚未查询"
+          description="点击「刷新数据」获取最近 31 天的用电与充值记录。"
+        />
+      )}
     </div>
   );
 }

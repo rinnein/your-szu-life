@@ -3,22 +3,13 @@ import { Outlet, useLocation } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { LoadingIndicator, Tab, Tabs } from "material/react";
 import { useAuth } from "./auth";
-import { CAMPUS_PAYMENTS_ROUTES, saveLastCampusPaymentsRoute } from "./campus-payments";
+import {
+  CAMPUS_PAYMENTS_ROUTES,
+  CAMPUS_PAYMENTS_SERVICES,
+  saveLastCampusPaymentsRoute,
+} from "./campus-payments";
 import { ModuleHeader, PageShell } from "./components";
 import { nameTablist } from "./ui/tablist";
-
-/**
- * 校园服务的四个入口。
- *
- * 它们是同一逻辑页面内的内容切换（各自只是不同的服务面板），因此用 tab 的
- * 语义表达，并用 `replace` 同步 URL——不制造新的返回层级。
- */
-const SERVICES = [
-  { path: "/life/campus-payments/card", label: "校园卡" },
-  { path: "/life/campus-payments/network", label: "网费" },
-  { path: "/life/campus-payments/electricity", label: "查电量" },
-  { path: "/life/campus-payments/recharge", label: "充电费" },
-] as const;
 
 export default function CampusPaymentsPage() {
   const { state } = useAuth();
@@ -47,7 +38,9 @@ export default function CampusPaymentsPage() {
     return null;
   }
 
-  const active = SERVICES.find((s) => s.path === location.pathname)?.path ?? SERVICES[0].path;
+  const active =
+    CAMPUS_PAYMENTS_SERVICES.find((s) => s.path === location.pathname)?.path ??
+    CAMPUS_PAYMENTS_SERVICES[0].path;
 
   return (
     <PageShell maxWidth="xl">
@@ -66,7 +59,7 @@ export default function CampusPaymentsPage() {
               void navigation.replace(event.detail.value, { resetScroll: false });
           }}
         >
-          {SERVICES.map((service) => (
+          {CAMPUS_PAYMENTS_SERVICES.map((service) => (
             <Tab key={service.path} value={service.path}>
               {service.label}
             </Tab>

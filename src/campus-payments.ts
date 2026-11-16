@@ -14,12 +14,23 @@ export const WECHAT_SERVICES = [
 ] as const;
 
 export const CAMPUS_PAYMENTS_LAST_ROUTE_KEY = "your-szu-life.campus-payments.last-route";
-export const CAMPUS_PAYMENTS_ROUTES = [
-  "/life/campus-payments/network",
-  "/life/campus-payments/card",
-  "/life/campus-payments/electricity",
-  "/life/campus-payments/recharge",
+
+/**
+ * 校园服务的四个入口（tab 顺序即路由的单一来源）。
+ *
+ * 它们是同一逻辑页面内的内容切换（各自只是不同的服务面板），因此用 tab 的
+ * 语义表达，并用 `replace` 同步 URL——不制造新的返回层级。
+ */
+export const CAMPUS_PAYMENTS_SERVICES = [
+  { path: "/life/campus-payments/card", label: "校园卡" },
+  { path: "/life/campus-payments/network", label: "网费" },
+  { path: "/life/campus-payments/electricity", label: "查电量" },
+  { path: "/life/campus-payments/recharge", label: "充电费" },
 ] as const;
+
+export const CAMPUS_PAYMENTS_ROUTES: readonly string[] = CAMPUS_PAYMENTS_SERVICES.map(
+  (service) => service.path,
+);
 
 export function readLastCampusPaymentsRoute() {
   try {

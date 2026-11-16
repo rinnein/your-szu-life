@@ -10,7 +10,7 @@ import {
   Tab,
   Tabs,
 } from "material/react";
-import { Banner, bindField, toast } from "./ui";
+import { bindField, toast } from "./ui";
 import { nameTablist } from "./ui/tablist";
 import {
   staffModeText,
@@ -40,8 +40,7 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
   const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [applying, setApplying] = useState(false);
-  const [error, setError] = useState("");
-  const [feedback, setFeedback] = useState<StaffApplyResult>();
+  /** 待确认的下线重登结果；仅在用户动作中产生与清除，不被设置事件挤掉。 */
   const [confirmation, setConfirmation] = useState<StaffApplyResult>();
   const mounted = useRef(true);
   const applyingRef = useRef(false);
@@ -56,7 +55,6 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
     setEnabled(settings.enabled);
     setCredentialMode(settings.credentialMode);
     setCard(settings.customCampusCardNumber ?? "");
-    setConfirmation(undefined);
   }, [
     settings.mode,
     settings.enabled,
@@ -73,11 +71,10 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
     (credentialMode === "custom" &&
       (card !== (settings.customCampusCardNumber ?? "") || password !== ""));
 
+  // 所有操作反馈统一走 toast：成功、失败各一条，不再维护并行的 Banner 状态。
   const save = async () => {
     if (busy) return;
     setSaving(true);
-    setError("");
-    setFeedback(undefined);
     setConfirmation(undefined);
     try {
       const next = await onSave({
@@ -93,9 +90,7 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
         toast.success("教工区设置已保存");
       }
     } catch (cause) {
-      const msg = String(cause);
-      if (mounted.current) setError(msg);
-      toast.danger("保存教工区设置失败", { description: msg });
+      toast.danger("保存教工区设置失败", { description: String(cause) });
     } finally {
       if (mounted.current) setSaving(false);
     }
@@ -105,7 +100,6 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
     if (value || !settings.enabled) return;
     // Stop immediately without also committing unsaved mode/password drafts.
     setSaving(true);
-    setError("");
     setConfirmation(undefined);
     try {
       await onSave({
@@ -113,8 +107,9 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
         enabled: false,
         credentialMode: settings.credentialMode,
       });
+      if (mounted.current) toast.success("自动登录已关闭");
     } catch (cause) {
-      if (mounted.current) setError(String(cause));
+      toast.danger("关闭自动登录失败", { description: String(cause) });
     } finally {
       if (mounted.current) setSaving(false);
     }
@@ -123,24 +118,19 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
     if (applyingRef.current || disabled || saving || dirty) return;
     applyingRef.current = true;
     setApplying(true);
-    setError("");
-    setFeedback(undefined);
     setConfirmation(undefined);
     try {
       const result = await onApply(token);
       if (!mounted.current) return;
-      if (result.outcome === "requiresConfirmation" && result.confirmationToken)
+      if (result.outcome === "requiresConfirmation" && result.confirmationToken) {
         setConfirmation(result);
-      else {
-        setFeedback(result);
-        if (result.outcome === "failed") {
-          toast.danger("教工区操作失败", { description: result.message });
-        }
+      } else if (result.outcome === "applied" || result.outcome === "alreadyOnline") {
+        toast.success(result.message || "教工区操作已完成");
+      } else {
+        toast.danger("教工区操作失败", { description: result.message });
       }
     } catch (cause) {
-      const msg = String(cause);
-      if (mounted.current) setError(msg);
-      toast.danger("教工区操作失败", { description: msg });
+      toast.danger("教工区操作失败", { description: String(cause) });
     } finally {
       applyingRef.current = false;
       if (mounted.current) setApplying(false);
@@ -179,17 +169,19 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
             <p className="field-hint">
               不保留门户的“记住密码”Cookie；开启后由应用监测并自动认证，关闭窗口时在后台运行。
             </p>
-            <Switch
-              aria-label="开启教工区自动登录"
-              checked={enabled}
-              disabled={disabled || saving}
-              onChange={(e: any) => void toggleAuto(e.detail?.checked ?? e.target?.checked)}
-            >
-              <div className="flex flex-col gap-0.5 ml-2">
-                <strong>自动登录</strong>
-                <span>新配置手动应用成功后生效，关闭开关立即停止</span>
-              </div>
-            </Switch>
+            <div className="network-setting-row">
+              <Switch
+                aria-label="开启教工区自动登录"
+                checked={enabled}
+                disabled={busy}
+                onChange={(e: any) => void toggleAuto(e.detail?.checked ?? e.target?.checked)}
+              >
+                <div className="flex flex-col gap-0.5 ml-2">
+                  <strong>自动登录</strong>
+                  <span>新配置手动应用成功后生效，关闭开关立即停止</span>
+                </div>
+              </Switch>
+            </div>
           </>
         )}
         <Tabs
@@ -251,26 +243,9 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
             {status.message}
           </p>
         )}
-        {feedback && (
-          <Banner status="default">
-            <Banner.Title>结果</Banner.Title>
-            <Banner.Description>{feedback.message}</Banner.Description>
-          </Banner>
-        )}
-        {error && (
-          <Banner status="danger">
-            <Banner.Title>操作失败</Banner.Title>
-            <Banner.Description>{error}</Banner.Description>
-          </Banner>
-        )}
         {confirmation &&
-          typeof document !== "undefined" &&
           createPortal(
-            <Dialog
-              open={!!confirmation}
-              headline="确认重新登录教工区？"
-              onClose={() => setConfirmation(undefined)}
-            >
+            <Dialog open headline="确认重新登录教工区？" onClose={() => setConfirmation(undefined)}>
               <div>{confirmation.message}</div>
               <div slot="actions">
                 <Button
@@ -285,6 +260,7 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
                   disabled={applying}
                   onClick={() => void apply(confirmation.confirmationToken ?? undefined)}
                 >
+                  {applying && <LoadingIndicator size={16} />}
                   确认下线并应用
                 </Button>
               </div>

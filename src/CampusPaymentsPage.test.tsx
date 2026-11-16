@@ -2,13 +2,14 @@
 import "@testing-library/jest-dom/vitest";
 import { StrictMode, type ComponentProps } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vite-plus/test";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { routeTree } from "./routeTree.gen";
 import { WECHAT_SERVICES, type NetworkFeePortalNotice } from "./campus-payments";
 import { hostOf } from "./ui/testing";
+import { toast } from "./ui";
 
 const qrProps = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -62,6 +63,10 @@ function fallback(value: unknown) {
   Object.defineProperty(document, "execCommand", { configurable: true, value });
 }
 
+let successToast: MockInstance;
+let dangerToast: MockInstance;
+let warningToast: MockInstance;
+
 describe("campus payments route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -75,6 +80,9 @@ describe("campus payments route", () => {
     });
     clipboard({ writeText: vi.fn().mockResolvedValue(undefined) });
     fallback(undefined);
+    successToast = vi.spyOn(toast, "success").mockReturnValue("toast");
+    dangerToast = vi.spyOn(toast, "danger").mockReturnValue("toast");
+    warningToast = vi.spyOn(toast, "warning").mockReturnValue("toast");
   });
   afterEach(() => {
     cleanup();
@@ -178,8 +186,8 @@ describe("campus payments route", () => {
       clipboard({ writeText });
       renderAt(routeForService(service));
       fireEvent.click(await screen.findByRole("button", { name: "复制" + service.title + "链接" }));
-      expect(await screen.findByRole("status")).toHaveTextContent(
-        "链接已复制，请在微信内粘贴打开。",
+      await waitFor(() =>
+        expect(successToast).toHaveBeenCalledWith("链接已复制，请在微信内粘贴打开"),
       );
       expect(writeText).toHaveBeenCalledWith(service.url);
     });
@@ -193,7 +201,7 @@ describe("campus payments route", () => {
       fallback(execCommand);
       renderAt(routeForService(service));
       fireEvent.click(await screen.findByRole("button", { name: "复制" + service.title + "链接" }));
-      expect(await screen.findByRole("status")).toHaveTextContent("链接已复制");
+      await waitFor(() => expect(successToast).toHaveBeenCalledWith("链接已复制，请在微信内粘贴打开"));
       expect(execCommand).toHaveBeenCalledWith("copy");
       expect(document.querySelector("textarea")).toBeNull();
     });
@@ -207,10 +215,12 @@ describe("campus payments route", () => {
         fireEvent.click(
           await screen.findByRole("button", { name: "复制" + service.title + "链接" }),
         );
-        expect(await screen.findByRole("status")).toHaveTextContent(
-          "无法自动复制，请长按或选择下方完整链接手动复制。",
+        await waitFor(() =>
+          expect(warningToast).toHaveBeenCalledWith(
+            "无法自动复制，请长按或选择下方完整链接手动复制",
+          ),
         );
-        expect(screen.queryByText("链接已复制，请在微信内粘贴打开。")).not.toBeInTheDocument();
+        expect(successToast).not.toHaveBeenCalled();
         expect(screen.getByLabelText(service.title + "完整链接")).toHaveTextContent(service.url);
       },
     );
@@ -242,8 +252,8 @@ describe("campus payments route", () => {
     renderAt("/life/campus-payments/network");
     const open = await screen.findByRole("button", { name: "打开网费官网" });
     fireEvent.click(open);
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "无法打开网费官网，请检查网络或重新认证后重试",
+    await waitFor(() =>
+      expect(dangerToast).toHaveBeenCalledWith("无法打开网费官网，请检查网络或重新认证后重试"),
     );
     expect(screen.queryByText(/do-not-display/)).not.toBeInTheDocument();
     expect(open).toBeEnabled();
@@ -266,7 +276,7 @@ describe("campus payments route", () => {
     renderAt("/life/campus-payments/network", true);
     await screen.findByRole("heading", { name: "校园卡/电费/网费" });
     act(() => resolveNotice({ code: "loadTimeout", message: "官网加载超时，请重试。" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("官网加载超时，请重试。");
+    expect(await screen.findByText("官网加载超时，请重试。")).toBeInTheDocument();
     expect(
       vi
         .mocked(invoke)
@@ -285,7 +295,7 @@ describe("campus payments route", () => {
     renderAt("/life/campus-payments/network");
     fireEvent.click(await screen.findByRole("button", { name: "打开网费官网" }));
     await act(async () => resolveNotice({ code: "loginTimeout", message: "上一次登录超时" }));
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText("上一次登录超时")).not.toBeInTheDocument();
   });
 
   it("shows usage records by default and keeps current electricity separate", async () => {
@@ -343,7 +353,6 @@ describe("campus payments route", () => {
     await waitFor(() => expect(select).not.toHaveAttribute("disabled"));
     fireEvent(select, new CustomEvent("change", { detail: { value: "yuehai" } }));
     fireEvent.click(screen.getByRole("button", { name: "查询电费" }));
-    fireEvent.click(await screen.findByRole("button", { name: "确认并查询" }));
 
     expect(await screen.findByRole("heading", { name: "用电记录" })).toBeInTheDocument();
     expect(screen.getByLabelText("当前电量")).toHaveTextContent("12.34 度");
@@ -444,7 +453,7 @@ describe("campus payments route", () => {
 
     renderAt("/life/campus-payments/electricity", true);
     expect(await screen.findByRole("heading", { name: "查电量" })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole("button", { name: /查询中/ })).toBeDisabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新数据" })).toBeDisabled());
     expect(screen.queryByLabelText("当前电量")).not.toBeInTheDocument();
     expect(
       vi.mocked(invoke).mock.calls.filter(([command]) => command === "query_electricity"),
@@ -480,11 +489,12 @@ describe("campus payments route", () => {
 
     renderAt("/life/campus-payments/electricity");
     expect(await screen.findByRole("heading", { name: "查电量" })).toBeInTheDocument();
-    expect(screen.getByText("正在加载宿舍选项…")).toBeInTheDocument();
+    expect(screen.getByText("正在读取宿舍配置…")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "查询电费" })).toBeDisabled();
 
     resolveOptions([]);
     resolveSettings(null);
-    await waitFor(() => expect(screen.queryByText("正在加载宿舍选项…")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "查询电费" })).toBeDisabled());
+    expect(screen.queryByText("正在读取宿舍配置…")).not.toBeInTheDocument();
   });
 });

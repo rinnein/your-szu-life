@@ -208,10 +208,6 @@ input {
   padding: 6px;
 }
 
-.field {
-  margin-bottom: 16px;
-}
-
 .eyebrow {
   color: var(--mtrl-sys-color-primary);
   font-size: 11px;
@@ -338,6 +334,11 @@ p {
   }
 }
 
+.campus-network-layout {
+  display: grid;
+  gap: 24px;
+}
+
 .network-setting-row,
 .network-action-row {
   display: flex;
@@ -359,22 +360,14 @@ p {
   line-height: 1.55;
 }
 
-.network-setting-row input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
-  accent-color: var(--szu-brand);
-}
-
 .custom-network-form {
+  display: grid;
+  gap: 16px;
   margin-top: 18px;
 }
 
 .network-action-row {
   margin-top: 18px;
-}
-
-.network-status-card {
-  margin-top: 16px;
 }
 
 .network-status-grid {
@@ -390,6 +383,7 @@ p {
   overflow-wrap: anywhere;
   color: var(--szu-ink);
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 凭据面板内的 tab 条与上一块的间距（页面顶栏到正文的间距已由统一规则提供）。 */
@@ -402,6 +396,7 @@ p {
 }
 
 .network-session-heading {
+  grid-column: 1 / -1;
   margin-top: 8px;
   padding-top: 12px;
   border-top: 1px solid var(--mtrl-sys-color-outline-variant);
@@ -409,12 +404,25 @@ p {
   font-weight: 700;
 }
 
-@media (max-width: 680px) {
+@media (max-width: 700px) {
   .campus-region-tabs,
-  .network-credential-tabs {
+  .network-credential-tabs,
+  .electricity-fields {
     width: 100%;
     max-width: 100%;
     min-width: 0;
+  }
+
+  .electricity-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .electricity-fields .electricity-room-name {
+    grid-column: auto;
+  }
+
+  .payments-wechat-content > button {
+    align-self: stretch;
   }
 }
 
@@ -476,13 +484,14 @@ p {
   justify-content: space-between;
   gap: 16px;
   padding: 14px 16px;
-  border-radius: 10px;
+  border-radius: var(--radius-inner, 4px);
   background: var(--szu-page);
   color: var(--szu-muted);
 }
 
 .electricity-location-summary strong {
   color: var(--szu-ink);
+  font-variant-numeric: tabular-nums;
 }
 
 .electricity-section-title {
@@ -492,14 +501,8 @@ p {
 
 /*
  * 卡片自带的圆角与 1px 边框在 shadow root 的 `::part(card)` 上，宿主本身是直角。
- * 若在宿主上加 border，就会在圆角卡片外多出一层方形边框；因此把这份强调阴影
- * 也交给 part，让描边与外框共用同一个圆角。
+ * 若在宿主上加 border，就会在圆角卡片外多出一层方形边框。
  */
-.payments-card::part(card),
-.network-zone::part(card) {
-  box-shadow: 0 12px 35px color-mix(in srgb, var(--mtrl-sys-color-shadow) 7%, transparent);
-}
-
 .payments-card {
   min-width: 0;
 }
@@ -521,25 +524,15 @@ p {
   align-self: flex-start;
 }
 
-.payments-instruction,
-.payments-copy-message {
-  margin: 0;
-}
-
-.payments-copy-message {
-  color: var(--szu-muted);
-  font-size: 13px;
-  line-height: 1.65;
-}
-
 .payments-instruction {
+  margin: 0;
   line-height: 1.65;
 }
 
 .payments-link {
   display: block;
   padding: 12px;
-  border-radius: 10px;
+  border-radius: var(--radius-inner, 4px);
   background: var(--szu-page);
   color: var(--szu-ink);
   font-size: 12px;
@@ -568,21 +561,6 @@ p {
   color: var(--szu-muted);
   font-size: 13px;
   text-align: center;
-}
-
-@media (max-width: 700px) {
-  .electricity-fields {
-    grid-template-columns: minmax(0, 1fr);
-    max-width: none;
-  }
-
-  .electricity-fields .electricity-room-name {
-    grid-column: auto;
-  }
-
-  .payments-wechat-content > button {
-    align-self: stretch;
-  }
 }
 
 .announcement-board {
@@ -1105,6 +1083,7 @@ p {
   border-collapse: collapse;
   font-size: 0.875rem;
   line-height: 1.25rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .data-table th {
@@ -1960,6 +1939,11 @@ m-top-app-bar::part(trailing) {
 
 @media (prefers-reduced-motion: reduce) {
   .page-transition[data-motion] {
+    animation: none;
+  }
+
+  /* 骨架屏的脉冲只是装饰性运动，减弱动效偏好下直接静止。 */
+  .animate-pulse {
     animation: none;
   }
 }

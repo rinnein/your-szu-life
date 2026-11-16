@@ -2,8 +2,9 @@
 import "@testing-library/jest-dom/vitest";
 import { typeInto } from "./ui/testing";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, expect, it, vi, type MockInstance } from "vite-plus/test";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "./ui";
 import { copyText } from "./clipboard";
 import CampusPaymentsElectricityPage from "./CampusPaymentsElectricityPage";
 import type { ElectricityResult } from "./electricity";
@@ -89,9 +90,16 @@ function mock(extra: (command: string) => unknown = () => undefined) {
     return null;
   });
 }
+let successToast: MockInstance;
+let dangerToast: MockInstance;
+let warningToast: MockInstance;
+
 beforeEach(() => {
   vi.clearAllMocks();
   mock();
+  successToast = vi.spyOn(toast, "success").mockReturnValue("toast");
+  dangerToast = vi.spyOn(toast, "danger").mockReturnValue("toast");
+  warningToast = vi.spyOn(toast, "warning").mockReturnValue("toast");
 });
 afterEach(cleanup);
 it("requests backend-owned dates, shows converted balance and preserves actual recharge amount", async () => {
@@ -109,9 +117,12 @@ it("copies exported configuration and offers manual fallback on clipboard failur
   const button = await screen.findByRole("button", { name: "导出宿舍配置并复制" });
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
-  expect(await screen.findByText("宿舍配置已复制。")).toBeInTheDocument();
+  await waitFor(() => expect(successToast).toHaveBeenCalledWith("宿舍配置已复制"));
   expect(copyText).toHaveBeenCalledWith("配置码");
   fireEvent.click(button);
+  await waitFor(() =>
+    expect(warningToast).toHaveBeenCalledWith("无法自动复制，请在下方配置码手动复制"),
+  );
   expect(await screen.findByLabelText("可复制的宿舍配置码")).toHaveValue("配置码");
 });
 it("imports into the draft without saving, rejects invalid imports without replacing the draft", async () => {
@@ -124,6 +135,9 @@ it("imports into the draft without saving, rejects invalid imports without repla
     expect(screen.getByRole("button", { name: "快捷导入宿舍配置" })).toBeEnabled(),
   );
   fireEvent.click(screen.getByRole("button", { name: "快捷导入宿舍配置" }));
+  await waitFor(() =>
+    expect(successToast).toHaveBeenCalledWith("已填入宿舍配置，点击查询电费保存并查询"),
+  );
   await waitFor(() => expect(screen.getByRole("textbox", { name: "宿舍号" })).toHaveValue("602"));
   expect(
     vi.mocked(invoke).mock.calls.some(([command]) => command === "save_electricity_settings"),
@@ -135,7 +149,11 @@ it("imports into the draft without saving, rejects invalid imports without repla
     expect(screen.getByRole("button", { name: "快捷导入宿舍配置" })).toBeEnabled(),
   );
   fireEvent.click(screen.getByRole("button", { name: "快捷导入宿舍配置" }));
-  expect(await screen.findByText("配置码格式错误")).toBeInTheDocument();
+  await waitFor(() =>
+    expect(dangerToast).toHaveBeenCalledWith("导入失败，请检查配置码", {
+      description: "配置码格式错误",
+    }),
+  );
   expect(screen.getByRole("textbox", { name: "宿舍号" })).toHaveValue("602");
 });
 it.each([
@@ -203,7 +221,6 @@ it.each([
     );
     typeInto(room, "1201");
     fireEvent.click(screen.getByRole("button", { name: "查询电费" }));
-    fireEvent.click(await screen.findByRole("button", { name: "确认并查询" }));
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("query_electricity", {
         input: { campusId, areaId, buildingId: "b1", buildingName: "测试楼栋", roomName: "1201" },
@@ -277,7 +294,6 @@ it("filters campuses and buildings by the inferred floor and auto-selects single
   expect(screen.queryByRole("option", { name: lowRise })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("option", { name: highRise }));
   fireEvent.click(screen.getByRole("button", { name: "查询电费" }));
-  fireEvent.click(await screen.findByRole("button", { name: "确认并查询" }));
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("query_electricity", {
       input: {
@@ -372,11 +388,14 @@ it("keeps local history visible if the refresh fails offline", async () => {
   expect(screen.getByLabelText("当前电量")).toHaveTextContent("10.00");
   expect(screen.getByRole("grid", { name: "用电记录" })).toBeInTheDocument();
 });
-it("lets the user explicitly refresh recent data after opening cached details", async () => {
+it("refreshes from the form and forces a refresh from the details", async () => {
   render(<CampusPaymentsElectricityPage />);
-  const button = await screen.findByRole("button", { name: "刷新最新数据" });
+  const button = await screen.findByRole("button", { name: "刷新数据" });
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith("query_electricity", { input: saved }));
+  const force = await screen.findByRole("button", { name: "强制刷新" });
+  fireEvent.click(force);
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("query_electricity", { input: saved, forceRefresh: true }),
   );
@@ -426,7 +445,6 @@ it("saves and queries a repaired legacy room in canonical form", async () => {
   await waitFor(() => expect(room).toBeEnabled());
   typeInto(room, " 1201 ");
   fireEvent.click(screen.getByRole("button", { name: "查询电费" }));
-  fireEvent.click(await screen.findByRole("button", { name: "确认并查询" }));
   const canonical = { ...saved, roomName: "1201" };
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("save_electricity_settings", { settings: canonical }),
@@ -448,11 +466,78 @@ it("keeps the dorm config unsaved when the query returns no data", async () => {
   await waitFor(() => expect(room).toBeEnabled());
   typeInto(room, "1201");
   fireEvent.click(screen.getByRole("button", { name: "查询电费" }));
-  fireEvent.click(await screen.findByRole("button", { name: "确认并查询" }));
   expect(
     await screen.findByText("未查询到该宿舍的电费信息，请检查宿舍信息后重试。配置尚未保存。"),
   ).toBeInTheDocument();
+  await waitFor(() =>
+    expect(warningToast).toHaveBeenCalledWith("未查询到该宿舍的电费信息", expect.anything()),
+  );
   expect(
     vi.mocked(invoke).mock.calls.some(([command]) => command === "save_electricity_settings"),
   ).toBe(false);
+});
+
+it("offers a retry when room options fail without a saved config", async () => {
+  let fail = true;
+  mock((command) => {
+    if (command === "get_electricity_settings") return null;
+    if (command === "get_electricity_options") {
+      if (fail) return Promise.reject("校园网暂不可用");
+      return options;
+    }
+    return undefined;
+  });
+  render(<CampusPaymentsElectricityPage />);
+  expect(await screen.findByText("宿舍选项加载失败")).toBeInTheDocument();
+  expect(screen.getByText(/校园网暂不可用/)).toBeInTheDocument();
+  fail = false;
+  fireEvent.click(screen.getByRole("button", { name: "重试" }));
+  await waitFor(() => {
+    const field = screen.getByRole("textbox", { name: "宿舍号" });
+    expect(field).toBeEnabled();
+  });
+  expect(screen.queryByText("宿舍选项加载失败")).not.toBeInTheDocument();
+});
+
+it("isolates rate conversion failure from query data", async () => {
+  // getElectricityConstants 有模块级 Promise 缓存；重置模块以获得未命中的新实例。
+  vi.resetModules();
+  mock((command) =>
+    command === "get_electricity_constants" ? Promise.reject("常量不可用") : undefined,
+  );
+  const { default: FreshPage } = await import("./CampusPaymentsElectricityPage");
+  render(<FreshPage />);
+  expect(await screen.findByText("电价换算不可用")).toBeInTheDocument();
+  expect(screen.getByLabelText("当前电量")).toHaveTextContent("10.00");
+  expect(screen.queryByText("查询未完成")).not.toBeInTheDocument();
+});
+
+it("keeps the last result visible while editing the draft", async () => {
+  render(<CampusPaymentsElectricityPage />);
+  await screen.findByLabelText("当前电量");
+  fireEvent.click(screen.getByRole("button", { name: "修改宿舍配置" }));
+  const room = await waitFor(() => {
+    const field = screen.getByRole("textbox", { name: "宿舍号" });
+    expect(field).toBeEnabled();
+    return field;
+  });
+  typeInto(room, "602");
+  // 结果保留供对照，不因键入被清空。
+  expect(screen.getByLabelText("当前电量")).toBeInTheDocument();
+});
+
+it("restores the saved config when collapsing the editor", async () => {
+  render(<CampusPaymentsElectricityPage />);
+  await screen.findByLabelText("当前电量");
+  fireEvent.click(screen.getByRole("button", { name: "修改宿舍配置" }));
+  const room = await waitFor(() => {
+    const field = screen.getByRole("textbox", { name: "宿舍号" });
+    expect(field).toBeEnabled();
+    return field;
+  });
+  typeInto(room, "602");
+  fireEvent.click(screen.getByRole("button", { name: "收起配置" }));
+  expect(screen.getByText("山茶斋 601")).toBeInTheDocument();
+  expect(screen.queryByRole("textbox", { name: "宿舍号" })).not.toBeInTheDocument();
+  expect(screen.getByLabelText("当前电量")).toBeInTheDocument();
 });

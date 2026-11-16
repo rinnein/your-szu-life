@@ -14,7 +14,7 @@ import {
 } from "material/react";
 import { Banner, bindField, toast } from "./ui";
 import { nameTablist } from "./ui/tablist";
-import { ModuleHeader, PageShell } from "./components";
+import { EmptyState, LoadingState, ModuleHeader, PageShell } from "./components";
 import StaffNetworkPanel from "./StaffNetworkPanel";
 import {
   initialStaffSettings,
@@ -78,6 +78,24 @@ type Status = {
   consecutiveFailures: number;
   nextProbeAtMs?: number | null;
   lastResult?: { ok: boolean; alreadyOnline: boolean; message?: string | null } | null;
+};
+
+/** 页面初始加载：加载中 / 就绪 / 失败（失败展示 EmptyState 并可重试）。 */
+type LoadState = { status: "loading" } | { status: "ready" } | { status: "error"; message: string };
+/** 断开连接状态机：确认弹窗 → 执行中 → 空闲；结果经 toast 反馈。 */
+type DisconnectState = null | { step: "confirm" } | { step: "running" };
+/** 宿舍区操作占用：保存与手动登录各自独立转圈。 */
+type DormPending = null | "save" | "login";
+
+/** 宿舍区与教工区共用同一组登录状态枚举；子标题不再直接打印后端枚举。 */
+const loginStatusText: Record<Status["state"], string> = {
+  disabled: "未启用",
+  monitoring: "自动登录监控中",
+  probing: "正在探测门户",
+  loggingIn: "正在登录",
+  online: "在线",
+  paused: "已暂停",
+  error: "异常",
 };
 
 const initialOverview: NetworkOverview = {
@@ -161,6 +179,7 @@ function regionDefaultTab(region: NetworkRegion): RegionTab {
 }
 
 export default function CampusNetworkPage() {
+  const [load, setLoad] = useState<LoadState>({ status: "loading" });
   const [overview, setOverview] = useState<NetworkOverview>(initialOverview);
   const [settings, setSettings] = useState<Settings>();
   const [status, setStatus] = useState<Status>(initialStatus);
@@ -171,8 +190,11 @@ export default function CampusNetworkPage() {
   const [enabled, setEnabled] = useState(false);
   const [card, setCard] = useState("");
   const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [dormPending, setDormPending] = useState<DormPending>(null);
+  /** 页面级持久错误：仅来自初始加载之外的连接刷新与事件订阅失败；随下次成功刷新清除。 */
+  const [error, setError] = useState<string>();
+  const [disconnect, setDisconnect] = useState<DisconnectState>(null);
+  const [refreshBusy, setRefreshBusy] = useState(false);
   const initializedTab = useRef(false);
   const mounted = useRef(false);
   const refreshBusyRef = useRef(false);
@@ -184,11 +206,7 @@ export default function CampusNetworkPage() {
     staffStatus: 0,
     refresh: 0,
   });
-  const [logoutOpen, setLogoutOpen] = useState(false);
-  const [disconnectBusy, setDisconnectBusy] = useState(false);
-  const [refreshBusy, setRefreshBusy] = useState(false);
-  const [logoutResult, setLogoutResult] = useState<LogoutResult>();
-  const operationBusy = busy || disconnectBusy;
+  const operationBusy = dormPending !== null || disconnect?.step === "running";
   const staffInProgress = staffStatus.state === "probing" || staffStatus.state === "loggingIn";
   const loginInProgress =
     status.state === "probing" || status.state === "loggingIn" || staffInProgress;
@@ -211,7 +229,7 @@ export default function CampusNetworkPage() {
     if (refreshBusyRef.current) return;
     refreshBusyRef.current = true;
     setRefreshBusy(true);
-    if (showError) setError("");
+    if (showError) setError(undefined);
     const overviewRevision = revisions.current.overview;
     try {
       const refreshed = await invoke<NetworkOverview | null>("refresh_campus_network");
@@ -220,10 +238,8 @@ export default function CampusNetworkPage() {
       if (mounted.current && overviewRevision === revisions.current.overview && refreshed) {
         applyOverview(refreshed);
       }
-      return refreshed;
     } catch (cause) {
       if (showError && mounted.current) setError(String(cause));
-      return null;
     } finally {
       refreshBusyRef.current = false;
       if (mounted.current) setRefreshBusy(false);
@@ -251,6 +267,20 @@ export default function CampusNetworkPage() {
       setStaffStatus(nextStaffStatus ?? initialStaffStatus);
   };
 
+  // 初始加载与「重试」共用：成功即进入就绪并清除页面级错误，失败进入可重试的错误态。
+  const loadAll = async () => {
+    setLoad({ status: "loading" });
+    try {
+      await refresh();
+      if (mounted.current) {
+        setLoad({ status: "ready" });
+        setError(undefined);
+      }
+    } catch (cause) {
+      if (mounted.current) setLoad({ status: "error", message: String(cause) });
+    }
+  };
+
   useEffect(() => {
     mounted.current = true;
     let active = true;
@@ -269,9 +299,7 @@ export default function CampusNetworkPage() {
 
     // Load cached settings/status immediately; this read-only batch does not
     // publish a probe result and must not wait for listener registration.
-    void refresh().catch((cause) => {
-      if (active) setError(String(cause));
-    });
+    void loadAll();
 
     // Install all listeners before starting a probe. The first snapshot can be
     // published immediately, so starting the monitor before `listen` resolves
@@ -328,15 +356,15 @@ export default function CampusNetworkPage() {
       });
     } finally {
       await refresh().catch((cause) => {
-        if (mounted.current) setError(String(cause));
+        if (mounted.current) toast.danger("校园网状态刷新失败", { description: String(cause) });
       });
     }
   };
 
   const save = async () => {
+    if (dormPending) return;
     const settingsRevision = revisions.current.settings;
-    setBusy(true);
-    setError("");
+    setDormPending("save");
     try {
       const next = await invoke<Settings>("save_dorm_network_settings", {
         input: {
@@ -350,47 +378,51 @@ export default function CampusNetworkPage() {
       setPassword("");
       toast.success("宿舍区设置已保存");
     } catch (cause) {
-      const msg = String(cause);
-      setError(msg);
-      toast.danger("保存宿舍区设置失败", { description: msg });
+      toast.danger("保存宿舍区设置失败", { description: String(cause) });
     } finally {
-      setBusy(false);
+      setDormPending(null);
     }
   };
 
   const manualLogin = async () => {
-    setBusy(true);
-    setError("");
+    if (dormPending) return;
+    setDormPending("login");
     try {
       await invoke("trigger_dorm_login");
     } catch (cause) {
-      const msg = String(cause);
-      setError(msg);
-      toast.danger("校园网登录失败", { description: msg });
+      toast.danger("校园网登录失败", { description: String(cause) });
     } finally {
-      setBusy(false);
+      setDormPending(null);
     }
   };
 
-  const disconnect = async () => {
-    if (disconnectBusy) return;
-    setDisconnectBusy(true);
-    setError("");
-    setLogoutResult(undefined);
+  // 断开：确认弹窗 → 执行（含执行后的状态重读）→ 空闲。结果只走 toast，
+  // 不再落页面 Banner；刷新失败独立提示，不掩盖断开本身的结果。
+  const runDisconnect = async () => {
+    if (disconnect?.step !== "confirm") return;
+    setDisconnect({ step: "running" });
     try {
       const result = await invoke<LogoutResult>("logout_campus_network");
-      setLogoutResult(result);
-    } catch (cause) {
-      setError(String(cause));
-    } finally {
-      setLogoutOpen(false);
-      try {
-        await refresh();
-      } catch (cause) {
-        setError(String(cause));
+      if (result.outcome === "disconnected") {
+        if (result.message) toast.success("已断开校园网", { description: result.message });
+        else toast.success("已断开校园网");
+      } else if (result.outcome === "alreadyOffline") {
+        if (result.message) toast.success("当前已离线", { description: result.message });
+        else toast.success("当前已离线");
+      } else if (result.outcome === "failed") {
+        toast.danger("断开未完成", { description: result.message });
+      } else {
+        toast.danger("断开结果待确认", { description: result.message });
       }
-      setDisconnectBusy(false);
+    } catch (cause) {
+      toast.danger("断开校园网失败", { description: String(cause) });
     }
+    try {
+      await refresh();
+    } catch (cause) {
+      toast.danger("校园网状态刷新失败", { description: String(cause) });
+    }
+    setDisconnect(null);
   };
 
   const modeDescription = useMemo(
@@ -401,6 +433,9 @@ export default function CampusNetworkPage() {
     [mode],
   );
 
+  // 状态卡跟随所选区域 tab：用户正在配置哪一侧，就展示哪一侧的监控状态。
+  const statusView = regionTab === "staff" ? staffStatus : status;
+
   return (
     <PageShell>
       <div className="campus-network-layout">
@@ -409,216 +444,241 @@ export default function CampusNetworkPage() {
           description={`当前推测网络状态：${statusText(overview)}`}
         />
 
-        <Tabs
-          ref={(host) => nameTablist(host, "校园网区域")}
-          className="campus-region-tabs"
-          value={regionTab}
-          onChange={(event) => {
-            initializedTab.current = true;
-            setRegionTab(event.detail.value as RegionTab);
-          }}
-        >
-          <Tab value="staff">教工区</Tab>
-          <Tab value="dormitory">宿舍区</Tab>
-        </Tabs>
-        {regionTab === "staff" ? (
-          <StaffNetworkPanel
-            settings={staffSettings}
-            status={staffStatus}
-            disabled={operationBusy}
-            onSave={saveStaff}
-            onApply={applyStaff}
+        {load.status === "loading" && <LoadingState message="正在读取校园网配置…" />}
+        {load.status === "error" && (
+          <EmptyState
+            variant="error"
+            title="校园网配置加载失败"
+            description={load.message}
+            onRetry={() => void loadAll()}
           />
-        ) : (
-          <div>
-            <Card className="network-zone" variant="outlined">
-              <div slot="headline">宿舍区</div>
-              <div slot="subhead">门户地址：172.30.255.42</div>
-              <div className="p-4">
-                <div className="network-setting-row">
-                  <Switch
-                    checked={enabled}
-                    disabled={operationBusy}
-                    onChange={(e: any) => setEnabled(e.detail?.checked ?? e.target?.checked)}
-                    aria-label="开启宿舍区自动登录"
-                  >
-                    <div className="flex flex-col gap-0.5 ml-2">
-                      <strong>自动登录</strong>
-                      <span>检测到宿舍区网络后自动认证</span>
-                    </div>
-                  </Switch>
-                </div>
-                <Tabs
-                  ref={(host) => nameTablist(host, "宿舍区凭据来源")}
-                  className="network-credential-tabs"
-                  value={mode}
-                  onChange={(event) => {
-                    if (!operationBusy) setMode(event.detail.value as CredentialMode);
-                  }}
-                >
-                  <Tab value="currentAccount">复用已登录账号</Tab>
-                  <Tab value="custom">单独配置</Tab>
-                </Tabs>
-                <p className="field-hint">{modeDescription}</p>
-                {mode === "custom" && (
-                  <div className="custom-network-form">
-                    <TextField
-                      label="校园卡号"
+        )}
+        {load.status === "ready" && (
+          <>
+            <Tabs
+              ref={(host) => nameTablist(host, "校园网区域")}
+              className="campus-region-tabs"
+              value={regionTab}
+              onChange={(event) => {
+                initializedTab.current = true;
+                setRegionTab(event.detail.value as RegionTab);
+              }}
+            >
+              <Tab value="staff">教工区</Tab>
+              <Tab value="dormitory">宿舍区</Tab>
+            </Tabs>
+            {/* 两个区域面板常驻挂载，仅切换可见性：切 tab 不会打断进行中的
+                教工区 apply、确认弹窗或未保存草稿。`aria-hidden`/`inert` 与
+                `hidden` 一起把非活动面板移出可访问树，避免查询与焦点命中。 */}
+            <div
+              data-region-panel="staff"
+              hidden={regionTab !== "staff"}
+              aria-hidden={regionTab !== "staff"}
+              inert={regionTab !== "staff"}
+            >
+              <StaffNetworkPanel
+                settings={staffSettings}
+                status={staffStatus}
+                disabled={operationBusy}
+                onSave={saveStaff}
+                onApply={applyStaff}
+              />
+            </div>
+            <div
+              data-region-panel="dormitory"
+              hidden={regionTab !== "dormitory"}
+              aria-hidden={regionTab !== "dormitory"}
+              inert={regionTab !== "dormitory"}
+            >
+              <Card className="network-zone" variant="outlined">
+                <div slot="headline">宿舍区</div>
+                <div slot="subhead">门户地址：172.30.255.42</div>
+                <div className="p-4">
+                  <div className="network-setting-row">
+                    <Switch
+                      checked={enabled}
                       disabled={operationBusy}
-                      className="field"
-                      name="dormCampusCard"
-                      value={card}
-                      {...bindField(setCard)}
-                      placeholder="6 位数字"
-                    />
-                    <TextField
-                      label="密码"
-                      type="password"
-                      disabled={operationBusy}
-                      className="field"
-                      name="dormPassword"
-                      value={password}
-                      {...bindField(setPassword)}
-                      placeholder={
-                        settings?.customConfigured ? "已保存（输入新密码可覆盖）" : "请输入密码"
-                      }
-                    />
+                      onChange={(e: any) => setEnabled(e.detail?.checked ?? e.target?.checked)}
+                      aria-label="开启宿舍区自动登录"
+                    >
+                      <div className="flex flex-col gap-0.5 ml-2">
+                        <strong>自动登录</strong>
+                        <span>检测到宿舍区网络后自动认证</span>
+                      </div>
+                    </Switch>
                   </div>
-                )}
-                <div className="network-action-row">
-                  <Button variant="filled" disabled={operationBusy} onClick={() => void save()}>
-                    {busy && <LoadingIndicator size={16} />}保存设置
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    disabled={operationBusy || loginInProgress || overview.region === "staff"}
-                    onClick={() => void manualLogin()}
+                  <Tabs
+                    ref={(host) => nameTablist(host, "宿舍区凭据来源")}
+                    className="network-credential-tabs"
+                    value={mode}
+                    onChange={(event) => {
+                      if (!operationBusy) setMode(event.detail.value as CredentialMode);
+                    }}
                   >
-                    立即登录
-                  </Button>
+                    <Tab value="currentAccount">复用已登录账号</Tab>
+                    <Tab value="custom">单独配置</Tab>
+                  </Tabs>
+                  <p className="field-hint">{modeDescription}</p>
+                  {mode === "custom" && (
+                    <div className="custom-network-form">
+                      <TextField
+                        label="校园卡号"
+                        disabled={operationBusy}
+                        className="field"
+                        name="dormCampusCard"
+                        value={card}
+                        {...bindField(setCard)}
+                        placeholder="6 位数字"
+                      />
+                      <TextField
+                        label="密码"
+                        type="password"
+                        disabled={operationBusy}
+                        className="field"
+                        name="dormPassword"
+                        value={password}
+                        {...bindField(setPassword)}
+                        placeholder={
+                          settings?.customConfigured ? "已保存（输入新密码可覆盖）" : "请输入密码"
+                        }
+                      />
+                    </div>
+                  )}
+                  <div className="network-action-row">
+                    <Button variant="filled" disabled={operationBusy} onClick={() => void save()}>
+                      {dormPending === "save" && <LoadingIndicator size={16} />}保存设置
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      disabled={operationBusy || loginInProgress || overview.region === "staff"}
+                      onClick={() => void manualLogin()}
+                    >
+                      {dormPending === "login" && <LoadingIndicator size={16} />}立即登录
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </Card>
-          </div>
+              </Card>
+            </div>
+          </>
         )}
 
-        <Card className="network-status-card" variant="outlined">
-          <div slot="headline">当前状态</div>
-          <div slot="subhead">
-            {disconnectBusy
-              ? "正在断开连接…"
-              : overview.region === "staff"
-                ? staffStatus.state
-                : status.state}
-          </div>
-          <div className="network-action-row" slot="actions">
-            <Button
-              variant="outlined"
-              disabled={operationBusy || refreshBusy}
-              onClick={() => void refreshConnection()}
-            >
-              {refreshBusy && <LoadingIndicator size={16} />}
-              刷新连接状态
-            </Button>
-            <Button
-              variant="filled"
-              disabled={
-                operationBusy ||
-                (overview.region === "none" &&
-                  !settings?.enabled &&
-                  !staffSettings.enabled &&
-                  !loginInProgress)
-              }
-              onClick={() => setLogoutOpen(true)}
-            >
-              {disconnectBusy && <LoadingIndicator size={16} />}
-              断开连接
-            </Button>
-          </div>
-          <div className="network-status-grid p-4">
-            <span>SSID</span>
-            <strong>
-              {overview.ssid === "有线连接" || status.ssid === "有线连接"
-                ? "有线连接"
-                : overview.ssid || status.ssid || "未读取"}
-            </strong>
-            <span>网络连接</span>
-            <strong>{overview.connected === false ? "无网络" : "已连接网络"}</strong>
-            <span>宿舍区门户</span>
-            <strong>{overview.portalReachable ? "可达" : "不可达"}</strong>
-            <span>教工区门户</span>
-            <strong>{overview.staffHostReachable ? "可达" : "不可达"}</strong>
-            <span>连续失败</span>
-            <strong>
-              {overview.region === "staff"
-                ? staffStatus.consecutiveFailures
-                : status.consecutiveFailures}{" "}
-              次
-            </strong>
-            <span>下次探测</span>
-            <strong>
-              {formatTime(
-                overview.region === "staff" ? staffStatus.nextProbeAtMs : status.nextProbeAtMs,
+        {load.status === "ready" && (
+          <Card className="network-status-card" variant="outlined">
+            <div slot="headline">当前状态（{regionTab === "staff" ? "教工区" : "宿舍区"}）</div>
+            <div slot="subhead">
+              {disconnect?.step === "running" ? "正在断开连接…" : loginStatusText[statusView.state]}
+            </div>
+            <div className="network-action-row" slot="actions">
+              <Button
+                variant="outlined"
+                disabled={operationBusy || refreshBusy}
+                onClick={() => void refreshConnection()}
+              >
+                {refreshBusy && <LoadingIndicator size={16} />}
+                刷新连接状态
+              </Button>
+              <Button
+                variant="filled"
+                disabled={
+                  operationBusy ||
+                  (overview.region === "none" &&
+                    !settings?.enabled &&
+                    !staffSettings.enabled &&
+                    !loginInProgress)
+                }
+                onClick={() => setDisconnect({ step: "confirm" })}
+              >
+                {disconnect?.step === "running" && <LoadingIndicator size={16} />}
+                断开连接
+              </Button>
+            </div>
+            <div className="network-status-grid p-4">
+              <span>SSID</span>
+              <strong>
+                {overview.ssid === "有线连接" || status.ssid === "有线连接"
+                  ? "有线连接"
+                  : overview.ssid ||
+                    (regionTab === "dormitory" ? status.ssid : undefined) ||
+                    "未读取"}
+              </strong>
+              <span>网络连接</span>
+              <strong>
+                {overview.connected === false
+                  ? "无网络"
+                  : overview.connected === true
+                    ? "已连接网络"
+                    : "未知"}
+              </strong>
+              <span>宿舍区门户</span>
+              <strong>{overview.portalReachable ? "可达" : "不可达"}</strong>
+              <span>教工区门户</span>
+              <strong>{overview.staffHostReachable ? "可达" : "不可达"}</strong>
+              <span>连续失败</span>
+              <strong>{statusView.consecutiveFailures} 次</strong>
+              <span>下次探测</span>
+              <strong>{formatTime(statusView.nextProbeAtMs)}</strong>
+              <span>最近结果</span>
+              <strong>
+                {(regionTab === "staff" ? staffStatus.message : status.lastResult?.message) ||
+                  "暂无"}
+              </strong>
+              {overview.state === "connected" && overview.region === "dormitory" && (
+                <>
+                  <span className="network-session-heading">在线详情</span>
+                  <span>校园卡号</span>
+                  <strong>{overview.portalSession?.campusCardNumber || "网关未提供"}</strong>
+                  <span>用户姓名</span>
+                  <strong>{overview.portalSession?.onlineUsername || "网关未提供"}</strong>
+                  <span>登录 IP</span>
+                  <strong>{overview.portalSession?.loginIp || "网关未提供"}</strong>
+                  <span>登录开始</span>
+                  <strong>{overview.portalSession?.loginStartedAt || "网关未提供"}</strong>
+                  <span>登录结束</span>
+                  <strong>{overview.portalSession?.loginExpiresAt || "网关未提供"}</strong>
+                  <span>在线时长</span>
+                  <strong>{formatGatewayValue(overview.portalSession?.onlineDuration)}</strong>
+                  <span>已用流量</span>
+                  <strong>{formatGatewayValue(overview.portalSession?.onlineFlow)}</strong>
+                </>
               )}
-            </strong>
-            <span>最近结果</span>
-            <strong>
-              {(overview.region === "staff" ? staffStatus.message : status.lastResult?.message) ||
-                "暂无"}
-            </strong>
-            {overview.state === "connected" && overview.region === "dormitory" && (
-              <>
-                <span className="network-session-heading">在线详情</span>
-                <span className="network-session-heading" aria-hidden="true" />
-                <span>校园卡号</span>
-                <strong>{overview.portalSession?.campusCardNumber || "网关未提供"}</strong>
-                <span>用户姓名</span>
-                <strong>{overview.portalSession?.onlineUsername || "网关未提供"}</strong>
-                <span>登录 IP</span>
-                <strong>{overview.portalSession?.loginIp || "网关未提供"}</strong>
-                <span>登录开始</span>
-                <strong>{overview.portalSession?.loginStartedAt || "网关未提供"}</strong>
-                <span>登录结束</span>
-                <strong>{overview.portalSession?.loginExpiresAt || "网关未提供"}</strong>
-                <span>在线时长</span>
-                <strong>{formatGatewayValue(overview.portalSession?.onlineDuration)}</strong>
-                <span>已用流量</span>
-                <strong>{formatGatewayValue(overview.portalSession?.onlineFlow)}</strong>
-              </>
-            )}
-            {overview.state === "connected" && overview.region === "staff" && (
-              <>
-                <span className="network-session-heading">教工区在线详情</span>
-                <span className="network-session-heading" aria-hidden="true" />
-                <span>登录账号</span>
-                <strong>{overview.staffSession?.username || "网关未提供"}</strong>
-                <span>姓名</span>
-                <strong>{overview.staffSession?.realName || "网关未提供"}</strong>
-                <span>IPv4</span>
-                <strong>{overview.staffSession?.loginIp || "网关未提供"}</strong>
-                <span>IPv6</span>
-                <strong>{overview.staffSession?.loginIpv6 || "网关未提供"}</strong>
-                <span>MAC 地址</span>
-                <strong>{overview.staffSession?.userMac || "网关未提供"}</strong>
-                <span>登录开始</span>
-                <strong>{formatLoginStartedAt(overview.staffSession?.loginStartedAtMs)}</strong>
-                <span>累计已用流量</span>
-                <strong>{formatUsedBytes(overview.staffSession?.usedBytes)}</strong>
-                <span>累计已用时长</span>
-                <strong>{formatUsedSeconds(overview.staffSession?.usedSeconds)}</strong>
-              </>
-            )}
-          </div>
-        </Card>
-
-        {logoutOpen &&
-          typeof document !== "undefined" &&
+              {overview.state === "connected" && overview.region === "staff" && (
+                <>
+                  <span className="network-session-heading">教工区在线详情</span>
+                  <span>登录账号</span>
+                  <strong>{overview.staffSession?.username || "网关未提供"}</strong>
+                  <span>姓名</span>
+                  <strong>{overview.staffSession?.realName || "网关未提供"}</strong>
+                  <span>IPv4</span>
+                  <strong>{overview.staffSession?.loginIp || "网关未提供"}</strong>
+                  <span>IPv6</span>
+                  <strong>{overview.staffSession?.loginIpv6 || "网关未提供"}</strong>
+                  <span>MAC 地址</span>
+                  <strong>{overview.staffSession?.userMac || "网关未提供"}</strong>
+                  <span>登录开始</span>
+                  <strong>{formatLoginStartedAt(overview.staffSession?.loginStartedAtMs)}</strong>
+                  <span>累计已用流量</span>
+                  <strong>{formatUsedBytes(overview.staffSession?.usedBytes)}</strong>
+                  <span>累计已用时长</span>
+                  <strong>{formatUsedSeconds(overview.staffSession?.usedSeconds)}</strong>
+                </>
+              )}
+            </div>
+          </Card>
+        )}
+        {load.status === "ready" && error && (
+          <Banner status="danger">
+            <Banner.Title>校园网状态获取失败</Banner.Title>
+            <Banner.Description>{error}</Banner.Description>
+          </Banner>
+        )}
+        {load.status === "ready" &&
+          disconnect !== null &&
           createPortal(
             <Dialog
-              open={logoutOpen}
+              open
               headline="确认断开校园网？"
               onClose={() => {
-                if (!disconnectBusy) setLogoutOpen(false);
+                if (disconnect.step === "confirm") setDisconnect(null);
               }}
             >
               <div>
@@ -628,41 +688,23 @@ export default function CampusNetworkPage() {
                 <Button
                   variant="text"
                   aria-label="取消"
-                  disabled={disconnectBusy}
-                  onClick={() => setLogoutOpen(false)}
+                  disabled={disconnect.step === "running"}
+                  onClick={() => setDisconnect(null)}
                 >
                   取消
                 </Button>
                 <Button
                   variant="filled"
-                  disabled={disconnectBusy}
-                  onClick={() => void disconnect()}
+                  disabled={disconnect.step === "running"}
+                  onClick={() => void runDisconnect()}
                 >
-                  {disconnectBusy && <LoadingIndicator size={16} />}
+                  {disconnect.step === "running" && <LoadingIndicator size={16} />}
                   确认断开
                 </Button>
               </div>
             </Dialog>,
             document.body,
           )}
-        {logoutResult && (
-          <Banner status="default">
-            <Banner.Title>
-              {logoutResult.outcome === "unknown"
-                ? "断开结果待确认"
-                : logoutResult.outcome === "failed"
-                  ? "断开未完成"
-                  : "已断开校园网"}
-            </Banner.Title>
-            <Banner.Description>{logoutResult.message}</Banner.Description>
-          </Banner>
-        )}
-        {error && (
-          <Banner status="danger">
-            <Banner.Title>校园网操作失败</Banner.Title>
-            <Banner.Description>{error}</Banner.Description>
-          </Banner>
-        )}
       </div>
     </PageShell>
   );

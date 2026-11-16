@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Card, Button } from "material/react";
+import { Card, Button, LoadingIndicator } from "material/react";
 import { Banner, Table } from "./ui";
 import {
   Bar,
@@ -19,11 +19,21 @@ import { StatCard } from "./components";
 export function ElectricityDetails({
   result,
   rate,
+  rateError,
+  dormLabel,
+  onForceRefresh,
+  refreshing,
   retryRecharges,
   retrying,
 }: {
   result: ElectricityResult;
   rate?: number;
+  /** 电价换算常量加载失败；不影响电量本身展示。 */
+  rateError?: boolean;
+  /** 本结果所属宿舍（楼栋 + 房间号），用于在配置修改后辨认陈旧数据。 */
+  dormLabel?: string;
+  onForceRefresh?: () => void;
+  refreshing?: boolean;
   retryRecharges: () => void;
   retrying: boolean;
 }) {
@@ -53,8 +63,9 @@ export function ElectricityDetails({
       title: "当前电量",
       value: result.currentRemaining,
       suffix: "度",
-      sub:
-        rate == null
+      sub: rateError
+        ? "电价换算不可用"
+        : rate == null
           ? "折算比例加载中"
           : `折算余额 ${fmt(result.currentRemaining == null ? null : result.currentRemaining * rate)} 元`,
     },
@@ -87,19 +98,28 @@ export function ElectricityDetails({
         ))}
       </div>
       <p className="text-sm text-muted">
+        {dormLabel && `${dormLabel}。`}
         读数日期：{summary?.observedDate ?? "暂无数据"}。
         {summary?.expired ? "读数已过期，无法有效预测。" : "预计可用天数仅供参考。"}{" "}
         {rate != null && `固定换算：${rate} 元/度。`}
       </p>
-      {result.cache?.updatedAtMs != null && (
-        <p className="text-sm text-muted">
-          {result.cache.fromCache ? "已加载本地记录" : "记录已更新"} · 最近获取：
-          {new Date(result.cache.updatedAtMs).toLocaleString("zh-CN", {
-            timeZone: "Asia/Shanghai",
-          })}
-          （北京时间）。通常每天 23:59 左右更新，可手动刷新最新数据。
-        </p>
-      )}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        {result.cache?.updatedAtMs != null && (
+          <p className="text-sm text-muted">
+            {result.cache.fromCache ? "已加载本地记录" : "记录已更新"} · 最近获取：
+            {new Date(result.cache.updatedAtMs).toLocaleString("zh-CN", {
+              timeZone: "Asia/Shanghai",
+            })}
+            （北京时间）。通常每天 23:59 左右更新，可手动刷新最新数据。
+          </p>
+        )}
+        {onForceRefresh && (
+          <Button variant="text" disabled={refreshing} onClick={onForceRefresh}>
+            {refreshing && <LoadingIndicator size={16} />}
+            强制刷新
+          </Button>
+        )}
+      </div>
       {summary?.warningReason && (
         <Banner status="warning">
           <Banner.Title>电量不足提醒</Banner.Title>
@@ -112,7 +132,7 @@ export function ElectricityDetails({
         headline="用电趋势"
         subhead={`${result.beginDate} 至 ${result.endDate} · 缺失数据不补零`}
       >
-        <div className="p-2 sm:p-4">
+        <div className="p-4">
           <Button variant="outlined" disabled={rate == null} onClick={() => setMoney((v) => !v)}>
             {money ? "切换为电量" : "切换为电费"}
           </Button>
@@ -154,8 +174,7 @@ export function ElectricityDetails({
                     backgroundColor: "var(--mtrl-sys-color-surface-container-high)",
                     borderColor: "var(--mtrl-sys-color-outline-variant)",
                     color: "var(--mtrl-sys-color-on-surface)",
-                    borderRadius: "12px",
-                    boxShadow: "0 4px 16px rgba(0,0,0,0.2)",
+                    borderRadius: "var(--radius-inner, 4px)",
                   }}
                   itemStyle={{
                     color: "var(--mtrl-sys-color-on-surface)",
@@ -220,7 +239,7 @@ export function ElectricityDetails({
         headline="充值记录及来源"
         subhead="最近 31 天 · 金额来自充值记录"
       >
-        <div className="p-2 sm:p-4">
+        <div className="p-4">
           {result.rechargeError ? (
             <Banner status="warning">
               <Banner.Title>充值记录查询未完成</Banner.Title>

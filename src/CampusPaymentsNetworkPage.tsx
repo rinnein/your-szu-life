@@ -1,55 +1,45 @@
-import { useLogicalNavigation } from "./logical-navigation";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { LoadingIndicator, Button } from "material/react";
-import { Banner } from "./ui";
+import { Banner, toast } from "./ui";
 import { LuWifi } from "react-icons/lu";
-import { useAuth } from "./auth";
 import { Card } from "./components";
 import type { NetworkFeePortalNotice } from "./campus-payments";
 
 export default function CampusPaymentsNetworkPage() {
-  const { state } = useAuth();
-  const navigation = useLogicalNavigation();
-  const authenticated = "Authenticated" in state;
   const [busy, setBusy] = useState(false);
+  /** 官方门户自动化上次留下的持久提示；打开失败走 toast，不占用这里。 */
   const [notice, setNotice] = useState<string>();
   const opening = useRef(false);
   const noticeSuppressed = useRef(false);
   const noticeRequest = useRef<Promise<NetworkFeePortalNotice | null> | undefined>(undefined);
 
   useEffect(() => {
-    if (!authenticated) void navigation.back();
-  }, [authenticated, navigation]);
-
-  useEffect(() => {
-    if (!authenticated) return;
     noticeRequest.current ??= invoke<NetworkFeePortalNotice | null>(
       "consume_network_fee_portal_notice",
     );
     void noticeRequest.current
       .then((x) => x && !noticeSuppressed.current && setNotice(x.message))
-      .catch(() => setNotice("未能读取上次网费办理提示，可重新打开官网"));
-  }, [authenticated]);
+      .catch(() => {
+        if (noticeSuppressed.current) return;
+        setNotice("未能读取上次网费办理提示，可重新打开官网");
+      });
+  }, []);
 
   const open = async () => {
     if (opening.current) return;
     opening.current = true;
     noticeSuppressed.current = true;
     setBusy(true);
-    setNotice(undefined);
     try {
       await invoke("open_network_fee_portal");
-      setBusy(false);
-      opening.current = false;
     } catch {
-      setNotice("无法打开网费官网，请检查网络或重新认证后重试");
+      toast.danger("无法打开网费官网，请检查网络或重新认证后重试");
+    } finally {
       setBusy(false);
       opening.current = false;
     }
   };
-
-  if (!authenticated) return null;
 
   return (
     <Card
@@ -59,14 +49,14 @@ export default function CampusPaymentsNetworkPage() {
     >
       <div className="grid gap-4">
         {notice && (
-          <Banner status="warning" role="alert">
+          <Banner status="warning">
             <Banner.Title>网费办理提示</Banner.Title>
             <Banner.Description>{notice}</Banner.Description>
           </Banner>
         )}
 
         <section
-          className="grid gap-2.5 p-4 rounded-xl bg-[var(--szu-brand-soft)] leading-relaxed"
+          className="grid gap-2.5 p-4 rounded-inner bg-accent-soft leading-relaxed"
           aria-label="网费办理说明"
         >
           <p>请先在校园卡「通用代扣费账户」充值足够金额</p>
@@ -80,7 +70,7 @@ export default function CampusPaymentsNetworkPage() {
           {busy ? "正在打开网费官网…" : "打开网费官网"}
         </Button>
 
-        <p className="text-sm text-[var(--szu-muted)] leading-relaxed">
+        <p className="text-sm text-muted leading-relaxed">
           每次打开最多自动提交一次登录；遇到验证码或登录错误将停止自动操作。办理时可随时返回本页
         </p>
       </div>
