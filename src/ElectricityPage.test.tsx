@@ -82,7 +82,7 @@ function mock(extra: (command: string) => unknown = () => undefined) {
   vi.mocked(invoke).mockImplementation(async (command) => {
     const override = extra(command);
     if (override !== undefined) return override;
-    if (command === "get_electricity_constants") return { yuanPerKwh: 0.61 };
+    if (command === "get_electricity_constants") return { yuanPerKwh: 0.69979 };
     if (command === "get_electricity_options") return options;
     if (command === "get_electricity_settings") return saved;
     if (command === "query_electricity") return result;

@@ -3,7 +3,7 @@ use chrono::{Duration, FixedOffset, NaiveDate, Utc};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-pub const YUAN_PER_KWH: f64 = 0.61;
+pub const YUAN_PER_KWH: f64 = 0.69979;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ElectricityConstants {
