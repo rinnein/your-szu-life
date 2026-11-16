@@ -10,6 +10,8 @@ pub struct TodoItem {
     pub kind: TodoKind,
     pub title: String,
     pub subtitle: Option<String>,
+    /// 任务开始时间；没有明确开始时间的来源为空，不参与「任务开始」提醒。
+    pub start_at_ms: Option<i64>,
     pub due_at_ms: i64,
     pub route: String,
     pub external_url: Option<String>,
@@ -23,8 +25,8 @@ pub enum TodosEvent {
     Snapshot(Box<Vec<TodoItem>>),
 }
 
-/// 当前版本的状态已经带「初次探测」基线语义；新安装不需要迁移旧记录。
-const DISCOVERY_BASELINE_VERSION: u8 = 1;
+/// 当前版本的状态已经带「初次探测」与「任务开始」基线语义；新安装不需要迁移旧记录。
+pub(crate) const DISCOVERY_BASELINE_VERSION: u8 = 2;
 
 /// 跨重启保存的提醒去重状态。
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -39,8 +41,12 @@ pub struct ReminderState {
     /// 「初次探测」去重：`kind|id` → 最近一次看到该待办时的截止时间
     #[serde(default)]
     pub discovered: BTreeMap<String, i64>,
+    /// 「任务开始」去重：`kind|id` → 已提醒过的开始时间
+    #[serde(default)]
+    pub started: BTreeMap<String, i64>,
     /// 0 表示旧版本状态（升级后需要为各来源静默建立探测基线）；
-    /// 1 表示新安装，第一批待办应正常触发「初次探测到」。
+    /// 1 表示已建立「初次探测」基线，但还没有「任务开始」基线；
+    /// 2 表示两者都已建立。
     #[serde(default)]
     pub discovery_baseline_version: u8,
     /// 升级基线已经覆盖过的待办类型，避免同一来源反复静默补基线。
@@ -54,7 +60,8 @@ impl Default for ReminderState {
             notified: BTreeMap::new(),
             scheduled: BTreeMap::new(),
             discovered: BTreeMap::new(),
-            // 注意：字段级 `serde(default)` 对旧 JSON 给出 0，与此处的 1 不同，
+            started: BTreeMap::new(),
+            // 注意：字段级 `serde(default)` 对旧 JSON 给出 0，与此处的 2 不同，
             // 正好用来区分「升级迁移」与「全新安装」。
             discovery_baseline_version: DISCOVERY_BASELINE_VERSION,
             baselined_kinds: BTreeSet::new(),

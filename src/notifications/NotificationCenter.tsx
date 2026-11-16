@@ -4,7 +4,6 @@ import { useRouter } from "@tanstack/react-router";
 import type { ActionPerformed } from "@tauri-apps/plugin-notification";
 import { isChildDocument, useLogicalNavigation } from "../logical-navigation";
 import { toast } from "../ui";
-import { isOjNotice, resolveOjNoticeRoute } from "../oj/notice-route";
 import { notificationSeverity } from "./categories";
 
 export interface InAppNotificationPayload {
@@ -54,26 +53,9 @@ export function NotificationCenter() {
         return;
       }
 
-      // 移动端排程的 OJ 提醒只带 ojNotice，需要按当前站点快照还原路由。
-      if (isOjNotice(extra.ojNotice)) {
-        void resolveOjNoticeRoute(extra.ojNotice).then((target) => {
-          if (target) navigate(target);
-        });
-        return;
-      }
-
       const course = extra.uoocCourse;
       if (typeof course === "string" && /^\d+$/.test(course)) {
         navigate(`/study/uooc?tab=courses&course=${course}`);
-        return;
-      }
-
-      if (
-        event.notification?.actionTypeId === "electricity-low" ||
-        event.actionId === "open-recharge" ||
-        event.actionId === "electricity-low"
-      ) {
-        navigate("/life/campus-payments/recharge");
       }
     },
     [navigate],

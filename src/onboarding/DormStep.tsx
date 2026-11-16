@@ -109,12 +109,15 @@ export function DormStep({ onComplete, registerNext }: StepProps) {
         await invoke("save_electricity_settings", { settings: normalized });
         saved = true;
         setSettings(normalized);
-        // 宿舍位置保存后自动启用低电量提醒；保留其它通知开关与总开关。
+        // 宿舍位置保存后自动启用宿舍电费预警；保留其它通知开关与总开关。
         try {
           const notifications = await invoke<NotificationConfig>("get_notification_settings");
-          if (!notifications.electricity) {
+          if (!notifications.todo?.electricityOutage) {
             await invoke("save_notification_settings", {
-              settings: { ...notifications, electricity: true },
+              settings: {
+                ...notifications,
+                todo: { ...notifications.todo, electricityOutage: true },
+              },
             });
           }
         } catch {

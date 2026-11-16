@@ -72,7 +72,7 @@ pub fn list_available_resources() -> Vec<Resource> {
         Resource::new("your-szu-life://data/todos", "todos")
             .with_title("首页待办聚合")
             .with_description(
-                "返回首页日历聚合后的全部待办：OJ 测验、UOOC 考试/作业/结课、畅课作业、电费预估断电",
+                "返回首页日历聚合后的全部待办：OJ 测验、UOOC 考试/作业/结课、畅课作业、宿舍电费预警、签到",
             )
             .with_mime_type("application/json"),
         Resource::new(

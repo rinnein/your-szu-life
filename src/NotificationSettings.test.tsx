@@ -19,12 +19,11 @@ vi.mock("@tauri-apps/plugin-notification", () => ({
 const DEFAULT_TEST_SETTINGS: NotificationConfig = {
   enabled: true,
   campusNetwork: true,
-  electricity: true,
   enrollment: true,
-  oj: true,
   uooc: true,
   todo: {
     enabled: true,
+    discovery: true,
     ojQuiz: true,
     uoocExam: true,
     uoocHomework: true,
@@ -72,9 +71,7 @@ describe("NotificationSettings component", () => {
     expect(masterSwitch).toBeChecked();
 
     expect(screen.getByRole("switch", { name: "开关宿舍校园网通知" })).toBeChecked();
-    expect(screen.getByRole("switch", { name: "开关宿舍电费预警通知" })).toBeChecked();
     expect(screen.getByRole("switch", { name: "开关选课助手通知" })).toBeChecked();
-    expect(screen.getByRole("switch", { name: "开关在线评测 (OJ)通知" })).toBeChecked();
     expect(screen.getByRole("switch", { name: "开关优课联盟 (UOOC)通知" })).toBeChecked();
   });
 
@@ -93,20 +90,19 @@ describe("NotificationSettings component", () => {
     });
 
     expect(screen.getByRole("switch", { name: "开关宿舍校园网通知" })).toBeDisabled();
-    expect(screen.getByRole("switch", { name: "开关宿舍电费预警通知" })).toBeDisabled();
   });
 
   it("toggling individual category switch saves updated category setting", async () => {
     render(<NotificationSettings />);
 
-    const electricitySwitch = await readySwitch("开关宿舍电费预警通知");
-    fireEvent.change(electricitySwitch, { target: { checked: false } });
+    const enrollmentSwitch = await readySwitch("开关选课助手通知");
+    fireEvent.change(enrollmentSwitch, { target: { checked: false } });
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("save_notification_settings", {
         settings: expect.objectContaining({
           enabled: true,
-          electricity: false,
+          enrollment: false,
         }),
       });
     });
@@ -138,7 +134,8 @@ describe("NotificationSettings component", () => {
       "开关UOOC 作业提醒",
       "开关UOOC 结课提醒",
       "开关畅课作业提醒",
-      "开关电费预估断电提醒",
+      "开关宿舍电费预警提醒",
+      "开关签到提醒",
     ]) {
       expect(await screen.findByRole("switch", { name })).toBeChecked();
     }
@@ -152,7 +149,11 @@ describe("NotificationSettings component", () => {
 
     const discovery = screen.getByRole("checkbox", { name: "初次探测到时" });
     expect(discovery).toBeChecked();
-    expect(discovery).toBeDisabled();
+    expect(discovery).toBeEnabled();
+
+    const started = screen.getByRole("checkbox", { name: "任务开始时" });
+    expect(started).toBeChecked();
+    expect(started).toBeDisabled();
   });
 
   it("saves per-item todo switches", async () => {
@@ -165,6 +166,22 @@ describe("NotificationSettings component", () => {
       expect(invoke).toHaveBeenCalledWith("save_notification_settings", {
         settings: expect.objectContaining({
           todo: expect.objectContaining({ enabled: true, uoocExam: false }),
+        }),
+      });
+    });
+  });
+
+  it("saves the discovery toggle", async () => {
+    render(<NotificationSettings />);
+
+    const discovery = await screen.findByRole("checkbox", { name: "初次探测到时" });
+    await waitFor(() => expect(discovery).toBeEnabled());
+    fireEvent.change(discovery, { target: { checked: false } });
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("save_notification_settings", {
+        settings: expect.objectContaining({
+          todo: expect.objectContaining({ discovery: false }),
         }),
       });
     });
@@ -201,7 +218,7 @@ describe("NotificationSettings component", () => {
     });
 
     render(<NotificationSettings />);
-    expect(await screen.findByText(/将只在初次探测到时提醒一次/)).toBeInTheDocument();
+    expect(await screen.findByText(/只在「初次探测到时」与「任务开始时」提醒/)).toBeInTheDocument();
   });
 
   it("disables todo controls when the todo master switch is off", async () => {
@@ -263,20 +280,20 @@ describe("NotificationSettings component", () => {
 
     render(<NotificationSettings />);
 
-    const electricity = await readySwitch("开关宿舍电费预警通知");
-    fireEvent.change(electricity, { target: { checked: false } });
-    fireEvent.change(screen.getByRole("switch", { name: "开关宿舍电费预警通知" }), {
+    const enrollment = await readySwitch("开关选课助手通知");
+    fireEvent.change(enrollment, { target: { checked: false } });
+    fireEvent.change(screen.getByRole("switch", { name: "开关选课助手通知" }), {
       target: { checked: true },
     });
 
     // 第一次保存还没回来时，第二次改动不能另起一个请求。
     await waitFor(() => expect(saves).toHaveLength(1));
-    expect(saves[0].electricity).toBe(false);
+    expect(saves[0].enrollment).toBe(false);
 
     release();
 
     await waitFor(() => expect(saves).toHaveLength(2));
-    expect(saves[1].electricity).toBe(true);
+    expect(saves[1].enrollment).toBe(true);
   });
 
   it("rolls the toggle back when the save fails", async () => {
@@ -289,12 +306,12 @@ describe("NotificationSettings component", () => {
 
     render(<NotificationSettings />);
 
-    const electricity = await readySwitch("开关宿舍电费预警通知");
-    fireEvent.change(electricity, { target: { checked: false } });
+    const enrollment = await readySwitch("开关选课助手通知");
+    fireEvent.change(enrollment, { target: { checked: false } });
 
     await waitFor(() => expect(danger).toHaveBeenCalled());
     await waitFor(() =>
-      expect(screen.getByRole("switch", { name: "开关宿舍电费预警通知" })).toBeChecked(),
+      expect(screen.getByRole("switch", { name: "开关选课助手通知" })).toBeChecked(),
     );
   });
 });

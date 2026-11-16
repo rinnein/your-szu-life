@@ -10,7 +10,7 @@ use szu_todos::todos::model::TodoKind;
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct ListTodosParams {
     /// 可选：只返回某一类待办（oj-quiz、uooc-exam、uooc-homework、uooc-course-end、
-    /// lms-homework、electricity-outage）。省略时返回全部。
+    /// lms-homework、electricity-outage、checkin）。省略时返回全部。
     pub kind: Option<TodoKind>,
 }
 
@@ -18,6 +18,8 @@ pub struct ListTodosParams {
 pub struct TodoSettingsUpdate {
     /// 待办提醒总开关
     pub enabled: Option<bool>,
+    /// 待办首次出现时提醒一次
+    pub discovery: Option<bool>,
     /// OJ 测验截止提醒
     pub oj_quiz: Option<bool>,
     /// UOOC 考试截止提醒
@@ -30,8 +32,10 @@ pub struct TodoSettingsUpdate {
     pub lms_homework: Option<bool>,
     /// 电费预估断电日期提醒
     pub electricity_outage: Option<bool>,
-    /// 提前量（分钟）。传空数组表示只发送「初次探测到时」的提醒；
-    /// 初次探测提醒始终开启，无法关闭。
+    /// 签到/打卡提醒
+    pub checkin: Option<bool>,
+    /// 提前量（分钟）。传空数组表示只发送「初次探测到时」与「任务开始时」的提醒；
+    /// 「任务开始时」始终开启，无法关闭。
     pub lead_minutes: Option<Vec<i64>>,
 }
 
@@ -42,6 +46,9 @@ impl TodoSettingsUpdate {
     ) {
         if let Some(value) = self.enabled {
             target.enabled = value;
+        }
+        if let Some(value) = self.discovery {
+            target.discovery = value;
         }
         if let Some(value) = self.oj_quiz {
             target.oj_quiz = value;
@@ -61,6 +68,9 @@ impl TodoSettingsUpdate {
         if let Some(value) = self.electricity_outage {
             target.electricity_outage = value;
         }
+        if let Some(value) = self.checkin {
+            target.checkin = value;
+        }
         if let Some(value) = self.lead_minutes {
             target.lead_minutes = value;
         }
@@ -71,7 +81,7 @@ impl TodoSettingsUpdate {
 impl UnifiedSzuMcpService {
     #[tool(
         name = "todos_list",
-        description = "获取首页日历聚合后的全部待办事项（OJ 测验、UOOC 考试/作业/结课、畅课作业、电费预估断电）。对应资源 your-szu-life://data/todos"
+        description = "获取首页日历聚合后的全部待办事项（OJ 测验、UOOC 考试/作业/结课、畅课作业、宿舍电费预警、签到）。对应资源 your-szu-life://data/todos"
     )]
     pub async fn todos_list(
         &self,
@@ -86,7 +96,7 @@ impl UnifiedSzuMcpService {
 
     #[tool(
         name = "todos_get_settings",
-        description = "获取待办提醒配置（六个注册项开关与提前量列表）。「初次探测到时」提醒始终开启，不在该配置中。对应资源 your-szu-life://data/todos/notification-settings"
+        description = "获取待办提醒配置（七个注册项开关、初次探测开关与提前量列表）。「任务开始时」提醒始终开启，不在该配置中。对应资源 your-szu-life://data/todos/notification-settings"
     )]
     pub async fn todos_get_settings(&self) -> Result<String, String> {
         let settings = szu_core::notification::settings::load(&self.app);
@@ -95,7 +105,7 @@ impl UnifiedSzuMcpService {
 
     #[tool(
         name = "todos_set_settings",
-        description = "修改待办提醒配置。修改后将持久化，并在下一次提醒判定时生效。「初次探测到时」提醒始终开启，无法通过该工具关闭。对应资源 your-szu-life://data/todos/notification-settings"
+        description = "修改待办提醒配置。修改后将持久化，并在下一次提醒判定时生效。「任务开始时」提醒始终开启，无法通过该工具关闭。对应资源 your-szu-life://data/todos/notification-settings"
     )]
     pub async fn todos_set_settings(
         &self,

@@ -56,7 +56,25 @@ function mock(extra: (command: string) => unknown = () => undefined) {
     if (command === "get_electricity_options") return options;
     if (command === "get_electricity_settings") return null;
     if (command === "query_electricity") return result;
-    if (command === "get_notification_settings") return { electricity: false };
+    if (command === "get_notification_settings")
+      return {
+        enabled: true,
+        campusNetwork: true,
+        enrollment: true,
+        uooc: true,
+        todo: {
+          enabled: true,
+          discovery: true,
+          ojQuiz: true,
+          uoocExam: true,
+          uoocHomework: true,
+          uoocCourseEnd: true,
+          lmsHomework: true,
+          electricityOutage: false,
+          checkin: true,
+          leadMinutes: [10080, 4320, 1440, 120],
+        },
+      };
     return null;
   });
 }
@@ -116,6 +134,13 @@ it("persists the dorm only after the query returns data", async () => {
         buildingName: building,
         roomName: "601",
       },
+    }),
+  );
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("save_notification_settings", {
+      settings: expect.objectContaining({
+        todo: expect.objectContaining({ electricityOutage: true }),
+      }),
     }),
   );
   expect(onComplete).toHaveBeenCalled();

@@ -14,6 +14,7 @@ import {
 
 export interface TodoNotificationConfig {
   enabled: boolean;
+  discovery: boolean;
   ojQuiz: boolean;
   uoocExam: boolean;
   uoocHomework: boolean;
@@ -27,15 +28,14 @@ export interface TodoNotificationConfig {
 export interface NotificationConfig {
   enabled: boolean;
   campusNetwork: boolean;
-  electricity: boolean;
   enrollment: boolean;
-  oj: boolean;
   uooc: boolean;
   todo: TodoNotificationConfig;
 }
 
 const DEFAULT_TODO_CONFIG: TodoNotificationConfig = {
   enabled: true,
+  discovery: true,
   ojQuiz: true,
   uoocExam: true,
   uoocHomework: true,
@@ -49,9 +49,7 @@ const DEFAULT_TODO_CONFIG: TodoNotificationConfig = {
 const DEFAULT_CONFIG: NotificationConfig = {
   enabled: true,
   campusNetwork: true,
-  electricity: true,
   enrollment: true,
-  oj: true,
   uooc: true,
   todo: DEFAULT_TODO_CONFIG,
 };
@@ -340,11 +338,14 @@ export function NotificationSettings() {
       <Card variant="outlined">
         <div slot="headline">待办提醒</div>
         <div slot="subhead">
-          统一管理首页日历中全部待办事项的截止提醒。系统通知在应用后台运行时发送，前台聚焦时以
+          统一管理首页日历中全部待办事项的提醒（初次探测、任务开始与截止前）。系统通知在应用后台运行时发送，前台聚焦时以
           Snackbar 展示。
         </div>
         <SettingList>
-          <SettingRow title="启用待办提醒" description="关闭后，所有待办都不再按截止时间发送通知。">
+          <SettingRow
+            title="启用待办提醒"
+            description="关闭后，所有待办都不再按事件与截止时间发送通知。"
+          >
             <Switch
               checked={view.todo.enabled}
               disabled={categoryDisabled}
@@ -374,14 +375,21 @@ export function NotificationSettings() {
 
         <div className="card-group mt-4">
           <div className="grid gap-1">
-            <p className="card-group-title">提前提醒时间</p>
+            <p className="card-group-title">提醒时机</p>
             <p className="text-xs text-muted">
-              待办首次出现时立即提醒一次（始终开启）；之后在每个已勾选的时间点各提醒一次。应用离线期间错过的多个时间点只补发最接近截止的一档。
+              待办首次出现时可提醒一次；任务开始时始终会再提醒一次；之后在每个已勾选的时间点各提醒一次。应用离线期间错过的多个时间点只补发最接近截止的一档。
             </p>
           </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
-            <Checkbox checked disabled>
+            <Checkbox
+              checked={view.todo.discovery}
+              disabled={todoDisabled}
+              onChange={(event: any) => toggleTodoFlag("discovery", checkedOf(event))}
+            >
               初次探测到时
+            </Checkbox>
+            <Checkbox checked disabled>
+              任务开始时
             </Checkbox>
             {TODO_LEAD_PRESETS.map((preset) => (
               <Checkbox
@@ -394,11 +402,20 @@ export function NotificationSettings() {
               </Checkbox>
             ))}
           </div>
-          {!readOnly && view.todo.enabled && view.todo.leadMinutes.length === 0 && (
-            <Banner status="info">
-              <span>未勾选任何提前提醒时间，待办将只在初次探测到时提醒一次。</span>
-            </Banner>
-          )}
+          {!readOnly &&
+            view.todo.enabled &&
+            view.todo.leadMinutes.length === 0 &&
+            (view.todo.discovery ? (
+              <Banner status="info">
+                <span>
+                  未勾选任何提前提醒时间，待办将只在「初次探测到时」与「任务开始时」提醒。
+                </span>
+              </Banner>
+            ) : (
+              <Banner status="info">
+                <span>未勾选任何提前提醒时间，待办将只在「任务开始时」提醒。</span>
+              </Banner>
+            ))}
         </div>
       </Card>
     </>

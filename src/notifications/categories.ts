@@ -17,17 +17,11 @@ import {
  * 避免两处各维护一份分类表后逐渐走偏。
  *
  * 待办类通知不在这个扁平列表里：它由下面的 `TODO_NOTIFICATION_ITEMS`
- * 按注册项单独管理，避免与 OJ/UOOC 的非截止通知混在一起。
+ * 按注册项单独管理，避免与 UOOC 的非截止通知混在一起。
  */
-export type NotificationCategory =
-  | "campus_network"
-  | "electricity"
-  | "enrollment"
-  | "oj"
-  | "uooc"
-  | "todo";
+export type NotificationCategory = "campus_network" | "enrollment" | "uooc" | "todo";
 
-export type NotificationConfigKey = "campusNetwork" | "electricity" | "enrollment" | "oj" | "uooc";
+export type NotificationConfigKey = "campusNetwork" | "enrollment" | "uooc";
 
 export interface NotificationCategoryMeta {
   category: NotificationCategory;
@@ -49,14 +43,6 @@ export const NOTIFICATION_CATEGORIES: readonly NotificationCategoryMeta[] = [
     severity: "warning",
   },
   {
-    category: "electricity",
-    configKey: "electricity",
-    title: "宿舍电费预警",
-    description: "宿舍电量偏低或预计可用天数不足时发送充值预警",
-    icon: LuZap,
-    severity: "warning",
-  },
-  {
     category: "enrollment",
     configKey: "enrollment",
     title: "选课助手",
@@ -65,18 +51,11 @@ export const NOTIFICATION_CATEGORIES: readonly NotificationCategoryMeta[] = [
     severity: "info",
   },
   {
-    category: "oj",
-    configKey: "oj",
-    title: "在线评测 (OJ)",
-    description: "新测验发布与 OJ 登录状态提醒（截止提醒见「待办提醒」）",
-    icon: LuCode,
-    severity: "info",
-  },
-  {
     category: "uooc",
     configKey: "uooc",
     title: "优课联盟 (UOOC)",
-    description: "UOOC 测验需要处理时发送提醒（截止提醒见「待办提醒」）",
+    description:
+      "自动刷课在闯关模式下被测验打断、需要人工确认或接管时发送提醒（新测验/作业/考试的提醒见「待办提醒」）",
     icon: LuBookOpen,
     severity: "info",
   },
@@ -132,8 +111,8 @@ export const TODO_NOTIFICATION_ITEMS: readonly TodoNotificationItemMeta[] = [
   },
   {
     key: "electricityOutage",
-    title: "电费预估断电",
-    description: "宿舍电量预计耗尽日期提醒",
+    title: "宿舍电费预警",
+    description: "电量偏低或预计即将耗尽时提醒（无估算时按当天截止）",
     icon: LuZap,
   },
   {

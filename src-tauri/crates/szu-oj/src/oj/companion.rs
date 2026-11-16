@@ -160,7 +160,6 @@ impl Service {
             let _ = self.persist(&r);
         }
         self.publish();
-        self.notify(&notice);
         let submission = result?;
         let outcome = CompanionResult {
             site_id: id,

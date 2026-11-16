@@ -2,7 +2,6 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { onAction } from "@tauri-apps/plugin-notification";
 import { toast } from "../ui";
@@ -22,7 +21,6 @@ vi.mock("@tanstack/react-router", () => ({
   useRouter: () => router,
 }));
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 vi.mock("@tauri-apps/plugin-notification", () => ({ onAction: vi.fn() }));
 
@@ -51,7 +49,6 @@ describe("NotificationCenter", () => {
       actionCallback = cb;
       return { unregister: vi.fn() } as any;
     });
-    vi.mocked(invoke).mockResolvedValue(undefined);
     vi.spyOn(toast, "info").mockImplementation(() => "info");
     vi.spyOn(toast, "warning").mockImplementation(() => "warning");
   });
@@ -96,20 +93,20 @@ describe("NotificationCenter", () => {
     expect(nav.push).toHaveBeenCalledWith("/study/uooc?tab=courses");
   });
 
-  it("uses a warning snackbar for electricity and network categories", async () => {
+  it("uses a warning snackbar for the campus network category", async () => {
     await renderCenter();
 
     eventCallback!({
       payload: {
-        category: "electricity",
-        title: "当前剩余电量：8.50 度",
-        body: "宿舍电量不足，请及时充值。",
-        route: "/life/campus-payments/recharge",
+        category: "campus_network",
+        title: "校园网登录失败",
+        body: "请检查账号或稍后重试。",
+        route: "/life/campus-network",
       },
     });
 
     expect(toast.warning).toHaveBeenCalledWith(
-      "当前剩余电量：8.50 度",
+      "校园网登录失败",
       expect.objectContaining({ actionLabel: "查看" }),
     );
     expect(toast.info).not.toHaveBeenCalled();
@@ -165,38 +162,5 @@ describe("NotificationCenter", () => {
 
     expect(nav.replace).toHaveBeenCalledWith("/study/uooc?tab=courses&course=12345");
     expect(nav.push).not.toHaveBeenCalled();
-  });
-
-  it("resolves a scheduled OJ reminder against the current snapshot", async () => {
-    vi.mocked(invoke).mockImplementation(async (command: string) => {
-      if (command === "get_oj_snapshot") {
-        return { sites: [{ id: "s1", username: "u1", enabled: true }] };
-      }
-      return undefined;
-    });
-    await renderCenter();
-
-    actionCallback!({
-      actionId: "tap",
-      inputValue: null,
-      notification: {
-        extra: {
-          ojNotice: {
-            id: "s1:u1:42",
-            siteId: "s1",
-            account: "u1",
-            contestId: "42",
-            title: "算法测验",
-            message: "测验将在 1 小时后截止",
-            timestamp: 0,
-            read: false,
-          },
-        },
-      },
-    });
-
-    await waitFor(() => {
-      expect(nav.push).toHaveBeenCalledWith("/study/oj?site=s1&contest=42");
-    });
   });
 });

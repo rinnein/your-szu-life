@@ -11,15 +11,11 @@ pub struct SetNotificationSettingsParams {
     pub enabled: Option<bool>,
     /// 校园网异常通知
     pub campus_network: Option<bool>,
-    /// 宿舍低电量预警
-    pub electricity: Option<bool>,
     /// 选课任务状态通知
     pub enrollment: Option<bool>,
-    /// OJ 测验与截止通知
-    pub oj: Option<bool>,
-    /// UOOC 测验需要处理提醒
+    /// UOOC 刷课需要人工处理提醒
     pub uooc: Option<bool>,
-    /// 待办类通知（六个注册项开关与提前量）
+    /// 待办类通知（七个注册项开关、初次探测开关与提前量）
     pub todo: Option<crate::mcp::features::todos::TodoSettingsUpdate>,
 }
 
@@ -27,7 +23,7 @@ pub struct SetNotificationSettingsParams {
 impl UnifiedSzuMcpService {
     #[tool(
         name = "notification_get_settings",
-        description = "获取应用通知配置（总开关、校园网、电费、选课、OJ、UOOC 分类开关与待办提醒配置）。对应资源 your-szu-life://data/notification/settings"
+        description = "获取应用通知配置（总开关、校园网、选课、UOOC 分类开关与待办提醒配置）。对应资源 your-szu-life://data/notification/settings"
     )]
     pub async fn notification_get_settings(&self) -> Result<String, String> {
         let settings = szu_core::notification::settings::load(&self.app);
@@ -49,14 +45,8 @@ impl UnifiedSzuMcpService {
         if let Some(v) = params.campus_network {
             current.campus_network = v;
         }
-        if let Some(v) = params.electricity {
-            current.electricity = v;
-        }
         if let Some(v) = params.enrollment {
             current.enrollment = v;
-        }
-        if let Some(v) = params.oj {
-            current.oj = v;
         }
         if let Some(v) = params.uooc {
             current.uooc = v;

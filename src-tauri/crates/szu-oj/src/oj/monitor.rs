@@ -1,5 +1,8 @@
 use super::*;
 use std::time::Duration;
+
+/// 登录需要人工处理（验证码/账号失败）时的静默重试间隔。
+const MANUAL_RETRY_MS: i64 = 30 * 60_000;
 pub fn changes(
     known: &mut Known,
     contests: &[Contest],
@@ -97,8 +100,15 @@ impl Service {
                 let s = e.state.lock().unwrap();
                 (s.next_sync, s.offset, s.session)
             };
-            if matches!(status, Session::CaptchaRequired | Session::LoginFailed) {
+            // 登录需要人工处理时不再发通知：到点后静默把会话置回 Disabled，让
+            // `ensure` 重新走登录；打开页面/手动刷新（force）则立即重试。
+            let manual = matches!(status, Session::CaptchaRequired | Session::LoginFailed);
+            if manual && !force && now < next {
+                self.tick(&site, &e, now + offset);
                 continue;
+            }
+            if manual {
+                self.update_status(&site.id, &e, Session::Disabled, "正在重试登录");
             }
             if !force && now < next {
                 self.tick(&site, &e, now + offset);
@@ -165,41 +175,20 @@ impl Service {
                 Err(message) => {
                     let mut s = e.state.lock().unwrap();
                     s.failures = s.failures.saturating_add(1);
-                    s.next_sync = now + (30_000_i64 * (1_i64 << s.failures.min(5))).min(900_000);
-                    s.message = message;
                     let manual =
                         matches!(s.session, Session::CaptchaRequired | Session::LoginFailed);
-                    drop(s);
-                    if manual {
-                        self.login_notice(&site, &e);
-                    }
+                    s.next_sync = now
+                        + if manual {
+                            // 登录需要人工处理：按固定间隔静默重试，不再弹通知。
+                            MANUAL_RETRY_MS
+                        } else {
+                            (30_000_i64 * (1_i64 << s.failures.min(5))).min(900_000)
+                        };
+                    s.message = message;
                 }
             }
         }
         self.publish();
-    }
-    fn login_notice(&self, site: &Site, e: &Entry) {
-        let id = format!("{}:{}:login", site.id, e.epoch);
-        let mut r = self.runtime.lock().unwrap();
-        if r.data.notices.iter().any(|n| n.id == id) {
-            return;
-        }
-        let notice = Notice {
-            id,
-            site_id: site.id.clone(),
-            account: e.username.clone(),
-            contest_id: String::new(),
-            title: site.name.clone(),
-            message: "OJ 登录需要处理，请打开填写验证码或检查账号".into(),
-            timestamp: chrono::Utc::now().timestamp_millis(),
-            read: false,
-        };
-        r.data.notices.push(notice.clone());
-        if self.persist(&r).is_err() {
-            return;
-        }
-        drop(r);
-        self.notify(&notice);
     }
     fn tick(&self, site: &Site, e: &Entry, now: i64) {
         let contests = {
@@ -238,7 +227,7 @@ impl Service {
                 read: false,
             })
             .collect();
-        next.notices.extend(notices.clone());
+        next.notices.extend(notices);
         if next.notices.len() > 500 {
             next.notices.drain(..next.notices.len() - 500);
         }
@@ -247,22 +236,6 @@ impl Service {
         }
         r.data = next;
         drop(r);
-        for notice in notices {
-            self.notify(&notice);
-        }
-    }
-    pub fn notify(&self, n: &Notice) {
-        let Some(app) = self.app.as_ref() else { return };
-        let route = format!("/study/oj?site={}&contest={}", n.site_id, n.contest_id);
-        let payload = szu_core::notification::NotificationPayload::new(
-            szu_core::notification::NotificationCategory::Oj,
-            &n.title,
-            &n.message,
-        )
-        .route(route)
-        .action_label("查看")
-        .extra(serde_json::json!({ "ojNotice": n }));
-        szu_core::notification::notify(app, payload);
     }
     pub fn cancel_notifications(&self, id: &str) {
         let mut r = self.runtime.lock().unwrap();

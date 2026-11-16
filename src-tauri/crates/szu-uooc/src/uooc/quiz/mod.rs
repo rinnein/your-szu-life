@@ -102,7 +102,7 @@ fn update(service: &Service, ctx: &Context, edit: impl FnOnce(&mut QuizState)) {
         let route = format!("/study/uooc?tab=courses&course={}", ctx.cid);
         let payload = szu_core::notification::NotificationPayload::new(
             szu_core::notification::NotificationCategory::Uooc,
-            "UOOC 测验需要处理",
+            "UOOC 刷课需要人工处理",
             body,
         )
         .route(route)

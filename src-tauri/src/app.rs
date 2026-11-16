@@ -164,16 +164,6 @@ pub(crate) fn run() {
             if let Err(error) = jxxk::initialize(app.handle()) {
                 log::error!("巡课服务初始化失败: {error}");
             }
-            #[cfg(mobile)]
-            {
-                use tauri_plugin_notification::{Action, ActionType, NotificationExt};
-                app.notification()
-                    .register_action_types(vec![ActionType::builder("electricity-low")
-                        .actions(vec![Action::builder("open-recharge", "打开充电费")
-                            .foreground(true)
-                            .build()])
-                        .build()])?;
-            }
             if let Err(error) = app_content::initialize(app.handle()) {
                 log::warn!("应用内容后台服务未启动，将在下次打开时重试: {error}");
             }

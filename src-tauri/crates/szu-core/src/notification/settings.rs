@@ -14,22 +14,22 @@ const MAX_LEAD_MINUTES: i64 = 525_600;
 #[serde(rename_all = "snake_case")]
 pub enum NotificationCategory {
     CampusNetwork,
-    Electricity,
     Enrollment,
-    Oj,
     Uooc,
     Todo,
 }
 
 /// 待办类通知的统一配置。
 ///
-/// 六个注册项与首页日历的六类待办一一对应；`lead_minutes` 是模块级统一阈值，
-/// 同一待办在每档各提醒一次。
+/// 七个注册项与首页日历的七类待办一一对应；`discovery` 控制「初次探测到」事件，
+/// 「任务开始」事件始终开启，`lead_minutes` 是模块级统一阈值，同一待办在每档各提醒一次。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct TodoNotificationSettings {
     /// 待办提醒总开关
     pub enabled: bool,
+    /// 待办首次出现时提醒一次
+    pub discovery: bool,
     /// OJ 测验截止
     pub oj_quiz: bool,
     /// UOOC 考试截止
@@ -52,6 +52,7 @@ impl Default for TodoNotificationSettings {
     fn default() -> Self {
         Self {
             enabled: true,
+            discovery: true,
             oj_quiz: true,
             uooc_exam: true,
             uooc_homework: true,
@@ -105,13 +106,9 @@ pub struct NotificationSettings {
     pub enabled: bool,
     /// 校园网异常通知
     pub campus_network: bool,
-    /// 宿舍电费低电量预警
-    pub electricity: bool,
     /// 选课任务状态通知
     pub enrollment: bool,
-    /// OJ 新测验发布与登录状态提醒（截止提醒由待办模块负责）
-    pub oj: bool,
-    /// UOOC 测验需要处理提醒（截止提醒由待办模块负责）
+    /// UOOC 刷课需要人工处理提醒（新测验/作业/考试与截止提醒由待办模块负责）
     pub uooc: bool,
     /// 待办类通知
     #[serde(default)]
@@ -123,9 +120,7 @@ impl Default for NotificationSettings {
         Self {
             enabled: true,
             campus_network: true,
-            electricity: true,
             enrollment: true,
-            oj: true,
             uooc: true,
             todo: TodoNotificationSettings::default(),
         }
@@ -139,9 +134,7 @@ impl NotificationSettings {
         }
         match category {
             NotificationCategory::CampusNetwork => self.campus_network,
-            NotificationCategory::Electricity => self.electricity,
             NotificationCategory::Enrollment => self.enrollment,
-            NotificationCategory::Oj => self.oj,
             NotificationCategory::Uooc => self.uooc,
             NotificationCategory::Todo => self.todo.enabled,
         }
@@ -179,9 +172,7 @@ mod tests {
         let settings = NotificationSettings::default();
         assert!(settings.enabled);
         assert!(settings.is_category_enabled(NotificationCategory::CampusNetwork));
-        assert!(settings.is_category_enabled(NotificationCategory::Electricity));
         assert!(settings.is_category_enabled(NotificationCategory::Enrollment));
-        assert!(settings.is_category_enabled(NotificationCategory::Oj));
         assert!(settings.is_category_enabled(NotificationCategory::Uooc));
         assert!(settings.is_category_enabled(NotificationCategory::Todo));
     }
@@ -190,6 +181,7 @@ mod tests {
     fn default_todo_settings_enable_every_kind_and_default_lead_times() {
         let todo = TodoNotificationSettings::default();
         assert!(todo.enabled);
+        assert!(todo.discovery);
         for kind in [
             TodoKind::OjQuiz,
             TodoKind::UoocExam,
@@ -212,9 +204,7 @@ mod tests {
         let mut settings = NotificationSettings::default();
         settings.enabled = false;
         assert!(!settings.is_category_enabled(NotificationCategory::CampusNetwork));
-        assert!(!settings.is_category_enabled(NotificationCategory::Electricity));
         assert!(!settings.is_category_enabled(NotificationCategory::Enrollment));
-        assert!(!settings.is_category_enabled(NotificationCategory::Oj));
         assert!(!settings.is_category_enabled(NotificationCategory::Uooc));
         assert!(!settings.is_category_enabled(NotificationCategory::Todo));
         assert!(!settings.is_todo_kind_enabled(TodoKind::OjQuiz));
@@ -223,10 +213,10 @@ mod tests {
     #[test]
     fn individual_category_toggle_works() {
         let mut settings = NotificationSettings::default();
-        settings.electricity = false;
+        settings.enrollment = false;
         assert!(settings.is_category_enabled(NotificationCategory::CampusNetwork));
-        assert!(!settings.is_category_enabled(NotificationCategory::Electricity));
-        assert!(settings.is_category_enabled(NotificationCategory::Oj));
+        assert!(!settings.is_category_enabled(NotificationCategory::Enrollment));
+        assert!(settings.is_category_enabled(NotificationCategory::Uooc));
     }
 
     #[test]
@@ -261,8 +251,8 @@ mod tests {
             "uooc": true
         }"#;
         let settings: NotificationSettings = serde_json::from_str(legacy).unwrap();
-        assert!(!settings.oj);
         assert!(settings.todo.enabled);
+        assert!(settings.todo.discovery);
         assert_eq!(
             settings.todo.lead_minutes,
             DEFAULT_TODO_LEAD_MINUTES.to_vec()
@@ -282,6 +272,7 @@ mod tests {
         }"#;
         let settings: NotificationSettings = serde_json::from_str(partial).unwrap();
         assert!(!settings.todo.enabled);
+        assert!(settings.todo.discovery);
         assert!(settings.todo.oj_quiz);
         assert_eq!(settings.todo.lead_minutes, vec![60]);
     }
@@ -291,12 +282,11 @@ mod tests {
         let settings = NotificationSettings {
             enabled: true,
             campus_network: false,
-            electricity: true,
             enrollment: false,
-            oj: true,
             uooc: false,
             todo: TodoNotificationSettings {
                 enabled: false,
+                discovery: false,
                 oj_quiz: true,
                 uooc_exam: false,
                 uooc_homework: true,

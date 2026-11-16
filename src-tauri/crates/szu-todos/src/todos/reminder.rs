@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager};
 
-use super::model::{item_key, reminder_key, ReminderState, TodoItem};
+use super::model::{item_key, reminder_key, ReminderState, TodoItem, DISCOVERY_BASELINE_VERSION};
 use super::{aggregate, publish, refresh_sources, RefreshSource, TodosStore};
 use szu_core::notification::settings::NotificationSettings;
 use szu_core::notification::{NotificationCategory, NotificationPayload, TodoKind};
@@ -12,6 +12,17 @@ const MINUTE_MS: i64 = 60_000;
 const DAY_MS: i64 = 86_400_000;
 /// 已通知记录按截止时间保留 30 天；更早的待办不会再次触发。
 const NOTIFIED_RETENTION_MS: i64 = 30 * DAY_MS;
+
+/// 一轮提醒判定中要发送的事件。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReminderEvent {
+    /// 待办首次出现在完整视图中
+    Discovered,
+    /// 待办到达开始时间
+    Started,
+    /// 截止前的提前量（分钟）
+    Lead(i64),
+}
 
 pub fn start(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
@@ -62,16 +73,18 @@ async fn evaluate(app: &AppHandle, items: &[TodoItem], trusted: &HashSet<TodoKin
         let mut state = store.state.lock().unwrap();
         let before_notified = state.notified.clone();
         let before_discovered = state.discovered.clone();
+        let before_started = state.started.clone();
         let before_baseline = (
             state.discovery_baseline_version,
             state.baselined_kinds.clone(),
         );
-        establish_discovery_baseline(items, trusted, &mut state);
+        establish_discovery_baseline(items, trusted, now, &mut state);
         let pending = plan_reminders(items, &settings, now, &mut state);
         prune_closed(items, trusted, now, &mut state);
         let changed = !pending.is_empty()
             || state.notified != before_notified
             || state.discovered != before_discovered
+            || state.started != before_started
             || state.discovery_baseline_version != before_baseline.0
             || state.baselined_kinds != before_baseline.1;
         (pending, changed)
@@ -88,14 +101,14 @@ async fn evaluate(app: &AppHandle, items: &[TodoItem], trusted: &HashSet<TodoKin
         }
     }
 
-    for (item, offset) in pending {
-        if let Some(offset) = offset {
+    for (item, event) in pending {
+        if let ReminderEvent::Lead(offset) = event {
             // Android 上该提醒已交给系统原生排程，避免前台运行时再发一次 Snackbar/系统通知。
             if has_native_schedule(app, &item, offset) {
                 continue;
             }
         }
-        dispatch(app, &item, offset);
+        dispatch(app, &item, event);
     }
 }
 
@@ -116,36 +129,49 @@ fn has_native_schedule(_app: &AppHandle, _item: &TodoItem, _offset_minutes: i64)
     false
 }
 
-/// 升级迁移：旧版本状态（`discovery_baseline_version == 0`）第一次看到某个来源的
-/// 完整视图时，把当前已有待办静默写入 `discovered`，避免升级瞬间补发一批通知。
-/// 新安装的 `Default` 已是 1，因此第一批待办会正常触发「初次探测到」。
+/// 升级迁移：旧版本状态第一次看到某个来源的完整视图时，把当前已有待办静默写入
+/// `discovered`，避免升级瞬间补发一批通知；版本 1 的状态再为已经开始的任务补上
+/// `started` 基线，避免升级后立刻收到「任务已开始」。新安装的 `Default` 已是当前版本。
 pub fn establish_discovery_baseline(
     items: &[TodoItem],
     trusted: &HashSet<TodoKind>,
+    now: i64,
     state: &mut ReminderState,
 ) {
-    if state.discovery_baseline_version >= 1 {
+    if state.discovery_baseline_version >= DISCOVERY_BASELINE_VERSION {
         return;
     }
 
-    let mut kinds: std::collections::BTreeSet<TodoKind> = trusted.iter().copied().collect();
-    kinds.extend(items.iter().map(|item| item.kind));
-    for kind in kinds {
-        if !state.baselined_kinds.insert(kind) {
-            continue;
-        }
-        for item in items.iter().filter(|item| item.kind == kind) {
-            state
-                .discovered
-                .entry(item_key(item))
-                .or_insert(item.due_at_ms);
+    if state.discovery_baseline_version < 1 {
+        let mut kinds: std::collections::BTreeSet<TodoKind> = trusted.iter().copied().collect();
+        kinds.extend(items.iter().map(|item| item.kind));
+        for kind in kinds {
+            if !state.baselined_kinds.insert(kind) {
+                continue;
+            }
+            for item in items.iter().filter(|item| item.kind == kind) {
+                state
+                    .discovered
+                    .entry(item_key(item))
+                    .or_insert(item.due_at_ms);
+            }
         }
     }
+
+    if state.discovery_baseline_version < 2 {
+        for item in items {
+            if let Some(start) = item.start_at_ms.filter(|start| *start <= now) {
+                state.started.entry(item_key(item)).or_insert(start);
+            }
+        }
+    }
+
+    state.discovery_baseline_version = DISCOVERY_BASELINE_VERSION;
 }
 
 /// 纯函数：根据当前待办与设置计算本轮要发送的提醒，并就地更新去重状态。
 ///
-/// 返回值的第二个字段为 `None` 时表示「初次探测到」，`Some(minutes)` 表示提前量。
+/// 「初次探测到」可关闭，「任务开始」始终开启；提前量仍以截止时间为基准。
 /// 同一待办有多个阈值同时到达时只保留最接近截止的一档，其余一并标记为已通知，
 /// 避免应用离线一段时间后补发一串过期提醒。
 pub fn plan_reminders(
@@ -153,7 +179,7 @@ pub fn plan_reminders(
     settings: &NotificationSettings,
     now: i64,
     state: &mut ReminderState,
-) -> Vec<(TodoItem, Option<i64>)> {
+) -> Vec<(TodoItem, ReminderEvent)> {
     if !settings.enabled || !settings.todo.enabled {
         return Vec::new();
     }
@@ -166,19 +192,26 @@ pub fn plan_reminders(
 
         let key = item_key(item);
         if !state.discovered.contains_key(&key) {
-            state.discovered.insert(key, item.due_at_ms);
-            // 初次探测立即提醒；把本轮已经到达的提前量一并标记，
-            // 避免同一待办在下一次 tick 再补一条截止提醒。
-            for offset in &settings.todo.lead_minutes {
-                if item.due_at_ms - *offset * MINUTE_MS <= now {
-                    state.notified.insert(reminder_key(item, *offset), now);
-                }
+            state.discovered.insert(key.clone(), item.due_at_ms);
+            // 首次探测时任务已经开始：只算一次「初次探测到」，不再补「任务开始」。
+            if let Some(start) = item.start_at_ms.filter(|start| *start <= now) {
+                state.started.entry(key.clone()).or_insert(start);
             }
-            pending.push((item.clone(), None));
-            continue;
+            if settings.todo.discovery {
+                // 初次探测立即提醒；把本轮已经到达的提前量一并标记，
+                // 避免同一待办在下一次 tick 再补一条截止提醒。
+                for offset in &settings.todo.lead_minutes {
+                    if item.due_at_ms - *offset * MINUTE_MS <= now {
+                        state.notified.insert(reminder_key(item, *offset), now);
+                    }
+                }
+                pending.push((item.clone(), ReminderEvent::Discovered));
+                continue;
+            }
+        } else {
+            // 截止时间可能被延长；记录最新值供关闭后的兜底清理使用。
+            state.discovered.insert(key.clone(), item.due_at_ms);
         }
-        // 截止时间可能被延长；记录最新值供关闭后的兜底清理使用。
-        state.discovered.insert(key, item.due_at_ms);
 
         let mut reached: Vec<(i64, String)> = settings
             .todo
@@ -188,15 +221,31 @@ pub fn plan_reminders(
             .map(|offset| (*offset, reminder_key(item, *offset)))
             .filter(|(_, key)| !state.notified.contains_key(key))
             .collect();
+        reached.sort_by_key(|(offset, _)| *offset);
+
+        if let Some(start) = item.start_at_ms.filter(|start| *start <= now) {
+            // 开始时间被改到更晚时重新提醒一次；相同或更早则保持已提醒。
+            let notified = state
+                .started
+                .get(&key)
+                .is_some_and(|previous| *previous >= start);
+            if !notified {
+                state.started.insert(key.clone(), start);
+                // 同一 tick 还有到期的提前量时，优先发更紧急的截止提醒。
+                if reached.is_empty() {
+                    pending.push((item.clone(), ReminderEvent::Started));
+                }
+            }
+        }
+
         if reached.is_empty() {
             continue;
         }
-        reached.sort_by_key(|(offset, _)| *offset);
         let chosen_offset = reached[0].0;
         for (_, key) in reached {
             state.notified.insert(key, now);
         }
-        pending.push((item.clone(), Some(chosen_offset)));
+        pending.push((item.clone(), ReminderEvent::Lead(chosen_offset)));
     }
 
     let horizon = now - NOTIFIED_RETENTION_MS;
@@ -246,24 +295,50 @@ pub fn prune_closed(
         }
         *due_at >= horizon
     });
+
+    state.started.retain(|key, start_at| {
+        if live.contains(key) {
+            return true;
+        }
+        let trusted_kind = key
+            .split_once('|')
+            .is_some_and(|(kind, _)| trusted_keys.contains(kind));
+        if trusted_kind {
+            return false;
+        }
+        *start_at >= horizon
+    });
 }
 
-fn dispatch(app: &AppHandle, item: &TodoItem, offset_minutes: Option<i64>) {
+fn dispatch(app: &AppHandle, item: &TodoItem, event: ReminderEvent) {
     let now = chrono::Utc::now().timestamp_millis();
     let remaining = (item.due_at_ms - now).max(0);
     let remaining_text = humanize_remaining(remaining);
-    let body = match (item.subtitle.as_deref(), offset_minutes) {
-        (Some(subtitle), Some(_)) => format!("{subtitle} · {remaining_text}"),
-        (Some(subtitle), None) => format!("{subtitle} · 初次探测到 · {remaining_text}"),
-        (None, Some(_)) => remaining_text,
-        (None, None) => format!("初次探测到 · {remaining_text}"),
+    let (body, event_key) = match (item.subtitle.as_deref(), event) {
+        (Some(subtitle), ReminderEvent::Discovered) => (
+            format!("{subtitle} · 初次探测到 · {remaining_text}"),
+            "discovered",
+        ),
+        (None, ReminderEvent::Discovered) => {
+            (format!("初次探测到 · {remaining_text}"), "discovered")
+        }
+        (Some(subtitle), ReminderEvent::Started) => (
+            format!("{subtitle} · 任务已开始 · {remaining_text}"),
+            "started",
+        ),
+        (None, ReminderEvent::Started) => (format!("任务已开始 · {remaining_text}"), "started"),
+        (Some(subtitle), ReminderEvent::Lead(_)) => {
+            (format!("{subtitle} · {remaining_text}"), "lead")
+        }
+        (None, ReminderEvent::Lead(_)) => (remaining_text, "lead"),
     };
     let mut extra = serde_json::json!({
         "todoId": item.id,
         "todoKind": item.kind,
         "dueAtMs": item.due_at_ms,
+        "event": event_key,
     });
-    if let Some(offset) = offset_minutes {
+    if let ReminderEvent::Lead(offset) = event {
         extra["offsetMinutes"] = serde_json::json!(offset);
     }
     let payload = NotificationPayload::new(NotificationCategory::Todo, &item.title, body)

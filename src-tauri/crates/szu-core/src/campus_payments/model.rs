@@ -31,7 +31,6 @@ pub struct ElectricityMonitorRecord {
     pub cache: Option<ElectricityCurrentCache>,
     pub last_startup_attempt_date: Option<String>,
     pub last_background_attempt_date: Option<String>,
-    pub last_notified_date: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]

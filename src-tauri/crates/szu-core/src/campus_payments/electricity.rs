@@ -701,52 +701,6 @@ pub fn emit_status(app: &AppHandle, store: &ElectricityStore) {
     let _ = app.emit(ELECTRICITY_STATUS_EVENT, status(store));
 }
 
-fn notify_if_needed(app: &AppHandle, store: &ElectricityStore) {
-    let is_background = store
-        .runtime
-        .lock()
-        .map(|runtime| runtime.background)
-        .unwrap_or(false);
-    if !is_background {
-        return;
-    }
-    let Some(location) = monitoring_settings(store) else {
-        return;
-    };
-    let today = local_date();
-    let mut record = load_monitor_record(store);
-    let Some(cache) = record
-        .cache
-        .as_ref()
-        .filter(|cache| cache_matches(cache, &location))
-    else {
-        return;
-    };
-    if cache.expires_at_ms <= now_ms()
-        || !cache.warning_active
-        || record.last_notified_date.as_deref() == Some(today.as_str())
-    {
-        return;
-    }
-    record.last_notified_date = Some(today);
-    save_monitor_record(store, &record);
-    let title = format!("当前剩余电量：{:.2} 度", cache.remaining);
-    let body = cache
-        .warning_reason
-        .as_deref()
-        .unwrap_or("宿舍电量不足，请及时充值。");
-    let payload = crate::notification::NotificationPayload::new(
-        crate::notification::NotificationCategory::Electricity,
-        title,
-        body,
-    )
-    .id(0x535a)
-    .action_type_id("electricity-low")
-    .route("/life/campus-payments/recharge")
-    .action_label("前往充值")
-    .auto_cancel(true);
-    crate::notification::notify(app, payload);
-}
 
 fn begin_query(store: &ElectricityStore) -> Result<(), String> {
     let mut runtime = store.runtime.lock().map_err(|_| "电费查询状态不可用")?;
@@ -788,7 +742,6 @@ pub fn query_and_record(
     let view = result?;
     record_view(store, &input, generation, started_at_ms, &view)?;
     emit_status(app, store);
-    notify_if_needed(app, store);
     Ok(view)
 }
 
@@ -918,7 +871,6 @@ pub fn initialize(app: AppHandle, store: ElectricityStore) {
                 .unwrap_or(false);
             if background {
                 automatic_query(&app, &store, true);
-                notify_if_needed(&app, &store);
             }
         }
     });
@@ -931,7 +883,6 @@ pub fn set_background(app: AppHandle, store: ElectricityStore, background: bool)
     if background {
         thread::spawn(move || {
             automatic_query(&app, &store, true);
-            notify_if_needed(&app, &store);
         });
     }
 }

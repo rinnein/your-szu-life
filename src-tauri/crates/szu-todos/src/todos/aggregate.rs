@@ -116,6 +116,8 @@ pub fn from_oj(deadlines: Vec<OjDeadline>, now: i64) -> Vec<TodoItem> {
                 contest.site_name,
                 if contest.is_exam { "考试" } else { "测验" }
             )),
+            start_at_ms: (contest.begin > 0 && contest.begin < contest.end)
+                .then_some(contest.begin),
             due_at_ms: contest.end,
             route: format!(
                 "/study/oj?site={}&contest={}",
@@ -151,6 +153,7 @@ pub fn from_uooc(
             kind: TodoKind::UoocCourseEnd,
             title: format!("{} 课程结课", course.title),
             subtitle: Some("UOOC · 课程结课".into()),
+            start_at_ms: None,
             due_at_ms: due_at,
             route: "/study/uooc?tab=courses".into(),
             external_url: None,
@@ -173,6 +176,7 @@ pub fn from_uooc(
             kind: TodoKind::UoocExam,
             title: exam.title.clone(),
             subtitle: Some(format!("{} · 考试", exam.course_name)),
+            start_at_ms: parse_uooc_datetime(&exam.start_time).filter(|start| *start < due_at),
             due_at_ms: due_at,
             route: "/study/uooc?tab=exams&subtab=exam".into(),
             external_url: None,
@@ -195,6 +199,7 @@ pub fn from_uooc(
             kind: TodoKind::UoocHomework,
             title: homework.title.clone(),
             subtitle: Some(format!("{} · 作业", homework.course_name)),
+            start_at_ms: parse_uooc_datetime(&homework.start_time).filter(|start| *start < due_at),
             due_at_ms: due_at,
             route: "/study/uooc?tab=exams&subtab=homework".into(),
             external_url: None,
@@ -239,6 +244,8 @@ pub fn from_lms(snapshot: &LmsSnapshot, now: i64) -> Vec<TodoItem> {
                 kind: TodoKind::LmsHomework,
                 title: todo.title.clone(),
                 subtitle: Some(format!("畅课 · {}", todo.course_name)),
+                // 畅课待办接口只给截止时间，没有任务开始时间。
+                start_at_ms: None,
                 due_at_ms: due_at,
                 route: "/study/lms".into(),
                 external_url: Some(format!(
@@ -261,6 +268,7 @@ pub fn from_checkin(items: Vec<szu_signin::signin::CheckinTodoItem>, now: i64) -
             kind: TodoKind::Checkin,
             title: item.title,
             subtitle: item.subtitle.or_else(|| Some("签到".into())),
+            start_at_ms: None,
             due_at_ms: item.due_at_ms,
             route: item.route,
             external_url: None,
@@ -270,37 +278,68 @@ pub fn from_checkin(items: Vec<szu_signin::signin::CheckinTodoItem>, now: i64) -
         .collect()
 }
 
+/// 电费预警统一并入待办。
+///
+/// 低电量（`low`）即使算不出估算耗尽日也要生成一条「当天 23:59 前充值」的待办，
+/// 避免原来每日后台推送被移除后漏报；算得出且尚未到达的估算日优先。
 pub fn from_electricity(status: &ElectricityStatusView, now: i64) -> Vec<TodoItem> {
     if status.expired {
         return Vec::new();
     }
-    let Some(days) = status.estimated_days_left else {
-        return Vec::new();
+    let estimate = status
+        .estimated_days_left
+        .filter(|days| *days >= 0.0)
+        .map(|days| {
+            let base = status
+                .observed_date
+                .as_deref()
+                .and_then(parse_local_date_midnight)
+                .unwrap_or(now);
+            base + (days * DAY_MS as f64) as i64
+        });
+    let due_at = if status.low {
+        estimate
+            .filter(|due| *due > now)
+            .unwrap_or_else(|| end_of_local_day(now))
+    } else {
+        match estimate {
+            Some(due) => due,
+            None => return Vec::new(),
+        }
     };
-    if days < 0.0 {
-        return Vec::new();
-    }
 
-    let base = status
-        .observed_date
-        .as_deref()
-        .and_then(parse_local_date_midnight)
-        .unwrap_or(now);
-    let due_at = base + (days * DAY_MS as f64) as i64;
     let remaining_text = status
         .remaining
         .map(|remaining| format!("（剩余约 {remaining:.1} 度）"))
         .unwrap_or_default();
+    let (title, subtitle, urgent) = if status.low {
+        // `warning_reason` 区分「低于 5 度」与「预计可用不足 1 天」，直接作为标题更准确。
+        (
+            status
+                .warning_reason
+                .clone()
+                .unwrap_or_else(|| "宿舍电量不足，请及时充值。".into()),
+            format!("宿舍电费监控 · 电费预警{remaining_text}"),
+            true,
+        )
+    } else {
+        (
+            format!("预计电量耗尽{remaining_text}"),
+            "宿舍电费监控 · 预估断电日期".to_string(),
+            due_at - now < DAY_MS,
+        )
+    };
 
     vec![TodoItem {
         id: "electricity:outage-forecast".into(),
         kind: TodoKind::ElectricityOutage,
-        title: format!("预计电量耗尽{remaining_text}"),
-        subtitle: Some("宿舍电费监控 · 预估断电日期".into()),
+        title,
+        subtitle: Some(subtitle),
+        start_at_ms: None,
         due_at_ms: due_at,
         route: "/life/campus-payments/recharge".into(),
         external_url: None,
-        urgent: days < 1.0,
+        urgent,
     }]
 }
 
@@ -344,6 +383,20 @@ fn parse_local_date_midnight(raw: &str) -> Option<i64> {
         .from_local_datetime(&date.and_hms_opt(0, 0, 0)?)
         .single()
         .map(|value| value.timestamp_millis())
+}
+
+/// 当前本地日期结束的时刻（23:59:59.999）。
+fn end_of_local_day(now: i64) -> i64 {
+    let today = chrono::Local
+        .timestamp_millis_opt(now)
+        .single()
+        .map(|value| value.date_naive());
+    today
+        .and_then(|date| date.succ_opt())
+        .and_then(|date| date.and_hms_opt(0, 0, 0))
+        .and_then(|naive| chrono::Local.from_local_datetime(&naive).single())
+        .map(|value| value.timestamp_millis() - 1)
+        .unwrap_or(now + DAY_MS)
 }
 
 /// 与前端 `encodeURIComponent` 等价的最小实现，用于 OJ 的路由参数。

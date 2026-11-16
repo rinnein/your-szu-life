@@ -7,6 +7,7 @@ fn item(title: &str, due_at_ms: i64) -> TodoItem {
         kind: TodoKind::OjQuiz,
         title: title.to_string(),
         subtitle: None,
+        start_at_ms: None,
         due_at_ms,
         route: "/study/oj".into(),
         external_url: None,
