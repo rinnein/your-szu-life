@@ -104,12 +104,12 @@ beforeEach(() => {
 afterEach(cleanup);
 it("requests backend-owned dates, shows converted balance and preserves actual recharge amount", async () => {
   render(<CampusPaymentsElectricityPage />);
-  expect(await screen.findByText("折算余额 6.10 元")).toBeInTheDocument();
+  expect(await screen.findByText("折算余额 7.00 元")).toBeInTheDocument();
   expect(invoke).toHaveBeenCalledWith("query_electricity", { input: saved });
   expect(screen.queryByLabelText("查询日期范围")).not.toBeInTheDocument();
   expect(screen.getByRole("grid", { name: "充值记录" })).toHaveTextContent("8.50");
   fireEvent.click(screen.getByRole("button", { name: "切换为电费" }));
-  expect(screen.getByRole("grid", { name: "用电记录" })).toHaveTextContent("1.22");
+  expect(screen.getByRole("grid", { name: "用电记录" })).toHaveTextContent("1.40");
 });
 it("copies exported configuration and offers manual fallback on clipboard failure", async () => {
   vi.mocked(copyText).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
