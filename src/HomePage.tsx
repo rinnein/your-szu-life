@@ -12,6 +12,7 @@ import { useDebugMode } from "./shell/use-debug-mode";
 import { useLogicalNavigation } from "./logical-navigation";
 import { AnnouncementBoard } from "./app-content/AnnouncementBoard";
 import { HomeCalendarWidget } from "./home-schedule/HomeCalendarWidget";
+import { HomeTimetableWidget } from "./timetable/HomeTimetableWidget";
 
 // AccountMenu 直接渲染 <m-menu>，因此由页面自己注册菜单元素与样式。
 defineMenu();
@@ -19,8 +20,8 @@ defineMenu();
 /**
  * 首页。
  *
- * 顶级部件之一，也是逻辑导航栈的 root：只承载账户入口与公告栏，
- * 学习 / 生活相关的入口分别在学习页与生活页。
+ * 顶级部件之一，也是逻辑导航栈的 root：承载账户入口、公告栏、课表小部件
+ * 与日历待办；学习 / 生活相关的详细功能分别在学习页与生活页。
  */
 export default function HomePage() {
   const { state, profile, setProfile, setState } = useAuth();
@@ -88,8 +89,9 @@ export default function HomePage() {
           }
         />
 
-        <div className="grid gap-12">
+        <div className="grid gap-1">
           <AnnouncementBoard />
+          <HomeTimetableWidget />
           <HomeCalendarWidget />
         </div>
 

@@ -42,6 +42,70 @@
   --color-accent-10: var(--mtrl-sys-color-accent-10);
   --color-accent-11: var(--mtrl-sys-color-accent-11);
   --color-accent-12: var(--mtrl-sys-color-accent-12);
+  /*
+   * 课表等按课程着色的卡片底：同一组 accent 色相降到卡片可读的浓度。
+   * 表达式必须留在普通声明里（与下面的 *-soft 一样），不能塞进自定义属性。
+   */
+  --color-accent-1-soft: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-accent-01) 18%,
+    var(--mtrl-sys-color-surface)
+  );
+  --color-accent-2-soft: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-accent-02) 18%,
+    var(--mtrl-sys-color-surface)
+  );
+  --color-accent-3-soft: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-accent-03) 18%,
+    var(--mtrl-sys-color-surface)
+  );
+  --color-accent-4-soft: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-accent-04) 18%,
+    var(--mtrl-sys-color-surface)
+  );
+  --color-accent-5-soft: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-accent-05) 18%,
+    var(--mtrl-sys-color-surface)
+  );
+  --color-accent-6-soft: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-accent-06) 18%,
+    var(--mtrl-sys-color-surface)
+  );
+  --color-accent-7-soft: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-accent-07) 18%,
+    var(--mtrl-sys-color-surface)
+  );
+  --color-accent-8-soft: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-accent-08) 18%,
+    var(--mtrl-sys-color-surface)
+  );
+  --color-accent-9-soft: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-accent-09) 18%,
+    var(--mtrl-sys-color-surface)
+  );
+  --color-accent-10-soft: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-accent-10) 18%,
+    var(--mtrl-sys-color-surface)
+  );
+  --color-accent-11-soft: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-accent-11) 18%,
+    var(--mtrl-sys-color-surface)
+  );
+  --color-accent-12-soft: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-accent-12) 18%,
+    var(--mtrl-sys-color-surface)
+  );
   --color-separator: var(--mtrl-sys-color-outline-variant);
   --color-border: var(--mtrl-sys-color-outline-variant);
   --color-focus: var(--mtrl-sys-color-primary);

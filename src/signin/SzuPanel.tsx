@@ -17,9 +17,12 @@ import { RadarForm, type PointSelection } from "./RadarForm";
 
 interface SzuPanelProps {
   buildings: Building[];
+  initialCourse?: string;
+  initialStart?: number;
+  open?: boolean;
 }
 
-export function SzuPanel({ buildings }: SzuPanelProps) {
+export function SzuPanel({ buildings, initialCourse, initialStart, open }: SzuPanelProps) {
   const [sessions, setSessions] = useState<TimetableSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -58,6 +61,18 @@ export function SzuPanel({ buildings }: SzuPanelProps) {
   useEffect(() => {
     void load(false);
   }, [load]);
+
+  const opened = useRef(false);
+  useEffect(() => {
+    if (!open || opened.current || loading || !initialCourse || !initialStart) return;
+    const target = sessions.find(
+      (session) => session.course_name === initialCourse && session.start_ms === initialStart,
+    );
+    if (target) {
+      opened.current = true;
+      setActive(target);
+    }
+  }, [open, initialCourse, initialStart, loading, sessions]);
 
   return (
     <section aria-label="SZU 考勤课次列表" className="flex flex-col gap-3">

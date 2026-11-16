@@ -17,7 +17,17 @@ const TAB_ITEMS = [
   { value: "szu", label: "SZU（实验性）" },
 ] as const;
 
-export default function SignInPage({ tab }: { tab: "lms" | "szu" }) {
+export default function SignInPage({
+  tab,
+  course,
+  start,
+  open,
+}: {
+  tab: "lms" | "szu";
+  course?: string;
+  start?: number;
+  open?: boolean;
+}) {
   const navigation = useLogicalNavigation();
   const [buildings, setBuildings] = useState<Building[]>([]);
 
@@ -49,7 +59,11 @@ export default function SignInPage({ tab }: { tab: "lms" | "szu" }) {
           ariaLabel="签到渠道"
         />
 
-        {tab === "lms" ? <LmsPanel buildings={buildings} /> : <SzuPanel buildings={buildings} />}
+        {tab === "lms" ? (
+          <LmsPanel buildings={buildings} initialCourse={course} open={open} />
+        ) : (
+          <SzuPanel buildings={buildings} initialCourse={course} initialStart={start} open={open} />
+        )}
       </PageSurface>
     </AuthGate>
   );

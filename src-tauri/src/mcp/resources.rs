@@ -69,10 +69,16 @@ pub fn list_available_resources() -> Vec<Resource> {
                 "返回签到模块缓存的 SZU 考勤课表（课次时间、楼栋/教室与解析出的楼栋坐标）",
             )
             .with_mime_type("application/json"),
+        Resource::new("your-szu-life://data/timetable", "timetable")
+            .with_title("课表快照")
+            .with_description(
+                "返回考勤课表的未来课次（日期/起止时间/楼栋教室）、待签点名与 eHall 固定学期课表（持久缓存）",
+            )
+            .with_mime_type("application/json"),
         Resource::new("your-szu-life://data/todos", "todos")
             .with_title("首页待办聚合")
             .with_description(
-                "返回首页日历聚合后的全部待办：OJ 测验、UOOC 考试/作业/结课、畅课作业、宿舍电费预警、签到",
+                "返回首页日历聚合后的全部待办：OJ 测验、UOOC 考试/作业/结课、畅课作业、宿舍电费预警",
             )
             .with_mime_type("application/json"),
         Resource::new(
@@ -87,7 +93,7 @@ pub fn list_available_resources() -> Vec<Resource> {
             "notification_settings",
         )
         .with_title("通知设置")
-        .with_description("返回全局通知总开关、各业务分类开关与待办提醒配置")
+        .with_description("返回全局通知总开关、各业务分类开关、待办提醒与课表提醒配置")
         .with_mime_type("application/json"),
         Resource::new(
             "your-szu-life://data/app/announcements",
@@ -272,6 +278,10 @@ pub async fn read_resource_by_uri(
             } else {
                 "{}".to_string()
             }
+        }
+        "your-szu-life://data/timetable" => {
+            let snapshot = szu_timetable::timetable::snapshot(app);
+            serde_json::to_string_pretty(&snapshot).unwrap_or_else(|_| "{}".to_string())
         }
         "your-szu-life://data/todos" => {
             let items = szu_todos::todos::aggregate::aggregate(app).items;

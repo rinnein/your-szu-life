@@ -10,7 +10,7 @@ use szu_todos::todos::model::TodoKind;
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct ListTodosParams {
     /// 可选：只返回某一类待办（oj-quiz、uooc-exam、uooc-homework、uooc-course-end、
-    /// lms-homework、electricity-outage、checkin）。省略时返回全部。
+    /// lms-homework、electricity-outage）。省略时返回全部。
     pub kind: Option<TodoKind>,
 }
 
@@ -32,8 +32,6 @@ pub struct TodoSettingsUpdate {
     pub lms_homework: Option<bool>,
     /// 电费预估断电日期提醒
     pub electricity_outage: Option<bool>,
-    /// 签到/打卡提醒
-    pub checkin: Option<bool>,
     /// 提前量（分钟）。传空数组表示只发送「初次探测到时」与「任务开始时」的提醒；
     /// 「任务开始时」始终开启，无法关闭。
     pub lead_minutes: Option<Vec<i64>>,
@@ -68,9 +66,6 @@ impl TodoSettingsUpdate {
         if let Some(value) = self.electricity_outage {
             target.electricity_outage = value;
         }
-        if let Some(value) = self.checkin {
-            target.checkin = value;
-        }
         if let Some(value) = self.lead_minutes {
             target.lead_minutes = value;
         }
@@ -81,7 +76,7 @@ impl TodoSettingsUpdate {
 impl UnifiedSzuMcpService {
     #[tool(
         name = "todos_list",
-        description = "获取首页日历聚合后的全部待办事项（OJ 测验、UOOC 考试/作业/结课、畅课作业、宿舍电费预警、签到）。对应资源 your-szu-life://data/todos"
+        description = "获取首页日历聚合后的全部待办事项（OJ 测验、UOOC 考试/作业/结课、畅课作业、宿舍电费预警）。对应资源 your-szu-life://data/todos"
     )]
     pub async fn todos_list(
         &self,
@@ -96,7 +91,7 @@ impl UnifiedSzuMcpService {
 
     #[tool(
         name = "todos_get_settings",
-        description = "获取待办提醒配置（七个注册项开关、初次探测开关与提前量列表）。「任务开始时」提醒始终开启，不在该配置中。对应资源 your-szu-life://data/todos/notification-settings"
+        description = "获取待办提醒配置（六个注册项开关、初次探测开关与提前量列表）。「任务开始时」提醒始终开启，不在该配置中。对应资源 your-szu-life://data/todos/notification-settings"
     )]
     pub async fn todos_get_settings(&self) -> Result<String, String> {
         let settings = szu_core::notification::settings::load(&self.app);

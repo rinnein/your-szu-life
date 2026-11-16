@@ -54,7 +54,7 @@ describe("filterCommands", () => {
   });
 
   it("matches commands by their full names", () => {
-    expect(filterCommands("上课时间表")[0].id).toBe("time");
+    expect(filterCommands("课表")[0].id).toBe("time");
     expect(filterCommands("查电量")[0].id).toBe("cdl");
     expect(filterCommands("充电费")[0].id).toBe("cdf");
     expect(filterCommands("校园网")[0].id).toBe("net");

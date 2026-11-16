@@ -127,7 +127,7 @@ describe("顶栏块不被放进带 gap 的容器", () => {
     "/study",
     "/life",
     "/settings",
-    "/study/class-timetable",
+    "/study/timetable",
     "/study/oj",
     "/study/uooc",
     "/study/academic",
@@ -167,12 +167,12 @@ describe("顶栏块不被放进带 gap 的容器", () => {
 describe("页面转场", () => {
   it("plays when a page is pushed and when it is popped by back", async () => {
     const router = renderAt("/study");
-    const entry = await screen.findByRole("button", { name: /上课时间表/ });
+    const entry = await screen.findByRole("button", { name: /^课表/ });
     expect(document.querySelector(".page-transition")?.getAttribute("data-motion")).toBe("forward");
 
     fireEvent.click(entry);
-    await vi.waitFor(() => expect(router.state.location.pathname).toBe("/study/class-timetable"));
-    expect(await screen.findByRole("heading", { name: "上课时间表" })).toBeInTheDocument();
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe("/study/timetable"));
+    expect(await screen.findByRole("heading", { name: "课表" })).toBeInTheDocument();
     expect(document.querySelector(".page-transition")?.getAttribute("data-motion")).toBe("forward");
 
     fireEvent.click(screen.getByRole("button", { name: "返回上一页" }));

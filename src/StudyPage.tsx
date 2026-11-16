@@ -17,10 +17,10 @@ import {
 
 const STUDY_FEATURES: readonly Feature[] = [
   {
-    label: "上课时间表",
+    label: "课表",
     icon: FaCalendarDays,
-    description: "查看各节次上课时间",
-    to: "/study/class-timetable",
+    description: "本周课程、学期课表与待签提醒",
+    to: "/study/timetable",
   },
   {
     label: "OJ",

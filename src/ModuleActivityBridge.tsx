@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 const MODULE_PREFIXES: [string, string][] = [
   ["/study/oj", "oj"],
+  ["/study/timetable", "timetable"],
   ["/study/signin", "signin"],
   ["/study/uooc", "uooc"],
   ["/study/patrol", "jxxk"],

@@ -31,11 +31,11 @@ export function getLastVisitedOjGroupUrl(): string {
 export const COMMAND_LIST: CommandItem[] = [
   {
     id: "time",
-    name: "上课时间表",
+    name: "课表",
     shortcuts: ["time"],
-    description: "查看各节次上课时间与作息安排",
+    description: "本周课程、学期课表与待签提醒",
     category: "学习",
-    target: "/study/class-timetable",
+    target: "/study/timetable",
     icon: FaCalendarDays,
     keywords: ["sk", "sksjb", "kechengbiao", "schedule", "timetable"],
   },

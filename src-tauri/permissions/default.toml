@@ -222,6 +222,8 @@ permissions = [
   "allow-save-analytics-settings",
   "allow-subscribe-todos",
   "allow-refresh-todos",
+  "allow-subscribe-timetable",
+  "allow-refresh-timetable",
   "allow-get-proxy-settings",
   "allow-save-proxy-settings",
   "allow-test-proxy-settings",

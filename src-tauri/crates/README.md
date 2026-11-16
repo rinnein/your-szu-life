@@ -18,7 +18,8 @@ szu-core                 平台基础 / 凭据与统一认证 / 网络代理 / �
   ├─ szu-lms             畅课（点名/签到接口在此）
   ├─ szu-oj              OJ 刷题伴侣
   ├─ szu-uooc            UOOC
-  ├─ szu-todos           待办聚合（依赖 oj / lms / uooc / signin）
+  ├─ szu-todos           待办聚合（依赖 oj / lms / uooc）
+  ├─ szu-timetable       课表（依赖 signin 的考勤课表/待签视图与 enrollment 的已选课程缓存）
   ├─ szu-mesh            EasyTier 组网 + 设置同步（依赖 uooc）
   │    └─ qr_room        临时消息房间（第二 EasyTier 实例，签到码共享用）
   └─ szu-signin          签到/打卡（依赖 lms 的点名接口与 mesh 的 qr_room）

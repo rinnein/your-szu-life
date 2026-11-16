@@ -1,7 +1,7 @@
 /**
  * 畅课签到面板：待签列表 + 交互模态框（数字 / 雷达 / 扫码）。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card, Dialog, LoadingIndicator, TextField } from "material/react";
 import { LuRefreshCw } from "react-icons/lu";
 import * as tauriCore from "@tauri-apps/api/core";
@@ -20,9 +20,14 @@ const METHOD_LABEL: Record<string, string> = {
 
 interface LmsPanelProps {
   buildings: Building[];
+  initialCourse?: string;
+  open?: boolean;
 }
 
-export function LmsPanel({ buildings }: LmsPanelProps) {
+const normalizeCourse = (value: string | undefined) =>
+  (value ?? "").replace(/\s/g, "").toLowerCase();
+
+export function LmsPanel({ buildings, initialCourse, open }: LmsPanelProps) {
   const [rollcalls, setRollcalls] = useState<RollcallItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -46,6 +51,19 @@ export function LmsPanel({ buildings }: LmsPanelProps) {
   }, [load]);
 
   const pending = rollcalls.filter(needAnswer);
+  const signed = rollcalls.filter((item) => !needAnswer(item));
+  const opened = useRef(false);
+
+  useEffect(() => {
+    if (!open || opened.current || !initialCourse || loading) return;
+    const target = pending.find(
+      (item) => normalizeCourse(item.course_title) === normalizeCourse(initialCourse),
+    );
+    if (target) {
+      opened.current = true;
+      setActive(target);
+    }
+  }, [open, initialCourse, loading, pending]);
 
   return (
     <section aria-label="畅课待签到列表" className="flex flex-col gap-3">
@@ -84,6 +102,20 @@ export function LmsPanel({ buildings }: LmsPanelProps) {
             </span>
           </Card>
         ))
+      )}
+
+      {!loading && signed.length > 0 && (
+        <Card variant="outlined" className="p-4 grid gap-2">
+          <h2 className="text-base font-medium">已签到</h2>
+          {signed.map((item) => (
+            <div key={item.rollcall_id} className="flex items-center justify-between gap-3 text-sm">
+              <span>{item.course_title || `课程 ${item.course_id}`}</span>
+              <span className="text-xs text-muted">
+                点名 #{item.rollcall_id} · {item.status ?? "已签到"}
+              </span>
+            </div>
+          ))}
+        </Card>
       )}
 
       {active && (

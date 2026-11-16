@@ -24,5 +24,6 @@ pub(crate) mod oj;
 pub(crate) mod onboarding;
 pub(crate) mod settings;
 pub(crate) mod settings_sync;
+pub(crate) mod timetable;
 pub(crate) mod todos;
 pub(crate) mod uooc;

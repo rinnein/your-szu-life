@@ -51,8 +51,6 @@ function getCategoryDotClass(category: ScheduleCategory): string {
       return "bg-accent-5";
     case "lms-homework":
       return "bg-accent-6";
-    case "checkin":
-      return "bg-accent-7";
   }
 }
 
@@ -94,12 +92,6 @@ function renderCategoryChip(category: ScheduleCategory) {
           畅课作业
         </Chip>
       );
-    case "checkin":
-      return (
-        <Chip size="sm" color="accent-7" variant="soft">
-          签到
-        </Chip>
-      );
   }
 }
 
@@ -117,8 +109,6 @@ function getCategoryAriaLabel(category: ScheduleCategory): string {
       return "UOOC结课";
     case "lms-homework":
       return "畅课作业";
-    case "checkin":
-      return "签到";
   }
 }
 
@@ -319,10 +309,6 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
             <span className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-accent-6" aria-hidden="true" />
               <span>畅课作业</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-accent-7" aria-hidden="true" />
-              <span>签到</span>
             </span>
           </div>
         </div>

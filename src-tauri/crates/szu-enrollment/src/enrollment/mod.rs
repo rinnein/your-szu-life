@@ -542,6 +542,38 @@ impl Service {
         }
         self.require_admission()
     }
+    /// 当前教务学期（如 `2026-2027-1`），课表模块用它确定 `XNXQDM`。
+    pub fn context_term(&self) -> String {
+        self.snapshot().context.term
+    }
+
+    /// 拉取上课期间的学期固定课表（eHall `wdkb/xskcb`）。
+    ///
+    /// 只读网络、不修改选课状态；eHall 会话未认证时返回可展示的错误提示。
+    pub fn fetch_semester_schedule(
+        &self,
+        preferred_term: Option<&str>,
+    ) -> std::result::Result<SemesterSchedule, String> {
+        self.academic_client()
+            .and_then(|academic| academic.semester_schedule(preferred_term))
+            .map_err(|error| error.message)
+    }
+
+    /// eHall 客户端：优先用 authserver SSO 自动过 CAS；没有应用统一认证会话时
+    /// 才回退到官方认证窗口捕获的 eHall cookie。
+    fn academic_client(&self) -> Result<academic::Academic> {
+        match academic::Academic::from_app(&self.app) {
+            Ok(client) => Ok(client),
+            Err(auto_error) => {
+                let raw = self.secrets.lock().unwrap().ehall.clone();
+                if raw.trim().is_empty() {
+                    Err(auto_error)
+                } else {
+                    academic::Academic::new(&raw)
+                }
+            }
+        }
+    }
     fn cache_snapshot(&self) -> Result<Snapshot> {
         let profile = self
             .credentials
@@ -1563,12 +1595,8 @@ impl Service {
                 self.reconcile(&c)?;
             }
             Action::Academic { recalculate } => {
-                let raw = self.secrets.lock().unwrap().ehall.clone();
-                if raw.is_empty() {
-                    return Err(Error::new(Failure::Session, "请先打开学业认证窗口"));
-                }
                 let context = self.secrets.lock().unwrap().academic_context.clone();
-                let c = academic::Academic::new(&raw)?.with_context(context);
+                let c = self.academic_client()?.with_context(context);
                 if recalculate {
                     if self.snapshot().academic_recalculation.is_some() {
                         return Ok(json!({"calculating":true}));
@@ -1592,7 +1620,8 @@ impl Service {
                 self.state.lock().unwrap().academic = Some(value);
             }
             Action::AcademicProgress => {
-                let value = academic::Academic::new(&self.secrets.lock().unwrap().ehall)?
+                let value = self
+                    .academic_client()?
                     .progress(&profile.student_id)?;
                 if let Some(row) = value["datas"]["byscjd"]["rows"]
                     .as_array()

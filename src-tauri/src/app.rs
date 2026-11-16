@@ -7,6 +7,7 @@ use szu_download::file_manager;
 use szu_jxxk::jxxk;
 use szu_lms::lms;
 use szu_signin::signin;
+use szu_timetable::timetable;
 use szu_oj::oj;
 use szu_uooc::uooc;
 use std::sync::Arc;
@@ -152,6 +153,9 @@ pub(crate) fn run() {
                 log::error!("签到服务初始化失败: {error}");
             }
             signin::start_probe_loop(app.handle());
+            if let Err(error) = timetable::initialize(app.handle()) {
+                log::error!("课表服务初始化失败: {error}");
+            }
             #[cfg(mobile)]
             {
                 app.handle()
@@ -363,6 +367,8 @@ pub(crate) fn run() {
             signin::commands::signin_qr_room_leave,
             signin::commands::signin_qr_room_share,
             signin::commands::subscribe_signin_qr_events,
+            timetable::commands::subscribe_timetable,
+            timetable::commands::refresh_timetable,
             jxxk::commands::get_jxxk_snapshot,
             jxxk::commands::subscribe_jxxk_state,
             jxxk::commands::refresh_jxxk,

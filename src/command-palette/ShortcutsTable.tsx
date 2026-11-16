@@ -11,9 +11,9 @@ export interface ShortcutEntry {
 export const SHORTCUT_ENTRIES: ShortcutEntry[] = [
   {
     shortcut: "time",
-    name: "上课时间表",
-    description: "查看各节次上课时间与作息",
-    target: "/study/class-timetable",
+    name: "课表",
+    description: "本周课程、学期课表与待签提醒",
+    target: "/study/timetable",
   },
   {
     shortcut: "oj",

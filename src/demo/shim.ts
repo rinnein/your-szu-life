@@ -37,6 +37,7 @@ import { mockSigninBuildings } from "./fixtures/signin";
 import { mockJxxkSnapshot } from "./fixtures/patrol";
 import { mockEnrollmentSnapshot } from "./fixtures/enrollment";
 import { mockTodoItems } from "./fixtures/todos";
+import { mockTimetableSnapshot } from "./fixtures/timetable";
 
 export * from "../../node_modules/@tauri-apps/api/core.js";
 
@@ -99,6 +100,17 @@ const mockHandlers: Record<string, MockHandler> = {
     return null;
   },
   refresh_todos: () => undefined,
+
+  // 课表：与后端 initial/snapshot 事件形状一致。
+  subscribe_timetable: (args) => {
+    const channel = channelFrom(args);
+    if (channel) {
+      void channel.send({ type: "initial", data: mockTimetableSnapshot });
+      void channel.send({ type: "snapshot", data: mockTimetableSnapshot });
+    }
+    return null;
+  },
+  refresh_timetable: () => undefined,
 
   // UOOC。
   get_uooc_snapshot: () => mockUoocSnapshot,

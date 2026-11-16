@@ -1,0 +1,33 @@
+[package]
+name = "szu-timetable"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "泥深课表：考勤课表、已选课程、签到展示与上课提醒"
+
+[lib]
+name = "szu_timetable"
+path = "src/lib.rs"
+
+[build-dependencies]
+szu-build-support = { path = "../szu-build-support" }
+
+[dependencies]
+szu-core = { path = "../szu-core" }
+szu-lms = { path = "../szu-lms" }
+szu-signin = { path = "../szu-signin" }
+szu-enrollment = { path = "../szu-enrollment" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true }
+toasty = { workspace = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = { workspace = true }
+ndk-context = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

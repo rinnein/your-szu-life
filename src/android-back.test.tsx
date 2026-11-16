@@ -90,7 +90,7 @@ describe("Android committed back", () => {
     "/settings",
     "/study",
     "/life",
-    "/study/class-timetable",
+    "/study/timetable",
     "/life/campus-network",
     "/life/campus-payments/electricity",
     "/life/campus-payments/network",

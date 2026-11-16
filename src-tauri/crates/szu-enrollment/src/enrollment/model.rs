@@ -52,6 +52,32 @@ pub struct Course {
     #[serde(default)]
     pub test_ids: Vec<String>,
 }
+
+/// 教务固定课表中的一个排课槽（eHall `wdkb/xskcb`）。
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SemesterCourse {
+    pub name: String,
+    pub teacher: String,
+    pub classroom: String,
+    /// 1-7，周一到周日。
+    pub weekday: u8,
+    /// 1-14。
+    pub start_period: u8,
+    pub end_period: u8,
+    /// 需要上课的周次（1 起）。
+    pub weeks: Vec<u8>,
+    /// 原始周次文本（如 `1-16周(单)`）。
+    pub raw_weeks: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SemesterSchedule {
+    pub term: String,
+    pub courses: Vec<SemesterCourse>,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Context {

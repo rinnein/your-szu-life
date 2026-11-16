@@ -264,6 +264,20 @@ describe("frontend smoke tests", () => {
     expect(await screen.findByRole("heading", { name: "日历与待办" })).toBeInTheDocument();
   });
 
+  it("places the timetable widget between announcements and the calendar", async () => {
+    mockSignedIn();
+
+    renderRouterApp();
+    const hero = await screen.findByTestId("hero-card");
+    const timetable = await screen.findByRole("heading", { name: "课表" });
+    const calendar = screen.getByRole("heading", { name: "日历与待办" });
+
+    expect(hero.compareDocumentPosition(timetable) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      timetable.compareDocumentPosition(calendar) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("keeps the account trigger avatar-free and the top bar as the only header", async () => {
     mockSignedIn();
 
@@ -283,7 +297,7 @@ describe("frontend smoke tests", () => {
     expect(await screen.findByRole("heading", { name: "学习" })).toBeInTheDocument();
     expect(document.querySelectorAll(".feature-icon svg")).toHaveLength(9);
     for (const [label, description] of [
-      ["上课时间表", "查看各节次上课时间"],
+      ["课表", "本周课程、学期课表与待签提醒"],
       ["签到/打卡", "畅课与 SZU 考勤签到"],
       ["OJ", "班级、测验与编程练习"],
       ["UOOC刷课", "优课在线视频任务"],

@@ -24,6 +24,7 @@ fn command_names_match_handlers_manifest_and_local_permissions() {
         include_str!("../crates/szu-runtime/src/embedding_model/commands.rs"),
         include_str!("../crates/szu-core/src/notification/commands.rs"),
         include_str!("../crates/szu-core/src/analytics/commands.rs"),
+        include_str!("../crates/szu-timetable/src/timetable/commands.rs"),
         include_str!("../crates/szu-todos/src/todos/commands.rs"),
         include_str!("../crates/szu-core/src/netproxy/commands.rs"),
         include_str!("../crates/szu-mesh/src/mesh/commands.rs"),

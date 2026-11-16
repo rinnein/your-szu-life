@@ -196,7 +196,7 @@ describe("SettingsPage multi-tab and unified local model card", () => {
     });
 
     expect(await screen.findByText("AI 连接")).toBeInTheDocument();
-    expect(screen.getByLabelText("主模型 API 地址")).toBeInTheDocument();
+    expect(await screen.findByLabelText("主模型 API 地址")).toBeInTheDocument();
   });
 
   it("switches to MCP tab and displays MCP endpoint and prompt", async () => {
@@ -240,7 +240,7 @@ describe("SettingsPage multi-tab and unified local model card", () => {
     });
 
     expect(await screen.findByText("命令面板快捷指令对照表")).toBeInTheDocument();
-    expect(screen.getByText("上课时间表")).toBeInTheDocument();
+    expect(screen.getByText("课表")).toBeInTheDocument();
     expect(screen.getByText("OJ首页")).toBeInTheDocument();
     expect(screen.getByText("最近班级测验")).toBeInTheDocument();
     expect(screen.getByText("UOOC任务tab")).toBeInTheDocument();

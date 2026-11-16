@@ -17,11 +17,12 @@ pub enum NotificationCategory {
     Enrollment,
     Uooc,
     Todo,
+    Timetable,
 }
 
 /// 待办类通知的统一配置。
 ///
-/// 七个注册项与首页日历的七类待办一一对应；`discovery` 控制「初次探测到」事件，
+/// 六个注册项与首页日历的六类待办一一对应；`discovery` 控制「初次探测到」事件，
 /// 「任务开始」事件始终开启，`lead_minutes` 是模块级统一阈值，同一待办在每档各提醒一次。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -42,8 +43,6 @@ pub struct TodoNotificationSettings {
     pub lms_homework: bool,
     /// 电费预估断电日期
     pub electricity_outage: bool,
-    /// 签到/打卡（点名开始与进行中提醒）
-    pub checkin: bool,
     /// 已启用的提前量（分钟）
     pub lead_minutes: Vec<i64>,
 }
@@ -59,7 +58,6 @@ impl Default for TodoNotificationSettings {
             uooc_course_end: true,
             lms_homework: true,
             electricity_outage: true,
-            checkin: true,
             lead_minutes: DEFAULT_TODO_LEAD_MINUTES.to_vec(),
         }
     }
@@ -83,7 +81,6 @@ impl TodoNotificationSettings {
             TodoKind::UoocCourseEnd => self.uooc_course_end,
             TodoKind::LmsHomework => self.lms_homework,
             TodoKind::ElectricityOutage => self.electricity_outage,
-            TodoKind::Checkin => self.checkin,
         }
     }
 }
@@ -97,6 +94,28 @@ fn normalized_lead_minutes(values: Vec<i64>) -> Vec<i64> {
     values.sort_unstable_by(|a, b| b.cmp(a));
     values.dedup();
     values
+}
+
+/// 课表（上课提醒）的独立配置。
+///
+/// 课前提醒默认提前 20 分钟，Android 上从该时刻起显示常驻倒计时通知；
+/// 签到提醒在探测到新的待签点名时发送一次。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TimetableNotificationSettings {
+    /// 课前提醒
+    pub class_reminder: bool,
+    /// 签到提醒
+    pub checkin: bool,
+}
+
+impl Default for TimetableNotificationSettings {
+    fn default() -> Self {
+        Self {
+            class_reminder: true,
+            checkin: true,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -113,6 +132,9 @@ pub struct NotificationSettings {
     /// 待办类通知
     #[serde(default)]
     pub todo: TodoNotificationSettings,
+    /// 课表（上课提醒 + 签到提醒）
+    #[serde(default)]
+    pub timetable: TimetableNotificationSettings,
 }
 
 impl Default for NotificationSettings {
@@ -123,6 +145,7 @@ impl Default for NotificationSettings {
             enrollment: true,
             uooc: true,
             todo: TodoNotificationSettings::default(),
+            timetable: TimetableNotificationSettings::default(),
         }
     }
 }
@@ -137,6 +160,9 @@ impl NotificationSettings {
             NotificationCategory::Enrollment => self.enrollment,
             NotificationCategory::Uooc => self.uooc,
             NotificationCategory::Todo => self.todo.enabled,
+            NotificationCategory::Timetable => {
+                self.timetable.class_reminder || self.timetable.checkin
+            }
         }
     }
 
@@ -175,6 +201,7 @@ mod tests {
         assert!(settings.is_category_enabled(NotificationCategory::Enrollment));
         assert!(settings.is_category_enabled(NotificationCategory::Uooc));
         assert!(settings.is_category_enabled(NotificationCategory::Todo));
+        assert!(settings.is_category_enabled(NotificationCategory::Timetable));
     }
 
     #[test]
@@ -207,7 +234,23 @@ mod tests {
         assert!(!settings.is_category_enabled(NotificationCategory::Enrollment));
         assert!(!settings.is_category_enabled(NotificationCategory::Uooc));
         assert!(!settings.is_category_enabled(NotificationCategory::Todo));
+        assert!(!settings.is_category_enabled(NotificationCategory::Timetable));
         assert!(!settings.is_todo_kind_enabled(TodoKind::OjQuiz));
+    }
+
+    #[test]
+    fn timetable_category_follows_either_sub_switch() {
+        let mut settings = NotificationSettings::default();
+        assert!(settings.is_category_enabled(NotificationCategory::Timetable));
+
+        settings.timetable.class_reminder = false;
+        assert!(settings.is_category_enabled(NotificationCategory::Timetable));
+
+        settings.timetable.checkin = false;
+        assert!(!settings.is_category_enabled(NotificationCategory::Timetable));
+
+        settings.timetable.class_reminder = true;
+        assert!(settings.is_category_enabled(NotificationCategory::Timetable));
     }
 
     #[test]
@@ -253,6 +296,8 @@ mod tests {
         let settings: NotificationSettings = serde_json::from_str(legacy).unwrap();
         assert!(settings.todo.enabled);
         assert!(settings.todo.discovery);
+        assert!(settings.timetable.class_reminder);
+        assert!(settings.timetable.checkin);
         assert_eq!(
             settings.todo.lead_minutes,
             DEFAULT_TODO_LEAD_MINUTES.to_vec()
@@ -293,8 +338,11 @@ mod tests {
                 uooc_course_end: false,
                 lms_homework: true,
                 electricity_outage: false,
-                checkin: true,
                 lead_minutes: vec![60, 5],
+            },
+            timetable: TimetableNotificationSettings {
+                class_reminder: false,
+                checkin: true,
             },
         };
         let serialized = serde_json::to_string(&settings).unwrap();

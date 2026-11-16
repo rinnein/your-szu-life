@@ -146,6 +146,9 @@ dependencies {
     implementation("androidx.webkit:webkit:1.14.0")
     implementation("androidx.appcompat:appcompat:1.7.1")
     implementation("androidx.activity:activity-ktx:1.10.1")
+    // NotificationCompat.ProgressStyle / Live Update（Android 16）需要 1.16+；
+    // 当前 appcompat 传递解析的是 1.13.1。
+    implementation("androidx.core:core-ktx:1.18.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.lifecycle:lifecycle-process:2.10.0")
     implementation("org.rustls:rustls-platform-verifier")

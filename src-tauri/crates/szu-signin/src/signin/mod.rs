@@ -19,15 +19,15 @@ pub mod scheduler;
 #[cfg(test)]
 mod tests;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock, Weak};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use szu_core::storage::SharedCredentialStore;
 
-// 跨 crate 消费（szu-todos 聚合、MCP 资源）。
-pub use model::{CheckinTodoItem, CheckinView};
+// 跨 crate 消费（szu-todos 聚合、MCP 资源、课表签到标签）。
+pub use model::{CachedSzuCheckin, CheckinTodoItem, CheckinView, SzuCheckinState};
 use model::{LastPoint, QwSessionState, QwStatusView, ResolvedPoint, TimetableCache};
 
 /// 课表缓存的内存有效期。
@@ -68,6 +68,8 @@ pub struct Service {
     timetable: Mutex<TimetableCache>,
     /// 最近一次待签视图（探测循环与 szu-todos 聚合读取）。
     pending: Mutex<CheckinView>,
+    /// 按课次的 SZU 考勤状态；只由课表窗口驱动的 probe 刷新。
+    szu_checkins: Mutex<HashMap<String, CachedSzuCheckin>>,
     /// 签到码共享房间（同一时刻至多一个活跃房间）。
     room: Mutex<Option<room::RoomSession>>,
     /// 网关会话状态（与 lms/jxxk 的会话管理同构）。
@@ -122,6 +124,7 @@ impl Service {
             auth_base,
             timetable: Mutex::new(timetable),
             pending: Mutex::new(CheckinView::default()),
+            szu_checkins: Mutex::new(HashMap::new()),
             room: Mutex::new(None),
             qw_session: Mutex::new(QwSessionState::NeedsAuth),
             qw_message: Mutex::new(String::new()),
@@ -153,6 +156,27 @@ impl Service {
     /// 当前待签视图（szu-todos 聚合读取）。
     pub fn checkin_view(&self) -> CheckinView {
         self.pending.lock().unwrap().clone()
+    }
+
+    /// 只读某个课次的 SZU 考勤状态。
+    ///
+    /// 状态只由 `probe()` 在课表窗口内刷新；课表模块不得自行轮询。
+    pub fn cached_szu_checkin(&self, session_key: &str) -> SzuCheckinState {
+        self.szu_checkins
+            .lock()
+            .unwrap()
+            .get(session_key)
+            .map(|cached| cached.state)
+            .unwrap_or_default()
+    }
+
+    /// 最近一次 LMS 点名列表（含已签到条目），供课表标签使用；无缓存时为空。
+    pub fn cached_rollcalls(&self) -> Vec<szu_lms::lms::rollcall::RollcallItem> {
+        self.lms_service()
+            .ok()
+            .and_then(|lms| lms.rollcall_cache.get())
+            .map(|(items, _)| items)
+            .unwrap_or_default()
     }
 
     /// 课表缓存视图。
@@ -299,6 +323,7 @@ impl Service {
         };
         let now = chrono::Utc::now().timestamp_millis();
         let mut view = self.pending.lock().unwrap().clone();
+        let previous_items = view.items.clone();
         match items {
             Ok(rollcalls) => {
                 view.items = rollcalls
@@ -319,7 +344,126 @@ impl Service {
                 view.complete = false;
             }
         }
+        let items_changed = previous_items != view.items;
         *self.pending.lock().unwrap() = view;
+        if items_changed {
+            if let Some(app) = &self.app {
+                let _ = app.emit("signin-checkin-status-changed", ());
+            }
+        }
+        self.refresh_szu_checkins(now).await;
+    }
+
+    /// 课表窗口内的 SZU 状态刷新。频率完全由 `scheduler::run` 的
+    /// 30s/5min 动态节拍决定，课表模块不另行轮询。
+    async fn refresh_szu_checkins(&self, now: i64) {
+        let sessions: Vec<model::TimetableSession> = self
+            .timetable
+            .lock()
+            .unwrap()
+            .sessions_on(&local_date(now))
+            .into_iter()
+            .cloned()
+            .collect();
+        let mut targets = Vec::new();
+        for session in sessions {
+            if now < session.start_ms - scheduler::WINDOW_HALF_MS
+                || now > session.end_ms + scheduler::WINDOW_HALF_MS
+            {
+                continue;
+            }
+            let key = format!(
+                "{}|{}|{}",
+                session.course_name, session.date, session.start_ms
+            );
+            let fresh = self
+                .szu_checkins
+                .lock()
+                .unwrap()
+                .get(&key)
+                .is_some_and(|cached| now - cached.checked_at_ms < 60_000);
+            if !fresh {
+                targets.push((key, session));
+            }
+        }
+        if targets.is_empty() {
+            return;
+        }
+
+        // 不在探测里 bootstrap：会话未就绪时由 timetable 的慢刷新或用户手动刷新负责，
+        // 避免每个 30s 窗口重复触发认证。
+        if *self.qw_session.lock().unwrap() != QwSessionState::Ready {
+            return;
+        }
+        let Ok(client) = self.build_qw_client() else {
+            return;
+        };
+        let Some(student_id) = self.qw_student_id.lock().unwrap().clone() else {
+            return;
+        };
+
+        let mut changed = false;
+        for (key, session) in targets {
+            let point = matching::match_building(
+                buildings::builtin(),
+                session.building_name.as_deref(),
+                session.building_name_en.as_deref(),
+                session.classroom.as_deref(),
+            )
+            .ok()
+            .map(|(building, _)| (building.latitude_gcj02, building.longitude_gcj02));
+            let state = match point {
+                Some((latitude, longitude)) => {
+                    match qw::check_signin_status(
+                        &client,
+                        latitude,
+                        longitude,
+                        &student_id,
+                        None,
+                        None,
+                    )
+                    .await
+                    {
+                        Ok(status)
+                            if classroom_matches(
+                                session.classroom.as_deref(),
+                                status.classroom.as_deref(),
+                            ) =>
+                        {
+                            if status.already_signed {
+                                SzuCheckinState::Signed
+                            } else if status.valid {
+                                SzuCheckinState::Pending
+                            } else {
+                                SzuCheckinState::Unknown
+                            }
+                        }
+                        _ => SzuCheckinState::Unknown,
+                    }
+                }
+                None => SzuCheckinState::Unknown,
+            };
+            let previous = {
+                let mut map = self.szu_checkins.lock().unwrap();
+                let previous = map.get(&key).map(|cached| cached.state).unwrap_or_default();
+                map.insert(
+                    key,
+                    model::CachedSzuCheckin {
+                        state,
+                        checked_at_ms: now,
+                    },
+                );
+                previous
+            };
+            if previous != state {
+                changed = true;
+            }
+        }
+        if changed {
+            if let Some(app) = &self.app {
+                let _ = app.emit("signin-checkin-status-changed", ());
+            }
+        }
     }
 
     /// szu-todos 的 refresh 钩子。自动刷新（首页订阅 / 后台轮询）只在
@@ -846,6 +990,19 @@ impl Service {
 
     fn room_active(&self) -> bool {
         self.room.lock().unwrap().is_some()
+    }
+}
+
+/// 状态接口返回的教室与课表教室是否指同一处。
+/// 两侧都为空或任一侧缺失时不否决；都非空时要求相等或互相包含。
+fn classroom_matches(session: Option<&str>, status: Option<&str>) -> bool {
+    match (session, status) {
+        (Some(session), Some(status)) => {
+            let session = matching::normalize(session);
+            let status = matching::normalize(status);
+            session == status || session.contains(&status) || status.contains(&session)
+        }
+        _ => true,
     }
 }
 

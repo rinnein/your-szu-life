@@ -397,6 +397,8 @@ fn main() {
             "set_application_focus",
             "subscribe_todos",
             "refresh_todos",
+            "subscribe_timetable",
+            "refresh_timetable",
             "get_proxy_settings",
             "save_proxy_settings",
             "test_proxy_settings",

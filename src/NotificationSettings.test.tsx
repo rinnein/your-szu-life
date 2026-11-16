@@ -30,8 +30,11 @@ const DEFAULT_TEST_SETTINGS: NotificationConfig = {
     uoocCourseEnd: true,
     lmsHomework: true,
     electricityOutage: true,
-    checkin: true,
     leadMinutes: [10080, 4320, 1440, 120],
+  },
+  timetable: {
+    classReminder: true,
+    checkin: true,
   },
 };
 
@@ -73,6 +76,8 @@ describe("NotificationSettings component", () => {
     expect(screen.getByRole("switch", { name: "开关宿舍校园网通知" })).toBeChecked();
     expect(screen.getByRole("switch", { name: "开关选课助手通知" })).toBeChecked();
     expect(screen.getByRole("switch", { name: "开关优课联盟 (UOOC)通知" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "开关课前提醒" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "开关签到提醒" })).toBeChecked();
   });
 
   it("toggling master switch saves disabled state and disables category switches", async () => {
@@ -154,6 +159,21 @@ describe("NotificationSettings component", () => {
     const started = screen.getByRole("checkbox", { name: "任务开始时" });
     expect(started).toBeChecked();
     expect(started).toBeDisabled();
+  });
+
+  it("saves the timetable reminder switches", async () => {
+    render(<NotificationSettings />);
+
+    const classReminder = await readySwitch("开关课前提醒");
+    fireEvent.change(classReminder, { target: { checked: false } });
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("save_notification_settings", {
+        settings: expect.objectContaining({
+          timetable: expect.objectContaining({ classReminder: false }),
+        }),
+      });
+    });
   });
 
   it("saves per-item todo switches", async () => {

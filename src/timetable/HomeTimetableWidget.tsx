@@ -1,0 +1,174 @@
+import { useMemo } from "react";
+import { Button, Card, LoadingIndicator } from "material/react";
+import { LuCalendarClock, LuChevronRight, LuRotateCw } from "react-icons/lu";
+import { Banner } from "../ui";
+import { useLogicalNavigation } from "../logical-navigation";
+import { useTimetable } from "./use-timetable";
+import { useNow } from "./use-now";
+import { slotForSession } from "./periods";
+import {
+  formatClock,
+  isPendingCheckin,
+  localDateKey,
+  nextSessionKey,
+  sessionLocation,
+  sessionStatus,
+  signinRoute,
+  teacherFor,
+  todayKey,
+  weekdayLabel,
+} from "./merge";
+import { SessionCard } from "./SessionCard";
+import type { TimetableSession } from "./types";
+
+/**
+ * 首页第二张卡片：今日课程、当前/下一节课与签到状态。
+ *
+ * 详细课表在 `/study/timetable`。点击课程时，检测到签到任务就进签到页
+ * 对应 tab；否则进课表页对应日期。
+ */
+export function HomeTimetableWidget() {
+  const navigation = useLogicalNavigation();
+  const { snapshot, error, refresh, refreshing } = useTimetable();
+  const now = useNow();
+
+  const today = todayKey();
+  const todaySessions = useMemo(
+    () =>
+      (snapshot?.sessions ?? [])
+        .filter((session) => session.date === today)
+        .sort((a, b) => a.startMs - b.startMs),
+    [snapshot, today],
+  );
+  const next = useMemo(
+    () =>
+      (snapshot?.sessions ?? [])
+        .filter((session) => session.startMs > now)
+        .sort((a, b) => a.startMs - b.startMs)[0],
+    [snapshot, now],
+  );
+  const hasCurrent = todaySessions.some((session) => session.startMs <= now && now < session.endMs);
+  const nextKey = hasCurrent ? undefined : nextSessionKey(snapshot?.sessions ?? [], now);
+  const remaining = todaySessions.filter((session) => session.startMs > now).length;
+  const pendingToday = todaySessions.filter(
+    (session) => session.checkin === "pending_lms" || session.checkin === "pending_szu",
+  ).length;
+  const unmatchedCheckins = Math.max(0, (snapshot?.checkins.length ?? 0) - pendingToday);
+  const dateLabel = `${new Date().getMonth() + 1}月${new Date().getDate()}日 ${weekdayLabel(
+    new Date(),
+  )}`;
+
+  const openSession = (session: TimetableSession) => {
+    const target = signinRoute(session, session.checkin, isPendingCheckin(session.checkin));
+    if (target) {
+      void navigation.push(target);
+      return;
+    }
+    void navigation.push(
+      `/study/timetable?tab=week&date=${localDateKey(new Date(session.startMs))}`,
+    );
+  };
+
+  const cardFor = (session: TimetableSession) => {
+    const slot = slotForSession(session.startMs, session.endMs);
+    return (
+      <SessionCard
+        key={`${session.courseName}-${session.startMs}`}
+        title={session.courseName}
+        periodLabel={slot?.periodLabel ?? "其他时段"}
+        timeLabel={`${formatClock(session.startMs)}–${formatClock(session.endMs)}`}
+        teacher={snapshot ? teacherFor(session, snapshot.semesterCourses) : undefined}
+        location={sessionLocation(session)}
+        checkin={session.checkin}
+        status={sessionStatus(session, now, nextKey)}
+        onClick={() => openSession(session)}
+      />
+    );
+  };
+
+  return (
+    <Card
+      className="home-timetable-widget p-4 sm:p-6"
+      variant="outlined"
+      aria-labelledby="home-timetable-heading"
+    >
+      <div className="flex items-center justify-between gap-4 mb-4">
+        <h2 id="home-timetable-heading" className="text-lg font-medium flex items-center gap-2">
+          <LuCalendarClock className="text-primary" aria-hidden="true" />
+          <span>课表</span>
+        </h2>
+        <div className="flex items-center gap-2">
+          {refreshing && (
+            <span className="text-sm text-muted flex items-center gap-1">
+              <LoadingIndicator size={14} /> 刷新中
+            </span>
+          )}
+          <Button
+            variant="text"
+            className="text-xs"
+            onClick={() => void refresh()}
+            aria-label="刷新课表"
+          >
+            <LuRotateCw aria-hidden="true" />
+          </Button>
+          <Button
+            variant="text"
+            className="text-xs"
+            onClick={() => void navigation.push("/study/timetable")}
+          >
+            查看全部
+            <LuChevronRight aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-muted">
+            {dateLabel}
+            {snapshot?.semester ? ` · ${snapshot.semester}` : ""}
+          </p>
+          <p className="text-xs text-muted">今天还剩 {remaining} 节课要上</p>
+        </div>
+
+        {(error || snapshot?.message) && (
+          <Banner status="warning">
+            <span className="text-sm">{error ?? snapshot?.message}</span>
+          </Banner>
+        )}
+
+        {unmatchedCheckins > 0 && (
+          <Button
+            variant="text"
+            className="justify-start text-xs"
+            onClick={() => void navigation.push("/study/signin?tab=lms")}
+          >
+            另有 {unmatchedCheckins} 个待签点名
+          </Button>
+        )}
+
+        {todaySessions.length > 0 ? (
+          <div className="grid gap-2">
+            {todaySessions.map(cardFor)}
+            {next && next.date !== today && (
+              <div className="grid gap-1 pt-1">
+                <p className="text-xs text-muted">下一节 · {next.date}</p>
+                {cardFor(next)}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="grid gap-2 rounded-inner border border-separator p-4">
+            <p className="text-sm">今天没有课。</p>
+            {next && (
+              <>
+                <p className="text-xs text-muted">下一节 · {next.date}</p>
+                {cardFor(next)}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}

@@ -104,8 +104,8 @@ pub struct LastPhotoView {
     pub thumbnail: Option<String>,
 }
 
-/// 提供给 szu-todos 的待签到待办条目。
-#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+/// 提供给 szu-timetable 的待签到条目。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CheckinTodoItem {
     /// `checkin:lms:{rollcall_id}` / `checkin:szu:{session}`。
     pub id: String,
@@ -115,7 +115,7 @@ pub struct CheckinTodoItem {
     pub route: String,
 }
 
-/// 待签到视图 + 缓存完整性标记（szu-todos 的 trusted 判定依据）。
+/// 待签到视图 + 缓存完整性标记（课表模块据此决定是否清理已提醒记录）。
 #[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckinView {
@@ -136,4 +136,22 @@ pub struct ResolvedPoint {
     pub source: String,
     /// 该点所属楼栋围栏半径（米）；非楼栋点（浏览器定位）为 None。
     pub fence_radius_m: Option<i64>,
+}
+
+/// 单个课次的 SZU 考勤状态（探测循环按课表窗口刷新）。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SzuCheckinState {
+    #[default]
+    Unknown,
+    /// 当前可签到。
+    Pending,
+    /// 已签到。
+    Signed,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct CachedSzuCheckin {
+    pub state: SzuCheckinState,
+    pub checked_at_ms: i64,
 }

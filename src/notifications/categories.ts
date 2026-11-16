@@ -5,7 +5,6 @@ import {
   LuCode,
   LuFileText,
   LuGraduationCap,
-  LuMapPinCheck,
   LuWifi,
   LuZap,
 } from "react-icons/lu";
@@ -68,8 +67,7 @@ export type TodoConfigKey =
   | "uoocHomework"
   | "uoocCourseEnd"
   | "lmsHomework"
-  | "electricityOutage"
-  | "checkin";
+  | "electricityOutage";
 
 export interface TodoNotificationItemMeta {
   key: TodoConfigKey;
@@ -114,12 +112,6 @@ export const TODO_NOTIFICATION_ITEMS: readonly TodoNotificationItemMeta[] = [
     title: "宿舍电费预警",
     description: "电量偏低或预计即将耗尽时提醒（无估算时按当天截止）",
     icon: LuZap,
-  },
-  {
-    key: "checkin",
-    title: "签到",
-    description: "课程开始、课中与结束窗口内探测到待签点名时立即提醒",
-    icon: LuMapPinCheck,
   },
 ];
 

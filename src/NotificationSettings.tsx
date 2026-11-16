@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { LuBell } from "react-icons/lu";
+import { LuBell, LuCalendarClock, LuMapPinCheck } from "react-icons/lu";
 import { Button, Card, Checkbox, LoadingIndicator, Switch } from "material/react";
 import { Banner, SettingList, SettingRow, toast } from "./ui";
 import { errorMessage, useAsyncLoad } from "./async-state";
@@ -21,8 +21,12 @@ export interface TodoNotificationConfig {
   uoocCourseEnd: boolean;
   lmsHomework: boolean;
   electricityOutage: boolean;
-  checkin: boolean;
   leadMinutes: number[];
+}
+
+export interface TimetableNotificationConfig {
+  classReminder: boolean;
+  checkin: boolean;
 }
 
 export interface NotificationConfig {
@@ -31,6 +35,7 @@ export interface NotificationConfig {
   enrollment: boolean;
   uooc: boolean;
   todo: TodoNotificationConfig;
+  timetable: TimetableNotificationConfig;
 }
 
 const DEFAULT_TODO_CONFIG: TodoNotificationConfig = {
@@ -42,8 +47,12 @@ const DEFAULT_TODO_CONFIG: TodoNotificationConfig = {
   uoocCourseEnd: true,
   lmsHomework: true,
   electricityOutage: true,
-  checkin: true,
   leadMinutes: Array.from(DEFAULT_TODO_LEAD_MINUTES),
+};
+
+const DEFAULT_TIMETABLE_CONFIG: TimetableNotificationConfig = {
+  classReminder: true,
+  checkin: true,
 };
 
 const DEFAULT_CONFIG: NotificationConfig = {
@@ -52,6 +61,7 @@ const DEFAULT_CONFIG: NotificationConfig = {
   enrollment: true,
   uooc: true,
   todo: DEFAULT_TODO_CONFIG,
+  timetable: DEFAULT_TIMETABLE_CONFIG,
 };
 
 function normalizeConfig(saved?: Partial<NotificationConfig> | null): NotificationConfig {
@@ -63,12 +73,14 @@ function normalizeConfig(saved?: Partial<NotificationConfig> | null): Notificati
       ...saved?.todo,
       leadMinutes: saved?.todo?.leadMinutes ?? DEFAULT_TODO_CONFIG.leadMinutes,
     },
+    timetable: { ...DEFAULT_TIMETABLE_CONFIG, ...saved?.timetable },
   };
 }
 
-/** 根级开关的键；`todo` 是嵌套对象，单独建模。 */
-type RootKey = Exclude<keyof NotificationConfig, "todo">;
+/** 根级开关的键；`todo` / `timetable` 是嵌套对象，单独建模。 */
+type RootKey = Exclude<keyof NotificationConfig, "todo" | "timetable">;
 type TodoField = keyof TodoNotificationConfig;
+type TimetableField = keyof TimetableNotificationConfig;
 
 /**
  * 一次保存改动的字段。
@@ -76,10 +88,15 @@ type TodoField = keyof TodoNotificationConfig;
  * 失败后只回滚这个字段，而不是整份配置：同一时刻可能有另一个字段的保存已经成功，
  * 整份回滚会把那次成功的结果也抹掉，界面与服务端随即不一致。
  */
-type Change = { scope: "root"; key: RootKey } | { scope: "todo"; key: TodoField };
+type Change =
+  | { scope: "root"; key: RootKey }
+  | { scope: "todo"; key: TodoField }
+  | { scope: "timetable"; key: TimetableField };
 
 function changeKey(change: Change) {
-  return change.scope === "todo" ? `notify:todo.${change.key}` : `notify:${change.key}`;
+  if (change.scope === "todo") return `notify:todo.${change.key}`;
+  if (change.scope === "timetable") return `notify:timetable.${change.key}`;
+  return `notify:${change.key}`;
 }
 
 function patchRoot(config: NotificationConfig, key: RootKey, value: boolean): NotificationConfig {
@@ -94,6 +111,14 @@ function patchTodo<K extends TodoField>(
   return { ...config, todo: { ...config.todo, [key]: value } };
 }
 
+function patchTimetable<K extends TimetableField>(
+  config: NotificationConfig,
+  key: K,
+  value: TimetableNotificationConfig[K],
+): NotificationConfig {
+  return { ...config, timetable: { ...config.timetable, [key]: value } };
+}
+
 function revert(
   config: NotificationConfig,
   confirmed: NotificationConfig,
@@ -104,6 +129,9 @@ function revert(
       return patchTodo(config, "leadMinutes", confirmed.todo.leadMinutes);
     }
     return patchTodo(config, change.key, confirmed.todo[change.key]);
+  }
+  if (change.scope === "timetable") {
+    return patchTimetable(config, change.key, confirmed.timetable[change.key]);
   }
   return patchRoot(config, change.key, confirmed[change.key]);
 }
@@ -230,6 +258,11 @@ export function NotificationSettings() {
     persist({ scope: "todo", key }, patchTodo(config, key, checked));
   };
 
+  const toggleTimetableFlag = (key: TimetableField, checked: boolean) => {
+    if (readOnly || !config) return;
+    persist({ scope: "timetable", key }, patchTimetable(config, key, checked));
+  };
+
   const toggleLeadMinutes = (minutes: number, checked: boolean) => {
     if (readOnly || !config) return;
     const next = checked
@@ -332,6 +365,40 @@ export function NotificationSettings() {
               </SettingRow>
             );
           })}
+        </SettingList>
+      </Card>
+
+      <Card variant="outlined">
+        <div slot="headline">上课提醒</div>
+        <div slot="subhead">
+          课表模块的通知。课前提醒从上课前 20
+          分钟起显示常驻倒计时（Android），上课时更新，下课后自动清除。
+        </div>
+        <SettingList>
+          <SettingRow
+            icon={<LuCalendarClock aria-hidden="true" />}
+            title="课前提醒"
+            description="每节课开始前 20 分钟提醒，包含课程名、时间段与地点。"
+          >
+            <Switch
+              checked={view.timetable.classReminder}
+              disabled={categoryDisabled}
+              onChange={(event: any) => toggleTimetableFlag("classReminder", checkedOf(event))}
+              aria-label="开关课前提醒"
+            />
+          </SettingRow>
+          <SettingRow
+            icon={<LuMapPinCheck aria-hidden="true" />}
+            title="签到提醒"
+            description="探测到新的点名待签时提醒，点击前往签到页。"
+          >
+            <Switch
+              checked={view.timetable.checkin}
+              disabled={categoryDisabled}
+              onChange={(event: any) => toggleTimetableFlag("checkin", checkedOf(event))}
+              aria-label="开关签到提醒"
+            />
+          </SettingRow>
         </SettingList>
       </Card>
 

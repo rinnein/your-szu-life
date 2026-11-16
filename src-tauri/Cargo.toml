@@ -168,6 +168,7 @@ szu-enrollment = { path = "crates/szu-enrollment" }
 szu-jxxk = { path = "crates/szu-jxxk" }
 szu-lms = { path = "crates/szu-lms" }
 szu-signin = { path = "crates/szu-signin" }
+szu-timetable = { path = "crates/szu-timetable" }
 szu-oj = { path = "crates/szu-oj" }
 szu-uooc = { path = "crates/szu-uooc" }
 tauri = { workspace = true }

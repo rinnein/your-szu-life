@@ -6,6 +6,28 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct TimetableSettingsUpdate {
+    /// 课前提醒（默认提前 20 分钟；Android 上显示常驻倒计时）
+    pub class_reminder: Option<bool>,
+    /// 签到提醒
+    pub checkin: Option<bool>,
+}
+
+impl TimetableSettingsUpdate {
+    pub(crate) fn apply(
+        self,
+        target: &mut szu_core::notification::settings::TimetableNotificationSettings,
+    ) {
+        if let Some(value) = self.class_reminder {
+            target.class_reminder = value;
+        }
+        if let Some(value) = self.checkin {
+            target.checkin = value;
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct SetNotificationSettingsParams {
     /// 全局总开关
     pub enabled: Option<bool>,
@@ -15,15 +37,17 @@ pub struct SetNotificationSettingsParams {
     pub enrollment: Option<bool>,
     /// UOOC 刷课需要人工处理提醒
     pub uooc: Option<bool>,
-    /// 待办类通知（七个注册项开关、初次探测开关与提前量）
+    /// 待办类通知（六个注册项开关、初次探测开关与提前量）
     pub todo: Option<crate::mcp::features::todos::TodoSettingsUpdate>,
+    /// 课表通知（课前提醒、签到提醒）
+    pub timetable: Option<TimetableSettingsUpdate>,
 }
 
 #[tool_router(router = notification_tools, vis = "pub(crate)")]
 impl UnifiedSzuMcpService {
     #[tool(
         name = "notification_get_settings",
-        description = "获取应用通知配置（总开关、校园网、选课、UOOC 分类开关与待办提醒配置）。对应资源 your-szu-life://data/notification/settings"
+        description = "获取应用通知配置（总开关、校园网、选课、UOOC 分类开关、待办提醒与课表提醒配置）。对应资源 your-szu-life://data/notification/settings"
     )]
     pub async fn notification_get_settings(&self) -> Result<String, String> {
         let settings = szu_core::notification::settings::load(&self.app);
@@ -53,6 +77,9 @@ impl UnifiedSzuMcpService {
         }
         if let Some(todo) = params.todo {
             todo.apply(&mut current.todo);
+        }
+        if let Some(timetable) = params.timetable {
+            timetable.apply(&mut current.timetable);
         }
         let saved = szu_core::notification::settings::save(&self.app, &current)?;
         serde_json::to_string_pretty(&saved).map_err(|e| format!("序列化失败: {e}"))

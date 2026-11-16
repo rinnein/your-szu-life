@@ -64,3 +64,5 @@
 -keep class in.rinne.your_szu_life.EnrollmentTaskService { public *; }
 
 -keep class in.rinne.your_szu_life.WebviewCookieBridge { public *; }
+-keep class in.rinne.your_szu_life.TimetableNotificationBridge { public *; }
+-keep class in.rinne.your_szu_life.TimetableReminderReceiver { public *; }
