@@ -119,9 +119,9 @@ describe("debug log page", () => {
     render(<DebugLogPage />);
     await screen.findByText("日志文件概览");
 
-    // Click "DEBUG" level button
-    const debugBtn = screen.getByRole("button", { name: /DEBUG/ });
-    fireEvent.click(debugBtn);
+    // Click the "DEBUG" radio in the retention level group.
+    const debugRadio = screen.getByRole("radio", { name: /DEBUG/ });
+    fireEvent.click(debugRadio);
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("set_log_level", { level: "DEBUG" });

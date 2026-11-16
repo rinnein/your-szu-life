@@ -2,6 +2,7 @@
 import "../test-setup-element-internals";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { Switch } from "material/react";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   Avatar,
@@ -11,6 +12,8 @@ import {
   NumberField,
   Pagination,
   resetToasts,
+  SettingList,
+  SettingRow,
   Table,
   toast,
 } from "./index";
@@ -173,6 +176,38 @@ describe("NumberField", () => {
     fireEvent.input(input, { target: { value: "1" } });
     fireEvent.blur(input, { target: { value: "999" } });
     expect(onCommit).toHaveBeenLastCalledWith(99);
+  });
+});
+
+describe("SettingRow", () => {
+  it("keeps the control's own accessible name unambiguous", () => {
+    render(
+      <SettingList>
+        <SettingRow title="自动同步" description="只同步白名单内容">
+          <Switch aria-label="开启自动同步" />
+        </SettingRow>
+      </SettingList>,
+    );
+    // 行不加同名分组：按标签查询只命中控件本身。
+    expect(screen.getAllByLabelText("开启自动同步")).toHaveLength(1);
+    expect(screen.getByText("自动同步")).toBeInTheDocument();
+    expect(screen.getByText("只同步白名单内容")).toBeInTheDocument();
+  });
+
+  it("keeps the icon out of the accessibility tree", () => {
+    render(
+      <SettingRow icon={<span data-testid="row-icon">i</span>} title="外观">
+        <button type="button">更改</button>
+      </SettingRow>,
+    );
+    const icon = screen.getByTestId("row-icon");
+    expect(icon.closest("[aria-hidden='true']")).not.toBeNull();
+  });
+
+  it("omits the description paragraph when none is given", () => {
+    const { container } = render(<SettingRow title="仅有标题" />);
+    expect(container.querySelector(".setting-row-description")).toBeNull();
+    expect(container.querySelector(".setting-row-control")).toBeNull();
   });
 });
 

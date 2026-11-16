@@ -430,7 +430,7 @@ describe("frontend smoke tests", () => {
     mockSignedIn();
 
     renderRouterApp("/settings");
-    expect(await screen.findByText("确认账户资料")).toBeInTheDocument();
+    expect(await screen.findByText("账户与个人信息")).toBeInTheDocument();
     // 设置是顶级部件之一，靠导航部件回首页，顶栏不再给返回键。
     expect(screen.queryByRole("button", { name: "返回上一页" })).not.toBeInTheDocument();
   });

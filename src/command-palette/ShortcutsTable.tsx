@@ -72,42 +72,38 @@ export function ShortcutsTable() {
       <div slot="subhead">
         在应用内任意页面按下快捷键唤起命令面板，输入下方英文缩写或功能名称即可快速跳转。
       </div>
-      <div className="pt-2 w-full min-w-0 max-w-full overflow-hidden">
-        <p className="text-[11px] text-muted mb-2 sm:hidden">
-          左右滑动表格可查看完整说明与跳转目标
-        </p>
-        <Table aria-label="快捷键与缩写对照表">
-          <Table.ScrollContainer className="w-full min-w-0 max-w-full overflow-x-auto">
-            <Table.Content aria-label="快捷键对照" className="min-w-[480px]">
-              <Table.Header>
-                <Table.Column isRowHeader>英文缩写 / 快捷指令</Table.Column>
-                <Table.Column>功能名称</Table.Column>
-                <Table.Column>功能说明与跳转目标</Table.Column>
-              </Table.Header>
-              <Table.Body>
-                {SHORTCUT_ENTRIES.map((entry) => (
-                  <Table.Row key={entry.shortcut} id={entry.shortcut}>
-                    <Table.Cell className="font-mono whitespace-nowrap">
-                      <div className="flex items-center gap-1.5">
-                        {entry.shortcut.split(" / ").map((s) => (
-                          <Chip key={s} size="sm" variant="soft" color="accent">
-                            {s}
-                          </Chip>
-                        ))}
-                      </div>
-                    </Table.Cell>
-                    <Table.Cell className="font-medium whitespace-nowrap">{entry.name}</Table.Cell>
-                    <Table.Cell className="text-muted">
-                      <div>{entry.description}</div>
-                      <div className="text-xs font-mono text-muted/80">{entry.target}</div>
-                    </Table.Cell>
-                  </Table.Row>
-                ))}
-              </Table.Body>
-            </Table.Content>
-          </Table.ScrollContainer>
-        </Table>
-      </div>
+      <p className="mb-2 text-xs text-muted sm:hidden">左右滑动表格可查看完整说明与跳转目标</p>
+      <Table aria-label="快捷键与缩写对照表">
+        <Table.ScrollContainer>
+          <Table.Content aria-label="快捷键对照" className="min-w-[480px]">
+            <Table.Header>
+              <Table.Column isRowHeader>英文缩写 / 快捷指令</Table.Column>
+              <Table.Column>功能名称</Table.Column>
+              <Table.Column>功能说明与跳转目标</Table.Column>
+            </Table.Header>
+            <Table.Body>
+              {SHORTCUT_ENTRIES.map((entry) => (
+                <Table.Row key={entry.shortcut} id={entry.shortcut}>
+                  <Table.Cell className="font-mono whitespace-nowrap">
+                    <div className="flex items-center gap-1.5">
+                      {entry.shortcut.split(" / ").map((s) => (
+                        <Chip key={s} size="sm" variant="soft" color="accent">
+                          {s}
+                        </Chip>
+                      ))}
+                    </div>
+                  </Table.Cell>
+                  <Table.Cell className="font-medium whitespace-nowrap">{entry.name}</Table.Cell>
+                  <Table.Cell className="text-muted">
+                    <div>{entry.description}</div>
+                    <div className="font-mono text-xs text-muted">{entry.target}</div>
+                  </Table.Cell>
+                </Table.Row>
+              ))}
+            </Table.Body>
+          </Table.Content>
+        </Table.ScrollContainer>
+      </Table>
     </Card>
   );
 }

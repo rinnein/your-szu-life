@@ -3,7 +3,9 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 import { Card, LoadingIndicator, Button } from "material/react";
 import { Banner, Chip, toast } from "./ui";
-import { LuCircleCheck, LuCpu, LuDownload, LuRefreshCw, LuTriangleAlert } from "react-icons/lu";
+import { errorMessage } from "./async-state";
+import { usePending } from "./use-pending";
+import { LuDownload, LuRefreshCw } from "react-icons/lu";
 import { useLogicalNavigation } from "./logical-navigation";
 import {
   DownloadSession,
@@ -90,6 +92,10 @@ export const LOCAL_MODELS: Record<ModelKind, ModelMetadata> = {
   },
 };
 
+function insideTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
 export function useLocalModelStatus(kind: ModelKind) {
   const [status, setStatus] = useState<LocalModelStatus>();
   const meta = LOCAL_MODELS[kind];
@@ -105,17 +111,22 @@ export function useLocalModelStatus(kind: ModelKind) {
     });
     void invoke<LocalModelStatus>(meta.statusCommand)
       .then((value) => active && setStatus(value))
-      .catch(
-        () =>
-          active &&
-          setStatus({
-            status: "ready",
-            revision: meta.manifest.revision ?? "",
-            sha256: meta.manifest.sha256,
-            bytes: meta.manifest.bytes,
-            source: "web-preview",
-          }),
-      );
+      .catch((cause) => {
+        if (!active) return;
+        // 浏览器预览里没有后端可读，伪造一个「已就绪」只用于看版式；
+        // 真实运行时读取失败必须显示为错误，否则会掩盖模型缺失。
+        setStatus(
+          insideTauri()
+            ? { status: "error", revision: "", sha256: "", bytes: 0, error: errorMessage(cause) }
+            : {
+                status: "ready",
+                revision: meta.manifest.revision ?? "",
+                sha256: meta.manifest.sha256,
+                bytes: meta.manifest.bytes,
+                source: "web-preview",
+              },
+        );
+      });
     return () => {
       active = false;
       stop?.();
@@ -145,23 +156,20 @@ export interface LocalModelCardProps {
   kind: ModelKind;
   autoReturn?: boolean;
   downloadButtonLabel?: string;
-  className?: string;
 }
 
 export function LocalModelCard({
   kind,
   autoReturn = false,
   downloadButtonLabel,
-  className,
 }: LocalModelCardProps) {
   const navigation = useOptionalLogicalNavigation();
   const meta = LOCAL_MODELS[kind];
   const status = useLocalModelStatus(kind);
   const { progress, setProgress } = useModelDownloadProgress(kind);
 
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string>();
-
+  const pending = usePending();
+  const busy = pending.anyPending;
   const ready = status?.status === "ready";
   const isDownloading = busy || status?.status === "downloading" || (progress !== null && !ready);
 
@@ -171,123 +179,103 @@ export function LocalModelCard({
   const speedBytesPerSec = progress?.speedBytesPerSec ?? status?.speedBytesPerSec ?? 0;
 
   const handleDownload = async (isUpdate: boolean) => {
-    setBusy(true);
-    setMessage(undefined);
-    try {
-      const channel = createTaskChannel<ModelDownloadChannelEvent>((event) => {
-        if (event.type === "progress") {
-          setProgress(event.data);
-        }
-      });
-      await invoke<LocalModelStatus>(isUpdate ? meta.updateCommand : meta.downloadCommand, {
+    const channel = createTaskChannel<ModelDownloadChannelEvent>((event) => {
+      if (event.type === "progress") setProgress(event.data);
+    });
+    // 下载与检查更新用不同的键：一个在跑不该把另一个按钮也算成「进行中」。
+    const outcome = await pending.run(isUpdate ? "update" : "download", () =>
+      invoke<LocalModelStatus>(isUpdate ? meta.updateCommand : meta.downloadCommand, {
         onEvent: channel,
-      });
+      }),
+    );
+    if (outcome.ok) {
       toast.success(isUpdate ? `${meta.name} 重新下载完成` : `${meta.name} 下载完成`);
       if (autoReturn && navigation) await navigation.back();
-    } catch (error) {
-      const errorMsg = String(error);
-      setMessage(errorMsg);
-      toast.danger(`${isUpdate ? "更新" : "下载"}失败`, { description: errorMsg });
-    } finally {
-      setBusy(false);
+    } else if (!outcome.skipped) {
+      toast.danger(`${isUpdate ? "更新" : "下载"}失败`, {
+        description: errorMessage(outcome.error),
+      });
     }
   };
 
   const handleCheckUpdate = async () => {
-    setBusy(true);
-    setMessage(undefined);
-    try {
+    const outcome = await pending.run("check", async () => {
       let currentStatus: LocalModelStatus | undefined = status;
       try {
         currentStatus = await invoke<LocalModelStatus>(meta.statusCommand);
       } catch {
-        // Fall back to status from hook
+        // 读不到状态时沿用 hook 里的快照。
       }
+      if (currentStatus?.status !== "ready") return { kind: "notInstalled" as const };
 
-      if (currentStatus?.status !== "ready") {
-        toast.warning(`${meta.name} 尚未安装，请点击下载模型`);
-        return;
-      }
-
-      const installedSha = (currentStatus?.sha256 ?? "").toLowerCase().trim();
+      const installedSha = (currentStatus.sha256 ?? "").toLowerCase().trim();
       const expectedSha = meta.manifest.sha256.toLowerCase().trim();
-
       if (installedSha && installedSha !== expectedSha) {
-        toast.info(`检测到模型配置已更新（内嵌哈希不匹配），正在开始下载更新...`);
+        toast.info("检测到模型配置已更新，正在下载新版本…");
         const channel = createTaskChannel<ModelDownloadChannelEvent>((event) => {
-          if (event.type === "progress") {
-            setProgress(event.data);
-          }
+          if (event.type === "progress") setProgress(event.data);
         });
         await invoke<LocalModelStatus>(meta.updateCommand, { onEvent: channel });
+        return { kind: "updated" as const };
+      }
+      return { kind: "current" as const };
+    });
+
+    if (!outcome.ok) {
+      if (!outcome.skipped) {
+        toast.danger("检查更新失败", { description: errorMessage(outcome.error) });
+      }
+      return;
+    }
+    switch (outcome.value.kind) {
+      case "notInstalled":
+        toast.warning(`${meta.name} 尚未安装，请点击下载模型`);
+        return;
+      case "updated":
         toast.success(`${meta.name} 模型更新完成`);
         if (autoReturn && navigation) await navigation.back();
-      } else {
+        return;
+      case "current":
         toast.success(`${meta.name} 模型哈希与软件内嵌配置一致，已是最新版本`);
-      }
-    } catch (error) {
-      const errorMsg = String(error);
-      setMessage(errorMsg);
-      toast.danger("检查更新失败", { description: errorMsg });
-    } finally {
-      setBusy(false);
+        return;
     }
   };
 
   return (
-    <Card
-      id={meta.anchorId}
-      aria-labelledby={`${meta.anchorId}-title`}
-      variant="outlined"
-      className={`w-full min-w-0 max-w-full ${className ?? ""}`}
-    >
-      <div
-        slot="headline"
-        className="flex flex-wrap items-center justify-between gap-2 min-w-0 w-full"
-      >
-        <span
-          id={`${meta.anchorId}-title`}
-          className="flex flex-wrap items-center gap-2.5 min-w-0 font-semibold text-base"
-        >
-          <LuCpu aria-hidden="true" className="size-5 text-primary shrink-0" />
-          <span>{meta.name}</span>
+    <Card id={meta.anchorId} variant="outlined">
+      <div slot="headline">
+        <span className="flex flex-wrap items-center gap-2">
+          {meta.name}
           <Chip size="sm" variant="soft" color="accent">
             {meta.category}
           </Chip>
         </span>
       </div>
-      <div slot="subhead" className="mt-2 space-y-1.5 text-xs text-muted break-words">
-        <div>
-          <span className="font-medium text-foreground">适用功能：</span>
-          <span>{meta.features}</span>
-        </div>
-        <div className="leading-relaxed">{meta.description}</div>
-      </div>
-      <div className="grid gap-4 w-full min-w-0 max-w-full p-4 overflow-hidden">
+      <div slot="subhead">{meta.description || meta.features}</div>
+      <div className="grid gap-4">
         {!status && (
-          <div className="flex items-center gap-2 text-sm text-muted" role="status">
-            <LoadingIndicator size={16} /> 正在检查模型状态
-          </div>
+          <p className="status-line" role="status">
+            <LoadingIndicator size={16} aria-hidden="true" />
+            正在检查模型状态…
+          </p>
         )}
         {status?.status === "ready" && (
-          <Banner status="success" className="w-full min-w-0 max-w-full">
-            <Banner.Title className="flex items-center gap-2 min-w-0">
-              <LuCircleCheck aria-hidden="true" className="shrink-0" /> 模型已就绪
-            </Banner.Title>
-            <Banner.Description className="grid gap-1 min-w-0 w-full break-all">
-              <div>{formatModelSize(status.bytes)} · 本机缓存</div>
+          <Banner status="success">
+            <Banner.Title>模型已就绪</Banner.Title>
+            <Banner.Description>
+              <span className="block">{formatModelSize(status.bytes)} · 本机缓存</span>
               {status.sha256 && (
-                <div className="text-xs text-muted font-mono break-all">
-                  SHA-256: {status.sha256.slice(0, 16)}...
-                </div>
+                <span className="block font-mono text-xs break-all">
+                  SHA-256: {status.sha256.slice(0, 16)}…
+                </span>
               )}
             </Banner.Description>
           </Banner>
         )}
         {status?.status === "missing" && (
-          <Banner status="warning" className="w-full min-w-0 max-w-full">
+          <Banner status="warning">
             <Banner.Title>尚未安装 {meta.category} 模型</Banner.Title>
-            <Banner.Description className="break-words">
+            <Banner.Description>
               首次下载约 {formatModelSize(status.bytes || meta.manifest.bytes)}
               ，完成后可离线使用。
             </Banner.Description>
@@ -313,29 +301,19 @@ export function LocalModelCard({
           />
         )}
         {status?.status === "error" && (
-          <Banner status="danger" className="w-full min-w-0 max-w-full">
-            <Banner.Title className="flex items-center gap-2 min-w-0">
-              <LuTriangleAlert aria-hidden="true" className="shrink-0" /> 模型不可用
-            </Banner.Title>
-            <Banner.Description className="break-all max-w-full text-xs leading-relaxed font-mono whitespace-pre-wrap">
-              {status.error ?? message ?? "下载或校验失败，请重试"}
-            </Banner.Description>
-          </Banner>
-        )}
-        {message && status?.status !== "error" && (
-          <Banner status="danger" className="w-full min-w-0 max-w-full">
-            <Banner.Description className="break-all max-w-full text-xs leading-relaxed font-mono whitespace-pre-wrap">
-              {message}
+          <Banner status="danger">
+            <Banner.Title>模型不可用</Banner.Title>
+            <Banner.Description>
+              <span className="block whitespace-pre-wrap break-all font-mono text-xs">
+                {status.error ?? "下载或校验失败，请重试"}
+              </span>
             </Banner.Description>
           </Banner>
         )}
       </div>
-      <div slot="actions" className="flex flex-wrap items-center gap-2 min-w-0 w-full p-4 pt-0">
+      <div slot="actions">
         {!ready && (
-          <Button
-            disabled={busy || !status || status.status === "downloading" || busy}
-            onClick={() => void handleDownload(false)}
-          >
+          <Button disabled={!status || isDownloading} onClick={() => void handleDownload(false)}>
             <LuDownload aria-hidden="true" /> {downloadButtonLabel ?? meta.defaultDownloadLabel}
           </Button>
         )}
@@ -343,7 +321,7 @@ export function LocalModelCard({
           <>
             <Button
               variant="tonal"
-              disabled={busy || isDownloading || busy}
+              disabled={isDownloading}
               onClick={() => void handleCheckUpdate()}
             >
               <LuRefreshCw aria-hidden="true" /> 检查更新
@@ -351,7 +329,7 @@ export function LocalModelCard({
             <Button
               variant="outlined"
               size="xs"
-              disabled={busy || isDownloading || busy}
+              disabled={isDownloading}
               onClick={() => void handleDownload(true)}
             >
               重新下载 / 修复
@@ -380,10 +358,10 @@ export function LocalModelsSettings({
   );
 
   return (
-    <div className="grid gap-6 w-full min-w-0 max-w-full">
-      <div className="flex flex-col gap-1 min-w-0">
-        <h3 className="text-base font-medium text-foreground">本地离线模型</h3>
-        <p className="text-sm text-muted break-words">
+    <>
+      <div className="grid gap-1">
+        <h2 className="settings-section-title">本地离线模型</h2>
+        <p className="max-w-[68ch] text-sm text-muted">
           {onboarding
             ? "OCR 用于选课系统与 OJ 验证码识别，Embedding 用于 UOOC 题库检索。模型只保存在本机；暂时不需要可以跳过，之后在设置 → 本地模型中下载。"
             : "管理应用内置与离线运行的 AI / 机器学习模型。模型仅保存在本地设备，离线高速运行并保护隐私安全。"}
@@ -399,6 +377,6 @@ export function LocalModelsSettings({
         autoReturn={autoReturnKind === "embedding"}
         downloadButtonLabel="下载 Embedding 模型"
       />
-    </div>
+    </>
   );
 }

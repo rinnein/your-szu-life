@@ -1,10 +1,15 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Card, LoadingIndicator } from "material/react";
+import { toast } from "../ui";
 import { useAuth, type AuthState } from "../auth";
 import { PageSurface } from "../shell/PageSurface";
 import { getOnboardingState, type OnboardingState } from "./api";
 import { OnboardingWizard } from "./OnboardingWizard";
+
+function insideTauri(): boolean {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
 
 /**
  * 认证状态的稳定标签。用对象本身做依赖会在 refresh 后反复触发。
@@ -25,13 +30,20 @@ function authStateKey(state: AuthState): string {
  * - 当前版本仍有未完成/未跳过的初始化设置项；
  * - 统一认证未完成或已失效（此时进入认证步骤自动登录）。
  *
- * 读取设置状态失败时 fail-open，避免数据库问题把应用锁死在启动页。
+ * 读取设置状态失败时 fail-open，避免数据库问题把应用锁死在启动页；失败原因
+ * 用一条 Snackbar 说明（浏览器预览里没有 IPC，属于预期状态，不提示）。
+ *
+ * 这里刻意保留「两个字段 + 一次 fetch」的朴素写法，没有换成 `Async<T>`：它是
+ * 启动路径上的三态门，多出的一次渲染会改变各页面的挂载时序，而当前写法在
+ * 路由级集成测试（EnrollmentPage 等）里已经稳定。需要可辨识联合的是步骤内部
+ * 那类状态，不是这个门。
  */
 export function OnboardingGate({ children }: { children: ReactNode }) {
   const { state } = useAuth();
   const [onboarding, setOnboarding] = useState<OnboardingState>();
   const [error, setError] = useState<string>();
   const [dismissed, setDismissed] = useState(false);
+  const reported = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -43,9 +55,12 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
       setOnboarding(next);
       setError(undefined);
     } catch (cause) {
-      console.error("读取初始化设置状态失败", cause);
       setOnboarding(undefined);
       setError(String(cause));
+      if (insideTauri() && !reported.current) {
+        reported.current = true;
+        toast.danger("读取初始化设置失败", { description: String(cause) });
+      }
     }
   }, []);
 
@@ -91,10 +106,10 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
     return (
       <PageSurface centered>
         <Card className="status-card" variant="outlined">
-          <div className="p-6 text-center flex flex-col items-center gap-3">
-            <LoadingIndicator size={40} />
-            <span className="font-semibold text-base">正在检查初始化设置…</span>
-          </div>
+          <span className="status-line" role="status">
+            <LoadingIndicator size={24} aria-hidden="true" />
+            正在检查初始化设置…
+          </span>
         </Card>
       </PageSurface>
     );
@@ -112,6 +127,7 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
         onDismiss={() => setDismissed(true)}
         onFinished={() => {
           setDismissed(false);
+          reported.current = false;
           void refresh();
         }}
       />

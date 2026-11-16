@@ -136,7 +136,7 @@ describe("顶栏块不被放进带 gap 的容器", () => {
   ];
 
   // 页面级容器类里自带 gap 的几个（见 src/index.css）。
-  const gapContainers = ["settings-page", "oj-page", "about-layout", "electricity-page"];
+  const gapContainers = ["settings-page", "oj-page", "electricity-page"];
 
   it.each(pages)("%s", async (path) => {
     renderAt(path);

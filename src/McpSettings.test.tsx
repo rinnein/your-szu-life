@@ -44,7 +44,7 @@ describe("McpSettings component", () => {
     expect(await screen.findByText("本地 MCP 服务状态")).toBeInTheDocument();
     expect(screen.getByText("端口已开启 (53901)")).toBeInTheDocument();
     expect(screen.getByText("http://127.0.0.1:53901/mcp")).toBeInTheDocument();
-    expect(screen.getByText("独立高位端口: 53901")).toBeInTheDocument();
+    expect(screen.getByText("独立高位端口：53901")).toBeInTheDocument();
 
     expect(screen.getByText("指导 AI Agent 安装该 MCP 服务")).toBeInTheDocument();
     expect(screen.getByText("配置文件片段 (Claude Desktop / Cursor)")).toBeInTheDocument();

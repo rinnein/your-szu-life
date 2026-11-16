@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, Checkbox, LoadingIndicator, TextField, Button } from "material/react";
 import { Banner, bindField, toast } from "./ui";
+import { errorMessage, useAsyncLoad } from "./async-state";
+import { usePending } from "./use-pending";
 import { useRegisterNextAction, type StepNextAction } from "./step-next-action";
 import type { AiConnections } from "./uooc/state/types";
 
@@ -42,37 +44,25 @@ export function AiConnectionForm({
   onboarding?: boolean;
   registerNext?: (action: StepNextAction | null) => void;
 }) {
+  const { state: loaded, reload } = useAsyncLoad<AiConnections>(async () => {
+    const connections = await invoke<AiConnections>("get_uooc_ai_connections");
+    if (!connections?.main || !connections?.jev) throw new Error("AI 连接配置格式无效");
+    return connections;
+  });
   const [draft, setDraft] = useState<ConnectionDraft>();
-  const [busy, setBusy] = useState(false);
-  const [loadError, setLoadError] = useState("");
+  const pending = usePending();
+  const saving = pending.isPending("save");
 
+  // 读取成功后进入可编辑副本；重试成功同样会覆盖一次。
   useEffect(() => {
-    let active = true;
-    void invoke<AiConnections>("get_uooc_ai_connections")
-      .then((connections) => {
-        if (!connections?.main || !connections?.jev) throw new Error("AI 连接配置格式无效");
-        if (active) setDraft({ ...emptyDraft, connections });
-      })
-      .catch((cause) => {
-        if (active)
-          setLoadError(
-            typeof cause === "string"
-              ? cause
-              : cause instanceof Error
-                ? cause.message
-                : "无法读取 AI 连接配置",
-          );
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+    if (loaded.status !== "ready") return;
+    setDraft((current) => (current ? current : { ...emptyDraft, connections: loaded.data }));
+  }, [loaded]);
 
   const save = async () => {
     if (!draft) return;
-    setBusy(true);
-    try {
-      const connections = await invoke<AiConnections>("save_uooc_ai_connections", {
+    const outcome = await pending.run("save", () =>
+      invoke<AiConnections>("save_uooc_ai_connections", {
         connections: {
           main: {
             baseUrl: draft.connections.main.baseUrl,
@@ -85,65 +75,76 @@ export function AiConnectionForm({
             clearKey: draft.clear.jev,
           },
         },
-      });
-      setDraft({
-        ...draft,
-        connections,
-        keys: { main: "", jev: "" },
-        clear: { main: false, jev: false },
-      });
-      toast.success("AI 连接配置已保存");
-      try {
-        await onSaved?.(connections);
-      } catch (callbackError) {
-        // 配置已经保存成功；后续步骤失败由调用方展示，不要误报为保存失败。
-        console.error("AI 配置保存后的回调失败", callbackError);
+      }),
+    );
+    if (!outcome.ok) {
+      if (!outcome.skipped) {
+        toast.danger("保存 AI 连接失败", { description: errorMessage(outcome.error) });
       }
+      return;
+    }
+    const connections = outcome.value;
+    setDraft((current) =>
+      current
+        ? {
+            ...current,
+            connections,
+            keys: { main: "", jev: "" },
+            clear: { main: false, jev: false },
+          }
+        : current,
+    );
+    toast.success("AI 连接配置已保存");
+    try {
+      await onSaved?.(connections);
     } catch (cause) {
-      toast.danger("保存 AI 连接失败", {
-        description:
-          typeof cause === "string"
-            ? cause
-            : cause instanceof Error
-              ? cause.message
-              : "保存失败，请检查配置",
-      });
-    } finally {
-      setBusy(false);
+      // 配置已经保存成功；后续步骤失败要单独说明，不要误报成保存失败。
+      toast.warning("配置已保存，但后续步骤没有完成", { description: errorMessage(cause) });
     }
   };
 
   useRegisterNextAction(
     registerNext,
-    onboarding && draft ? { label: submitLabel, disabled: busy, busy, run: save } : null,
+    onboarding && draft ? { label: submitLabel, disabled: saving, busy: saving, run: save } : null,
   );
 
-  if (!draft)
+  if (!draft) {
     return (
       <div className="grid gap-3">
-        {loadError ? (
-          <Banner status="danger">
-            <Banner.Title>无法读取 AI 连接配置</Banner.Title>
-            <Banner.Description>{loadError}</Banner.Description>
-          </Banner>
+        {loaded.status === "error" ? (
+          <>
+            <Banner status="danger">
+              <Banner.Title>无法读取 AI 连接配置</Banner.Title>
+              <Banner.Description>{loaded.message}</Banner.Description>
+            </Banner>
+            <div>
+              <Button variant="outlined" onClick={() => void reload()}>
+                重新读取
+              </Button>
+            </div>
+          </>
         ) : (
-          <p role="status">正在读取 AI 连接配置…</p>
+          <p className="status-line" role="status">
+            <LoadingIndicator size={16} aria-hidden="true" />
+            正在读取 AI 连接配置…
+          </p>
         )}
       </div>
     );
+  }
 
   const providers = PROVIDERS.filter((provider) => showJev || provider.id === "main");
 
   return (
-    <div className="settings-form">
-      {providers.map(({ id, title, placeholder }) => (
-        <section key={id} className="settings-section">
-          <h3 className="settings-section-title">{title}</h3>
+    <form className="settings-form" onSubmit={(event) => event.preventDefault()}>
+      {providers.map(({ id, title, placeholder }, index) => (
+        <section key={id} className={index === 0 ? "settings-section" : "card-group"}>
+          <h3 className={index === 0 ? "settings-section-title" : "card-group-title"}>{title}</h3>
           <TextField
             label={id === "main" ? "主模型 API 地址" : "Jev API 地址"}
             value={draft.connections[id].baseUrl}
             placeholder={placeholder}
-            disabled={busy}
+            disabled={saving}
             {...bindField((value) =>
               setDraft(
                 (current) =>
@@ -163,25 +164,28 @@ export function AiConnectionForm({
             value={draft.keys[id]}
             placeholder={draft.connections[id].hasKey ? "已保存；留空保持不变" : "填写密钥"}
             autocomplete="new-password"
-            disabled={busy}
+            disabled={saving || draft.clear[id]}
             {...bindField((value) =>
               setDraft(
                 (current) =>
                   current && {
                     ...current,
                     keys: { ...current.keys, [id]: value },
+                    // 输入新密钥即视为「不删除」：两种意图不能同时成立。
+                    clear: { ...current.clear, [id]: value ? false : current.clear[id] },
                   },
               ),
             )}
           />
           <Checkbox
             checked={draft.clear[id]}
-            disabled={busy}
+            disabled={saving || draft.keys[id] !== ""}
             onChange={(event: any) =>
               setDraft(
                 (current) =>
                   current && {
                     ...current,
+                    keys: { ...current.keys, [id]: "" },
                     clear: {
                       ...current.clear,
                       [id]: Boolean(event.detail?.checked ?? event.target?.checked),
@@ -196,13 +200,13 @@ export function AiConnectionForm({
       ))}
       {!onboarding && (
         <div>
-          <Button variant="filled" disabled={busy} onClick={() => void save()}>
-            {busy && <LoadingIndicator size={16} />}
-            {busy ? "保存中…" : submitLabel}
+          <Button variant="filled" disabled={saving} onClick={() => void save()}>
+            {saving && <LoadingIndicator size={16} />}
+            {saving ? "保存中…" : submitLabel}
           </Button>
         </div>
       )}
-    </div>
+    </form>
   );
 }
 
@@ -217,7 +221,7 @@ export default function AiConnectionSettings({
 }) {
   if (onboarding) {
     return (
-      <div className="grid gap-4">
+      <>
         <Banner status="info">
           <Banner.Title>未配置 AI 时无法使用 AI 功能</Banner.Title>
           <Banner.Description>
@@ -228,23 +232,21 @@ export default function AiConnectionSettings({
         <Card variant="outlined">
           <div slot="headline">AI 配置</div>
           <div slot="subhead">只填写主模型即可；Jev 可以在设置 → AI 配置中按需开启。</div>
-          <div className="p-4">
-            <AiConnectionForm
-              onboarding
-              showJev={false}
-              submitLabel="保存并继续"
-              registerNext={registerNext}
-              onSaved={async (connections) => {
-                if (!connections.main.baseUrl || !connections.main.hasKey) {
-                  toast.info("主模型尚未配置完整；可以继续填写，或跳过此步骤");
-                  return;
-                }
-                await onComplete?.();
-              }}
-            />
-          </div>
+          <AiConnectionForm
+            onboarding
+            showJev={false}
+            submitLabel="保存并继续"
+            registerNext={registerNext}
+            onSaved={async (connections) => {
+              if (!connections.main.baseUrl || !connections.main.hasKey) {
+                toast.info("主模型尚未配置完整；可以继续填写，或跳过此步骤");
+                return;
+              }
+              await onComplete?.();
+            }}
+          />
         </Card>
-      </div>
+      </>
     );
   }
 
@@ -252,9 +254,7 @@ export default function AiConnectionSettings({
     <Card variant="outlined">
       <div slot="headline">AI 连接</div>
       <div slot="subhead">API Key 保存在系统凭据存储中，不会回显。</div>
-      <div className="p-4">
-        <AiConnectionForm />
-      </div>
+      <AiConnectionForm />
     </Card>
   );
 }

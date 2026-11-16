@@ -102,6 +102,13 @@ html[data-szu-native-toolbar="true"] [data-webview-navigation] {
 
   /* 窄屏底部导航栏高度：预留 65px（64px 容器 + 1px 顶边框），宽屏或全屏页面退化为 0px */
   --app-nav-bar-height: 65px;
+
+  /*
+   * 初始化向导常驻底栏的高度。默认值只是首帧兜底：向导挂载后由
+   * OnboardingWizard 用 ResizeObserver 把实测高度写回 body，按钮换行变高时
+   * Snackbar 的抬升量跟着走，不再写死一个像素值。
+   */
+  --onboarding-actions-height: 89px;
 }
 
 @media (min-width: 900px) {
@@ -155,7 +162,6 @@ input {
 }
 
 .auth-card,
-.profile-card,
 .status-card {
   width: min(480px, 100%);
   box-shadow: 0 20px 70px color-mix(in srgb, var(--mtrl-sys-color-shadow) 8%, transparent);
@@ -202,10 +208,6 @@ input {
   gap: 10px;
   color: var(--szu-muted);
   font-size: 14px;
-}
-
-.profile-card {
-  padding: 6px;
 }
 
 .eyebrow {
@@ -734,15 +736,6 @@ p {
   font-size: 13px;
 }
 
-.about-layout {
-  position: relative;
-  max-width: 880px;
-  margin: 0 auto;
-  display: grid;
-  gap: 22px;
-  min-width: 0;
-}
-
 .about-header {
   padding-left: 52px;
 }
@@ -773,18 +766,19 @@ p {
   margin: 0;
 }
 
+/* 状态与动作并排靠左：整页列宽 64rem 时把按钮推到右缘会与状态彻底脱节。 */
 .about-update-toolbar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-block: 4px 16px;
 }
 
 .update-status {
   margin: 0;
-  font-weight: 650;
+  font-size: 0.875rem;
+  font-weight: 500;
   overflow-wrap: anywhere;
 }
 
@@ -1458,10 +1452,10 @@ body:not(:has(.app-nav-bar)) m-snackbar::part(snackbar) {
   bottom: 16px !important;
 }
 
-/* 初始化向导有常驻底部操作栏，Snackbar 抬到操作栏上方。 */
+/* 初始化向导有常驻底部操作栏，Snackbar 抬到操作栏上方（高度由向导实测写回，已含安全区）。 */
 body:has(.onboarding-actions) m-snackbar::part(snackbar),
 body:has(.onboarding-actions) .app-snackbar::part(snackbar) {
-  bottom: calc(65px + env(safe-area-inset-bottom, 0px) + 16px) !important;
+  bottom: calc(var(--onboarding-actions-height, 89px) + 16px) !important;
 }
 
 /* ---------- 页面容器 ---------- */
@@ -1514,32 +1508,75 @@ body:has(.onboarding-actions) .app-snackbar::part(snackbar) {
 }
 
 /* ---------- 初始化设置向导 ---------- */
+/* 头部压成一行：品牌标 + 标题居左，步数居右，进度条独占一行。 */
+.onboarding-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.onboarding-header-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-inline-size: 0;
+}
+
+.onboarding-header-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--mtrl-sys-color-on-surface);
+}
+
+.onboarding-header-step {
+  margin-inline-start: auto;
+  flex: none;
+  font-size: 0.75rem;
+  color: var(--mtrl-sys-color-on-surface-variant);
+}
+
 .onboarding-wizard {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 24px;
+  font-variant-numeric: tabular-nums;
   /* 给常驻底栏留出空间，长步骤滚到底时最后一块不会被盖住。 */
-  padding-block: 24px 96px;
+  padding-block: 24px calc(var(--onboarding-actions-height, 89px) + 24px);
 }
 
 /*
  * 底栏通过 portal 挂到 body，因此这里的 fixed 相对视口定位，不受
  * .app-content 的 container-type 影响。z-index 10 高于页面内容与顶栏，
  * 低于 Snackbar（1000）和 Dialog 的 top layer。
+ *
+ * 背景条横向撑满视口，但内容收在与向导正文同宽的一列里：宽屏下「上一步」
+ * 与卡片左缘对齐，不再贴着视口边缘。
  */
 .onboarding-actions {
   position: fixed;
   inset-inline: 0;
   inset-block-end: 0;
   z-index: 10;
+  box-sizing: border-box;
+  padding-inline: clamp(16px, 4vw, 40px);
+  padding-block-end: env(safe-area-inset-bottom, 0px);
+  background: var(--mtrl-sys-color-surface);
+  border-block-start: 1px solid var(--mtrl-sys-color-outline-variant);
+}
+
+.onboarding-actions-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px 12px;
   flex-wrap: wrap;
-  padding: 12px clamp(16px, 4vw, 40px) calc(12px + env(safe-area-inset-bottom, 0px));
-  background: var(--mtrl-sys-color-surface);
-  border-block-start: 1px solid var(--mtrl-sys-color-outline-variant);
+  inline-size: 100%;
+  /* 与 PageSurface maxWidth="md" 的正文列同宽。 */
+  max-inline-size: 48rem;
+  margin-inline: auto;
+  padding-block: 12px;
 }
 
 .onboarding-actions-group {
@@ -1681,12 +1718,7 @@ m-top-app-bar::part(trailing) {
 }
 
 /* ---------- 外观设置 ---------- */
-.appearance-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
+/* 外层节奏交给 .settings-panel / .onboarding-wizard，这里只管种子色控件本身。 */
 .seed-grid {
   display: flex;
   flex-wrap: wrap;
@@ -1723,24 +1755,14 @@ m-top-app-bar::part(trailing) {
 }
 
 .seed-swatch-check {
-  color: #fff;
+  /* 勾色不写死白色：浅色种子（黄、青）上白勾会看不见，改用表面的反色。 */
+  color: var(--mtrl-sys-color-on-primary);
+  filter: drop-shadow(0 0 1px color-mix(in srgb, var(--mtrl-sys-color-shadow) 45%, transparent));
 }
 
 .seed-swatch-label {
   font-size: 0.75rem;
   color: var(--mtrl-sys-color-on-surface-variant);
-}
-
-.seed-custom {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.seed-custom > :first-child {
-  flex: 1;
-  min-inline-size: 12rem;
 }
 
 /* Android Monet 风格的 4 色取色预览。 */
@@ -1977,59 +1999,153 @@ m-top-app-bar::part(trailing) {
 }
 
 /* ---------- 设置页 ---------- */
+/*
+ * 版式约定（设置页与初始化向导共用）：
+ * - 一条内容列，宽度由 PageSurface 的 maxWidth 决定，tab 面板不再各自设上限；
+ * - 区块之间 24px，卡片正文不重复加内边距（material 的 .mtrl-card__content
+ *   自带 16px，页面自己再写 p-4 会变成 32px）；
+ * - 数字全部等宽，端口、版本、大小、计数在更新时不抖。
+ */
 .settings-page {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
   min-inline-size: 0;
-}
-
-.settings-tabs-desktop {
-  display: flex;
-  gap: 4px;
-  overflow-x: auto;
-  border-block-end: 1px solid var(--mtrl-sys-color-outline-variant);
-}
-
-.settings-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 16px;
-  border: none;
-  border-block-end: 3px solid transparent;
-  background: none;
-  color: var(--mtrl-sys-color-on-surface-variant);
-  font: inherit;
-  font-size: 0.875rem;
-  font-weight: 500;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.settings-tab[data-selected] {
-  color: var(--mtrl-sys-color-primary);
-  border-block-end-color: var(--mtrl-sys-color-primary);
-}
-
-.settings-tab-icon {
-  inline-size: 1rem;
-  block-size: 1rem;
-  flex: none;
+  font-variant-numeric: tabular-nums;
 }
 
 .settings-panel {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
   min-inline-size: 0;
 }
 
+.settings-panel > * {
+  min-inline-size: 0;
+}
+
+/* ---------- 设置行 ---------- */
+/* 标题 + 说明 + 控件：行间分隔线由 .setting-list 统一画，行自己不带边框。 */
+.setting-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.setting-list > * + * {
+  border-block-start: 1px solid var(--mtrl-sys-color-outline-variant);
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-block-size: 56px;
+  padding-block: 12px;
+}
+
+.setting-row-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--mtrl-sys-color-on-surface-variant);
+}
+
+.setting-row-icon > svg {
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+.setting-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.setting-row-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--mtrl-sys-color-on-surface);
+}
+
+.setting-row-description {
+  /* 说明文字限制在 ~68ch：再宽的卡片也不会拉出一行上百字符的小字。 */
+  margin: 0;
+  max-inline-size: 68ch;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--mtrl-sys-color-on-surface-variant);
+}
+
+.setting-row-control {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---------- 卡片内分组 ---------- */
+/* 卡片里需要再分节时用它，而不是嵌套第二张 m-card（卡中卡的圆角会脏）。 */
+.card-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-block-start: 16px;
+  border-block-start: 1px solid var(--mtrl-sys-color-outline-variant);
+}
+
+.card-group-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--mtrl-sys-color-on-surface);
+}
+
+/* ---------- 进行中提示 ---------- */
+/* 指示器 + 一句说明，替代各页面自写的 p-4 flex 组合。 */
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--mtrl-sys-color-on-surface-variant);
+}
+
+/* ---------- 对齐的定义列表 ---------- */
+/* 「标签：值」成对展示（账户信息、版本信息），冒号由布局代替，不写进文案。 */
+.detail-list {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 8px 24px;
+  margin: 0;
+}
+
+.detail-list dt {
+  font-size: 0.875rem;
+  color: var(--mtrl-sys-color-on-surface-variant);
+}
+
+.detail-list dd {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--mtrl-sys-color-on-surface);
+  overflow-wrap: anywhere;
+}
+
 /* ---------- 设置表单 ---------- */
+/*
+ * 表单收在 36rem：整页列宽给到 64rem 是为了让区块与顶栏同宽，但输入框铺满
+ * 一千像素既难读也难对齐标签。卡片里的表单左对齐、窄一档。
+ */
 .settings-form {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  max-inline-size: 36rem;
 }
 
 .settings-section {

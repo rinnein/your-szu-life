@@ -183,6 +183,6 @@ describe("AuthStep", () => {
 
     expect(await screen.findByText("补充校园卡号")).toBeInTheDocument();
     expect(screen.queryByText("账户与个人信息")).not.toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: "保存并进入工作台" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "保存并继续" })).toBeInTheDocument();
   });
 });

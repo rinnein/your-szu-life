@@ -101,8 +101,11 @@ describe("CampusAccessSettings", () => {
 
     render(<CampusAccessSettings />);
     await screen.findByText("校园网访问");
+    const toggle = screen.getByLabelText("启用校园网访问");
+    // 读取完成前开关禁用（不乐观更新）。
+    await waitFor(() => expect(toggle).toBeEnabled());
 
-    fireEvent.click(screen.getByLabelText("启用校园网访问"));
+    fireEvent.click(toggle);
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("set_mesh_campus_access", { enabled: false });

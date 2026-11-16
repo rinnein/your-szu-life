@@ -1,5 +1,8 @@
-import { Card } from "material/react";
-import { Banner } from "./ui";
+import { Button, Card, LoadingIndicator } from "material/react";
+import { Banner, SettingList, SettingRow } from "./ui";
+import type { Async } from "./async-state";
+import { usePending } from "./use-pending";
+import type { FileManagerState } from "./file-manager/api";
 import {
   DirectoryConfirmDialog,
   DirectoryPickerActions,
@@ -14,57 +17,79 @@ import { useFileManagerState } from "./file-manager/useFileManagerState";
  * 直接使用该目录，已有其它内容时统一放进其中的「泥深」子目录。
  */
 export default function StorageSettings() {
-  const { state, error, refresh } = useFileManagerState();
+  const pending = usePending();
+  const { state, error, loading, refresh } = useFileManagerState();
   const picker = useDirectoryPicker(() => refresh());
 
+  // 读取快照只有四种结果：显式区分，失败时给出重试入口，而不是留一行「读取中…」。
+  const view: Async<FileManagerState> =
+    error != null
+      ? { status: "error", message: error, previous: state ?? undefined }
+      : state != null
+        ? { status: "ready", data: state }
+        : loading
+          ? { status: "loading" }
+          : { status: "idle" };
+  const current =
+    view.status === "ready" ? view.data : view.status === "error" ? view.previous : undefined;
+
   return (
-    <div className="grid gap-4">
-      {error && (
-        <Banner status="danger">
-          <Banner.Title>无法读取保存目录</Banner.Title>
-          <Banner.Description>{error}</Banner.Description>
-        </Banner>
+    <>
+      {view.status === "loading" && (
+        <p className="status-line">
+          <LoadingIndicator size={16} aria-label="正在读取保存目录" />
+          正在读取保存目录…
+        </p>
       )}
 
-      <Card variant="outlined">
-        <div slot="headline">统一保存目录</div>
-        <div slot="subhead">
-          录像等由你直接管理的文件统一保存在这里，各业务模块使用其中的子目录。目录已有其它内容时，
-          会统一放进其中的「泥深」子目录。
+      {view.status === "error" && (
+        <div className="grid justify-items-start gap-3">
+          <Banner status="danger">
+            <Banner.Title>无法读取保存目录</Banner.Title>
+            <Banner.Description>{view.message}</Banner.Description>
+          </Banner>
+          <Button
+            variant="outlined"
+            disabled={pending.isPending("reload")}
+            onClick={() => void pending.run("reload", () => refresh())}
+          >
+            重试
+          </Button>
         </div>
-        <div className="p-4">
-          <DirectoryPickerActions state={state} controller={picker} />
-        </div>
-      </Card>
+      )}
 
-      <Card variant="outlined">
-        <div slot="headline">模块子目录</div>
-        <div slot="subhead">
-          {state?.platform === "android"
-            ? "Android 通过系统文件夹选择器授权目录，应用只在你选中的目录里读写。"
-            : "文件由系统文件系统直接写入，与系统「文档」目录同级。"}
-        </div>
-        <div className="p-4 grid gap-3">
-          {(state?.modules ?? []).map((module) => (
-            <div key={module.id} className="grid gap-0.5">
-              <span className="text-sm text-foreground">{module.label}</span>
-              <span className="text-xs text-muted break-all">{module.path}</span>
+      {current && (
+        <>
+          <Card variant="outlined">
+            <div slot="headline">统一保存目录</div>
+            <div slot="subhead">
+              录像等由你直接管理的文件统一保存在这里，各业务模块使用其中的子目录。目录已有其它内容时，
+              会统一放进其中的「泥深」子目录。
             </div>
-          ))}
-          {!state && <span className="text-sm text-muted">正在读取模块目录…</span>}
-        </div>
-      </Card>
+            <DirectoryPickerActions state={current} controller={picker} />
+          </Card>
 
-      {state?.access.state === "denied" && state.config != null && (
-        <Banner status="warning">
-          <Banner.Title>需要重新授权目录</Banner.Title>
-          <Banner.Description>
-            {state.access.detail ?? "系统文件夹授权可能已被撤销。重新选择同一个目录即可恢复保存。"}
-          </Banner.Description>
-        </Banner>
+          <Card variant="outlined">
+            <div slot="headline">模块子目录</div>
+            <div slot="subhead">
+              {current.platform === "android"
+                ? "Android 通过系统文件夹选择器授权目录，应用只在你选中的目录里读写。"
+                : "文件由系统文件系统直接写入，与系统「文档」目录同级。"}
+            </div>
+            <SettingList>
+              {current.modules.map((module) => (
+                <SettingRow
+                  key={module.id}
+                  title={module.label}
+                  description={<span className="break-all">{module.path}</span>}
+                />
+              ))}
+            </SettingList>
+          </Card>
+        </>
       )}
 
       <DirectoryConfirmDialog controller={picker} />
-    </div>
+    </>
   );
 }

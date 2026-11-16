@@ -76,6 +76,27 @@ describe("StorageSettings", () => {
     expect(screen.getByText(/当前使用平台默认目录/)).toBeInTheDocument();
   });
 
+  it("offers a retry when the snapshot cannot be read", async () => {
+    let attempts = 0;
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_file_manager_state") {
+        attempts += 1;
+        if (attempts === 1) throw "读取保存目录失败";
+        return desktopState;
+      }
+      return undefined;
+    });
+
+    render(<StorageSettings />);
+
+    expect(await screen.findByText("无法读取保存目录")).toBeInTheDocument();
+    expect(screen.getByText("读取保存目录失败")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+
+    expect(await screen.findByText("/home/me/Documents/泥深")).toBeInTheDocument();
+  });
+
   it("asks for confirmation and saves the resolved directory", async () => {
     let current = desktopState;
     vi.mocked(invoke).mockImplementation(async (command) => {

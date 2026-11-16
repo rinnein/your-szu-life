@@ -22,7 +22,7 @@ export function WelcomeStep({ onComplete, registerNext }: StepProps) {
     <Card variant="outlined">
       <div slot="headline">欢迎使用「泥深」</div>
       <div slot="subhead">接下来只需几步，完成账户、文件位置与外观等初始设置。</div>
-      <div className="p-6 flex flex-col items-center text-center gap-3">
+      <div className="grid gap-3 place-items-center text-center">
         <button
           type="button"
           className="brand-mark-trigger"

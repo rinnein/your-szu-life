@@ -1,5 +1,5 @@
 import { useLogicalNavigation } from "./logical-navigation";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   LuBell,
@@ -20,7 +20,8 @@ import { PageShell } from "./components";
 import { TopAppBar } from "./shell/TopAppBar";
 import { useDebugMode } from "./shell/use-debug-mode";
 import { useAuth } from "./auth";
-import { AdaptiveTabs } from "./ui";
+import { AdaptiveTabs, toast } from "./ui";
+import { errorMessage } from "./async-state";
 import AiConnectionSettings from "./AiConnectionSettings";
 import SettingsSync from "./SettingsSync";
 import { LocalModelsSettings } from "./LocalModelSettings";
@@ -35,26 +36,29 @@ import DebugLogPage from "./DebugLogPage";
 import { useSearch } from "@tanstack/react-router";
 import type { SettingsTab } from "./routes/settings";
 
-const SETTINGS_TABS: ReadonlyArray<{
-  id: SettingsTab;
-  label: string;
-  icon: typeof LuUser;
-  /** 仅在调试模式启用后出现。 */
-  debugOnly?: boolean;
-}> = [
+/**
+ * tab 的顺序与展示信息。新增 tab 时必须同时改 `SETTINGS_TAB_IDS`，两处不一致
+ * 会在 `renderTab` 的穷尽检查里报错。
+ */
+const SETTINGS_TABS = [
   { id: "profile", label: "个人信息", icon: LuUser },
   { id: "appearance", label: "外观", icon: LuPalette },
   { id: "notifications", label: "通知", icon: LuBell },
   { id: "network", label: "网络", icon: LuGlobe },
   { id: "storage", label: "储存", icon: LuHardDrive },
   { id: "models", label: "本地模型", icon: LuCpu },
-  { id: "ai", label: "AI配置", icon: LuSparkles },
+  { id: "ai", label: "AI 配置", icon: LuSparkles },
   { id: "mcp", label: "MCP", icon: LuServer },
   { id: "sync", label: "同步", icon: LuRefreshCw },
   { id: "shortcuts", label: "快捷键", icon: LuKeyboard },
-  { id: "about", label: "关于与更新", icon: LuInfo },
+  { id: "about", label: "关于", icon: LuInfo },
   { id: "debug", label: "调试", icon: LuBug, debugOnly: true },
-];
+] as const satisfies ReadonlyArray<{
+  id: SettingsTab;
+  label: string;
+  icon: typeof LuUser;
+  debugOnly?: boolean;
+}>;
 
 export default function SettingsPage() {
   const { state, profile, setProfile } = useAuth();
@@ -62,7 +66,7 @@ export default function SettingsPage() {
   const { enabled: debugEnabled } = useDebugMode();
   const { tab: queryTab, focus } = useSearch({ from: "/settings" });
 
-  const tabs = SETTINGS_TABS.filter((item) => !item.debugOnly || debugEnabled);
+  const tabs = SETTINGS_TABS.filter((item) => !("debugOnly" in item) || debugEnabled);
   const requestedTab: SettingsTab = queryTab ?? (focus ? "models" : "profile");
   const activeTab: SettingsTab = tabs.some((item) => item.id === requestedTab)
     ? requestedTab
@@ -102,6 +106,58 @@ export default function SettingsPage() {
     [tabs],
   );
 
+  /**
+   * tab 内容的唯一分发点。用 `never` 兜底：新增 tab 却忘了给内容时编译期就报错，
+   * 不会出现「切过去是空白页」。
+   */
+  const renderTab = (tab: SettingsTab): ReactNode => {
+    switch (tab) {
+      case "profile":
+        return (
+          <ProfileForm
+            initial={profile}
+            name={profile?.name}
+            onSaved={async () => {
+              // 保存后留在当前页：用户可能接着调其它设置，跳回首页像被踢出去。
+              try {
+                setProfile((await invoke("get_account_profile")) as typeof profile);
+                toast.success("账户资料已保存");
+              } catch (cause) {
+                toast.danger("资料已保存，但未能刷新显示", { description: errorMessage(cause) });
+              }
+            }}
+          />
+        );
+      case "appearance":
+        return <AppearanceSettings />;
+      case "notifications":
+        return <NotificationSettings />;
+      case "network":
+        return <NetworkSettings />;
+      case "storage":
+        return <StorageSettings />;
+      case "models":
+        return <LocalModelsSettings autoReturnKind={focus} />;
+      case "ai":
+        return <AiConnectionSettings />;
+      case "mcp":
+        return <McpSettings />;
+      case "sync":
+        return <SettingsSync />;
+      case "shortcuts":
+        return <ShortcutsTable />;
+      case "about":
+        return <AboutPage />;
+      case "debug":
+        return <DebugLogPage />;
+      default: {
+        // 穷尽性守卫：漏掉某个 tab 时这里的赋值会失败。
+        const unhandled: never = tab;
+        return unhandled;
+      }
+    }
+  };
+
   if (!authenticated) {
     if (!aboutOnly) return null;
     return (
@@ -135,27 +191,7 @@ export default function SettingsPage() {
         />
 
         <div className="settings-panel" role="tabpanel" aria-label={currentTabMeta.label}>
-          {activeTab === "profile" && (
-            <ProfileForm
-              initial={profile}
-              name={profile?.name}
-              onSaved={async () => {
-                setProfile((await invoke("get_account_profile")) as typeof profile);
-                await navigation.back();
-              }}
-            />
-          )}
-          {activeTab === "appearance" && <AppearanceSettings />}
-          {activeTab === "notifications" && <NotificationSettings />}
-          {activeTab === "network" && <NetworkSettings />}
-          {activeTab === "storage" && <StorageSettings />}
-          {activeTab === "models" && <LocalModelsSettings autoReturnKind={focus} />}
-          {activeTab === "ai" && <AiConnectionSettings />}
-          {activeTab === "mcp" && <McpSettings />}
-          {activeTab === "sync" && <SettingsSync />}
-          {activeTab === "shortcuts" && <ShortcutsTable />}
-          {activeTab === "about" && <AboutPage />}
-          {activeTab === "debug" && <DebugLogPage />}
+          {renderTab(activeTab)}
         </div>
       </div>
     </PageShell>

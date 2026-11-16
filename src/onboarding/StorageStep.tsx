@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { Card } from "material/react";
-import { Banner, toast } from "../ui";
+import { Button, Card } from "material/react";
+import { Banner } from "../ui";
+import { usePending } from "../use-pending";
 import {
   DirectoryConfirmDialog,
   DirectoryPickerActions,
@@ -22,27 +22,29 @@ export function StorageStep({ onComplete, registerNext }: StepProps) {
     await refresh();
     await onComplete();
   });
-  const [advancing, setAdvancing] = useState(false);
+  const pending = usePending();
+  const advancing = pending.isPending("advance");
 
   const configured = state?.config != null;
 
   useRegisterNextAction(registerNext, {
     label: configured ? "保存并继续" : "选择保存位置",
-    disabled: picker.busy || loading || advancing || Boolean(error),
+    // 读取失败时不再永久禁用底栏：给一个重试入口，而不是让用户卡在这一步。
+    disabled: picker.busy || loading || advancing,
     busy: picker.busy || advancing,
     run: async () => {
+      if (error) {
+        await refresh();
+        return;
+      }
       if (!configured) {
         await picker.pick();
         return;
       }
-      setAdvancing(true);
-      try {
+      // 失败的提示由向导统一给出，这里不重复 toast。
+      await pending.run("advance", async () => {
         await onComplete();
-      } catch (cause) {
-        toast.danger("保存初始化设置进度失败", { description: String(cause) });
-      } finally {
-        setAdvancing(false);
-      }
+      });
     },
   });
 
@@ -56,12 +58,19 @@ export function StorageStep({ onComplete, registerNext }: StepProps) {
           ? " Android 会弹出系统文件夹选择器，授权只对这个目录生效。"
           : ""}
       </div>
-      <div className="p-4 grid gap-3">
+      <div className="grid gap-3">
         {error && (
           <Banner status="danger">
             <Banner.Title>无法读取保存目录</Banner.Title>
             <Banner.Description>{error}</Banner.Description>
           </Banner>
+        )}
+        {error && (
+          <div>
+            <Button variant="outlined" disabled={loading} onClick={() => void refresh()}>
+              重新读取
+            </Button>
+          </div>
         )}
         <DirectoryPickerActions state={state} controller={picker} />
       </div>

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { invoke } from "@tauri-apps/api/core";
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 import { NotificationSettings, type NotificationConfig } from "./NotificationSettings";
+import { toast } from "./ui";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -53,7 +54,15 @@ describe("NotificationSettings component", () => {
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
   });
+
+  /** 读取完成前所有控件都禁用（防止把默认值写回），交互前先等它可用。 */
+  async function readySwitch(name: string) {
+    const element = await screen.findByRole("switch", { name });
+    await waitFor(() => expect(element).toBeEnabled());
+    return element;
+  }
 
   it("renders notification settings with all switches enabled by default", async () => {
     render(<NotificationSettings />);
@@ -72,7 +81,7 @@ describe("NotificationSettings component", () => {
   it("toggling master switch saves disabled state and disables category switches", async () => {
     render(<NotificationSettings />);
 
-    const masterSwitch = await screen.findByRole("switch", { name: "启用所有通知" });
+    const masterSwitch = await readySwitch("启用所有通知");
     fireEvent.change(masterSwitch, { target: { checked: false } });
 
     await waitFor(() => {
@@ -90,7 +99,7 @@ describe("NotificationSettings component", () => {
   it("toggling individual category switch saves updated category setting", async () => {
     render(<NotificationSettings />);
 
-    const electricitySwitch = await screen.findByRole("switch", { name: "开关宿舍电费预警通知" });
+    const electricitySwitch = await readySwitch("开关宿舍电费预警通知");
     fireEvent.change(electricitySwitch, { target: { checked: false } });
 
     await waitFor(() => {
@@ -149,7 +158,7 @@ describe("NotificationSettings component", () => {
   it("saves per-item todo switches", async () => {
     render(<NotificationSettings />);
 
-    const examSwitch = await screen.findByRole("switch", { name: "开关UOOC 考试提醒" });
+    const examSwitch = await readySwitch("开关UOOC 考试提醒");
     fireEvent.change(examSwitch, { target: { checked: false } });
 
     await waitFor(() => {
@@ -165,6 +174,7 @@ describe("NotificationSettings component", () => {
     render(<NotificationSettings />);
 
     const twoHours = await screen.findByRole("checkbox", { name: "2 小时前" });
+    await waitFor(() => expect(twoHours).toBeEnabled());
     fireEvent.change(twoHours, { target: { checked: false } });
 
     await waitFor(() => {
@@ -197,7 +207,7 @@ describe("NotificationSettings component", () => {
   it("disables todo controls when the todo master switch is off", async () => {
     render(<NotificationSettings />);
 
-    const todoMaster = await screen.findByRole("switch", { name: "启用待办提醒" });
+    const todoMaster = await readySwitch("启用待办提醒");
     fireEvent.change(todoMaster, { target: { checked: false } });
 
     await waitFor(() => {
@@ -208,5 +218,83 @@ describe("NotificationSettings component", () => {
     const discovery = screen.getByRole("checkbox", { name: "初次探测到时" });
     expect(discovery).toBeChecked();
     expect(discovery).toBeDisabled();
+  });
+
+  it("shows a retry banner and keeps every control disabled when the read fails", async () => {
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_notification_settings") throw "读取设置文件失败";
+      return undefined;
+    });
+
+    render(<NotificationSettings />);
+
+    expect(await screen.findByText("读取通知设置失败")).toBeInTheDocument();
+    expect(screen.getByText(/读取设置文件失败/)).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "启用所有通知" })).toBeDisabled();
+    expect(screen.getByRole("switch", { name: "开关宿舍校园网通知" })).toBeDisabled();
+    expect(screen.getByRole("switch", { name: "启用待办提醒" })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "7 天前" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+
+    await waitFor(() =>
+      expect(
+        vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === "get_notification_settings"),
+      ).toHaveLength(2),
+    );
+  });
+
+  it("serializes rapid toggles of one switch and keeps the last value", async () => {
+    const saves: NotificationConfig[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "get_notification_settings") return DEFAULT_TEST_SETTINGS;
+      if (command === "save_notification_settings") {
+        const settings = (args as { settings: NotificationConfig }).settings;
+        saves.push(settings);
+        if (saves.length === 1) await gate;
+        return settings;
+      }
+      return undefined;
+    });
+
+    render(<NotificationSettings />);
+
+    const electricity = await readySwitch("开关宿舍电费预警通知");
+    fireEvent.change(electricity, { target: { checked: false } });
+    fireEvent.change(screen.getByRole("switch", { name: "开关宿舍电费预警通知" }), {
+      target: { checked: true },
+    });
+
+    // 第一次保存还没回来时，第二次改动不能另起一个请求。
+    await waitFor(() => expect(saves).toHaveLength(1));
+    expect(saves[0].electricity).toBe(false);
+
+    release();
+
+    await waitFor(() => expect(saves).toHaveLength(2));
+    expect(saves[1].electricity).toBe(true);
+  });
+
+  it("rolls the toggle back when the save fails", async () => {
+    const danger = vi.spyOn(toast, "danger").mockImplementation(() => "toast-id");
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_notification_settings") return DEFAULT_TEST_SETTINGS;
+      if (command === "save_notification_settings") throw "设置文件不可写";
+      return undefined;
+    });
+
+    render(<NotificationSettings />);
+
+    const electricity = await readySwitch("开关宿舍电费预警通知");
+    fireEvent.change(electricity, { target: { checked: false } });
+
+    await waitFor(() => expect(danger).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByRole("switch", { name: "开关宿舍电费预警通知" })).toBeChecked(),
+    );
   });
 });

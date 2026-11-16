@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
  * 异步数据与请求状态的统一模型。
@@ -43,7 +43,8 @@ export function useLatestRequest<T>(fetch: (signal: { cancelled: boolean }) => P
     const signal = { cancelled: false };
     setState((old) => ({
       status: "loading",
-      previous: old.status === "ready" ? old.data : old.status === "loading" ? old.previous : previous,
+      previous:
+        old.status === "ready" ? old.data : old.status === "loading" ? old.previous : previous,
     }));
     try {
       const data = await fetchRef.current(signal);
@@ -66,5 +67,35 @@ export function useLatestRequest<T>(fetch: (signal: { cancelled: boolean }) => P
     setState({ status: "idle" });
   }, []);
 
-  return { state, run, reset };
+  /**
+   * 直接写入一份快照（例如后端通过事件推送的新状态）。会作废在途请求，
+   * 避免旧响应随后把推送的内容盖回去。
+   */
+  const apply = useCallback((data: T) => {
+    sequence.current++;
+    setState({ status: "ready", data });
+  }, []);
+
+  return { state, run, reset, apply };
+}
+
+/**
+ * 挂载即读取、可重试的异步数据。
+ *
+ * 页面里「读配置 / 读状态」这类数据的通用形态：进入时读一次，渲染次数变化
+ * 不重复请求，失败后由用户点「重试」重读。读取结果用 `Async<T>` 表达，渲染处
+ * 必须穷尽 `idle | loading | ready | error` 四个分支，不会出现「错误时展示了
+ * 默认值、随后又把默认值写回后端」这类组合。
+ */
+export function useAsyncLoad<T>(load: () => Promise<T>) {
+  const { state, run, apply } = useLatestRequest<T>(() => load());
+  const started = useRef(false);
+
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    void run();
+  }, [run]);
+
+  return { state, reload: run, apply };
 }

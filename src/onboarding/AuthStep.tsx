@@ -2,34 +2,25 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Button, Card, LoadingIndicator, TextField } from "material/react";
 import { Banner, bindField, toast } from "../ui";
-import { authFailureFor, beginAuthentication, useAuth, type AuthState } from "../auth";
+import { errorMessage } from "../async-state";
+import { usePending } from "../use-pending";
+import { authFailureFor, beginAuthentication, useAuth } from "../auth";
 import { ProfileForm } from "../ProfileForm";
 import { useRegisterNextAction, type StepNextAction } from "../step-next-action";
 import type { StepProps } from "./step-types";
+import { authStepView, isTerminalAuthFailure, type AutoAttempt } from "./auth-view";
 import { beginSetupAuthentication, cancelAuthentication, consumeAuthFailureNotice } from "./api";
-
-type AutoAttempt = "idle" | "running" | "failed";
-
-/** 无法在本机通过静默重新登录修复的状态。 */
-function isTerminalAuthFailure(state: AuthState): boolean {
-  return (
-    "WebViewUpdateRequired" in state ||
-    "AccountMismatch" in state ||
-    "CredentialStorageFailed" in state ||
-    "CredentialCaptureFailed" in state ||
-    "SessionCaptureFailed" in state
-  );
-}
 
 export function AuthStep({ onComplete, registerNext, reauth }: StepProps) {
   const { state, profile, userData } = useAuth();
   const [campusCard, setCampusCard] = useState(profile?.campusCardNumber ?? "");
   const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
   const [manual, setManual] = useState(false);
   const [autoAttempt, setAutoAttempt] = useState<AutoAttempt>("idle");
   const [profileWaitExpired, setProfileWaitExpired] = useState(false);
   const lastFailure = useRef<string | undefined>(undefined);
+  const pending = usePending();
+  const submitPending = pending.isPending("submit");
 
   useEffect(() => {
     void consumeAuthFailureNotice()
@@ -88,13 +79,10 @@ export function AuthStep({ onComplete, registerNext, reauth }: StepProps) {
     }
     setAutoAttempt("running");
     lastFailure.current = undefined;
-    setBusy(true);
-    void beginAuthentication()
-      .catch((cause) => {
-        setAutoAttempt("failed");
-        toast.danger("无法开始统一认证", { description: String(cause) });
-      })
-      .finally(() => setBusy(false));
+    void beginAuthentication().catch((cause) => {
+      setAutoAttempt("failed");
+      toast.danger("无法开始统一认证", { description: errorMessage(cause) });
+    });
   }, [reauth, autoAttempt, state, profile, profileWaitExpired]);
 
   useEffect(() => {
@@ -119,6 +107,7 @@ export function AuthStep({ onComplete, registerNext, reauth }: StepProps) {
     };
   }, []);
 
+  // 键盘回车与底栏按钮走同一个入口；重复提交由 usePending 的同键拦截挡住。
   const submitCredentials = async () => {
     if (!/^\d{6}$/.test(campusCard.trim())) {
       toast.danger("校园卡号必须是 6 位数字");
@@ -128,15 +117,13 @@ export function AuthStep({ onComplete, registerNext, reauth }: StepProps) {
       toast.danger("密码不能为空");
       return;
     }
-    setBusy(true);
     setManual(false);
     lastFailure.current = undefined;
-    try {
-      await beginSetupAuthentication(campusCard.trim(), password);
-    } catch (cause) {
-      toast.danger("无法开始统一认证", { description: String(cause) });
-    } finally {
-      setBusy(false);
+    const outcome = await pending.run("submit", () =>
+      beginSetupAuthentication(campusCard.trim(), password),
+    );
+    if (!outcome.ok && !outcome.skipped) {
+      toast.danger("无法开始统一认证", { description: errorMessage(outcome.error) });
     }
   };
 
@@ -145,146 +132,138 @@ export function AuthStep({ onComplete, registerNext, reauth }: StepProps) {
     void submitCredentials();
   };
 
-  const awaitingProfile = "AwaitingProfile" in state;
+  const view = authStepView(state, { reauth, autoAttempt });
+
   let nextAction: StepNextAction | null = null;
-  if ("Authenticated" in state) {
+  if (view.kind === "authenticated") {
     nextAction = { label: "继续", run: onComplete };
-  } else if (!awaitingProfile && !("Authenticating" in state)) {
-    if (!reauth || autoAttempt === "failed") {
-      nextAction = {
-        label: "登录并继续",
-        disabled: busy,
-        busy,
-        run: submitCredentials,
-      };
-    }
+  } else if (view.kind === "credentials") {
+    nextAction = {
+      label: "登录并继续",
+      disabled: submitPending,
+      busy: submitPending,
+      run: submitCredentials,
+    };
   }
-
   // AwaitingProfile 时把主操作让给 ProfileForm 的注册。
-  useRegisterNextAction(registerNext, nextAction, !awaitingProfile);
+  useRegisterNextAction(registerNext, nextAction, view.kind !== "awaitingProfile");
 
-  if ("Authenticated" in state) {
-    return (
-      <Card variant="outlined">
-        <div slot="headline">账户已就绪</div>
-        <div slot="subhead">
-          学号由统一认证自动获取；学号、校园卡号和密码已安全保存到本机凭据存储。
-        </div>
-        <div className="p-4 grid gap-3">
-          <div className="grid gap-1 text-sm text-foreground">
-            <span>姓名：{profile?.name ?? "未获取"}</span>
-            <span>学号：{profile?.studentId ?? "未获取"}</span>
-            <span>校园卡号：{profile?.campusCardNumber ?? "未获取"}</span>
+  switch (view.kind) {
+    case "authenticated":
+      return (
+        <Card variant="outlined">
+          <div slot="headline">账户已就绪</div>
+          <div slot="subhead">学号由统一认证自动获取，账号资料已安全保存到本机凭据存储。</div>
+          <dl className="detail-list">
+            <dt>姓名</dt>
+            <dd>{profile?.name ?? "未获取"}</dd>
+            <dt>学号</dt>
+            <dd>{profile?.studentId ?? "未获取"}</dd>
+            <dt>校园卡号</dt>
+            <dd>{profile?.campusCardNumber ?? "未获取"}</dd>
+          </dl>
+        </Card>
+      );
+
+    case "authenticating":
+      return (
+        <Card variant="outlined">
+          <div slot="headline">正在完成统一认证</div>
+          <div slot="subhead">请稍候，认证完成后会自动进入下一步。</div>
+          <div className="grid gap-3">
+            <p className="status-line" role="status">
+              <LoadingIndicator size={20} aria-hidden="true" />
+              等待官方认证完成…
+            </p>
+            {manual && (
+              <Banner status="warning">
+                <Banner.Title>需要在官方页面手动登录</Banner.Title>
+                <Banner.Description>
+                  请在打开的官方页面完成登录，完成后会自动继续；也可以返回重试。
+                </Banner.Description>
+              </Banner>
+            )}
+            <div>
+              <Button
+                variant="text"
+                onClick={() => {
+                  setAutoAttempt("failed");
+                  setManual(false);
+                  void cancelAuthentication().catch(() => undefined);
+                }}
+              >
+                取消并重试
+              </Button>
+            </div>
           </div>
-        </div>
-      </Card>
-    );
-  }
+        </Card>
+      );
 
-  if ("Authenticating" in state) {
-    return (
-      <Card variant="outlined">
-        <div slot="headline">正在完成统一认证</div>
-        <div slot="subhead">
-          二维码登录已禁用，正在后台刷新会话或使用上一步的凭据自动登录，不需要在官方页面再次点击登录。
-        </div>
-        <div className="p-4 grid gap-3">
-          <div className="auth-progress" role="status">
-            <LoadingIndicator size={24} />
-            <span>等待官方认证完成…</span>
+    case "awaitingProfile":
+      return (
+        <ProfileForm
+          onboarding
+          registerNext={registerNext}
+          onlyCampusCard
+          name={view.name ?? userData?.name}
+          initial={{ studentId: view.studentId || userData?.studentId || "", hasPassword: true }}
+          onSaved={() => onComplete()}
+        />
+      );
+
+    case "restoring":
+      return (
+        <Card variant="outlined">
+          <div slot="headline">正在恢复统一认证</div>
+          <div slot="subhead">正在使用本机保存的凭据自动登录；无法自动恢复时才需要你操作。</div>
+          <div className="grid gap-3">
+            <p className="status-line" role="status">
+              <LoadingIndicator size={20} aria-hidden="true" />
+              正在恢复统一认证…
+            </p>
+            <div>
+              <Button
+                variant="text"
+                onClick={() => {
+                  setAutoAttempt("failed");
+                  void cancelAuthentication().catch(() => undefined);
+                }}
+              >
+                手动登录
+              </Button>
+            </div>
           </div>
-          {manual && (
-            <Banner status="warning">
-              <Banner.Title>自动登录已切换为手动</Banner.Title>
-              <Banner.Description>
-                请在官方页面完成登录；完成后会自动继续。也可以返回重试。
-              </Banner.Description>
-            </Banner>
-          )}
-          <Button
-            variant="outlined"
-            onClick={() => {
-              setAutoAttempt("failed");
-              setManual(false);
-              void cancelAuthentication().catch(() => undefined);
-            }}
-          >
-            取消并重试
-          </Button>
-        </div>
-      </Card>
-    );
-  }
+        </Card>
+      );
 
-  if (awaitingProfile) {
-    const studentId = state.AwaitingProfile.studentId ?? userData?.studentId ?? "";
-    return (
-      <ProfileForm
-        onboarding
-        registerNext={registerNext}
-        onlyCampusCard
-        name={state.AwaitingProfile.name ?? userData?.name}
-        initial={{ studentId, hasPassword: true }}
-        onSaved={() => onComplete()}
-      />
-    );
-  }
-
-  if (reauth && autoAttempt !== "failed") {
-    return (
-      <Card variant="outlined">
-        <div slot="headline">正在恢复统一认证</div>
-        <div slot="subhead">
-          正在静默刷新会话或使用已保存的凭据自动登录；只有在无法自动恢复时才会要求你手动操作。
-        </div>
-        <div className="p-4 grid gap-3">
-          <div className="auth-progress" role="status">
-            <LoadingIndicator size={24} />
-            <span>正在恢复统一认证…</span>
+    case "credentials":
+      return (
+        <Card variant="outlined">
+          <div slot="headline">账户与个人信息</div>
+          <div slot="subhead">
+            输入校园卡号和登录密码后会自动打开深圳大学统一认证；学号由认证结果自动获取。
           </div>
-          <Button
-            variant="text"
-            disabled={busy}
-            onClick={() => {
-              setAutoAttempt("failed");
-              void cancelAuthentication().catch(() => undefined);
-            }}
-          >
-            手动登录
-          </Button>
-        </div>
-      </Card>
-    );
+          <form className="settings-form" onSubmit={onSubmit}>
+            <TextField
+              label="校园卡号"
+              value={campusCard}
+              inputMode="numeric"
+              required
+              disabled={submitPending}
+              supportingText="6 位数字"
+              {...bindField(setCampusCard)}
+            />
+            <TextField
+              label="登录密码"
+              type="password"
+              value={password}
+              required
+              disabled={submitPending}
+              autocomplete="current-password"
+              {...bindField(setPassword)}
+            />
+          </form>
+        </Card>
+      );
   }
-
-  return (
-    <Card variant="outlined">
-      <div slot="headline">账户与个人信息</div>
-      <div slot="subhead">
-        输入校园卡号和登录密码后，将自动打开深圳大学统一认证并完成登录；学号会自动获取，无需手动填写。
-      </div>
-      <div className="p-4">
-        <form className="settings-form" onSubmit={onSubmit}>
-          <TextField
-            label="校园卡号"
-            value={campusCard}
-            inputMode="numeric"
-            required
-            disabled={busy}
-            supportingText="6 位数字"
-            {...bindField(setCampusCard)}
-          />
-          <TextField
-            label="登录密码"
-            type="password"
-            value={password}
-            required
-            disabled={busy}
-            autocomplete="current-password"
-            {...bindField(setPassword)}
-          />
-        </form>
-      </div>
-    </Card>
-  );
 }

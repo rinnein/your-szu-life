@@ -124,7 +124,7 @@ describe("SettingsPage multi-tab and unified local model card", () => {
     expect(screen.getByRole("tab", { name: /通知/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /网络/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /本地模型/ })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /AI配置/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /AI 配置/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /MCP/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /同步/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /快捷键/ })).toBeInTheDocument();
@@ -133,7 +133,7 @@ describe("SettingsPage multi-tab and unified local model card", () => {
     expect(screen.queryByRole("tab", { name: /调试/ })).not.toBeInTheDocument();
 
     // Default tab shows ProfileForm
-    expect(screen.getByText("确认账户资料")).toBeInTheDocument();
+    expect(screen.getByText("账户与个人信息")).toBeInTheDocument();
 
     // Privacy storage card must NOT be present
     expect(screen.queryByText("隐私信息存储")).not.toBeInTheDocument();
@@ -181,15 +181,15 @@ describe("SettingsPage multi-tab and unified local model card", () => {
     expect(await screen.findByText("本地离线模型")).toBeInTheDocument();
     expect(screen.getByText("ddddocr")).toBeInTheDocument();
     expect(screen.getByText("BGE-small-zh-v1.5 (量化版)")).toBeInTheDocument();
-    expect(screen.getByText("选课系统与在线评测（OJ）验证码离线识别")).toBeInTheDocument();
-    expect(screen.getByText("UOOC 题库检索与语义相似度计算")).toBeInTheDocument();
+    expect(screen.getAllByText(/选课系统与在线评测（OJ）验证码离线/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/UOOC 题库检索与语义相似度计算/).length).toBeGreaterThan(0);
   });
 
   it("switches to AI配置 tab and displays AiConnectionSettings", async () => {
     const { testRouter } = renderRouterApp("/settings");
 
-    await screen.findByRole("tab", { name: /AI配置/ });
-    fireEvent.click(screen.getByRole("tab", { name: /AI配置/ }));
+    await screen.findByRole("tab", { name: /AI 配置/ });
+    fireEvent.click(screen.getByRole("tab", { name: /AI 配置/ }));
 
     await waitFor(() => {
       expect(testRouter.state.location.search).toMatchObject({ tab: "ai" });

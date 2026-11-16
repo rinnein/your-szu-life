@@ -81,8 +81,9 @@ it("renders unified LocalModelsSettings displaying both OCR and Embedding models
   expect(screen.getByText("BGE-small-zh-v1.5 (量化版)")).toBeInTheDocument();
 
   // Model application features
-  expect(screen.getByText("选课系统与在线评测（OJ）验证码离线识别")).toBeInTheDocument();
-  expect(screen.getByText("UOOC 题库检索与语义相似度计算")).toBeInTheDocument();
+  // 卡片副标题用清单里的描述（同一句话不再重复两遍）。
+  expect(screen.getAllByText(/选课系统与在线评测（OJ）验证码离线/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/UOOC 题库检索与语义相似度计算/).length).toBeGreaterThan(0);
 
   // Model states
   expect(screen.getByText("模型已就绪")).toBeInTheDocument();

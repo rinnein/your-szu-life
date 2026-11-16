@@ -26,7 +26,7 @@ describe("ProfileForm toast error notifications", () => {
     const dangerSpy = vi.spyOn(toast, "danger").mockReturnValue("toast-id");
     render(<ProfileForm onSaved={vi.fn()} />);
 
-    const submitBtn = screen.getByRole("button", { name: "保存并进入工作台" });
+    const submitBtn = screen.getByRole("button", { name: "保存" });
     fireEvent.click(submitBtn);
 
     expect(dangerSpy).toHaveBeenCalledWith("学号必须是 10 位数字");
@@ -37,7 +37,7 @@ describe("ProfileForm toast error notifications", () => {
     const dangerSpy = vi.spyOn(toast, "danger").mockReturnValue("toast-id");
     render(<ProfileForm initial={{ studentId: "1234567890" }} onSaved={vi.fn()} />);
 
-    const submitBtn = screen.getByRole("button", { name: "保存并进入工作台" });
+    const submitBtn = screen.getByRole("button", { name: "保存" });
     fireEvent.click(submitBtn);
 
     expect(dangerSpy).toHaveBeenCalledWith("校园卡号必须是 6 位数字");
@@ -53,7 +53,7 @@ describe("ProfileForm toast error notifications", () => {
       />,
     );
 
-    const submitBtn = screen.getByRole("button", { name: "保存并进入工作台" });
+    const submitBtn = screen.getByRole("button", { name: "保存" });
     fireEvent.click(submitBtn);
 
     expect(dangerSpy).toHaveBeenCalledWith("密码不能为空");
@@ -71,12 +71,12 @@ describe("ProfileForm toast error notifications", () => {
       />,
     );
 
-    const submitBtn = screen.getByRole("button", { name: "保存并进入工作台" });
+    const submitBtn = screen.getByRole("button", { name: "保存" });
     fireEvent.click(submitBtn);
 
     await vi.waitFor(() => {
       expect(dangerSpy).toHaveBeenCalledWith("保存账户资料失败", {
-        description: "Error: 网络超时",
+        description: "网络超时",
       });
     });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -107,7 +107,7 @@ describe("ProfileForm toast error notifications", () => {
     });
     expect(input.value).toBe("123456");
 
-    fireEvent.click(screen.getByRole("button", { name: "保存并进入工作台" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("confirm_profile", {
         input: {

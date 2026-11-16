@@ -1,14 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { LuBell, LuShieldAlert } from "react-icons/lu";
-import { Button, Card, Checkbox, Switch } from "material/react";
-import { Banner, toast } from "./ui";
+import { LuBell } from "react-icons/lu";
+import { Button, Card, Checkbox, LoadingIndicator, Switch } from "material/react";
+import { Banner, SettingList, SettingRow, toast } from "./ui";
+import { errorMessage, useAsyncLoad } from "./async-state";
+import { usePending } from "./use-pending";
 import {
   DEFAULT_TODO_LEAD_MINUTES,
   NOTIFICATION_CATEGORIES,
   TODO_LEAD_PRESETS,
   TODO_NOTIFICATION_ITEMS,
-  type TodoConfigKey,
 } from "./notifications/categories";
 
 export interface TodoNotificationConfig {
@@ -67,26 +68,81 @@ function normalizeConfig(saved?: Partial<NotificationConfig> | null): Notificati
   };
 }
 
+/** 根级开关的键；`todo` 是嵌套对象，单独建模。 */
+type RootKey = Exclude<keyof NotificationConfig, "todo">;
+type TodoField = keyof TodoNotificationConfig;
+
+/**
+ * 一次保存改动的字段。
+ *
+ * 失败后只回滚这个字段，而不是整份配置：同一时刻可能有另一个字段的保存已经成功，
+ * 整份回滚会把那次成功的结果也抹掉，界面与服务端随即不一致。
+ */
+type Change = { scope: "root"; key: RootKey } | { scope: "todo"; key: TodoField };
+
+function changeKey(change: Change) {
+  return change.scope === "todo" ? `notify:todo.${change.key}` : `notify:${change.key}`;
+}
+
+function patchRoot(config: NotificationConfig, key: RootKey, value: boolean): NotificationConfig {
+  return { ...config, [key]: value };
+}
+
+function patchTodo<K extends TodoField>(
+  config: NotificationConfig,
+  key: K,
+  value: TodoNotificationConfig[K],
+): NotificationConfig {
+  return { ...config, todo: { ...config.todo, [key]: value } };
+}
+
+function revert(
+  config: NotificationConfig,
+  confirmed: NotificationConfig,
+  change: Change,
+): NotificationConfig {
+  if (change.scope === "todo") {
+    if (change.key === "leadMinutes") {
+      return patchTodo(config, "leadMinutes", confirmed.todo.leadMinutes);
+    }
+    return patchTodo(config, change.key, confirmed.todo[change.key]);
+  }
+  return patchRoot(config, change.key, confirmed[change.key]);
+}
+
+function checkedOf(event: any): boolean {
+  return Boolean(event.detail?.checked ?? event.target?.checked);
+}
+
+/**
+ * 设置 → 通知：总开关、分类开关与待办提醒。
+ *
+ * 读取失败时**不能**退回默认配置：那样下一次开关会把默认值写回后端，覆盖用户
+ * 真正保存的设置。因此读取状态用 `Async` 表达，失败分支只渲染重试横幅并把全部
+ * 控件维持在禁用状态。保存也不再写进 `setConfig` 的 updater 里（那是在状态更新
+ * 中做副作用），而是乐观更新草稿、串行提交、失败只回滚被改的那一个字段。
+ */
 export function NotificationSettings() {
-  const [config, setConfig] = useState<NotificationConfig>(DEFAULT_CONFIG);
-  const [loading, setLoading] = useState(true);
+  const pending = usePending();
+  const { state, reload } = useAsyncLoad(async () =>
+    normalizeConfig(await invoke<NotificationConfig | null>("get_notification_settings")),
+  );
+  const [config, setConfig] = useState<NotificationConfig | null>(null);
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
-  const [requesting, setRequesting] = useState(false);
+  /** 最后一次确认落盘的配置，用于失败回滚。 */
+  const confirmed = useRef<NotificationConfig | null>(null);
+  /** 每个保存键最新一次期望写入的配置（双击时只保留最后一个）。 */
+  const queued = useRef(new Map<string, NotificationConfig>());
+
+  useEffect(() => {
+    if (state.status !== "ready") return;
+    confirmed.current = state.data;
+    setConfig(state.data);
+  }, [state]);
 
   useEffect(() => {
     let active = true;
-    void invoke<NotificationConfig>("get_notification_settings")
-      .then((saved) => {
-        if (active && saved) setConfig(normalizeConfig(saved));
-      })
-      .catch(() => {
-        // 使用默认值
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-
-    const checkPermission = async () => {
+    void (async () => {
       try {
         const { isPermissionGranted } = await import("@tauri-apps/plugin-notification");
         const granted = await isPermissionGranted();
@@ -94,230 +150,232 @@ export function NotificationSettings() {
       } catch {
         if (active) setPermissionGranted(true);
       }
-    };
-    void checkPermission();
-
+    })();
     return () => {
       active = false;
     };
   }, []);
 
-  const handleRequestPermission = async () => {
-    setRequesting(true);
-    try {
+  const loading = state.status === "idle" || state.status === "loading";
+  const readOnly = loading || config === null;
+  // 读取中/失败时用默认值把版式撑起来，但控件全部禁用。
+  const view = config ?? DEFAULT_CONFIG;
+
+  const requestPermission = async () => {
+    const result = await pending.run("permission", async () => {
       const { isPermissionGranted, requestPermission } =
         await import("@tauri-apps/plugin-notification");
       let granted = await isPermissionGranted();
-      if (!granted) {
-        const permission = await requestPermission();
-        granted = permission === "granted";
-      }
-      setPermissionGranted(granted);
-      if (granted) {
-        toast.success("已获得系统通知权限");
-      } else {
-        toast.warning("系统通知权限未开启", {
-          description: "请在系统设置中允许本应用发送通知。",
-        });
-      }
-    } catch (e) {
-      toast.danger("申请通知权限失败", {
-        description: e instanceof Error ? e.message : String(e),
+      if (!granted) granted = (await requestPermission()) === "granted";
+      return granted;
+    });
+    if (!result.ok && result.skipped) return;
+    if (!result.ok) {
+      toast.danger("申请通知权限失败", { description: errorMessage(result.error) });
+      return;
+    }
+    setPermissionGranted(result.value);
+    if (result.value) {
+      toast.success("已获得系统通知权限");
+    } else {
+      toast.warning("系统通知权限未开启", {
+        description: "请在系统设置中允许本应用发送通知。",
       });
-    } finally {
-      setRequesting(false);
     }
   };
 
-  const updateConfig = (updater: (prev: NotificationConfig) => NotificationConfig) => {
-    setConfig((prev) => {
-      const next = updater(prev);
-      void invoke("save_notification_settings", { settings: next }).catch((e) => {
-        toast.danger("保存通知设置失败", {
-          description: e instanceof Error ? e.message : String(e),
-        });
-      });
-      return next;
-    });
+  /**
+   * 提交一次改动：先乐观更新，同一键的写入串行，失败回滚该字段。
+   *
+   * 同键已有请求在跑时新值只进队列，由正在跑的那次循环接着发，因此快速连点
+   * 不会交错，也不会用旧响应覆盖新状态。
+   */
+  const flush = async (key: string, change: Change) => {
+    for (;;) {
+      const next = queued.current.get(key);
+      if (!next) return;
+      const result = await pending.run(key, () =>
+        invoke<NotificationConfig>("save_notification_settings", { settings: next }),
+      );
+      if (!result.ok && result.skipped) return;
+      if (queued.current.get(key) === next) queued.current.delete(key);
+      if (!result.ok) {
+        queued.current.delete(key);
+        const base = confirmed.current;
+        if (base) setConfig((current) => (current ? revert(current, base, change) : current));
+        toast.danger("保存通知设置失败", { description: errorMessage(result.error) });
+        return;
+      }
+      const saved = normalizeConfig(result.value);
+      confirmed.current = saved;
+      if (queued.current.has(key)) continue;
+      setConfig((current) => (current === next ? saved : current));
+      return;
+    }
   };
 
-  const updateTodo = (updater: (prev: TodoNotificationConfig) => TodoNotificationConfig) => {
-    updateConfig((prev) => ({ ...prev, todo: updater(prev.todo) }));
+  const persist = (change: Change, next: NotificationConfig) => {
+    if (config === null) return;
+    const key = changeKey(change);
+    setConfig(next);
+    queued.current.set(key, next);
+    void flush(key, change);
   };
 
-  const toggleTodoKind = (key: TodoConfigKey, checked: boolean) => {
-    updateTodo((prev) => ({ ...prev, [key]: checked }));
+  const toggleRoot = (key: RootKey, checked: boolean) => {
+    if (readOnly || !config) return;
+    persist({ scope: "root", key }, patchRoot(config, key, checked));
+  };
+
+  const toggleTodoFlag = (key: Exclude<TodoField, "leadMinutes">, checked: boolean) => {
+    if (readOnly || !config) return;
+    persist({ scope: "todo", key }, patchTodo(config, key, checked));
   };
 
   const toggleLeadMinutes = (minutes: number, checked: boolean) => {
-    updateTodo((prev) => {
-      const next = checked
-        ? [...prev.leadMinutes, minutes]
-        : prev.leadMinutes.filter((value) => value !== minutes);
-      return { ...prev, leadMinutes: Array.from(new Set(next)).sort((a, b) => b - a) };
-    });
+    if (readOnly || !config) return;
+    const next = checked
+      ? [...config.todo.leadMinutes, minutes]
+      : config.todo.leadMinutes.filter((value) => value !== minutes);
+    persist(
+      { scope: "todo", key: "leadMinutes" },
+      patchTodo(
+        config,
+        "leadMinutes",
+        Array.from(new Set(next)).sort((a, b) => b - a),
+      ),
+    );
   };
 
-  const categories = NOTIFICATION_CATEGORIES;
-  const todoDisabled = loading || !config.enabled || !config.todo.enabled;
+  const categoryDisabled = readOnly || !view.enabled;
+  const todoDisabled = categoryDisabled || !view.todo.enabled;
 
   return (
-    <div className="notification-settings space-y-6 max-w-3xl">
+    <>
+      {loading && (
+        <p className="status-line">
+          <LoadingIndicator size={16} aria-label="正在读取通知设置" />
+          正在读取通知设置…
+        </p>
+      )}
+
+      {state.status === "error" && (
+        <div className="grid justify-items-start gap-3">
+          <Banner status="danger">
+            <Banner.Title>读取通知设置失败</Banner.Title>
+            <Banner.Description>
+              <span className="block">{state.message}</span>
+              <span className="block">
+                为避免把默认值写回，所有开关暂时禁用；重试成功前不会保存任何改动。
+              </span>
+            </Banner.Description>
+          </Banner>
+          <Button variant="outlined" onClick={() => void reload()}>
+            重试
+          </Button>
+        </div>
+      )}
+
       {permissionGranted === false && (
-        <Banner status="warning" className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <LuShieldAlert className="size-5 shrink-0" />
-            <span>
-              系统通知权限未开启。在后台运行时将无法接收系统推送通知；前台聚焦使用时仍会通过应用内
-              Snackbar 提示。
-            </span>
-          </div>
+        <div className="grid justify-items-start gap-3">
+          <Banner status="warning">
+            <Banner.Title>系统通知权限未开启</Banner.Title>
+            <Banner.Description>
+              后台运行时将无法接收系统推送通知；前台聚焦使用时仍会通过应用内 Snackbar 提示。
+            </Banner.Description>
+          </Banner>
           <Button
-            variant="text"
-            disabled={requesting}
-            onClick={() => void handleRequestPermission()}
+            variant="outlined"
+            disabled={pending.isPending("permission")}
+            onClick={() => void requestPermission()}
           >
             授权系统通知
           </Button>
-        </Banner>
+        </div>
       )}
 
-      {/* 全局总开关 */}
-      <Card variant="outlined" className="p-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 font-medium text-base text-foreground">
-              <LuBell className="size-5 text-primary" />
-              <span>通知总开关</span>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              关闭后，所有系统通知和前台应用内提示均被静音。
-            </p>
-          </div>
+      <Card variant="outlined">
+        <SettingRow
+          icon={<LuBell aria-hidden="true" />}
+          title="通知总开关"
+          description="关闭后，所有系统通知和前台应用内提示均被静音。"
+        >
           <Switch
-            checked={config.enabled}
-            disabled={loading}
-            onChange={(e: any) => {
-              const checked = Boolean(e.detail?.checked ?? e.target?.checked);
-              updateConfig((prev) => ({ ...prev, enabled: checked }));
-            }}
+            checked={view.enabled}
+            disabled={readOnly}
+            onChange={(event: any) => toggleRoot("enabled", checkedOf(event))}
             aria-label="启用所有通知"
           />
-        </div>
+        </SettingRow>
       </Card>
 
-      {/* 业务分类开关列表 */}
-      <Card variant="outlined" className="p-4 space-y-4">
-        <div slot="headline" className="font-medium text-base text-foreground">
-          通知分类管理
-        </div>
-        <p className="text-sm text-muted-foreground">
+      <Card variant="outlined">
+        <div slot="headline">通知分类管理</div>
+        <div slot="subhead">
           根据需要开启或关闭特定业务的通知提醒。应用在前台聚焦状态下将自动以 Snackbar
           展示，后台运行时弹出系统通知。
-        </p>
-
-        <div className="divide-y divide-border/40">
-          {categories.map((cat) => {
+        </div>
+        <SettingList>
+          {NOTIFICATION_CATEGORIES.map((cat) => {
             const Icon = cat.icon;
-            const isChecked = config[cat.configKey];
-            const isDisabled = loading || !config.enabled;
             return (
-              <div
+              <SettingRow
                 key={cat.configKey}
-                className="flex items-center justify-between gap-4 py-3.5 first:pt-1 last:pb-1"
+                icon={<Icon aria-hidden="true" />}
+                title={cat.title}
+                description={cat.description}
               >
-                <div className="flex items-start gap-3">
-                  <div className="p-2 rounded-lg bg-surface-container text-primary shrink-0 mt-0.5">
-                    <Icon className="size-5" />
-                  </div>
-                  <div className="space-y-0.5">
-                    <div className="font-medium text-sm text-foreground">{cat.title}</div>
-                    <p className="text-xs text-muted-foreground">{cat.description}</p>
-                  </div>
-                </div>
                 <Switch
-                  checked={isChecked}
-                  disabled={isDisabled}
-                  onChange={(e: any) => {
-                    const checked = Boolean(e.detail?.checked ?? e.target?.checked);
-                    updateConfig((prev) => ({ ...prev, [cat.configKey]: checked }));
-                  }}
+                  checked={view[cat.configKey]}
+                  disabled={categoryDisabled}
+                  onChange={(event: any) => toggleRoot(cat.configKey, checkedOf(event))}
                   aria-label={`开关${cat.title}通知`}
                 />
-              </div>
+              </SettingRow>
             );
           })}
-        </div>
+        </SettingList>
       </Card>
 
-      {/* 待办提醒：唯一入口 */}
-      <Card variant="outlined" className="p-4 space-y-5">
-        <div slot="headline" className="font-medium text-base text-foreground">
-          待办提醒
-        </div>
-        <p className="text-sm text-muted-foreground">
+      <Card variant="outlined">
+        <div slot="headline">待办提醒</div>
+        <div slot="subhead">
           统一管理首页日历中全部待办事项的截止提醒。系统通知在应用后台运行时发送，前台聚焦时以
           Snackbar 展示。
-        </p>
-
-        <div className="flex items-center justify-between gap-4 rounded-xl bg-surface-container/60 p-3">
-          <div className="space-y-0.5">
-            <div className="font-medium text-sm text-foreground">启用待办提醒</div>
-            <p className="text-xs text-muted-foreground">
-              关闭后，所有待办都不再按截止时间发送通知。
-            </p>
-          </div>
-          <Switch
-            checked={config.todo.enabled}
-            disabled={loading || !config.enabled}
-            onChange={(e: any) => {
-              const checked = Boolean(e.detail?.checked ?? e.target?.checked);
-              updateTodo((prev) => ({ ...prev, enabled: checked }));
-            }}
-            aria-label="启用待办提醒"
-          />
         </div>
+        <SettingList>
+          <SettingRow title="启用待办提醒" description="关闭后，所有待办都不再按截止时间发送通知。">
+            <Switch
+              checked={view.todo.enabled}
+              disabled={categoryDisabled}
+              onChange={(event: any) => toggleTodoFlag("enabled", checkedOf(event))}
+              aria-label="启用待办提醒"
+            />
+          </SettingRow>
+          {TODO_NOTIFICATION_ITEMS.map((item) => {
+            const Icon = item.icon;
+            return (
+              <SettingRow
+                key={item.key}
+                icon={<Icon aria-hidden="true" />}
+                title={item.title}
+                description={item.description}
+              >
+                <Switch
+                  checked={view.todo[item.key]}
+                  disabled={todoDisabled}
+                  onChange={(event: any) => toggleTodoFlag(item.key, checkedOf(event))}
+                  aria-label={`开关${item.title}提醒`}
+                />
+              </SettingRow>
+            );
+          })}
+        </SettingList>
 
-        <div className="space-y-1">
-          <div className="font-medium text-sm text-foreground">提醒的待办类型</div>
-          <div className="divide-y divide-border/40">
-            {TODO_NOTIFICATION_ITEMS.map((item) => {
-              const Icon = item.icon;
-              return (
-                <div
-                  key={item.key}
-                  className="flex items-center justify-between gap-4 py-3 first:pt-1 last:pb-1"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 rounded-lg bg-surface-container text-primary shrink-0 mt-0.5">
-                      <Icon className="size-5" />
-                    </div>
-                    <div className="space-y-0.5">
-                      <div className="font-medium text-sm text-foreground">{item.title}</div>
-                      <p className="text-xs text-muted-foreground">{item.description}</p>
-                    </div>
-                  </div>
-                  <Switch
-                    checked={config.todo[item.key]}
-                    disabled={todoDisabled}
-                    onChange={(e: any) => {
-                      const checked = Boolean(e.detail?.checked ?? e.target?.checked);
-                      toggleTodoKind(item.key, checked);
-                    }}
-                    aria-label={`开关${item.title}提醒`}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 font-medium text-sm text-foreground">
-              <span>提前提醒时间</span>
-            </div>
-            <p className="text-xs text-muted-foreground">
+        <div className="card-group mt-4">
+          <div className="grid gap-1">
+            <p className="card-group-title">提前提醒时间</p>
+            <p className="text-xs text-muted">
               待办首次出现时立即提醒一次（始终开启）；之后在每个已勾选的时间点各提醒一次。应用离线期间错过的多个时间点只补发最接近截止的一档。
             </p>
           </div>
@@ -328,24 +386,21 @@ export function NotificationSettings() {
             {TODO_LEAD_PRESETS.map((preset) => (
               <Checkbox
                 key={preset.minutes}
-                checked={config.todo.leadMinutes.includes(preset.minutes)}
+                checked={view.todo.leadMinutes.includes(preset.minutes)}
                 disabled={todoDisabled}
-                onChange={(e: any) => {
-                  const checked = Boolean(e.detail?.checked ?? e.target?.checked);
-                  toggleLeadMinutes(preset.minutes, checked);
-                }}
+                onChange={(event: any) => toggleLeadMinutes(preset.minutes, checkedOf(event))}
               >
                 {preset.label}
               </Checkbox>
             ))}
           </div>
-          {!loading && config.todo.enabled && config.todo.leadMinutes.length === 0 && (
+          {!readOnly && view.todo.enabled && view.todo.leadMinutes.length === 0 && (
             <Banner status="info">
               <span>未勾选任何提前提醒时间，待办将只在初次探测到时提醒一次。</span>
             </Banner>
           )}
         </div>
       </Card>
-    </div>
+    </>
   );
 }

@@ -18,4 +18,5 @@ export { toast, resetToasts, type ToastColor, type ToastOptions } from "./toast"
 export { Chip, type ChipColor, type ChipVariant } from "./Chip";
 export { AdaptiveTabs, type AdaptiveTabItem, type AdaptiveTabsProps } from "./AdaptiveTabs";
 export { ActionMenu, type ActionMenuItem } from "./ActionMenu";
+export { SettingList, SettingRow } from "./SettingRow";
 export { bindField } from "./field";

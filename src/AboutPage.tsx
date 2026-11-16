@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { LoadingIndicator, Button, Select, SelectOption } from "material/react";
+import { LoadingIndicator, Button, Card, Select, SelectOption } from "material/react";
 import { Banner, toast } from "./ui";
 import { LuArrowUpRight, LuDownload, LuRefreshCw } from "react-icons/lu";
-import { BrandMark, Card } from "./components";
+import { BrandMark } from "./components";
 import { useAppContent } from "./app-content/context";
 import { ChangelogMarkdown } from "./app-content/ChangelogMarkdown";
 import { contentTime, openPublicUrl } from "./app-content/external";
@@ -12,6 +12,8 @@ import { clearPostponedUpdateReminder } from "./app-content/update-postpone";
 import { createTaskChannel } from "./tauri-channel";
 import { getPlatform } from "./os-info";
 import { DownloadSession } from "./DownloadSession";
+import { errorMessage } from "./async-state";
+import { usePending } from "./use-pending";
 import { Contributors } from "./app-content/Contributors";
 import type { AppContentSnapshot, UpdateChannel } from "./app-content/types";
 import packageInfo from "../package.json";
@@ -32,6 +34,16 @@ type UpdateProgress = {
   totalActiveTasks?: number;
   error: string | null;
 };
+
+/**
+ * 应用内更新只有一个状态机，事件监听与命令回调都走同一个 `applyProgress`。
+ * 之前两条管道各自 toast、各自清 `updating`，同一次更新会弹两次提示。
+ */
+type UpdateRun =
+  | { status: "idle" }
+  | { status: "downloading"; progress: UpdateProgress }
+  | { status: "ready" }
+  | { status: "error"; message: string };
 
 export function updateStatus(
   snapshot: AppContentSnapshot | undefined,
@@ -61,11 +73,33 @@ export function updateStatus(
 
 export default function AboutPage() {
   const { snapshot, error, refreshing, refresh } = useAppContent();
-  const [openError, setOpenError] = useState<string>();
   const [platform, setPlatform] = useState<string>("unknown");
-  const [updating, setUpdating] = useState(false);
-  const [channelSaving, setChannelSaving] = useState(false);
-  const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null);
+  const [updateRun, setUpdateRun] = useState<UpdateRun>({ status: "idle" });
+  const updateRunRef = useRef<UpdateRun>({ status: "idle" });
+  const pending = usePending();
+
+  const applyProgress = useCallback((payload: UpdateProgress) => {
+    const previous = updateRunRef.current;
+    let next: UpdateRun;
+    if (payload.status === "error") {
+      next = {
+        status: "error",
+        message: payload.error?.trim() || "下载或解压过程中发生错误",
+      };
+    } else if (payload.status === "installing" || payload.status === "ready") {
+      next = { status: "ready" };
+    } else {
+      next = { status: "downloading", progress: payload };
+    }
+    updateRunRef.current = next;
+    setUpdateRun(next);
+    // 每次状态迁移只提示一次：installing 之后紧跟的 ready 不会再弹第二次。
+    if (next.status === "error" && previous.status !== "error") {
+      toast.danger("应用内更新失败", { description: next.message });
+    } else if (next.status === "ready" && previous.status !== "ready") {
+      toast.success("下载完成", { description: "正在打开系统安装程序…" });
+    }
+  }, []);
 
   useEffect(() => {
     void getPlatform().then(setPlatform);
@@ -74,63 +108,43 @@ export default function AboutPage() {
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     void listen<UpdateProgress>("in-app-update-progress", (event) => {
-      setUpdateProgress(event.payload);
-      if (event.payload.status === "error") {
-        setUpdating(false);
-        toast.danger("应用内更新失败", {
-          description: event.payload.error ?? "下载或解压过程中发生错误",
-        });
-      } else if (event.payload.status === "installing" || event.payload.status === "ready") {
-        setUpdating(false);
-        toast.success("下载完成", {
-          description: "正在打开系统安装程序…",
-        });
-      }
+      applyProgress(event.payload);
     }).then((fn) => {
       unlisten = fn;
     });
     return () => {
       unlisten?.();
     };
-  }, []);
+  }, [applyProgress]);
 
   const handleStartInAppUpdate = async () => {
-    setUpdating(true);
-    setUpdateProgress({
+    if (updateRunRef.current.status === "downloading" || pending.isPending("update")) return;
+    applyProgress({
       status: "downloading",
       progress: 0,
       downloadedBytes: 0,
       totalBytes: 0,
       error: null,
     });
-    try {
-      const channel = createTaskChannel<UpdateProgress>((progress) => {
-        setUpdateProgress(progress);
-        if (progress.status === "error") {
-          setUpdating(false);
-          toast.danger("应用内更新失败", {
-            description: progress.error ?? "下载或解压过程中发生错误",
-          });
-        } else if (progress.status === "installing" || progress.status === "ready") {
-          setUpdating(false);
-          toast.success("下载完成", {
-            description: "正在打开系统安装程序…",
-          });
-        }
-      });
+    const result = await pending.run("update", async () => {
+      const channel = createTaskChannel<UpdateProgress>(applyProgress);
       await invoke("start_in_app_update", { onProgress: channel });
-    } catch (e) {
-      setUpdating(false);
-      const msg = typeof e === "string" ? e : "启动更新失败";
-      setUpdateProgress({
+    });
+    if (!result.ok && !result.skipped) {
+      applyProgress({
         status: "error",
         progress: 0,
         downloadedBytes: 0,
         totalBytes: 0,
-        error: msg,
+        error: errorMessage(result.error, "启动更新失败"),
       });
-      toast.danger("应用内更新失败", { description: msg });
     }
+  };
+
+  const handleOpenLink = (url: string) => {
+    void openPublicUrl(url).catch((cause) => {
+      toast.danger("无法打开链接", { description: errorMessage(cause) });
+    });
   };
 
   const update = snapshot?.update;
@@ -141,27 +155,29 @@ export default function AboutPage() {
   const channel: UpdateChannel = snapshot?.updateChannel ?? "stable";
   // 编译期自定义内容源与频道无关；快照未就绪时也不让用户盲切。
   const channelLocked = !snapshot || configured;
+  const channelSaving = pending.isPending("channel");
+  const updating = updateRun.status === "downloading" || pending.isPending("update");
 
   const handleChannelChange = async (value: string) => {
     const next: UpdateChannel = value === "canary" ? "canary" : "stable";
     if (next === channel || channelSaving) return;
-    setChannelSaving(true);
-    try {
-      await invoke("set_update_channel", { channel: next });
+    const result = await pending.run("channel", () =>
+      invoke("set_update_channel", { channel: next }),
+    );
+    if (result.ok) {
       toast.success(next === "canary" ? "已切换到测试版更新" : "已切换到稳定版更新", {
         description: "正在按新频道检查更新…",
       });
-    } catch (error) {
+    } else if (!result.skipped) {
       toast.danger("切换更新频道失败", {
-        description: typeof error === "string" ? error : "请稍后重试。",
+        description: errorMessage(result.error, "请稍后重试。"),
       });
-    } finally {
-      setChannelSaving(false);
     }
   };
+
   // 作为设置页的「关于」tab 呈现，页面外壳与标题由设置页提供。
   return (
-    <div className="about-layout">
+    <>
       <header className="about-header">
         <div className="about-brand">
           <BrandMark large />
@@ -174,10 +190,11 @@ export default function AboutPage() {
           </div>
         </div>
       </header>
-      <Card
-        title="更新与公告"
-        description="启动时自动检查,持续运行每 24 小时检查一次。手动检查同时刷新公告与更新信息"
-      >
+      <Card variant="outlined">
+        <div slot="headline">更新与公告</div>
+        <div slot="subhead">
+          启动时自动检查,持续运行每 24 小时检查一次。手动检查同时刷新公告与更新信息
+        </div>
         <div className="grid gap-4">
           <div>
             <Select
@@ -301,7 +318,7 @@ export default function AboutPage() {
             <div className="grid gap-3">
               {platform === "android" || platform === "windows" ? (
                 <>
-                  {updateProgress?.status === "downloading" && (
+                  {updateRun.status === "downloading" && (
                     <DownloadSession
                       title={
                         platform === "windows"
@@ -310,50 +327,47 @@ export default function AboutPage() {
                       }
                       defaultExpanded
                       session={{
-                        downloadedBytes: updateProgress.downloadedBytes,
-                        totalBytes: updateProgress.totalBytes,
-                        speedBytesPerSec: updateProgress.speedBytesPerSec,
-                        port: updateProgress.port,
-                        numPieces: updateProgress.numPieces,
-                        pieceLength: updateProgress.pieceLength,
-                        bitfield: updateProgress.bitfield,
-                        connections: updateProgress.connections,
-                        isResumed: updateProgress.isResumed,
-                        resumedBytes: updateProgress.resumedBytes,
-                        totalActiveTasks: updateProgress.totalActiveTasks,
-                        status: updateProgress.status,
-                        error: updateProgress.error,
+                        downloadedBytes: updateRun.progress.downloadedBytes,
+                        totalBytes: updateRun.progress.totalBytes,
+                        speedBytesPerSec: updateRun.progress.speedBytesPerSec,
+                        port: updateRun.progress.port,
+                        numPieces: updateRun.progress.numPieces,
+                        pieceLength: updateRun.progress.pieceLength,
+                        bitfield: updateRun.progress.bitfield,
+                        connections: updateRun.progress.connections,
+                        isResumed: updateRun.progress.isResumed,
+                        resumedBytes: updateRun.progress.resumedBytes,
+                        totalActiveTasks: updateRun.progress.totalActiveTasks,
+                        status: updateRun.progress.status,
+                        error: updateRun.progress.error,
                       }}
                     />
                   )}
-                  {(updateProgress?.status === "installing" ||
-                    updateProgress?.status === "ready") && (
+                  {updateRun.status === "ready" && (
                     <p className="content-muted" role="status">
                       <LoadingIndicator size={16} /> 正在启动安装程序，请按系统提示完成更新…
                     </p>
                   )}
-                  {updateProgress?.status === "error" && (
+                  {updateRun.status === "error" && (
                     <Banner status="danger" role="alert">
                       <Banner.Title>应用内更新失败</Banner.Title>
-                      <Banner.Description>
-                        {updateProgress.error ?? "下载或解压过程中发生错误。"}
-                      </Banner.Description>
+                      <Banner.Description>{updateRun.message}</Banner.Description>
                     </Banner>
                   )}
                   <div className="flex flex-wrap gap-2">
                     <Button
                       variant="filled"
-                      disabled={updating || updateProgress?.status === "downloading"}
+                      disabled={updating}
                       onClick={() => void handleStartInAppUpdate()}
                     >
-                      {updating || updateProgress?.status === "downloading" ? (
+                      {updating ? (
                         <LoadingIndicator size={16} />
                       ) : (
                         <LuDownload aria-hidden="true" />
                       )}
-                      {updating || updateProgress?.status === "downloading"
+                      {updating
                         ? "正在下载…"
-                        : updateProgress?.status === "error"
+                        : updateRun.status === "error"
                           ? platform === "windows"
                             ? `重试下载安装 ${update.data.latest_ver}`
                             : `重试应用内更新 ${update.data.latest_ver}`
@@ -363,12 +377,7 @@ export default function AboutPage() {
                     </Button>
                     <Button
                       variant="tonal"
-                      onClick={() => {
-                        setOpenError(undefined);
-                        void openPublicUrl(update.data!.latest_ver_url).catch(() =>
-                          setOpenError("无法打开系统浏览器，请稍后重试。"),
-                        );
-                      }}
+                      onClick={() => handleOpenLink(update.data!.latest_ver_url)}
                     >
                       前往浏览器下载
                       <LuArrowUpRight aria-hidden="true" />
@@ -378,37 +387,20 @@ export default function AboutPage() {
               ) : platform === "linux" ? (
                 <Button
                   variant="tonal"
-                  onClick={() => {
-                    setOpenError(undefined);
-                    const targetUrl = update.data!.release_url || update.data!.latest_ver_url;
-                    void openPublicUrl(targetUrl).catch(() =>
-                      setOpenError("无法打开系统浏览器，请稍后重试。"),
-                    );
-                  }}
+                  onClick={() =>
+                    handleOpenLink(update.data!.release_url || update.data!.latest_ver_url)
+                  }
                 >
                   <LuDownload aria-hidden="true" /> 前往发布页面 {update.data.latest_ver}
                   <LuArrowUpRight aria-hidden="true" />
                 </Button>
               ) : (
-                <Button
-                  variant="tonal"
-                  onClick={() => {
-                    setOpenError(undefined);
-                    void openPublicUrl(update.data!.latest_ver_url).catch(() =>
-                      setOpenError("无法打开系统浏览器，请稍后重试。"),
-                    );
-                  }}
-                >
+                <Button variant="tonal" onClick={() => handleOpenLink(update.data!.latest_ver_url)}>
                   <LuDownload aria-hidden="true" /> 前往下载 {update.data.latest_ver}
                   <LuArrowUpRight aria-hidden="true" />
                 </Button>
               )}
             </div>
-          )}
-          {openError && (
-            <p className="content-error" role="alert">
-              {openError}
-            </p>
           )}
           <p className="content-muted about-download-note">
             {platform === "android"
@@ -422,33 +414,26 @@ export default function AboutPage() {
         </div>
       </Card>
       <Contributors />
-      <Card
-        title="UOOC 功能参考"
-        description="视频流程参考 auto-uooc-go，测验交互参考 fuckuooc，使用 Rust 独立实现"
-      >
+      <Card variant="outlined">
+        <div slot="headline">UOOC 功能参考</div>
+        <div slot="subhead">
+          视频流程参考 auto-uooc-go，测验交互参考 fuckuooc，使用 Rust 独立实现
+        </div>
         <div className="flex flex-wrap gap-2">
           <Button
             variant="text"
-            onClick={() =>
-              void openPublicUrl("https://github.com/rinnein/auto-uooc-go").catch(() =>
-                setOpenError("无法打开参考项目链接"),
-              )
-            }
+            onClick={() => handleOpenLink("https://github.com/rinnein/auto-uooc-go")}
           >
             auto-uooc-go <LuArrowUpRight aria-hidden="true" />
           </Button>
           <Button
             variant="text"
-            onClick={() =>
-              void openPublicUrl("https://github.com/YusongXiao/fuckuooc").catch(() =>
-                setOpenError("无法打开参考项目链接"),
-              )
-            }
+            onClick={() => handleOpenLink("https://github.com/YusongXiao/fuckuooc")}
           >
             fuckuooc <LuArrowUpRight aria-hidden="true" />
           </Button>
         </div>
       </Card>
-    </div>
+    </>
   );
 }

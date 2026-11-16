@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import SettingsSync from "./SettingsSync";
 import { toast } from "./ui";
+import { typeInto } from "./ui/testing";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
@@ -65,6 +66,29 @@ describe("SettingsSync", () => {
     expect(await screen.findByText("设备同步")).toBeInTheDocument();
     expect(screen.getByText("未启用")).toBeInTheDocument();
     expect(screen.getByText("开启设备同步后，这里会显示同账号的设备。")).toBeInTheDocument();
+  });
+
+  it("shows a retry banner when the initial read fails", async () => {
+    let attempts = 0;
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_mesh_status") {
+        attempts += 1;
+        if (attempts === 1) throw "设备同步网络未启动";
+        return enabledStatus;
+      }
+      if (command === "get_sync_status") return syncStatus;
+      if (command === "list_mesh_devices") return [];
+      return undefined;
+    });
+
+    render(<SettingsSync />);
+
+    expect(await screen.findByText("读取设备同步状态失败")).toBeInTheDocument();
+    expect(screen.getByText("设备同步网络未启动")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+
+    expect(await screen.findByText("已连接")).toBeInTheDocument();
   });
 
   it("renders devices returned by the backend", async () => {
@@ -141,7 +165,7 @@ describe("SettingsSync", () => {
     });
   });
 
-  it("saves the device name", async () => {
+  it("saves the device name when the field loses focus", async () => {
     const success = vi.spyOn(toast, "success").mockImplementation(() => undefined as never);
     vi.mocked(invoke).mockImplementation(async (command, args) => {
       if (command === "get_mesh_status") return enabledStatus;
@@ -157,9 +181,7 @@ describe("SettingsSync", () => {
     render(<SettingsSync />);
     await screen.findByText("设备同步");
 
-    const input = screen.getByLabelText("设备名称");
-    fireEvent.input(input, { target: { value: "新名字" } });
-    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+    typeInto(screen.getByLabelText("设备名称"), "新名字");
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("set_mesh_device_name", { name: "新名字" });
