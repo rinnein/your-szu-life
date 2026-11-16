@@ -559,20 +559,9 @@ impl Service {
             .map_err(|error| error.message)
     }
 
-    /// eHall 客户端：优先用 authserver SSO 自动过 CAS；没有应用统一认证会话时
-    /// 才回退到官方认证窗口捕获的 eHall cookie。
+    /// eHall 客户端：统一走 authserver SSO 自动过 CAS（与 lms/jxxk/qw 同一套）。
     fn academic_client(&self) -> Result<academic::Academic> {
-        match academic::Academic::from_app(&self.app) {
-            Ok(client) => Ok(client),
-            Err(auto_error) => {
-                let raw = self.secrets.lock().unwrap().ehall.clone();
-                if raw.trim().is_empty() {
-                    Err(auto_error)
-                } else {
-                    academic::Academic::new(&raw)
-                }
-            }
-        }
+        academic::Academic::from_app(&self.app)
     }
     fn cache_snapshot(&self) -> Result<Snapshot> {
         let profile = self
@@ -1595,8 +1584,7 @@ impl Service {
                 self.reconcile(&c)?;
             }
             Action::Academic { recalculate } => {
-                let context = self.secrets.lock().unwrap().academic_context.clone();
-                let c = self.academic_client()?.with_context(context);
+                let c = self.academic_client()?;
                 if recalculate {
                     if self.snapshot().academic_recalculation.is_some() {
                         return Ok(json!({"calculating":true}));

@@ -226,7 +226,7 @@ const mockHandlers: Record<string, MockHandler> = {
     if (channel) void channel.send({ type: "snapshot", data: mockEnrollmentSnapshot });
     return null;
   },
-  open_academic_portal: () => unavailable("open_academic_portal"),
+  open_webvpn_portal: () => unavailable("open_webvpn_portal"),
   open_enrollment_official: () => unavailable("open_enrollment_official"),
   open_network_fee_portal: () => unavailable("open_network_fee_portal"),
 };

@@ -17,16 +17,13 @@ pub struct OjSecret {
     pub cookies: String,
 }
 
-/// 学业认证（WebVPN / ehall）的一组会话 Cookie 快照。
+/// 学业认证（WebVPN / 选课）的一组会话 Cookie 快照。
 #[derive(Default, Serialize, Deserialize)]
 pub struct EnrollmentSecrets {
     pub student: String,
     pub vpn: String,
     pub campus: String,
     pub webvpn: String,
-    pub ehall: String,
-    #[serde(default)]
-    pub academic_context: Option<serde_json::Value>,
     pub campus_token: String,
     pub webvpn_token: String,
 }
@@ -38,7 +35,6 @@ impl EnrollmentSecrets {
             (&self.vpn, Kind::Gateway),
             (&self.campus, Kind::Campus),
             (&self.webvpn, Kind::Webvpn),
-            (&self.ehall, Kind::Academic),
         ] {
             if let Some(envelope) = SessionEnvelope::decode(raw)? {
                 if envelope.scope.kind != kind {

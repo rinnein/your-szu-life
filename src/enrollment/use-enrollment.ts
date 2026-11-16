@@ -177,23 +177,6 @@ export function useEnrollment(cacheOnly = false) {
       setPending((p) => ({ ...p, [key]: 0 }));
     }
   }, [clearError]);
-  const portal = useCallback(
-    async (kind: "webvpn" | "academic") => {
-      const key = `portal-${kind}`;
-      clearError(key);
-      setPending((p) => ({ ...p, [key]: 1 }));
-      try {
-        await invoke("open_academic_portal", { kind, target: null });
-        return true;
-      } catch (e) {
-        setErrors((p) => ({ ...p, [key]: String(e) }));
-        return false;
-      } finally {
-        setPending((p) => ({ ...p, [key]: 0 }));
-      }
-    },
-    [clearError],
-  );
   return {
     snapshot: state,
     errors,
@@ -201,7 +184,6 @@ export function useEnrollment(cacheOnly = false) {
     clearError,
     run,
     recalculateAcademic,
-    portal,
     official,
     busy: Object.values(pending).some(Boolean),
     error: Object.values(errors).find(Boolean) ?? "",

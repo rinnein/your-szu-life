@@ -8,50 +8,43 @@ use std::sync::Mutex;
 
 pub struct Academic {
     client: reqwest::blocking::Client,
-    context: Option<Value>,
-    /// 带 `gid_` 的角色入口；wdkb 的模块 API 必须用它作为 Referer。
+    /// 当前应用的角色入口（带 `gid_`）；模块 API 必须用它作为 Referer。
     referer: Mutex<Option<String>>,
 }
 const EHALL_BASE: &str = "https://ehall.szu.edu.cn";
-const EHALL_ENTRY: &str = "https://ehall.szu.edu.cn/jwapp/sys/wdkb/*default/index.do";
-/// eHall「我的课表」应用 ID（service center 的 appId）。
+/// eHall「我的课表」微应用。
+const WDKB_ENTRY: &str = "https://ehall.szu.edu.cn/jwapp/sys/wdkb/*default/index.do";
 const WDKB_APP_ID: &str = "4770397878132218";
+/// eHall「学业完成查询」微应用（appId 来自 `serviceCenterData.json`）。
+const XYWCX_ENTRY: &str = "https://ehall.szu.edu.cn/jwapp/sys/xywccx/*default/index.do";
+const XYWCX_APP_ID: &str = "4980269146247992";
 const MAX_REDIRECTS: usize = 15;
 
 impl Academic {
-    pub fn new(raw: &str) -> Result<Self> {
-        Ok(Self {
-            client: session::client(session::jar(raw)?)?,
-            context: None,
-            referer: Mutex::new(None),
-        })
-    }
-
     /// 用 authserver 的统一认证 SSO 自动建立 eHall 会话。
     ///
     /// 与 lms/jxxk/qw 同一套机制：从 vault 投影 authserver cookie，访问
-    /// eHall 入口时手动跟随 CAS 跳转；CASTGC 有效时自动完成 service ticket
+    /// eHall 时手动跟随 CAS 跳转；CASTGC 有效时自动完成 service ticket
     /// 登录，失效时返回 NeedsAuth 类错误。
     pub fn from_app(app: &tauri::AppHandle) -> Result<Self> {
         let sso = szu_core::auth::reusable_sso_jar(app)
             .map_err(|message| Error::new(Failure::Session, message))?;
         Ok(Self {
             client: session::client(sso)?,
-            context: None,
             referer: Mutex::new(None),
         })
     }
 
-    /// 建立 eHall 应用会话。
+    /// 建立指定 eHall 应用会话。
     ///
     /// 顺序与真实浏览器一致：
-    /// 1. GET `wdkb` 入口并跟随 CAS，拿到 `MOD_AUTH_CAS`（最终 403 也视为 CAS 成功，
-    ///    因为 wdkb 还需要应用角色）；
+    /// 1. GET 应用入口并跟随 CAS，拿到 `MOD_AUTH_CAS`（最终 403 也视为 CAS 成功，
+    ///    因为应用还需要角色）；
     /// 2. GET `appShow?appId=...` 初始化应用上下文；
     /// 3. GET `appMultiGroupEntranceList` 取带 `gid_` 的角色入口；
     /// 4. GET 角色入口（`gid_`）建立角色会话，并把它作为后续模块 API 的 Referer。
-    pub fn bootstrap(&self) -> Result<()> {
-        let mut url = reqwest::Url::parse(EHALL_ENTRY)
+    fn bootstrap(&self, entry: &str, app_id: &str) -> Result<()> {
+        let mut url = reqwest::Url::parse(entry)
             .map_err(|_| Error::new(Failure::Protocol, "教务入口地址无效"))?;
         let mut cas_ok = false;
         for _ in 0..=MAX_REDIRECTS {
@@ -96,7 +89,7 @@ impl Academic {
 
         let app_show = self
             .client
-            .get(format!("{EHALL_BASE}/appShow?appId={WDKB_APP_ID}"))
+            .get(format!("{EHALL_BASE}/appShow?appId={app_id}"))
             .header("Referer", format!("{EHALL_BASE}/new/index.html"))
             .send()
             .map_err(|_| Error::new(Failure::Network, "教务应用入口暂时无法访问"))?;
@@ -115,13 +108,13 @@ impl Academic {
         let roles = self
             .client
             .get(format!(
-                "{EHALL_BASE}/appMultiGroupEntranceList?appId={WDKB_APP_ID}&param=&r_t={}",
+                "{EHALL_BASE}/appMultiGroupEntranceList?appId={app_id}&param=&r_t={}",
                 chrono::Utc::now().timestamp_millis()
             ))
             .header("X-Requested-With", "XMLHttpRequest")
             .header(
                 "Referer",
-                format!("{EHALL_BASE}/portal/html/select_role.html?appId={WDKB_APP_ID}"),
+                format!("{EHALL_BASE}/portal/html/select_role.html?appId={app_id}"),
             )
             .send()
             .map_err(|_| Error::new(Failure::Network, "教务角色列表暂时无法访问"))?;
@@ -186,38 +179,50 @@ impl Academic {
         *self.referer.lock().unwrap() = Some(target);
         Ok(())
     }
-    pub fn with_context(mut self, context: Option<Value>) -> Self {
-        self.context = context;
-        self
-    }
-    fn context(&self) -> Result<Value> {
-        if let Some(context) = &self.context {
-            return Ok(context.clone());
-        }
-        let value = self.post(
-            "cxxsscfa",
-            &[
-                ("SCLBDM".into(), "04".into()),
-                ("*order".into(), "-CZSJ".into()),
-            ],
-        )?;
-        rows(&value, "cxxsscfa")?
+    /// 学业方案上下文（学号 + 培养方案 + 年级 + 学生类别）。
+    ///
+    /// 直接读 `cxscfa` 当前方案行：`cxxsscfa`（方案列表）在新版 eHall 会返回
+    /// 403，且手动认证窗口捕获的那份上下文可能已随重算变化，不再使用。
+    fn context(&self, student: &str) -> Result<Value> {
+        let value = self.post("cxscfa", &[("XH".into(), student.into())])?;
+        rows(&value, "cxscfa")?
             .first()
             .cloned()
-            .ok_or_else(|| Error::new(Failure::Protocol, "请先在官方学业页面加载当前方案"))
+            .ok_or_else(|| Error::new(Failure::Protocol, "当前账号还没有可用的学业完成方案"))
     }
     pub fn post(&self, name: &str, form: &[(String, String)]) -> Result<Value> {
         self.post_path(&format!("/jwapp/sys/xywccx/modules/xywccx/{name}.do"), form)
     }
 
+    fn referer(&self, fallback: &str) -> String {
+        self.referer
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| fallback.to_string())
+    }
+
+    /// xywccx 微应用要求 X-Requested-With 与角色入口 Referer。
     fn post_path(&self, path: &str, form: &[(String, String)]) -> Result<Value> {
-        let r = self
+        let response = self
             .client
             .post(format!("https://ehall.szu.edu.cn{path}"))
+            .header("X-Requested-With", "XMLHttpRequest")
+            .header("Referer", self.referer(XYWCX_ENTRY))
             .form(form)
             .send()
             .map_err(|_| Error::new(Failure::Network, "教务系统暂时无法访问"))?;
-        decode(r)
+        let status = response.status();
+        if status.as_u16() >= 500 {
+            return Err(Error::new(Failure::Network, "教务系统暂时不可用"));
+        }
+        if status.is_redirection() || !status.is_success() {
+            return Err(Error::new(
+                Failure::Session,
+                "学业接口拒绝访问，请重新登录应用后再试",
+            ));
+        }
+        decode(response)
     }
 
     /// 金智 wdkb 微应用要求 X-Requested-With 与 Referer。
@@ -226,14 +231,7 @@ impl Academic {
             .client
             .post(format!("https://ehall.szu.edu.cn{path}"))
             .header("X-Requested-With", "XMLHttpRequest")
-            .header(
-                "Referer",
-                self.referer
-                    .lock()
-                    .unwrap()
-                    .clone()
-                    .unwrap_or_else(|| EHALL_ENTRY.to_string()),
-            )
+            .header("Referer", self.referer(WDKB_ENTRY))
             .form(form)
             .send()
             .map_err(|_| Error::new(Failure::Network, "教务课表暂时无法访问"))?;
@@ -261,7 +259,7 @@ impl Academic {
         &self,
         preferred_term: Option<&str>,
     ) -> Result<super::model::SemesterSchedule> {
-        self.bootstrap()?;
+        self.bootstrap(WDKB_ENTRY, WDKB_APP_ID)?;
 
         let term_list = self.post_wisedu("/jwapp/sys/wdkb/modules/jshkcb/dqxnxq.do", &[])?;
         let rows = term_list["datas"]["dqxnxq"]["rows"]
@@ -308,24 +306,9 @@ impl Academic {
         }
         Ok(super::model::SemesterSchedule { term, courses })
     }
-    pub fn verify(&self, student: &str) -> Result<()> {
-        let row = self.context()?;
-        if protocol::text(&row["XH"]) != student {
-            return Err(Error::new(Failure::Session, "学业查询账户不匹配"));
-        }
-        let form: Vec<_> = ["XH", "PYFADM", "BYNJDM", "SCLBDM"]
-            .iter()
-            .map(|k| (k.to_string(), protocol::text(&row[*k])))
-            .collect();
-        let result = self.post("cxscfa", &form)?;
-        if rows(&result, "cxscfa")?.is_empty() {
-            return Err(Error::new(Failure::Session, "尚未验证学业方案"));
-        }
-        Ok(())
-    }
     pub fn load(&self, student: &str) -> Result<Value> {
-        self.bootstrap()?;
-        let row = self.context()?;
+        self.bootstrap(XYWCX_ENTRY, XYWCX_APP_ID)?;
+        let row = self.context(student)?;
         if protocol::text(&row["XH"]) != student {
             return Err(Error::new(Failure::Permanent, "学业查询账户不匹配"));
         }
@@ -367,8 +350,8 @@ impl Academic {
         )
     }
     pub fn recalculate(&self, student: &str) -> Result<Value> {
-        self.bootstrap()?;
-        let row = self.context()?;
+        self.bootstrap(XYWCX_ENTRY, XYWCX_APP_ID)?;
+        let row = self.context(student)?;
         if protocol::text(&row["XH"]) != student {
             return Err(Error::new(Failure::Permanent, "学业账户不匹配"));
         }
@@ -386,7 +369,7 @@ impl Academic {
         Ok(result)
     }
     pub fn progress(&self, student: &str) -> Result<Value> {
-        self.bootstrap()?;
+        self.bootstrap(XYWCX_ENTRY, XYWCX_APP_ID)?;
         self.post("byscjd", &[("ZXJDKEY".into(), format!("BYSC_{student}"))])
     }
 }

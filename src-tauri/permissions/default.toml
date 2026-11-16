@@ -5,7 +5,7 @@ permissions = [
   "allow-set-mcp-server-enabled",
   "allow-take-port-notices",
   "allow-enrollment-command",
-  "allow-open-academic-portal",
+  "allow-open-webvpn-portal",
   "allow-open-enrollment-official",
   "allow-get-ocr-model-status",
   "allow-download-ocr-model",

@@ -52,7 +52,7 @@ export function WebvpnAuthProvider({ children }: { children: ReactNode }) {
     const granted = await new Promise<boolean>((resolve) => setPending({ reason, resolve }));
     if (!granted) return false;
     try {
-      await invoke("open_academic_portal", { kind: "webvpn", target: null });
+      await invoke("open_webvpn_portal", { target: null });
       return true;
     } catch (cause) {
       toast.danger("无法打开 WebVPN 认证窗口", {

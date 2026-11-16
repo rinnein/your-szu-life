@@ -137,12 +137,10 @@ it("asks for confirmation before opening dedicated 2FA from the login access car
   fireEvent.click(screen.getByRole("radio", { name: "WebVPN访问" }));
   expect(await screen.findByRole("heading", { name: "需要 WebVPN 认证" })).toBeInTheDocument();
   expect(
-    vi.mocked(invoke).mock.calls.filter(([name]) => name === "open_academic_portal"),
+    vi.mocked(invoke).mock.calls.filter(([name]) => name === "open_webvpn_portal"),
   ).toHaveLength(0);
   fireEvent.click(screen.getByRole("button", { name: "打开认证窗口" }));
-  await waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith("open_academic_portal", { kind: "webvpn", target: null }),
-  );
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith("open_webvpn_portal", { target: null }));
 });
 it("renders a separate timetable with a week control", async () => {
   mount("/study/enrollment/timetable");
@@ -248,9 +246,7 @@ it("activates the entire radio card once when its blank area is clicked", async 
   await screen.findByText("需2FA验证");
   fireEvent.click(radio.closest("label")!);
   fireEvent.click(await screen.findByRole("button", { name: "打开认证窗口" }));
-  await waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith("open_academic_portal", { kind: "webvpn", target: null }),
-  );
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith("open_webvpn_portal", { target: null }));
   expect(
     vi
       .mocked(invoke)
@@ -261,7 +257,7 @@ it("activates the entire radio card once when its blank area is clicked", async 
       ),
   ).toHaveLength(1);
   expect(
-    vi.mocked(invoke).mock.calls.filter(([name]) => name === "open_academic_portal"),
+    vi.mocked(invoke).mock.calls.filter(([name]) => name === "open_webvpn_portal"),
   ).toHaveLength(1);
 });
 
@@ -273,17 +269,13 @@ it("reopens 2FA once from the selected card latency without resetting its mode",
   fireEvent.click(radio.closest("label")!);
   await waitFor(() => expect(radio).toBeChecked());
   fireEvent.click(await screen.findByRole("button", { name: "打开认证窗口" }));
-  await waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith("open_academic_portal", { kind: "webvpn", target: null }),
-  );
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith("open_webvpn_portal", { target: null }));
   vi.mocked(invoke).mockClear();
   fireEvent.click(screen.getByText("需2FA验证"));
   fireEvent.click(await screen.findByRole("button", { name: "打开认证窗口" }));
-  await waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith("open_academic_portal", { kind: "webvpn", target: null }),
-  );
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith("open_webvpn_portal", { target: null }));
   expect(
-    vi.mocked(invoke).mock.calls.filter(([name]) => name === "open_academic_portal"),
+    vi.mocked(invoke).mock.calls.filter(([name]) => name === "open_webvpn_portal"),
   ).toHaveLength(1);
   expect(
     vi
@@ -345,7 +337,7 @@ it("does not prompt for WebVPN authentication when the session does not need 2FA
   fireEvent.click(screen.getByRole("radio", { name: "WebVPN访问" }));
   await waitFor(() =>
     expect(
-      vi.mocked(invoke).mock.calls.filter(([name]) => name === "open_academic_portal"),
+      vi.mocked(invoke).mock.calls.filter(([name]) => name === "open_webvpn_portal"),
     ).toHaveLength(0),
   );
   expect(screen.queryByRole("heading", { name: "需要 WebVPN 认证" })).not.toBeInTheDocument();

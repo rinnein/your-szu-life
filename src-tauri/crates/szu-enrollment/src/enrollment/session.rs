@@ -8,7 +8,6 @@ use cookie_store::{CookieDomain, CookieStore};
 use reqwest_cookie_store::CookieStoreMutex;
 use std::sync::Arc;
 pub const VPN: &str = "https://webvpn.szu.edu.cn/";
-pub const EHALL: &str = "https://ehall.szu.edu.cn/jwapp/sys/xywccx/*default/index.do";
 pub const VPN_NAMES: [&str; 3] = ["_webvpn_key", "webvpn_username", "webvpn_username_NS_Sig"];
 pub use szu_core::storage::model::EnrollmentSecrets as Secrets;
 pub fn vpn_url(url: &reqwest::Url) -> bool {
@@ -120,28 +119,24 @@ pub fn gateway_valid(raw: &str) -> Result<bool> {
         && (body.contains("xsxkapp") || body.contains("loginPwd"))
         && !body.contains("/users/auth/cas"))
 }
-pub fn capture(window: &tauri::WebviewWindow, urls: &[&str], vpn: bool) -> Result<String> {
+/// 从认证窗口捕获 WebVPN 会话 Cookie。
+pub fn capture_vpn(window: &tauri::WebviewWindow, urls: &[&str]) -> Result<String> {
     #[cfg(not(target_os = "android"))]
     let mut jar = CookieStore::default();
     #[cfg(not(target_os = "android"))]
     let allowed = |host: &str, name: &str| {
-        if vpn {
-            VPN_NAMES.contains(&name)
-                && (host == "szu.edu.cn"
-                    || host == "webvpn.szu.edu.cn"
-                    || host.ends_with(".webvpn.szu.edu.cn"))
-        } else {
-            host == "ehall.szu.edu.cn"
-        }
+        VPN_NAMES.contains(&name)
+            && (host == "szu.edu.cn"
+                || host == "webvpn.szu.edu.cn"
+                || host.ends_with(".webvpn.szu.edu.cn"))
     };
     #[cfg(target_os = "android")]
     {
-        let kind = if vpn {
-            szu_core::webview_cookies::Kind::Gateway
-        } else {
-            szu_core::webview_cookies::Kind::Academic
-        };
-        let scope = szu_core::webview_cookies::Scope::new(kind, urls).map_err(Error::from)?;
+        let scope = szu_core::webview_cookies::Scope::new(
+            szu_core::webview_cookies::Kind::Gateway,
+            urls,
+        )
+        .map_err(Error::from)?;
         let snapshot = szu_core::webview_cookies::capture(window, &scope).map_err(Error::from)?;
         let jar = szu_core::webview_cookies::project(snapshot, scope).map_err(Error::from)?;
         return serialize(jar.as_ref());

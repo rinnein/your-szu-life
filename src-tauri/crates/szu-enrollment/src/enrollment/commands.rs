@@ -118,7 +118,7 @@ mod source_tests {
     fn source_scope_uses_window_lifecycle_only() {
         assert!(trusted_source("main"));
         assert!(trusted_source("feature-test"));
-        assert!(!trusted_source("academic-auth-test"));
+        assert!(!trusted_source("webvpn-auth-test"));
         assert!(!trusted_source("external"));
     }
 }
@@ -134,14 +134,13 @@ pub async fn enrollment_command(
         .map_err(|_| "选课任务异常".to_owned())?
 }
 #[tauri::command]
-pub async fn open_academic_portal(
+pub async fn open_webvpn_portal(
     window: tauri::WebviewWindow,
-    kind: String,
     target: Option<String>,
 ) -> Result<(), String> {
     local(&window)?;
     let service: Arc<Service> = window.state::<Store>().0.clone();
-    super::portal::open(service, window, kind, target).await
+    super::portal::open(service, window, target).await
 }
 
 #[tauri::command]

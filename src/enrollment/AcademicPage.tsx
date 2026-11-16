@@ -9,7 +9,7 @@ import CourseQueryModal from "./academic/CourseQueryModal";
 import { buildTree, creditSummary, number } from "./academic/tree";
 import { getViewState, saveViewState, migrateViewState } from "./academic/view-state";
 export default function AcademicPage() {
-  const { snapshot: s, run, recalculateAcademic, portal, pending, errors } = useEnrollment();
+  const { snapshot: s, run, recalculateAcademic, pending, errors } = useEnrollment();
   const [calculating, setCalculating] = useState(false);
   const [progress, setProgress] = useState("");
   const viewKey = `${s?.context.student ?? "pending"}:${s?.academic?.summary[0]?.PYFADM ?? "plan"}`;
@@ -59,14 +59,6 @@ export default function AcademicPage() {
             <Button
               size="xs"
               variant="tonal"
-              disabled={!!pending["portal-academic"]}
-              onClick={() => void portal("academic")}
-            >
-              官方认证
-            </Button>
-            <Button
-              size="xs"
-              variant="tonal"
               disabled={!!pending.academic && !calculating}
               onClick={() => void run({ type: "academic", recalculate: false })}
             >
@@ -86,14 +78,7 @@ export default function AcademicPage() {
       />
 
       <div className="mx-auto grid w-full max-w-[1600px] min-w-0 gap-5">
-        <OperationError
-          message={
-            errors.snapshot ||
-            errors.academic ||
-            errors.academicProgress ||
-            errors["portal-academic"]
-          }
-        />
+        <OperationError message={errors.snapshot || errors.academic || errors.academicProgress} />
         {s?.academic && (
           <div className="grid gap-3 sm:grid-cols-3 w-full min-w-0">
             <StatCard
@@ -167,9 +152,8 @@ export default function AcademicPage() {
                 <>
                   <h2 className="text-lg font-semibold">还没有学业完成数据</h2>
                   <p className="max-w-md text-sm text-muted">
-                    完成官方认证后刷新。已有缓存会保留，系统暂时不可用时也能浏览培养方案。
+                    应用会通过统一认证自动访问教务系统。如果统一认证已失效，请重新登录应用后再刷新；已有缓存会保留，系统暂时不可用时也能浏览培养方案。
                   </p>
-                  <Button onClick={() => void portal("academic")}>打开官方认证</Button>
                 </>
               )}
             </div>

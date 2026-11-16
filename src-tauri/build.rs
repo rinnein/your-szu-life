@@ -237,7 +237,7 @@ fn main() {
             "set_mcp_server_enabled",
             "take_port_notices",
             "enrollment_command",
-            "open_academic_portal",
+            "open_webvpn_portal",
             "open_enrollment_official",
             "subscribe_enrollment_state",
             "watch_enrollment_online_users",
