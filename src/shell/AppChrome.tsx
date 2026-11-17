@@ -8,9 +8,9 @@ import { isChildDocument, nativeRuntime } from "../logical-navigation";
 /**
  * 应用外壳：导航 + 转场 + 内容区。
  *
- * 转场只在建立/回退页面层级时播放（push / back）；同一逻辑页面内的
- * tab、筛选器切换走 `replace`，`PageTransition` 据此不播放动画
- * （见 src/motion/PageTransition.tsx）。
+ * 转场只在建立/回退页面层级时播放（push / back）或顶级部件之间切换时
+ * 播放 fade-through；同一逻辑页面内的 tab、筛选器切换走 `replace` 且
+ * 不换部件，`PageTransition` 据此不播放动画（见 src/motion/PageTransition.tsx）。
  *
  * 顶栏不在这里渲染 —— 顶栏由各页面的 `TopAppBar` 提供，因为工作台、
  * 独立门户页与 tab 页的顶栏结构不同。

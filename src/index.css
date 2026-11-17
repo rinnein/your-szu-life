@@ -1428,14 +1428,41 @@ p {
   color: var(--mtrl-sys-color-on-surface);
 }
 
-/* 窄屏：底部导航栏固定，内容区留出底部空间。 */
+/*
+ * 窄屏：底部导航栏固定，内容区留出底部空间。
+ *
+ * `.app-nav-bar` 是外层壳：底色、上边框、`z-index`、高度测量与原生小白条
+ * 取色都读它。material 的 `m-navigation-bar` 是壳里透明的 `.app-nav-bar-inner`，
+ * 在它上面叠一层 `.app-nav-indicator`（motion 驱动的滑动药丸）。药丸颜色定义
+ * 在壳上：inner 把 material 的 `secondary-container` 覆盖成透明以隐藏它自己
+ * 每项独立淡入的药丸，若药丸也用那个令牌就会被一起覆盖掉。
+ */
 .app-nav-bar {
+  --app-nav-indicator-bg: var(--mtrl-sys-color-secondary-container);
   position: fixed;
   inset-inline: 0;
   inset-block-end: 0;
   z-index: 20;
   background: var(--mtrl-sys-color-surface-container);
   border-block-start: 1px solid var(--mtrl-sys-color-outline-variant);
+}
+
+.app-nav-bar-inner {
+  position: relative;
+  z-index: 1;
+  /* 背景交给外层壳，避免两层同色叠加。 */
+  --mtrl-sys-color-surface-container: transparent;
+  /* 隐藏 material 自带的选中药丸，改由 `.app-nav-indicator` 跨项滑动绘制。 */
+  --mtrl-sys-color-secondary-container: transparent;
+  background: transparent;
+}
+
+.app-nav-indicator {
+  position: absolute;
+  z-index: 0;
+  border-radius: var(--mtrl-sys-shape-corner-full, 9999px);
+  background: var(--app-nav-indicator-bg);
+  pointer-events: none;
 }
 
 .app-content {
@@ -1988,7 +2015,10 @@ m-top-app-bar::part(trailing) {
 }
 
 /* ---------- 页面过渡 ----------
-   只在建立/回退页面层级时播放；tab 切换（data-motion="none"）不动。 */
+   `forward` / `back`：建立或回退页面层级（push / back）时的 CSS 入场。
+   顶级部件之间切换（底栏 / rail）走 motion 的 fade-through，由
+   src/motion/PageTransition.tsx 直接驱动元素，不经过 `data-motion`；
+   同一逻辑页面内的 tab、筛选器切换（data-motion="none"）不动。 */
 .page-transition {
   min-block-size: 100%;
 }

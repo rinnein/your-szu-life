@@ -90,6 +90,31 @@ describe("AppNavigation", () => {
     expect(labelsOf("m-navigation-bar-item")).toEqual(NAV_LABELS);
   });
 
+  it("wraps the material bar in the app shell for the sliding indicator", async () => {
+    renderAt("/");
+    await screen.findByRole("heading", { name: "首页" });
+
+    const shell = document.querySelector(".app-nav-bar");
+    const bar = document.querySelector("m-navigation-bar");
+    // 外层壳负责定位、底色与原生小白条取色，material 宿主退成透明内层。
+    expect(shell?.tagName.toLowerCase()).toBe("div");
+    expect(bar?.classList.contains("app-nav-bar-inner")).toBe(true);
+    expect(shell?.contains(bar ?? null)).toBe(true);
+  });
+
+  it("navigates when the material bar reports a change", async () => {
+    const router = renderAt("/");
+    await screen.findByRole("heading", { name: "首页" });
+
+    const bar = document.querySelector("m-navigation-bar") as HTMLElement;
+    bar.dispatchEvent(
+      new CustomEvent("change", { detail: { value: "life" }, bubbles: true, composed: true }),
+    );
+
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe("/life"));
+    await screen.findByRole("heading", { name: "生活" });
+  });
+
   it("sets --app-nav-bar-height on document root when narrow navigation bar has measured height", async () => {
     const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
     HTMLElement.prototype.getBoundingClientRect = function () {

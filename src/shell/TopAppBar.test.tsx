@@ -190,4 +190,19 @@ describe("页面转场", () => {
       expect(document.querySelector(".page-transition")?.getAttribute("data-motion")).toBe("none"),
     );
   });
+
+  it("plays fade-through when the bottom navigation switches destinations", async () => {
+    const router = renderAt("/");
+
+    fireEvent(
+      await screen
+        .findByRole("heading", { name: "首页" })
+        .then(() => document.querySelector("m-navigation-bar") as HTMLElement),
+      new CustomEvent("change", { detail: { value: "study" }, bubbles: true, composed: true }),
+    );
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe("/study"));
+    expect(await screen.findByRole("heading", { name: "学习" })).toBeInTheDocument();
+    // fade-through 由 motion 直接驱动元素，不写入 `data-motion`。
+    expect(document.querySelector(".page-transition")?.getAttribute("data-motion")).toBe("none");
+  });
 });
