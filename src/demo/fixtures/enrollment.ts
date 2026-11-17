@@ -30,6 +30,31 @@ export const mockEnrollmentCourses: Course[] = [
 
 export const mockEnrollmentTasks: Task[] = [];
 
+/**
+ * 顶栏「学校信息」条用的班次数据（`batchInfo` action 的返回）。
+ * 页面挂载后立刻请求，缺了会弹「操作失败」。
+ */
+export const mockEnrollmentBatches = [
+  {
+    code: "2026-2027-1",
+    name: "2026-2027学年第一学期",
+    typeName: "正常选课",
+    tacticName: "先到先得",
+    beginTime: "2026-09-01 08:00",
+    endTime: "2026-09-07 23:59",
+    active: "1",
+  },
+  {
+    code: "2026-2027-1-2",
+    name: "补选阶段",
+    typeName: "补退选",
+    tacticName: "先到先得",
+    beginTime: "2026-09-08 08:00",
+    endTime: "2026-09-14 23:59",
+    active: "0",
+  },
+];
+
 export const mockEnrollmentSnapshot: Snapshot = {
   mode: "campus",
   context: { student: "20250001", term: "2026-2027-1", batch: "2026级", campus: "粤海" },

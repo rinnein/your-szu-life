@@ -135,7 +135,7 @@ export function WeekGrid({ sessions, semesterCourses, initialDate }: Props) {
   );
 
   return (
-    <div className="grid gap-3">
+    <div className="grid gap-3" data-testid="week-grid">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-1">
           <Button

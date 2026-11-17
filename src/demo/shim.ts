@@ -28,10 +28,12 @@ import { mockUoocAiConfig } from "./fixtures/uooc";
 import {
   mockOjContests,
   mockOjGroups,
+  mockOjPaper,
   mockOjProgress,
   mockOjRecords,
   mockOjSnapshot,
 } from "./fixtures/oj";
+import { mockAppContentSnapshot, mockRemoteResourceBytes } from "./fixtures/app-content";
 import { mockLmsSnapshot } from "./fixtures/lms";
 import {
   mockSigninAutomation,
@@ -41,18 +43,30 @@ import {
   mockSigninTimetable,
 } from "./fixtures/signin";
 import { mockJxxkSnapshot } from "./fixtures/patrol";
-import { mockEnrollmentSnapshot } from "./fixtures/enrollment";
+import { mockEnrollmentBatches, mockEnrollmentSnapshot } from "./fixtures/enrollment";
 import { mockTodoItems } from "./fixtures/todos";
 import { mockTimetableSnapshot } from "./fixtures/timetable";
 
 export * from "../../node_modules/@tauri-apps/api/core.js";
 
 type InvokeArgs = Record<string, unknown> | number[] | ArrayBuffer | Uint8Array;
-type ChannelLike = { send: (payload: unknown) => Promise<void> | void };
+/**
+ * 前端 Channel 的接收端形态。
+ *
+ * `@tauri-apps/api` 的 `Channel` 只有 `onmessage`（写成 Rust 侧 send 时由
+ * `__TAURI_INTERNALS__` 回调递送），**没有 `send`**。演示模式要把后端的
+ * initial / snapshot 推给页面，只能直接调用 `onmessage`。
+ */
+type ChannelLike = { onmessage?: ((message: unknown) => void) | null };
 
 function channelFrom(args: InvokeArgs | undefined): ChannelLike | undefined {
   const channel = (args as { channel?: ChannelLike } | undefined)?.channel;
-  return channel && typeof channel.send === "function" ? channel : undefined;
+  return channel && typeof channel.onmessage === "function" ? channel : undefined;
+}
+
+/** 按后端「Rust 侧 send」的等价语义投递一条消息。 */
+function push(channel: ChannelLike, payload: unknown): void {
+  channel.onmessage?.(payload);
 }
 
 function unavailable(command: string): never {
@@ -103,8 +117,8 @@ const mockHandlers: Record<string, MockHandler> = {
   subscribe_todos: (args) => {
     const channel = channelFrom(args);
     if (channel) {
-      void channel.send({ type: "initial", data: mockTodoItems });
-      void channel.send({ type: "snapshot", data: mockTodoItems });
+      push(channel, { type: "initial", data: mockTodoItems });
+      push(channel, { type: "snapshot", data: mockTodoItems });
     }
     return null;
   },
@@ -114,8 +128,8 @@ const mockHandlers: Record<string, MockHandler> = {
   subscribe_timetable: (args) => {
     const channel = channelFrom(args);
     if (channel) {
-      void channel.send({ type: "initial", data: mockTimetableSnapshot });
-      void channel.send({ type: "snapshot", data: mockTimetableSnapshot });
+      push(channel, { type: "initial", data: mockTimetableSnapshot });
+      push(channel, { type: "snapshot", data: mockTimetableSnapshot });
     }
     return null;
   },
@@ -126,7 +140,7 @@ const mockHandlers: Record<string, MockHandler> = {
   refresh_uooc_progress: () => mockUoocSnapshot,
   subscribe_uooc_state: (args) => {
     const channel = channelFrom(args);
-    if (channel) void channel.send({ type: "snapshot", data: mockUoocSnapshot });
+    if (channel) push(channel, { type: "snapshot", data: mockUoocSnapshot });
     return null;
   },
   get_uooc_ai_config: () => mockUoocAiConfig,
@@ -166,7 +180,7 @@ const mockHandlers: Record<string, MockHandler> = {
   get_sync_status: () => ({ enabled: false, items: [] }),
   subscribe_uooc_assessments: (args) => {
     const channel = channelFrom(args);
-    if (channel) void channel.send({ type: "initial", data: mockUoocAssessments });
+    if (channel) push(channel, { type: "initial", data: mockUoocAssessments });
     return null;
   },
   refresh_uooc_assessments: () => undefined,
@@ -180,6 +194,38 @@ const mockHandlers: Record<string, MockHandler> = {
   get_oj_records: () => mockOjRecords,
   get_oj_progress: () => mockOjProgress,
   save_oj_preferences: () => undefined,
+  get_oj_paper: () => mockOjPaper,
+  // OJ 页面主体走 Channel 订阅；无 IPC 时若不接管订阅，答题页会一直空着。
+  subscribe_oj_state: (args) => {
+    const channel = channelFrom(args);
+    if (channel) {
+      push(channel, { type: "initial", data: mockOjSnapshot });
+      push(channel, { type: "snapshot", data: mockOjSnapshot });
+    }
+    return null;
+  },
+  subscribe_oj_lists: (args) => {
+    const channel = channelFrom(args);
+    if (channel) {
+      // 键分别是站点 ID 与 `site:group`，与后端缓存口径一致。
+      const siteId = mockOjSnapshot.sites[0]?.id ?? "";
+      const groupId = mockOjGroups[0]?.id ?? "";
+      push(channel, {
+        type: "initial",
+        data: {
+          groups: { [siteId]: mockOjGroups },
+          contests: { [`${siteId}:${groupId}`]: mockOjContests },
+        },
+      });
+    }
+    return null;
+  },
+
+  // 公共内容：公告与更新来自远端，浏览器里拉不到会让首页公告栏整块空掉。
+  get_app_content_snapshot: () => mockAppContentSnapshot,
+  refresh_app_content: () => mockAppContentSnapshot,
+  // 公告头图、贡献者头像等经该命令取字节；无 IPC 时会落到「加载失败」占位。
+  load_remote_resource: () => mockRemoteResourceBytes,
 
   // 畅课。
   get_lms_snapshot: () => mockLmsSnapshot,
@@ -227,12 +273,24 @@ const mockHandlers: Record<string, MockHandler> = {
   refresh_jxxk: () => mockJxxkSnapshot,
 
   // 选课：单命令多 action，按 action 路由。
+  // 只读查询给演示数据；真正会改动学校系统或需要真实会话的 action 仍拦截。
   enrollment_command: (args) => {
     const action = (args as { action?: unknown } | undefined)?.action;
     if (action === "snapshot" || action === "refresh") return mockEnrollmentSnapshot;
     if (typeof action === "object" && action !== null) {
       const type = (action as { type?: string }).type;
       if (type === "refresh" || type === "query") return mockEnrollmentSnapshot;
+      if (type === "cacheSnapshot" || type === "cache") {
+        return {
+          ...mockEnrollmentSnapshot,
+          complete: true,
+          cachedPages: 1,
+          total: mockEnrollmentSnapshot.courses.length,
+        };
+      }
+      // 学校信息条（班次 / 学期徽标）在页面挂载后立刻请求，缺了会弹「操作失败」。
+      if (type === "batchInfo") return { dataList: mockEnrollmentBatches };
+      if (type === "selected") return mockEnrollmentSnapshot.selected;
     }
     if (action === "probe") {
       return [{ mode: "campus", latency: 12, needs2fa: false, message: "" }];
@@ -240,9 +298,15 @@ const mockHandlers: Record<string, MockHandler> = {
     if (action === "session") return { status: "ok", snapshot: mockEnrollmentSnapshot };
     return unavailable(`enrollment_command(${String(action)})`);
   },
+  // 在线人数由后端轮询推送；无 IPC 时给一个静态值，页面才不会显示「暂不可用」。
+  watch_enrollment_online_users: (args) => {
+    const channel = channelFrom(args);
+    if (channel) push(channel, { online: 1284, updatedAt: Date.now(), error: null });
+    return null;
+  },
   subscribe_enrollment_state: (args) => {
     const channel = channelFrom(args);
-    if (channel) void channel.send({ type: "snapshot", data: mockEnrollmentSnapshot });
+    if (channel) push(channel, { type: "snapshot", data: mockEnrollmentSnapshot });
     return null;
   },
   open_webvpn_portal: () => unavailable("open_webvpn_portal"),

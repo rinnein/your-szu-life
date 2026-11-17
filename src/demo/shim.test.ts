@@ -71,4 +71,88 @@ describe("demo shim", () => {
     await expect(invoke("set_demo_mode", { enabled: true })).rejects.toThrow("backend down");
     expect(demoActive()).toBe(false);
   });
+
+  it("serves a ready app-content snapshot so the homepage notice bar is populated", async () => {
+    setDemoActive(true);
+    const snapshot = await invoke<{
+      configuration: { status: string };
+      announcements: { data: { announcements: unknown[] } | null };
+    }>("get_app_content_snapshot");
+    expect(snapshot.configuration.status).toBe("ready");
+    expect(snapshot.announcements.data?.announcements.length).toBeGreaterThan(0);
+    expect(internalsInvoke).not.toHaveBeenCalled();
+  });
+
+  it("hands remote resource requests a decodable PNG instead of hitting IPC", async () => {
+    setDemoActive(true);
+    const bytes = await invoke<number[]>("load_remote_resource", {
+      url: "https://example.invalid/a.png",
+      kind: "announcement",
+    });
+    expect(internalsInvoke).not.toHaveBeenCalled();
+    // PNG 签名，前端 imageMimeType 靠它选 MIME。
+    expect(bytes.slice(0, 8)).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  });
+
+  // 真实 Channel 只有 `onmessage`，没有 `send`——桩子必须照这个形状写，
+  // 否则测不出「mock 根本没往页面推数据」这类问题。
+  const sink = () => {
+    const received: unknown[] = [];
+    return {
+      received,
+      channel: { onmessage: (payload: unknown) => void received.push(payload) },
+    };
+  };
+
+  it("pushes timetable and todo snapshots through a channel onmessage", async () => {
+    setDemoActive(true);
+    const timetable = sink();
+    const todos = sink();
+
+    await invoke("subscribe_timetable", { channel: timetable.channel });
+    await invoke("subscribe_todos", { channel: todos.channel });
+
+    expect(internalsInvoke).not.toHaveBeenCalled();
+    expect(timetable.received).toEqual([
+      expect.objectContaining({ type: "initial" }),
+      expect.objectContaining({ type: "snapshot" }),
+    ]);
+    expect(todos.received).toHaveLength(2);
+    const snapshot = (timetable.received[0] as { data: { sessions: unknown[] } }).data;
+    expect(snapshot.sessions.length).toBeGreaterThan(0);
+  });
+
+  it("pushes OJ snapshot and lists over the channel", async () => {
+    setDemoActive(true);
+    const state = sink();
+    const lists = sink();
+
+    await invoke("subscribe_oj_state", { channel: state.channel });
+    await invoke("subscribe_oj_lists", { channel: lists.channel });
+
+    expect(internalsInvoke).not.toHaveBeenCalled();
+    expect(state.received).toEqual([
+      expect.objectContaining({ type: "initial" }),
+      expect.objectContaining({ type: "snapshot" }),
+    ]);
+    const listPayload = lists.received[0] as {
+      data: { groups: Record<string, unknown[]>; contests: Record<string, unknown[]> };
+    };
+    // 键口径：站点 ID 与 `site:group`。
+    expect(Object.keys(listPayload.data.groups)).toEqual(["npuoj"]);
+    expect(Object.keys(listPayload.data.contests)).toEqual(["npuoj:g-1"]);
+  });
+
+  it("serves an OJ paper with problems and a draft for the first one", async () => {
+    setDemoActive(true);
+    const paper = await invoke<{
+      problems: { id: string; kind: number }[];
+      drafts: Record<string, unknown>;
+    }>("get_oj_paper", { siteId: "npuoj", contestId: "ct-1" });
+    expect(internalsInvoke).not.toHaveBeenCalled();
+    expect(paper.problems.length).toBeGreaterThan(0);
+    expect(Object.keys(paper.drafts)).toEqual([
+      `${paper.problems[0].kind}:${paper.problems[0].id}`,
+    ]);
+  });
 });

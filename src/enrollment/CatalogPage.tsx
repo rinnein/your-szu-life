@@ -146,7 +146,7 @@ export default function CatalogPage() {
           已缓存 {cached?.total ?? 0} 个匹配教学班；仅检索已缓存内容，未缓存页面不会自动联网补齐。
         </p>
       )}
-      <div className="grid gap-3 xl:grid-cols-2">
+      <div className="grid gap-3 xl:grid-cols-2" data-testid="catalog-courses">
         {courses.map((c) => {
           const a = academicIndex.get(c.code);
           return (
