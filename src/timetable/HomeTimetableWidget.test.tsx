@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { HomeTimetableWidget } from "./HomeTimetableWidget";
 
-const { nav, snapshot } = vi.hoisted(() => {
+const { nav, snapshot, NOW } = vi.hoisted(() => {
   const today = new Date();
   const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(
     today.getDate(),
@@ -13,7 +13,10 @@ const { nav, snapshot } = vi.hoisted(() => {
   start.setHours(8, 30, 0, 0);
   const end = new Date(today);
   end.setHours(10, 5, 0, 0);
+  const now = new Date(today);
+  now.setHours(9, 0, 0, 0);
   return {
+    NOW: now.getTime(),
     nav: { push: vi.fn(), replace: vi.fn(), back: vi.fn() },
     snapshot: {
       fetchedAtMs: Date.now(),
@@ -72,6 +75,11 @@ vi.mock("./use-timetable", () => ({
   }),
 }));
 
+// 固定「现在」为今天的 09:00：8:30-10:05 的课处于上课中，避免测试随时段漂移。
+vi.mock("./use-now", () => ({
+  useNow: () => NOW,
+}));
+
 describe("HomeTimetableWidget", () => {
   afterEach(() => {
     cleanup();
@@ -124,5 +132,65 @@ describe("HomeTimetableWidget", () => {
     expect(screen.queryByRole("button", { name: /另有/ })).not.toBeInTheDocument();
     snapshot.checkins = previous;
     snapshot.sessions[0].checkin = "none";
+  });
+
+  it("collapses classes that have already finished", () => {
+    const session = snapshot.sessions[0];
+    const previous = { startMs: session.startMs, endMs: session.endMs, checkin: session.checkin };
+    const start = new Date(NOW);
+    start.setHours(7, 0, 0, 0);
+    const end = new Date(NOW);
+    end.setHours(8, 0, 0, 0);
+    session.startMs = start.getTime();
+    session.endMs = end.getTime();
+    session.checkin = "none";
+
+    try {
+      render(<HomeTimetableWidget />);
+      // 默认收起：已上完的课程不渲染，只留一行可展开的标题。
+      expect(screen.queryByText("编译原理")).not.toBeInTheDocument();
+      const trigger = screen.getByRole("button", { name: "展开已上过的课" });
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+      fireEvent.click(trigger);
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+      expect(screen.getByText("编译原理")).toBeInTheDocument();
+    } finally {
+      session.startMs = previous.startMs;
+      session.endMs = previous.endMs;
+      session.checkin = previous.checkin;
+    }
+  });
+
+  it("keeps finished classes above the current and upcoming ones", () => {
+    const original = snapshot.sessions;
+    const template = original[0];
+    const start = (hour: number) => {
+      const date = new Date(NOW);
+      date.setHours(hour, 0, 0, 0);
+      return date.getTime();
+    };
+    snapshot.sessions = [
+      { ...template, courseName: "编译原理", startMs: start(7), endMs: start(8), checkin: "none" },
+      { ...template, courseName: "离散数学", startMs: start(8), endMs: start(10), checkin: "none" },
+    ];
+
+    try {
+      render(<HomeTimetableWidget />);
+      const trigger = screen.getByRole("button", { name: "展开已上过的课" });
+      const active = screen.getByRole("button", { name: /离散数学/ });
+      // 折叠区（已上过）应排在正在上/未上的课之前，展开后仍是时间顺序。
+      expect(
+        trigger.compareDocumentPosition(active) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+
+      fireEvent.click(trigger);
+      const finished = screen.getByRole("button", { name: /编译原理/ });
+      expect(
+        finished.compareDocumentPosition(active) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    } finally {
+      snapshot.sessions = original;
+    }
   });
 });

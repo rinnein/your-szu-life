@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Button, Card, LoadingIndicator } from "material/react";
 import { LuCalendarClock, LuChevronRight, LuRotateCw } from "react-icons/lu";
-import { Banner } from "../ui";
+import { Banner, Disclosure } from "../ui";
 import { useLogicalNavigation } from "../logical-navigation";
 import { useTimetable } from "./use-timetable";
 import { useNow } from "./use-now";
@@ -46,6 +46,15 @@ export function HomeTimetableWidget() {
         .filter((session) => session.startMs > now)
         .sort((a, b) => a.startMs - b.startMs)[0],
     [snapshot, now],
+  );
+  // 已上完的课默认折叠：首页只保留当前/未开始的课，历史课收进底部可展开区。
+  const activeSessions = useMemo(
+    () => todaySessions.filter((session) => session.endMs > now),
+    [todaySessions, now],
+  );
+  const finishedSessions = useMemo(
+    () => todaySessions.filter((session) => session.endMs <= now),
+    [todaySessions, now],
   );
   const hasCurrent = todaySessions.some((session) => session.startMs <= now && now < session.endMs);
   const nextKey = hasCurrent ? undefined : nextSessionKey(snapshot?.sessions ?? [], now);
@@ -153,7 +162,16 @@ export function HomeTimetableWidget() {
 
         {todaySessions.length > 0 ? (
           <div className="grid gap-2">
-            {todaySessions.map(cardFor)}
+            {/* 按时间顺序：已上完（默认折叠）→ 正在上/未上 → 明天的下一节。 */}
+            {finishedSessions.length > 0 && (
+              <Disclosure
+                title={`已上过的课 · ${finishedSessions.length} 节`}
+                ariaLabel="展开已上过的课"
+              >
+                <div className="grid gap-2">{finishedSessions.map(cardFor)}</div>
+              </Disclosure>
+            )}
+            {activeSessions.map(cardFor)}
             {next && next.date !== today && (
               <div className="grid gap-1 pt-1">
                 <p className="text-xs text-muted">下一节 · {next.date}</p>
