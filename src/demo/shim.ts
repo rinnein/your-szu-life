@@ -33,7 +33,12 @@ import {
   mockOjSnapshot,
 } from "./fixtures/oj";
 import { mockLmsSnapshot } from "./fixtures/lms";
-import { mockSigninBuildings } from "./fixtures/signin";
+import {
+  mockSigninBuildings,
+  mockSigninQwStatus,
+  mockSigninRollcalls,
+  mockSigninTimetable,
+} from "./fixtures/signin";
 import { mockJxxkSnapshot } from "./fixtures/patrol";
 import { mockEnrollmentSnapshot } from "./fixtures/enrollment";
 import { mockTodoItems } from "./fixtures/todos";
@@ -176,10 +181,11 @@ const mockHandlers: Record<string, MockHandler> = {
   get_lms_snapshot: () => mockLmsSnapshot,
   refresh_lms: () => mockLmsSnapshot,
 
-  // 签到/打卡：演示模式下列表为空、提交静默成功（不会触达真实接口）。
+  // 签到/打卡：演示模式给可交互的代表数据，提交静默成功（不会触达真实接口）。
   signin_get_buildings: () => mockSigninBuildings,
-  signin_get_timetable: () => ({ fetched_at_ms: 0, sessions: [] }),
-  signin_get_lms_rollcalls: () => [],
+  signin_get_qw_status: () => mockSigninQwStatus,
+  signin_get_timetable: () => mockSigninTimetable,
+  signin_get_lms_rollcalls: () => mockSigninRollcalls,
   signin_resolve_radar_point: () => ({
     latitude: 22.528,
     longitude: 113.94,

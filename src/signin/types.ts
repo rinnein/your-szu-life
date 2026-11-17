@@ -37,7 +37,7 @@ export interface TimetableCache {
   sessions: TimetableSession[];
 }
 
-/** 畅课待签项（szu-lms rollcall::RollcallItem）。 */
+/** 畅课待签项（szu-lms rollcall::RollcallItem，字段名与后端 serde 输出一致）。 */
 export interface RollcallItem {
   rollcall_id: number;
   is_number: boolean;
@@ -45,7 +45,8 @@ export interface RollcallItem {
   course_id: number;
   course_title: string;
   student_rollcall_id: number;
-  kind?: string;
+  /** 畅课原始 `type` 字段（Rust 侧 `#[serde(rename = "type")]`）。 */
+  type?: string;
   status?: string;
 }
 
@@ -54,7 +55,7 @@ export type RollcallMethod = "radar" | "number" | "qr" | "unknown";
 export function rollcallMethod(item: RollcallItem): RollcallMethod {
   if (item.is_radar) return "radar";
   if (item.is_number) return "number";
-  switch (item.kind) {
+  switch (item.type) {
     case "qr":
     case "qr_rollcall":
     case "qrcode":
@@ -74,6 +75,25 @@ export function needAnswer(item: RollcallItem): boolean {
   return item.status !== "on_call_fine";
 }
 
+/** 点名状态的界面文案；未知状态按「进行中」呈现。 */
+const ROLLCALL_STATUS_LABEL: Record<string, string> = {
+  on_call: "进行中",
+  on_call_fine: "已签到",
+  absent: "缺席",
+};
+
+export function rollcallStatusLabel(status: string | undefined): string {
+  return (status && ROLLCALL_STATUS_LABEL[status]) || "进行中";
+}
+
+/** 签到方式的界面文案。 */
+export const ROLLCALL_METHOD_LABEL: Record<RollcallMethod, string> = {
+  radar: "雷达",
+  number: "数字",
+  qr: "扫码",
+  unknown: "其它",
+};
+
 /** 雷达默认点解析结果（camelCase，Rust ResolvedPoint）。 */
 export interface ResolvedPoint {
   latitude: number;
@@ -89,12 +109,12 @@ export interface LastPhotoView {
   thumbnail?: string;
 }
 
-/** 签到码共享房间事件（Rust QrEvent，tag=type content=data camelCase）。 */
+/** 签到码共享房间事件（Rust QrEvent，tag=type content=data；变体字段保持 snake_case）。 */
 export type QrEvent =
-  | { type: "roomJoined"; data: { courseId: number } }
-  | { type: "roomClosed"; data: { courseId: number } }
-  | { type: "matched"; data: { courseId: number; ok: boolean; message: string } }
-  | { type: "shared"; data: { courseId: number; ok: boolean; message: string } }
+  | { type: "roomJoined"; data: { course_id: number } }
+  | { type: "roomClosed"; data: { course_id: number } }
+  | { type: "matched"; data: { course_id: number; ok: boolean; message: string } }
+  | { type: "shared"; data: { course_id: number; ok: boolean; message: string } }
   | { type: "error"; data: { message: string } };
 
 export function localDateKey(date: Date = new Date()): string {

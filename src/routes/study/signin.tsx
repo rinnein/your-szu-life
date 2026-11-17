@@ -10,7 +10,9 @@ export const Route = createFileRoute("/study/signin")({
     course: typeof search.course === "string" ? search.course : undefined,
     start:
       typeof search.start === "number" && Number.isFinite(search.start) ? search.start : undefined,
-    open: search.open === true || search.open === "1",
+    // 默认解析器会把 `open=1` 的值 JSON 解析成数字 1（merge.ts 拼的深链接）；
+    // 非真时返回 undefined，避免把 open=false 序列化进 URL。
+    open: search.open === true || search.open === 1 || search.open === "1" ? true : undefined,
   }),
   component: SignInPageRoute,
 });
