@@ -6,6 +6,7 @@
 use super::*;
 use tauri::WebviewWindow;
 
+use super::automation::SigninAutomationSettings;
 use model::{Building, LastPhotoView, QwStatusView, ResolvedPoint, TimetableCache};
 
 fn local(window: &WebviewWindow) -> Result<(), String> {
@@ -160,6 +161,39 @@ pub async fn signin_get_last_photo(
 ) -> Result<LastPhotoView, String> {
     local(&window)?;
     service(&app)?.last_photo(&course_name).await
+}
+
+/// 提前保存某课程的签到照片（不要求提交成功，供后续手动/自动签到复用）。
+#[tauri::command]
+pub async fn signin_save_szu_photo(
+    window: WebviewWindow,
+    app: tauri::AppHandle,
+    course_name: String,
+    photo_b64: String,
+) -> Result<LastPhotoView, String> {
+    local(&window)?;
+    service(&app)?
+        .save_szu_photo(&course_name, &photo_b64)
+        .await
+}
+
+#[tauri::command]
+pub async fn signin_get_automation_settings(
+    window: WebviewWindow,
+    app: tauri::AppHandle,
+) -> Result<SigninAutomationSettings, String> {
+    local(&window)?;
+    Ok(service(&app)?.automation_settings())
+}
+
+#[tauri::command]
+pub async fn signin_set_automation_settings(
+    window: WebviewWindow,
+    app: tauri::AppHandle,
+    settings: SigninAutomationSettings,
+) -> Result<SigninAutomationSettings, String> {
+    local(&window)?;
+    service(&app)?.set_automation_settings(settings)
 }
 
 #[tauri::command]

@@ -35,6 +35,7 @@ const DEFAULT_TEST_SETTINGS: NotificationConfig = {
   timetable: {
     classReminder: true,
     checkin: true,
+    checkinFailure: true,
   },
 };
 
@@ -78,6 +79,7 @@ describe("NotificationSettings component", () => {
     expect(screen.getByRole("switch", { name: "开关优课联盟 (UOOC)通知" })).toBeChecked();
     expect(screen.getByRole("switch", { name: "开关课前提醒" })).toBeChecked();
     expect(screen.getByRole("switch", { name: "开关签到提醒" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "开关签到失败提醒" })).toBeChecked();
   });
 
   it("toggling master switch saves disabled state and disables category switches", async () => {
@@ -141,6 +143,7 @@ describe("NotificationSettings component", () => {
       "开关畅课作业提醒",
       "开关宿舍电费预警提醒",
       "开关签到提醒",
+      "开关签到失败提醒",
     ]) {
       expect(await screen.findByRole("switch", { name })).toBeChecked();
     }
@@ -171,6 +174,24 @@ describe("NotificationSettings component", () => {
       expect(invoke).toHaveBeenCalledWith("save_notification_settings", {
         settings: expect.objectContaining({
           timetable: expect.objectContaining({ classReminder: false }),
+        }),
+      });
+    });
+  });
+
+  it("saves the check-in failure reminder switch independently", async () => {
+    render(<NotificationSettings />);
+
+    const failureSwitch = await readySwitch("开关签到失败提醒");
+    fireEvent.change(failureSwitch, { target: { checked: false } });
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("save_notification_settings", {
+        settings: expect.objectContaining({
+          timetable: expect.objectContaining({
+            checkinFailure: false,
+            checkin: true,
+          }),
         }),
       });
     });

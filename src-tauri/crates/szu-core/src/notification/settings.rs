@@ -99,14 +99,17 @@ fn normalized_lead_minutes(values: Vec<i64>) -> Vec<i64> {
 /// 课表（上课提醒）的独立配置。
 ///
 /// 课前提醒默认提前 20 分钟，Android 上从该时刻起显示常驻倒计时通知；
-/// 签到提醒在探测到新的待签点名时发送一次。
+/// 签到提醒在探测到新的待签点名时发送一次；签到失败提醒在自动签到失败、
+/// 缺少照片被跳过等需要人工处理时发送。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct TimetableNotificationSettings {
     /// 课前提醒
     pub class_reminder: bool,
-    /// 签到提醒
+    /// 签到提醒（普通待签点名）
     pub checkin: bool,
+    /// 签到/打卡失败提醒（自动签到失败、缺照片被跳过等）
+    pub checkin_failure: bool,
 }
 
 impl Default for TimetableNotificationSettings {
@@ -114,6 +117,7 @@ impl Default for TimetableNotificationSettings {
         Self {
             class_reminder: true,
             checkin: true,
+            checkin_failure: true,
         }
     }
 }
@@ -161,7 +165,9 @@ impl NotificationSettings {
             NotificationCategory::Uooc => self.uooc,
             NotificationCategory::Todo => self.todo.enabled,
             NotificationCategory::Timetable => {
-                self.timetable.class_reminder || self.timetable.checkin
+                self.timetable.class_reminder
+                    || self.timetable.checkin
+                    || self.timetable.checkin_failure
             }
         }
     }
@@ -239,7 +245,7 @@ mod tests {
     }
 
     #[test]
-    fn timetable_category_follows_either_sub_switch() {
+    fn timetable_category_follows_any_sub_switch() {
         let mut settings = NotificationSettings::default();
         assert!(settings.is_category_enabled(NotificationCategory::Timetable));
 
@@ -247,9 +253,13 @@ mod tests {
         assert!(settings.is_category_enabled(NotificationCategory::Timetable));
 
         settings.timetable.checkin = false;
+        // 失败提醒仍然开启，分类不能关。
+        assert!(settings.is_category_enabled(NotificationCategory::Timetable));
+
+        settings.timetable.checkin_failure = false;
         assert!(!settings.is_category_enabled(NotificationCategory::Timetable));
 
-        settings.timetable.class_reminder = true;
+        settings.timetable.checkin = true;
         assert!(settings.is_category_enabled(NotificationCategory::Timetable));
     }
 
@@ -298,6 +308,7 @@ mod tests {
         assert!(settings.todo.discovery);
         assert!(settings.timetable.class_reminder);
         assert!(settings.timetable.checkin);
+        assert!(settings.timetable.checkin_failure);
         assert_eq!(
             settings.todo.lead_minutes,
             DEFAULT_TODO_LEAD_MINUTES.to_vec()
@@ -343,6 +354,7 @@ mod tests {
             timetable: TimetableNotificationSettings {
                 class_reminder: false,
                 checkin: true,
+                checkin_failure: false,
             },
         };
         let serialized = serde_json::to_string(&settings).unwrap();

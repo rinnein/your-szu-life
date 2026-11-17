@@ -50,10 +50,14 @@ export function HomeTimetableWidget() {
   const hasCurrent = todaySessions.some((session) => session.startMs <= now && now < session.endMs);
   const nextKey = hasCurrent ? undefined : nextSessionKey(snapshot?.sessions ?? [], now);
   const remaining = todaySessions.filter((session) => session.startMs > now).length;
-  const pendingToday = todaySessions.filter(
-    (session) => session.checkin === "pending_lms" || session.checkin === "pending_szu",
+  const pendingLmsToday = todaySessions.filter(
+    (session) => session.checkin === "pending_lms",
   ).length;
-  const unmatchedCheckins = Math.max(0, (snapshot?.checkins.length ?? 0) - pendingToday);
+  // SZU 待签条目对应课表里的同一课次，已在卡片上显示，不能重复计入「另有」。
+  const lmsCheckins = (snapshot?.checkins ?? []).filter((item) =>
+    item.id.startsWith("checkin:lms:"),
+  ).length;
+  const unmatchedCheckins = Math.max(0, lmsCheckins - pendingLmsToday);
   const dateLabel = `${new Date().getMonth() + 1}月${new Date().getDate()}日 ${weekdayLabel(
     new Date(),
   )}`;

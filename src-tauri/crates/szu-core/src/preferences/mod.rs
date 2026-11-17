@@ -33,6 +33,9 @@ pub const SYNC_DEVICE_NAME: &str = "sync.device_name";
 pub const SYNC_DISABLED_ITEMS: &str = "sync.disabled_items";
 /// 最近一次显式 UOOC 登录对应的账户指纹；同步引擎消费后清空。
 pub const UOOC_LOGIN_PENDING: &str = "uooc.sync.login_pending";
+/// 签到自动化开关（畅课雷达自动签到、SZU 签到提醒与自动签到的总开关）。
+/// 设备本地行为，不参与设备同步。
+pub const SIGNIN_AUTOMATION: &str = "signin.automation";
 
 static DATABASE: OnceLock<db::SettingsDatabase> = OnceLock::new();
 

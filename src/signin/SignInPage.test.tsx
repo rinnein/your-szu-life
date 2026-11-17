@@ -131,6 +131,18 @@ function defaultInvoke(command: string, args?: unknown): Promise<unknown> {
       });
     case "signin_get_last_photo":
       return Promise.resolve({ hasPhoto: false });
+    case "signin_get_automation_settings":
+      return Promise.resolve({ lmsAutoRadar: false, szuEnabled: false });
+    case "signin_set_automation_settings": {
+      const settings = (args as { settings?: Record<string, unknown> } | undefined)?.settings;
+      return Promise.resolve(settings ?? { lmsAutoRadar: false, szuEnabled: false });
+    }
+    case "signin_save_szu_photo":
+      submitted.push({ command, args: (args ?? {}) as Record<string, unknown> });
+      return Promise.resolve({
+        hasPhoto: true,
+        thumbnail: "data:image/jpeg;base64,QUJD",
+      });
     case "signin_submit_lms_number":
     case "signin_submit_lms_radar":
     case "signin_submit_lms_qr":
@@ -239,7 +251,11 @@ it("disables SZU submit until a photo is available", async () => {
   expect(await screen.findByTestId("point-label")).toHaveTextContent("致理楼");
   // 无本次照片且无上次照片 → 提交不可用，而不是提交后撞服务端错误。
   expect(screen.getByRole("button", { name: "提交" })).toBeDisabled();
-  expect(await screen.findByText("SZU 签到需要照片，请先拍摄或选择一张。")).toBeInTheDocument();
+  expect(
+    await screen.findByText(
+      "SZU 签到需要照片，请先拍摄或选择一张；也可只保存照片，供自动签到使用。",
+    ),
+  ).toBeInTheDocument();
 }, 15000);
 
 it("submits SZU signin with the remembered photo", async () => {
@@ -353,4 +369,65 @@ it("top-bar refresh forces a reload of the current tab", async () => {
   });
   await waitFor(() => expect(calls().length).toBeGreaterThan(1));
   expect(calls()[1]?.[1]).toEqual({ force: true });
+}, 15000);
+
+it("leaves the LMS auto radar switch off and saves it when enabled", async () => {
+  await mount("/study/signin");
+  const toggle = await screen.findByRole("switch", { name: "开关畅课自动雷达签到" });
+  await waitFor(() => expect(toggle).toBeEnabled());
+  expect(toggle).not.toBeChecked();
+
+  fireEvent.change(toggle, { target: { checked: true } });
+  await waitFor(() => {
+    expect(
+      vi.mocked(invoke).mock.calls.some(([command, args]) => {
+        if (command !== "signin_set_automation_settings") return false;
+        const settings = (args as { settings?: Record<string, unknown> } | undefined)?.settings;
+        return settings?.lmsAutoRadar === true && settings?.szuEnabled === false;
+      }),
+    ).toBe(true);
+  });
+}, 15000);
+
+it("enables the SZU master switch and warns about photos", async () => {
+  await mount("/study/signin?tab=szu");
+  const toggle = await screen.findByRole("switch", {
+    name: "开关 SZU 签到提醒与自动签到",
+  });
+  await waitFor(() => expect(toggle).toBeEnabled());
+  expect(toggle).not.toBeChecked();
+  expect(screen.queryByText("自动签到需要提前为课程配置照片")).not.toBeInTheDocument();
+
+  fireEvent.change(toggle, { target: { checked: true } });
+  expect(await screen.findByText("自动签到需要提前为课程配置照片")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      vi.mocked(invoke).mock.calls.some(([command, args]) => {
+        if (command !== "signin_set_automation_settings") return false;
+        const settings = (args as { settings?: Record<string, unknown> } | undefined)?.settings;
+        return settings?.szuEnabled === true;
+      }),
+    ).toBe(true);
+  });
+}, 15000);
+
+it("saves a picked SZU photo without submitting a check-in", async () => {
+  await mount("/study/signin?tab=szu");
+  fireEvent.click(await screen.findByText("概率论与数理统计"));
+  const input = await screen.findByTestId("szu-photo-file-input");
+  fireEvent.change(input, {
+    target: { files: [new File(["abc"], "photo.jpg", { type: "image/jpeg" })] },
+  });
+  expect(await screen.findByText(/将使用本次选择的照片/)).toBeInTheDocument();
+
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "保存照片" }));
+  });
+  await waitFor(() => {
+    expect(submitted.some((entry) => entry.command === "signin_save_szu_photo")).toBe(true);
+  });
+  const entry = submitted.find((item) => item.command === "signin_save_szu_photo")!;
+  expect(entry.args.courseName).toBe("概率论与数理统计");
+  expect(entry.args.photoB64).toBe("YWJj");
+  expect(submitted.some((item) => item.command === "signin_submit_szu")).toBe(false);
 }, 15000);

@@ -105,4 +105,24 @@ describe("HomeTimetableWidget", () => {
       expect.stringMatching(/^\/study\/timetable\?tab=week&date=/),
     );
   });
+
+  it("does not double count SZU check-in items in the unmatched button", () => {
+    const previous = snapshot.checkins;
+    snapshot.sessions[0].checkin = "pending_lms";
+    snapshot.checkins = [
+      ...previous,
+      {
+        id: "checkin:szu:编译原理|2026-11-17|1000",
+        title: "编译原理 签到",
+        subtitle: null,
+        firstSeenMs: Date.now(),
+        route: "/study/signin?tab=szu",
+      },
+    ];
+    render(<HomeTimetableWidget />);
+    // SZU 待签已由课次 chip 表达，不应再出现在「另有 n 个待签点名」里。
+    expect(screen.queryByRole("button", { name: /另有/ })).not.toBeInTheDocument();
+    snapshot.checkins = previous;
+    snapshot.sessions[0].checkin = "none";
+  });
 });

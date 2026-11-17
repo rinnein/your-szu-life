@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { LuBell, LuCalendarClock, LuMapPinCheck } from "react-icons/lu";
+import { LuBell, LuCalendarClock, LuMapPinCheck, LuTriangleAlert } from "react-icons/lu";
 import { Button, Card, Checkbox, LoadingIndicator, Switch } from "material/react";
 import { Banner, SettingList, SettingRow, toast } from "./ui";
 import { errorMessage, useAsyncLoad } from "./async-state";
@@ -27,6 +27,7 @@ export interface TodoNotificationConfig {
 export interface TimetableNotificationConfig {
   classReminder: boolean;
   checkin: boolean;
+  checkinFailure: boolean;
 }
 
 export interface NotificationConfig {
@@ -53,6 +54,7 @@ const DEFAULT_TODO_CONFIG: TodoNotificationConfig = {
 const DEFAULT_TIMETABLE_CONFIG: TimetableNotificationConfig = {
   classReminder: true,
   checkin: true,
+  checkinFailure: true,
 };
 
 const DEFAULT_CONFIG: NotificationConfig = {
@@ -397,6 +399,18 @@ export function NotificationSettings() {
               disabled={categoryDisabled}
               onChange={(event: any) => toggleTimetableFlag("checkin", checkedOf(event))}
               aria-label="开关签到提醒"
+            />
+          </SettingRow>
+          <SettingRow
+            icon={<LuTriangleAlert aria-hidden="true" />}
+            title="签到/打卡失败提醒"
+            description="自动签到失败、缺少照片被跳过或需要手动处理时提醒。"
+          >
+            <Switch
+              checked={view.timetable.checkinFailure}
+              disabled={categoryDisabled}
+              onChange={(event: any) => toggleTimetableFlag("checkinFailure", checkedOf(event))}
+              aria-label="开关签到失败提醒"
             />
           </SettingRow>
         </SettingList>

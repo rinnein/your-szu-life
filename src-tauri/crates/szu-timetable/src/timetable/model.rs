@@ -261,6 +261,9 @@ pub fn plan_desktop_class_reminders(
 }
 
 /// 新的待签点名各提醒一次；`complete` 为真且条目消失时清理记录。
+///
+/// 普通待签条目受 `timetable.checkin` 控制；带失败原因（自动签到失败/缺照片
+/// 跳过）的条目受 `timetable.checkin_failure` 控制，两者互不替代。
 pub fn plan_checkin_reminders(
     view: &CheckinView,
     settings: &NotificationSettings,
@@ -277,7 +280,7 @@ pub fn plan_checkin_reminders(
             .checkin_notified
             .retain(|id, _| ids.contains(id.as_str()));
     }
-    if !settings.enabled || !settings.timetable.checkin {
+    if !settings.enabled {
         return Vec::new();
     }
     let mut pending = Vec::new();
@@ -286,10 +289,24 @@ pub fn plan_checkin_reminders(
             .checkin_first_seen
             .entry(item.id.clone())
             .or_insert(now);
-        if !state.checkin_notified.contains_key(&item.id) {
-            state.checkin_notified.insert(item.id.clone(), now);
-            pending.push(item.clone());
+        if state.checkin_notified.contains_key(&item.id) {
+            continue;
         }
+        let failure = item
+            .subtitle
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty());
+        let enabled = if failure {
+            settings.timetable.checkin_failure
+        } else {
+            settings.timetable.checkin
+        };
+        if !enabled {
+            // 开关关闭时不写 notified：之后重新开启仍会提醒。
+            continue;
+        }
+        state.checkin_notified.insert(item.id.clone(), now);
+        pending.push(item.clone());
     }
     pending
 }
@@ -318,6 +335,13 @@ mod tests {
             subtitle: None,
             due_at_ms: 0,
             route: "/study/signin?tab=lms".into(),
+        }
+    }
+
+    fn failure_checkin(id: &str) -> CheckinTodoItem {
+        CheckinTodoItem {
+            subtitle: Some("自动签到失败：定位失败".into()),
+            ..checkin(id)
         }
     }
 
@@ -372,6 +396,47 @@ mod tests {
         };
         plan_checkin_reminders(&unavailable, &settings, 2_000, &mut state);
         assert!(state.checkin_notified.contains_key("a"));
+    }
+
+    #[test]
+    fn failure_items_follow_the_failure_switch() {
+        let mut settings = NotificationSettings::default();
+        // 普通签到提醒关闭，失败提醒仍然开启：失败条目仍要提醒。
+        settings.timetable.checkin = false;
+        let view = CheckinView {
+            items: vec![failure_checkin("a")],
+            complete: true,
+        };
+        let mut state = ReminderState::default();
+        assert_eq!(
+            plan_checkin_reminders(&view, &settings, 1_000, &mut state).len(),
+            1
+        );
+
+        // 关闭失败提醒：不提醒，也不写 notified，重新开启后补发。
+        settings.timetable.checkin_failure = false;
+        let mut state = ReminderState::default();
+        assert!(plan_checkin_reminders(&view, &settings, 1_000, &mut state).is_empty());
+        assert!(state.checkin_notified.is_empty());
+
+        settings.timetable.checkin_failure = true;
+        assert_eq!(
+            plan_checkin_reminders(&view, &settings, 2_000, &mut state).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn failure_switch_does_not_send_generic_items() {
+        let mut settings = NotificationSettings::default();
+        settings.timetable.checkin = false;
+        settings.timetable.checkin_failure = true;
+        let view = CheckinView {
+            items: vec![checkin("a")],
+            complete: true,
+        };
+        let mut state = ReminderState::default();
+        assert!(plan_checkin_reminders(&view, &settings, 1_000, &mut state).is_empty());
     }
 
     #[test]

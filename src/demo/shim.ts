@@ -34,6 +34,7 @@ import {
 } from "./fixtures/oj";
 import { mockLmsSnapshot } from "./fixtures/lms";
 import {
+  mockSigninAutomation,
   mockSigninBuildings,
   mockSigninQwStatus,
   mockSigninRollcalls,
@@ -59,6 +60,9 @@ function unavailable(command: string): never {
 }
 
 type MockHandler = (args?: InvokeArgs) => unknown;
+
+/** 演示会话内可变的签到自动化开关（切换 tab 后仍保留）。 */
+let signinAutomation = { ...mockSigninAutomation };
 
 /** 演示模式下按命令名分发的 mock；未列出的命令放行给真实后端。 */
 const mockHandlers: Record<string, MockHandler> = {
@@ -204,6 +208,14 @@ const mockHandlers: Record<string, MockHandler> = {
   signin_submit_lms_qr: () => undefined,
   signin_submit_szu: () => undefined,
   signin_get_last_photo: () => ({ hasPhoto: false }),
+  signin_save_szu_photo: () => ({ hasPhoto: true }),
+  signin_get_automation_settings: () => signinAutomation,
+  signin_set_automation_settings: (args) => {
+    const settings = (args as { settings?: Partial<typeof signinAutomation> } | undefined)
+      ?.settings;
+    if (settings) signinAutomation = { ...signinAutomation, ...settings };
+    return signinAutomation;
+  },
   signin_qr_room_join: () => undefined,
   signin_qr_room_leave: () => undefined,
   signin_qr_room_share: () => ({ shared: false }),

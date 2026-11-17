@@ -5,6 +5,7 @@
 //! szu-lms 的畅课客户端与 szu-mesh 的临时房间；命令注册四处校验见
 //! `src-tauri/src/tests.rs`。
 
+pub mod automation;
 pub mod buildings;
 pub mod commands;
 pub mod db;
@@ -24,6 +25,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 use tauri::{Emitter, Manager};
 
+use automation::{AutoRuntime, SigninAutomationSettings};
 use szu_core::storage::SharedCredentialStore;
 
 // 跨 crate 消费（szu-todos 聚合、MCP 资源、课表签到标签）。
@@ -34,8 +36,6 @@ use model::{LastPoint, QwSessionState, QwStatusView, ResolvedPoint, TimetableCac
 const TIMETABLE_TTL_MS: i64 = 6 * 60 * 60 * 1000;
 /// LMS 雷达提交的偏移上限（服务端围栏 200m，留安全余量）。
 const LMS_JITTER_CAP_M: f64 = 150.0;
-/// 点名无明确截止时的兜底窗口（签到一般只持续几分钟）。
-const ROLLCALL_FALLBACK_TTL_MS: i64 = 15 * 60 * 1000;
 /// 共享房间的时间窗外沿：课次开始/结束各放宽 10 分钟。
 pub const ROOM_WINDOW_MARGIN_MS: i64 = 10 * 60 * 1000;
 
@@ -82,6 +82,12 @@ pub struct Service {
     room_suspended: Mutex<HashSet<i64>>,
     /// 上次自动建房尝试时间（失败冷却，避免窗口内每轮探测都重试组网）。
     room_last_attempt: Mutex<Option<std::time::Instant>>,
+    /// 自动签到开关（设备本地，由命令写入并即时生效）。
+    automation: Mutex<SigninAutomationSettings>,
+    /// 自动提交尝试账本（内存；成功/失败次数与最近失败原因）。
+    auto_runtime: Mutex<AutoRuntime>,
+    /// 探测串行锁：scheduler 与 `probe_if_due` 可能并发触发，避免重复自动提交。
+    probe_lock: tokio::sync::Mutex<()>,
     /// 自引用，用于派生后台任务。
     self_weak: Mutex<Weak<Service>>,
     /// 事件订阅池：房间状态 / 匹配结果 / 共享计数。
@@ -132,6 +138,9 @@ impl Service {
             qw_user_name: Mutex::new(None),
             room_suspended: Mutex::new(HashSet::new()),
             room_last_attempt: Mutex::new(None),
+            automation: Mutex::new(SigninAutomationSettings::default()),
+            auto_runtime: Mutex::new(AutoRuntime::default()),
+            probe_lock: tokio::sync::Mutex::new(()),
             self_weak: Mutex::new(Weak::new()),
             qr_events: szu_core::ipc_channel::SubscriberPool::new(),
         }))
@@ -156,6 +165,26 @@ impl Service {
     /// 当前待签视图（szu-todos 聚合读取）。
     pub fn checkin_view(&self) -> CheckinView {
         self.pending.lock().unwrap().clone()
+    }
+
+    /// 当前自动签到开关。
+    pub fn automation_settings(&self) -> SigninAutomationSettings {
+        self.automation.lock().unwrap().clone()
+    }
+
+    /// 保存自动签到开关：先落盘再更新内存缓存，保存失败不改变运行时状态。
+    pub fn set_automation_settings(
+        &self,
+        settings: SigninAutomationSettings,
+    ) -> Result<SigninAutomationSettings, String> {
+        let saved = settings.save()?;
+        *self.automation.lock().unwrap() = saved.clone();
+        Ok(saved)
+    }
+
+    /// 任一自动签到能力开启（调度器据此收紧课中探测节拍）。
+    pub fn auto_checkin_active(&self) -> bool {
+        self.automation.lock().unwrap().active()
     }
 
     /// 只读某个课次的 SZU 考勤状态。
@@ -314,49 +343,298 @@ impl Service {
         }
     }
 
-    /// 计划探测一轮：刷新 LMS 待签列表并更新待签视图。
+    /// 计划探测一轮：刷新 LMS 待签列表与 SZU 考勤状态，并运行已开启的自动签到。
     /// LMS 侧列表自带 30s 缓存，本方法被探测循环与 szu-todos 复用时不会刷接口。
     pub async fn probe(&self) {
-        let items = match self.lms_service() {
+        // scheduler 与 szu-todos 的刷新可能并发触发；只允许一轮，避免重复提交。
+        let Ok(_probe_guard) = self.probe_lock.try_lock() else {
+            return;
+        };
+        let now = chrono::Utc::now().timestamp_millis();
+        let automation = self.automation_settings();
+        let previous_items = self.pending.lock().unwrap().items.clone();
+
+        let lms_result = match self.lms_service() {
             Ok(lms) => lms.rollcall_list(false).await,
             Err(message) => Err(message),
         };
-        let now = chrono::Utc::now().timestamp_millis();
-        let mut view = self.pending.lock().unwrap().clone();
-        let previous_items = view.items.clone();
-        match items {
-            Ok(rollcalls) => {
-                view.items = rollcalls
-                    .iter()
-                    .filter(|item| item.need_answer())
-                    .map(|item| CheckinTodoItem {
-                        id: format!("checkin:lms:{}", item.rollcall_id),
-                        title: format!("{} 签到", item.course_title),
-                        subtitle: None,
-                        due_at_ms: now + ROLLCALL_FALLBACK_TTL_MS,
-                        route: "/study/signin?tab=lms".into(),
-                    })
-                    .collect();
-                view.complete = true;
+
+        let (mut items, complete) = match lms_result {
+            Ok(mut rollcalls) => {
+                if automation.lms_auto_radar {
+                    let signed = self.auto_lms_radar(&rollcalls, now).await;
+                    if !signed.is_empty() {
+                        // 服务端已记录签到：强制刷新缓存，让课表与列表立即反映。
+                        if let Ok(lms) = self.lms_service() {
+                            if let Ok(refreshed) = lms.rollcall_list(true).await {
+                                rollcalls = refreshed;
+                            }
+                        }
+                        rollcalls.retain(|item| !signed.contains(&item.rollcall_id));
+                    }
+                }
+                // 只清理当前仍可信的候选，保留失败退避账本。
+                let keep = self.auto_keep_keys(&rollcalls);
+                self.auto_runtime.lock().unwrap().retain(&keep);
+                let runtime = self.auto_runtime.lock().unwrap();
+                (automation::lms_items(&rollcalls, &runtime, now), true)
             }
             Err(_) => {
-                // 探测失败：保留旧条目但标记不完整，提醒层不据此关闭。
-                view.complete = false;
+                // 探测失败：保留旧 LMS 条目但标记不完整，提醒层不据此关闭。
+                (
+                    previous_items
+                        .iter()
+                        .filter(|item| item.id.starts_with("checkin:lms:"))
+                        .cloned()
+                        .collect(),
+                    false,
+                )
             }
+        };
+
+        let mut status_changed = self.refresh_szu_checkins(now).await;
+        if automation.szu_enabled {
+            status_changed |= self.auto_szu(now).await;
+            let sessions: Vec<model::TimetableSession> = self
+                .timetable
+                .lock()
+                .unwrap()
+                .sessions_on(&local_date(now))
+                .into_iter()
+                .cloned()
+                .collect();
+            let refs: Vec<&model::TimetableSession> = sessions.iter().collect();
+            let states = self.szu_checkins.lock().unwrap().clone();
+            let runtime = self.auto_runtime.lock().unwrap();
+            items.extend(automation::szu_items(&refs, &states, &runtime, now));
         }
+
+        let view = CheckinView { items, complete };
         let items_changed = previous_items != view.items;
         *self.pending.lock().unwrap() = view;
-        if items_changed {
+        if items_changed || status_changed {
             if let Some(app) = &self.app {
                 let _ = app.emit("signin-checkin-status-changed", ());
             }
         }
-        self.refresh_szu_checkins(now).await;
+    }
+
+    /// 自动提交账本的保留键：当前待签 LMS 点名 + 当天全部 SZU 课次。
+    fn auto_keep_keys(
+        &self,
+        rollcalls: &[szu_lms::lms::rollcall::RollcallItem],
+    ) -> HashSet<String> {
+        let mut keep: HashSet<String> = rollcalls
+            .iter()
+            .filter(|item| item.need_answer())
+            .map(|item| AutoRuntime::lms_key(item.rollcall_id))
+            .collect();
+        let cache = self.timetable.lock().unwrap().clone();
+        for session in cache.sessions_on(&local_date(chrono::Utc::now().timestamp_millis())) {
+            keep.insert(AutoRuntime::szu_key(session));
+        }
+        keep
+    }
+
+    /// 畅课雷达自动签到：只处理雷达类型；返回本轮提交成功的点名 ID。
+    async fn auto_lms_radar(
+        &self,
+        rollcalls: &[szu_lms::lms::rollcall::RollcallItem],
+        now: i64,
+    ) -> HashSet<i64> {
+        let plans: Vec<(i64, i64, String)> = {
+            let mut runtime = self.auto_runtime.lock().unwrap();
+            rollcalls
+                .iter()
+                .filter(|item| {
+                    item.need_answer()
+                        && item.method() == szu_lms::lms::rollcall::RollcallMethod::Radar
+                })
+                .filter(|item| runtime.begin(&AutoRuntime::lms_key(item.rollcall_id), now))
+                .map(|item| {
+                    (
+                        item.rollcall_id,
+                        item.course_id,
+                        item.course_title.clone(),
+                    )
+                })
+                .collect()
+        };
+        let mut signed = HashSet::new();
+        for (rollcall_id, course_id, course_title) in plans {
+            let key = AutoRuntime::lms_key(rollcall_id);
+            match self
+                .submit_lms_radar(rollcall_id, course_id, &course_title, None, None)
+                .await
+            {
+                Ok(_) => {
+                    self.auto_runtime.lock().unwrap().succeed(&key);
+                    signed.insert(rollcall_id);
+                    log::info!("已自动完成畅课雷达签到（点名 {rollcall_id}）");
+                }
+                Err(message) => {
+                    log::warn!("自动雷达签到失败（畅课点名 {rollcall_id}）: {message}");
+                    self.auto_runtime
+                        .lock()
+                        .unwrap()
+                        .fail(&key, format!("自动签到失败：{message}"));
+                }
+            }
+        }
+        signed
+    }
+
+    /// SZU 自动签到：对当前窗口内 `Pending` 的课次提交。返回状态是否有变化。
+    async fn auto_szu(&self, now: i64) -> bool {
+        let sessions: Vec<model::TimetableSession> = self
+            .timetable
+            .lock()
+            .unwrap()
+            .sessions_on(&local_date(now))
+            .into_iter()
+            .cloned()
+            .collect();
+        let candidates: Vec<(model::TimetableSession, String, String)> = {
+            let states = self.szu_checkins.lock().unwrap();
+            sessions
+                .into_iter()
+                .filter(|session| {
+                    now >= session.start_ms - scheduler::WINDOW_HALF_MS
+                        && now <= session.end_ms + scheduler::WINDOW_HALF_MS
+                })
+                .filter(|session| {
+                    states
+                        .get(&automation::szu_session_key(session))
+                        .is_some_and(|cached| cached.state == model::SzuCheckinState::Pending)
+                })
+                .map(|session| {
+                    let state_key = automation::szu_session_key(&session);
+                    let runtime_key = AutoRuntime::szu_key(&session);
+                    (session, state_key, runtime_key)
+                })
+                .collect()
+        };
+        if candidates.is_empty() {
+            return false;
+        }
+        // 不在探测里 bootstrap：会话未就绪时留给课表慢刷新/手动刷新。
+        if *self.qw_session.lock().unwrap() != QwSessionState::Ready {
+            return false;
+        }
+
+        let mut changed = false;
+        for (session, state_key, runtime_key) in candidates {
+            if self.auto_runtime.lock().unwrap().is_completed(&runtime_key) {
+                continue;
+            }
+            let has_photo = match self.course_has_photo(&session.course_name).await {
+                Ok(has_photo) => has_photo,
+                Err(message) => {
+                    self.auto_runtime
+                        .lock()
+                        .unwrap()
+                        .skip(&runtime_key, format!("读取签到照片失败：{message}"));
+                    continue;
+                }
+            };
+            if !has_photo {
+                self.auto_runtime
+                    .lock()
+                    .unwrap()
+                    .skip(&runtime_key, automation::NO_PHOTO_MESSAGE);
+                continue;
+            }
+            if !self.auto_runtime.lock().unwrap().begin(&runtime_key, now) {
+                continue;
+            }
+            match self.auto_submit_szu_session(&session).await {
+                Ok(()) => {
+                    self.auto_runtime.lock().unwrap().succeed(&runtime_key);
+                    self.szu_checkins.lock().unwrap().insert(
+                        state_key,
+                        model::CachedSzuCheckin {
+                            state: model::SzuCheckinState::Signed,
+                            checked_at_ms: now,
+                        },
+                    );
+                    changed = true;
+                    log::info!("已自动完成 SZU 签到（{}）", session.course_name);
+                }
+                Err(message) if message.contains("已经签到") => {
+                    // 服务端已签：按成功处理，避免继续重试。
+                    self.auto_runtime.lock().unwrap().succeed(&runtime_key);
+                    self.szu_checkins.lock().unwrap().insert(
+                        state_key,
+                        model::CachedSzuCheckin {
+                            state: model::SzuCheckinState::Signed,
+                            checked_at_ms: now,
+                        },
+                    );
+                    changed = true;
+                }
+                Err(message) => {
+                    log::warn!("自动 SZU 签到失败（{}）: {message}", session.course_name);
+                    self.auto_runtime
+                        .lock()
+                        .unwrap()
+                        .fail(&runtime_key, format!("自动签到失败：{message}"));
+                }
+            }
+        }
+        changed
+    }
+
+    async fn auto_submit_szu_session(&self, session: &model::TimetableSession) -> Result<(), String> {
+        let resolved = self
+            .resolve_radar_point(
+                &szu_course_key(&session.course_name),
+                &session.course_name,
+            )
+            .await?;
+        let Some((latitude, longitude, label, radius)) =
+            automation::szu_auto_point(&resolved, session)
+        else {
+            return Err("无法解析该课次的楼栋位置".into());
+        };
+        let source = if resolved.source == "last_success" {
+            "geolocation"
+        } else {
+            "building"
+        };
+        // SZU 服务端按楼栋围栏强校验；抖动上限优先用本课次匹配到的楼栋半径。
+        let cap_m = matching::match_building(
+            buildings::builtin(),
+            session.building_name.as_deref(),
+            session.building_name_en.as_deref(),
+            session.classroom.as_deref(),
+        )
+        .ok()
+        .map(|(building, _)| building.radius_m as f64)
+        .unwrap_or(radius as f64);
+        self.submit_szu_at(
+            &session.course_name,
+            (latitude, longitude),
+            cap_m,
+            label,
+            source,
+            None,
+            session.classroom.as_deref(),
+        )
+        .await
+    }
+
+    /// 课程是否已有可复用的签到照片（提前保存或上次提交留下的）。
+    async fn course_has_photo(&self, course_name: &str) -> Result<bool, String> {
+        let database = self.database()?;
+        let key = szu_course_key(course_name);
+        let memory =
+            szu_core::migrations::db::run_sync(async move { database.load_memory(&key).await })?;
+        Ok(memory.has_photo())
     }
 
     /// 课表窗口内的 SZU 状态刷新。频率完全由 `scheduler::run` 的
-    /// 30s/5min 动态节拍决定，课表模块不另行轮询。
-    async fn refresh_szu_checkins(&self, now: i64) {
+    /// 30s/5min 动态节拍决定，课表模块不另行轮询。返回状态是否变化。
+    async fn refresh_szu_checkins(&self, now: i64) -> bool {
         let sessions: Vec<model::TimetableSession> = self
             .timetable
             .lock()
@@ -372,10 +650,7 @@ impl Service {
             {
                 continue;
             }
-            let key = format!(
-                "{}|{}|{}",
-                session.course_name, session.date, session.start_ms
-            );
+            let key = automation::szu_session_key(&session);
             let fresh = self
                 .szu_checkins
                 .lock()
@@ -387,19 +662,19 @@ impl Service {
             }
         }
         if targets.is_empty() {
-            return;
+            return false;
         }
 
         // 不在探测里 bootstrap：会话未就绪时由 timetable 的慢刷新或用户手动刷新负责，
         // 避免每个 30s 窗口重复触发认证。
         if *self.qw_session.lock().unwrap() != QwSessionState::Ready {
-            return;
+            return false;
         }
         let Ok(client) = self.build_qw_client() else {
-            return;
+            return false;
         };
         let Some(student_id) = self.qw_student_id.lock().unwrap().clone() else {
-            return;
+            return false;
         };
 
         let mut changed = false;
@@ -459,11 +734,7 @@ impl Service {
                 changed = true;
             }
         }
-        if changed {
-            if let Some(app) = &self.app {
-                let _ = app.emit("signin-checkin-status-changed", ());
-            }
-        }
+        changed
     }
 
     /// szu-todos 的 refresh 钩子。自动刷新（首页订阅 / 后台轮询）只在
@@ -661,8 +932,8 @@ impl Service {
         custom: Option<(f64, f64, bool)>,
         photo_b64: Option<&str>,
     ) -> Result<(), String> {
-        // 1. 定位点：自定义（WGS-84 读数或 GCJ-02 点）或内置楼栋（GCJ-02）。
-        //    保存记忆用的「用户选择的点」与提交用的「抖动点」分开。
+        // 定位点：自定义（WGS-84 读数或 GCJ-02 点）或内置楼栋（GCJ-02）。
+        // 保存记忆用的「用户选择的点」与提交用的「抖动点」分开。
         let (selected, cap_m, label, source) = match (building_id, custom) {
             (Some(id), _) => {
                 let point = self.building_point(id)?;
@@ -679,6 +950,30 @@ impl Service {
             }
             (None, None) => return Err("请选择签到地点".into()),
         };
+        self.submit_szu_at(
+            course_name,
+            selected,
+            cap_m,
+            label,
+            source,
+            photo_b64,
+            None,
+        )
+        .await
+    }
+
+    /// SZU 签到的共同实现：`expected_classroom` 非空时校验服务端按该坐标匹配到
+    /// 的课次教室，避免自动签到拿兜底/旧定位签错课次。
+    async fn submit_szu_at(
+        &self,
+        course_name: &str,
+        selected: (f64, f64),
+        cap_m: f64,
+        label: String,
+        source: &str,
+        photo_b64: Option<&str>,
+        expected_classroom: Option<&str>,
+    ) -> Result<(), String> {
         let (submitted_lat, submitted_lng) = {
             let mut rng = rand::rng();
             geo::jitter_point(&mut rng, selected.0, selected.1, cap_m)
@@ -752,6 +1047,11 @@ impl Service {
                     .message
                     .unwrap_or_else(|| "当前不满足签到条件（不在签到时间或范围内）".into()));
             }
+            if let Some(classroom) = expected_classroom {
+                if !classroom_matches(Some(classroom), status.classroom.as_deref()) {
+                    return Err("当前定位与课次教室不一致，已取消自动签到，请手动签到".into());
+                }
+            }
             // 4. 上传照片（multipart 字段 photo）拿 photo_path，再随 JSON 提交。
             let uploaded = match client
                 .upload_photo(
@@ -808,7 +1108,7 @@ impl Service {
                 latitude: selected.0,
                 longitude: selected.1,
                 label,
-                source: source.into(),
+                source: source.to_string(),
             },
         )
         .await
@@ -832,6 +1132,26 @@ impl Service {
             } else {
                 None
             },
+        })
+    }
+
+    /// 提前保存某课程的签到照片：不要求提交成功，供后续手动/自动签到复用。
+    pub async fn save_szu_photo(
+        &self,
+        course_name: &str,
+        photo_b64: &str,
+    ) -> Result<model::LastPhotoView, String> {
+        let bytes = photo::base64_decode(photo_b64)?;
+        let (jpeg, mime) = photo::normalize_photo(&bytes)?;
+        self.save_last_photo(
+            &szu_course_key(course_name),
+            &photo::base64_encode(&jpeg),
+            mime,
+        )
+        .await?;
+        Ok(model::LastPhotoView {
+            has_photo: true,
+            thumbnail: photo::photo_thumbnail_data_uri(&jpeg).ok(),
         })
     }
 
@@ -1054,6 +1374,8 @@ pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
         .map_err(|_| "应用数据目录不可用".to_string())?
         .join("signin/state.sqlite");
     let service = Service::new(Some(app.clone()), store.credentials.clone(), path)?;
+    // 自动签到开关是设备本地偏好；读取失败按关闭处理，不影响签到主流程。
+    *service.automation.lock().unwrap() = SigninAutomationSettings::load();
     *service.self_weak.lock().unwrap() = Arc::downgrade(&service);
     store
         .service

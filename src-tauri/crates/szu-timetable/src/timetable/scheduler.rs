@@ -284,15 +284,19 @@ async fn sync_android(
     }
 }
 
+fn checkin_payload(item: &CheckinTodoItem) -> NotificationPayload {
+    let details = item
+        .subtitle
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("探测到新的点名，请尽快前往签到页处理。");
+    NotificationPayload::new(NotificationCategory::Timetable, &item.title, details)
+        .route(item.route.clone())
+        .action_label("去签到")
+}
+
 fn dispatch_checkin(app: &AppHandle, item: &CheckinTodoItem) {
-    let payload = NotificationPayload::new(
-        NotificationCategory::Timetable,
-        &item.title,
-        "探测到新的点名，请尽快前往签到页处理。",
-    )
-    .route(item.route.clone())
-    .action_label("去签到");
-    notify(app, payload);
+    notify(app, checkin_payload(item));
 }
 
 fn dispatch_class(app: &AppHandle, spec: &ClassReminderSpec) {
@@ -316,6 +320,7 @@ fn dispatch_class(app: &AppHandle, spec: &ClassReminderSpec) {
 
 #[cfg(test)]
 mod tests {
+    use super::checkin_payload;
     use super::super::model::{class_spec, class_sync_specs};
     use szu_signin::signin::model::TimetableSession;
 
@@ -354,5 +359,36 @@ mod tests {
         let specs = class_sync_specs(&sessions, now);
         assert_eq!(specs.len(), 1);
         assert_eq!(specs[0].start_at_ms, now + 60 * 60_000);
+    }
+
+    #[test]
+    fn checkin_payload_uses_auto_failure_reason_when_present() {
+        use szu_signin::signin::model::CheckinTodoItem;
+
+        let item = CheckinTodoItem {
+            id: "checkin:szu:高等数学|2026-11-17|1000".into(),
+            title: "高等数学 签到".into(),
+            subtitle: Some("没有为该课程保存签到照片，自动签到已跳过。".into()),
+            due_at_ms: 0,
+            route: "/study/signin?tab=szu".into(),
+        };
+        let payload = checkin_payload(&item);
+        assert_eq!(
+            payload.body,
+            "没有为该课程保存签到照片，自动签到已跳过。"
+        );
+        assert_eq!(
+            payload.route.as_deref(),
+            Some("/study/signin?tab=szu")
+        );
+
+        let plain = CheckinTodoItem {
+            subtitle: None,
+            ..item
+        };
+        assert_eq!(
+            checkin_payload(&plain).body,
+            "探测到新的点名，请尽快前往签到页处理。"
+        );
     }
 }

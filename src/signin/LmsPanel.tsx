@@ -7,12 +7,15 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as tauriCore from "@tauri-apps/api/core";
-import { Chip } from "../ui";
+import { Button, Card, Switch } from "material/react";
+import { LuRadar } from "react-icons/lu";
+import { Banner, Chip, SettingList, SettingRow } from "../ui";
 import { EmptyState, LoadingState } from "../components";
 import { useLatestRequest } from "../async-state";
 import { SigninList, SigninRow } from "./SigninList";
 import { LmsRollcallDialog } from "./LmsRollcallDialog";
 import { useQrRoom } from "./use-qr-room";
+import { useSigninAutomation } from "./use-signin-automation";
 import {
   needAnswer,
   ROLLCALL_METHOD_LABEL,
@@ -34,6 +37,8 @@ interface LmsPanelProps {
 const normalizeCourse = (value: string | undefined) =>
   (value ?? "").replace(/\s/g, "").toLowerCase();
 
+const checkedOf = (event: any): boolean => Boolean(event.detail?.checked ?? event.target?.checked);
+
 export function LmsPanel({
   buildings,
   buildingsFailed,
@@ -48,6 +53,7 @@ export function LmsPanel({
   );
   const [active, setActive] = useState<RollcallItem | null>(null);
   const qr = useQrRoom();
+  const automation = useSigninAutomation();
 
   const load = useCallback(
     (force: boolean) => {
@@ -109,6 +115,44 @@ export function LmsPanel({
 
   return (
     <section aria-label="畅课待签到列表" className="flex flex-col gap-4">
+      <Card variant="outlined">
+        <div slot="headline">自动雷达签到</div>
+        <div slot="subhead">
+          检测到畅课雷达点名时，按「上次成功定位 → 课表楼栋 → 兜底楼栋」自动提交。
+          默认关闭；仅在应用进程存活时运行，锁屏或系统回收进程时可能错过。
+        </div>
+        <SettingList>
+          <SettingRow
+            icon={<LuRadar aria-hidden="true" />}
+            title="启用自动雷达签到"
+            description="只处理雷达类点名；数字与扫码仍需手动完成。"
+          >
+            <Switch
+              checked={automation.settings.lmsAutoRadar}
+              disabled={
+                automation.loading ||
+                automation.failed ||
+                automation.pending.isPending("automation")
+              }
+              onChange={(event: any) => automation.toggle("lmsAutoRadar", checkedOf(event))}
+              aria-label="开关畅课自动雷达签到"
+            />
+          </SettingRow>
+        </SettingList>
+      </Card>
+      {automation.failed && (
+        <div className="grid justify-items-start gap-3">
+          <Banner status="danger">
+            <Banner.Title>无法读取自动签到设置</Banner.Title>
+            <Banner.Description>
+              {automation.state.status === "error" ? automation.state.message : ""}
+            </Banner.Description>
+          </Banner>
+          <Button variant="outlined" onClick={() => void automation.reload()}>
+            重试
+          </Button>
+        </div>
+      )}
       {loadFailed ? (
         <EmptyState
           variant="error"

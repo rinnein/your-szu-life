@@ -109,6 +109,14 @@ export interface LastPhotoView {
   thumbnail?: string;
 }
 
+/** 签到自动化设置（camelCase，Rust SigninAutomationSettings）。默认均关闭。 */
+export interface SigninAutomationSettings {
+  /** 畅课雷达点名自动签到 */
+  lmsAutoRadar: boolean;
+  /** SZU（实验性）签到提醒与自动签到的总开关 */
+  szuEnabled: boolean;
+}
+
 /** 签到码共享房间事件（Rust QrEvent，tag=type content=data；变体字段保持 snake_case）。 */
 export type QrEvent =
   | { type: "roomJoined"; data: { course_id: number } }

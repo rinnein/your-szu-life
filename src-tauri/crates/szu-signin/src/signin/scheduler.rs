@@ -21,6 +21,8 @@ pub const WINDOW_HALF_MS: i64 = 3 * 60 * 1000;
 const WINDOW_CADENCE_MS: i64 = 30 * 1000;
 /// 课中探测间隔。
 const IN_COURSE_CADENCE_MS: i64 = 5 * 60 * 1000;
+/// 开启自动签到后的课中探测间隔：点名可能在课中任意时刻发起，5 分钟会错过。
+pub const AUTO_CHECKIN_CADENCE_MS: i64 = 60 * 1000;
 
 /// 一次探测计划：何时醒、醒来后的节拍。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,10 +79,20 @@ fn session_next_probe(start_ms: i64, end_ms: i64, now_ms: i64) -> Option<ProbePl
     None
 }
 
+/// 自动签到开启时收紧探测节拍：30s 窗口保持，课中 5min 压到 60s。
+pub fn effective_cadence(cadence_ms: i64, auto_checkin: bool) -> i64 {
+    if auto_checkin {
+        cadence_ms.min(AUTO_CHECKIN_CADENCE_MS)
+    } else {
+        cadence_ms
+    }
+}
+
 /// 探测循环：每轮先算下次计划，分块睡到点再探测。
 /// 档位变快（Active/Foreground）时把最长睡眠块压短，让探测尽快跟上。
 pub async fn run(service: Arc<Service>) {
     let mut last_tier = activity::tier(Some("signin"));
+    let mut last_auto = service.auto_checkin_active();
     let mut deadline: Option<ProbePlan> = None;
     loop {
         let tier = activity::tier(Some("signin"));
@@ -88,6 +100,14 @@ pub async fn run(service: Arc<Service>) {
             last_tier = tier;
             // 档位变快时立即重新计划并探测一次。
             if tier != ActivityTier::Background {
+                deadline = None;
+            }
+        }
+        let auto = service.auto_checkin_active();
+        if auto != last_auto {
+            last_auto = auto;
+            // 用户刚打开自动签到：不要等完当前 5min 课中睡眠。
+            if auto {
                 deadline = None;
             }
         }
@@ -101,9 +121,10 @@ pub async fn run(service: Arc<Service>) {
                 service.probe().await;
                 // 房间生命周期跟随探测节拍：窗口内自动建房、窗外自动回收。
                 service.update_rooms(now).await;
+                let cadence = effective_cadence(plan.cadence_ms, auto);
                 deadline = Some(ProbePlan {
-                    at_ms: now + plan.cadence_ms,
-                    cadence_ms: plan.cadence_ms,
+                    at_ms: now + cadence,
+                    cadence_ms: cadence,
                 });
             }
             Some(plan) => {
@@ -204,5 +225,18 @@ mod tests {
         let plan = plan_at(&[a, b], 10 * 60 * MIN - 2 * MIN).unwrap();
         assert_eq!(plan.at_ms, 10 * 60 * MIN - 2 * MIN);
         assert_eq!(plan.cadence_ms, WINDOW_CADENCE_MS);
+    }
+
+    #[test]
+    fn auto_checkin_tightens_only_long_cadences() {
+        assert_eq!(effective_cadence(WINDOW_CADENCE_MS, true), WINDOW_CADENCE_MS);
+        assert_eq!(
+            effective_cadence(IN_COURSE_CADENCE_MS, true),
+            AUTO_CHECKIN_CADENCE_MS
+        );
+        assert_eq!(
+            effective_cadence(IN_COURSE_CADENCE_MS, false),
+            IN_COURSE_CADENCE_MS
+        );
     }
 }

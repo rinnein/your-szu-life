@@ -1,5 +1,10 @@
 /** 演示模式的签到/打卡数据（真实列表由 Rust 命令返回，这里给可交互的代表子集）。 */
-import { localDateKey, type RollcallItem, type TimetableCache } from "../../signin/types";
+import {
+  localDateKey,
+  type RollcallItem,
+  type SigninAutomationSettings,
+  type TimetableCache,
+} from "../../signin/types";
 
 export const mockSigninBuildings = [
   {
@@ -35,6 +40,11 @@ export const mockSigninBuildings = [
 ];
 
 export const mockSigninQwStatus = { state: "ready", message: "" };
+
+export const mockSigninAutomation: SigninAutomationSettings = {
+  lmsAutoRadar: false,
+  szuEnabled: false,
+};
 
 export const mockSigninRollcalls: RollcallItem[] = [
   {

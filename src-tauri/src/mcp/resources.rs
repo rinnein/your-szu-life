@@ -69,6 +69,12 @@ pub fn list_available_resources() -> Vec<Resource> {
                 "返回签到模块缓存的 SZU 考勤课表（课次时间、楼栋/教室与解析出的楼栋坐标）",
             )
             .with_mime_type("application/json"),
+        Resource::new("your-szu-life://data/signin/settings", "signin_settings")
+            .with_title("签到自动化设置")
+            .with_description(
+                "返回畅课雷达自动签到与 SZU（实验性）签到提醒/自动签到总开关（默认关闭）",
+            )
+            .with_mime_type("application/json"),
         Resource::new("your-szu-life://data/timetable", "timetable")
             .with_title("课表快照")
             .with_description(
@@ -274,6 +280,14 @@ pub async fn read_resource_by_uri(
         "your-szu-life://data/signin/timetable" => {
             if let Ok(service) = szu_signin::signin::service(app) {
                 serde_json::to_string_pretty(&service.timetable_snapshot())
+                    .unwrap_or_else(|_| "{}".to_string())
+            } else {
+                "{}".to_string()
+            }
+        }
+        "your-szu-life://data/signin/settings" => {
+            if let Ok(service) = szu_signin::signin::service(app) {
+                serde_json::to_string_pretty(&service.automation_settings())
                     .unwrap_or_else(|_| "{}".to_string())
             } else {
                 "{}".to_string()

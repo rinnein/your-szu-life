@@ -1,6 +1,7 @@
 //! 签到/打卡模块的 MCP 工具胶水。
 
 use szu_signin::signin;
+use szu_signin::signin::automation::SigninAutomationSettings;
 use crate::mcp::service::UnifiedSzuMcpService;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::tool;
@@ -38,6 +39,14 @@ pub struct SubmitRadarParams {
 pub struct TimetableParams {
     /// 是否强制重新拉取课表（默认 false，用 6 小时 TTL 缓存）
     pub force: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default)]
+pub struct AutomationSettingsUpdate {
+    /// 畅课雷达点名自动签到
+    pub lms_auto_radar: Option<bool>,
+    /// SZU（实验性）签到提醒与自动签到的总开关
+    pub szu_enabled: Option<bool>,
 }
 
 #[tool_router(router = signin_tools, vis = "pub(crate)")]
@@ -111,5 +120,34 @@ impl UnifiedSzuMcpService {
             )
             .await?;
         serde_json::to_string_pretty(&resolved).map_err(|e| format!("序列化失败: {e}"))
+    }
+
+    #[tool(
+        name = "signin_get_automation_settings",
+        description = "获取签到自动化设置：畅课雷达自动签到与 SZU（实验性）签到提醒/自动签到总开关。默认均为关闭。对应资源 your-szu-life://data/signin/settings"
+    )]
+    pub async fn signin_get_automation_settings(&self) -> Result<String, String> {
+        let settings: SigninAutomationSettings = signin::service(&self.app)?.automation_settings();
+        serde_json::to_string_pretty(&settings).map_err(|e| format!("序列化失败: {e}"))
+    }
+
+    #[tool(
+        name = "signin_set_automation_settings",
+        description = "修改签到自动化设置。开启畅课雷达自动签到后，检测到雷达点名会按默认地点回退链自动提交；开启 SZU 总开关后，对可签到的考勤课次自动用记忆照片提交，并发送签到提醒。对应资源 your-szu-life://data/signin/settings"
+    )]
+    pub async fn signin_set_automation_settings(
+        &self,
+        Parameters(params): Parameters<AutomationSettingsUpdate>,
+    ) -> Result<String, String> {
+        let service = signin::service(&self.app)?;
+        let mut current = service.automation_settings();
+        if let Some(value) = params.lms_auto_radar {
+            current.lms_auto_radar = value;
+        }
+        if let Some(value) = params.szu_enabled {
+            current.szu_enabled = value;
+        }
+        let saved = service.set_automation_settings(current)?;
+        serde_json::to_string_pretty(&saved).map_err(|e| format!("序列化失败: {e}"))
     }
 }

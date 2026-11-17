@@ -7,12 +7,14 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as tauriCore from "@tauri-apps/api/core";
-import { Button } from "material/react";
-import { Banner } from "../ui";
+import { Button, Card, Switch } from "material/react";
+import { LuMapPinCheck } from "react-icons/lu";
+import { Banner, SettingList, SettingRow } from "../ui";
 import { EmptyState, LoadingState } from "../components";
 import { useLatestRequest } from "../async-state";
 import { SigninList, SigninRow } from "./SigninList";
 import { SzuSigninDialog } from "./SzuSigninDialog";
+import { useSigninAutomation } from "./use-signin-automation";
 import {
   formatSessionTime,
   localDateKey,
@@ -26,6 +28,8 @@ type SzuSnapshot =
   | { kind: "ready"; sessions: TimetableSession[] }
   | { kind: "needs_auth"; message: string }
   | { kind: "unavailable"; message: string };
+
+const checkedOf = (event: any): boolean => Boolean(event.detail?.checked ?? event.target?.checked);
 
 interface SzuPanelProps {
   buildings: Building[];
@@ -47,6 +51,7 @@ export function SzuPanel({
   onBusyChange,
 }: SzuPanelProps) {
   const forceRef = useRef(false);
+  const automation = useSigninAutomation();
   const { state, run } = useLatestRequest<SzuSnapshot>(async () => {
     const status = await tauriCore.invoke<{
       state: "ready" | "needs_auth" | "unavailable";
@@ -115,6 +120,58 @@ export function SzuPanel({
 
   return (
     <section aria-label="SZU 考勤课次列表" className="flex flex-col gap-4">
+      <Card variant="outlined">
+        <div slot="headline">签到提醒与自动签到</div>
+        <div slot="subhead">
+          开启后，检测到 SZU 考勤可签到的课次时自动用雷达定位提交；无法自动完成时发送签到提醒。
+          默认关闭，且仍受「设置 → 通知 → 签到提醒」开关约束。
+        </div>
+        <SettingList>
+          <SettingRow
+            icon={<LuMapPinCheck aria-hidden="true" />}
+            title="启用签到提醒与自动签到"
+            description="自动签到仅在应用进程存活时运行，锁屏或系统回收进程时可能错过。"
+          >
+            <Switch
+              checked={automation.settings.szuEnabled}
+              disabled={
+                automation.loading ||
+                automation.failed ||
+                automation.pending.isPending("automation")
+              }
+              onChange={(event: any) => automation.toggle("szuEnabled", checkedOf(event))}
+              aria-label="开关 SZU 签到提醒与自动签到"
+            />
+          </SettingRow>
+        </SettingList>
+      </Card>
+      {automation.failed && (
+        <div className="grid justify-items-start gap-3">
+          <Banner status="danger">
+            <Banner.Title>无法读取自动签到设置</Banner.Title>
+            <Banner.Description>
+              {automation.state.status === "error" ? automation.state.message : ""}
+            </Banner.Description>
+          </Banner>
+          <Button variant="outlined" onClick={() => void automation.reload()}>
+            重试
+          </Button>
+        </div>
+      )}
+      {automation.settings.szuEnabled && (
+        <Banner status="warning">
+          <Banner.Title>自动签到需要提前为课程配置照片</Banner.Title>
+          <Banner.Description>
+            <span className="block">
+              没有保存照片的课程会被跳过，并发送失败提醒。请打开课次，选择或拍摄照片后点「保存照片」；
+              保存不要求签到成功，照片会按课程记忆供后续自动签到使用。
+            </span>
+            <span className="block">
+              自动签到仅在应用进程存活时运行；锁屏或系统回收进程时可能错过。
+            </span>
+          </Banner.Description>
+        </Banner>
+      )}
       {loadFailed ? (
         <EmptyState
           variant="error"

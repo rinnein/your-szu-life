@@ -32,6 +32,7 @@ export function SzuSigninDialog({
   const [photo, setPhoto] = useState<string | null>(null); // data URI，base64 在提交时切出
   const pending = usePending();
   const submitting = pending.isPending("submit");
+  const savingPhoto = pending.isPending("savePhoto");
   const android = useAndroid() === "android";
 
   const resolved = useAsyncLoad<ResolvedPoint>(() =>
@@ -51,10 +52,10 @@ export function SzuSigninDialog({
 
   const preview = photo ?? lastPhotoReady?.thumbnail ?? null;
   const note = photo
-    ? "将使用本次选择的照片提交（提交时压缩为 JPEG）。"
+    ? "将使用本次选择的照片提交（提交时压缩为 JPEG）；可先点「保存照片」供之后复用。"
     : hasRememberedPhoto
-      ? "将使用该课程上一次的签到照片提交；也可以重新拍照或选择。"
-      : "SZU 签到需要照片，请先拍摄或选择一张。";
+      ? "将使用该课程上一次保存的签到照片提交，自动签到也会复用它；也可以重新拍照或选择。"
+      : "SZU 签到需要照片，请先拍摄或选择一张；也可只保存照片，供自动签到使用。";
 
   const captureRef = useRef<HTMLInputElement | null>(null);
   const uploadRef = useRef<HTMLInputElement | null>(null);
@@ -84,6 +85,24 @@ export function SzuSigninDialog({
       onClose();
     } else if (!outcome.skipped) {
       toast.danger("SZU 签到失败", { description: errorMessage(outcome.error) });
+    }
+  };
+
+  const savePhoto = async () => {
+    if (!photo) return;
+    const outcome = await pending.run("savePhoto", () =>
+      tauriCore.invoke<LastPhotoView>("signin_save_szu_photo", {
+        courseName: session.course_name,
+        photoB64: photo.slice(photo.indexOf(",") + 1),
+      }),
+    );
+    if (outcome.ok) {
+      lastPhoto.apply(outcome.value);
+      toast.success("已保存该课程的签到照片", {
+        description: "之后的手动或自动签到会复用这张照片，无需签到成功。",
+      });
+    } else if (!outcome.skipped) {
+      toast.danger("保存签到照片失败", { description: errorMessage(outcome.error) });
     }
   };
 
@@ -120,7 +139,7 @@ export function SzuSigninDialog({
         />
 
         <div className="flex flex-col gap-2">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <input
               ref={captureRef}
               type="file"
@@ -148,6 +167,16 @@ export function SzuSigninDialog({
               <LuImageUp aria-hidden="true" />
               选择照片
             </Button>
+            {photo && (
+              <Button
+                variant="outlined"
+                disabled={savingPhoto || submitting}
+                onClick={() => void savePhoto()}
+              >
+                {savingPhoto && <LoadingIndicator size={16} />}
+                保存照片
+              </Button>
+            )}
           </div>
           {preview && (
             <img
