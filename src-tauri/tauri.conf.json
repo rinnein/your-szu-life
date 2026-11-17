@@ -57,7 +57,9 @@
       "resources/licenses/modern-monaco.txt": "resources/licenses/modern-monaco.txt",
       "../node_modules/typescript-lsp/LICENSE.txt": "resources/licenses/typescript-lsp.txt",
       "../node_modules/tm-grammars/LICENSE": "resources/licenses/tm-grammars.txt",
-      "../node_modules/tm-themes/LICENSE": "resources/licenses/tm-themes.txt"
+      "../node_modules/tm-themes/LICENSE": "resources/licenses/tm-themes.txt",
+      "../node_modules/misans/LICENSE": "resources/licenses/misans.txt",
+      "../node_modules/@fontsource/monaspace-neon/LICENSE": "resources/licenses/monaspace-neon.txt"
     },
     "linux": {
       "deb": {

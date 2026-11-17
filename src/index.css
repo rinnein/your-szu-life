@@ -130,6 +130,15 @@
 }
 
 /*
+ * 等宽字体：内置 Monaspace Neon（src/monospace.ts 是同一栈的 TS 来源）。
+ * 覆盖 Tailwind 默认的 --font-mono，让 font-mono 工具类与 OJ 编辑器、
+ * 样例输入框、<pre> 全部落到同一个字体上。
+ */
+@theme {
+  --font-mono: "Monaspace Neon", ui-monospace, monospace;
+}
+
+/*
  * 嵌套圆角：卡片（12px）与对话框（28px）内的块按「外圆角 − 内边距」取值，
  * 两者算出来都不超过 4px，统一落到 MD3 的 extra-small。工具类是 rounded-inner。
  */
@@ -158,7 +167,17 @@ html[data-szu-native-toolbar="true"] [data-webview-navigation] {
   --surface: var(--mtrl-sys-color-surface);
   --foreground: var(--mtrl-sys-color-on-surface);
   --muted: var(--mtrl-sys-color-on-surface-variant);
-  font-family: Inter, "Noto Sans SC", sans-serif;
+  /*
+   * 全局 UI 字体。MiSans VF 由 src/app.tsx 从 misans 包加载（按 unicode-range 切片，
+   * 浏览器只取用到的切片），后面的 Inter / Noto Sans SC 只作字形缺口兜底。
+   * 等宽场景（OJ 的 Monaco / 样例输入 / pre、font-mono 工具类）不读这条，
+   * 它们的字体栈在 src/monospace.ts 与上面的 --font-mono。
+   */
+  --app-font-family: "MiSans VF", Inter, "Noto Sans SC", sans-serif;
+  /* material 的元素样式在 shadow root 里读这两条，用它们把 MD3 组件一起换成 MiSans。 */
+  --mtrl-ref-typeface-brand: var(--app-font-family);
+  --mtrl-ref-typeface-plain: var(--app-font-family);
+  font-family: var(--app-font-family);
   color: var(--mtrl-sys-color-on-surface);
   background: var(--mtrl-sys-color-surface);
   font-synthesis: none;

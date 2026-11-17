@@ -38,3 +38,13 @@ yay -S your-szu-life
 # or
 paru -S your-szu-life
 ```
+
+## 字体
+
+界面默认使用小米 MiSans（经 npm 包 [`misans`](https://github.com/dsrkafuu/misans) 引入其按 unicode-range
+切片子集化的可变字重版本），依据《MiSans 字体知识产权许可协议》在软件中标注使用，许可说明见
+`src-tauri/resources/licenses/misans.txt`。
+
+代码与等宽场景（OJ 编辑器、样例输入框、日志）使用 Monaspace Neon
+（[githubnext/monaspace](https://github.com/githubnext/monaspace)，OFL-1.1），许可见
+`src-tauri/resources/licenses/monaspace-neon.txt`。

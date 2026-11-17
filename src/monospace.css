@@ -1,0 +1,40 @@
+/*
+ * 内置等宽字体 Monaspace Neon（githubnext/monaspace，OFL-1.1），来自
+ * @fontsource/monaspace-neon。
+ *
+ * 不使用该包的 *.css 入口：那些入口每个字重都同时声明 woff2 与 woff，
+ * 打包时两份都会进产物（多出约 200KB），而应用的目标是 Chrome 90+ 的 WebView，
+ * 一律支持 woff2。这里只声明实际用到的 400/500/600/700 四个字重、
+ * 只引用 woff2。字体栈本体见 src/monospace.ts（与 index.css 的 --font-mono 同源）。
+ */
+@font-face {
+  font-family: "Monaspace Neon";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("@fontsource/monaspace-neon/files/monaspace-neon-latin-400-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Monaspace Neon";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url("@fontsource/monaspace-neon/files/monaspace-neon-latin-500-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Monaspace Neon";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url("@fontsource/monaspace-neon/files/monaspace-neon-latin-600-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Monaspace Neon";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url("@fontsource/monaspace-neon/files/monaspace-neon-latin-700-normal.woff2") format("woff2");
+}

@@ -7,13 +7,33 @@ import { registerOjCompletions } from "./monaco-completions";
 import { OJ_MONO_FONT_FAMILY } from "./monospace";
 import type { CodeEditorProps } from "./CodeEditor";
 let loading: Promise<typeof Monaco> | undefined;
+/**
+ * Monaco 在 canvas 里按字宽排版，字体没就绪时会用回退字体的度量，
+ * 之后换字体就会错位（光标、行号与文本对不齐）。因此初始化前先等字体加载。
+ * `document.fonts` 在旧 WebView 上可能缺失，缺失时直接放行。
+ */
+function fontsReady() {
+  const fonts = typeof document !== "undefined" ? document.fonts : undefined;
+  if (!fonts) return Promise.resolve();
+  return Promise.all([
+    fonts.load("14px 'Monaspace Neon'"),
+    // 等待已声明字体的加载结束，避免逐次 load 的竞态。
+    fonts.ready,
+  ]).then(
+    () => undefined,
+    () => undefined,
+  );
+}
 function loadMonaco() {
-  return (loading ??= init({
-    cdn: window.location.origin,
-    defaultTheme: "vitesse-light",
-    themes: ["vitesse-dark"],
-    langs: ["c", "cpp", "java", "python", "go"],
-  })
+  return (loading ??= fontsReady()
+    .then(() =>
+      init({
+        cdn: window.location.origin,
+        defaultTheme: "vitesse-light",
+        themes: ["vitesse-dark"],
+        langs: ["c", "cpp", "java", "python", "go"],
+      }),
+    )
     .then((monaco) => {
       registerOjCompletions(monaco);
       return monaco;

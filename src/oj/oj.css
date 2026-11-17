@@ -191,12 +191,10 @@
   border: 1px solid var(--szu-surface, var(--border));
   border-radius: 0.625rem;
   padding: 1rem;
+  /* 与 src/monospace.ts 的 MONO_FONT_FAMILY 同一个栈。 */
   font:
-    0.875rem/1.6 ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Monaco,
-    Consolas,
+    0.875rem/1.6 "Monaspace Neon",
+    ui-monospace,
     monospace;
   max-width: 100%;
 }

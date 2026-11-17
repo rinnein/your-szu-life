@@ -6,6 +6,7 @@ import { java } from "@codemirror/lang-java";
 import { python } from "@codemirror/lang-python";
 import { javascript } from "@codemirror/lang-javascript";
 import { go } from "@codemirror/lang-go";
+import { OJ_MONO_FONT_FAMILY } from "./monospace";
 const syntax = (language: string) =>
   language === "java"
     ? java()
@@ -16,6 +17,13 @@ const syntax = (language: string) =>
         : language === "js"
           ? javascript()
           : cpp();
+
+// 字体与明暗无关：两种模式都挂，避免浅色模式回落到 CodeMirror 自带的等宽栈。
+const fontTheme = EditorView.theme({
+  "&": {
+    fontFamily: OJ_MONO_FONT_FAMILY,
+  },
+});
 
 const darkTheme = EditorView.theme(
   {
@@ -79,6 +87,7 @@ export function CodeEditor({
             EditorView.editable.of(!disabled),
           ]),
           themeCompartment.current.of(isDark ? darkTheme : []),
+          fontTheme,
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({
             "aria-label": ariaLabel,
