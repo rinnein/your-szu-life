@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
-import { qrReducer, qrStageFor, type QrAction, type QrState } from "./qr-state";
+import { shareReducer, shareStageFor, type ShareAction, type ShareState } from "./share-state";
 
-const idle: QrState = { stage: "idle" };
+const idle: ShareState = { stage: "idle" };
 
-function reduce(state: QrState, ...actions: QrAction[]): QrState {
-  return actions.reduce(qrReducer, state);
+function reduce(state: ShareState, ...actions: ShareAction[]): ShareState {
+  return actions.reduce(shareReducer, state);
 }
 
-describe("qrReducer", () => {
+describe("shareReducer", () => {
   it("idle → scanning → idle（扫码是本地相机状态，不依赖房间）", () => {
     expect(reduce(idle, { type: "scanStarted" })).toEqual({ stage: "scanning" });
     expect(reduce({ stage: "scanning" }, { type: "scanFinished" })).toEqual(idle);
@@ -115,17 +115,17 @@ describe("qrReducer", () => {
   });
 });
 
-describe("qrStageFor", () => {
+describe("shareStageFor", () => {
   it("其它课程的房间状态在本课程视角呈现为 idle", () => {
-    expect(qrStageFor({ stage: "matching", courseId: 8 }, 7)).toEqual({
+    expect(shareStageFor({ stage: "matching", courseId: 8 }, 7)).toEqual({
       stage: "idle",
       sharedCount: 0,
     });
-    expect(qrStageFor({ stage: "sharing", courseId: 7, count: 2 }, 7)).toEqual({
+    expect(shareStageFor({ stage: "sharing", courseId: 7, count: 2 }, 7)).toEqual({
       stage: "sharing",
       sharedCount: 2,
     });
-    expect(qrStageFor({ stage: "scanning" }, 7)).toEqual({ stage: "scanning", sharedCount: 0 });
-    expect(qrStageFor(idle, 7)).toEqual({ stage: "idle", sharedCount: 0 });
+    expect(shareStageFor({ stage: "scanning" }, 7)).toEqual({ stage: "scanning", sharedCount: 0 });
+    expect(shareStageFor(idle, 7)).toEqual({ stage: "idle", sharedCount: 0 });
   });
 });

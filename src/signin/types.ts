@@ -117,12 +117,21 @@ export interface SigninAutomationSettings {
   szuEnabled: boolean;
 }
 
-/** 签到码共享房间事件（Rust QrEvent，tag=type content=data；变体字段保持 snake_case）。 */
-export type QrEvent =
+/** 共享码种类：数字签到码（随点名结束失效）或二维码 data（15s 有效期）。 */
+export type SharedCodeKind = "number" | "qr";
+
+/** 签到码共享房间事件（Rust ShareEvent，tag=type content=data；变体字段保持 snake_case）。 */
+export type ShareEvent =
   | { type: "roomJoined"; data: { course_id: number } }
   | { type: "roomClosed"; data: { course_id: number } }
-  | { type: "matched"; data: { course_id: number; ok: boolean; message: string } }
-  | { type: "shared"; data: { course_id: number; ok: boolean; message: string } }
+  | {
+      type: "matched";
+      data: { course_id: number; ok: boolean; message: string; kind: SharedCodeKind };
+    }
+  | {
+      type: "shared";
+      data: { course_id: number; ok: boolean; message: string; kind: SharedCodeKind };
+    }
   | { type: "error"; data: { message: string } };
 
 export function localDateKey(date: Date = new Date()): string {

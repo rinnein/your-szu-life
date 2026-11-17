@@ -7,6 +7,11 @@
 //! 数据面与主网一致：overlay 端口经 [`bridge::inbound`] 桥到本机回环上的
 //! axum 服务；发给对端时用 [`bridge::outbound`] 建立每 peer 的出站桥。
 //! 消息是带去重键的不透明 JSON，协议语义由调用方（szu-signin）定义。
+//!
+//! 对端列表以 EasyTier 的 `route_snapshots` 为准（与 [`super::devices`] 同源），
+//! 因此新加入的房间能发现已有设备，而不是只能被动等对方推送。发现新 peer 时
+//! 会把存储里**全部未过期**消息补发过去：数字签到码不随时间失效，后加入的
+//! 设备必须立刻拿到当前有效的码。
 
 use std::collections::HashMap;
 use std::net::Ipv4Addr;
@@ -29,7 +34,7 @@ use szu_core::ports;
 
 /// 房间虚拟网内的服务端口（overlay 命名空间，与 SYNC_API_PORT / CAMPUS_PROXY_PORT
 /// 同一惯例；回环端口由 ports 模块动态分配）。
-pub const QR_ROOM_PORT: u16 = 54303;
+pub const SHARE_ROOM_PORT: u16 = 54303;
 
 /// 发送方设备标记，服务端用它跳过回环与识别消息来源。
 const ORIGIN_HEADER: &str = "x-room-origin";
@@ -97,8 +102,9 @@ impl MessageStore {
             .collect()
     }
 
-    fn latest(&self) -> Option<StoredMessage> {
-        self.entries.last().cloned()
+    /// 全部未过期消息（catch-up 用：数字码不随时间失效，后加入设备要能拿到）。
+    fn all(&self) -> Vec<StoredMessage> {
+        self.entries.clone()
     }
 
     fn prune(&mut self, now_ms: i64) {
@@ -124,7 +130,7 @@ impl RoomState {
             if let Some(bridge) = outbound.get(&peer) {
                 bridge.local_addr.to_string()
             } else {
-                let bridge = match bridge::outbound(self.node.clone(), peer, QR_ROOM_PORT) {
+                let bridge = match bridge::outbound(self.node.clone(), peer, SHARE_ROOM_PORT) {
                     Ok(bridge) => bridge,
                     Err(error) => {
                         log::warn!("签到房间出站桥建立失败（{peer}）: {error}");
@@ -156,21 +162,37 @@ impl RoomState {
         });
     }
 
-    fn known_peers(&self, self_ip: Option<Ipv4Addr>) -> Vec<Ipv4Addr> {
-        let mut peers: Vec<Ipv4Addr> = self
-            .outbound
-            .lock()
-            .unwrap()
-            .keys()
-            .copied()
+    /// 当前房间内的对端（EasyTier 路由表 + 已建桥地址的并集，排除本机）。
+    /// 路由表才是权威来源；只读 `outbound` 会让新加入的房间看不到已在房间里的设备。
+    async fn known_peers(&self, self_ip: Option<Ipv4Addr>) -> Vec<Ipv4Addr> {
+        let discovered: Vec<Ipv4Addr> = self
+            .node
+            .peers()
+            .await
+            .into_iter()
+            .filter_map(|peer| peer.ipv4)
             .collect();
-        peers.sort();
-        peers.dedup();
-        if let Some(ip) = self_ip {
-            peers.retain(|peer| *peer != ip);
-        }
-        peers
+        merge_peers(&discovered, &self.outbound.lock().unwrap(), self_ip)
     }
+}
+
+/// 合并 EasyTier 路由表里的对端与已建出站桥的地址（纯函数，便于单测）。
+fn merge_peers(
+    discovered: &[Ipv4Addr],
+    outbound: &HashMap<Ipv4Addr, Bridge>,
+    self_ip: Option<Ipv4Addr>,
+) -> Vec<Ipv4Addr> {
+    let mut peers: Vec<Ipv4Addr> = discovered
+        .iter()
+        .copied()
+        .chain(outbound.keys().copied())
+        .collect();
+    peers.sort();
+    peers.dedup();
+    if let Some(ip) = self_ip {
+        peers.retain(|peer| *peer != ip);
+    }
+    peers
 }
 
 /// 一个已加入的房间。Drop 时任务被中止；务必调用 [`RoomHandle::leave`]
@@ -229,28 +251,42 @@ impl RoomHandle {
             }
         });
 
-        let inbound = bridge::inbound(node.clone(), QR_ROOM_PORT, local_addr).await?;
+        let inbound = bridge::inbound(node.clone(), SHARE_ROOM_PORT, local_addr).await?;
 
-        // peer 刷新：维持出站桥、清理过期消息；发现新 peer 时补发最新消息
-        // （catch-up，让后加入的设备立刻拿到当前有效的签到码）。
+        // peer 刷新：从 EasyTier 路由表发现对端、清理过期消息；发现新对端时
+        // 把全部未过期消息补发过去（catch-up），让后加入的设备立刻拿到当前有效
+        // 的签到码——数字码不使用时间过期，只能靠这里补发。
         let refresh_state = state.clone();
         let refresh_self = self_ip;
+        let refresh_node = node.clone();
         let refresh = tokio::spawn(async move {
             let mut ticker = tokio::time::interval(PEER_REFRESH_INTERVAL);
             loop {
                 ticker.tick().await;
-                refresh_state
-                    .store
-                    .lock()
-                    .unwrap()
-                    .prune(now_ms());
-                let peers = refresh_state.known_peers(refresh_self);
-                for peer in &peers {
-                    if !refresh_state.outbound.lock().unwrap().contains_key(peer) {
-                        let latest = refresh_state.store.lock().unwrap().latest();
-                        if let Some(stored) = latest {
-                            refresh_state.post_to_peer(*peer, &stored.message);
-                        }
+                let discovered: Vec<Ipv4Addr> = refresh_node
+                    .peers()
+                    .await
+                    .into_iter()
+                    .filter_map(|peer| peer.ipv4)
+                    .collect();
+                let (messages, fresh_peers) = {
+                    let mut store = refresh_state.store.lock().unwrap();
+                    store.prune(now_ms());
+                    let messages = store.all();
+                    let peers = merge_peers(
+                        &discovered,
+                        &refresh_state.outbound.lock().unwrap(),
+                        refresh_self,
+                    );
+                    let fresh: Vec<Ipv4Addr> = peers
+                        .into_iter()
+                        .filter(|peer| !refresh_state.outbound.lock().unwrap().contains_key(peer))
+                        .collect();
+                    (messages, fresh)
+                };
+                for peer in fresh_peers {
+                    for stored in &messages {
+                        refresh_state.post_to_peer(peer, &stored.message);
                     }
                 }
             }
@@ -269,20 +305,20 @@ impl RoomHandle {
         self.state.inbox.subscribe()
     }
 
-    /// 当前房间内的对端虚拟 IP 列表。
+    /// 当前房间内的对端虚拟 IP 列表（含 EasyTier 路由表里尚未建桥的地址）。
     pub async fn peers(&self) -> Vec<Ipv4Addr> {
-        self.state.known_peers(self.self_ip)
+        self.state.known_peers(self.self_ip).await
     }
 
     /// 广播一条消息：先入自己的存储（供 GET 拉取与 catch-up），再扇出到
     /// 全部已知 peer。
-    pub fn broadcast(&self, message: RoomMessage) {
+    pub async fn broadcast(&self, message: RoomMessage) {
         {
             let mut store = self.state.store.lock().unwrap();
             store.prune(now_ms());
             store.insert(message.clone());
         }
-        for peer in self.state.known_peers(self.self_ip) {
+        for peer in self.state.known_peers(self.self_ip).await {
             self.state.post_to_peer(peer, &message);
         }
     }
@@ -374,7 +410,7 @@ mod tests {
         let second = store.insert(message("b")).expect("第二条应入库");
         assert_eq!(second.seq, 1);
         assert_eq!(store.since(0).len(), 1);
-        assert_eq!(store.latest().unwrap().message.id, "b");
+        assert_eq!(store.all().last().unwrap().message.id, "b");
     }
 
     #[test]
@@ -397,15 +433,45 @@ mod tests {
     fn room_port_is_in_overlay_namespace() {
         // overlay 端口与回环端口命名空间无关；这里只钉住协议常量，
         // 防止无意间与 sync/campus proxy 撞号。
-        assert_ne!(QR_ROOM_PORT, super::super::SYNC_API_PORT);
-        assert_ne!(QR_ROOM_PORT, super::super::CAMPUS_PROXY_PORT);
+        assert_ne!(SHARE_ROOM_PORT, super::super::SYNC_API_PORT);
+        assert_ne!(SHARE_ROOM_PORT, super::super::CAMPUS_PROXY_PORT);
+    }
+
+    #[test]
+    fn peers_merge_discovered_and_bridged_addresses() {
+        let self_ip = Ipv4Addr::new(10, 0, 0, 1);
+        let discovered = [
+            Ipv4Addr::new(10, 0, 0, 2),
+            Ipv4Addr::new(10, 0, 0, 1), // 本机，必须排除
+            Ipv4Addr::new(10, 0, 0, 3),
+        ];
+        // outbound 目前只反映「曾经发过消息」的地址，可能含路由表暂未列出的旧地址。
+        let outbound: HashMap<Ipv4Addr, Bridge> = HashMap::new();
+        assert_eq!(
+            merge_peers(&discovered, &outbound, Some(self_ip)),
+            vec![Ipv4Addr::new(10, 0, 0, 2), Ipv4Addr::new(10, 0, 0, 3)]
+        );
+        // 没有路由发现时退回 outbound（不应崩溃或漏掉）。
+        assert!(merge_peers(&[], &outbound, Some(self_ip)).is_empty());
+    }
+
+    #[test]
+    fn catch_up_returns_every_unexpired_message() {
+        // 数字签到码不随时间失效：后加入的设备必须拿到全部未过期消息，
+        // 而不是只拿最新一条。
+        let mut store = MessageStore::default();
+        store.insert(message("a"));
+        store.insert(message("b"));
+        assert_eq!(store.all().len(), 2);
+        store.prune(1_000 + MessageStore::MAX_AGE_MS + 1);
+        assert!(store.all().is_empty());
     }
 
     #[test]
     fn named_config_passes_easytier_validation() {
         // 房间用第二个实例时也必须通过 EasyTier 的能力校验（feature 齐全）。
         let identity = MeshIdentity {
-            network_name: "your-szu-life:study/signin/lms/qr:42".into(),
+            network_name: "your-szu-life:study/signin/lms:42".into(),
             network_secret: "a".repeat(64),
             student_id: String::new(),
         };

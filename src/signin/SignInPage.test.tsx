@@ -100,6 +100,9 @@ function todaySession() {
 }
 
 let submitted: Array<{ command: string; args: Record<string, unknown> }>;
+type MockChannel = { onmessage: ((message: unknown) => void) | null };
+/** 最近一次订阅到的共享房间事件通道（测试可用它模拟后端推送）。 */
+let shareChannel: MockChannel | null = null;
 
 function defaultInvoke(command: string, args?: unknown): Promise<unknown> {
   switch (command) {
@@ -153,6 +156,10 @@ function defaultInvoke(command: string, args?: unknown): Promise<unknown> {
           ? { latitude: 22.528, longitude: 113.94, label: "致理楼", source: "fallback" }
           : null,
       );
+    case "subscribe_signin_share_events":
+      // 记住 Channel，测试可往后端推送房间事件。
+      shareChannel = (args as { channel?: MockChannel } | undefined)?.channel ?? null;
+      return Promise.resolve(undefined);
     default:
       return Promise.resolve(undefined);
   }
@@ -160,6 +167,7 @@ function defaultInvoke(command: string, args?: unknown): Promise<unknown> {
 
 function setupInvoke() {
   submitted = [];
+  shareChannel = null;
   vi.mocked(invoke).mockImplementation(defaultInvoke as unknown as typeof invoke);
 }
 
@@ -204,6 +212,8 @@ it("lists pending rollcalls and submits a number code from the modal", async () 
   });
   const entry = submitted.find((item) => item.command === "signin_submit_lms_number")!;
   expect(entry.args.rollcallId).toBe(123);
+  // 后端用 courseId 把成功的数字码自动共享到该课程房间。
+  expect(entry.args.courseId).toBe(9);
   expect(entry.args.code).toBe("0837");
 }, 15000);
 
@@ -344,7 +354,7 @@ it("desktop QR section joins the room for matching", async () => {
   });
   await waitFor(() => {
     expect(
-      vi.mocked(invoke).mock.calls.some(([command]) => command === "signin_qr_room_join"),
+      vi.mocked(invoke).mock.calls.some(([command]) => command === "signin_share_room_join"),
     ).toBe(true);
   });
   expect(await screen.findByText("共享签到码匹配中…")).toBeInTheDocument();
@@ -355,6 +365,43 @@ it("opens the rollcall dialog from the open=1 deep link", async () => {
   // 路由必须同时接受数字；自动打开只触发一次。
   await mount("/study/signin?tab=lms&course=大学英语&open=1");
   expect(await screen.findByRole("button", { name: "开始匹配共享签到码" })).toBeInTheDocument();
+}, 15000);
+
+it("surfaces a received shared number code result", async () => {
+  await mount("/study/signin");
+  await screen.findByText("数据库系统");
+  await waitFor(() => expect(shareChannel).not.toBeNull());
+  act(() => {
+    shareChannel?.onmessage?.({
+      type: "matched",
+      data: {
+        course_id: 9,
+        ok: true,
+        message: "数字码匹配成功，签到已提交",
+        kind: "number",
+      },
+    });
+  });
+  // 数字码共享来自同一房间通道：结果以一条成功提示呈现。
+  expect(await screen.findByText("数字码匹配成功，签到已提交")).toBeInTheDocument();
+}, 15000);
+
+it("tells the user to check manually when a shared number code fails", async () => {
+  await mount("/study/signin");
+  await screen.findByText("数据库系统");
+  await waitFor(() => expect(shareChannel).not.toBeNull());
+  act(() => {
+    shareChannel?.onmessage?.({
+      type: "matched",
+      data: {
+        course_id: 9,
+        ok: false,
+        message: "数字签到失败",
+        kind: "number",
+      },
+    });
+  });
+  expect(await screen.findByText(/共享的数字码未能自动提交/)).toBeInTheDocument();
 }, 15000);
 
 it("top-bar refresh forces a reload of the current tab", async () => {

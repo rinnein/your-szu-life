@@ -13,7 +13,19 @@ use serde::{Deserialize, Serialize};
 pub struct SubmitNumberParams {
     /// 畅课点名 ID（rollcall_id，来自 signin_list_pending）
     pub rollcall_id: i64,
-    /// 4 位数字签到码
+    /// 课程数字 ID（用于把成功的数字码自动共享到该课程的共享房间）
+    pub course_id: i64,
+    /// 数字签到码（通常 4 位，最长 8 字符）
+    pub code: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default)]
+pub struct ShareNumberParams {
+    /// 课程数字 ID（房间按课程隔离）
+    pub course_id: i64,
+    /// 畅课点名 ID（rollcall_id，来自 signin_list_pending）
+    pub rollcall_id: i64,
+    /// 要共享的数字签到码
     pub code: String,
 }
 
@@ -86,16 +98,35 @@ impl UnifiedSzuMcpService {
 
     #[tool(
         name = "signin_submit_number",
-        description = "提交畅课数字签到：向指定点名提交 4 位数字码。deviceId 由应用按设备持久化；每场点名同账号限 10 次提交"
+        description = "提交畅课数字签到：向指定点名提交数字码（通常 4 位）。deviceId 由应用按设备持久化；每场点名同账号限 10 次提交。提交成功后若该课程的共享房间已开启，会自动把数字码共享给同课程的其他设备"
     )]
     pub async fn signin_submit_number(
         &self,
         Parameters(params): Parameters<SubmitNumberParams>,
     ) -> Result<String, String> {
         signin::service(&self.app)?
-            .submit_lms_number(params.rollcall_id, params.code.trim())
+            .submit_lms_number(
+                params.rollcall_id,
+                params.course_id,
+                params.code.trim(),
+            )
             .await?;
         Ok(format!("点名 {} 数字签到提交成功", params.rollcall_id))
+    }
+
+    #[tool(
+        name = "signin_share_number",
+        description = "把一条已知的数字签到码共享到该课程的签到码共享房间（同账号、同课程的其他设备会在收到后自动提交）。数字码在本次点名结束前一直有效；未加入房间时返回 shared=false"
+    )]
+    pub async fn signin_share_number(
+        &self,
+        Parameters(params): Parameters<ShareNumberParams>,
+    ) -> Result<String, String> {
+        let shared = signin::service(&self.app)?
+            .share_number_code(params.course_id, params.rollcall_id, params.code.trim())
+            .await?;
+        serde_json::to_string_pretty(&serde_json::json!({ "shared": shared }))
+            .map_err(|e| format!("序列化失败: {e}"))
     }
 
     #[tool(

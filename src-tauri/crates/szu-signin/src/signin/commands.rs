@@ -72,10 +72,13 @@ pub async fn signin_submit_lms_number(
     window: WebviewWindow,
     app: tauri::AppHandle,
     rollcall_id: i64,
+    course_id: i64,
     code: String,
 ) -> Result<(), String> {
     local(&window)?;
-    service(&app)?.submit_lms_number(rollcall_id, code.trim()).await
+    service(&app)?
+        .submit_lms_number(rollcall_id, course_id, code.trim())
+        .await
 }
 
 #[tauri::command]
@@ -114,20 +117,22 @@ pub async fn signin_submit_lms_qr(
 ) -> Result<(), String> {
     local(&window)?;
     let service = service(&app)?;
-    let mut fields = room::parse_qr_fields(&raw).ok_or("无效的签到二维码")?;
+    let mut fields = share::parse_qr_fields(&raw).ok_or("无效的签到二维码")?;
     if fields.rollcall_id == 0 {
         fields.rollcall_id = rollcall_id.ok_or("二维码缺少点名 ID")?;
     }
     let now = chrono::Utc::now().timestamp_millis();
-    if room::qr_valid_until_ms(&fields, now) <= now {
+    if share::qr_valid_until_ms(&fields, now) <= now {
         return Err("签到码已过期，请扫描最新的二维码".into());
     }
     service
         .submit_lms_qr(fields.rollcall_id, &fields.data, &service.device_id()?)
         .await?;
-    // 已加入房间时立即共享（自己的提交也要让同伴受益）。
-    if service.room_active() {
-        let _ = service.qr_room_share(&fields);
+    // 已加入该课程房间时立即共享（自己的提交也要让同伴受益）。
+    if service.share_room_active() {
+        if let Err(error) = service.share_qr_code(&fields).await {
+            log::warn!("共享二维码失败: {error}");
+        }
     }
     Ok(())
 }
@@ -197,7 +202,7 @@ pub async fn signin_set_automation_settings(
 }
 
 #[tauri::command]
-pub async fn signin_qr_room_join(
+pub async fn signin_share_room_join(
     window: WebviewWindow,
     app: tauri::AppHandle,
     course_id: i64,
@@ -205,7 +210,7 @@ pub async fn signin_qr_room_join(
 ) -> Result<(), String> {
     local(&window)?;
     let service = service(&app)?;
-    service.qr_room_join(course_id, rollcall_id).await
+    service.share_room_join(course_id, rollcall_id).await
 }
 
 /// 网关（qw.szu.edu.cn）会话状态。`force` 时重新探活一次；
@@ -221,10 +226,10 @@ pub async fn signin_get_qw_status(
 }
 
 #[tauri::command]
-pub async fn signin_qr_room_leave(window: WebviewWindow, app: tauri::AppHandle) -> Result<(), String> {
+pub async fn signin_share_room_leave(window: WebviewWindow, app: tauri::AppHandle) -> Result<(), String> {
     local(&window)?;
     // 用户主动停止：时间窗结束前不再自动为该课程建房。
-    service(&app)?.qr_room_leave().await;
+    service(&app)?.share_room_leave().await;
     Ok(())
 }
 
@@ -237,17 +242,17 @@ pub struct ShareOutcome {
 
 /// 共享一份扫码结果到当前房间（不自动提交；共享者自己通常已签到）。
 #[tauri::command]
-pub async fn signin_qr_room_share(
+pub async fn signin_share_room_share_qr(
     window: WebviewWindow,
     app: tauri::AppHandle,
     raw: String,
 ) -> Result<ShareOutcome, String> {
     local(&window)?;
     let service = service(&app)?;
-    let fields = room::parse_qr_fields(&raw).ok_or("无效的签到二维码")?;
-    let shared = service.qr_room_share(&fields)?;
+    let fields = share::parse_qr_fields(&raw).ok_or("无效的签到二维码")?;
+    let shared = service.share_qr_code(&fields).await?;
     if shared {
-        let _ = service.qr_events.broadcast(&room::QrEvent::Shared {
+        let _ = service.share_events.broadcast(&share::ShareEvent::Shared {
             course_id: service
                 .room
                 .lock()
@@ -256,19 +261,45 @@ pub async fn signin_qr_room_share(
                 .map(|session| session.course_id)
                 .unwrap_or_default(),
             ok: true,
-            message: "已共享 1 份签到码".into(),
+            message: "已共享 1 份二维码".into(),
+            kind: "qr".into(),
+        });
+    }
+    Ok(ShareOutcome { shared })
+}
+
+/// 手动共享一条数字签到码（自动共享之外的显式入口，也让 MCP 能代传数字码）。
+#[tauri::command]
+pub async fn signin_share_room_share_number(
+    window: WebviewWindow,
+    app: tauri::AppHandle,
+    course_id: i64,
+    rollcall_id: i64,
+    code: String,
+) -> Result<ShareOutcome, String> {
+    local(&window)?;
+    let service = service(&app)?;
+    let shared = service
+        .share_number_code(course_id, rollcall_id, code.trim())
+        .await?;
+    if shared {
+        let _ = service.share_events.broadcast(&share::ShareEvent::Shared {
+            course_id,
+            ok: true,
+            message: "已共享 1 个数字签到码".into(),
+            kind: "number".into(),
         });
     }
     Ok(ShareOutcome { shared })
 }
 
 #[tauri::command]
-pub fn subscribe_signin_qr_events(
+pub fn subscribe_signin_share_events(
     window: WebviewWindow,
     app: tauri::AppHandle,
-    channel: tauri::ipc::Channel<room::QrEvent>,
+    channel: tauri::ipc::Channel<share::ShareEvent>,
 ) -> Result<(), String> {
     local(&window)?;
-    service(&app)?.qr_events.subscribe(channel);
+    service(&app)?.share_events.subscribe(channel);
     Ok(())
 }

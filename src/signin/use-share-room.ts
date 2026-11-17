@@ -1,5 +1,5 @@
 /**
- * 二维码共享房间的状态与动作 hook（供畅课面板持有）。
+ * 签到码共享房间（数字码 + 二维码）的状态与动作 hook（供畅课面板持有）。
  *
  * 状态提升到面板层：对话框关闭后「匹配中」仍在（被动匹配由后端继续，
  * 结果经 matched 事件 toast），列表行尾也能显示匹配状态。关闭承载共享的
@@ -12,23 +12,29 @@ import { errorMessage } from "../async-state";
 import { useChannelSubscription } from "../tauri-channel";
 import { usePending } from "../use-pending";
 import { runScanLoop, scanQrOnce, stopScanLoop } from "./qr-scan";
-import { qrActionFromEvent, qrReducer, type QrState } from "./qr-state";
-import type { QrEvent } from "./types";
+import { shareActionFromEvent, shareReducer, type ShareState } from "./share-state";
+import type { ShareEvent } from "./types";
 
-export function useQrRoom() {
-  const [state, dispatch] = useReducer(qrReducer, { stage: "idle" } as QrState);
+export function useShareRoom() {
+  const [state, dispatch] = useReducer(shareReducer, { stage: "idle" } as ShareState);
   const pending = usePending();
 
   // 房间事件：joined/closed 驱动状态机；matched 是提交结果（失败不阻断后续匹配）。
-  useChannelSubscription<QrEvent>("subscribe_signin_qr_events", (event) => {
-    const action = qrActionFromEvent(event);
+  useChannelSubscription<ShareEvent>("subscribe_signin_share_events", (event) => {
+    const action = shareActionFromEvent(event);
     if (action) {
       dispatch(action);
       return;
     }
     if (event.type === "matched") {
       if (event.data.ok) toast.success(event.data.message);
-      else toast.warning(event.data.message);
+      else
+        toast.warning(event.data.message, {
+          description:
+            event.data.kind === "number"
+              ? "共享的数字码未能自动提交，请手动核对签到状态。"
+              : "共享的二维码未能自动提交，请等待下一份或手动扫码。",
+        });
     }
   });
 
@@ -40,7 +46,7 @@ export function useQrRoom() {
     void runScanLoop(
       async (content) => {
         const outcome = await pending.run("share", () =>
-          tauriCore.invoke<{ shared: boolean }>("signin_qr_room_share", { raw: content }),
+          tauriCore.invoke<{ shared: boolean }>("signin_share_room_share_qr", { raw: content }),
         );
         if (outcome.ok) {
           if (outcome.value.shared) dispatch({ type: "codeShared" });
@@ -79,7 +85,7 @@ export function useQrRoom() {
   const startMatching = useCallback(
     async (courseId: number, rollcallId: number) => {
       const outcome = await pending.run("join", () =>
-        tauriCore.invoke("signin_qr_room_join", { courseId, rollcallId }),
+        tauriCore.invoke("signin_share_room_join", { courseId, rollcallId }),
       );
       if (!outcome.ok) {
         if (!outcome.skipped) {
@@ -96,7 +102,7 @@ export function useQrRoom() {
 
   const stop = useCallback(
     async (courseId: number) => {
-      const outcome = await pending.run("leave", () => tauriCore.invoke("signin_qr_room_leave"));
+      const outcome = await pending.run("leave", () => tauriCore.invoke("signin_share_room_leave"));
       if (!outcome.ok) return; // leave 失败保持原状，等待房间事件回收
       dispatch({ type: "stopped", courseId });
     },
@@ -116,7 +122,7 @@ export function useQrRoom() {
   const startSharing = useCallback(
     async (courseId: number) => {
       const outcome = await pending.run("join", () =>
-        tauriCore.invoke("signin_qr_room_join", { courseId }),
+        tauriCore.invoke("signin_share_room_join", { courseId }),
       );
       if (!outcome.ok) {
         if (!outcome.skipped) {
@@ -147,4 +153,4 @@ export function useQrRoom() {
   };
 }
 
-export type QrRoom = ReturnType<typeof useQrRoom>;
+export type ShareRoom = ReturnType<typeof useShareRoom>;

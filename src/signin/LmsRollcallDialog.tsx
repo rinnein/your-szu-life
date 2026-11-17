@@ -13,8 +13,8 @@ import { errorMessage, useAsyncLoad } from "../async-state";
 import { usePending } from "../use-pending";
 import { PointPicker } from "./PointPicker";
 import { selectionArgs, type PointSelection } from "./point-selection";
-import { QrSection, type QrActions } from "./QrSection";
-import type { QrState } from "./qr-state";
+import { ShareSection, type ShareActions } from "./ShareSection";
+import type { ShareState } from "./share-state";
 import type { Building, ResolvedPoint, RollcallItem } from "./types";
 import { rollcallMethod } from "./types";
 
@@ -22,8 +22,8 @@ interface LmsRollcallDialogProps {
   item: RollcallItem;
   buildings: Building[];
   buildingsFailed?: boolean;
-  qrState: QrState;
-  qrActions: QrActions;
+  shareState: ShareState;
+  shareActions: ShareActions;
   onClose: () => void;
   onSubmitted: () => void;
 }
@@ -32,8 +32,8 @@ export function LmsRollcallDialog({
   item,
   buildings,
   buildingsFailed,
-  qrState,
-  qrActions,
+  shareState,
+  shareActions,
   onClose,
   onSubmitted,
 }: LmsRollcallDialogProps) {
@@ -72,7 +72,11 @@ export function LmsRollcallDialog({
     const trimmed = code.trim();
     if (!trimmed) return;
     const outcome = await pending.run("submit", () =>
-      tauriCore.invoke("signin_submit_lms_number", { rollcallId: item.rollcall_id, code: trimmed }),
+      tauriCore.invoke("signin_submit_lms_number", {
+        rollcallId: item.rollcall_id,
+        courseId: item.course_id,
+        code: trimmed,
+      }),
     );
     finishSubmit(outcome, "数字签到提交成功", "数字签到失败");
   };
@@ -148,11 +152,11 @@ export function LmsRollcallDialog({
           />
         )}
         {method === "qr" && (
-          <QrSection
+          <ShareSection
             rollcallId={item.rollcall_id}
             courseId={item.course_id}
-            state={qrState}
-            actions={qrActions}
+            state={shareState}
+            actions={shareActions}
           />
         )}
         {method === "unknown" && (

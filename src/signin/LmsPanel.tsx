@@ -14,7 +14,7 @@ import { EmptyState, LoadingState } from "../components";
 import { useLatestRequest } from "../async-state";
 import { SigninList, SigninRow } from "./SigninList";
 import { LmsRollcallDialog } from "./LmsRollcallDialog";
-import { useQrRoom } from "./use-qr-room";
+import { useShareRoom } from "./use-share-room";
 import { useSigninAutomation } from "./use-signin-automation";
 import {
   needAnswer,
@@ -52,7 +52,7 @@ export function LmsPanel({
     tauriCore.invoke<RollcallItem[]>("signin_get_lms_rollcalls", { force: forceRef.current }),
   );
   const [active, setActive] = useState<RollcallItem | null>(null);
-  const qr = useQrRoom();
+  const share = useShareRoom();
   const automation = useSigninAutomation();
 
   const load = useCallback(
@@ -101,10 +101,13 @@ export function LmsPanel({
   const closeDialog = () => {
     if (active) {
       // 关闭承载共享/确认页的对话框时回收本地扫码循环；房间保留给被动匹配。
-      if (qr.state.stage === "sharing" && qr.state.courseId === active.course_id) {
-        qr.dialogClosed(active.course_id);
-      } else if (qr.state.stage === "confirmShare" && qr.state.courseId === active.course_id) {
-        qr.cancelSharePrompt(active.course_id);
+      if (share.state.stage === "sharing" && share.state.courseId === active.course_id) {
+        share.dialogClosed(active.course_id);
+      } else if (
+        share.state.stage === "confirmShare" &&
+        share.state.courseId === active.course_id
+      ) {
+        share.cancelSharePrompt(active.course_id);
       }
     }
     setActive(null);
@@ -168,7 +171,7 @@ export function LmsPanel({
             <SigninList label="待签到项">
               {pendingItems.map((item) => {
                 const matching =
-                  qr.state.stage === "matching" && qr.state.courseId === item.course_id;
+                  share.state.stage === "matching" && share.state.courseId === item.course_id;
                 return (
                   <SigninRow
                     key={item.rollcall_id}
@@ -223,8 +226,8 @@ export function LmsPanel({
           item={active}
           buildings={buildings}
           buildingsFailed={buildingsFailed}
-          qrState={qr.state}
-          qrActions={qr}
+          shareState={share.state}
+          shareActions={share}
           onClose={closeDialog}
           onSubmitted={() => {
             setActive(null);

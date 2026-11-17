@@ -216,10 +216,11 @@ const mockHandlers: Record<string, MockHandler> = {
     if (settings) signinAutomation = { ...signinAutomation, ...settings };
     return signinAutomation;
   },
-  signin_qr_room_join: () => undefined,
-  signin_qr_room_leave: () => undefined,
-  signin_qr_room_share: () => ({ shared: false }),
-  subscribe_signin_qr_events: () => undefined,
+  signin_share_room_join: () => undefined,
+  signin_share_room_leave: () => undefined,
+  signin_share_room_share_qr: () => ({ shared: false }),
+  signin_share_room_share_number: () => ({ shared: false }),
+  subscribe_signin_share_events: () => undefined,
 
   // 巡课。
   get_jxxk_snapshot: () => mockJxxkSnapshot,

@@ -15,7 +15,7 @@ pub mod migrations;
 pub mod model;
 pub mod photo;
 pub mod qw;
-pub mod room;
+pub mod share;
 pub mod scheduler;
 #[cfg(test)]
 mod tests;
@@ -71,7 +71,7 @@ pub struct Service {
     /// 按课次的 SZU 考勤状态；只由课表窗口驱动的 probe 刷新。
     szu_checkins: Mutex<HashMap<String, CachedSzuCheckin>>,
     /// 签到码共享房间（同一时刻至多一个活跃房间）。
-    room: Mutex<Option<room::RoomSession>>,
+    room: Mutex<Option<share::RoomSession>>,
     /// 网关会话状态（与 lms/jxxk 的会话管理同构）。
     qw_session: Mutex<QwSessionState>,
     qw_message: Mutex<String>,
@@ -91,7 +91,7 @@ pub struct Service {
     /// 自引用，用于派生后台任务。
     self_weak: Mutex<Weak<Service>>,
     /// 事件订阅池：房间状态 / 匹配结果 / 共享计数。
-    pub qr_events: szu_core::ipc_channel::SubscriberPool<room::QrEvent>,
+    pub share_events: szu_core::ipc_channel::SubscriberPool<share::ShareEvent>,
 }
 
 impl Service {
@@ -142,7 +142,7 @@ impl Service {
             auto_runtime: Mutex::new(AutoRuntime::default()),
             probe_lock: tokio::sync::Mutex::new(()),
             self_weak: Mutex::new(Weak::new()),
-            qr_events: szu_core::ipc_channel::SubscriberPool::new(),
+            share_events: szu_core::ipc_channel::SubscriberPool::new(),
         }))
     }
 
@@ -837,12 +837,23 @@ impl Service {
         })
     }
 
-    /// 畅课数字签到。
-    pub async fn submit_lms_number(&self, rollcall_id: i64, code: &str) -> Result<(), String> {
+    /// 畅课数字签到。成功后把数字码共享到该课程的房间（房间不在时静默跳过）：
+    /// 数字码在本次点名结束前一直有效，同课程的其他设备可直接复用。
+    pub async fn submit_lms_number(
+        &self,
+        rollcall_id: i64,
+        course_id: i64,
+        code: &str,
+    ) -> Result<(), String> {
         let device_id = self.device_id()?;
         self.lms_service()?
             .submit_number(rollcall_id, code, &device_id)
+            .await?;
+        self.share_number_code(course_id, rollcall_id, code)
             .await
+            .map_err(|error| log::warn!("共享数字签到码失败: {error}"))
+            .ok();
+        Ok(())
     }
 
     /// 畅课雷达签到。定位来源三选一：`custom`（浏览器 WGS-84 读数或已转换的
@@ -1181,15 +1192,15 @@ impl Service {
 
     /// 加入（或切换到）某课程的签到码共享房间（用户显式操作）。
     /// 同课程幂等：已活跃时标记为手动房间即可。
-    pub async fn qr_room_join(
+    pub async fn share_room_join(
         self: &Arc<Self>,
         course_id: i64,
         rollcall_id: Option<i64>,
     ) -> Result<(), String> {
-        self.qr_room_join_inner(course_id, rollcall_id, true).await
+        self.share_room_join_inner(course_id, rollcall_id, true).await
     }
 
-    async fn qr_room_join_inner(
+    async fn share_room_join_inner(
         self: &Arc<Self>,
         course_id: i64,
         rollcall_id: Option<i64>,
@@ -1210,7 +1221,7 @@ impl Service {
             }
         }
         self.teardown_room(false).await;
-        let mut session = room::RoomSession::join(self.clone(), course_id, rollcall_id).await?;
+        let mut session = share::RoomSession::join(self.clone(), course_id, rollcall_id).await?;
         session.manual = manual;
         *self.room.lock().unwrap() = Some(session);
         Ok(())
@@ -1226,11 +1237,11 @@ impl Service {
             if suspend {
                 self.room_suspended.lock().unwrap().insert(course_id);
             }
-            let _ = self.qr_events.broadcast(&room::QrEvent::RoomClosed { course_id });
+            let _ = self.share_events.broadcast(&share::ShareEvent::RoomClosed { course_id });
         }
     }
 
-    pub async fn qr_room_leave(&self) {
+    pub async fn share_room_leave(&self) {
         self.teardown_room(true).await;
     }
 
@@ -1291,7 +1302,7 @@ impl Service {
                     }
                     *last = Some(std::time::Instant::now());
                 }
-                if let Err(error) = self.qr_room_join_inner(target.0, Some(target.1), false).await {
+                if let Err(error) = self.share_room_join_inner(target.0, Some(target.1), false).await {
                     log::warn!("自动加入签到码房间失败（课程 {}）: {error}", target.0);
                 } else {
                     // 成功后清掉冷却，让下一次状态变化能立即响应。
@@ -1301,14 +1312,59 @@ impl Service {
         }
     }
 
-    /// 共享一份扫码结果到当前房间（不自动提交）。返回是否为新码。
-    pub fn qr_room_share(&self, fields: &room::QrFields) -> Result<bool, String> {
-        let guard = self.room.lock().unwrap();
-        let session = guard.as_ref().ok_or("尚未加入签到码共享房间")?;
-        session.share(fields)
+    /// 共享一份签到码到当前房间（不自动提交）。返回是否为新码。
+    ///
+    /// 只有房间课程与 `course_id` 一致时才广播：一门课的房间不应收到别的课程的码。
+    async fn share_code(&self, course_id: i64, code: &share::SharedCode) -> Result<bool, String> {
+        // 先取出发送侧句柄并释放 std Mutex：跨 await 持有 Guard 会让 future 不是 Send。
+        let id = code.message_id();
+        let sender = {
+            let guard = self.room.lock().unwrap();
+            match guard.as_ref() {
+                Some(session) if session.course_id == course_id => Some(session.share_handle()),
+                _ => None,
+            }
+        };
+        let Some(sender) = sender else {
+            return Ok(false);
+        };
+        sender.share(&id, code).await
     }
 
-    fn room_active(&self) -> bool {
+    /// 共享一条数字签到码（数字签到成功后自动调用；无房间时静默跳过）。
+    pub async fn share_number_code(
+        &self,
+        course_id: i64,
+        rollcall_id: i64,
+        code: &str,
+    ) -> Result<bool, String> {
+        if !self.share_room_active() {
+            return Ok(false);
+        }
+        self.share_code(
+            course_id,
+            &share::SharedCode::Number {
+                rollcall_id,
+                code: code.to_string(),
+            },
+        )
+        .await
+    }
+
+    /// 共享一份二维码 data（扫码提交成功后自动调用；无房间时静默跳过）。
+    pub async fn share_qr_code(&self, fields: &share::QrFields) -> Result<bool, String> {
+        let course_id = match fields.course_id {
+            Some(course_id) => course_id,
+            None => match self.room.lock().unwrap().as_ref() {
+                Some(session) => session.course_id,
+                None => return Ok(false),
+            },
+        };
+        self.share_code(course_id, &share::SharedCode::from_qr_fields(fields))
+            .await
+    }
+
+    pub fn share_room_active(&self) -> bool {
         self.room.lock().unwrap().is_some()
     }
 }

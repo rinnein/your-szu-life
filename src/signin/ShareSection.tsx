@@ -1,13 +1,13 @@
 /**
- * 畅课二维码签到区（纯展示）：状态来自 useQrRoom 的房间状态机，动作由
+ * 畅课签到码共享区（纯展示）：状态来自 useShareRoom 的房间状态机，动作由
  * 宿主（LmsPanel）传入。平台未知时不渲染操作区，避免 Android 首帧闪现
  * 桌面分支；匹配状态在对话框关闭后仍由面板持有并显示。
  */
 import { Button } from "material/react";
-import { qrStageFor, type QrState } from "./qr-state";
+import { shareStageFor, type ShareState } from "./share-state";
 import { useAndroid } from "./use-android";
 
-export interface QrActions {
+export interface ShareActions {
   scanOnce: (rollcallId: number) => Promise<void>;
   startMatching: (courseId: number, rollcallId: number) => Promise<void>;
   stop: (courseId: number) => Promise<void>;
@@ -16,7 +16,7 @@ export interface QrActions {
   startSharing: (courseId: number) => Promise<void>;
 }
 
-export function QrSection({
+export function ShareSection({
   rollcallId,
   courseId,
   state,
@@ -24,17 +24,17 @@ export function QrSection({
 }: {
   rollcallId: number;
   courseId: number;
-  state: QrState;
-  actions: QrActions;
+  state: ShareState;
+  actions: ShareActions;
 }) {
   const platform = useAndroid();
-  const { stage, sharedCount } = qrStageFor(state, courseId);
+  const { stage, sharedCount } = shareStageFor(state, courseId);
 
   if (platform === "unknown") return null;
 
   if (platform === "desktop") {
     return (
-      <div className="flex flex-col gap-2" data-testid="qr-section-desktop">
+      <div className="flex flex-col gap-2" data-testid="share-section-desktop">
         {stage === "matching" ? (
           <>
             <p className="text-sm text-muted">共享签到码匹配中…</p>
@@ -51,7 +51,7 @@ export function QrSection({
               开始匹配共享签到码
             </Button>
             <p className="text-xs text-muted">
-              桌面端无法扫描二维码；请在同一课程的其他设备上扫码，收到共享后本机会自动提交。
+              桌面端无法扫描二维码；请在同一课程的其他设备上扫码或提交数字码，收到共享后本机会自动提交。
             </p>
           </>
         )}
@@ -60,7 +60,7 @@ export function QrSection({
   }
 
   return (
-    <div className="flex flex-col gap-2" data-testid="qr-section-android">
+    <div className="flex flex-col gap-2" data-testid="share-section-android">
       {stage === "sharing" ? (
         <>
           <p className="text-sm font-medium" aria-live="polite">
@@ -73,7 +73,8 @@ export function QrSection({
       ) : stage === "confirmShare" ? (
         <>
           <p className="text-sm text-muted">
-            该功能用于持续上传新的签到码（15s 有效期），您可以自行决定什么时候开始与结束。
+            该功能用于持续上传新的签到码：二维码 15
+            秒内有效，数字码在本次点名结束前有效。您可以自行决定什么时候开始与结束。
           </p>
           <Button variant="filled" onClick={() => void actions.startSharing(courseId)}>
             开始

@@ -1,21 +1,21 @@
 /**
- * 二维码共享房间的界面状态机（纯 reducer，事件驱动）。
+ * 签到码共享房间的界面状态机（纯 reducer，事件驱动）。
  *
  * 后端按课表窗口自动建立/回收房间，并通过 Channel 推送 roomJoined /
  * roomClosed；界面必须跟随这两个事件，否则会出现「房间已被回收但界面
  * 仍在匹配」。房间状态按 course_id 归属：状态属于其它课程时，本课程的
- * 视角呈现为 idle（见 qrStageFor）。
+ * 视角呈现为 idle（见 shareStageFor）。
  */
-import type { QrEvent } from "./types";
+import type { ShareEvent } from "./types";
 
-export type QrState =
+export type ShareState =
   | { stage: "idle" }
   | { stage: "scanning" }
   | { stage: "matching"; courseId: number }
   | { stage: "confirmShare"; courseId: number }
   | { stage: "sharing"; courseId: number; count: number };
 
-export type QrAction =
+export type ShareAction =
   | { type: "scanStarted" }
   | { type: "scanFinished" }
   | { type: "roomJoined"; courseId: number }
@@ -28,16 +28,16 @@ export type QrAction =
   /** 持续共享的扫码循环停止，但房间仍在（被动匹配继续）。 */
   | { type: "shareStopped"; courseId: number };
 
-type RoomStage = Extract<QrState, { courseId: number }>;
+type RoomStage = Extract<ShareState, { courseId: number }>;
 
-function isRoomStage(state: QrState, courseId?: number): state is RoomStage {
+function isRoomStage(state: ShareState, courseId?: number): state is RoomStage {
   if (state.stage !== "matching" && state.stage !== "confirmShare" && state.stage !== "sharing") {
     return false;
   }
   return courseId === undefined || state.courseId === courseId;
 }
 
-export function qrReducer(state: QrState, action: QrAction): QrState {
+export function shareReducer(state: ShareState, action: ShareAction): ShareState {
   switch (action.type) {
     case "scanStarted":
       return state.stage === "idle" ? { stage: "scanning" } : state;
@@ -73,10 +73,10 @@ export function qrReducer(state: QrState, action: QrAction): QrState {
 }
 
 /** 房间归属其它课程时，本课程视角按 idle 呈现。 */
-export function qrStageFor(
-  state: QrState,
+export function shareStageFor(
+  state: ShareState,
   courseId: number,
-): { stage: QrState["stage"]; sharedCount: number } {
+): { stage: ShareState["stage"]; sharedCount: number } {
   if (state.stage === "idle" || state.stage === "scanning") {
     return { stage: state.stage, sharedCount: 0 };
   }
@@ -89,8 +89,8 @@ export function qrStageFor(
   };
 }
 
-/** 从后端 QrEvent 提取界面关心的动作；matched/shared 等结果事件由调用方处理。 */
-export function qrActionFromEvent(event: QrEvent): QrAction | null {
+/** 从后端 ShareEvent 提取界面关心的动作；matched/shared 等结果事件由调用方处理。 */
+export function shareActionFromEvent(event: ShareEvent): ShareAction | null {
   switch (event.type) {
     case "roomJoined":
       return { type: "roomJoined", courseId: event.data.course_id };
