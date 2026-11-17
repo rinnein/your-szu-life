@@ -116,14 +116,27 @@ pub fn snapshot(app: &AppHandle) -> TimetableSnapshot {
         .as_ref()
         .map(|service| service.cached_rollcalls())
         .unwrap_or_default();
+    // SZU（实验性）总开关关闭时，首页与课表只显示畅课签到状态：既不读 SZU
+    // 缓存状态，也不回退到已持久化的 SZU 已签到记录。
+    let szu_enabled = signin
+        .as_ref()
+        .map(|service| service.automation_settings().szu_enabled)
+        .unwrap_or(false);
     let mut sessions = cache.sessions;
     sessions.sort_by_key(|session| session.start_ms);
     let sessions: Vec<model::SessionView> = sessions
         .into_iter()
         .map(|session| {
             let key = model::session_id(&session);
-            let checkin =
-                resolve_checkin(&session, &today, &rollcalls, signin.as_ref(), &state, &key);
+            let checkin = resolve_checkin(
+                &session,
+                &today,
+                &rollcalls,
+                signin.as_ref(),
+                szu_enabled,
+                &state,
+                &key,
+            );
             model::SessionView::new(session, checkin)
         })
         .collect();
@@ -160,6 +173,7 @@ fn resolve_checkin(
     today: &str,
     rollcalls: &[szu_lms::lms::rollcall::RollcallItem],
     signin: Option<&std::sync::Arc<szu_signin::signin::Service>>,
+    szu_enabled: bool,
     state: &ReminderState,
     key: &str,
 ) -> model::SessionCheckin {
@@ -182,7 +196,11 @@ fn resolve_checkin(
             }
         }
     }
-    let szu = signin.map(|service| service.cached_szu_checkin(key));
+    let szu = if szu_enabled {
+        signin.map(|service| service.cached_szu_checkin(key))
+    } else {
+        None
+    };
     let szu_pending = matches!(szu, Some(SzuCheckinState::Pending));
     let szu_signed = matches!(szu, Some(SzuCheckinState::Signed));
 
@@ -197,7 +215,9 @@ fn resolve_checkin(
     } else if let Some(signed) = state.checkin_signed.get(key) {
         match signed.source {
             CheckinSource::Lms => SessionCheckin::SignedLms,
-            CheckinSource::Szu => SessionCheckin::SignedSzu,
+            // 总开关关闭后不再回退到历史 SZU 已签到记录。
+            CheckinSource::Szu if szu_enabled => SessionCheckin::SignedSzu,
+            CheckinSource::Szu => SessionCheckin::None,
         }
     } else {
         SessionCheckin::None
@@ -289,6 +309,7 @@ mod tests {
             "2026-11-16",
             &[rollcall(Some("on_call_fine")), rollcall(Some("on_call"))],
             None,
+            true,
             &state,
             "key",
         );
@@ -304,6 +325,7 @@ mod tests {
             "2026-11-16",
             &[rollcall(Some("on_call_fine"))],
             None,
+            true,
             &state,
             "key",
         );
@@ -321,7 +343,10 @@ mod tests {
                 source: model::CheckinSource::Szu,
             },
         );
-        let checkin = resolve_checkin(&item, "2026-11-16", &[], None, &state, "key");
+        let checkin = resolve_checkin(&item, "2026-11-16", &[], None, true, &state, "key");
         assert_eq!(checkin, model::SessionCheckin::SignedSzu);
+        // 总开关关闭：不再回退到历史 SZU 已签到记录。
+        let hidden = resolve_checkin(&item, "2026-11-16", &[], None, false, &state, "key");
+        assert_eq!(hidden, model::SessionCheckin::None);
     }
 }

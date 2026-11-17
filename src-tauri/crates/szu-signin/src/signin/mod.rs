@@ -173,12 +173,24 @@ impl Service {
     }
 
     /// 保存自动签到开关：先落盘再更新内存缓存，保存失败不改变运行时状态。
+    ///
+    /// SZU 总开关切换会改变首页/课表里 SZU 签到状态的可见性，因此清掉旧缓存并
+    /// 广播一次状态变化，让课表模块立即按新设置重算快照。
     pub fn set_automation_settings(
         &self,
         settings: SigninAutomationSettings,
     ) -> Result<SigninAutomationSettings, String> {
+        let previous = self.automation_settings();
         let saved = settings.save()?;
         *self.automation.lock().unwrap() = saved.clone();
+        if previous.szu_enabled != saved.szu_enabled {
+            if !saved.szu_enabled {
+                self.szu_checkins.lock().unwrap().clear();
+            }
+            if let Some(app) = &self.app {
+                let _ = app.emit("signin-checkin-status-changed", ());
+            }
+        }
         Ok(saved)
     }
 
@@ -190,7 +202,12 @@ impl Service {
     /// 只读某个课次的 SZU 考勤状态。
     ///
     /// 状态只由 `probe()` 在课表窗口内刷新；课表模块不得自行轮询。
+    /// SZU（实验性）总开关关闭时视为未知：首页与课表只显示畅课签到状态，
+    /// 也不应拿旧缓存继续展示。
     pub fn cached_szu_checkin(&self, session_key: &str) -> SzuCheckinState {
+        if !self.automation.lock().unwrap().szu_enabled {
+            return SzuCheckinState::Unknown;
+        }
         self.szu_checkins
             .lock()
             .unwrap()
@@ -635,6 +652,12 @@ impl Service {
     /// 课表窗口内的 SZU 状态刷新。频率完全由 `scheduler::run` 的
     /// 30s/5min 动态节拍决定，课表模块不另行轮询。返回状态是否变化。
     async fn refresh_szu_checkins(&self, now: i64) -> bool {
+        // 总开关关闭时不做任何 SZU 考勤探测（不刷 QW 接口），并丢弃旧状态：
+        // 首页与课表只保留畅课签到状态。
+        if !self.automation.lock().unwrap().szu_enabled {
+            self.szu_checkins.lock().unwrap().clear();
+            return false;
+        }
         let sessions: Vec<model::TimetableSession> = self
             .timetable
             .lock()

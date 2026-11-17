@@ -142,6 +142,76 @@ async fn resolve_radar_point_prefers_memory_then_timetable_then_fallback() {
     assert!((point.latitude - 22.5).abs() < 1e-9);
 }
 
+#[tokio::test]
+async fn szu_checkin_cache_is_hidden_when_master_switch_is_off() {
+    use super::automation::SigninAutomationSettings;
+    use super::model::{CachedSzuCheckin, SzuCheckinState};
+
+    let dir = tempfile::tempdir().unwrap();
+    let service = Service::with_bases(
+        None,
+        test_credentials(),
+        dir.path().join("state.sqlite"),
+        "http://127.0.0.1:1/".into(),
+        "http://127.0.0.2:1/".into(),
+    )
+    .unwrap();
+    let key = "概率论与数理统计|2026-11-17|1000";
+    service.szu_checkins.lock().unwrap().insert(
+        key.into(),
+        CachedSzuCheckin {
+            state: SzuCheckinState::Pending,
+            checked_at_ms: 1_000,
+        },
+    );
+
+    // 总开关关闭：首页/课表拿到 Unknown，不展示 SZU 签到状态。
+    assert_eq!(service.cached_szu_checkin(key), SzuCheckinState::Unknown);
+    // 开启后正常返回缓存状态。
+    *service.automation.lock().unwrap() = SigninAutomationSettings {
+        szu_enabled: true,
+        ..Default::default()
+    };
+    assert_eq!(service.cached_szu_checkin(key), SzuCheckinState::Pending);
+    // 再关闭：立即隐藏。
+    *service.automation.lock().unwrap() = SigninAutomationSettings::default();
+    assert_eq!(service.cached_szu_checkin(key), SzuCheckinState::Unknown);
+}
+
+#[tokio::test]
+async fn disabled_szu_master_clears_checkin_cache_without_network() {
+    use super::automation::SigninAutomationSettings;
+    use super::model::{CachedSzuCheckin, SzuCheckinState};
+
+    let dir = tempfile::tempdir().unwrap();
+    let service = Service::with_bases(
+        None,
+        test_credentials(),
+        dir.path().join("state.sqlite"),
+        "http://127.0.0.1:1/".into(),
+        "http://127.0.0.2:1/".into(),
+    )
+    .unwrap();
+    assert!(!service.automation.lock().unwrap().szu_enabled);
+    service.szu_checkins.lock().unwrap().insert(
+        "key".into(),
+        CachedSzuCheckin {
+            state: SzuCheckinState::Signed,
+            checked_at_ms: 1_000,
+        },
+    );
+    // 关闭时探测应直接清空旧状态且不发网络请求。
+    service.refresh_szu_checkins(2_000).await;
+    assert!(service.szu_checkins.lock().unwrap().is_empty());
+    // 打开后仍按原逻辑工作（无 QW 会话时不会误报）。
+    *service.automation.lock().unwrap() = SigninAutomationSettings {
+        szu_enabled: true,
+        ..Default::default()
+    };
+    service.refresh_szu_checkins(2_000).await;
+    assert!(service.szu_checkins.lock().unwrap().is_empty());
+}
+
 #[test]
 fn szu_course_key_is_normalized_and_prefixed() {
     assert_eq!(super::szu_course_key("  概率论 课程 "), "szu:概率论课程");

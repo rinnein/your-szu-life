@@ -124,13 +124,13 @@ export function SzuPanel({
         <div slot="headline">签到提醒与自动签到</div>
         <div slot="subhead">
           开启后，检测到 SZU 考勤可签到的课次时自动用雷达定位提交；无法自动完成时发送签到提醒。
-          默认关闭，且仍受「设置 → 通知 → 签到提醒」开关约束。
+          默认关闭；关闭时首页课表与课表页不再检测/显示 SZU 签到状态，只保留畅课签到。
         </div>
         <SettingList>
           <SettingRow
             icon={<LuMapPinCheck aria-hidden="true" />}
             title="启用签到提醒与自动签到"
-            description="自动签到仅在应用进程存活时运行，锁屏或系统回收进程时可能错过。"
+            description="同时控制首页/课表的 SZU 签到状态；自动签到仅在应用进程存活时运行，锁屏或系统回收进程时可能错过。"
           >
             <Switch
               checked={automation.settings.szuEnabled}
