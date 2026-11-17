@@ -156,6 +156,8 @@ pub struct ClassReminderSpec {
     pub location: String,
     pub route: String,
     pub lead_minutes: i64,
+    /// 是否使用 Android 16 Live Update（promoted 实时活动）展示。
+    pub live_update: bool,
 }
 
 /// 课次的稳定身份：同一课程同一天同一开始时间只提醒一次。
@@ -208,6 +210,14 @@ pub fn session_location(session: &TimetableSession) -> String {
 }
 
 pub fn class_spec(session: &TimetableSession) -> ClassReminderSpec {
+    class_spec_with_live(session, true)
+}
+
+/// 同 [`class_spec`]，可指定是否使用实时活动展示。
+pub fn class_spec_with_live(
+    session: &TimetableSession,
+    live_update: bool,
+) -> ClassReminderSpec {
     ClassReminderSpec {
         session_id: session_id(session),
         course_name: session.course_name.clone(),
@@ -217,16 +227,42 @@ pub fn class_spec(session: &TimetableSession) -> ClassReminderSpec {
         location: session_location(session),
         route: session_route(session),
         lead_minutes: CLASS_REMINDER_LEAD_MINUTES,
+        live_update,
     }
 }
 
 /// Android 原生排程窗口：未来 72 小时内开始的课次。
 pub fn class_sync_specs(sessions: &[TimetableSession], now: i64) -> Vec<ClassReminderSpec> {
+    class_sync_specs_with_live(sessions, now, true)
+}
+
+pub fn class_sync_specs_with_live(
+    sessions: &[TimetableSession],
+    now: i64,
+    live_update: bool,
+) -> Vec<ClassReminderSpec> {
     sessions
         .iter()
         .filter(|session| session.start_ms >= now && session.start_ms <= now + CLASS_SYNC_WINDOW_MS)
-        .map(class_spec)
+        .map(|session| class_spec_with_live(session, live_update))
         .collect()
+}
+
+/// 当前应放进实时活动的那节课：`start - lead ≤ now < end` 中开始时间最晚的一节。
+///
+/// 实时活动是单条的（系统胶囊只有一个），连堂课或时间重叠时优先最近的课程。
+pub fn active_live_spec<'a>(
+    specs: &'a [ClassReminderSpec],
+    now: i64,
+) -> Option<&'a ClassReminderSpec> {
+    specs
+        .iter()
+        .filter(|spec| spec.live_update)
+        .filter(|spec| {
+            let lead = spec.lead_minutes.max(1);
+            now >= spec.start_at_ms - lead * MINUTE_MS && now < spec.end_at_ms
+        })
+        .max_by_key(|spec| spec.start_at_ms)
 }
 
 /// 桌面端没有常驻通知能力：只在进入 20 分钟窗口时发一次。
@@ -466,5 +502,62 @@ mod tests {
         )
         .is_empty());
         assert!(plan_desktop_class_reminders(&sessions, &settings, start, &mut state).is_empty());
+    }
+
+    fn live_spec(id: &str, start: i64, end: i64, live_update: bool) -> ClassReminderSpec {
+        ClassReminderSpec {
+            session_id: id.into(),
+            course_name: id.into(),
+            start_at_ms: start,
+            end_at_ms: end,
+            time_label: String::new(),
+            location: String::new(),
+            route: String::new(),
+            lead_minutes: 20,
+            live_update,
+        }
+    }
+
+    #[test]
+    fn live_update_is_flagged_per_spec() {
+        let now = 1_800_000_000_000;
+        let sessions = vec![session(now + 60 * MINUTE_MS)];
+        assert!(class_sync_specs_with_live(&sessions, now, true)
+            .iter()
+            .all(|spec| spec.live_update));
+        assert!(class_sync_specs_with_live(&sessions, now, false)
+            .iter()
+            .all(|spec| !spec.live_update));
+    }
+
+    #[test]
+    fn active_live_spec_picks_the_nearest_class_in_window() {
+        let base = 1_800_000_000_000;
+        let specs = vec![
+            live_spec("a", base, base + 60 * MINUTE_MS, true),
+            // 与上一节重叠的高年级课：窗口内优先最近开始的一节。
+            live_spec("b", base + 30 * MINUTE_MS, base + 120 * MINUTE_MS, true),
+        ];
+        // 窗口外（开课前 21 分钟）。
+        assert!(active_live_spec(&specs, base - 21 * MINUTE_MS).is_none());
+        // 第一节开课前 20 分钟：进入窗口。
+        assert_eq!(
+            active_live_spec(&specs, base - 20 * MINUTE_MS).map(|spec| spec.session_id.as_str()),
+            Some("a")
+        );
+        // 第二节也进入窗口后取更近的一节。
+        assert_eq!(
+            active_live_spec(&specs, base + 45 * MINUTE_MS).map(|spec| spec.session_id.as_str()),
+            Some("b")
+        );
+        // 都结束后没有实时活动。
+        assert!(active_live_spec(&specs, base + 200 * MINUTE_MS).is_none());
+    }
+
+    #[test]
+    fn active_live_spec_skips_specs_without_live_update() {
+        let base = 1_800_000_000_000;
+        let specs = vec![live_spec("a", base, base + 60 * MINUTE_MS, false)];
+        assert!(active_live_spec(&specs, base + 10 * MINUTE_MS).is_none());
     }
 }

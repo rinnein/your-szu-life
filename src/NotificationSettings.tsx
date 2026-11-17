@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { LuBell, LuCalendarClock, LuMapPinCheck, LuTriangleAlert } from "react-icons/lu";
+import { LuBell, LuCalendarClock, LuMapPinCheck, LuRadio, LuTriangleAlert } from "react-icons/lu";
 import { Button, Card, Checkbox, LoadingIndicator, Switch } from "material/react";
 import { Banner, SettingList, SettingRow, toast } from "./ui";
 import { errorMessage, useAsyncLoad } from "./async-state";
@@ -26,6 +26,8 @@ export interface TodoNotificationConfig {
 
 export interface TimetableNotificationConfig {
   classReminder: boolean;
+  /** 实时活动（Android 16 promoted Live Update / ColorOS 流体云） */
+  liveUpdate: boolean;
   checkin: boolean;
   checkinFailure: boolean;
 }
@@ -53,6 +55,7 @@ const DEFAULT_TODO_CONFIG: TodoNotificationConfig = {
 
 const DEFAULT_TIMETABLE_CONFIG: TimetableNotificationConfig = {
   classReminder: true,
+  liveUpdate: true,
   checkin: true,
   checkinFailure: true,
 };
@@ -387,6 +390,18 @@ export function NotificationSettings() {
               disabled={categoryDisabled}
               onChange={(event: any) => toggleTimetableFlag("classReminder", checkedOf(event))}
               aria-label="开关课前提醒"
+            />
+          </SettingRow>
+          <SettingRow
+            icon={<LuRadio aria-hidden="true" />}
+            title="实时活动（流体云）"
+            description="课前 20 分钟起以实时活动展示进度环与倒计时（Android 16 实时更新；ColorOS 流体云据此渲染）。需要系统的实时通知授权。"
+          >
+            <Switch
+              checked={view.timetable.liveUpdate}
+              disabled={categoryDisabled || !view.timetable.classReminder}
+              onChange={(event: any) => toggleTimetableFlag("liveUpdate", checkedOf(event))}
+              aria-label="开关课前实时活动"
             />
           </SettingRow>
           <SettingRow

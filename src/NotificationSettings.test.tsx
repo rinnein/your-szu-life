@@ -34,6 +34,7 @@ const DEFAULT_TEST_SETTINGS: NotificationConfig = {
   },
   timetable: {
     classReminder: true,
+    liveUpdate: true,
     checkin: true,
     checkinFailure: true,
   },
@@ -78,6 +79,7 @@ describe("NotificationSettings component", () => {
     expect(screen.getByRole("switch", { name: "开关选课助手通知" })).toBeChecked();
     expect(screen.getByRole("switch", { name: "开关优课联盟 (UOOC)通知" })).toBeChecked();
     expect(screen.getByRole("switch", { name: "开关课前提醒" })).toBeChecked();
+    expect(screen.getByRole("switch", { name: "开关课前实时活动" })).toBeChecked();
     expect(screen.getByRole("switch", { name: "开关签到提醒" })).toBeChecked();
     expect(screen.getByRole("switch", { name: "开关签到失败提醒" })).toBeChecked();
   });
@@ -177,6 +179,31 @@ describe("NotificationSettings component", () => {
         }),
       });
     });
+  });
+
+  it("saves the live update switch and disables it without class reminders", async () => {
+    render(<NotificationSettings />);
+
+    const liveSwitch = await readySwitch("开关课前实时活动");
+    fireEvent.change(liveSwitch, { target: { checked: false } });
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("save_notification_settings", {
+        settings: expect.objectContaining({
+          timetable: expect.objectContaining({ liveUpdate: false, classReminder: true }),
+        }),
+      });
+    });
+    expect(await screen.findByRole("switch", { name: "开关课前实时活动" })).not.toBeChecked();
+  });
+
+  it("disables the live update switch when class reminders are off", async () => {
+    render(<NotificationSettings />);
+    const classReminder = await readySwitch("开关课前提醒");
+    fireEvent.change(classReminder, { target: { checked: false } });
+    await waitFor(() =>
+      expect(screen.getByRole("switch", { name: "开关课前实时活动" })).toBeDisabled(),
+    );
   });
 
   it("saves the check-in failure reminder switch independently", async () => {

@@ -46,6 +46,7 @@ object TimetableNotificationBridge {
   @JvmStatic
   fun cancelAll(context: Context): Boolean = try {
     val app = context.applicationContext
+    TimetableLiveUpdateService.stop(app)
     loadSpecs(app).forEach { cancelSpec(app, it) }
     prefs(app).edit().remove(PREFS_SPECS).apply()
     true
@@ -61,6 +62,40 @@ object TimetableNotificationBridge {
 
   fun notificationId(sessionId: String): Int = sessionId.hashCode() and 0x3fff_ffff
 
+  /** 把课次包进闹钟/服务 Intent（闹钟与实时活动共用同一组 extras）。 */
+  fun putSpec(intent: Intent, spec: ClassSpec) {
+    intent
+      .putExtra(EXTRA_SESSION_ID, spec.sessionId)
+      .putExtra(EXTRA_COURSE, spec.courseName)
+      .putExtra(EXTRA_START, spec.startAtMs)
+      .putExtra(EXTRA_END, spec.endAtMs)
+      .putExtra(EXTRA_TIME_LABEL, spec.timeLabel)
+      .putExtra(EXTRA_LOCATION, spec.location)
+      .putExtra(EXTRA_ROUTE, spec.route)
+      .putExtra(EXTRA_LEAD, spec.leadMinutes)
+      .putExtra(EXTRA_LIVE, spec.liveUpdate)
+  }
+
+  /** 从 Intent extras 还原课次；缺关键字段时返回 null。 */
+  fun specFromIntent(intent: Intent?): ClassSpec? {
+    if (intent == null) return null
+    val sessionId = intent.getStringExtra(EXTRA_SESSION_ID) ?: return null
+    val start = intent.getLongExtra(EXTRA_START, 0L)
+    val end = intent.getLongExtra(EXTRA_END, 0L)
+    if (start <= 0L || end <= start) return null
+    return ClassSpec(
+      sessionId = sessionId,
+      courseName = intent.getStringExtra(EXTRA_COURSE).orEmpty(),
+      startAtMs = start,
+      endAtMs = end,
+      timeLabel = intent.getStringExtra(EXTRA_TIME_LABEL).orEmpty(),
+      location = intent.getStringExtra(EXTRA_LOCATION).orEmpty(),
+      route = intent.getStringExtra(EXTRA_ROUTE).orEmpty(),
+      leadMinutes = intent.getLongExtra(EXTRA_LEAD, 20L).coerceAtLeast(1L),
+      liveUpdate = intent.getBooleanExtra(EXTRA_LIVE, false),
+    )
+  }
+
   private fun scheduleSpec(context: Context, spec: ClassSpec) {
     val now = System.currentTimeMillis()
     val start = spec.startAtMs
@@ -68,8 +103,15 @@ object TimetableNotificationBridge {
     val leadMs = spec.leadMinutes.coerceAtLeast(1) * 60_000L
     val leadAt = start - leadMs
     if (leadAt <= now) {
-      // 已经进入 20 分钟窗口：立即发布，后续 T0/下课仍由闹钟推进。
-      TimetableReminderReceiver.post(context, spec, TimetableReminderReceiver.PHASE_REMIND)
+      // 已经进入 20 分钟窗口。实时活动开启时交给前台服务推进（每 15s 重发）；
+      // 启动失败或系统不支持时回退到定点通知。
+      if (spec.liveUpdate && TimetableLiveUpdateService.supportsPromoted(context)) {
+        if (!TimetableLiveUpdateService.start(context, spec)) {
+          TimetableReminderReceiver.post(context, spec, TimetableReminderReceiver.PHASE_REMIND)
+        }
+      } else {
+        TimetableReminderReceiver.post(context, spec, TimetableReminderReceiver.PHASE_REMIND)
+      }
     }
     schedule(context, spec, TimetableReminderReceiver.PHASE_REMIND, POINT_REMIND, leadAt)
     schedule(context, spec, TimetableReminderReceiver.PHASE_UPDATE, POINT_UPDATE_15, start - 15 * 60_000L)
@@ -89,15 +131,8 @@ object TimetableNotificationBridge {
     if (atMs <= System.currentTimeMillis()) return
     val intent = Intent(context, TimetableReminderReceiver::class.java)
       .setAction(ACTION)
-      .putExtra(EXTRA_SESSION_ID, spec.sessionId)
-      .putExtra(EXTRA_COURSE, spec.courseName)
-      .putExtra(EXTRA_START, spec.startAtMs)
-      .putExtra(EXTRA_END, spec.endAtMs)
-      .putExtra(EXTRA_TIME_LABEL, spec.timeLabel)
-      .putExtra(EXTRA_LOCATION, spec.location)
-      .putExtra(EXTRA_ROUTE, spec.route)
-      .putExtra(EXTRA_LEAD, spec.leadMinutes)
       .putExtra(EXTRA_PHASE, phase)
+    putSpec(intent, spec)
     val pending = PendingIntent.getBroadcast(
       context,
       requestCode(spec.sessionId, point),
@@ -128,6 +163,9 @@ object TimetableNotificationBridge {
       pending.cancel()
     }
     NotificationManagerCompat.from(context).cancel(notificationId(spec.sessionId))
+    if (TimetableLiveUpdateBridge.castingSessionId() == spec.sessionId) {
+      TimetableLiveUpdateService.stop(context)
+    }
   }
 
   private fun requestCode(sessionId: String, point: Int): Int =
@@ -177,6 +215,7 @@ object TimetableNotificationBridge {
           location = row.optString("location"),
           route = row.optString("route"),
           leadMinutes = row.optLong("leadMinutes", 20L).coerceAtLeast(1L),
+          liveUpdate = row.optBoolean("liveUpdate", false),
         )
       )
     }
@@ -192,6 +231,8 @@ object TimetableNotificationBridge {
     val location: String,
     val route: String,
     val leadMinutes: Long,
+    /** 是否使用 Android 16 实时活动（promoted Live Update）推进展示。 */
+    val liveUpdate: Boolean = false,
   )
 
   const val EXTRA_SESSION_ID = "sessionId"
@@ -203,6 +244,7 @@ object TimetableNotificationBridge {
   const val EXTRA_ROUTE = "route"
   const val EXTRA_LEAD = "leadMinutes"
   const val EXTRA_PHASE = "phase"
+  const val EXTRA_LIVE = "liveUpdate"
 
   // 每个时间点必须有独立请求码；同 phase 共用请求码会让后一个闹钟覆盖前一个。
   private const val POINT_REMIND = 0

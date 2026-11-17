@@ -54,6 +54,12 @@
             android:exported="false"
             android:stopWithTask="true"
             android:foregroundServiceType="dataSync" />
+        <!-- 上课提醒的实时活动：Android 16 promoted Live Update / ColorOS 流体云。 -->
+        <service
+            android:name=".TimetableLiveUpdateService"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="dataSync" />
         <activity
             android:name=".FeatureActivity"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"

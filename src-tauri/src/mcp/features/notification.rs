@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 pub struct TimetableSettingsUpdate {
     /// 课前提醒（默认提前 20 分钟；Android 上显示常驻倒计时）
     pub class_reminder: Option<bool>,
+    /// 实时活动（Android 16 promoted Live Update / ColorOS 流体云）
+    pub live_update: Option<bool>,
     /// 签到提醒（普通待签点名）
     pub checkin: Option<bool>,
     /// 签到/打卡失败提醒（自动签到失败、缺照片被跳过等）
@@ -22,6 +24,9 @@ impl TimetableSettingsUpdate {
     ) {
         if let Some(value) = self.class_reminder {
             target.class_reminder = value;
+        }
+        if let Some(value) = self.live_update {
+            target.live_update = value;
         }
         if let Some(value) = self.checkin {
             target.checkin = value;
@@ -44,7 +49,7 @@ pub struct SetNotificationSettingsParams {
     pub uooc: Option<bool>,
     /// 待办类通知（六个注册项开关、初次探测开关与提前量）
     pub todo: Option<crate::mcp::features::todos::TodoSettingsUpdate>,
-    /// 课表通知（课前提醒、签到提醒、签到失败提醒）
+    /// 课表通知（课前提醒、实时活动、签到提醒、签到失败提醒）
     pub timetable: Option<TimetableSettingsUpdate>,
 }
 

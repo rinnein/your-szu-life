@@ -26,11 +26,23 @@ class TimetableReminderReceiver : BroadcastReceiver() {
     val phase = intent.getIntExtra(TimetableNotificationBridge.EXTRA_PHASE, PHASE_REMIND)
     if (phase == PHASE_END) {
       val sessionId = intent.getStringExtra(TimetableNotificationBridge.EXTRA_SESSION_ID) ?: return
+      if (TimetableLiveUpdateBridge.castingSessionId() == sessionId) {
+        // 实时活动会话自己会在下课时收尾，这里只确保服务被停掉。
+        TimetableLiveUpdateService.stop(context)
+      }
       NotificationManagerCompat.from(context)
         .cancel(TimetableNotificationBridge.notificationId(sessionId))
       return
     }
-    val spec = specFrom(intent) ?: return
+    val spec = TimetableNotificationBridge.specFromIntent(intent) ?: return
+    // 实时活动已接管该课次时，定点闹钟只做「启动/续期」与下课清理，不再重复发帖，
+    // 否则会和前台服务每 15 秒的通知互相覆盖。
+    if (spec.liveUpdate && TimetableLiveUpdateService.supportsPromoted(context)) {
+      if (phase == PHASE_REMIND || phase == PHASE_START) {
+        TimetableLiveUpdateService.start(context, spec)
+      }
+      if (TimetableLiveUpdateBridge.castingSessionId() == spec.sessionId) return
+    }
     post(context, spec, phase)
   }
 
@@ -77,9 +89,11 @@ class TimetableReminderReceiver : BroadcastReceiver() {
         .setChronometerCountDown(true)
 
       if (supportsPromoted(app)) {
+        // 非实时活动路径下也尽量带上 promoted 三件套（系统自行决定是否提升）；
+        // 有前台服务时这条会被服务的每 15s 发帖覆盖，因此只是兜底。
         builder.setStyle(NotificationCompat.ProgressStyle().setProgress(progress))
         builder.setRequestPromotedOngoing(true)
-        builder.setShortCriticalText(status)
+        builder.setShortCriticalText(LiveReminderSession.capsuleText(spec.courseName, status))
       }
 
       try {
@@ -122,24 +136,6 @@ class TimetableReminderReceiver : BroadcastReceiver() {
         TimetableNotificationBridge.notificationId(spec.sessionId),
         intent,
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-      )
-    }
-
-    private fun specFrom(intent: Intent): TimetableNotificationBridge.ClassSpec? {
-      val sessionId = intent.getStringExtra(TimetableNotificationBridge.EXTRA_SESSION_ID) ?: return null
-      val start = intent.getLongExtra(TimetableNotificationBridge.EXTRA_START, 0L)
-      val end = intent.getLongExtra(TimetableNotificationBridge.EXTRA_END, 0L)
-      if (start <= 0L || end <= start) return null
-      return TimetableNotificationBridge.ClassSpec(
-        sessionId = sessionId,
-        courseName = intent.getStringExtra(TimetableNotificationBridge.EXTRA_COURSE).orEmpty(),
-        startAtMs = start,
-        endAtMs = end,
-        timeLabel = intent.getStringExtra(TimetableNotificationBridge.EXTRA_TIME_LABEL).orEmpty(),
-        location = intent.getStringExtra(TimetableNotificationBridge.EXTRA_LOCATION).orEmpty(),
-        route = intent.getStringExtra(TimetableNotificationBridge.EXTRA_ROUTE).orEmpty(),
-        leadMinutes = intent.getLongExtra(TimetableNotificationBridge.EXTRA_LEAD, 20L)
-          .coerceAtLeast(1L),
       )
     }
   }

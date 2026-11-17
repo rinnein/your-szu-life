@@ -66,3 +66,7 @@
 -keep class in.rinne.your_szu_life.WebviewCookieBridge { public *; }
 -keep class in.rinne.your_szu_life.TimetableNotificationBridge { public *; }
 -keep class in.rinne.your_szu_life.TimetableReminderReceiver { public *; }
+-keep class in.rinne.your_szu_life.TimetableLiveUpdateService { public *; }
+-keep class in.rinne.your_szu_life.TimetableLiveUpdateBridge { public *; }
+-keep class in.rinne.your_szu_life.LiveReminderSession { public *; }
+-keep class in.rinne.your_szu_life.ProgressRingIcon { public *; }

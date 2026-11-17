@@ -10,7 +10,7 @@ use szu_signin::signin::model::CheckinTodoItem;
 #[cfg(target_os = "android")]
 use super::android;
 #[cfg(target_os = "android")]
-use super::model::class_sync_specs;
+use super::model::class_sync_specs_with_live;
 #[cfg(not(target_os = "android"))]
 use super::model::plan_desktop_class_reminders;
 use super::model::{plan_checkin_reminders, ClassReminderSpec, ReminderState};
@@ -254,8 +254,11 @@ async fn sync_android(
     let (specs, enabled, changed) = {
         let mut state = store.state.lock().unwrap();
         let enabled = settings.enabled && settings.timetable.class_reminder;
+        // 实时活动（promoted Live Update / ColorOS 流体云）由 Kotlin 按此标志决定是否
+        // 用前台服务推进进度；关闭时退回定点通知，因此它必须进入同步签名。
+        let live_update = enabled && settings.timetable.live_update;
         let specs = if enabled {
-            class_sync_specs(sessions, now)
+            class_sync_specs_with_live(sessions, now, live_update)
         } else {
             Vec::new()
         };

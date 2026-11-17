@@ -106,6 +106,8 @@ fn normalized_lead_minutes(values: Vec<i64>) -> Vec<i64> {
 pub struct TimetableNotificationSettings {
     /// 课前提醒
     pub class_reminder: bool,
+    /// 实时活动：Android 16+ 的 promoted Live Update（ColorOS 流体云据此渲染）
+    pub live_update: bool,
     /// 签到提醒（普通待签点名）
     pub checkin: bool,
     /// 签到/打卡失败提醒（自动签到失败、缺照片被跳过等）
@@ -116,6 +118,7 @@ impl Default for TimetableNotificationSettings {
     fn default() -> Self {
         Self {
             class_reminder: true,
+            live_update: true,
             checkin: true,
             checkin_failure: true,
         }
@@ -307,6 +310,7 @@ mod tests {
         assert!(settings.todo.enabled);
         assert!(settings.todo.discovery);
         assert!(settings.timetable.class_reminder);
+        assert!(settings.timetable.live_update);
         assert!(settings.timetable.checkin);
         assert!(settings.timetable.checkin_failure);
         assert_eq!(
@@ -353,6 +357,7 @@ mod tests {
             },
             timetable: TimetableNotificationSettings {
                 class_reminder: false,
+                live_update: false,
                 checkin: true,
                 checkin_failure: false,
             },
