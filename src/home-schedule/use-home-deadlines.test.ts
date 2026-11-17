@@ -67,6 +67,7 @@ describe("useHomeDeadlines", () => {
     vi.spyOn(Date, "now").mockReturnValue(now);
 
     const { result } = renderHook(() => useHomeDeadlines());
+    expect(result.current.ready).toBe(false);
     await waitForChannel();
     await emitChannel("subscribe_todos", {
       type: "initial",
@@ -84,6 +85,7 @@ describe("useHomeDeadlines", () => {
     });
 
     await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.ready).toBe(true);
     expect(result.current.items).toHaveLength(2);
     // 后端已排序，前端仍按截止时间兜底排序。
     expect(result.current.items.map((item) => item.category)).toEqual([
@@ -156,5 +158,33 @@ describe("useHomeDeadlines", () => {
 
     const { result } = renderHook(() => useHomeDeadlines());
     await waitFor(() => expect(result.current.loading).toBe(false));
+    // 订阅失败也算「已就绪」：排序据此回退到「无待办」的默认顺序。
+    expect(result.current.ready).toBe(true);
+  });
+
+  it("hydrates the last snapshot for the same account after remount", async () => {
+    const first = renderHook(() => useHomeDeadlines("cache-account-a"));
+    await waitForChannel();
+    await emitChannel("subscribe_todos", {
+      type: "initial",
+      data: [todoItem({ title: "缓存待办" })],
+    });
+    await waitFor(() => expect(first.result.current.ready).toBe(true));
+    first.unmount();
+
+    channels.clear();
+    const second = renderHook(() => useHomeDeadlines("cache-account-a"));
+
+    // 首帧就命中缓存，不需要等 Channel 再来一次。
+    expect(second.result.current.ready).toBe(true);
+    expect(second.result.current.loading).toBe(false);
+    expect(second.result.current.items.map((item) => item.title)).toEqual(["缓存待办"]);
+  });
+
+  it("does not reuse another account's cached snapshot", () => {
+    const { result } = renderHook(() => useHomeDeadlines("cache-account-b"));
+
+    expect(result.current.ready).toBe(false);
+    expect(result.current.items).toEqual([]);
   });
 });

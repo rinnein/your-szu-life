@@ -4,8 +4,8 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { HomeCalendarWidget } from "./HomeCalendarWidget";
-import * as deadlinesModule from "./use-home-deadlines";
 import * as navigationModule from "../logical-navigation";
+import type { ScheduleCategory, ScheduleItem } from "./types";
 
 describe("HomeCalendarWidget", () => {
   const pushMock = vi.fn();
@@ -28,6 +28,23 @@ describe("HomeCalendarWidget", () => {
       lastAction: () => null,
     });
   });
+
+  function renderWidget(
+    items: ScheduleItem[],
+    categoryMap: Map<string, ScheduleCategory[]>,
+    initialDate: Date,
+  ) {
+    return render(
+      <HomeCalendarWidget
+        items={items}
+        categoryMap={categoryMap}
+        loading={false}
+        ready
+        refresh={vi.fn()}
+        initialDate={initialDate}
+      />,
+    );
+  }
 
   it("renders calendar month and list of deadlines with UOOC items", () => {
     const testDate = new Date(2026, 9, 28, 12, 0, 0); // 2026-10-28
@@ -79,20 +96,17 @@ describe("HomeCalendarWidget", () => {
       },
     ];
 
-    vi.spyOn(deadlinesModule, "useHomeDeadlines").mockReturnValue({
-      items: mockItems,
-      categoryMap: new Map([
+    renderWidget(
+      mockItems,
+      new Map([
         ["2026-10-28", ["oj-quiz"]],
         ["2026-10-29", ["uooc-exam"]],
         ["2026-10-30", ["uooc-homework"]],
         ["2026-10-31", ["electricity-outage"]],
         ["2026-11-05", ["uooc-course-end"]],
       ]),
-      loading: false,
-      refresh: vi.fn(),
-    });
-
-    render(<HomeCalendarWidget initialDate={testDate} />);
+      testDate,
+    );
 
     // Check heading
     expect(screen.getByRole("heading", { name: /日历与待办/ })).toBeInTheDocument();
@@ -144,17 +158,14 @@ describe("HomeCalendarWidget", () => {
       },
     ];
 
-    vi.spyOn(deadlinesModule, "useHomeDeadlines").mockReturnValue({
-      items: mockItems,
-      categoryMap: new Map([
+    renderWidget(
+      mockItems,
+      new Map([
         ["2026-10-28", ["oj-quiz"]],
         ["2026-10-31", ["electricity-outage"]],
       ]),
-      loading: false,
-      refresh: vi.fn(),
-    });
-
-    render(<HomeCalendarWidget initialDate={testDate} />);
+      testDate,
+    );
 
     // Initially both items are shown
     expect(screen.getByText("算法第四次测验")).toBeInTheDocument();
@@ -191,18 +202,27 @@ describe("HomeCalendarWidget", () => {
       },
     ];
 
-    vi.spyOn(deadlinesModule, "useHomeDeadlines").mockReturnValue({
-      items: mockItems,
-      categoryMap: new Map([["2026-10-29", ["uooc-exam"]]]),
-      loading: false,
-      refresh: vi.fn(),
-    });
-
-    render(<HomeCalendarWidget initialDate={testDate} />);
+    renderWidget(mockItems, new Map([["2026-10-29", ["uooc-exam"]]]), testDate);
 
     const itemBtn = screen.getByRole("button", { name: /期中考试/ });
     fireEvent.click(itemBtn);
 
     expect(pushMock).toHaveBeenCalledWith("/study/uooc?tab=exams&subtab=exam");
+  });
+
+  it("shows a skeleton instead of the empty state before todos arrive", () => {
+    render(
+      <HomeCalendarWidget
+        items={[]}
+        categoryMap={new Map()}
+        loading
+        ready={false}
+        refresh={vi.fn()}
+        initialDate={new Date(2026, 9, 28, 12, 0, 0)}
+      />,
+    );
+
+    expect(screen.getByRole("status", { name: "正在读取待办" })).toBeInTheDocument();
+    expect(screen.queryByText("近期暂无待办事项，一切就绪")).not.toBeInTheDocument();
   });
 });

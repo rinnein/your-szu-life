@@ -2,9 +2,8 @@ import { useMemo } from "react";
 import { Button, Card, LoadingIndicator } from "material/react";
 import { LuCalendarClock, LuChevronRight, LuRotateCw } from "react-icons/lu";
 import { Banner, Disclosure } from "../ui";
+import { SkeletonText } from "../components";
 import { useLogicalNavigation } from "../logical-navigation";
-import { useTimetable } from "./use-timetable";
-import { useNow } from "./use-now";
 import { slotForSession } from "./periods";
 import {
   formatClock,
@@ -19,18 +18,33 @@ import {
   weekdayLabel,
 } from "./merge";
 import { SessionCard } from "./SessionCard";
-import type { TimetableSession } from "./types";
+import type { TimetableSession, TimetableSnapshot } from "./types";
+
+/** 首页课表卡片的展示数据，由 `HomePage` 统一订阅后传入。 */
+export interface HomeTimetableWidgetProps {
+  snapshot?: TimetableSnapshot;
+  error?: string;
+  refreshing: boolean;
+  refresh: () => void;
+  /** 当前时间（毫秒），由页面级 `useNow` 统一推进，驱动课程状态翻转。 */
+  now: number;
+}
 
 /**
- * 首页第二张卡片：今日课程、当前/下一节课与签到状态。
+ * 首页课表卡片：今日课程、当前/下一节课与签到状态。
  *
+ * 与「日历与待办」的先后顺序由 `HomeCards` 按今日课程是否上完决定。
  * 详细课表在 `/study/timetable`。点击课程时，检测到签到任务就进签到页
  * 对应 tab；否则进课表页对应日期。
  */
-export function HomeTimetableWidget() {
+export function HomeTimetableWidget({
+  snapshot,
+  error,
+  refreshing,
+  refresh,
+  now,
+}: HomeTimetableWidgetProps) {
   const navigation = useLogicalNavigation();
-  const { snapshot, error, refresh, refreshing } = useTimetable();
-  const now = useNow();
 
   const today = todayKey();
   const todaySessions = useMemo(
@@ -70,6 +84,8 @@ export function HomeTimetableWidget() {
   const dateLabel = `${new Date().getMonth() + 1}月${new Date().getDate()}日 ${weekdayLabel(
     new Date(),
   )}`;
+  // 首次推送到达前既不是「没有课」也不是「已经上完」，用骨架屏占位。
+  const initialLoading = snapshot === undefined && error === undefined;
 
   const openSession = (session: TimetableSession) => {
     const target = signinRoute(session, session.checkin, isPendingCheckin(session.checkin));
@@ -141,7 +157,7 @@ export function HomeTimetableWidget() {
             {dateLabel}
             {snapshot?.semester ? ` · ${snapshot.semester}` : ""}
           </p>
-          <p className="text-xs text-muted">今天还剩 {remaining} 节课要上</p>
+          {snapshot && <p className="text-xs text-muted">今天还剩 {remaining} 节课要上</p>}
         </div>
 
         {(error || snapshot?.message) && (
@@ -160,7 +176,19 @@ export function HomeTimetableWidget() {
           </Button>
         )}
 
-        {todaySessions.length > 0 ? (
+        {initialLoading ? (
+          <div
+            className="grid gap-2 rounded-inner border border-separator p-4"
+            role="status"
+            aria-label="正在读取课表"
+          >
+            <SkeletonText lines={3} />
+          </div>
+        ) : snapshot === undefined ? (
+          <div className="grid gap-2 rounded-inner border border-separator p-4">
+            <p className="text-sm">课表暂不可用，请稍后重试。</p>
+          </div>
+        ) : todaySessions.length > 0 ? (
           <div className="grid gap-2">
             {/* 按时间顺序：已上完（默认折叠）→ 正在上/未上 → 明天的下一节。 */}
             {finishedSessions.length > 0 && (

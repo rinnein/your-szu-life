@@ -232,3 +232,14 @@ export function useAuth() {
   if (!value) throw new Error("useAuth must be used inside AuthProvider");
   return value;
 }
+
+/**
+ * 当前已认证账号的学号；未完成认证时返回 `undefined`。
+ *
+ * 供页面内的进程缓存按账号隔离，避免退出登录或切换账号后读到上一个
+ * 账号的数据。
+ */
+export function useAuthAccount(): string | undefined {
+  const { state } = useAuth();
+  return "Authenticated" in state ? state.Authenticated.studentId : undefined;
+}

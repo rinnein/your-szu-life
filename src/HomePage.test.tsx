@@ -270,6 +270,8 @@ describe("frontend smoke tests", () => {
   it("places the timetable widget between announcements and the calendar", async () => {
     mockSignedIn();
 
+    // 两张卡片的顺序由今日课程与待办决定；这里没有 Channel 数据，
+    // 应保持默认顺序（课表在前），不应在首帧就闪跳。
     renderRouterApp();
     const hero = await screen.findByTestId("hero-card");
     const timetable = await screen.findByRole("heading", { name: "课表" });

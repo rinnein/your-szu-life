@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { LoadingIndicator, Button } from "material/react";
 import { AdaptiveTabs, Banner } from "./ui";
 import { useLogicalNavigation } from "./logical-navigation";
+import { useAuthAccount } from "./auth";
 import { PageSurface } from "./shell/PageSurface";
 import { TopAppBar } from "./shell/TopAppBar";
 import { AuthGate } from "./shell/AuthGate";
@@ -21,7 +22,8 @@ const TABS = [
 
 export default function TimetablePage({ tab, date }: { tab: TimetableTab; date?: string }) {
   const navigation = useLogicalNavigation();
-  const { snapshot, error, refresh, refreshing } = useTimetable();
+  const account = useAuthAccount();
+  const { snapshot, error, refresh, refreshing } = useTimetable(account);
   const initialDate = useMemo(() => dateFromKey(date), [date]);
 
   return (

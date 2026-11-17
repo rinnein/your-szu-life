@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Button, Dialog, LoadingIndicator, MenuItem } from "material/react";
 import "material/elements/css/menu";
 import { defineMenu } from "material/elements";
-import { useAuth, beginAuthentication } from "./auth";
+import { useAuth, useAuthAccount, beginAuthentication } from "./auth";
 import { BrandMark } from "./components";
 import { PageSurface } from "./shell/PageSurface";
 import { TopAppBar } from "./shell/TopAppBar";
@@ -11,8 +11,10 @@ import { AuthGate } from "./shell/AuthGate";
 import { useDebugMode } from "./shell/use-debug-mode";
 import { useLogicalNavigation } from "./logical-navigation";
 import { AnnouncementBoard } from "./app-content/AnnouncementBoard";
-import { HomeCalendarWidget } from "./home-schedule/HomeCalendarWidget";
-import { HomeTimetableWidget } from "./timetable/HomeTimetableWidget";
+import { HomeCards } from "./home-schedule/HomeCards";
+import { useHomeDeadlines } from "./home-schedule/use-home-deadlines";
+import { useTimetable } from "./timetable/use-timetable";
+import { useNow } from "./timetable/use-now";
 
 // AccountMenu 直接渲染 <m-menu>，因此由页面自己注册菜单元素与样式。
 defineMenu();
@@ -91,8 +93,7 @@ export default function HomePage() {
 
         <div className="grid gap-1">
           <AnnouncementBoard />
-          <HomeTimetableWidget />
-          <HomeCalendarWidget />
+          <HomeScheduleCards />
         </div>
 
         <LogoutDialog
@@ -113,6 +114,38 @@ export default function HomePage() {
         />
       </PageSurface>
     </AuthGate>
+  );
+}
+
+/**
+ * 首页课表 / 日历待办两张卡片的订阅与排序。
+ *
+ * 作为 `AuthGate` 的子组件挂载：未完成统一认证时不会建立 Channel 订阅。
+ * 两份订阅只在这里建立一次，`subscribe_*` 每次订阅都会触发一次后端刷新。
+ */
+function HomeScheduleCards() {
+  const account = useAuthAccount();
+  const timetable = useTimetable(account);
+  const deadlines = useHomeDeadlines(account);
+  const now = useNow();
+
+  return (
+    <HomeCards
+      now={now}
+      timetable={{
+        snapshot: timetable.snapshot,
+        error: timetable.error,
+        refreshing: timetable.refreshing,
+        refresh: timetable.refresh,
+      }}
+      calendar={{
+        items: deadlines.items,
+        categoryMap: deadlines.categoryMap,
+        loading: deadlines.loading,
+        ready: deadlines.ready,
+        refresh: deadlines.refresh,
+      }}
+    />
   );
 }
 

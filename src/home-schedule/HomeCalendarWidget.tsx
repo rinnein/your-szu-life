@@ -10,7 +10,7 @@ import {
   LuRotateCw,
 } from "react-icons/lu";
 import { generateCalendarGrid, formatDateKey } from "./calendar-math";
-import { useHomeDeadlines } from "./use-home-deadlines";
+import { SkeletonText } from "../components";
 import { useLogicalNavigation } from "../logical-navigation";
 import { isAndroidPlatform } from "../os-info";
 import { openLmsExternalUrl, LmsTodoLinkDialog, type LmsTodoLink } from "../lms/link";
@@ -112,9 +112,27 @@ function getCategoryAriaLabel(category: ScheduleCategory): string {
   }
 }
 
-export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
+/** 首页「日历与待办」卡片的展示数据，由 `HomePage` 统一订阅后传入。 */
+export interface HomeCalendarWidgetProps {
+  items: ScheduleItem[];
+  categoryMap: Map<string, ScheduleCategory[]>;
+  loading: boolean;
+  /** 首次 Channel 推送（或订阅失败）后为 true；false 时待办列表显示骨架屏。 */
+  ready: boolean;
+  refresh: () => void;
+  /** 仅测试使用：初始展示的月份。 */
+  initialDate?: Date;
+}
+
+export function HomeCalendarWidget({
+  items,
+  categoryMap,
+  loading,
+  ready,
+  refresh,
+  initialDate,
+}: HomeCalendarWidgetProps) {
   const navigation = useLogicalNavigation();
-  const { items, categoryMap, loading, refresh } = useHomeDeadlines();
 
   const [currentViewDate, setCurrentViewDate] = useState<Date>(() => initialDate ?? new Date());
   const [selectedDateKey, setSelectedDateKey] = useState<string | null>(null);
@@ -180,7 +198,7 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
           <span>日历与待办</span>
         </h2>
         <div className="flex items-center gap-2">
-          {loading && (
+          {loading && ready && (
             <span className="text-sm text-muted flex items-center gap-1">
               <LoadingIndicator size={14} /> 加载中
             </span>
@@ -319,7 +337,7 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
             <div className="flex items-center gap-2">
               <span className="font-semibold text-base">待办事项</span>
               <Chip size="sm" color="default" variant="soft">
-                {filteredItems.length}
+                {ready ? filteredItems.length : "—"}
               </Chip>
             </div>
             {selectedDateKey && (
@@ -337,7 +355,11 @@ export function HomeCalendarWidget({ initialDate }: { initialDate?: Date }) {
           )}
 
           <div className="flex flex-col gap-2.5 overflow-y-auto max-h-[360px] pr-1">
-            {filteredItems.length === 0 ? (
+            {!ready ? (
+              <div role="status" aria-label="正在读取待办" className="py-2">
+                <SkeletonText lines={4} />
+              </div>
+            ) : filteredItems.length === 0 ? (
               <div className="py-8 text-center text-sm text-muted">
                 {selectedDateKey ? "该日无截止事项" : "近期暂无待办事项，一切就绪"}
               </div>

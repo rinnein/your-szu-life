@@ -3,6 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { HomeTimetableWidget } from "./HomeTimetableWidget";
+import type { TimetableSnapshot } from "./types";
 
 const { nav, snapshot, NOW } = vi.hoisted(() => {
   const today = new Date();
@@ -15,50 +16,51 @@ const { nav, snapshot, NOW } = vi.hoisted(() => {
   end.setHours(10, 5, 0, 0);
   const now = new Date(today);
   now.setHours(9, 0, 0, 0);
+  const snapshot: TimetableSnapshot = {
+    fetchedAtMs: Date.now(),
+    semester: "2026 秋",
+    message: "",
+    sessions: [
+      {
+        date,
+        courseName: "编译原理",
+        buildingName: "致理楼",
+        classroom: "301",
+        buildingNameEn: null,
+        startMs: start.getTime(),
+        endMs: end.getTime(),
+        semester: "2026 秋",
+        checkin: "pending_lms",
+      },
+    ],
+    checkins: [
+      {
+        id: "checkin:lms:1",
+        title: "编译原理 签到",
+        subtitle: null,
+        firstSeenMs: Date.now() - 60_000,
+        route: "/study/signin?tab=lms",
+      },
+    ],
+    semesterCourses: [
+      {
+        name: "编译原理",
+        teacher: "演示教师",
+        classroom: "demo-room-1",
+        weekday: 1,
+        startPeriod: 1,
+        endPeriod: 2,
+        weeks: [1, 2, 3],
+        rawWeeks: "1-3周",
+      },
+    ],
+    semesterFetchedAtMs: Date.now(),
+    semesterMessage: "",
+  };
   return {
     NOW: now.getTime(),
     nav: { push: vi.fn(), replace: vi.fn(), back: vi.fn() },
-    snapshot: {
-      fetchedAtMs: Date.now(),
-      semester: "2026 秋",
-      message: "",
-      sessions: [
-        {
-          date,
-          courseName: "编译原理",
-          buildingName: "致理楼",
-          classroom: "301",
-          buildingNameEn: null,
-          startMs: start.getTime(),
-          endMs: end.getTime(),
-          semester: "2026 秋",
-          checkin: "pending_lms",
-        },
-      ],
-      checkins: [
-        {
-          id: "checkin:lms:1",
-          title: "编译原理 签到",
-          subtitle: null,
-          firstSeenMs: Date.now() - 60_000,
-          route: "/study/signin?tab=lms",
-        },
-      ],
-      semesterCourses: [
-        {
-          name: "编译原理",
-          teacher: "演示教师",
-          classroom: "demo-room-1",
-          weekday: 1,
-          startPeriod: 1,
-          endPeriod: 2,
-          weeks: [1, 2, 3],
-          rawWeeks: "1-3周",
-        },
-      ],
-      semesterFetchedAtMs: Date.now(),
-      semesterMessage: "",
-    },
+    snapshot,
   };
 });
 
@@ -66,19 +68,12 @@ vi.mock("../logical-navigation", () => ({
   useLogicalNavigation: () => nav,
 }));
 
-vi.mock("./use-timetable", () => ({
-  useTimetable: () => ({
-    snapshot,
-    error: undefined,
-    refresh: vi.fn(),
-    refreshing: false,
-  }),
-}));
-
 // 固定「现在」为今天的 09:00：8:30-10:05 的课处于上课中，避免测试随时段漂移。
-vi.mock("./use-now", () => ({
-  useNow: () => NOW,
-}));
+function renderWidget() {
+  return render(
+    <HomeTimetableWidget snapshot={snapshot} refreshing={false} refresh={vi.fn()} now={NOW} />,
+  );
+}
 
 describe("HomeTimetableWidget", () => {
   afterEach(() => {
@@ -87,7 +82,7 @@ describe("HomeTimetableWidget", () => {
   });
 
   it("shows today's class with period, time and location", () => {
-    render(<HomeTimetableWidget />);
+    renderWidget();
     expect(screen.getByText("课表")).toBeInTheDocument();
     expect(screen.getByText("编译原理")).toBeInTheDocument();
     expect(screen.getByText(/第1–2节/)).toBeInTheDocument();
@@ -96,7 +91,7 @@ describe("HomeTimetableWidget", () => {
 
   it("shows the pending check-in label and opens the sign-in page", () => {
     snapshot.sessions[0].checkin = "pending_lms";
-    render(<HomeTimetableWidget />);
+    renderWidget();
     expect(screen.getByText("待签到(畅课lms)")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /编译原理/ }));
     expect(nav.push).toHaveBeenCalledWith(
@@ -106,7 +101,7 @@ describe("HomeTimetableWidget", () => {
 
   it("routes a class without a check-in task to the detailed timetable", () => {
     snapshot.sessions[0].checkin = "none";
-    render(<HomeTimetableWidget />);
+    renderWidget();
     expect(screen.queryByText("待签到(畅课lms)")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /编译原理/ }));
     expect(nav.push).toHaveBeenCalledWith(
@@ -127,7 +122,7 @@ describe("HomeTimetableWidget", () => {
         route: "/study/signin?tab=szu",
       },
     ];
-    render(<HomeTimetableWidget />);
+    renderWidget();
     // SZU 待签已由课次 chip 表达，不应再出现在「另有 n 个待签点名」里。
     expect(screen.queryByRole("button", { name: /另有/ })).not.toBeInTheDocument();
     snapshot.checkins = previous;
@@ -146,7 +141,7 @@ describe("HomeTimetableWidget", () => {
     session.checkin = "none";
 
     try {
-      render(<HomeTimetableWidget />);
+      renderWidget();
       // 默认收起：已上完的课程不渲染，只留一行可展开的标题。
       expect(screen.queryByText("编译原理")).not.toBeInTheDocument();
       const trigger = screen.getByRole("button", { name: "展开已上过的课" });
@@ -176,7 +171,7 @@ describe("HomeTimetableWidget", () => {
     ];
 
     try {
-      render(<HomeTimetableWidget />);
+      renderWidget();
       const trigger = screen.getByRole("button", { name: "展开已上过的课" });
       const active = screen.getByRole("button", { name: /离散数学/ });
       // 折叠区（已上过）应排在正在上/未上的课之前，展开后仍是时间顺序。
@@ -192,5 +187,15 @@ describe("HomeTimetableWidget", () => {
     } finally {
       snapshot.sessions = original;
     }
+  });
+
+  it("shows a skeleton instead of the empty state before the first snapshot", () => {
+    render(
+      <HomeTimetableWidget snapshot={undefined} refreshing={false} refresh={vi.fn()} now={NOW} />,
+    );
+
+    expect(screen.getByRole("status", { name: "正在读取课表" })).toBeInTheDocument();
+    expect(screen.queryByText("今天没有课。")).not.toBeInTheDocument();
+    expect(screen.queryByText(/今天还剩/)).not.toBeInTheDocument();
   });
 });
