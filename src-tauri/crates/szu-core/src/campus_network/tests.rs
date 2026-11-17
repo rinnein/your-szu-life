@@ -159,6 +159,30 @@ fn parses_portal_online_session_fields_and_gb2312_html() {
 }
 
 #[test]
+fn dorm_context_keeps_account_and_prefers_real_mac_over_placeholders() {
+    let html = "<script>v4ip='172.24.111.161';uid='123456';v6ip='::';</script><!--Dr.COMWebLoginID_1.htm-->";
+    let status = serde_json::json!({
+        "result": 1,
+        "uid": "123456",
+        "olmac": "000000000000",
+        "ss4": "3EE1F57672E6",
+        "v6ip": "::",
+        "vlanid": "18",
+        "time": 50824,
+        "flow": 224149878,
+    });
+    let probe = dorm_probe_from_responses(html, Some(&status));
+    let context = probe.context.expect("portal context");
+    assert_eq!(context.account, "123456");
+    assert_eq!(context.mac, "3ee1f57672e6");
+    assert_eq!(context.ipv6, "");
+    assert_eq!(context.vlan, "18");
+    let session = probe.session.expect("portal session");
+    assert_eq!(session.online_duration, Some(50_824));
+    assert_eq!(session.online_flow, Some(224_149_878));
+}
+
+#[test]
 fn online_portal_session_drives_connected_state_without_cached_login_status() {
     let snapshot = NetworkSnapshot {
         connected: true,

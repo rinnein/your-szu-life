@@ -874,7 +874,7 @@ export function OjPaper({
       {/* 题目选择器：横向标签切换接入通用 AdaptiveTabs 组件。 */}
       {layout === "strip" && showSwitcher && (
         <AdaptiveTabs
-          className="oj-problem-tabs"
+          className="oj-problem-tabs oj-switcher-strip"
           label="题目列表"
           items={problemItems}
           value={pk}

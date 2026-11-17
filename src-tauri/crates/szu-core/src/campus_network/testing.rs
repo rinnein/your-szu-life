@@ -46,8 +46,11 @@ pub fn staff_online(ip: &str) -> Value {
         "sum_bytes":25473392014_u64, "sum_seconds":663767, "add_time":1788827879_u64,
         "online_device_detail":"{\"other-device\":{\"ip\":\"172.28.0.99\"}}"})
 }
+pub fn dorm_html_with_mac(ip: &str, online: bool, mac: &str) -> String {
+    format!("<!--Dr.COMWebLoginID_{}.htm--><script>v4ip='{ip}';uid='001234';NID='宿舍同学';olmac='{mac}';vlanid='1';</script>", if online { 1 } else { 0 })
+}
 pub fn dorm_html(ip: &str, online: bool) -> String {
-    format!("<!--Dr.COMWebLoginID_{}.htm--><script>v4ip='{ip}';uid='001234';NID='宿舍同学';olmac='000000000001';vlanid='1';</script>", if online { 1 } else { 0 })
+    dorm_html_with_mac(ip, online, "000000000001")
 }
 pub fn snapshot() -> NetworkSnapshot {
     NetworkSnapshot {

@@ -36,8 +36,10 @@ pub fn extract_portal_session_info(html: &str) -> DormPortalSessionInfo {
     DormPortalSessionInfo {
         online_username: text("NID"),
         campus_card_number: text("uid"),
-        online_duration: number("oltime"),
-        online_flow: number("olflow"),
+        // The portal page renders `time` / `flow`; `oltime` / `olflow` are
+        // template placeholders (4294967295) on this gateway.
+        online_duration: number("time").or_else(|| number("oltime")),
+        online_flow: number("flow").or_else(|| number("olflow")),
         login_ip: text("lip"),
         login_started_at: text("stime"),
         login_expires_at: text("etime"),

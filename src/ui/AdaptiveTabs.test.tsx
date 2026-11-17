@@ -66,6 +66,24 @@ describe("AdaptiveTabs Component & Drawer Auto-injection", () => {
     expect(screen.queryByRole("listbox")).toBeNull();
   });
 
+  it("窄屏触发器在同时提供 label 与 ariaLabel 时仍包含当前项", () => {
+    render(
+      <PageDrawerProvider>
+        <AdaptiveTabs
+          items={sampleItems}
+          value="overview"
+          onChange={vi.fn()}
+          label="功能分类"
+          ariaLabel="功能分类导航"
+        />
+      </PageDrawerProvider>,
+    );
+
+    const trigger = screen.getByRole("button", { name: "功能分类：概览" });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("listbox", { name: "功能分类导航" })).toBeInTheDocument();
+  });
+
   it("点击外部区域自动收起下拉浮层", () => {
     render(
       <PageDrawerProvider>
@@ -105,6 +123,7 @@ describe("AdaptiveTabs Component & Drawer Auto-injection", () => {
     expect(tabs).not.toBeNull();
     const tabElements = container.querySelectorAll("m-tab");
     expect(tabElements).toHaveLength(3);
+    expect(container.querySelector(".oj-switcher-strip")).toBeNull();
   });
 
   it("自动向左上角抽屉注入内容，且 TopAppBar 自动显示汉堡抽屉按钮", () => {

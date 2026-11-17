@@ -9,9 +9,44 @@ use super::{
     state::NetworkEvents,
     CampusNetworkStore,
 };
+use base64::Engine;
 use reqwest::Url;
+use serde_json::Value;
 use sha1::{Digest, Sha1};
 use std::time::Duration;
+
+const LOGOUT_VERIFY_ATTEMPTS: usize = 6;
+const LOGOUT_VERIFY_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Portal page settings that decide which logout path the frontend uses.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DormPortalConfig {
+    pub login_method: u8,
+    pub un_bind_mac: bool,
+    pub register_mode: u8,
+    pub ac_logout: u8,
+    pub isp_unbind_suffix: bool,
+}
+
+impl DormPortalConfig {
+    fn wants_mac_unbind(&self) -> bool {
+        self.un_bind_mac && matches!(self.register_mode, 1 | 4)
+    }
+
+    fn uses_portal_logout(&self) -> bool {
+        self.ac_logout > 0 || self.login_method != 0
+    }
+}
+
+/// Used when the portal settings cannot be read. The live Dr.COM deployment
+/// uses the portal logout endpoint as its fallback (`login_method=1`).
+const DORM_PORTAL_FALLBACK_CONFIG: DormPortalConfig = DormPortalConfig {
+    login_method: 1,
+    un_bind_mac: false,
+    register_mode: 1,
+    ac_logout: 0,
+    isp_unbind_suffix: false,
+};
 
 #[derive(Debug, Clone)]
 pub enum LogoutTarget {
@@ -37,7 +72,13 @@ impl LogoutTarget {
             NetworkRegion::None => None,
         }
     }
-    pub fn request(&self, now: u64) -> (Url, String) {
+    pub fn request(&self, now: u64, config: Option<&DormPortalConfig>) -> (Url, String) {
+        let dorm_config = config.copied().unwrap_or(DORM_PORTAL_FALLBACK_CONFIG);
+        if let Self::Dorm(_) = self {
+            if !dorm_config.uses_portal_logout() {
+                return dorm_local_logout(now);
+            }
+        }
         let callback = match self {
             Self::Dorm(_) => format!("dr{}", 1000 + now % 9000),
             Self::Staff { .. } => format!("szuLifeLogout_{now}"),
@@ -47,14 +88,14 @@ impl LogoutTarget {
                 let mut url = portal_url(DORM_PORTAL_HOST, 801, "/eportal/portal/logout");
                 url.query_pairs_mut()
                     .append_pair("callback", &callback)
-                    .append_pair("login_method", "1")
+                    .append_pair("login_method", &dorm_config.login_method.to_string())
                     // These are the portal script's fixed placeholders, NOT user credentials.
                     .append_pair("user_account", "drcom")
                     .append_pair("user_password", "123")
-                    .append_pair("ac_logout", "0")
-                    .append_pair("register_mode", "1")
+                    .append_pair("ac_logout", &dorm_config.ac_logout.to_string())
+                    .append_pair("register_mode", &dorm_config.register_mode.to_string())
                     .append_pair("wlan_user_ip", &context.ip)
-                    .append_pair("wlan_user_ipv6", &context.ipv6)
+                    .append_pair("wlan_user_ipv6", usable_ipv6(&context.ipv6))
                     .append_pair("wlan_vlan_id", &context.vlan)
                     .append_pair("wlan_user_mac", &context.mac)
                     .append_pair("wlan_ac_ip", &context.ac_ip)
@@ -139,6 +180,161 @@ impl LogoutTarget {
             Self::Staff { .. } => observation.staff = probe_staff_portal(http, now),
         }
     }
+}
+
+fn ipv4_decimal(value: &str) -> Option<u32> {
+    value
+        .trim()
+        .parse::<std::net::Ipv4Addr>()
+        .ok()
+        .map(u32::from)
+}
+
+fn usable_ipv6(value: &str) -> &str {
+    match value.trim().parse::<std::net::Ipv6Addr>() {
+        Ok(ip) if !ip.is_unspecified() => value.trim(),
+        _ => "",
+    }
+}
+
+/// The portal's `logout.init()` fallback for `login_method=0`.
+fn dorm_local_logout(now: u64) -> (Url, String) {
+    let callback = format!("dr{}", 1000 + now % 9000);
+    let mut url = portal_url(DORM_PORTAL_HOST, 80, "/drcom/logout");
+    url.query_pairs_mut()
+        .append_pair("callback", &callback)
+        .append_pair("jsVersion", "4.1.3")
+        .append_pair("v", &(now % 10000 + 500).to_string())
+        .append_pair("lang", "zh-cn");
+    (url, callback)
+}
+
+fn dorm_acknowledged(value: &Value) -> bool {
+    match value.get("result") {
+        Some(Value::Number(number)) => number.as_u64() == Some(1),
+        Some(Value::String(text)) => text == "1" || text == "ok",
+        _ => false,
+    }
+}
+
+fn is_placeholder_account(value: &str) -> bool {
+    let value = value.trim();
+    value.is_empty() || value == "12345678901234567890123456"
+}
+
+/// `user.unbind_mac()` on the portal online page. Requires the portal `uid`
+/// and a real terminal MAC; never reads saved credentials.
+fn dorm_unbind_request(
+    context: &DormPortalContext,
+    config: &DormPortalConfig,
+    now: u64,
+) -> Option<(Url, String)> {
+    let account = context.account.trim();
+    let mac = context.mac.trim();
+    if is_placeholder_account(account) || is_placeholder_mac(mac) {
+        return None;
+    }
+    let ip = ipv4_decimal(&context.ip)?;
+    let account = if config.isp_unbind_suffix {
+        account.rsplit_once('@').map_or(account, |(head, _)| head)
+    } else {
+        account
+    };
+    let callback = format!("dr{}", 1000 + now % 9000);
+    let mut url = portal_url(DORM_PORTAL_HOST, 801, "/eportal/portal/mac/unbind");
+    url.query_pairs_mut()
+        .append_pair("callback", &callback)
+        .append_pair("user_account", account)
+        .append_pair("wlan_user_mac", &mac.to_ascii_uppercase())
+        .append_pair("wlan_user_ip", &ip.to_string())
+        .append_pair("jsVersion", "4.1.3")
+        .append_pair("v", &(now % 10000 + 500).to_string())
+        .append_pair("lang", "zh-cn");
+    Some((url, callback))
+}
+
+fn config_value(data: &Value, name: &str) -> u8 {
+    data.get(name)
+        .and_then(|value| match value {
+            Value::String(text) => text.trim().parse().ok(),
+            Value::Number(number) => number.as_u64().map(|value| value.min(u8::MAX as u64) as u8),
+            _ => None,
+        })
+        .unwrap_or(0)
+}
+
+fn config_flag(data: &Value, name: &str) -> bool {
+    config_value(data, name) != 0
+}
+
+fn fetch_dorm_portal_config(
+    http: &dyn PortalHttp,
+    context: &DormPortalContext,
+    now: u64,
+) -> Option<DormPortalConfig> {
+    let callback = format!("dr{}", 1000 + now % 9000);
+    let encode = |value: &str| base64::engine::general_purpose::STANDARD.encode(value.as_bytes());
+    let mut url = portal_url(DORM_PORTAL_HOST, 801, "/eportal/portal/page/loadConfig");
+    url.query_pairs_mut()
+        .append_pair("callback", &callback)
+        .append_pair("program_index", "")
+        .append_pair("wlan_vlan_id", &context.vlan)
+        .append_pair("wlan_user_ip", &encode(&context.ip))
+        .append_pair("wlan_user_ipv6", &encode(&context.ipv6))
+        .append_pair("wlan_user_ssid", "")
+        .append_pair("wlan_user_areaid", "")
+        .append_pair("wlan_ac_ip", &encode(&context.ac_ip))
+        .append_pair("wlan_ap_mac", "")
+        .append_pair("gw_id", "")
+        .append_pair("jsVersion", "4.1.3")
+        .append_pair("v", &(now % 10000 + 500).to_string())
+        .append_pair("lang", "zh-cn");
+    let response = http.get(&url).ok()?;
+    if !(200..300).contains(&response.status) {
+        return None;
+    }
+    let parsed = parse_jsonp_callback(&String::from_utf8_lossy(&response.body), &callback).ok()?;
+    let data = parsed.get("data")?;
+    Some(DormPortalConfig {
+        login_method: config_value(data, "login_method"),
+        un_bind_mac: config_flag(data, "un_bind_mac"),
+        register_mode: config_value(data, "register_mode"),
+        ac_logout: config_value(data, "ac_logout"),
+        isp_unbind_suffix: config_flag(data, "isp_unbind_suffix"),
+    })
+}
+
+fn submit_logout(
+    http: &dyn PortalHttp,
+    url: &Url,
+    callback: &str,
+    accepted: impl Fn(&Value) -> bool,
+) -> bool {
+    http.get(url)
+        .ok()
+        .filter(|response| (200..300).contains(&response.status))
+        .and_then(|response| {
+            parse_jsonp_callback(&String::from_utf8_lossy(&response.body), callback).ok()
+        })
+        .is_some_and(|value| accepted(&value))
+}
+
+fn submit_dorm_logout(http: &dyn PortalHttp, context: &DormPortalContext, now: u64) -> bool {
+    // Mirror the portal's `wc()`: when the BS backend uses MAC binding, the
+    // online page logs out by unbinding this terminal; the regular logout API
+    // is only its fallback.
+    let config = fetch_dorm_portal_config(http, context, now);
+    if let Some(config) = config.as_ref() {
+        if config.wants_mac_unbind() {
+            if let Some((url, callback)) = dorm_unbind_request(context, config, now) {
+                if submit_logout(http, &url, &callback, dorm_acknowledged) {
+                    return true;
+                }
+            }
+        }
+    }
+    let (url, callback) = LogoutTarget::Dorm(context.clone()).request(now, config.as_ref());
+    submit_logout(http, &url, &callback, dorm_acknowledged)
 }
 
 fn result(
@@ -319,26 +515,22 @@ pub fn disconnect_target(
         report.changed = true;
         return report;
     }
-    let (url, callback) = target.request(environment.now_ms());
-    report.acknowledged = http
-        .get(&url)
-        .ok()
-        .filter(|response| (200..300).contains(&response.status))
-        .and_then(|response| {
-            parse_jsonp_callback(&String::from_utf8_lossy(&response.body), &callback).ok()
-        })
-        .is_some_and(|value| match target {
-            LogoutTarget::Dorm(_) => value
-                .get("result")
-                .is_some_and(|v| v.as_u64() == Some(1) || v.as_str() == Some("ok")),
-            LogoutTarget::Staff { .. } => value.get("error").and_then(|v| v.as_str()) == Some("ok"),
-        });
-    for _ in 0..3 {
+    let now = environment.now_ms();
+    report.acknowledged = match target {
+        LogoutTarget::Dorm(context) => submit_dorm_logout(http, context, now),
+        LogoutTarget::Staff { .. } => {
+            let (url, callback) = target.request(now, None);
+            submit_logout(http, &url, &callback, |value| {
+                value.get("error").and_then(|v| v.as_str()) == Some("ok")
+            })
+        }
+    };
+    for _ in 0..LOGOUT_VERIFY_ATTEMPTS {
         if !allowed() {
             report.changed = true;
             break;
         }
-        environment.sleep(Duration::from_secs(1));
+        environment.sleep(LOGOUT_VERIFY_INTERVAL);
         if !allowed() {
             report.changed = true;
             break;

@@ -13,6 +13,7 @@ import {
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type EventCallback } from "@tauri-apps/api/event";
 import CampusNetworkPage from "./CampusNetworkPage";
+import { mockElementRects } from "./test-layout";
 import { toast } from "./ui";
 import { typeInto } from "./ui/testing";
 
@@ -38,6 +39,8 @@ type Overview = {
   portalSession?: {
     campusCardNumber?: string | null;
     onlineUsername?: string | null;
+    onlineDuration?: number | null;
+    onlineFlow?: number | null;
   } | null;
 };
 
@@ -94,11 +97,20 @@ let successToast: MockInstance;
 let dangerToast: MockInstance;
 
 /** material 的 m-tabs 内部点击映射在 jsdom 下不可靠；与 Select 一致，
- * 直接在宿主上派发 change 事件驱动 React 的 onChange。 */
+ * 直接在宿主上派发 change 事件驱动 React 的 onChange。AdaptiveTabs 的
+ * segmented 宽屏控件是 light DOM button，直接 click 即可。 */
 const switchTab = (scope: ReturnType<typeof within>, name: string, value: string) => {
   const tab = scope.getByRole("tab", { name });
-  const host = (tab.getRootNode() as ShadowRoot).host as HTMLElement;
-  fireEvent(host, new CustomEvent("change", { detail: { value }, bubbles: true, composed: true }));
+  const root = tab.getRootNode();
+  if (root instanceof ShadowRoot) {
+    const host = root.host as HTMLElement;
+    fireEvent(
+      host,
+      new CustomEvent("change", { detail: { value }, bubbles: true, composed: true }),
+    );
+  } else {
+    fireEvent.click(tab);
+  }
 };
 
 async function renderPage(readyLabel = cardLabel) {
@@ -142,10 +154,14 @@ function publishSettings() {
   });
 }
 
-async function openDisconnectDialog() {
-  fireEvent.click(screen.getByRole("button", { name: "断开连接" }));
+async function currentDialog() {
   const el = await screen.findByRole("alertdialog");
   return ((el.getRootNode() as ShadowRoot).host as HTMLElement) ?? el;
+}
+
+async function openDisconnectDialog() {
+  fireEvent.click(screen.getByRole("button", { name: "断开连接" }));
+  return currentDialog();
 }
 
 const logoutCalls = () =>
@@ -154,6 +170,8 @@ const logoutCalls = () =>
 describe("campus network status and logout", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // jsdom 没有布局；给 AdaptiveTabs 一个宽屏尺寸，让既有 tab 用例走 segmented 宽屏。
+    mockElementRects({ "adaptive-tabs": 1024 });
     listeners.clear();
     successToast = vi.spyOn(toast, "success").mockReturnValue("toast");
     dangerToast = vi.spyOn(toast, "danger").mockReturnValue("toast");
@@ -337,6 +355,9 @@ describe("campus network status and logout", () => {
     };
     await renderPage("校园网登录");
     expect(screen.getByText("当前推测网络状态：已连接(未识别区域)")).toBeInTheDocument();
+    expect(screen.getByText("当前状态（未识别区域）")).toBeInTheDocument();
+    expect(screen.getByText("未识别到校园网门户")).toBeInTheDocument();
+    expect(screen.queryByText("连续失败")).not.toBeInTheDocument();
     expect(valueFor("网络连接")).toHaveTextContent("已连接网络");
     expect(valueFor("宿舍区门户")).toHaveTextContent("不可达");
     expect(valueFor("教工区门户")).toHaveTextContent("不可达");
@@ -362,7 +383,8 @@ describe("campus network status and logout", () => {
 
   it("renders readable status text instead of raw backend states", async () => {
     await renderPage("校园网登录");
-    expect(screen.getByText("未启用")).toBeInTheDocument();
+    expect(screen.getByText("当前状态（宿舍区）")).toBeInTheDocument();
+    expect(screen.getByText("自动登录未启用")).toBeInTheDocument();
     publish({
       ...overview,
       state: "notLoggedIn",
@@ -508,6 +530,18 @@ describe("campus network status and logout", () => {
     expect(valueFor(nameLabel)?.querySelector("img")).toBeNull();
   });
 
+  it("formats dormitory online duration and flow", async () => {
+    overview.portalSession = {
+      campusCardNumber: "654321",
+      onlineUsername: "网关同学",
+      onlineDuration: 5021,
+      onlineFlow: 1024 ** 3,
+    };
+    await renderPage();
+    expect(valueFor("已用时长")).toHaveTextContent("1 小时 23 分 41 秒");
+    expect(valueFor("已用流量")).toHaveTextContent("1 GiB");
+  });
+
   it("shows staff online information and cumulative units instead of dormitory identity", async () => {
     overview = {
       ...overview,
@@ -526,6 +560,7 @@ describe("campus network status and logout", () => {
     };
     await renderPage("教工区在线详情");
     expect(screen.getByText("当前推测网络状态：已连接(教工区)")).toBeInTheDocument();
+    expect(screen.getByText("当前状态（教工区）")).toBeInTheDocument();
     expect(valueFor("登录账号")).toHaveTextContent("001234");
     expect(valueFor("姓名")).toHaveTextContent("教工区同学");
     expect(valueFor("MAC 地址")).toHaveTextContent("0000-0000-0001");
@@ -639,7 +674,7 @@ describe("campus network status and logout", () => {
     await renderPage();
     fireEvent.click(panelFor("dormitory").getByRole("button", { name: "立即登录" }));
     await waitFor(() =>
-      expect(dangerToast).toHaveBeenCalledWith("校园网登录失败", {
+      expect(dangerToast).toHaveBeenCalledWith("宿舍区登录失败", {
         description: expect.stringContaining("portal rejected"),
       }),
     );
@@ -708,6 +743,7 @@ describe("campus network status and logout", () => {
     await renderPage();
     const dialog = await openDisconnectDialog();
     expect(within(dialog).getByText(/不会退出应用账号/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/解绑本机 MAC/)).toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
     expect(logoutCalls()).toHaveLength(0);
@@ -727,6 +763,7 @@ describe("campus network status and logout", () => {
         description: "已确认当前设备断开校园网；自动连接已关闭。",
       }),
     );
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
     expect(logoutCalls()).toEqual([["logout_campus_network"]]);
     expect(screen.getByRole("switch", { name: "开启宿舍区自动登录" })).not.toBeChecked();
     expect(screen.getByText("当前推测网络状态：未登录(宿舍区)")).toBeInTheDocument();
@@ -742,7 +779,7 @@ describe("campus network status and logout", () => {
     ).toBe(false);
   });
 
-  it("disables repeated actions while a logout is in flight and consumes settings events before completion", async () => {
+  it("keeps a non-dismissible loading modal while a logout is in flight and consumes settings events", async () => {
     settings.enabled = true;
     let complete: (value: unknown) => void = () => {};
     logoutHandler = () =>
@@ -751,16 +788,20 @@ describe("campus network status and logout", () => {
       });
     await renderPage();
     const dialog = await openDisconnectDialog();
-    const confirm = within(dialog).getByRole("button", { name: "确认断开" });
-    fireEvent.click(confirm);
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认断开" }));
     await waitFor(() => expect(logoutCalls()).toHaveLength(1));
-    expect(confirm).toBeDisabled();
+    const running = await currentDialog();
+    expect(running.getAttribute("headline")).toBe("正在断开校园网…");
+    expect(within(running).getByText(/正在注销当前设备并确认下线状态/)).toBeInTheDocument();
+    expect(running.hasAttribute("no-close-on-scrim-click")).toBe(true);
+    expect(running.hasAttribute("no-close-on-escape")).toBe(true);
+    expect(within(running).queryByRole("button", { name: "取消" })).not.toBeInTheDocument();
+    expect(within(running).queryByRole("button", { name: "确认断开" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "断开连接" })).toBeDisabled();
     settings.enabled = false;
     publishSettings();
     expect(screen.getByLabelText("开启宿舍区自动登录")).not.toBeChecked();
     expect(screen.getByLabelText("开启宿舍区自动登录")).toBeDisabled();
-    fireEvent.click(confirm);
-    expect(logoutCalls()).toHaveLength(1);
     await act(async () => {
       overview = { ...overview, state: "notLoggedIn", portalSession: null };
       complete({
@@ -774,6 +815,7 @@ describe("campus network status and logout", () => {
         description: "已断开；自动连接已关闭。",
       }),
     );
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
     expect(screen.getByRole("switch", { name: "开启宿舍区自动登录" })).not.toBeChecked();
   });
 
@@ -781,7 +823,7 @@ describe("campus network status and logout", () => {
     ["failed", "断开未完成"],
     ["unknown", "断开结果待确认"],
   ] as const)(
-    "keeps auto-connect disabled and reports %s without claiming success",
+    "keeps the failed modal open and reports %s without claiming success",
     async (outcome, title) => {
       settings.enabled = true;
       logoutHandler = async () => {
@@ -792,7 +834,14 @@ describe("campus network status and logout", () => {
       await renderPage();
       const dialog = await openDisconnectDialog();
       fireEvent.click(within(dialog).getByRole("button", { name: "确认断开" }));
-      await waitFor(() => expect(dangerToast).toHaveBeenCalledWith(title, expect.anything()));
+      await waitFor(() =>
+        expect(screen.getByText("请稍后检查；自动连接已关闭。")).toBeInTheDocument(),
+      );
+      const failed = await currentDialog();
+      expect(failed.getAttribute("headline")).toBe(title);
+      expect(within(failed).getByRole("button", { name: "重试" })).toBeInTheDocument();
+      expect(within(failed).getByRole("button", { name: "关闭" })).toBeInTheDocument();
+      expect(dangerToast).not.toHaveBeenCalled();
       expect(successToast).not.toHaveBeenCalled();
       expect(screen.getByRole("switch", { name: "开启宿舍区自动登录" })).not.toBeChecked();
       expect(logoutCalls()).toHaveLength(1);
@@ -806,6 +855,7 @@ describe("campus network status and logout", () => {
     const dialog = await openDisconnectDialog();
     fireEvent.click(within(dialog).getByRole("button", { name: "确认断开" }));
     await waitFor(() => expect(successToast).toHaveBeenCalledWith("当前已离线"));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
   });
 
   it("shows command failures and does not restore an enabled draft", async () => {
@@ -819,12 +869,44 @@ describe("campus network status and logout", () => {
     const dialog = await openDisconnectDialog();
     fireEvent.click(within(dialog).getByRole("button", { name: "确认断开" }));
     await waitFor(() =>
-      expect(dangerToast).toHaveBeenCalledWith("断开校园网失败", {
-        description: expect.stringContaining("保存关闭设置失败，未发送注销请求"),
-      }),
+      expect(screen.getByText("保存关闭设置失败，未发送注销请求")).toBeInTheDocument(),
     );
+    const failed = await currentDialog();
+    expect(failed.getAttribute("headline")).toBe("断开校园网失败");
+    expect(within(failed).getByRole("button", { name: "重试" })).toBeInTheDocument();
+    expect(dangerToast).not.toHaveBeenCalled();
     expect(screen.getByRole("switch", { name: "开启宿舍区自动登录" })).not.toBeChecked();
     expect(successToast).not.toHaveBeenCalled();
+    expect(logoutCalls()).toHaveLength(1);
+  });
+
+  it("retries a failed disconnect and closes only after the retry succeeds", async () => {
+    settings.enabled = true;
+    let calls = 0;
+    logoutHandler = async () => {
+      calls += 1;
+      if (calls === 1) {
+        return { outcome: "failed", region: "dormitory", message: "第一次失败；自动连接已关闭。" };
+      }
+      settings = { ...settings, enabled: false };
+      publishSettings();
+      return { outcome: "disconnected", region: "dormitory", message: "已断开；自动连接已关闭。" };
+    };
+    await renderPage();
+    const dialog = await openDisconnectDialog();
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认断开" }));
+    await waitFor(() =>
+      expect(screen.getByText("第一次失败；自动连接已关闭。")).toBeInTheDocument(),
+    );
+    const failed = await currentDialog();
+    fireEvent.click(within(failed).getByRole("button", { name: "重试" }));
+    await waitFor(() =>
+      expect(successToast).toHaveBeenCalledWith("已断开校园网", {
+        description: "已断开；自动连接已关闭。",
+      }),
+    );
+    expect(logoutCalls()).toHaveLength(2);
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
   });
 
   it("does not use the selected tab to choose a logout target", async () => {
@@ -835,7 +917,10 @@ describe("campus network status and logout", () => {
     };
     await renderPage("教工区在线详情");
     switchTab(screen, "宿舍区", "dormitory");
+    expect(screen.getByText("当前状态（教工区）")).toBeInTheDocument();
+    expect(screen.getByText("教工区在线详情")).toBeInTheDocument();
     const dialog = await openDisconnectDialog();
+    expect(within(dialog).queryByText(/解绑本机 MAC/)).not.toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "确认断开" }));
     await waitFor(() =>
       expect(successToast).toHaveBeenCalledWith("已断开校园网", expect.anything()),
@@ -896,6 +981,17 @@ describe("campus network status and logout", () => {
     switchTab(screen, "宿舍区", "dormitory");
     publish(staff);
     expect(screen.getByRole("tab", { name: "宿舍区" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("switches regions through the adaptive dropdown on narrow screens", async () => {
+    mockElementRects({});
+    await renderPage("校园网登录");
+    const trigger = screen.getByRole("button", { name: /校园网区域/ });
+    fireEvent.click(trigger);
+    const listbox = await screen.findByRole("listbox", { name: "校园网区域" });
+    fireEvent.click(within(listbox).getByRole("option", { name: "教工区" }));
+    expect(await screen.findByRole("button", { name: /校园网区域.*教工区/ })).toBeInTheDocument();
+    expect(document.querySelector('[data-region-panel="staff"]')).not.toHaveAttribute("hidden");
   });
 
   it("does not let an earlier save response undo a newer disabled settings event", async () => {

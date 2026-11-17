@@ -278,6 +278,15 @@ pub struct DormPortalContext {
     pub vlan: String,
     pub ac_ip: String,
     pub ac_name: String,
+    /// 门户返回的 `uid`，仅用于注销时的 MAC 解绑与展示，不是凭据。
+    pub account: String,
+}
+
+pub fn is_placeholder_mac(value: &str) -> bool {
+    let value = value.trim();
+    value.is_empty()
+        || value.eq_ignore_ascii_case("000000000000")
+        || value.eq_ignore_ascii_case("111111111111")
 }
 
 #[derive(Debug, Clone, Default)]
@@ -308,14 +317,22 @@ fn dorm_context(html: &str, status: Option<&Value>) -> Option<DormPortalContext>
                 .find(|ip| ip.is_ipv4())
         })?
         .to_string();
-    let mac = ["olmac", "ss4"]
+    let macs: Vec<String> = ["olmac", "ss4"]
         .into_iter()
         .filter_map(text)
-        .find_map(|value| {
+        .filter_map(|value| {
             let value = value.replace([':', '-'], "");
             (value.len() == 12 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
                 .then(|| value.to_ascii_lowercase())
         })
+        .collect();
+    // `olmac` is the terminal MAC while `ss4` may still be the portal's
+    // all-zero placeholder. Prefer a real value regardless of order.
+    let mac = macs
+        .iter()
+        .find(|value| !is_placeholder_mac(value))
+        .or_else(|| macs.first())
+        .cloned()
         .unwrap_or_else(|| "000000000000".into());
     let vlan = text("vlanid")
         .and_then(|value| value.parse::<u16>().ok())
@@ -328,7 +345,10 @@ fn dorm_context(html: &str, status: Option<&Value>) -> Option<DormPortalContext>
         vlan,
         ipv6: text("v6ip")
             .and_then(|value| valid_ip(&value))
-            .filter(|ip| ip.is_ipv6())
+            .filter(|ip| match ip {
+                std::net::IpAddr::V6(value) => !value.is_unspecified(),
+                std::net::IpAddr::V4(_) => false,
+            })
             .map(|ip| ip.to_string())
             .unwrap_or_default(),
         ac_ip: text("wlanacip")
@@ -336,6 +356,10 @@ fn dorm_context(html: &str, status: Option<&Value>) -> Option<DormPortalContext>
             .map(|ip| ip.to_string())
             .unwrap_or_default(),
         ac_name: text("wlanacname").unwrap_or_default(),
+        // Match the portal: `term.account` is set from `chkstatus`'s `uid`.
+        account: gateway_text(status, "uid")
+            .or_else(|| extract_portal_value(html, "uid"))
+            .unwrap_or_default(),
     })
 }
 
@@ -388,12 +412,17 @@ pub fn dorm_probe_from_responses(html: &str, status: Option<&Value>) -> DormPort
     session.login_ip = session.login_ip.or_else(|| text("lip"));
     session.login_started_at = session.login_started_at.or_else(|| text("stime"));
     session.login_expires_at = session.login_expires_at.or_else(|| text("etime"));
+    let status_number = |name: &str| status?.get(name).and_then(unsigned);
+    // The portal page renders `time` / `flow`; `oltime` / `olflow` are
+    // placeholders in the gateway template. Prefer the live counters.
     session.online_flow = session
         .online_flow
-        .or_else(|| status?.get("olflow").and_then(unsigned));
+        .or_else(|| status_number("flow"))
+        .or_else(|| status_number("olflow"));
     session.online_duration = session
         .online_duration
-        .or_else(|| status?.get("oltime").and_then(unsigned));
+        .or_else(|| status_number("time"))
+        .or_else(|| status_number("oltime"));
     probe.session = has_online_session_fields(&session).then_some(session);
     probe
 }

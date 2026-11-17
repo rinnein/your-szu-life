@@ -39,7 +39,7 @@ impl UnifiedSzuMcpService {
 
     #[tool(
         name = "network_logout",
-        description = "立即主动断开并注销当前的校园网络在线连接"
+        description = "立即主动断开并注销当前的校园网络在线连接；宿舍区会优先解绑本机 MAC（与门户注销一致），并关闭自动连接"
     )]
     pub async fn network_logout(&self) -> Result<String, String> {
         let app = self.app.clone();

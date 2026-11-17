@@ -1,17 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  Card,
-  Dialog,
-  LoadingIndicator,
-  Switch,
-  TextField,
-  Button,
-  Tab,
-  Tabs,
-} from "material/react";
-import { bindField, toast } from "./ui";
-import { nameTablist } from "./ui/tablist";
+import { Card, Dialog, LoadingIndicator, Switch, TextField, Button } from "material/react";
+import { AdaptiveTabs, bindField, toast } from "./ui";
 import {
   staffModeText,
   type StaffApplyResult,
@@ -139,27 +129,33 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
 
   return (
     <Card className="network-zone" variant="outlined">
-      <div slot="headline">教工区登录</div>
+      <div slot="headline">教工区</div>
       <div slot="subhead">门户地址：net.szu.edu.cn</div>
       <div className="p-4">
-        <Tabs
-          ref={(host) => nameTablist(host, "教工区登录方式")}
+        <AdaptiveTabs
+          variant="segmented"
+          label="教工区登录方式"
+          injectDrawer={false}
           value={mode}
-          onChange={(event) => {
+          onChange={(nextMode) => {
             if (busy) return;
-            const key = event.detail.value;
-            setMode(key as StaffLoginMode);
-            if (key === "macAuth") setEnabled(false);
+            setMode(nextMode as StaffLoginMode);
+            if (nextMode === "macAuth") setEnabled(false);
             setConfirmation(undefined);
           }}
-        >
-          <Tab value="macAuth" disabled={busy}>
-            无感认证（绑定MAC地址）
-          </Tab>
-          <Tab value="appAuto" disabled={busy}>
-            软件自动登录（不绑定MAC地址）
-          </Tab>
-        </Tabs>
+          items={[
+            {
+              value: "macAuth",
+              label: "无感认证（绑定MAC地址）",
+              disabled: busy,
+            },
+            {
+              value: "appAuto",
+              label: "软件自动登录（不绑定MAC地址）",
+              disabled: busy,
+            },
+          ]}
+        />
         {mode === "macAuth" ? (
           <p className="field-hint">
             复现门户勾选“记住密码”的登录流程；后续由校园网处理无感认证，无需应用保持后台运行。
@@ -184,21 +180,20 @@ export default function StaffNetworkPanel({ settings, status, disabled, onSave, 
             </div>
           </>
         )}
-        <Tabs
-          ref={(host) => nameTablist(host, "教工区凭据来源")}
+        <AdaptiveTabs
           className="network-credential-tabs"
+          variant="segmented"
+          label="教工区凭据来源"
+          injectDrawer={false}
           value={credentialMode}
-          onChange={(event) => {
-            if (!busy) setCredentialMode(event.detail.value as StaffCredentialMode);
+          onChange={(nextMode) => {
+            if (!busy) setCredentialMode(nextMode as StaffCredentialMode);
           }}
-        >
-          <Tab value="currentAccount" disabled={busy}>
-            复用已登录账号
-          </Tab>
-          <Tab value="custom" disabled={busy}>
-            单独配置
-          </Tab>
-        </Tabs>
+          items={[
+            { value: "currentAccount", label: "复用已登录账号", disabled: busy },
+            { value: "custom", label: "单独配置", disabled: busy },
+          ]}
+        />
         {credentialMode === "custom" && (
           <div className="custom-network-form">
             <TextField

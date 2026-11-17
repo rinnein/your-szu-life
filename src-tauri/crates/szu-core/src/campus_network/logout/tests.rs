@@ -16,10 +16,15 @@ struct Scenario {
     staff: bool,
     online: AtomicBool,
     reject: AtomicBool,
+    unbind_reject: AtomicBool,
     uncertain: AtomicBool,
     change_source: AtomicBool,
     change_before_logout: AtomicBool,
+    placeholder_mac: AtomicBool,
+    config_fail: AtomicBool,
     logouts: AtomicUsize,
+    unbinds: AtomicUsize,
+    portal_config: Mutex<DormPortalConfig>,
     requests: Mutex<Vec<Url>>,
     environment: Arc<FakeEnvironment>,
     credentials: Arc<MemoryCredentialStore>,
@@ -41,7 +46,8 @@ impl PortalHttp for Scenario {
             "/eportal/portal/login",
             "logout may never submit login"
         );
-        let after = self.logouts.load(Ordering::Relaxed) > 0;
+        let after =
+            self.logouts.load(Ordering::Relaxed) + self.unbinds.load(Ordering::Relaxed) > 0;
         if after && self.uncertain.load(Ordering::Relaxed) {
             return Err(HttpError::Timeout);
         }
@@ -51,6 +57,11 @@ impl PortalHttp for Scenario {
             TEST_IP
         };
         let online = self.online.load(Ordering::Relaxed);
+        let mac = if self.placeholder_mac.load(Ordering::Relaxed) {
+            "000000000000"
+        } else {
+            "000000000001"
+        };
         Ok(match (url.host_str().unwrap(), url.path()) {
             ("net.szu.edu.cn", "/") => html(&staff_html(ip, true)),
             ("net.szu.edu.cn", "/cgi-bin/rad_user_info") => jsonp(
@@ -61,7 +72,9 @@ impl PortalHttp for Scenario {
                     serde_json::json!({"error":"not_online_error"})
                 },
             ),
-            ("172.30.255.42", "/") => html(&dorm_html(TEST_IP, self.staff || online)),
+            ("172.30.255.42", "/") => {
+                html(&dorm_html_with_mac(TEST_IP, self.staff || online, mac))
+            }
             ("172.30.255.42", "/drcom/chkstatus") => {
                 if self.change_before_logout.load(Ordering::Relaxed) && !after {
                     self.environment.current.lock().unwrap().ssid =
@@ -69,11 +82,48 @@ impl PortalHttp for Scenario {
                 }
                 jsonp(
                     url,
-                    serde_json::json!({"result":if self.staff || online { 1 } else { 0 },"v4ip":TEST_IP,"uid":"001234","ss4":"000000000001"}),
+                    serde_json::json!({
+                        "result": if self.staff || online { 1 } else { 0 },
+                        "v4ip": TEST_IP,
+                        "uid": "001234",
+                        "olmac": mac,
+                        "ss4": "000000000000",
+                        "v6ip": "::",
+                        "vlanid": "1",
+                    }),
                 )
             }
+            ("172.30.255.42", "/eportal/portal/page/loadConfig") => {
+                if self.config_fail.load(Ordering::Relaxed) {
+                    return Err(HttpError::Timeout);
+                }
+                let config = *self.portal_config.lock().unwrap();
+                jsonp(
+                    url,
+                    serde_json::json!({
+                        "code": 1,
+                        "data": {
+                            "login_method": config.login_method.to_string(),
+                            "un_bind_mac": if config.un_bind_mac { "1" } else { "0" },
+                            "register_mode": config.register_mode.to_string(),
+                            "ac_logout": config.ac_logout.to_string(),
+                            "isp_unbind_suffix": if config.isp_unbind_suffix { "1" } else { "0" },
+                        }
+                    }),
+                )
+            }
+            ("172.30.255.42", "/eportal/portal/mac/unbind") => {
+                self.unbinds.fetch_add(1, Ordering::Relaxed);
+                if self.unbind_reject.load(Ordering::Relaxed) {
+                    jsonp(url, serde_json::json!({"result":0,"msg":"解绑失败"}))
+                } else {
+                    self.online.store(false, Ordering::Relaxed);
+                    jsonp(url, serde_json::json!({"result":1,"msg":"解绑成功"}))
+                }
+            }
             ("net.szu.edu.cn", "/cgi-bin/rad_user_dm")
-            | ("172.30.255.42", "/eportal/portal/logout") => {
+            | ("172.30.255.42", "/eportal/portal/logout")
+            | ("172.30.255.42", "/drcom/logout") => {
                 assert_eq!(url.host_str() == Some("net.szu.edu.cn"), self.staff);
                 self.logouts.fetch_add(1, Ordering::Relaxed);
                 if self.reject.load(Ordering::Relaxed) {
@@ -106,10 +156,21 @@ fn setup(
         staff,
         online: AtomicBool::new(true),
         reject: AtomicBool::new(false),
+        unbind_reject: AtomicBool::new(false),
         uncertain: AtomicBool::new(false),
         change_source: AtomicBool::new(false),
         change_before_logout: AtomicBool::new(false),
+        placeholder_mac: AtomicBool::new(false),
+        config_fail: AtomicBool::new(false),
         logouts: AtomicUsize::new(0),
+        unbinds: AtomicUsize::new(0),
+        portal_config: Mutex::new(DormPortalConfig {
+            login_method: 1,
+            un_bind_mac: true,
+            register_mode: 1,
+            ac_logout: 0,
+            isp_unbind_suffix: false,
+        }),
         requests: Mutex::new(Vec::new()),
         environment: Arc::new(FakeEnvironment::default()),
         credentials: credentials.clone(),
@@ -125,7 +186,7 @@ fn request_builders_match_both_staff_modes_and_dorm_placeholders() {
         username: "001234".into(),
         domain: "ignored-by-dm".into(),
     }
-    .request(1788828000123);
+    .request(1788828000123, None);
     let query: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
     assert_eq!(url.path(), "/cgi-bin/rad_user_dm");
     assert_eq!(query["username"], "001234");
@@ -142,20 +203,29 @@ fn request_builders_match_both_staff_modes_and_dorm_placeholders() {
         username: "001234".into(),
         domain: "campus".into(),
     }
-    .request(1);
+    .request(1, None);
     let query: std::collections::HashMap<_, _> = normal.query_pairs().into_owned().collect();
     assert_eq!(normal.path(), "/cgi-bin/srun_portal");
     assert_eq!(query["username"], "001234@campus");
     assert_eq!(query["ac_id"], "7");
     assert_eq!(query["action"], "logout");
     assert!(!query.contains_key("password"));
-    let (dorm, _) = LogoutTarget::Dorm(DormPortalContext {
+    let portal_config = DormPortalConfig {
+        login_method: 1,
+        un_bind_mac: true,
+        register_mode: 1,
+        ac_logout: 0,
+        isp_unbind_suffix: false,
+    };
+    let context = DormPortalContext {
         ip: TEST_IP.into(),
         mac: "000000000001".into(),
         vlan: "18".into(),
+        ipv6: "::".into(),
+        account: "001234".into(),
         ..Default::default()
-    })
-    .request(1);
+    };
+    let (dorm, _) = LogoutTarget::Dorm(context.clone()).request(1, Some(&portal_config));
     let query: std::collections::HashMap<_, _> = dorm.query_pairs().into_owned().collect();
     assert_eq!(dorm.port(), Some(801));
     assert_eq!(dorm.query_pairs().next().unwrap().0, "callback");
@@ -164,8 +234,64 @@ fn request_builders_match_both_staff_modes_and_dorm_placeholders() {
     assert_eq!(query["user_password"], "123");
     assert_eq!(query["register_mode"], "1");
     assert_eq!(query["wlan_user_ip"], TEST_IP);
+    assert_eq!(query["wlan_user_ipv6"], "");
     assert_eq!(query["wlan_vlan_id"], "18");
     assert_eq!(query["wlan_user_mac"], "000000000001");
+
+    let unbind_context = DormPortalContext {
+        mac: "3ee1f57672e6".into(),
+        ..context.clone()
+    };
+    let (unbind, unbind_callback) = dorm_unbind_request(&unbind_context, &portal_config, 1).unwrap();
+    let unbind_query: std::collections::HashMap<_, _> =
+        unbind.query_pairs().into_owned().collect();
+    assert_eq!(unbind.path(), "/eportal/portal/mac/unbind");
+    assert_eq!(unbind.port(), Some(801));
+    assert_eq!(unbind_callback, "dr1001");
+    assert_eq!(unbind_query["callback"], "dr1001");
+    assert_eq!(unbind_query["user_account"], "001234");
+    assert_eq!(unbind_query["wlan_user_mac"], "3EE1F57672E6");
+    assert_eq!(unbind_query["wlan_user_ip"], "2887516168");
+    assert!(!unbind_query.contains_key("user_password"));
+    assert!(!unbind_query.contains_key("login_method"));
+
+    let placeholder_account = DormPortalContext {
+        account: "12345678901234567890123456".into(),
+        ..unbind_context.clone()
+    };
+    assert!(dorm_unbind_request(&placeholder_account, &portal_config, 1).is_none());
+    let empty_account = DormPortalContext {
+        account: String::new(),
+        ..unbind_context.clone()
+    };
+    assert!(dorm_unbind_request(&empty_account, &portal_config, 1).is_none());
+    let suffix_config = DormPortalConfig {
+        isp_unbind_suffix: true,
+        ..portal_config
+    };
+    let suffix_context = DormPortalContext {
+        account: "001234@dx".into(),
+        ..unbind_context
+    };
+    let (suffix, _) = dorm_unbind_request(&suffix_context, &suffix_config, 1).unwrap();
+    assert_eq!(
+        suffix
+            .query_pairs()
+            .find(|(key, _)| key == "user_account")
+            .map(|(_, value)| value.into_owned()),
+        Some("001234".into())
+    );
+
+    let (local, _) = LogoutTarget::Dorm(context).request(
+        1,
+        Some(&DormPortalConfig {
+            login_method: 0,
+            ..portal_config
+        }),
+    );
+    assert_eq!(local.path(), "/drcom/logout");
+    assert_eq!(local.port_or_known_default(), Some(80));
+    assert!(!local.query_pairs().any(|(key, _)| key == "user_account"));
 }
 
 #[test]
@@ -187,7 +313,13 @@ fn both_regions_disconnect_without_reading_credentials_and_preserve_saved_accoun
         )
         .unwrap();
         assert_eq!(view.outcome, NetworkLogoutOutcome::Disconnected);
-        assert_eq!(scenario.logouts.load(Ordering::Relaxed), 1);
+        if staff {
+            assert_eq!(scenario.logouts.load(Ordering::Relaxed), 1);
+            assert_eq!(scenario.unbinds.load(Ordering::Relaxed), 0);
+        } else {
+            assert_eq!(scenario.logouts.load(Ordering::Relaxed), 0);
+            assert_eq!(scenario.unbinds.load(Ordering::Relaxed), 1);
+        }
         assert_eq!(credentials.dorm_credential_reads.load(Ordering::Relaxed), 0);
         assert!(!credentials.load_dorm_settings().unwrap().unwrap().enabled);
         assert!(credentials.load_profile().unwrap().is_some());
@@ -224,6 +356,113 @@ fn both_regions_disconnect_without_reading_credentials_and_preserve_saved_accoun
             assert!(!url.as_str().contains("654321"));
         }
     }
+}
+
+#[test]
+fn dorm_unbind_failure_falls_back_to_portal_logout() {
+    let (store, _, scenario) = setup(false);
+    scenario.unbind_reject.store(true, Ordering::Relaxed);
+    let view = perform_network_logout(
+        &store,
+        scenario.as_ref(),
+        scenario.environment.as_ref(),
+        &(),
+    )
+    .unwrap();
+    assert_eq!(view.outcome, NetworkLogoutOutcome::Disconnected);
+    assert_eq!(scenario.unbinds.load(Ordering::Relaxed), 1);
+    assert_eq!(scenario.logouts.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn portal_config_without_unbind_uses_portal_logout() {
+    let (store, _, scenario) = setup(false);
+    scenario.portal_config.lock().unwrap().un_bind_mac = false;
+    let view = perform_network_logout(
+        &store,
+        scenario.as_ref(),
+        scenario.environment.as_ref(),
+        &(),
+    )
+    .unwrap();
+    assert_eq!(view.outcome, NetworkLogoutOutcome::Disconnected);
+    assert_eq!(scenario.unbinds.load(Ordering::Relaxed), 0);
+    assert_eq!(scenario.logouts.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn config_fetch_failure_uses_portal_logout() {
+    let (store, _, scenario) = setup(false);
+    scenario.config_fail.store(true, Ordering::Relaxed);
+    let view = perform_network_logout(
+        &store,
+        scenario.as_ref(),
+        scenario.environment.as_ref(),
+        &(),
+    )
+    .unwrap();
+    assert_eq!(view.outcome, NetworkLogoutOutcome::Disconnected);
+    assert_eq!(scenario.unbinds.load(Ordering::Relaxed), 0);
+    assert_eq!(scenario.logouts.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn placeholder_mac_skips_unbind_and_uses_portal_logout() {
+    let (store, _, scenario) = setup(false);
+    scenario.placeholder_mac.store(true, Ordering::Relaxed);
+    let view = perform_network_logout(
+        &store,
+        scenario.as_ref(),
+        scenario.environment.as_ref(),
+        &(),
+    )
+    .unwrap();
+    assert_eq!(view.outcome, NetworkLogoutOutcome::Disconnected);
+    assert_eq!(scenario.unbinds.load(Ordering::Relaxed), 0);
+    assert_eq!(scenario.logouts.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn login_method_zero_uses_local_portal_logout() {
+    let (store, _, scenario) = setup(false);
+    {
+        let mut config = scenario.portal_config.lock().unwrap();
+        config.login_method = 0;
+        config.un_bind_mac = false;
+    }
+    let view = perform_network_logout(
+        &store,
+        scenario.as_ref(),
+        scenario.environment.as_ref(),
+        &(),
+    )
+    .unwrap();
+    assert_eq!(view.outcome, NetworkLogoutOutcome::Disconnected);
+    assert!(scenario
+        .requests
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|url| url.path() == "/drcom/logout"));
+}
+
+#[test]
+fn dorm_logout_keeps_verifying_for_six_attempts() {
+    let (store, _, scenario) = setup(false);
+    scenario.unbind_reject.store(true, Ordering::Relaxed);
+    scenario.reject.store(true, Ordering::Relaxed);
+    let view = perform_network_logout(
+        &store,
+        scenario.as_ref(),
+        scenario.environment.as_ref(),
+        &(),
+    )
+    .unwrap();
+    assert_eq!(view.outcome, NetworkLogoutOutcome::Failed);
+    assert_eq!(
+        scenario.environment.sleeps.lock().unwrap().as_slice(),
+        &[Duration::from_secs(1); LOGOUT_VERIFY_ATTEMPTS]
+    );
 }
 
 #[test]
@@ -320,7 +559,7 @@ fn failures_and_unknown_results_never_retry_logout_or_reenable_auto_connect() {
         assert_eq!(scenario.logouts.load(Ordering::Relaxed), 1);
         assert_eq!(
             scenario.environment.sleeps.lock().unwrap().as_slice(),
-            &[Duration::from_secs(1); 3]
+            &[Duration::from_secs(1); LOGOUT_VERIFY_ATTEMPTS]
         );
         assert!(!credentials.load_dorm_settings().unwrap().unwrap().enabled);
         assert_eq!(store.dorm_status.lock().unwrap().consecutive_failures, 0);

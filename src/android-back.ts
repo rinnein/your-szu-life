@@ -78,6 +78,9 @@ function materialOverlayHost(overlay: HTMLElement): HTMLElement | undefined {
 function dismissOverlay(overlay: HTMLElement): boolean {
   const host = materialOverlayHost(overlay);
   if (!host) return false;
+  // A dialog that opts out of Escape (for example a running destructive
+  // action) must also ignore Android's back gesture: consume it, keep it open.
+  if (host.hasAttribute("no-close-on-escape")) return true;
   if (host.localName === "m-drawer") {
     // drawer 宿主没有暴露 close()，移除 open 会走 attributeChangedCallback → close()。
     host.removeAttribute("open");

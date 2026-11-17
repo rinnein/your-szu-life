@@ -9,6 +9,7 @@ import { routeTree } from "./routeTree.gen";
 import { listen } from "@tauri-apps/api/event";
 import { authFailureFor, normalizeAuthState } from "./auth";
 import { registerDebugTap } from "./shell/use-debug-mode";
+import { mockElementRects } from "./test-layout";
 import { toast } from "./ui";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -104,6 +105,8 @@ describe("frontend smoke tests", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // jsdom 没有布局；让校园网页面的 AdaptiveTabs 走宽屏 segmented 档。
+    mockElementRects({ "adaptive-tabs": 1024 });
     vi.mocked(listen).mockResolvedValue(() => undefined);
     vi.mocked(invoke).mockImplementation(async (command) => {
       if (command === "get_auth_state") return "unauthenticated";
@@ -353,8 +356,9 @@ describe("frontend smoke tests", () => {
     });
 
     renderRouterApp("/life/campus-network");
-    expect(await screen.findByText("教工区登录")).toBeInTheDocument();
-    expect(screen.getByText("当前推测网络状态：未登录(教工区)")).toBeInTheDocument();
+    expect(await screen.findByText("当前推测网络状态：未登录(教工区)")).toBeInTheDocument();
+    const staffPanel = document.querySelector('[data-region-panel="staff"]');
+    expect(within(staffPanel as HTMLElement).getByText("教工区")).toBeInTheDocument();
   });
 
   it("navigates from the life page to the campus network controls and back", async () => {
@@ -389,12 +393,14 @@ describe("frontend smoke tests", () => {
     expect(screen.getByRole("tab", { name: "教工区" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "宿舍区" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "教工区" }));
-    expect(screen.getByText("教工区登录")).toBeInTheDocument();
+    const staffPanel = document.querySelector('[data-region-panel="staff"]');
+    expect(within(staffPanel as HTMLElement).getByText("教工区")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "宿舍区" }));
+    const dormPanel = document.querySelector('[data-region-panel="dormitory"]');
+    expect(within(dormPanel as HTMLElement).getByText("宿舍区")).toBeInTheDocument();
     const toggle = screen.getByRole("switch", { name: "开启宿舍区自动登录" });
     fireEvent.click(toggle);
     // 两个区域面板常驻挂载，按面板收窄查询。
-    const dormPanel = document.querySelector('[data-region-panel="dormitory"]');
     fireEvent.click(within(dormPanel as HTMLElement).getByRole("button", { name: "保存设置" }));
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("save_dorm_network_settings", expect.anything()),

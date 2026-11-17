@@ -31,6 +31,22 @@ fn decodes_actual_meta_shape_from_gbk_bytes_without_losing_name() {
 }
 
 #[test]
+fn prefers_live_time_and_flow_counters_over_placeholder_fields() {
+    let html = "<script>uid='123456';time='50824     ';flow='224149878 ';oltime=4294967295;olflow=4294967295;</script>";
+    let session = extract_portal_session_info(html);
+    assert_eq!(session.online_duration, Some(50_824));
+    assert_eq!(session.online_flow, Some(224_149_878));
+}
+
+#[test]
+fn falls_back_to_oltime_and_olflow_when_live_counters_are_absent() {
+    let html = "<script>uid='123456';oltime='120';olflow=4096;</script>";
+    let session = extract_portal_session_info(html);
+    assert_eq!(session.online_duration, Some(120));
+    assert_eq!(session.online_flow, Some(4096));
+}
+
+#[test]
 fn encoding_priority_is_http_then_meta_then_utf8_then_gb18030() {
     let unicode = "<meta charset='GB2312'><script>uid='001234';NID='测试🙂';</script>";
     assert_eq!(

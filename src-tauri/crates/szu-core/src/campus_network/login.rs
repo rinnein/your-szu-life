@@ -166,7 +166,7 @@ fn perform_dorm_login(
         .append_pair("user_password", &password)
         .append_pair("wlan_user_ip", &context.ip)
         .append_pair("wlan_user_ipv6", "")
-        .append_pair("wlan_user_mac", "000000000000")
+        .append_pair("wlan_user_mac", &context.mac)
         .append_pair("wlan_ac_ip", "")
         .append_pair("wlan_ac_name", "")
         .append_pair("jsVersion", "4.1.3")

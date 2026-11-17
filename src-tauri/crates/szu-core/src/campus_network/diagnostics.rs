@@ -253,6 +253,8 @@ fn portal_stage(url: &Url) -> String {
         "/" => "config".into(),
         path if path.contains("rad_user_info") => "session".into(),
         path if path.contains("chkstatus") => "status".into(),
+        path if path.contains("mac/unbind") => "unbind".into(),
+        path if path.contains("page/loadConfig") => "page-config".into(),
         path if path.contains("logout") => "logout".into(),
         _ => "request".into(),
     }

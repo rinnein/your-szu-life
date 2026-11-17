@@ -358,7 +358,7 @@ export function AdaptiveTabs({
       content = (
         <div
           ref={handleCombinedRef}
-          className={`adaptive-tabs adaptive-tabs-strip oj-switcher-strip adaptive-tabs--${size} ${className}`}
+          className={`adaptive-tabs adaptive-tabs-strip adaptive-tabs--${size} ${className}`}
           data-adaptive-mode="tabs"
           data-adaptive-variant={variant}
           data-adaptive-size={size}
@@ -433,7 +433,7 @@ export function AdaptiveTabs({
         className={`adaptive-tabs-trigger adaptive-tabs-trigger--${size} adaptive-tabs-trigger--${variant}`}
         aria-haspopup="listbox"
         aria-expanded={menuOpen}
-        aria-label={ariaLabel ?? (label ? `${label}：${currentItem?.label ?? value}` : undefined)}
+        aria-label={label ? `${label}：${currentItem?.label ?? value}` : ariaLabel}
         onClick={() => setMenuOpen((open) => !open)}
       >
         {currentItem?.icon && (

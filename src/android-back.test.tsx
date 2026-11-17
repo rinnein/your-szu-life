@@ -175,6 +175,22 @@ describe("Android committed back", () => {
     await waitFor(() => expect(bridge.postMessage).toHaveBeenLastCalledWith("system"));
     expect(goHome).not.toHaveBeenCalled();
   });
+  it("keeps a dialog that disables Escape/back dismissal open", async () => {
+    function Example() {
+      return (
+        <Dialog open noCloseOnScrimClick noCloseOnEscape headline="正在断开校园网…">
+          <div>正在注销当前设备</div>
+        </Dialog>
+      );
+    }
+    render(<Example />);
+    install();
+    expect(activeOverlay()).toBeDefined();
+    await back();
+    expect(activeOverlay()).toBeDefined();
+    expect(bridge.postMessage).toHaveBeenLastCalledWith("overlay");
+    expect(goHome).not.toHaveBeenCalled();
+  });
   it("republishes overlay state when an already mounted dialog opens", async () => {
     function Example() {
       const [open, setOpen] = useState(false);
