@@ -44,6 +44,9 @@ pub struct ReminderState {
     /// 「任务开始」去重：`kind|id` → 已提醒过的开始时间
     #[serde(default)]
     pub started: BTreeMap<String, i64>,
+    /// 每日只提醒一次的待办（电费预警）：`kind|id` → 最近一次提醒的本地日期
+    #[serde(default)]
+    pub notified_day: BTreeMap<String, String>,
     /// 0 表示旧版本状态（升级后需要为各来源静默建立探测基线）；
     /// 1 表示已建立「初次探测」基线，但还没有「任务开始」基线；
     /// 2 表示两者都已建立。
@@ -61,6 +64,7 @@ impl Default for ReminderState {
             scheduled: BTreeMap::new(),
             discovered: BTreeMap::new(),
             started: BTreeMap::new(),
+            notified_day: BTreeMap::new(),
             // 注意：字段级 `serde(default)` 对旧 JSON 给出 0，与此处的 2 不同，
             // 正好用来区分「升级迁移」与「全新安装」。
             discovery_baseline_version: DISCOVERY_BASELINE_VERSION,

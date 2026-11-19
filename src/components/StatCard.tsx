@@ -27,8 +27,8 @@ export function StatCard({
   };
 
   return (
-    <Card aria-label={label} variant="outlined" className="payments-card">
-      <div className="p-4">
+    <Card aria-label={label} variant="outlined" className="payments-card h-full">
+      <div className="flex h-full flex-col p-4">
         <div className="flex items-start justify-between mb-2">
           <span className="text-sm text-muted">{label}</span>
           {icon && <span className={colors[color]}>{icon}</span>}
@@ -40,7 +40,10 @@ export function StatCard({
           {unit && <span className="text-lg text-muted"> {unit}</span>}
         </div>
         {trend && <div className="mt-2 text-xs text-success">{trend}</div>}
-        {description && <div className="mt-2 text-xs text-muted">{description}</div>}
+        {/* 说明行贴底并预留两行：同一网格里说明行数不同的卡片高度仍然一致。 */}
+        {description && (
+          <div className="mt-auto min-h-11 pt-2 text-xs text-muted">{description}</div>
+        )}
       </div>
     </Card>
   );

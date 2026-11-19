@@ -54,9 +54,14 @@ const result: ElectricityResult = {
   beginDate: "2026-09-01",
   endDate: "2026-10-01",
   currentRemaining: 10,
+  observedRemaining: 10,
+  observedAtMs: Date.parse("2026-09-30T15:59:01Z"),
+  rechargeCreditKwh: 0,
+  elapsedUsedKwh: 0,
   readings: [
     {
       date: "2026-09-30",
+      observedAt: "2026-09-30 23:59:01.0",
       roomName: "601",
       remaining: 10,
       totalUsed: 20,
@@ -67,10 +72,13 @@ const result: ElectricityResult = {
   ],
   summary: {
     totalUsed: 20,
-    dailyAverage: 2,
-    validDays: 10,
-    predictionDailyAverage: 2,
-    estimatedDaysLeft: 5,
+    weeklyDailyAverage: 2,
+    monthlyDailyAverage: 4,
+    predictionDailyAverage: 3,
+    estimatedRemaining: 10,
+    rechargeCreditKwh: 0,
+    elapsedUsedKwh: 0,
+    estimatedDaysLeft: 3.33,
     observedDate: "2026-09-30",
     expired: false,
     warningReason: null,
@@ -110,6 +118,73 @@ it("requests backend-owned dates, shows converted balance and preserves actual r
   expect(screen.getByRole("grid", { name: "充值记录" })).toHaveTextContent("8.50");
   fireEvent.click(screen.getByRole("button", { name: "切换为电费" }));
   expect(screen.getByRole("grid", { name: "用电记录" })).toHaveTextContent("1.40");
+});
+it("shows both window estimates and their average on the daily-usage card", async () => {
+  render(<CampusPaymentsElectricityPage />);
+  const card = await screen.findByLabelText("日均用电");
+  expect(card).toHaveTextContent("3.00");
+  expect(card).toHaveTextContent("7 天 2.00 度/天 · 31 天 4.00 度/天");
+});
+it("puts the balance arithmetic inside the current-balance card", async () => {
+  mock((command) =>
+    command === "query_electricity"
+      ? {
+          ...result,
+          currentRemaining: 52,
+          observedRemaining: 4,
+          rechargeCreditKwh: 50,
+          elapsedUsedKwh: 2,
+          summary: {
+            ...result.summary,
+            estimatedRemaining: 52,
+            rechargeCreditKwh: 50,
+            elapsedUsedKwh: 2,
+          },
+        }
+      : undefined,
+  );
+  render(<CampusPaymentsElectricityPage />);
+  const card = await screen.findByLabelText("当前电量");
+  expect(card).toHaveTextContent("52.00");
+  expect(card).toHaveTextContent("读数 4.00 度 ＋ 充值记录 50.00 度");
+  expect(card).toHaveTextContent("估算用电 2.00 度（0.667 天 × 3.00 度/天）");
+  expect(card).toHaveTextContent("→ 52.00 度");
+});
+it("reports an overdraft instead of clamping the balance to zero", async () => {
+  mock((command) =>
+    command === "query_electricity"
+      ? {
+          ...result,
+          currentRemaining: -1.77,
+          observedRemaining: 18.1,
+          rechargeCreditKwh: 0,
+          elapsedUsedKwh: 19.87,
+          summary: {
+            ...result.summary,
+            estimatedRemaining: -1.77,
+            rechargeCreditKwh: 0,
+            elapsedUsedKwh: 19.87,
+          },
+        }
+      : undefined,
+  );
+  render(<CampusPaymentsElectricityPage />);
+  const card = await screen.findByLabelText("当前电量");
+  expect(card).toHaveTextContent("-1.77");
+  expect(card).toHaveTextContent(
+    "读数 18.10 度 − 估算用电 19.87 度（6.623 天 × 3.00 度/天） → 透支 1.77 度",
+  );
+});
+it("still shows the forecast when the reading is stale", async () => {
+  mock((command) =>
+    command === "query_electricity"
+      ? { ...result, summary: { ...result.summary, expired: true, estimatedDaysLeft: 2.5 } }
+      : undefined,
+  );
+  render(<CampusPaymentsElectricityPage />);
+  const card = await screen.findByLabelText("预计可用天数");
+  expect(card).toHaveTextContent("2.50");
+  expect(screen.getByText(/按读数时刻推算/)).toBeInTheDocument();
 });
 it("copies exported configuration and offers manual fallback on clipboard failure", async () => {
   vi.mocked(copyText).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
@@ -388,17 +463,15 @@ it("keeps local history visible if the refresh fails offline", async () => {
   expect(screen.getByLabelText("当前电量")).toHaveTextContent("10.00");
   expect(screen.getByRole("grid", { name: "用电记录" })).toBeInTheDocument();
 });
-it("refreshes from the form and forces a refresh from the details", async () => {
+it("refreshes by hitting the portal from the single refresh button", async () => {
   render(<CampusPaymentsElectricityPage />);
   const button = await screen.findByRole("button", { name: "刷新数据" });
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
-  await waitFor(() => expect(invoke).toHaveBeenCalledWith("query_electricity", { input: saved }));
-  const force = await screen.findByRole("button", { name: "强制刷新" });
-  fireEvent.click(force);
   await waitFor(() =>
     expect(invoke).toHaveBeenCalledWith("query_electricity", { input: saved, forceRefresh: true }),
   );
+  expect(screen.queryByRole("button", { name: "强制刷新" })).not.toBeInTheDocument();
 });
 
 it("normalizes padded saved rooms before querying", async () => {

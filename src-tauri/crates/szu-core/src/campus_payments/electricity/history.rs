@@ -29,6 +29,9 @@ pub struct Room {
     pub recharge_checks: BTreeMap<String, Check>,
     pub balance: Option<f64>,
     pub balance_date: Option<String>,
+    /// 实时余额的抓取时刻（毫秒时间戳）。
+    #[serde(default)]
+    pub balance_observed_at_ms: Option<i64>,
     pub usage_updated_at: Option<i64>,
     pub recharge_updated_at: Option<i64>,
     #[serde(default)]
@@ -260,6 +263,7 @@ fn merge_usage(
     if let Some(balance) = data.current_remaining {
         room.balance = Some(balance);
         room.balance_date = Some(today_at(now).to_string());
+        room.balance_observed_at_ms = Some(now);
     }
     mark(&mut room.usage_checks, chunk, now);
     room.usage_updated_at = Some(now);
@@ -274,29 +278,30 @@ fn view(
 ) -> ElectricityQueryView {
     (input.begin_date, input.end_date) = analytics::window(today_at(now), purpose);
     let data = providers::ProviderData {
-        readings: room
-            .readings
-            .iter()
-            .filter(|r| providers::in_window(&r.date, &input))
-            .cloned()
-            .collect(),
+        // The prediction window spans further back than either query window, and a
+        // background Monitor query only fetches three days: feed the whole cached
+        // history into the summary, then trim the payload below.
+        readings: room.readings.clone(),
         current_remaining: room.balance,
-        recharges: if purpose == QueryPurpose::Detail {
-            room.recharges
-                .iter()
-                .filter(|r| providers::in_window(&r.time, &input))
-                .cloned()
-                .collect()
-        } else {
-            vec![]
-        },
+        recharges: room.recharges.clone(),
         recharge_error: if purpose == QueryPurpose::Detail {
             room.recharge_error.clone()
         } else {
             None
         },
     };
-    let mut result = build_view(input, data, today_at(now), room.balance_date.clone());
+    let mut result = build_view(
+        input.clone(),
+        data,
+        today_at(now),
+        room.balance_observed_at_ms,
+        now,
+    );
+    result.readings.retain(|r| providers::in_window(&r.date, &input));
+    result.recharges.retain(|r| providers::in_window(&r.time, &input));
+    if purpose != QueryPurpose::Detail {
+        result.recharges.clear();
+    }
     result.cache = Some(CacheInfo {
         from_cache,
         updated_at_ms: room.usage_updated_at,
@@ -461,6 +466,42 @@ fn refresh_recharges(
     room.recharges
         .sort_by_key(|r| std::cmp::Reverse(reading_datetime(&r.time)));
 }
+/// 只刷新实时充值记录并重建监控视图（发通知前的即时校验）。
+///
+/// 不抓用电，因此不会把陈旧的日读数再次当作「刚测到」；返回的视图已经带上
+/// 更新后的充值抵扣，可以直接写回监控缓存。
+pub fn recheck_recharges(
+    store: &ElectricityStore,
+    mut input: ElectricityQueryInput,
+) -> Result<ElectricityQueryView, String> {
+    let _query = store.query_lock.lock().map_err(|_| "电量查询状态不可用")?;
+    let now = now_ms();
+    (input.begin_date, input.end_date) = analytics::window(today_at(now), QueryPurpose::Monitor);
+    validate(&input)?;
+    let mut room = store
+        .history
+        .lock()
+        .map_err(|_| "电量缓存不可用")?
+        .room(&location_for(&input));
+    let mut recharge_input = input.clone();
+    (recharge_input.begin_date, recharge_input.end_date) =
+        analytics::window(today_at(now), QueryPurpose::Detail);
+    refresh_recharges(
+        &mut room,
+        &recharge_input,
+        now,
+        true,
+        &now_ms,
+        &mut fetch_recharges,
+    );
+    store
+        .history
+        .lock()
+        .map_err(|_| "电量缓存不可用")?
+        .save(room.clone(), now_ms());
+    Ok(view(&room, input, QueryPurpose::Monitor, now_ms(), true, None))
+}
+
 pub fn recharges(
     store: &ElectricityStore,
     mut input: ElectricityQueryInput,
@@ -526,6 +567,7 @@ mod tests {
                 .filter(|d| *d < today_at(now))
                 .map(|d| ElectricityReading {
                     date: d.to_string(),
+                    observed_at: None,
                     room_name: input.room_name.clone(),
                     remaining: Some(20.0),
                     total_used: Some(d.num_days_from_ce() as f64 * 2.0),
@@ -660,12 +702,20 @@ mod tests {
         // immediately refetches the recent window with force semantics.
         let (view, calls, _) = run(&store, now + 1000, false, QueryPurpose::Monitor);
         assert_eq!(calls, vec![("2026-10-05".into(), "2026-10-07".into())]);
-        assert_eq!(view.summary.estimated_days_left, Some(10.0));
+        // 20 kWh left, 2 kWh/day, minus the half day elapsed since the 10-06
+        // end-of-day snapshot.
+        assert!(view
+            .summary
+            .estimated_days_left
+            .is_some_and(|days| (9.0..=10.0).contains(&days)));
         assert!(!view.cache.unwrap().from_cache);
         // Once the prediction exists, repeated reads stay cached.
         let (view, calls, _) = run(&store, now + 2000, false, QueryPurpose::Monitor);
         assert!(calls.is_empty());
-        assert_eq!(view.summary.estimated_days_left, Some(10.0));
+        assert!(view
+            .summary
+            .estimated_days_left
+            .is_some_and(|days| (9.0..=10.0).contains(&days)));
         assert!(view.cache.unwrap().from_cache);
     }
     #[test]
@@ -806,6 +856,7 @@ mod tests {
                 if query_date(&i.end_date) == Some(today_at(first)) {
                     data.readings.push(ElectricityReading {
                         date: "2026-10-01".into(),
+                        observed_at: None,
                         room_name: "101".into(),
                         remaining: Some(20.0),
                         total_used: None,

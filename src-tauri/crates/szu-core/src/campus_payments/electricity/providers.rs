@@ -450,6 +450,7 @@ fn lihu_usage(
             .filter(|r| in_window(cell(r, date), input))
             .map(|r| ElectricityReading {
                 date: cell(r, date).into(),
+                observed_at: Some(cell(r, date).into()),
                 room_name: input.room_name.clone(),
                 remaining: None,
                 total_used: None,

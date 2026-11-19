@@ -221,21 +221,15 @@ fn lms_keeps_future_todos_and_builds_external_url() {
 }
 
 #[test]
-fn electricity_forecast_uses_observed_date_and_estimated_days() {
-    let status = ElectricityStatusView {
-        remaining: Some(3.25),
-        observed_date: Some("2026-11-01".into()),
-        expires_at_ms: None,
-        expired: false,
-        low: false,
-        estimated_days_left: Some(1.5),
-        warning_reason: None,
-    };
+fn electricity_forecast_starts_from_now_and_lands_on_the_day_end() {
+    let status = electricity_status(false, Some(1.5));
     let items = from_electricity(&status, now());
     assert_eq!(items.len(), 1);
-    let expected = Local.with_ymd_and_hms(2026, 11, 1, 0, 0, 0).unwrap().timestamp_millis()
-        + (1.5 * DAY as f64) as i64;
-    assert_eq!(items[0].due_at_ms, expected);
+    // 估算以「此刻还剩多少」为起点，再落到那一天的日终，避免读数抖动改写去重键。
+    assert_eq!(
+        items[0].due_at_ms,
+        end_of_local_day(now() + (1.5 * DAY as f64) as i64)
+    );
     assert_eq!(items[0].kind, TodoKind::ElectricityOutage);
     assert_eq!(items[0].start_at_ms, None);
     assert!(items[0].title.contains("预计电量耗尽"));
@@ -276,29 +270,56 @@ fn electricity_low_without_estimate_falls_back_to_end_of_today() {
 }
 
 #[test]
-fn electricity_low_with_past_estimate_still_reminds_today() {
-    let yesterday = (Local.timestamp_millis_opt(now()).single().unwrap().date_naive()
-        - chrono::Days::new(1))
-    .format("%Y-%m-%d")
-    .to_string();
-    let mut status = electricity_status(true, Some(0.5));
-    status.observed_date = Some(yesterday);
+fn electricity_low_with_estimate_keeps_the_forecast_day() {
+    let items = from_electricity(&electricity_status(true, Some(2.0)), now());
+    assert_eq!(items.len(), 1);
+    assert_eq!(
+        items[0].due_at_ms,
+        end_of_local_day(now() + 2 * DAY)
+    );
+}
+
+#[test]
+fn electricity_overdraft_is_reported_as_such() {
+    let mut status = electricity_status(true, Some(0.0));
+    status.remaining = Some(-1.82);
+    // 读数过期也必须照常提醒：门户延迟发布期间正是最需要预警的时候。
+    status.expired = true;
     let items = from_electricity(&status, now());
     assert_eq!(items.len(), 1);
+    let subtitle = items[0].subtitle.as_deref().unwrap();
+    assert!(subtitle.contains("已透支 1.8 度"));
+    assert!(subtitle.contains("读数已过期"));
     assert_eq!(items[0].due_at_ms, end_of_local_day(now()));
 }
 
 #[test]
 fn electricity_without_low_or_estimate_produces_nothing() {
     assert!(from_electricity(&electricity_status(false, None), now()).is_empty());
-    assert!(from_electricity(
-        &ElectricityStatusView {
-            expired: true,
-            ..electricity_status(true, Some(1.0))
-        },
-        now()
-    )
-    .is_empty());
+}
+
+#[test]
+fn electricity_reminders_fire_at_most_once_per_day() {
+    let mut settings = NotificationSettings::default();
+    settings.todo.lead_minutes = vec![2 * 24 * 60, 24 * 60];
+    let due = now() + 2 * DAY;
+    let items = vec![item("outage", TodoKind::ElectricityOutage, due)];
+    let mut state = seen_state(&items);
+
+    // 进入两天的预警档：第一次提醒。
+    let pending = plan_reminders(&items, &settings, now(), &mut state);
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].1, ReminderEvent::Lead(2 * 24 * 60));
+    assert!(state.notified_day.contains_key(&item_key(&items[0])));
+
+    // 同一天估算微调不再补发第二条。
+    let moved = vec![item("outage", TodoKind::ElectricityOutage, due + 5 * MINUTE)];
+    assert!(plan_reminders(&moved, &settings, now() + MINUTE, &mut state).is_empty());
+
+    // 第二天新到达的 1 天档照常提醒一次。
+    let pending = plan_reminders(&items, &settings, now() + DAY, &mut state);
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].1, ReminderEvent::Lead(24 * 60));
 }
 
 #[test]

@@ -35,7 +35,22 @@ mod mobile {
                 if item.due_at_ms <= now || !settings.is_todo_kind_enabled(item.kind) {
                     continue;
                 }
-                for offset in &settings.todo.lead_minutes {
+                // 电费预警的余额可能因为刚充值而失效，而原生排程没法在触发前
+                // 校验；只把最接近截止的一档写进系统，其余提前量留给应用内
+                // 的提醒引擎（它可以先刷新实时充值）。
+                let offsets: Vec<i64> = if item.kind.notify_at_most_daily() {
+                    settings
+                        .todo
+                        .lead_minutes
+                        .iter()
+                        .copied()
+                        .min()
+                        .into_iter()
+                        .collect()
+                } else {
+                    settings.todo.lead_minutes.clone()
+                };
+                for offset in &offsets {
                     let fire_at = item.due_at_ms - offset * 60_000;
                     if fire_at <= now || fire_at > window_end {
                         continue;

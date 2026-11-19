@@ -121,6 +121,10 @@ pub struct ElectricityCampus {
 #[serde(rename_all = "camelCase")]
 pub struct ElectricityReading {
     pub date: String,
+    /// 门户给出的原始观测时刻（可能是 `2026-09-17 23:59:01.0`，也可能只有日期）。
+    /// 余额的旧化扣减以它为锚点，`normalize` 改写 `date` 之前会把它保留下来。
+    #[serde(default)]
+    pub observed_at: Option<String>,
     pub room_name: String,
     pub remaining: Option<f64>,
     pub total_used: Option<f64>,
@@ -139,7 +143,13 @@ pub struct ElectricityQueryView {
     pub begin_date: String,
     pub end_date: String,
     pub readings: Vec<ElectricityReading>,
+    /// 观测时刻的原始余额加上实时充值、再扣掉观测之后的估算用电。
     pub current_remaining: Option<f64>,
+    /// 门户读数上的原始余额，供页面说明校正来源。
+    pub observed_remaining: Option<f64>,
+    pub observed_at_ms: Option<i64>,
+    pub recharge_credit_kwh: f64,
+    pub elapsed_used_kwh: f64,
     pub summary: analytics::Summary,
     pub recharges: Vec<providers::Recharge>,
     pub recharge_error: Option<String>,
@@ -478,6 +488,7 @@ fn parse_sims(html: &str, room: &str) -> Result<Vec<ElectricityReading>, String>
         }
         result.push(ElectricityReading {
             date: cells[5].clone(),
+            observed_at: Some(cells[5].clone()),
             room_name: if cells[1].is_empty() {
                 room.into()
             } else {
@@ -535,25 +546,39 @@ fn fetch_usage(input: &ElectricityQueryInput) -> Result<providers::ProviderData,
 
 fn build_view(
     input: ElectricityQueryInput,
-    mut data: providers::ProviderData,
+    data: providers::ProviderData,
     today: NaiveDate,
-    balance_date: Option<String>,
+    balance_observed_at_ms: Option<i64>,
+    now: i64,
 ) -> ElectricityQueryView {
-    data.readings.retain(|r| {
-        reading_date(&r.date)
-            .is_some_and(|d| d >= query_date(&input.begin_date).unwrap() && d <= today)
-    });
     let readings = with_daily_changes(data.readings);
     let current = readings.iter().rev().find(|r| r.remaining.is_some());
-    let remaining = data
-        .current_remaining
-        .or_else(|| current.and_then(|r| r.remaining));
-    let observed = if data.current_remaining.is_some() {
-        balance_date
-    } else {
-        current.map(|r| r.date.clone())
+    let balance = match (data.current_remaining, current) {
+        // 实时余额（丽湖）以抓取时刻为观测时刻。
+        (Some(remaining), _) => Some(analytics::BalanceInput {
+            remaining,
+            observed_at_ms: balance_observed_at_ms.unwrap_or(now),
+        }),
+        // 累计读数（SIMS）只发布前一天 23:59 的快照，用行上的门户时间戳。
+        (None, Some(row)) => row.remaining.map(|remaining| analytics::BalanceInput {
+            remaining,
+            observed_at_ms: row
+                .observed_at
+                .as_deref()
+                .and_then(analytics::observed_ms)
+                .or_else(|| analytics::date_end_ms(&row.date))
+                .unwrap_or(now),
+        }),
+        (None, None) => None,
     };
-    let summary = analytics::summarize(&readings, remaining, observed, today);
+    let summary = analytics::summarize(analytics::SummaryInput {
+        readings: &readings,
+        period_start: query_date(&input.begin_date).unwrap_or(today),
+        balance,
+        recharges: &data.recharges,
+        now,
+        today,
+    });
     ElectricityQueryView {
         campus_id: input.campus_id,
         area_id: input.area_id,
@@ -562,7 +587,11 @@ fn build_view(
         begin_date: input.begin_date,
         end_date: input.end_date,
         readings,
-        current_remaining: remaining,
+        current_remaining: summary.estimated_remaining,
+        observed_remaining: balance.map(|balance| balance.remaining),
+        observed_at_ms: balance.map(|balance| balance.observed_at_ms),
+        recharge_credit_kwh: summary.recharge_credit_kwh,
+        elapsed_used_kwh: summary.elapsed_used_kwh,
         summary,
         recharges: data.recharges,
         recharge_error: data.recharge_error,
@@ -682,18 +711,27 @@ pub fn status(store: &ElectricityStore) -> ElectricityStatusView {
         };
     };
     let expired = cache.expires_at_ms <= now_ms();
+    // The cached snapshot is re-derived on every read: only a recharge refresh is
+    // needed for a top-up to clear the warning, no new meter reading.
+    let balance = analytics::evaluate_balance(
+        cache.remaining,
+        cache.credits_kwh,
+        cache.daily_average,
+        cache.observed_at_ms,
+        now_ms(),
+    );
+    // 过期读数仍然预警：有效余额已经按实际经过的天数扣过，报告「已透支」
+    // 正是这段延迟期最需要知道的事；过期与否只作为展示说明。
+    let warning = analytics::warning_reason(Some(&balance));
     ElectricityStatusView {
-        remaining: Some(cache.remaining),
+        remaining: Some(balance.effective_remaining),
         observed_date: Some(cache.observed_date),
         expires_at_ms: Some(cache.expires_at_ms),
         expired,
-        low: !expired && cache.warning_active,
-        estimated_days_left: if expired {
-            None
-        } else {
-            cache.estimated_days_left
-        },
-        warning_reason: if expired { None } else { cache.warning_reason },
+        low: warning.is_some(),
+        // 过期读数不发预警，但预计天数照常按读数时刻推算，页面上不会直接变成空值。
+        estimated_days_left: balance.estimated_days_left,
+        warning_reason: warning,
     }
 }
 
@@ -765,32 +803,64 @@ fn record_view(
     {
         return Ok(());
     }
-    if let (Some(remaining), Some(observed)) =
-        (view.current_remaining, view.summary.observed_date.as_ref())
-    {
+    if let (Some(observed_remaining), Some(observed_at_ms), Some(observed_date)) = (
+        view.observed_remaining,
+        view.observed_at_ms,
+        view.summary.observed_date.as_ref(),
+    ) {
         let mut record = load_monitor_record(store);
         if !record.cache.as_ref().is_some_and(|cache| {
             cache_matches(cache, &location)
                 && (cache.fetched_at_ms > started_at_ms
-                    || reading_datetime(&cache.observed_date) > reading_datetime(observed))
+                    || cache.observed_at_ms > observed_at_ms)
         }) {
             record.cache = Some(ElectricityCurrentCache {
                 location,
-                remaining,
-                observed_date: observed.clone(),
+                remaining: observed_remaining,
+                observed_date: observed_date.clone(),
+                observed_at_ms,
                 fetched_at_ms: started_at_ms,
                 expires_at_ms: if view.summary.expired {
                     now_ms()
                 } else {
                     analytics::expiry_ms()
                 },
-                warning_active: view.summary.warning_reason.is_some(),
-                estimated_days_left: view.summary.estimated_days_left,
-                warning_reason: view.summary.warning_reason.clone(),
+                daily_average: view.summary.prediction_daily_average,
+                credits_kwh: view.summary.recharge_credit_kwh,
             });
             save_monitor_record(store, &record);
         }
     }
+    Ok(())
+}
+
+/// 发通知前的即时校验：只重拉实时充值记录，并据此重建监控缓存。
+///
+/// 门户的用电读数按天发布（SIMS 只给前一天 23:59 的快照），充值记录却是实时的。
+/// 用户在这段空档里充过值时，旧读数推出的预警就是误报；发通知前重新拉一次充值，
+/// 新的充值电量会立刻把有效余额抬出预警区间。
+pub fn verify_recharges(store: &ElectricityStore, app: &AppHandle) -> Result<(), String> {
+    let Some(settings) = monitoring_settings(store) else {
+        return Err("尚未配置宿舍".into());
+    };
+    let input = ElectricityQueryInput {
+        campus_id: settings.campus_id,
+        area_id: settings.area_id,
+        building_id: settings.building_id,
+        building_name: settings.building_name,
+        room_name: settings.room_name,
+        begin_date: String::new(),
+        end_date: String::new(),
+    };
+    let generation = store
+        .runtime
+        .lock()
+        .map_err(|_| "电费状态不可用")?
+        .generation;
+    let started_at_ms = now_ms();
+    let view = history::recheck_recharges(store, input.clone())?;
+    record_view(store, &input, generation, started_at_ms, &view)?;
+    emit_status(app, store);
     Ok(())
 }
 
@@ -959,6 +1029,7 @@ mod tests {
         let rows = vec![
             ElectricityReading {
                 date: "2026-09-16 23:59:01.0".into(),
+                observed_at: None,
                 room_name: "601".into(),
                 remaining: Some(8.0),
                 total_used: Some(1.0),
@@ -968,6 +1039,7 @@ mod tests {
             },
             ElectricityReading {
                 date: format!("{} 23:59:01.0", current_reading_date()),
+                observed_at: None,
                 room_name: "601".into(),
                 remaining: Some(4.0),
                 total_used: Some(2.0),
@@ -1082,6 +1154,40 @@ mod tests {
         }
     }
 
+    /// 伪造一次「刚抓到 remaining」的视图，供监控缓存的写入/旧化测试使用。
+    fn test_view(input: &ElectricityQueryInput, remaining: f64) -> ElectricityQueryView {
+        let now = now_ms();
+        let summary = analytics::summarize(analytics::SummaryInput {
+            readings: &[],
+            period_start: analytics::today() - ChronoDuration::days(30),
+            balance: Some(analytics::BalanceInput {
+                remaining,
+                observed_at_ms: now,
+            }),
+            recharges: &[],
+            now,
+            today: analytics::today(),
+        });
+        ElectricityQueryView {
+            campus_id: input.campus_id.clone(),
+            area_id: input.area_id.clone(),
+            building_name: input.building_name.clone(),
+            room_name: input.room_name.clone(),
+            begin_date: input.begin_date.clone(),
+            end_date: input.end_date.clone(),
+            readings: vec![],
+            current_remaining: summary.estimated_remaining,
+            observed_remaining: Some(remaining),
+            observed_at_ms: Some(now),
+            recharge_credit_kwh: summary.recharge_credit_kwh,
+            elapsed_used_kwh: summary.elapsed_used_kwh,
+            summary,
+            recharges: vec![],
+            recharge_error: None,
+            cache: None,
+        }
+    }
+
     #[test]
     fn padded_settings_update_status_and_do_not_reset_monitoring_when_saved() {
         for area in [
@@ -1107,25 +1213,7 @@ mod tests {
                 begin_date: String::new(),
                 end_date: String::new(),
             };
-            let view = ElectricityQueryView {
-                campus_id: saved.campus_id.clone(),
-                area_id: saved.area_id.clone(),
-                building_name: saved.building_name.clone(),
-                room_name: "601".into(),
-                begin_date: String::new(),
-                end_date: String::new(),
-                readings: vec![],
-                current_remaining: Some(4.0),
-                summary: analytics::summarize(
-                    &[],
-                    Some(4.0),
-                    Some(analytics::today().to_string()),
-                    analytics::today(),
-                ),
-                recharges: vec![],
-                recharge_error: None,
-                cache: None,
-            };
+            let view = test_view(&input, 4.0);
             record_view(&store, &input, generation, now_ms(), &view).unwrap();
             assert_eq!(status(&store).remaining, Some(4.0));
             assert!(status(&store).low);
@@ -1147,7 +1235,7 @@ mod tests {
             save_monitor_record(&store, &newer);
             assert_eq!(status(&store).remaining, Some(4.0));
             let mut late_view = view.clone();
-            late_view.current_remaining = Some(99.0);
+            late_view.observed_remaining = Some(99.0);
             record_view(&store, &input, generation, newer_time - 1, &late_view).unwrap();
             assert_eq!(status(&store).remaining, Some(4.0));
         }
@@ -1165,11 +1253,11 @@ mod tests {
                 location: saved,
                 remaining: 1.0,
                 observed_date: analytics::today().to_string(),
+                observed_at_ms: now_ms(),
                 fetched_at_ms: now_ms(),
                 expires_at_ms: now_ms() + 60_000,
-                warning_active: true,
-                estimated_days_left: Some(0.2),
-                warning_reason: Some("low".into()),
+                daily_average: None,
+                credits_kwh: 0.0,
             });
             save_monitor_record(&store, &record);
             assert_eq!(
@@ -1187,8 +1275,9 @@ mod tests {
             "location": {"campusId":"yuehai","areaId":"yuehai-main","buildingId":"1","buildingName":"山茶斋","roomName":"601"},
             "remaining": 4.0, "observedDate": "2026-09-30", "fetchedAtMs": 0, "expiresAtMs": 1, "warningActive": true
         })).unwrap();
-        assert_eq!(old.estimated_days_left, None);
-        assert_eq!(old.warning_reason, None);
+        assert_eq!(old.observed_at_ms, 0);
+        assert_eq!(old.daily_average, None);
+        assert_eq!(old.credits_kwh, 0.0);
         let store = ElectricityStore::new(Arc::new(MemoryCredentialStore::default()));
         save_settings(&store, old.location.clone()).unwrap();
         let generation = store.runtime.lock().unwrap().generation;
@@ -1201,25 +1290,7 @@ mod tests {
             begin_date: String::new(),
             end_date: String::new(),
         };
-        let mut view = ElectricityQueryView {
-            campus_id: input.campus_id.clone(),
-            area_id: input.area_id.clone(),
-            building_name: input.building_name.clone(),
-            room_name: input.room_name.clone(),
-            begin_date: String::new(),
-            end_date: String::new(),
-            readings: vec![],
-            current_remaining: Some(4.0),
-            summary: analytics::summarize(
-                &[],
-                Some(4.0),
-                Some(analytics::today().to_string()),
-                analytics::today(),
-            ),
-            recharges: vec![],
-            recharge_error: None,
-            cache: None,
-        };
+        let mut view = test_view(&input, 4.0);
         view.cache = Some(history::CacheInfo {
             from_cache: false,
             updated_at_ms: Some(200),
@@ -1238,16 +1309,10 @@ mod tests {
             200
         );
         view.cache = None;
-        view.current_remaining = Some(30.0);
-        view.summary = analytics::summarize(
-            &[],
-            Some(30.0),
-            Some(analytics::today().to_string()),
-            analytics::today(),
-        );
+        view = test_view(&input, 30.0);
         record_view(&store, &input, generation, 300, &view).unwrap();
         assert!(!status(&store).low);
-        view.current_remaining = Some(1.0);
+        view = test_view(&input, 1.0);
         record_view(&store, &input, generation, 100, &view).unwrap();
         assert_eq!(status(&store).remaining, Some(30.0));
         let mut other = old.location;
@@ -1256,6 +1321,33 @@ mod tests {
         record_view(&store, &input, generation, 400, &view).unwrap();
         assert_eq!(status(&store).remaining, None);
     }
+    #[test]
+    fn status_derives_the_effective_balance_from_credits() {
+        for credits in [0.0, 30.0] {
+            let credentials: SharedCredentialStore = Arc::new(MemoryCredentialStore::default());
+            let saved = room_settings("601");
+            credentials.save_electricity_settings(&saved).unwrap();
+            let store = ElectricityStore::new(credentials);
+            let mut record = ElectricityMonitorRecord::default();
+            record.cache = Some(ElectricityCurrentCache {
+                location: saved,
+                remaining: 1.0,
+                observed_date: analytics::today().to_string(),
+                observed_at_ms: now_ms(),
+                fetched_at_ms: now_ms(),
+                expires_at_ms: now_ms() + 60_000,
+                daily_average: Some(2.0),
+                credits_kwh: credits,
+            });
+            save_monitor_record(&store, &record);
+            let computed = status(&store);
+            // 1 度余额 + 实时充值，扣掉观测之后按 2 度/天估算的用电。
+            assert!(computed.remaining.unwrap() >= credits);
+            assert_eq!(computed.low, credits == 0.0);
+            assert_eq!(computed.warning_reason.is_some(), credits == 0.0);
+        }
+    }
+
     #[test]
     fn splits_queries_into_at_most_twenty_inclusive_days() {
         let mut input = ElectricityQueryInput {
@@ -1328,6 +1420,7 @@ mod tests {
                 .take((last - first).num_days() as usize + 1)
                 .map(|date| ElectricityReading {
                     date: date.to_string(),
+                    observed_at: None,
                     room_name: "101".into(),
                     remaining: Some(100.0),
                     total_used: Some((date - start).num_days() as f64 * 3.0),

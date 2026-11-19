@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use chrono::{NaiveDate, NaiveDateTime, TimeZone};
+use chrono::{NaiveDateTime, TimeZone};
 use tauri::Manager;
 
 use super::model::{TodoItem, TodoKind};
@@ -253,26 +253,19 @@ pub fn from_lms(snapshot: &LmsSnapshot, now: i64) -> Vec<TodoItem> {
 /// 电费预警统一并入待办。
 ///
 /// 低电量（`low`）即使算不出估算耗尽日也要生成一条「当天 23:59 前充值」的待办，
-/// 避免原来每日后台推送被移除后漏报；算得出且尚未到达的估算日优先。
+/// 避免原来每日后台推送被移除后漏报；算得出时取估算耗尽的那一天。
+///
+/// 读数过期（门户连续几天没发布）**不再**让预警消失：有效余额已经按实际经过的
+/// 天数扣过，透支/低电量正是这段延迟期最需要提醒的事。过期只在副标题里注明。
 pub fn from_electricity(status: &ElectricityStatusView, now: i64) -> Vec<TodoItem> {
-    if status.expired {
-        return Vec::new();
-    }
+    // `estimated_days_left` 已经把读数换成「此刻还剩多少」，因此预计耗尽日从
+    // 现在起算；再落到那一天的日终，估算的小时抖动就不会改写去重键。
     let estimate = status
         .estimated_days_left
         .filter(|days| *days >= 0.0)
-        .map(|days| {
-            let base = status
-                .observed_date
-                .as_deref()
-                .and_then(parse_local_date_midnight)
-                .unwrap_or(now);
-            base + (days * DAY_MS as f64) as i64
-        });
+        .map(|days| end_of_local_day(now + (days * DAY_MS as f64) as i64));
     let due_at = if status.low {
-        estimate
-            .filter(|due| *due > now)
-            .unwrap_or_else(|| end_of_local_day(now))
+        estimate.unwrap_or_else(|| end_of_local_day(now))
     } else {
         match estimate {
             Some(due) => due,
@@ -282,22 +275,35 @@ pub fn from_electricity(status: &ElectricityStatusView, now: i64) -> Vec<TodoIte
 
     let remaining_text = status
         .remaining
-        .map(|remaining| format!("（剩余约 {remaining:.1} 度）"))
+        .map(|remaining| {
+            // 学校允许透支，电表结算延迟时会出现负数余额。
+            if remaining < 0.0 {
+                format!("（已透支 {:.1} 度）", -remaining)
+            } else {
+                format!("（剩余约 {remaining:.1} 度）")
+            }
+        })
         .unwrap_or_default();
+    let stale_note = if status.expired {
+        " · 读数已过期"
+    } else {
+        ""
+    };
     let (title, subtitle, urgent) = if status.low {
-        // `warning_reason` 区分「低于 5 度」与「预计可用不足 1 天」，直接作为标题更准确。
+        // `warning_reason` 区分「透支」「低于 5 度」与「预计可用不足 1 天」，
+        // 直接作为标题更准确。
         (
             status
                 .warning_reason
                 .clone()
                 .unwrap_or_else(|| "宿舍电量不足，请及时充值。".into()),
-            format!("宿舍电费监控 · 电费预警{remaining_text}"),
+            format!("宿舍电费监控 · 电费预警{remaining_text}{stale_note}"),
             true,
         )
     } else {
         (
             format!("预计电量耗尽{remaining_text}"),
-            "宿舍电费监控 · 预估断电日期".to_string(),
+            format!("宿舍电费监控 · 预估断电日期{stale_note}"),
             due_at - now < DAY_MS,
         )
     };
@@ -349,18 +355,10 @@ fn parse_rfc3339_millis(raw: &str) -> Option<i64> {
         .map(|value| value.timestamp_millis())
 }
 
-fn parse_local_date_midnight(raw: &str) -> Option<i64> {
-    let date = NaiveDate::parse_from_str(raw.trim(), "%Y-%m-%d").ok()?;
-    chrono::Local
-        .from_local_datetime(&date.and_hms_opt(0, 0, 0)?)
-        .single()
-        .map(|value| value.timestamp_millis())
-}
-
-/// 当前本地日期结束的时刻（23:59:59.999）。
-fn end_of_local_day(now: i64) -> i64 {
+/// 指定时刻所在本地日期的结束时刻（23:59:59.999）。
+fn end_of_local_day(ms: i64) -> i64 {
     let today = chrono::Local
-        .timestamp_millis_opt(now)
+        .timestamp_millis_opt(ms)
         .single()
         .map(|value| value.date_naive());
     today
@@ -368,7 +366,7 @@ fn end_of_local_day(now: i64) -> i64 {
         .and_then(|date| date.and_hms_opt(0, 0, 0))
         .and_then(|naive| chrono::Local.from_local_datetime(&naive).single())
         .map(|value| value.timestamp_millis() - 1)
-        .unwrap_or(now + DAY_MS)
+        .unwrap_or(ms + DAY_MS)
 }
 
 /// 与前端 `encodeURIComponent` 等价的最小实现，用于 OJ 的路由参数。

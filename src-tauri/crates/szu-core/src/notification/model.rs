@@ -31,4 +31,11 @@ impl TodoKind {
             Self::ElectricityOutage => "electricity-outage",
         }
     }
+
+    /// 电费预警是持续状态而非一次性任务：估算每天都会变，如果沿用带 `due_at` 的
+    /// 去重键，四档提前量会随估算抖动反复重新上膛。这类待办改为「同一天最多提醒
+    /// 一次」，桌面端由提醒引擎节流，Android 也只把最接近截止的一档交给原生排程。
+    pub fn notify_at_most_daily(self) -> bool {
+        matches!(self, Self::ElectricityOutage)
+    }
 }

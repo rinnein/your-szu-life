@@ -9,6 +9,7 @@ export type ElectricitySettings = {
 };
 export type ElectricityReading = {
   date: string;
+  observedAt: string | null;
   roomName: string;
   remaining: number | null;
   totalUsed: number | null;
@@ -18,9 +19,16 @@ export type ElectricityReading = {
 };
 export type ElectricitySummary = {
   totalUsed: number | null;
-  dailyAverage: number | null;
-  validDays: number;
+  /** 最近 7 天覆盖加权的日均。 */
+  weeklyDailyAverage: number | null;
+  /** 最近 31 天覆盖加权的日均。 */
+  monthlyDailyAverage: number | null;
+  /** 最终估计：上面两个可用值的均值，余额校正与预计天数都用它。 */
   predictionDailyAverage: number | null;
+  /** 校正后的有效余额（读数余额 + 充值记录 − 观测后估算用电）。 */
+  estimatedRemaining: number | null;
+  rechargeCreditKwh: number;
+  elapsedUsedKwh: number;
   estimatedDaysLeft: number | null;
   observedDate: string | null;
   expired: boolean;
@@ -42,6 +50,10 @@ export type ElectricityResult = {
   endDate: string;
   readings: ElectricityReading[];
   currentRemaining: number | null;
+  observedRemaining: number | null;
+  observedAtMs: number | null;
+  rechargeCreditKwh: number;
+  elapsedUsedKwh: number;
   summary: ElectricitySummary;
   recharges: ElectricityRecharge[];
   rechargeError: string | null;

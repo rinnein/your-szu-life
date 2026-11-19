@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
+use chrono::TimeZone;
 use tauri::{AppHandle, Manager};
 
 use super::model::{item_key, reminder_key, ReminderState, TodoItem, DISCOVERY_BASELINE_VERSION};
@@ -69,11 +70,12 @@ async fn evaluate(app: &AppHandle, items: &[TodoItem], trusted: &HashSet<TodoKin
     };
     let now = chrono::Utc::now().timestamp_millis();
 
-    let (pending, changed) = {
+    let (mut pending, changed) = {
         let mut state = store.state.lock().unwrap();
         let before_notified = state.notified.clone();
         let before_discovered = state.discovered.clone();
         let before_started = state.started.clone();
+        let before_day = state.notified_day.clone();
         let before_baseline = (
             state.discovery_baseline_version,
             state.baselined_kinds.clone(),
@@ -85,6 +87,7 @@ async fn evaluate(app: &AppHandle, items: &[TodoItem], trusted: &HashSet<TodoKin
             || state.notified != before_notified
             || state.discovered != before_discovered
             || state.started != before_started
+            || state.notified_day != before_day
             || state.discovery_baseline_version != before_baseline.0
             || state.baselined_kinds != before_baseline.1;
         (pending, changed)
@@ -101,6 +104,30 @@ async fn evaluate(app: &AppHandle, items: &[TodoItem], trusted: &HashSet<TodoKin
         }
     }
 
+    // 电费预警的依据是最多滞后一天的门户读数，而充值记录是实时的。发通知前
+    // 重新拉一次充值：用户刚充过值时，校正后的余额会把这条误报直接撤销。
+    // 已经交给系统原生排程的那一条无法拦截，不必再浪费一次网络请求。
+    let needs_recheck = pending.iter().any(|(item, event)| {
+        item.kind == TodoKind::ElectricityOutage
+            && !matches!(event, ReminderEvent::Lead(offset) if has_native_schedule(app, item, *offset))
+    });
+    if needs_recheck && recheck_electricity(app).await {
+        if let Some(store) = app.try_state::<szu_core::campus_payments::CampusPaymentsStore>() {
+            let status = szu_core::campus_payments::electricity::status(&store.electricity);
+            let fresh = aggregate::from_electricity(&status, now).into_iter().next();
+            pending.retain(|(item, _)| {
+                item.kind != TodoKind::ElectricityOutage
+                    || fresh.as_ref().is_some_and(|fresh| {
+                        fresh.due_at_ms == item.due_at_ms
+                            && fresh.title == item.title
+                            && fresh.subtitle == item.subtitle
+                    })
+            });
+            drop(store);
+            publish(app, &aggregate::aggregate(app).items);
+        }
+    }
+
     for (item, event) in pending {
         if let ReminderEvent::Lead(offset) = event {
             // Android 上该提醒已交给系统原生排程，避免前台运行时再发一次 Snackbar/系统通知。
@@ -110,6 +137,27 @@ async fn evaluate(app: &AppHandle, items: &[TodoItem], trusted: &HashSet<TodoKin
         }
         dispatch(app, &item, event);
     }
+}
+
+/// 发通知前刷新实时充值记录。网络失败时按原状态提醒（fail-open），
+/// 宁可偶发一次误报，也不要因为内网抖动漏掉断电预警。
+async fn recheck_electricity(app: &AppHandle) -> bool {
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(store) = handle.try_state::<szu_core::campus_payments::CampusPaymentsStore>()
+        else {
+            return false;
+        };
+        match szu_core::campus_payments::electricity::verify_recharges(&store.electricity, &handle) {
+            Ok(()) => true,
+            Err(error) => {
+                log::info!("电费提醒前刷新充值失败，按原状态提醒: {error}");
+                false
+            }
+        }
+    })
+    .await
+    .unwrap_or(false)
 }
 
 #[cfg(mobile)]
@@ -185,12 +233,25 @@ pub fn plan_reminders(
     }
 
     let mut pending = Vec::new();
+    let today = local_day(now);
     for item in items {
         if item.due_at_ms <= now || !settings.is_todo_kind_enabled(item.kind) {
             continue;
         }
 
         let key = item_key(item);
+        let daily_only = item.kind.notify_at_most_daily();
+        if daily_only && state.notified_day.get(&key) == Some(&today) {
+            // 今天已经提醒过：把当天已到达的提前量一起记为已通知，
+            // 估算微调之后不会在当天补发第二条（更晚到达的提前量留给以后）。
+            for offset in &settings.todo.lead_minutes {
+                if item.due_at_ms - *offset * MINUTE_MS <= now {
+                    state.notified.insert(reminder_key(item, *offset), now);
+                }
+            }
+            state.discovered.insert(key, item.due_at_ms);
+            continue;
+        }
         if !state.discovered.contains_key(&key) {
             state.discovered.insert(key.clone(), item.due_at_ms);
             // 首次探测时任务已经开始：只算一次「初次探测到」，不再补「任务开始」。
@@ -205,6 +266,7 @@ pub fn plan_reminders(
                         state.notified.insert(reminder_key(item, *offset), now);
                     }
                 }
+                mark_notified_day(state, item, daily_only, &today);
                 pending.push((item.clone(), ReminderEvent::Discovered));
                 continue;
             }
@@ -233,6 +295,7 @@ pub fn plan_reminders(
                 state.started.insert(key.clone(), start);
                 // 同一 tick 还有到期的提前量时，优先发更紧急的截止提醒。
                 if reached.is_empty() {
+                    mark_notified_day(state, item, daily_only, &today);
                     pending.push((item.clone(), ReminderEvent::Started));
                 }
             }
@@ -245,6 +308,7 @@ pub fn plan_reminders(
         for (_, key) in reached {
             state.notified.insert(key, now);
         }
+        mark_notified_day(state, item, daily_only, &today);
         pending.push((item.clone(), ReminderEvent::Lead(chosen_offset)));
     }
 
@@ -253,6 +317,26 @@ pub fn plan_reminders(
         .notified
         .retain(|key, _| key_due_at_ms(key).is_none_or(|due_at| due_at >= horizon));
     pending
+}
+
+/// 记录「每日只提醒一次」的待办今天已经提醒过。
+fn mark_notified_day(
+    state: &mut ReminderState,
+    item: &TodoItem,
+    daily_only: bool,
+    today: &str,
+) {
+    if daily_only {
+        state.notified_day.insert(item_key(item), today.to_owned());
+    }
+}
+
+fn local_day(now: i64) -> String {
+    chrono::Local
+        .timestamp_millis_opt(now)
+        .single()
+        .map(|value| value.date_naive().to_string())
+        .unwrap_or_default()
 }
 
 /// 可信来源中已经不在当前列表里的待办视为「确认关闭」，连同类名下所有提醒记录一起删除。
@@ -307,6 +391,17 @@ pub fn prune_closed(
             return false;
         }
         *start_at >= horizon
+    });
+
+    let day_cutoff = local_day(horizon);
+    state.notified_day.retain(|key, day| {
+        if live.contains(key) {
+            return true;
+        }
+        let trusted_kind = key
+            .split_once('|')
+            .is_some_and(|(kind, _)| trusted_keys.contains(kind));
+        !trusted_kind && day.as_str() >= day_cutoff.as_str()
     });
 }
 

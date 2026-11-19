@@ -5,10 +5,11 @@ use std::fs;
 use std::path::Path;
 use toasty::migration::{MigrationFile, MigrationSet};
 
-pub static ELECTRICITY_MIGRATIONS: MigrationSet = MigrationSet::new(&[MigrationFile::new(
-    1,
-    "0001_init_electricity.sql",
-    r#"
+pub static ELECTRICITY_MIGRATIONS: MigrationSet = MigrationSet::new(&[
+    MigrationFile::new(
+        1,
+        "0001_init_electricity.sql",
+        r#"
     CREATE TABLE IF NOT EXISTS electricity_room_records (
         id TEXT PRIMARY KEY,
         location_json TEXT NOT NULL,
@@ -27,7 +28,15 @@ pub static ELECTRICITY_MIGRATIONS: MigrationSet = MigrationSet::new(&[MigrationF
         updated_at_ms INTEGER NOT NULL
     );
     "#,
-)]);
+    ),
+    MigrationFile::new(
+        2,
+        "0002_balance_observed_at.sql",
+        r#"
+    ALTER TABLE electricity_room_records ADD COLUMN balance_observed_at_ms INTEGER;
+    "#,
+    ),
+]);
 
 #[derive(Default, Deserialize, Serialize)]
 struct LegacyDiskCache {

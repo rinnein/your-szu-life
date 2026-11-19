@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Card, Button, LoadingIndicator } from "material/react";
+import { Card, Button } from "material/react";
 import { Banner, Table } from "./ui";
 import {
   Bar,
@@ -21,8 +21,6 @@ export function ElectricityDetails({
   rate,
   rateError,
   dormLabel,
-  onForceRefresh,
-  refreshing,
   retryRecharges,
   retrying,
 }: {
@@ -32,8 +30,6 @@ export function ElectricityDetails({
   rateError?: boolean;
   /** 本结果所属宿舍（楼栋 + 房间号），用于在配置修改后辨认陈旧数据。 */
   dormLabel?: string;
-  onForceRefresh?: () => void;
-  refreshing?: boolean;
   retryRecharges: () => void;
   retrying: boolean;
 }) {
@@ -58,28 +54,80 @@ export function ElectricityDetails({
     const date = new Date(time).toISOString().slice(0, 10);
     chart.push(byDate.get(date) ?? { date, remaining: null, dailyUsed: null });
   }
+  const observedAt =
+    result.observedAtMs == null
+      ? null
+      : new Date(result.observedAtMs).toLocaleString("zh-CN", {
+          timeZone: "Asia/Shanghai",
+          hour12: false,
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+  const corrected = result.rechargeCreditKwh > 0 || result.elapsedUsedKwh > 0;
+  const blended = summary?.predictionDailyAverage;
+  const elapsedDays =
+    blended != null && blended > 0 && result.elapsedUsedKwh > 0
+      ? result.elapsedUsedKwh / blended
+      : null;
+  // 读数计算直接放进「当前电量」卡片：每个数字都带单位，「估算用电」后面
+  // 用括号写出「日均 × 天数」，才能和「日均用电」卡片的数字对上。
+  const elapsedNote =
+    elapsedDays != null ? `（${elapsedDays.toFixed(3)} 天 × ${fmt(blended)} 度/天）` : "";
+  const balanceTerms = [
+    `读数 ${fmt(result.observedRemaining)} 度`,
+    result.rechargeCreditKwh > 0 ? `＋ 充值记录 ${fmt(result.rechargeCreditKwh)} 度` : null,
+    result.elapsedUsedKwh > 0 ? `− 估算用电 ${fmt(result.elapsedUsedKwh)} 度${elapsedNote}` : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  // 学校允许透支：负余额照实显示成「透支 X 度」，不要夹成 0。
+  const currentBalance = result.currentRemaining ?? 0;
+  const balanceResult =
+    currentBalance < 0 ? `透支 ${fmt(-currentBalance)} 度` : `${fmt(result.currentRemaining)} 度`;
+  const balanceSummary = `${balanceTerms} → ${balanceResult}`;
+  const moneyText = rateError
+    ? "电价换算不可用"
+    : rate == null
+      ? "折算比例加载中"
+      : `折算余额 ${fmt(result.currentRemaining == null ? null : result.currentRemaining * rate)} 元`;
+  const weekly = summary?.weeklyDailyAverage;
+  const monthly = summary?.monthlyDailyAverage;
+  // 两个窗口都有数据时最终估计取均值；只有一侧时如实说明用了哪一侧。
+  const blendNote =
+    weekly != null && monthly != null
+      ? `7 天 ${fmt(weekly)} 度/天 · 31 天 ${fmt(monthly)} 度/天`
+      : weekly != null
+        ? `仅 7 天有数据：${fmt(weekly)} 度/天`
+        : monthly != null
+          ? `仅 31 天有数据：${fmt(monthly)} 度/天`
+          : "近期无有效用电数据";
   const metrics = [
     {
       title: "当前电量",
       value: result.currentRemaining,
       suffix: "度",
-      sub: rateError
-        ? "电价换算不可用"
-        : rate == null
-          ? "折算比例加载中"
-          : `折算余额 ${fmt(result.currentRemaining == null ? null : result.currentRemaining * rate)} 元`,
+      sub: corrected ? (
+        <span className="tabular-nums">{balanceSummary}</span>
+      ) : (
+        <span>{moneyText}</span>
+      ),
     },
     {
       title: "日均用电",
-      value: summary?.dailyAverage,
+      value: summary?.predictionDailyAverage,
       suffix: "度 / 天",
-      sub: `周期内 ${summary?.validDays ?? 0} 天有效数据`,
+      sub: blendNote,
     },
     {
       title: "预计可用天数",
       value: summary?.estimatedDaysLeft,
       suffix: "天",
-      sub: "按最近 3 天有效用电估算",
+      sub:
+        summary?.estimatedDaysLeft == null
+          ? "暂无足够用电数据，无法估算"
+          : "按 7 天与 31 天平均用电估算",
     },
     { title: "周期用电", value: summary?.totalUsed, suffix: "度", sub: "最近 31 天有效用量合计" },
   ];
@@ -99,27 +147,21 @@ export function ElectricityDetails({
       </div>
       <p className="text-sm text-muted">
         {dormLabel && `${dormLabel}。`}
-        读数日期：{summary?.observedDate ?? "暂无数据"}。
-        {summary?.expired ? "读数已过期，无法有效预测。" : "预计可用天数仅供参考。"}{" "}
+        读数时间：{observedAt ?? summary?.observedDate ?? "暂无数据"}。
+        {summary?.expired
+          ? "读数已过期，预计天数按读数时刻推算。"
+          : "门户在 23:59 至次日 12:00 之间更新，预计天数仅供参考。"}{" "}
         {rate != null && `固定换算：${rate} 元/度。`}
       </p>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        {result.cache?.updatedAtMs != null && (
-          <p className="text-sm text-muted">
-            {result.cache.fromCache ? "已加载本地记录" : "记录已更新"} · 最近获取：
-            {new Date(result.cache.updatedAtMs).toLocaleString("zh-CN", {
-              timeZone: "Asia/Shanghai",
-            })}
-            （北京时间）。通常每天 23:59 左右更新，可手动刷新最新数据。
-          </p>
-        )}
-        {onForceRefresh && (
-          <Button variant="text" disabled={refreshing} onClick={onForceRefresh}>
-            {refreshing && <LoadingIndicator size={16} />}
-            强制刷新
-          </Button>
-        )}
-      </div>
+      {result.cache?.updatedAtMs != null && (
+        <p className="text-sm text-muted">
+          {result.cache.fromCache ? "已加载本地记录" : "记录已更新"} · 最近获取：
+          {new Date(result.cache.updatedAtMs).toLocaleString("zh-CN", {
+            timeZone: "Asia/Shanghai",
+          })}
+          （北京时间）。通常每天 23:59 左右更新，可用上方「刷新数据」重新获取。
+        </p>
+      )}
       {summary?.warningReason && (
         <Banner status="warning">
           <Banner.Title>电量不足提醒</Banner.Title>

@@ -26,8 +26,8 @@ type OptionsState =
   | { status: "loading" }
   | { status: "ready" }
   | { status: "error"; message: string };
-/** 数据操作占用：查询（含保存）/ 刷新（非强制）/ 强制刷新，转圈只落在发起动作的按钮上。 */
-type Pending = null | "query" | "refresh" | "force";
+/** 数据操作占用：查询（含保存）/ 刷新数据，转圈只落在发起动作的按钮上。 */
+type Pending = null | "query" | "refresh";
 
 export default function CampusPaymentsElectricityPage() {
   const [campuses, setCampuses] = useState<Campus[]>([]);
@@ -229,18 +229,17 @@ export default function CampusPaymentsElectricityPage() {
     }
     void submit();
   };
-  // 非强制刷新走后端缓存策略（每天 23:59 左右更新）；强制刷新直连门户，
-  // 只在结果区提供，避免与表单区的主操作重复。
-  const refreshLatest = async (forceRefresh: boolean) => {
+  // 「刷新数据」就是直连门户重新取数（force）：页面首次加载走后端缓存策略，
+  // 用户主动点击时不再区分「刷新」和「强制刷新」。
+  const refreshLatest = async () => {
     if (!savedSettings || pending) return;
-    const kind = forceRefresh ? "force" : "refresh";
     const id = ++requestId.current;
-    setPending(kind);
+    setPending("refresh");
     setError(undefined);
     try {
       const next = await invoke<Result>("query_electricity", {
         input: savedSettings,
-        forceRefresh,
+        forceRefresh: true,
       });
       if (id === requestId.current) {
         setResult(next);
@@ -381,7 +380,7 @@ export default function CampusPaymentsElectricityPage() {
                   type="button"
                   variant="filled"
                   disabled={formDisabled}
-                  onClick={() => void refreshLatest(false)}
+                  onClick={() => void refreshLatest()}
                 >
                   {pending === "refresh" && <LoadingIndicator size={16} />}
                   刷新数据
@@ -459,8 +458,6 @@ export default function CampusPaymentsElectricityPage() {
           dormLabel={
             savedSettings ? `${savedSettings.buildingName} ${savedSettings.roomName}` : undefined
           }
-          onForceRefresh={savedSettings ? () => void refreshLatest(true) : undefined}
-          refreshing={pending === "force"}
           retryRecharges={() => void retryRecharges()}
           retrying={retrying}
         />

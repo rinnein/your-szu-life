@@ -14,15 +14,20 @@ pub struct ElectricityLocationSettings {
 #[serde(rename_all = "camelCase")]
 pub struct ElectricityCurrentCache {
     pub location: ElectricityLocationSettings,
+    /// 门户读数上的原始余额；有效余额由 `status()` 按观测时刻与充值实时换算。
     pub remaining: f64,
     pub observed_date: String,
+    /// 余额对应的观测时刻（毫秒时间戳），用于扣减观测之后已经用掉的电量。
+    #[serde(default)]
+    pub observed_at_ms: i64,
     pub fetched_at_ms: i64,
     pub expires_at_ms: i64,
-    pub warning_active: bool,
+    /// 观测时刻的 7 天日均用电；缺失时只按余额阈值判断。
     #[serde(default)]
-    pub estimated_days_left: Option<f64>,
+    pub daily_average: Option<f64>,
+    /// 观测时刻之后、已确认到账的充值电量合计。
     #[serde(default)]
-    pub warning_reason: Option<String>,
+    pub credits_kwh: f64,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
