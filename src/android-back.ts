@@ -15,11 +15,13 @@ declare global {
  *
  * 桥接协议（原生侧只接受本地主框架来源的消息，见 ApplicationBackNavigation）：
  * 前端 → 原生：`toolbar-query`、`parent:yes|no`、`back-request`、`document`、
- * `route|overlay|loading|system`、`chrome-status-bar:<#rrggbb>`、`chrome-nav-bar:<#rrggbb>`；
+ * `route|overlay|loading|system`、`chrome-status-bar:<#rrggbb>`、`chrome-nav-bar:<#rrggbb>`、
+ * `chrome-accent:<#rrggbb>`；
  * 原生 → 前端：`native-toolbar-ready`、`navigate-back`、`dismiss-overlay`、`wallpaper-changed`。
  *
  * `chrome-status-bar` 是顶部应用栏的当前颜色（滚动会变），`chrome-nav-bar` 是底部导航栏的颜色；
  * 原生侧据此给状态栏与「小白条」上色（桌面端没有该桥，调用方静默跳过）。
+ * `chrome-accent` 是 M3 primary：原生侧落盘后给上课实时活动的进度条与强调色用。
  */
 export function postNativeMessage(message: string): boolean {
   const bridge = window.SzuApplicationBack;

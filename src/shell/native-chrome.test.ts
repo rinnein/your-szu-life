@@ -118,3 +118,26 @@ it("stays silent without the Android bridge", () => {
   pushNativeChromeColors({ statusBar: "#fcf8ff", navigationBar: "#f6f2fa" });
   expect(postMessage).not.toHaveBeenCalled();
 });
+
+it("reads the notification accent from the M3 primary role", () => {
+  tokens.set("--mtrl-sys-color-primary", "#3d5c3a");
+  installComputedStyles();
+
+  expect(readNativeChromeColors().accent).toBe("#3d5c3a");
+});
+
+it("posts the notification accent once and only when it changes", () => {
+  const postMessage = vi.fn();
+  window.SzuApplicationBack = { postMessage, onmessage: null };
+
+  pushNativeChromeColors({ accent: "#3d5c3a" });
+  expect(postMessage.mock.calls.map(([message]) => message)).toEqual(["chrome-accent:#3d5c3a"]);
+
+  // 深浅模式切换会换一套令牌，但同一个值不重复发（与两条系统栏同一套去重）。
+  postMessage.mockClear();
+  pushNativeChromeColors({ accent: "#3d5c3a" });
+  expect(postMessage).not.toHaveBeenCalled();
+
+  pushNativeChromeColors({ accent: "#b0cfaa" });
+  expect(postMessage.mock.calls.map(([message]) => message)).toEqual(["chrome-accent:#b0cfaa"]);
+});

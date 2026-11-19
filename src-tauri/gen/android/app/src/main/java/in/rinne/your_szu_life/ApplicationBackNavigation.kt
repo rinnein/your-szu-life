@@ -119,6 +119,7 @@ class ApplicationBackNavigation(
             }
             // Web 端推来的系统栏颜色：状态栏取顶栏当前颜色（滚动会变），
             // 小白条取底部导航栏颜色。只有本地主框架能改窗口外观，与导航状态同一套来源校验。
+            // 通知强调色（M3 primary）也走这里，原生侧持久化后给上课实时活动用。
             else -> if (policy.acceptsSource(sourceOrigin.toString(), webView.url, true)) {
               when {
                 data.startsWith(CHROME_STATUS_BAR_PREFIX) -> activity.setChromeStatusBarColor(
@@ -126,6 +127,8 @@ class ApplicationBackNavigation(
                 data.startsWith(CHROME_NAVIGATION_BAR_PREFIX) ->
                   activity.setChromeNavigationBarColor(
                     parseCssColor(data.substring(CHROME_NAVIGATION_BAR_PREFIX.length)))
+                data.startsWith(CHROME_ACCENT_PREFIX) -> activity.setNotificationAccent(
+                  parseCssColor(data.substring(CHROME_ACCENT_PREFIX.length)))
               }
             }
           }

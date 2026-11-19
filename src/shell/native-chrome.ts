@@ -5,6 +5,8 @@ import { postNativeMessage } from "../android-back";
 /** 与原生约定的消息前缀；原生侧只接受本地主框架来源。 */
 const STATUS_BAR_MESSAGE = "chrome-status-bar:";
 const NAVIGATION_BAR_MESSAGE = "chrome-nav-bar:";
+/** 通知（上课实时活动）的强调色：取 M3 primary，原生侧持久化后给进度条与强调色用。 */
+const ACCENT_MESSAGE = "chrome-accent:";
 
 /**
  * material 顶栏把真实外壳放在 shadow root 里，颜色在那个元素上。
@@ -42,7 +44,12 @@ function tokenColor(name: string): string | undefined {
   return /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : undefined;
 }
 
-export type NativeChromeColors = { statusBar?: string; navigationBar?: string };
+export type NativeChromeColors = {
+  statusBar?: string;
+  navigationBar?: string;
+  /** 通知强调色（M3 primary）：原生侧用它给实时活动的进度条着色。 */
+  accent?: string;
+};
 
 /**
  * 读取沉浸式系统栏颜色（Web 侧的真实来源，不在前端重复 M3 令牌值）。
@@ -51,6 +58,7 @@ export type NativeChromeColors = { statusBar?: string; navigationBar?: string };
  *   `surface` 换成 `surface-container`，读 computed style 因此始终与它一致；
  *   没有顶栏的页面（统一认证流程）退回 `surface`。
  * - 小白条固定取底部导航栏的颜色（宽屏没有底部导航栏时同样退回 `surface-container`）。
+ * - 通知强调色取 `primary`：深浅模式切换后令牌会变，通知配色因此跟着应用外观走。
  */
 export function readNativeChromeColors(): NativeChromeColors {
   const shell = document
@@ -61,6 +69,7 @@ export function readNativeChromeColors(): NativeChromeColors {
     navigationBar:
       computedBackground(document.querySelector(".app-nav-bar")) ??
       tokenColor("--mtrl-sys-color-surface-container"),
+    accent: tokenColor("--mtrl-sys-color-primary"),
   };
 }
 
@@ -87,6 +96,11 @@ export function pushNativeChromeColors(colors: NativeChromeColors = readNativeCh
   if (navigationBar && navigationBar !== lastPushed.navigationBar) {
     lastPushed = { ...lastPushed, navigationBar };
     postNativeMessage(NAVIGATION_BAR_MESSAGE + navigationBar);
+  }
+  const accent = colors.accent;
+  if (accent && accent !== lastPushed.accent) {
+    lastPushed = { ...lastPushed, accent };
+    postNativeMessage(ACCENT_MESSAGE + accent);
   }
 }
 

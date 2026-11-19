@@ -213,6 +213,9 @@ class TimetableLiveUpdateService : Service() {
      * 构建实时活动通知。ColorOS 流体云读取的是标准 promoted 通知：
      * `ProgressStyle` + `setRequestPromotedOngoing` + `setShortCriticalText`，
      * 因此不要用 RemoteViews、不要 group summary、不要 colorized。
+     *
+     * 卡片文案固定为「标题 = 时间段 + 地点 / 表头 = 课程名 / 正文 = 倒计时」，
+     * 右上角 logo 与强调色由 [NotificationBrand] 统一提供。
      */
     fun buildLiveNotification(
       context: Context,
@@ -221,19 +224,24 @@ class TimetableLiveUpdateService : Service() {
     ): Notification {
       val started = now >= spec.startAtMs
       val status = LiveReminderSession.statusText(spec.startAtMs, now)
+      val texts = LiveReminderSession.notificationTexts(
+        timeLabel = spec.timeLabel,
+        location = spec.location,
+        courseName = spec.courseName,
+        startAtMs = spec.startAtMs,
+        now = now,
+      )
       val progress = LiveReminderSession.progressPercent(spec.startAtMs, spec.leadMinutes, now)
-      val detail = listOf(spec.timeLabel, spec.location)
-        .filter { it.isNotBlank() }
-        .joinToString(" · ")
+      val accent = NotificationBrand.accent(context)
 
       val builder = NotificationCompat.Builder(context, CHANNEL_ID)
         .setSmallIcon(
           ProgressRingIcon.create(progress)
             ?: IconCompat.createWithResource(context, R.drawable.ic_stat_timetable),
         )
-        .setContentTitle(spec.courseName)
-        .setContentText(detail)
-        .setSubText(status)
+        .setContentTitle(texts.title)
+        .setContentText(texts.text)
+        .setSubText(texts.subText)
         .setContentIntent(openIntent(context, spec))
         .setCategory(NotificationCompat.CATEGORY_PROGRESS)
         .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -242,17 +250,16 @@ class TimetableLiveUpdateService : Service() {
         .setOnlyAlertOnce(true)
         .setSilent(true)
         .setProgress(100, progress, false)
-        .setStyle(NotificationCompat.ProgressStyle().setProgress(progress))
+        // 系统倒计时：课前指向上课时间，上课后指向下课时间。否则表头会显示每次重发的时刻。
+        .setWhen(if (started) spec.endAtMs else spec.startAtMs)
+        .setUsesChronometer(true)
+        .setChronometerCountDown(true)
+        .setStyle(NotificationBrand.progressStyle(progress, accent))
+      NotificationBrand.apply(builder, context, accent)
 
       if (supportsPromoted(context)) {
         builder.setRequestPromotedOngoing(true)
         builder.setShortCriticalText(LiveReminderSession.capsuleText(spec.courseName, status))
-      }
-      if (!started) {
-        // 课前保留系统倒计时（点开通知后可见），promoted 卡片用它做辅助说明。
-        builder.setWhen(spec.startAtMs)
-          .setUsesChronometer(true)
-          .setChronometerCountDown(true)
       }
       return builder.build()
     }

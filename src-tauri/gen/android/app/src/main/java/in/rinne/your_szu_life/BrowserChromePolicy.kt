@@ -12,6 +12,9 @@ internal fun shouldShowBrowserToolbar(localDocument: Boolean): Boolean = !localD
 internal const val CHROME_STATUS_BAR_PREFIX = "chrome-status-bar:"
 internal const val CHROME_NAVIGATION_BAR_PREFIX = "chrome-nav-bar:"
 
+/** Web 端推来的通知强调色（M3 primary），给上课实时活动的进度条与强调色用。 */
+internal const val CHROME_ACCENT_PREFIX = "chrome-accent:"
+
 /**
  * 状态栏取「顶部条」当前的颜色。
  *

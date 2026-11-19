@@ -33,6 +33,42 @@ object LiveReminderSession {
     return "还有 $remainingMinutes 分钟"
   }
 
+  /** 通知卡片的三个文字槽位：标题、表头小字与正文。 */
+  data class ClassNotificationTexts(
+    val title: String,
+    val subText: String,
+    val text: String,
+  )
+
+  /**
+   * 实时活动/提醒卡片的文案（两条发布路径共用，避免文案分叉）：
+   * - 标题：`上课时间段 上课地点`（没有地点时只留时间段）；
+   * - 表头小字：课程名；
+   * - 正文：课前的「N 分钟后上课」，上课后「上课中」。
+   *
+   * 倒计时按分钟向上取整，最后一分钟内仍显示「1 分钟后上课」。
+   */
+  fun notificationTexts(
+    timeLabel: String,
+    location: String,
+    courseName: String,
+    startAtMs: Long,
+    now: Long,
+  ): ClassNotificationTexts {
+    val title = listOf(timeLabel, location)
+      .map { it.trim() }
+      .filter { it.isNotEmpty() }
+      .joinToString(" ")
+    val text = if (now >= startAtMs) {
+      "上课中"
+    } else {
+      val remaining = startAtMs - now
+      val minutes = ((remaining + 59_999L) / 60_000L).toInt()
+      "$minutes 分钟后上课"
+    }
+    return ClassNotificationTexts(title = title, subText = courseName.trim(), text = text)
+  }
+
   /**
    * 胶囊上的短文本。系统只显示极少字符，按 sleepy 的真机结论截到 7 个字符；
    * 课前的「还有 N 分钟」压缩成「N分」，上课后显示「上课中」，其它情况用课程名。

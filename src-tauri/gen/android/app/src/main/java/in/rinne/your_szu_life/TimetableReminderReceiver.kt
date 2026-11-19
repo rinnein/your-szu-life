@@ -13,7 +13,8 @@ import androidx.core.app.NotificationManagerCompat
 /**
  * 课表课前提醒的发布/更新/清除入口。
  *
- * 通知内容固定包含课程名、上课时间段与地点；上课前显示倒计时。
+ * 文案固定为「标题 = 时间段 + 地点 / 表头小字 = 课程名 / 正文 = N 分钟后上课」，
+ * 与实时活动共用 [LiveReminderSession.notificationTexts]；logo 与强调色共用 [NotificationBrand]。
  * - Android 16+ 且系统允许 promoted ongoing：ProgressStyle + Live Update；
  * - 其余版本：setProgress + setUsesChronometer(true) + setChronometerCountDown(true)。
  */
@@ -60,23 +61,25 @@ class TimetableReminderReceiver : BroadcastReceiver() {
       val app = context.applicationContext
       val now = System.currentTimeMillis()
       val started = phase == PHASE_START || now >= spec.startAtMs
-      val remainingMinutes = ((spec.startAtMs - now).coerceAtLeast(0L) / 60_000L).toInt()
-      val base = listOf(spec.timeLabel, spec.location)
-        .filter { it.isNotBlank() }
-        .joinToString(" · ")
-      val status = if (started) "已开始" else "还有 $remainingMinutes 分钟"
-      val text = listOf(base, status)
-        .filter { it.isNotBlank() }
-        .joinToString(" · ")
+      val status = LiveReminderSession.statusText(spec.startAtMs, now)
+      val texts = LiveReminderSession.notificationTexts(
+        timeLabel = spec.timeLabel,
+        location = spec.location,
+        courseName = spec.courseName,
+        startAtMs = spec.startAtMs,
+        now = now,
+      )
       val progress = progressPercent(spec, now)
+      val accent = NotificationBrand.accent(app)
       val open = openIntent(app, spec)
       val notificationId = TimetableNotificationBridge.notificationId(spec.sessionId)
 
       val builder = NotificationCompat.Builder(app, TimetableNotificationBridge.CHANNEL_ID)
         .setSmallIcon(R.drawable.ic_stat_timetable)
-        .setContentTitle(spec.courseName)
-        .setContentText(text)
-        .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+        .setContentTitle(texts.title)
+        .setContentText(texts.text)
+        .setSubText(texts.subText)
+        .setStyle(NotificationCompat.BigTextStyle().bigText(texts.text))
         .setContentIntent(open)
         .setOngoing(now < spec.endAtMs)
         .setOnlyAlertOnce(true)
@@ -87,11 +90,12 @@ class TimetableReminderReceiver : BroadcastReceiver() {
         .setWhen(if (started) spec.endAtMs else spec.startAtMs)
         .setUsesChronometer(true)
         .setChronometerCountDown(true)
+      NotificationBrand.apply(builder, app, accent)
 
       if (supportsPromoted(app)) {
         // 非实时活动路径下也尽量带上 promoted 三件套（系统自行决定是否提升）；
         // 有前台服务时这条会被服务的每 15s 发帖覆盖，因此只是兜底。
-        builder.setStyle(NotificationCompat.ProgressStyle().setProgress(progress))
+        builder.setStyle(NotificationBrand.progressStyle(progress, accent))
         builder.setRequestPromotedOngoing(true)
         builder.setShortCriticalText(LiveReminderSession.capsuleText(spec.courseName, status))
       }

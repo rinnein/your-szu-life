@@ -30,6 +30,58 @@ class LiveReminderSessionTest {
   }
 
   @Test
+  fun notificationTextsPutTimeAndPlaceInTheTitleAndCountDownInTheBody() {
+    val texts = LiveReminderSession.notificationTexts(
+      timeLabel = "08:30–10:05",
+      location = "致理楼 A101",
+      courseName = "概率论",
+      startAtMs = base,
+      now = base - 14 * minute,
+    )
+    assertEquals("08:30–10:05 致理楼 A101", texts.title)
+    assertEquals("概率论", texts.subText)
+    assertEquals("14 分钟后上课", texts.text)
+  }
+
+  @Test
+  fun notificationTextsDropThePlaceWhenThereIsNone() {
+    val texts = LiveReminderSession.notificationTexts(
+      timeLabel = "08:30–10:05",
+      location = "  ",
+      courseName = "概率论",
+      startAtMs = base,
+      now = base - minute,
+    )
+    assertEquals("08:30–10:05", texts.title)
+  }
+
+  @Test
+  fun notificationCountdownRoundsUpSoItNeverSaysZeroMinutes() {
+    // 最后一分钟仍显示「1 分钟后上课」，倒计时按分钟向上取整。
+    assertEquals(
+      "1 分钟后上课",
+      LiveReminderSession.notificationTexts("08:30", "", "概率论", base, base - 30_000L).text,
+    )
+    assertEquals(
+      "20 分钟后上课",
+      LiveReminderSession.notificationTexts("08:30", "", "概率论", base, base - 20 * minute).text,
+    )
+  }
+
+  @Test
+  fun notificationBodySwitchesToInClassAfterTheStart() {
+    val texts = LiveReminderSession.notificationTexts(
+      timeLabel = "08:30–10:05",
+      location = "致理楼 A101",
+      courseName = "概率论",
+      startAtMs = base,
+      now = base + 5 * minute,
+    )
+    assertEquals("上课中", texts.text)
+    assertEquals("概率论", texts.subText)
+  }
+
+  @Test
   fun capsuleTextPrefersCountdownThenClockIn() {
     assertEquals("14分", LiveReminderSession.capsuleText("概率论", "还有 14 分钟"))
     assertEquals("上课中", LiveReminderSession.capsuleText("概率论", "已开始"))

@@ -97,6 +97,16 @@ abstract class ApplicationBackActivity : TauriActivity(), app.tauri.AppBackNavig
     applySystemBars()
   }
 
+  /**
+   * Web 端推来的通知强调色（M3 primary）。
+   *
+   * 只落盘，不动窗口：课程实时活动可能在应用进程被回收后才发布，必须能从
+   * SharedPreferences 读回同一套配色。传 null 表示退回主题色。
+   */
+  internal fun setNotificationAccent(color: Int?) {
+    NotificationBrand.saveAccent(this, color)
+  }
+
   private fun applySystemBars() {
     // 内容区自己画上下两条系统栏区域（Android 15 起系统栏不再上色），
     // 窗口属性只是旧版本系统上的等价做法，图标明暗由 SystemBars 一起决定。
