@@ -14,7 +14,7 @@ import { errorMessage, useAsyncLoad } from "../async-state";
 import { usePending } from "../use-pending";
 import { PointPicker } from "./PointPicker";
 import { selectionArgs, type PointSelection } from "./point-selection";
-import { useAndroid } from "./use-android";
+import { useAndroid } from "../use-android";
 import type { Building, LastPhotoView, ResolvedPoint, TimetableSession } from "./types";
 
 export function SzuSigninDialog({

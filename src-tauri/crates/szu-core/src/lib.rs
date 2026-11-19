@@ -24,6 +24,7 @@ pub mod migrations;
 pub mod netproxy;
 pub mod notification;
 pub mod onboarding;
+pub mod permissions;
 #[cfg(target_os = "android")]
 pub mod platform_tls;
 pub mod ports;

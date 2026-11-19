@@ -125,23 +125,20 @@ pub fn adopt_existing_settings(local_models_ready: bool) -> Result<(), String> {
 
 /// 新增的「自动同步」步骤对已经走完旧向导的安装不再打扰。
 ///
-/// 判据是「除 sync 外的所有步骤都已完成/跳过」：全新安装此时还有待完成步骤，
-/// 迁移不会动它，向导里仍会在认证后出现同步步骤。
+/// 判据是「除新增步骤外的所有步骤都已完成/跳过」：全新安装此时还有待完成步骤，
+/// 迁移不会动它，向导里仍会在认证后出现同步步骤。`permissions` 与 `sync` 一样
+/// 是基线之后才加的，判定时必须一起排除，否则从 pre-sync 版本升级的用户会
+/// 因为缺这两行而连同步步骤都补不上。
+///
+/// 「系统权限」步骤刻意**不**自动补写：旧版本没有统一申请入口，升级上来的
+/// Android 用户本来就可能缺通知/定位等授权，应该让他们在向导里检查一遍。
 fn adopt_sync_step() -> Result<(), String> {
-    use crate::onboarding::{definition, OnboardingStatus, ONBOARDING_DEFINITION, SYNC};
+    use crate::onboarding::{definition, OnboardingStatus, PERMISSIONS, SYNC};
     let rows = crate::preferences::load_onboarding_rows()?;
     if rows.contains_key(SYNC) {
         return Ok(());
     }
-    let others_done = ONBOARDING_DEFINITION
-        .iter()
-        .filter(|step| step.id != SYNC)
-        .all(|step| {
-            rows.get(step.id).is_some_and(|(status, revision)| {
-                *revision >= step.revision && status != OnboardingStatus::Pending.as_str()
-            })
-        });
-    if !others_done {
+    if !all_other_steps_completed(&rows, &[SYNC, PERMISSIONS]) {
         return Ok(());
     }
     if let Some(step) = definition(SYNC) {
@@ -152,6 +149,22 @@ fn adopt_sync_step() -> Result<(), String> {
         )?;
     }
     Ok(())
+}
+
+/// 除 `exclude` 中的步骤外，其余步骤是否全部完成/跳过（revision 必须达到当前定义）。
+fn all_other_steps_completed(
+    rows: &BTreeMap<String, (String, u32)>,
+    exclude: &[&str],
+) -> bool {
+    use crate::onboarding::{OnboardingStatus, ONBOARDING_DEFINITION};
+    ONBOARDING_DEFINITION
+        .iter()
+        .filter(|step| !exclude.contains(&step.id))
+        .all(|step| {
+            rows.get(step.id).is_some_and(|(status, revision)| {
+                *revision >= step.revision && status != OnboardingStatus::Pending.as_str()
+            })
+        })
 }
 
 #[cfg(test)]
@@ -202,5 +215,44 @@ mod tests {
         .unwrap();
         assert_eq!(result, vec![crate::onboarding::MCP]);
         assert_eq!(written, vec![(crate::onboarding::MCP, 1)]);
+    }
+
+    fn rows_for_all_steps(exclude: &[&str]) -> BTreeMap<String, (String, u32)> {
+        crate::onboarding::ONBOARDING_DEFINITION
+            .iter()
+            .filter(|step| !exclude.contains(&step.id))
+            .map(|step| {
+                (
+                    step.id.to_string(),
+                    ("configured".to_string(), step.revision),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn sync_is_adopted_for_pre_sync_installs_without_a_permissions_row() {
+        use crate::onboarding::{AUTH, PERMISSIONS, SYNC};
+
+        // 从 pre-sync 版本升级：sync 与 permissions 都还没有行，但 sync 仍应被补写。
+        let legacy = rows_for_all_steps(&[SYNC, PERMISSIONS]);
+        assert!(all_other_steps_completed(&legacy, &[SYNC, PERMISSIONS]));
+
+        // 权限步骤刻意不补写：升级用户必须看到它，因此这里不检查 permissions。
+        assert!(legacy.get(PERMISSIONS).is_none());
+
+        // 全新安装还有 pending → 不补。
+        let mut pending = rows_for_all_steps(&[SYNC, PERMISSIONS]);
+        pending.insert(AUTH.to_string(), ("pending".to_string(), 1));
+        assert!(!all_other_steps_completed(&pending, &[SYNC, PERMISSIONS]));
+    }
+
+    #[test]
+    fn stale_revision_counts_as_incomplete() {
+        use crate::onboarding::PERMISSIONS;
+
+        let mut rows = rows_for_all_steps(&[PERMISSIONS]);
+        rows.insert(crate::onboarding::AUTH.to_string(), ("configured".to_string(), 0));
+        assert!(!all_other_steps_completed(&rows, &[PERMISSIONS]));
     }
 }

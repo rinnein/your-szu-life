@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import type { StepProps } from "./step-types";
 import { WelcomeStep } from "./WelcomeStep";
 import { AuthStep } from "./AuthStep";
+import { PermissionsStep } from "./PermissionsStep";
 import { SyncStep } from "./SyncStep";
 import { StorageStep } from "./StorageStep";
 import { DormStep } from "./DormStep";
@@ -13,6 +14,7 @@ import { McpStep } from "./McpStep";
 export const STEP_META: Record<string, { label: string; component: ComponentType<StepProps> }> = {
   welcome: { label: "欢迎", component: WelcomeStep },
   auth: { label: "账户与个人信息", component: AuthStep },
+  permissions: { label: "系统权限", component: PermissionsStep },
   sync: { label: "自动同步", component: SyncStep },
   storage: { label: "文件保存位置", component: StorageStep },
   dormitory: { label: "宿舍信息", component: DormStep },

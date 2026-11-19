@@ -6,6 +6,7 @@ export const SETTINGS_TAB_IDS = [
   "profile",
   "appearance",
   "notifications",
+  "permissions",
   "network",
   "storage",
   "models",

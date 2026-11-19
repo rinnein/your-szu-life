@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 import { listen } from "@tauri-apps/api/event";
+import { isAndroidPlatform } from "./os-info";
 import { mockElementRects } from "./test-layout";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -15,6 +16,11 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(),
 }));
+
+vi.mock("./os-info", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./os-info")>();
+  return { ...actual, isAndroidPlatform: vi.fn(async () => false) };
+});
 
 function renderRouterApp(initialEntry = "/settings") {
   const history = createMemoryHistory({
@@ -27,6 +33,7 @@ function renderRouterApp(initialEntry = "/settings") {
 describe("SettingsPage multi-tab and unified local model card", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(isAndroidPlatform).mockResolvedValue(false);
     mockElementRects({ "adaptive-tabs": 1400 });
     vi.stubGlobal(
       "ResizeObserver",
@@ -99,6 +106,17 @@ describe("SettingsPage multi-tab and unified local model card", () => {
         };
       }
       if (command === "list_mesh_devices") return [];
+      if (command === "get_permission_states") {
+        return [
+          { id: "notifications", status: "granted", canRequest: false },
+          { id: "promotedNotifications", status: "unsupported", canRequest: false },
+          { id: "location", status: "granted", canRequest: false },
+          { id: "nearbyWifi", status: "granted", canRequest: false },
+          { id: "camera", status: "granted", canRequest: false },
+          { id: "installPackages", status: "granted", canRequest: false },
+          { id: "exactAlarm", status: "granted", canRequest: false },
+        ];
+      }
       if (command === "get_mcp_server_status") {
         return {
           running: true,
@@ -122,6 +140,8 @@ describe("SettingsPage multi-tab and unified local model card", () => {
     expect(await screen.findByRole("tab", { name: /个人信息/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /外观/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /通知/ })).toBeInTheDocument();
+    // 权限 tab 只在 Android 出现，桌面端不渲染。
+    expect(screen.queryByRole("tab", { name: /权限/ })).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /网络/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /本地模型/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /AI 配置/ })).toBeInTheDocument();
@@ -139,6 +159,23 @@ describe("SettingsPage multi-tab and unified local model card", () => {
     expect(screen.queryByText("隐私信息存储")).not.toBeInTheDocument();
     expect(screen.queryByText("当前使用系统密钥环")).not.toBeInTheDocument();
     expect(invoke).not.toHaveBeenCalledWith("get_credential_storage_status");
+  });
+
+  it("shows the permissions tab and page on Android", async () => {
+    vi.mocked(isAndroidPlatform).mockResolvedValue(true);
+    renderRouterApp("/settings?tab=permissions");
+
+    expect(await screen.findByRole("tab", { name: /权限/ })).toBeInTheDocument();
+    expect(await screen.findByText("需要你授权的权限")).toBeInTheDocument();
+    expect(screen.getByText("POST_NOTIFICATIONS")).toBeInTheDocument();
+  });
+
+  it("falls back to 个人信息 when ?tab=permissions is opened on desktop", async () => {
+    renderRouterApp("/settings?tab=permissions");
+
+    expect(await screen.findByText("账户与个人信息")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /权限/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("需要你授权的权限")).not.toBeInTheDocument();
   });
 
   it("switches to 网络 tab and displays NetworkSettings", async () => {

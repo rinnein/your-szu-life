@@ -5,7 +5,7 @@
  */
 import { Button } from "material/react";
 import { shareStageFor, type ShareState } from "./share-state";
-import { useAndroid } from "./use-android";
+import { useAndroid } from "../use-android";
 
 export interface ShareActions {
   scanOnce: (rollcallId: number) => Promise<void>;

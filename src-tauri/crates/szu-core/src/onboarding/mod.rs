@@ -11,6 +11,7 @@ pub mod commands;
 pub const BASELINE_MARKER: &str = "__baseline__";
 pub const WELCOME: &str = "welcome";
 pub const AUTH: &str = "auth";
+pub const PERMISSIONS: &str = "permissions";
 pub const SYNC: &str = "sync";
 pub const STORAGE: &str = "storage";
 pub const DORMITORY: &str = "dormitory";
@@ -54,7 +55,7 @@ pub struct OnboardingDefinition {
     pub skippable: bool,
 }
 
-pub const ONBOARDING_DEFINITION: [OnboardingDefinition; 9] = [
+pub const ONBOARDING_DEFINITION: [OnboardingDefinition; 10] = [
     OnboardingDefinition {
         id: WELCOME,
         revision: 1,
@@ -64,6 +65,11 @@ pub const ONBOARDING_DEFINITION: [OnboardingDefinition; 9] = [
         id: AUTH,
         revision: 1,
         skippable: false,
+    },
+    OnboardingDefinition {
+        id: PERMISSIONS,
+        revision: 1,
+        skippable: true,
     },
     OnboardingDefinition {
         id: SYNC,
@@ -175,6 +181,9 @@ pub fn compute_state(
                     .and_then(|(status, _)| OnboardingStatus::parse(status))
                     .unwrap_or(OnboardingStatus::Configured)
             } else if definition.id == AUTH && has_profile {
+                OnboardingStatus::Configured
+            } else if definition.id == PERMISSIONS && !cfg!(target_os = "android") {
+                // 桌面端没有需要用户授予的运行时权限：步骤直接视为完成，且不写库。
                 OnboardingStatus::Configured
             } else if definition.id == WELCOME && has_progress {
                 OnboardingStatus::Configured
@@ -320,11 +329,13 @@ mod tests {
         assert_eq!(
             ids,
             vec![
-                WELCOME, AUTH, SYNC, STORAGE, DORMITORY, APPEARANCE, LOCAL_MODEL, AI, MCP
+                WELCOME, AUTH, PERMISSIONS, SYNC, STORAGE, DORMITORY, APPEARANCE, LOCAL_MODEL, AI,
+                MCP
             ]
         );
         assert!(!definition(WELCOME).unwrap().skippable);
         assert!(!definition(AUTH).unwrap().skippable);
+        assert!(definition(PERMISSIONS).unwrap().skippable);
         assert!(definition(SYNC).unwrap().skippable);
         assert!(!definition(STORAGE).unwrap().skippable);
         assert!(definition(DORMITORY).unwrap().skippable);
@@ -332,6 +343,34 @@ mod tests {
         assert!(definition(LOCAL_MODEL).unwrap().skippable);
         assert!(definition(AI).unwrap().skippable);
         assert!(!definition(MCP).unwrap().skippable);
+    }
+
+    #[test]
+    fn upgraded_install_still_sees_the_permissions_step() {
+        // 升级用户的其它步骤都已完成，但没有 permissions 行：迁移不会替他们补写，
+        // Android 上必须重新出现在向导里检查授权；桌面端则派生为已完成。
+        let rows: BTreeMap<String, (String, u32)> = ONBOARDING_DEFINITION
+            .iter()
+            .filter(|step| {
+                step.id != PERMISSIONS && step.id != WELCOME && step.id != AUTH
+            })
+            .map(|step| {
+                (
+                    step.id.to_string(),
+                    (OnboardingStatus::Configured.as_str().to_string(), step.revision),
+                )
+            })
+            .collect();
+        let state = compute_state(&ONBOARDING_DEFINITION, &rows, true, false);
+        let permissions = state
+            .steps
+            .iter()
+            .find(|step| step.id == PERMISSIONS)
+            .expect("permissions step must exist");
+        #[cfg(target_os = "android")]
+        assert_eq!(permissions.status, OnboardingStatus::Pending);
+        #[cfg(not(target_os = "android"))]
+        assert_eq!(permissions.status, OnboardingStatus::Configured);
     }
 
     #[test]

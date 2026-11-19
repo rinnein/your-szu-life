@@ -12,6 +12,7 @@ import {
   LuPalette,
   LuRefreshCw,
   LuServer,
+  LuShieldCheck,
   LuSparkles,
   LuUser,
 } from "react-icons/lu";
@@ -19,6 +20,7 @@ import { ProfileForm } from "./ProfileForm";
 import { PageShell } from "./components";
 import { TopAppBar } from "./shell/TopAppBar";
 import { useDebugMode } from "./shell/use-debug-mode";
+import { useAndroid } from "./use-android";
 import { useAuth } from "./auth";
 import { AdaptiveTabs, toast } from "./ui";
 import { errorMessage } from "./async-state";
@@ -28,6 +30,7 @@ import { LocalModelsSettings } from "./LocalModelSettings";
 import McpSettings from "./McpSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { NotificationSettings } from "./NotificationSettings";
+import { PermissionSettings } from "./PermissionSettings";
 import { NetworkSettings } from "./NetworkSettings";
 import StorageSettings from "./StorageSettings";
 import { ShortcutsTable } from "./command-palette";
@@ -44,6 +47,7 @@ const SETTINGS_TABS = [
   { id: "profile", label: "个人信息", icon: LuUser },
   { id: "appearance", label: "外观", icon: LuPalette },
   { id: "notifications", label: "通知", icon: LuBell },
+  { id: "permissions", label: "权限", icon: LuShieldCheck, androidOnly: true },
   { id: "network", label: "网络", icon: LuGlobe },
   { id: "storage", label: "储存", icon: LuHardDrive },
   { id: "models", label: "本地模型", icon: LuCpu },
@@ -58,15 +62,21 @@ const SETTINGS_TABS = [
   label: string;
   icon: typeof LuUser;
   debugOnly?: boolean;
+  androidOnly?: boolean;
 }>;
 
 export default function SettingsPage() {
   const { state, profile, setProfile } = useAuth();
   const navigation = useLogicalNavigation();
   const { enabled: debugEnabled } = useDebugMode();
+  const android = useAndroid();
   const { tab: queryTab, focus } = useSearch({ from: "/settings" });
 
-  const tabs = SETTINGS_TABS.filter((item) => !("debugOnly" in item) || debugEnabled);
+  const tabs = SETTINGS_TABS.filter(
+    (item) =>
+      (!("debugOnly" in item) || debugEnabled) &&
+      (!("androidOnly" in item) || android === "android"),
+  );
   const requestedTab: SettingsTab = queryTab ?? (focus ? "models" : "profile");
   const activeTab: SettingsTab = tabs.some((item) => item.id === requestedTab)
     ? requestedTab
@@ -132,6 +142,8 @@ export default function SettingsPage() {
         return <AppearanceSettings />;
       case "notifications":
         return <NotificationSettings />;
+      case "permissions":
+        return <PermissionSettings />;
       case "network":
         return <NetworkSettings />;
       case "storage":

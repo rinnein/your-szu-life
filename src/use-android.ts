@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { isAndroidPlatform } from "../os-info";
+import { isAndroidPlatform } from "./os-info";
 
 /**
  * 平台判定（异步）收敛成三态：unknown 表示还没拿到结果。
  *
  * 直接 `useState(false)` + `useEffect` 会让 Android 首帧先渲染桌面分支的
  * 操作区再翻转；调用方在 unknown 时不渲染平台相关 UI 即可避免闪烁。
- * 沿用 `src/signin` 现有测试对 `../os-info` 的模块 mock。
+ * 测试沿用对 `../os-info` / `./os-info` 的模块 mock。
  */
 export type PlatformState = "unknown" | "android" | "desktop";
 
