@@ -438,7 +438,9 @@ pub async fn read_resource_by_uri(
         }
     };
 
-    Ok(ReadResourceResult::new(vec![ResourceContents::text(
-        clean_uri, json_text,
-    )]))
+    // rmcp 的 `text(内容, uri)`：先内容后 uri，别写反，否则客户端拿到的
+    // `contents[].uri` 会是 JSON、`text` 才是 URI。
+    Ok(ReadResourceResult::new(vec![
+        ResourceContents::text(json_text, clean_uri).with_mime_type("application/json"),
+    ]))
 }
