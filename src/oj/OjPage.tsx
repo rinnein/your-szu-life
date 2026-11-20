@@ -4,7 +4,7 @@ import { useSearch } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { useChannelSubscription } from "../tauri-channel";
 import { Card, Checkbox, Dialog, LoadingIndicator, TextField, Button } from "material/react";
-import { Chip, bindField, toast } from "../ui";
+import { Chip, AdaptiveTabs, bindField, toast } from "../ui";
 import { ModuleHeader, PageShell } from "../components";
 import { useLogicalNavigation } from "../logical-navigation";
 import { usePageBackHandler } from "../page-back";
@@ -17,6 +17,8 @@ import {
   type OjLists,
   route,
   sessionName,
+  canReview,
+  roleName,
 } from "./types";
 import "./oj.css";
 import { ContestTable } from "./ContestTable";
@@ -28,6 +30,14 @@ import { ojProgressCache, progressScope } from "./progress-store";
 import { readContests, readGroups, writeContests, writeGroups } from "./list-cache";
 import { OcrModelRequiredDialog } from "../OcrModelGate";
 import { useOcrModelStatus } from "../OcrModelSettings";
+import { TaWorkbench } from "./ta/TaWorkbench";
+import { TaContest, type TaNavigate } from "./ta/TaContest";
+import {
+  studentContestRoute,
+  taContestRoute,
+  taProblemRoute,
+  taWorkbenchRoute,
+} from "./ta/ta-route";
 export function ErrorNotice({ message }: { message?: string }) {
   const lastRef = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -59,13 +69,27 @@ export default function OjPage() {
   // 系统子页把班级/测验/答题收在同一个逻辑页里，阶段切换只替换 URL 子状态。
   const enabledSiteId = site?.enabled ? site.id : undefined;
   const inDetail = Boolean(enabledSiteId && search.contest);
+  const taCapable = canReview(site);
+  // 助教默认落在工作台；但带 group/contest 的深链（通知、首页待办、旧链接）
+  // 仍按学生视图打开，避免把学生上下文误判成助教管理。
+  const view =
+    taCapable &&
+    search.view !== "student" &&
+    !(search.view == null && (search.group || search.contest))
+      ? "ta"
+      : "student";
+  const isTaView = taCapable && view === "ta";
+  const inTaContest = Boolean(isTaView && enabledSiteId && search.contest);
+  const inTaReview = Boolean(inTaContest && search.review);
+  const inTaProblem = Boolean(inTaContest && search.problem);
+  const taRefresh = useRef<(() => void) | undefined>(undefined);
   useEffect(() => {
     if (!isOverview) setConfigurationOpen(false);
   }, [isOverview]);
   // replace 不重挂载组件，阶段切换要自己清掉上一阶段的筛选词。
   useEffect(() => {
     setQuery("");
-  }, [search.site, search.group, search.contest]);
+  }, [search.site, search.group, search.contest, search.view, search.taView]);
   useEffect(() => {
     if (search.site && search.group) {
       try {
@@ -120,7 +144,7 @@ export default function OjPage() {
   }, [refresh]);
   // 后端缓存刷新后直接更新当前列表，不再为每个 oj-cache-changed 重新 invoke。
   useEffect(() => {
-    if (!site?.enabled || search.contest) return;
+    if (!site?.enabled || search.contest || isTaView) return;
     // 测验阶段也同步班级列表：只有单个班级时「切换班级」没有意义。
     const channelGroups = lists.groups[site.id];
     if (channelGroups) {
@@ -134,10 +158,10 @@ export default function OjPage() {
         writeContests(site.id, search.group, rows);
       }
     }
-  }, [lists, site?.id, site?.enabled, search.group, search.contest]);
+  }, [lists, site?.id, site?.enabled, search.group, search.contest, isTaView]);
   useEffect(() => {
     let active = true;
-    if (!site?.enabled || search.contest) {
+    if (!site?.enabled || search.contest || isTaView) {
       return;
     }
     const siteId = site.id;
@@ -184,15 +208,16 @@ export default function OjPage() {
     return () => {
       active = false;
     };
-  }, [site?.id, site?.username, site?.enabled, search.group, search.contest, refresh]);
+  }, [site?.id, site?.username, site?.enabled, search.group, search.contest, isTaView, refresh]);
   // 系统只有一个班级时没有可选的余地：直接进入该班级，跳过手动点击。
   // 等 busy 结束再判断，避免拿正在刷新的旧列表抢跑。
   useEffect(() => {
+    if (isTaView) return;
     if (!enabledSiteId || search.group || search.contest || busy || groups.length !== 1) return;
     void nav.replace(route({ site: enabledSiteId, group: groups[0].id }), {
       resetScroll: true,
     });
-  }, [enabledSiteId, search.group, search.contest, busy, groups, nav]);
+  }, [enabledSiteId, search.group, search.contest, busy, groups, isTaView, nav]);
   useEffect(() => {
     if (ocrStatus?.status === "ready") setOcrRequired(false);
   }, [ocrStatus?.status]);
@@ -219,6 +244,10 @@ export default function OjPage() {
         token: null,
         value: null,
       });
+      if (isTaView) {
+        taRefresh.current?.();
+        return;
+      }
       if (search.group) {
         const rows = await invoke<Contest[]>("get_oj_contests", {
           siteId: site!.id,
@@ -239,11 +268,56 @@ export default function OjPage() {
   // 答题页是同一个逻辑页里的子状态：返回先收回测验列表，而不是退出系统。
   const backToList = useCallback(async () => {
     if (!enabledSiteId || !search.contest) return;
-    await nav.replace(route({ site: enabledSiteId, group: search.group }), {
+    await nav.replace(
+      route({
+        site: enabledSiteId,
+        group: search.group,
+        view: search.view,
+      }),
+      { resetScroll: true },
+    );
+  }, [enabledSiteId, nav, search.contest, search.group, search.view]);
+  const backToTa = useCallback(async () => {
+    if (!enabledSiteId || !search.contest) return;
+    if (search.review) {
+      await nav.replace(taContestRoute(enabledSiteId, search.contest, "students"), {
+        resetScroll: true,
+      });
+      return;
+    }
+    if (search.problem) {
+      await nav.replace(taProblemRoute(enabledSiteId, search.contest), {
+        resetScroll: true,
+      });
+      return;
+    }
+    await nav.replace(taWorkbenchRoute(enabledSiteId), { resetScroll: true });
+  }, [enabledSiteId, nav, search.contest, search.problem, search.review]);
+  usePageBackHandler(
+    isTaView ? (inTaContest ? backToTa : undefined) : inDetail ? backToList : undefined,
+  );
+  const navigateTa = (next: TaNavigate) => {
+    if (!site || !search.contest) return;
+    void nav.replace(
+      route({
+        site: site.id,
+        view: "ta",
+        contest: search.contest,
+        taView: next.taView,
+        taTab: next.taTab,
+        problem: next.problem || undefined,
+        review: next.review || undefined,
+        codeSubmission: next.codeSubmission || undefined,
+      }),
+      { resetScroll: true },
+    );
+  };
+  const openStudentView = (problemKey: string) => {
+    if (!site || !search.contest) return;
+    void nav.replace(studentContestRoute(site.id, search.contest, problemKey, "answer"), {
       resetScroll: true,
     });
-  }, [enabledSiteId, nav, search.contest, search.group]);
-  usePageBackHandler(inDetail ? backToList : undefined);
+  };
   const items =
     snapshot?.sites.filter((s) =>
       `${s.name} ${s.url} ${s.username}`.toLowerCase().includes(query.toLowerCase()),
@@ -261,54 +335,76 @@ export default function OjPage() {
       <ModuleHeader
         title={site?.name ?? "OJ"}
         description={site ? site.url : "OJ · 班级、测验与练习"}
-        backLabel={inDetail ? "返回测验列表" : undefined}
-        onBack={inDetail ? () => void backToList() : undefined}
+        backLabel={
+          inTaReview
+            ? "返回批阅列表"
+            : inTaProblem
+              ? "返回题目列表"
+              : inTaContest
+                ? "返回助教工作台"
+                : inDetail
+                  ? "返回测验列表"
+                  : undefined
+        }
+        onBack={
+          inTaContest ? () => void backToTa() : inDetail ? () => void backToList() : undefined
+        }
         actions={
           <>
-            <Button
-              variant="tonal"
-              disabled={busy}
-              onClick={() =>
-                void action(async () => {
-                  await invoke("refresh_oj");
-                  if (site) {
-                    if (search.group) {
-                      const rows = await invoke<Contest[]>("get_oj_contests", {
-                        siteId: site.id,
-                        groupId: search.group,
-                        force: true,
-                      });
-                      ojProgressCache.invalidate(
-                        progressScope(site),
-                        rows.map((c) => c.id),
-                        true,
-                      );
-                      setContests(rows);
-                      writeContests(site.id, search.group, rows);
-                    } else {
-                      const rows = await invoke<Group[]>("get_oj_groups", {
-                        siteId: site.id,
-                        force: true,
-                      });
-                      setGroups(rows);
-                      writeGroups(site.id, rows);
-                    }
-                  }
-                })
-              }
-            >
-              刷新
-            </Button>
-            {enabledSiteId && search.group && !search.contest && groups.length !== 1 && (
+            {(!isTaView || !search.contest) && (
               <Button
                 variant="tonal"
-                onClick={() =>
-                  void nav.replace(route({ site: enabledSiteId }), { resetScroll: true })
-                }
+                disabled={busy}
+                onClick={() => {
+                  if (isTaView) {
+                    taRefresh.current?.();
+                    return;
+                  }
+                  void action(async () => {
+                    await invoke("refresh_oj");
+                    if (site) {
+                      if (search.group) {
+                        const rows = await invoke<Contest[]>("get_oj_contests", {
+                          siteId: site.id,
+                          groupId: search.group,
+                          force: true,
+                        });
+                        ojProgressCache.invalidate(
+                          progressScope(site),
+                          rows.map((c) => c.id),
+                          true,
+                        );
+                        setContests(rows);
+                        writeContests(site.id, search.group, rows);
+                      } else {
+                        const rows = await invoke<Group[]>("get_oj_groups", {
+                          siteId: site.id,
+                          force: true,
+                        });
+                        setGroups(rows);
+                        writeGroups(site.id, rows);
+                      }
+                    }
+                  });
+                }}
               >
-                切换班级
+                刷新
               </Button>
             )}
+            {!isTaView &&
+              enabledSiteId &&
+              search.group &&
+              !search.contest &&
+              groups.length !== 1 && (
+                <Button
+                  variant="tonal"
+                  onClick={() =>
+                    void nav.replace(route({ site: enabledSiteId }), { resetScroll: true })
+                  }
+                >
+                  切换班级
+                </Button>
+              )}
             {snapshot?.desktop && isOverview && (
               <Button
                 variant="tonal"
@@ -356,6 +452,7 @@ export default function OjPage() {
               {site.enabled ? sessionName[site.session] : "未配置"}
             </Chip>
             <span>{site.username}</span>
+            {taCapable && <Chip color="accent">{roleName[site.permission ?? 3]}</Chip>}
             <span className="oj-muted">{site.message}</span>
             {site.enabled && site.session !== "ready" && site.session !== "captchaRequired" && (
               <Button variant="tonal" disabled={busy} onClick={() => void connect()}>
@@ -364,11 +461,36 @@ export default function OjPage() {
             )}
           </div>
         )}
+        {site && site.enabled && taCapable && !search.contest && (
+          <AdaptiveTabs
+            className="oj-ta-mode-tabs"
+            items={[
+              { value: "ta", label: "助教工作台" },
+              { value: "student", label: "我的班级" },
+            ]}
+            value={view}
+            onChange={(next) => {
+              if (next === "ta") {
+                void nav.replace(taWorkbenchRoute(site.id), { resetScroll: true });
+              } else {
+                void nav.replace(route({ site: site.id, view: "student" }), {
+                  resetScroll: true,
+                });
+              }
+            }}
+            label="OJ 视图"
+            ariaLabel="选择 OJ 视图"
+          />
+        )}
         {site && site.enabled && site.session === "captchaRequired" && (
           <OjCaptchaInput
             site={site}
             onAuthenticated={async () => {
               await refresh();
+              if (isTaView) {
+                taRefresh.current?.();
+                return;
+              }
               if (search.group) {
                 const rows = await invoke<Contest[]>("get_oj_contests", {
                   siteId: site.id,
@@ -421,10 +543,20 @@ export default function OjPage() {
                           {s.username && <p>{s.username}</p>}
                         </div>
                         <div slot="actions">
+                          {enabled && canReview(s) && s.permission != null && (
+                            <Chip color="accent">{roleName[s.permission]}</Chip>
+                          )}
                           <Button
                             variant={enabled ? "filled" : "tonal"}
                             onClick={() =>
-                              enabled ? void nav.push(route({ site: s.id })) : setEdit(s)
+                              enabled
+                                ? void nav.push(
+                                    route({
+                                      site: s.id,
+                                      view: canReview(s) ? "ta" : undefined,
+                                    }),
+                                  )
+                                : setEdit(s)
                             }
                           >
                             {enabled ? "进入班级" : "配置账号"}
@@ -445,80 +577,113 @@ export default function OjPage() {
             ))}
           </>
         )}
-        {site?.enabled && !search.contest && (
-          <>
-            <TextField
-              label={search.group ? "查找测验" : "查找班级"}
-              value={query}
-              {...bindField(setQuery)}
-              placeholder={search.group ? "输入测验名称" : "输入班级名称"}
+        {site?.enabled &&
+          !search.contest &&
+          (isTaView ? (
+            <TaWorkbench
+              key={`${site.id}:${site.username}:${site.sessionGeneration ?? ""}`}
+              site={site}
+              onOpenContest={(contest) =>
+                void nav.replace(taContestRoute(site.id, contest.id), {
+                  resetScroll: true,
+                })
+              }
+              registerRefresh={(refresh) => {
+                taRefresh.current = refresh;
+              }}
             />
-            {!search.group ? (
-              <div className="oj-site-grid">
-                {groups
-                  .filter((g) => g.name.includes(query))
-                  .map((g) => (
-                    <Card key={g.id} variant="outlined" headline={g.name}>
-                      <div slot="actions">
-                        <Button
-                          variant="tonal"
-                          onClick={() =>
-                            void nav.replace(route({ site: site.id, group: g.id }), {
-                              resetScroll: true,
-                            })
-                          }
-                        >
-                          查看测验
-                        </Button>
-                      </div>
-                    </Card>
-                  ))}
-              </div>
-            ) : (
-              <ContestTable
-                siteId={site.id}
-                account={site.username}
-                siteUrl={site.url}
-                sessionGeneration={site.sessionGeneration}
-                contests={contests}
-                query={query}
-                onOpen={(contest) =>
-                  void nav.replace(
-                    route({ site: site.id, group: search.group, contest: contest.id }),
-                    { resetScroll: true },
-                  )
-                }
+          ) : (
+            <>
+              <TextField
+                label={search.group ? "查找测验" : "查找班级"}
+                value={query}
+                {...bindField(setQuery)}
+                placeholder={search.group ? "输入测验名称" : "输入班级名称"}
               />
-            )}
-            {!busy && !(search.group ? contests.length : groups.length) && (
-              <p className="oj-muted">暂无可见的{search.group ? "测验" : "班级"}。</p>
-            )}
-          </>
-        )}
-        {site?.enabled && search.contest && (
-          <OjPaper
-            key={`${site.id}:${site.username}:${search.contest}`}
-            site={site}
-            contestId={search.contest}
-            groupId={search.group}
-            selected={search.problem}
-            tab={search.tab}
-            desktop={snapshot?.desktop ?? false}
-            port={snapshot?.companionPort ?? 27121}
-            onGroupResolved={(groupId) => {
-              // 通知/待办深链只带 contest：补上班级后返回键才能回到该班的测验列表。
-              if (search.group || !search.contest) return;
-              void nav.replace(
-                route({
-                  site: site.id,
-                  group: groupId,
-                  contest: search.contest,
-                  problem: search.problem,
-                }),
-              );
-            }}
-          />
-        )}
+              {!search.group ? (
+                <div className="oj-site-grid">
+                  {groups
+                    .filter((g) => g.name.includes(query))
+                    .map((g) => (
+                      <Card key={g.id} variant="outlined" headline={g.name}>
+                        <div slot="actions">
+                          <Button
+                            variant="tonal"
+                            onClick={() =>
+                              void nav.replace(route({ site: site.id, group: g.id }), {
+                                resetScroll: true,
+                              })
+                            }
+                          >
+                            查看测验
+                          </Button>
+                        </div>
+                      </Card>
+                    ))}
+                </div>
+              ) : (
+                <ContestTable
+                  siteId={site.id}
+                  account={site.username}
+                  siteUrl={site.url}
+                  sessionGeneration={site.sessionGeneration}
+                  contests={contests}
+                  query={query}
+                  onOpen={(contest) =>
+                    void nav.replace(
+                      route({ site: site.id, group: search.group, contest: contest.id }),
+                      { resetScroll: true },
+                    )
+                  }
+                />
+              )}
+              {!busy && !(search.group ? contests.length : groups.length) && (
+                <p className="oj-muted">暂无可见的{search.group ? "测验" : "班级"}。</p>
+              )}
+            </>
+          ))}
+        {site?.enabled &&
+          search.contest &&
+          (isTaView ? (
+            <TaContest
+              key={`${site.id}:${site.username}:${search.contest}`}
+              site={site}
+              contestId={search.contest}
+              taView={search.taView}
+              taTab={search.taTab}
+              problem={search.problem}
+              review={search.review}
+              codeSubmission={search.codeSubmission}
+              desktop={snapshot?.desktop ?? false}
+              onNavigate={navigateTa}
+              onOpenStudent={openStudentView}
+            />
+          ) : (
+            <OjPaper
+              key={`${site.id}:${site.username}:${search.contest}`}
+              site={site}
+              contestId={search.contest}
+              groupId={search.group}
+              selected={search.problem}
+              tab={search.tab}
+              view={search.view}
+              desktop={snapshot?.desktop ?? false}
+              port={snapshot?.companionPort ?? 27121}
+              onGroupResolved={(groupId) => {
+                // 通知/待办深链只带 contest：补上班级后返回键才能回到该班的测验列表。
+                if (search.group || !search.contest) return;
+                void nav.replace(
+                  route({
+                    site: site.id,
+                    group: groupId,
+                    contest: search.contest,
+                    problem: search.problem,
+                    view: search.view,
+                  }),
+                );
+              }}
+            />
+          ))}
         {edit && (
           <SiteEditor
             site={edit === "new" ? undefined : edit}

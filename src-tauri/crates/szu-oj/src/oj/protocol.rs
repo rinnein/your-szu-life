@@ -21,6 +21,61 @@ pub fn timestamp(v: &Value) -> Result<i64, Error> {
         .map(|t| t.timestamp_millis())
         .map_err(|_| Error::local("测验时间格式无效"))
 }
+/// 可选时间字段：null/空串/非法格式一律视为缺失。
+pub fn timestamp_opt(v: &Value) -> Option<i64> {
+    if let Some(n) = v.as_i64() {
+        return Some(if n.abs() < 10_000_000_000 { n * 1000 } else { n });
+    }
+    v.as_str()
+        .filter(|s| !s.is_empty())
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|t| t.timestamp_millis())
+}
+pub fn number_opt(v: &Value) -> Option<f64> {
+    v.as_f64()
+        .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
+        .filter(|n| n.is_finite())
+}
+pub fn review_user(v: &Value) -> Result<ReviewUser, Error> {
+    if let Some(name) = v.as_str() {
+        return Ok(ReviewUser {
+            id: name.into(),
+            username: name.into(),
+            name: String::new(),
+            nickname: String::new(),
+        });
+    }
+    let username = v["username"]
+        .as_str()
+        .ok_or_else(|| Error::local("用户数据缺失"))?;
+    Ok(ReviewUser {
+        id: id(&v["id"]).unwrap_or_else(|_| username.to_string()),
+        username: username.into(),
+        name: text(&v["name"]),
+        nickname: text(&v["nickname"]),
+    })
+}
+pub fn managed_contest(v: &Value) -> Result<ManagedContest, Error> {
+    let group = &v["group"];
+    let (group_id, group_name) = if group.is_object() {
+        (id(&group["id"]).unwrap_or_default(), text(&group["name"]))
+    } else {
+        (id(group).unwrap_or_default(), String::new())
+    };
+    Ok(ManagedContest {
+        id: id(&v["id"])?,
+        group_id,
+        group_name,
+        title: text(&v["title"]),
+        description: text(&v["description"]),
+        begin: timestamp(&v["begin_time"])?,
+        end: timestamp(&v["end_time"])?,
+        is_exam: v["is_exam"].as_bool().unwrap_or(false),
+        scored_status: text(&v["scored_status"]),
+        score_start_time: timestamp_opt(&v["score_start_time"]),
+        total_score: number_opt(&v["total_score"]),
+    })
+}
 pub fn group(v: &Value) -> Result<Group, Error> {
     Ok(Group {
         id: id(&v["id"])?,

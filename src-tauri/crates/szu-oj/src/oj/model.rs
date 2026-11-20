@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -11,6 +11,10 @@ pub struct Site {
     pub builtin: bool,
     #[serde(default = "yes")]
     pub reminders: bool,
+    /// 上次登录确认的平台角色：0 管理员 / 1 教师 / 2 助教 / 3 学生。
+    /// 只用于站点卡片标记与助教入口判断，后端每次 manage 调用仍会重新校验。
+    #[serde(default)]
+    pub permission: Option<u8>,
 }
 fn yes() -> bool {
     true
@@ -34,6 +38,7 @@ pub fn defaults() -> Vec<Site> {
         url: format!("http://172.31.221.{ip}/"),
         builtin: true,
         reminders: true,
+        permission: None,
     })
     .collect()
 }
@@ -258,6 +263,212 @@ pub struct Paper {
     pub source_url: String,
     pub preferences: Preferences,
 }
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewUser {
+    pub id: String,
+    pub username: String,
+    pub name: String,
+    #[serde(default)]
+    pub nickname: String,
+}
+
+/// 助教工作台的管理测验列表项。字段取自 `GET /api/manage/contests/`。
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedContest {
+    pub id: String,
+    pub group_id: String,
+    pub group_name: String,
+    pub title: String,
+    pub description: String,
+    pub begin: i64,
+    pub end: i64,
+    pub is_exam: bool,
+    /// `waiting` / `running` / `done` / 其它错误状态；空串表示后端未提供。
+    pub scored_status: String,
+    pub score_start_time: Option<i64>,
+    pub total_score: Option<f64>,
+}
+
+#[derive(Clone, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedContests {
+    pub rows: Vec<ManagedContest>,
+    /// 服务端当前时间（毫秒），用于在不依赖设备时钟的情况下判断阶段。
+    pub now: i64,
+}
+
+#[derive(Clone, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedContestDetail {
+    #[serde(flatten)]
+    pub contest: ManagedContest,
+    pub problems: Vec<Problem>,
+    /// 服务端当前时间（毫秒）。
+    pub now: i64,
+}
+
+#[derive(Clone, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewSummary {
+    pub id: String,
+    pub user: ReviewUser,
+    pub total_score: f64,
+    pub judged: bool,
+    pub checked: bool,
+}
+
+#[derive(Clone, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewList {
+    pub count: u64,
+    pub rows: Vec<ReviewSummary>,
+}
+
+/// 批阅页单题视图。编程/补全题带代码与判题结果；选择/填空带学生答案；
+/// 问答题带文本答案与教师评语。
+#[derive(Clone, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewProblem {
+    pub id: String,
+    pub display_label: String,
+    pub kind: u8,
+    pub title: String,
+    pub description: String,
+    pub hint: String,
+    pub max_score: f64,
+    pub score: f64,
+    pub submission_id: Option<String>,
+    #[serde(default)]
+    pub answer: Value,
+    #[serde(default)]
+    pub choices: Vec<String>,
+    #[serde(default)]
+    pub multiple: bool,
+    #[serde(default)]
+    pub blanks: usize,
+    pub code: Option<String>,
+    pub language: Option<String>,
+    pub status: Option<i32>,
+    pub comment: String,
+    /// 参考答案：编程为代码字符串，选择/填空为选项下标数组，问答为文本。
+    pub reference_answer: Option<Value>,
+    /// 编程/补全提交的原始判题结果，用于展示测试点与隐藏输出。
+    pub judge: Option<Value>,
+    pub load_error: Option<String>,
+}
+
+#[derive(Clone, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewDetail {
+    pub contest: ManagedContest,
+    pub submission_id: String,
+    pub user: ReviewUser,
+    pub total_score: f64,
+    pub judged: bool,
+    pub checked: bool,
+    pub problems: Vec<ReviewProblem>,
+    /// 参考答案等非关键数据读取失败的提示，不阻塞批阅。
+    pub warnings: Vec<String>,
+}
+
+#[derive(Clone, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ProblemSubmissionRow {
+    pub id: String,
+    pub user: ReviewUser,
+    pub language: String,
+    pub status: Option<i32>,
+    pub create_time: Value,
+    pub cpu_time: Option<f64>,
+    pub real_time: Option<f64>,
+    pub memory: Option<f64>,
+    pub can_view_detail: bool,
+}
+
+#[derive(Clone, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ProblemSubmissions {
+    pub count: u64,
+    pub rows: Vec<ProblemSubmissionRow>,
+}
+
+#[derive(Clone, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct TaSubmission {
+    pub submission: Value,
+    /// `coding_problem` / `code_fill_problem` 返回的 `test_output`。
+    pub expected: Vec<String>,
+    /// 同一接口返回的 `sample_output`。
+    pub samples: Vec<String>,
+    pub warnings: Vec<String>,
+}
+
+/// 批阅保存的分数结构。wire 后的字段名与平台前端一致。
+#[derive(Clone, Default, Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewScores {
+    #[serde(default)]
+    pub coding: BTreeMap<String, BTreeMap<String, f64>>,
+    #[serde(default)]
+    pub code_fill: BTreeMap<String, BTreeMap<String, f64>>,
+    #[serde(default)]
+    pub qa: BTreeMap<String, BTreeMap<String, f64>>,
+    #[serde(default)]
+    pub choice: BTreeMap<String, f64>,
+    #[serde(default)]
+    pub fill_in: BTreeMap<String, f64>,
+}
+impl ReviewScores {
+    pub fn wire(&self) -> Value {
+        json!({
+            "coding_score": self.coding,
+            "code_fill_score": self.code_fill,
+            "qa_score": self.qa,
+            "choice_score": self.choice,
+            "fill_in_score": self.fill_in,
+        })
+    }
+}
+
+#[derive(Clone, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveReviewInput {
+    pub site_id: String,
+    pub contest_id: String,
+    pub submission_id: String,
+    pub scores: ReviewScores,
+}
+
+#[derive(Clone, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewCommentInput {
+    pub site_id: String,
+    pub submission_id: String,
+    pub kind: u8,
+    pub comment: String,
+}
+
+/// 写操作结果。`uncertain` 表示请求可能已在服务端生效，前端必须刷新确认而不是重发。
+#[derive(Clone, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteResult {
+    pub saved: bool,
+    pub uncertain: bool,
+    pub message: String,
+}
+
+/// 批阅保存结果：成功后带回刷新后的答卷，刷新失败时仍保留 `saved=true`。
+#[derive(Clone, Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveReviewResult {
+    pub saved: bool,
+    pub uncertain: bool,
+    pub message: String,
+    pub detail: Option<ReviewDetail>,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Notice {

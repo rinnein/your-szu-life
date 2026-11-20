@@ -97,7 +97,7 @@ export function Html({ html, base, siteId }: { html: string; base: string; siteI
     <div className="oj-statement" ref={element} dangerouslySetInnerHTML={{ __html: safeHtml }} />
   );
 }
-function Statement({ p, paper, siteId }: { p: Problem; paper: Paper; siteId: string }) {
+export function Statement({ p, paper, siteId }: { p: Problem; paper: Paper; siteId: string }) {
   return (
     <div className="oj-statement-sections">
       <div className="oj-actions">
@@ -163,6 +163,7 @@ export function OjPaper({
   groupId,
   selected,
   tab,
+  view,
   desktop,
   port,
   onGroupResolved,
@@ -172,6 +173,8 @@ export function OjPaper({
   groupId?: string;
   selected?: string;
   tab: string;
+  /** 保留站点视图子状态：助教切到「我的班级」后，题目/标签切换不能跳回工作台。 */
+  view?: "ta" | "student";
   desktop: boolean;
   port: number;
   /** 深链只有 contest、没有 group 时，用 paper 自带的班级补全 URL。 */
@@ -451,6 +454,7 @@ export function OjPaper({
         contest: contestId,
         problem: updates.problem ?? pk,
         tab: updates.tab ?? tab,
+        view,
       }),
     );
 

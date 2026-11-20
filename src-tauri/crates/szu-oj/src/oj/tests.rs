@@ -1420,3 +1420,291 @@ fn reload_synced_accounts_rebuilds_entries_without_restart() {
         .unwrap();
     assert!(!view.enabled);
 }
+
+#[tokio::test]
+async fn profile_permission_is_captured_and_snapshot_exposes_it() {
+    let (url, handle) = server(vec![(
+        200,
+        json!({"id":9,"username":"student","permission":2}),
+    )]);
+    let (_dir, s) = setup();
+    let id = s.save_site(input(&url)).unwrap();
+    let e = s.entry(&id).unwrap();
+    s.login(&id, &e, None).await.unwrap();
+    assert_eq!(e.state.lock().unwrap().permission, Some(2));
+    let view = s
+        .snapshot()
+        .sites
+        .into_iter()
+        .find(|site| site.site.id == id)
+        .unwrap();
+    assert_eq!(view.site.permission, Some(2));
+    handle.join().unwrap();
+}
+
+#[tokio::test]
+async fn review_commands_reject_students_before_network() {
+    let (_dir, s) = setup();
+    let id = s.save_site(input("http://127.0.0.1:9/")).unwrap();
+    let e = s.entry(&id).unwrap();
+    {
+        let mut state = e.state.lock().unwrap();
+        state.session = Session::Ready;
+        state.permission = Some(3);
+    }
+    let error = s.managed_contests(&id).await.unwrap_err();
+    assert!(error.contains("助教权限"));
+}
+
+#[tokio::test]
+async fn managed_contests_are_never_cached_or_added_to_deadlines() {
+    let row = json!({
+        "id": 12,
+        "group": {"id": 3, "name": "班级"},
+        "title": "测验",
+        "begin_time": "2026-10-04T00:00:00+08:00",
+        "end_time": "2026-10-05T00:00:00+08:00",
+        "is_exam": false,
+        "scored_status": "done"
+    });
+    let (url, handle) = server(vec![
+        (200, json!({"count":1,"results":[row.clone()]})),
+        (200, json!({"local_time":"2026-10-04T12:00:00+08:00"})),
+        (200, json!({"count":1,"results":[row]})),
+        (200, json!({"local_time":"2026-10-04T12:00:00+08:00"})),
+    ]);
+    let (_dir, s) = setup();
+    let id = s.save_site(input(&url)).unwrap();
+    let e = s.entry(&id).unwrap();
+    {
+        let mut state = e.state.lock().unwrap();
+        state.session = Session::Ready;
+        state.permission = Some(2);
+    }
+    let first = s.managed_contests(&id).await.unwrap();
+    let second = s.managed_contests(&id).await.unwrap();
+    assert_eq!(first.rows.len(), 1);
+    assert_eq!(second.rows.len(), 1);
+    assert_eq!(first.rows[0].group_name, "班级");
+    assert_eq!(first.now, second.now);
+    let data = persistence::read(&s.path).unwrap();
+    assert!(data.groups.is_empty());
+    assert!(data.contests.is_empty());
+    assert!(s.deadlines_view().rows.is_empty());
+    let requests = handle.join().unwrap();
+    assert_eq!(requests.len(), 4);
+    assert!(requests[0].starts_with("GET /api/manage/contests/"));
+    assert!(requests[1].starts_with("GET /api/info/time/"));
+    assert!(requests[2].starts_with("GET /api/manage/contests/"));
+}
+
+#[tokio::test]
+async fn review_detail_parses_code_score_and_reference() {
+    let contest = json!({
+        "id": 12,
+        "group": {"id": 3, "name": "班级"},
+        "title": "测验",
+        "description": "",
+        "begin_time": "2026-10-04T00:00:00+08:00",
+        "end_time": "2026-10-05T00:00:00+08:00",
+        "is_exam": false,
+        "scored_status": "done",
+        "problem_json": {"0": [{
+            "id": 1,
+            "title": "相加",
+            "description": "<p>计算</p>",
+            "sample_input": ["1 2\n"],
+            "sample_output": ["3"],
+            "languages": ["cpp"],
+            "hint": "提示"
+        }]},
+        "problem_score": {"0": {"1": 20}}
+    });
+    let (url, handle) = server(vec![
+        (200, contest),
+        (
+            200,
+            json!({
+                "id": 77,
+                "user": {"id": 9, "username": "s1", "name": "学生"},
+                "total_score": 15,
+                "judged": true,
+                "checked": false,
+                "coding_score": {"1": {"88": 15}}
+            }),
+        ),
+        (
+            200,
+            json!({"id":88,"code":"print(1)","language":"cpp","status":0,"result":{"data":[]}}),
+        ),
+        (200, json!({"id":1,"answer":"print(2)"})),
+    ]);
+    let (_dir, s) = setup();
+    let id = s.save_site(input(&url)).unwrap();
+    let e = s.entry(&id).unwrap();
+    {
+        let mut state = e.state.lock().unwrap();
+        state.session = Session::Ready;
+        state.permission = Some(2);
+    }
+    let detail = s.review_detail(&id, "12", "77").await.unwrap();
+    assert_eq!(detail.user.username, "s1");
+    assert_eq!(detail.total_score, 15.);
+    assert!(detail.judged);
+    assert!(!detail.checked);
+    assert_eq!(detail.problems.len(), 1);
+    let problem = &detail.problems[0];
+    assert_eq!(problem.submission_id.as_deref(), Some("88"));
+    assert_eq!(problem.score, 15.);
+    assert_eq!(problem.max_score, 20.);
+    assert_eq!(problem.code.as_deref(), Some("print(1)"));
+    assert_eq!(problem.reference_answer, Some(json!("print(2)")));
+    handle.join().unwrap();
+}
+
+#[tokio::test]
+async fn save_review_sends_platform_payload_and_never_retries_network_errors() {
+    let contest = json!({
+        "id": 12,
+        "group": {"id": 3, "name": "班级"},
+        "title": "测验",
+        "description": "",
+        "begin_time": "2026-10-04T00:00:00+08:00",
+        "end_time": "2026-10-05T00:00:00+08:00",
+        "is_exam": false,
+        "scored_status": "done",
+        "problem_json": {
+            "0": [{
+                "id": 1,
+                "title": "相加",
+                "description": "",
+                "sample_input": ["1 2\n"],
+                "sample_output": ["3"],
+                "languages": ["cpp"]
+            }],
+            "1": [{"id": 2, "description": "选择", "choice": ["甲", "乙"], "multiple": false}]
+        },
+        "problem_score": {"0": {"1": 20}, "1": {"2": 5}}
+    });
+    let (url, handle) = server(vec![(200, contest), (503, json!({}))]);
+    let (_dir, s) = setup();
+    let id = s.save_site(input(&url)).unwrap();
+    let e = s.entry(&id).unwrap();
+    {
+        let mut state = e.state.lock().unwrap();
+        state.session = Session::Ready;
+        state.permission = Some(2);
+    }
+    let mut scores = ReviewScores::default();
+    scores.coding.insert(
+        "1".into(),
+        [("88".into(), 15.)].into_iter().collect(),
+    );
+    scores.choice.insert("2".into(), 5.);
+    let result = s
+        .save_review(SaveReviewInput {
+            site_id: id.clone(),
+            contest_id: "12".into(),
+            submission_id: "77".into(),
+            scores,
+        })
+        .await
+        .unwrap();
+    assert!(!result.saved);
+    assert!(result.uncertain);
+    let requests = handle.join().unwrap();
+    assert_eq!(requests.len(), 2);
+    assert!(requests[1].starts_with("PATCH /api/manage/contest-submission/77/"));
+    let body: Value = serde_json::from_str(requests[1].split_once("\r\n\r\n").unwrap().1).unwrap();
+    assert_eq!(body["coding_score"]["1"]["88"], 15.);
+    assert_eq!(body["choice_score"]["2"], 5.);
+}
+
+#[tokio::test]
+async fn problem_submissions_and_ta_submission_expose_expected_outputs() {
+    let (url, handle) = server(vec![
+        (
+            200,
+            json!({
+                "count": 1,
+                "results": [{
+                    "id": 88,
+                    "user": {"id": 9, "username": "s1", "name": "学生"},
+                    "language": "cpp",
+                    "status": -1,
+                    "time": "2026-10-04T12:00:00+08:00",
+                    "cpu_time": 10,
+                    "real_time": 12,
+                    "memory": 1024,
+                    "can_view_detail": true
+                }]
+            }),
+        ),
+        (
+            200,
+            json!({
+                "id": 88,
+                "code": "int main(){}",
+                "status": -1,
+                "result": {"data": [{"test_case": 1, "result": -1, "output": "4"}]}
+            }),
+        ),
+        (200, json!({"test_output": ["3"], "sample_output": ["3"]})),
+    ]);
+    let (_dir, s) = setup();
+    let id = s.save_site(input(&url)).unwrap();
+    let e = s.entry(&id).unwrap();
+    {
+        let mut state = e.state.lock().unwrap();
+        state.session = Session::Ready;
+        state.permission = Some(2);
+    }
+    let list = s
+        .problem_submissions(&id, "12", "1", 0, None, None, 0, 20)
+        .await
+        .unwrap();
+    assert_eq!(list.count, 1);
+    assert_eq!(list.rows[0].user.username, "s1");
+    assert!(list.rows[0].can_view_detail);
+    let submission = s.ta_submission(&id, "12", "1", 0, "88").await.unwrap();
+    assert_eq!(submission.expected, vec!["3"]);
+    assert_eq!(submission.samples, vec!["3"]);
+    let requests = handle.join().unwrap();
+    assert!(requests[0].contains("contest=12"));
+    assert!(requests[0].contains("problem=1"));
+    assert!(requests[2].contains("contest=12"));
+}
+
+#[test]
+fn permission_survives_same_identity_but_resets_when_account_changes() {
+    let (_dir, s) = setup();
+    let id = s.save_site(input("http://oj.test/")).unwrap();
+    {
+        let mut r = s.runtime.lock().unwrap();
+        r.data
+            .sites
+            .iter_mut()
+            .find(|site| site.id == id)
+            .unwrap()
+            .permission = Some(2);
+    }
+    let mut same = input("http://oj.test/");
+    same.id = Some(id.clone());
+    s.save_site(same).unwrap();
+    let permission = || {
+        s.snapshot()
+            .sites
+            .into_iter()
+            .find(|site| site.site.id == id)
+            .unwrap()
+            .site
+            .permission
+    };
+    assert_eq!(permission(), Some(2));
+    let mut changed = input("http://oj.test/");
+    changed.id = Some(id.clone());
+    changed.username = "other".into();
+    s.save_site(changed).unwrap();
+    assert_eq!(permission(), None);
+}
+

@@ -11,7 +11,7 @@ import { listen } from "@tauri-apps/api/event";
 import OjPage, { SiteEditor } from "./OjPage";
 import { OjPaper } from "./OjPaper";
 import { mockElementRects, mockViewportHeight } from "../test-layout";
-import type { Paper, Site } from "./types";
+import type { Paper, Problem, Site } from "./types";
 const { search, nav, auth } = vi.hoisted(() => ({
   search: {
     site: undefined as string | undefined,
@@ -19,6 +19,11 @@ const { search, nav, auth } = vi.hoisted(() => ({
     contest: undefined as string | undefined,
     problem: undefined as string | undefined,
     tab: "statement",
+    view: undefined as "ta" | "student" | undefined,
+    taView: undefined as "students" | "problems" | undefined,
+    taTab: undefined as "students" | "statement" | "judge" | "answer" | undefined,
+    review: undefined as string | undefined,
+    codeSubmission: undefined as string | undefined,
   },
   nav: { push: vi.fn(), replace: vi.fn(), back: vi.fn() },
   auth: {
@@ -113,6 +118,71 @@ const paper: Paper = {
   ],
   drafts: { "1:1": { code: "", language: "", answer: [], revision: 0, options: null } },
 };
+const codingProblem: Problem = {
+  id: "1",
+  displayLabel: "A",
+  kind: 0,
+  title: "相加",
+  description: "<p>计算</p>",
+  input: "",
+  output: "",
+  hint: "",
+  timeLimit: 1,
+  memoryLimit: 128,
+  samples: [{ input: "1 2\n", output: "3" }],
+  choices: [],
+  multiple: false,
+  blanks: 0,
+  languages: ["cpp"],
+  templates: {},
+  score: 20,
+  ioMode: "stdio",
+};
+const managedContest = {
+  id: "1",
+  groupId: "2",
+  groupName: "一班",
+  title: "助教测验",
+  description: "",
+  begin: Date.now() - 10000,
+  end: Date.now() + 3600000,
+  isExam: false,
+  scoredStatus: "done",
+  totalScore: 20,
+};
+const reviewDetail = {
+  contest: managedContest,
+  submissionId: "77",
+  user: { id: "9", username: "s1", name: "学生", nickname: "" },
+  totalScore: 0,
+  judged: true,
+  checked: false,
+  problems: [
+    {
+      id: "1",
+      displayLabel: "A",
+      kind: 0,
+      title: "相加",
+      description: "<p>计算</p>",
+      hint: "",
+      maxScore: 20,
+      score: 0,
+      submissionId: "88",
+      answer: null,
+      choices: [],
+      multiple: false,
+      blanks: 0,
+      code: "int main(){}",
+      language: "cpp",
+      status: 0,
+      comment: "",
+      referenceAnswer: "int main(){return 0;}",
+      judge: null,
+      loadError: null,
+    },
+  ],
+  warnings: [],
+};
 type Listener = (event: { payload: unknown }) => void;
 type ChannelMock = { onmessage: ((message: unknown) => void) | null };
 const listeners = new Map<string, Listener>();
@@ -150,6 +220,12 @@ beforeEach(() => {
   search.group = undefined;
   search.contest = undefined;
   search.problem = undefined;
+  search.view = undefined;
+  search.taView = undefined;
+  search.taTab = undefined;
+  search.review = undefined;
+  search.codeSubmission = undefined;
+  site.permission = undefined;
   auth.state.Authenticated.studentId = "20260001";
   vi.mocked(invoke).mockImplementation(async (command, args) => {
     if (command.startsWith("subscribe_")) {
@@ -185,6 +261,23 @@ beforeEach(() => {
         { id: "3", name: "二班" },
       ];
     if (command === "get_oj_paper") return structuredClone(paper);
+    if (command === "get_oj_managed_contests") return { rows: [managedContest], now: Date.now() };
+    if (command === "get_oj_manage_contest")
+      return {
+        ...managedContest,
+        problems: [codingProblem],
+        now: Date.now(),
+      };
+    if (command === "get_oj_review_list") return { count: 0, rows: [] };
+    if (command === "get_oj_review_detail") return structuredClone(reviewDetail);
+    if (command === "get_oj_problem_submissions") return { count: 0, rows: [] };
+    if (command === "save_oj_review")
+      return {
+        saved: true,
+        uncertain: false,
+        message: "",
+        detail: structuredClone(reviewDetail),
+      };
     if (command === "get_oj_records") return { records: [], uncertain: [] };
     if (command === "submit_oj") return { id: 100 };
     return null;
@@ -903,4 +996,49 @@ it("opens judging result in a modal dialog upon submitting code and can be close
   const closeBtn = screen.getByRole("button", { name: "关闭" });
   fireEvent.click(closeBtn);
   await waitFor(() => expect(document.querySelector("m-dialog")).toBeNull());
+});
+
+it("marks a review-capable site and enters the workbench by default", async () => {
+  site.permission = 2;
+  render(<OjPage />);
+  await screen.findByText("测试 OJ");
+  expect(screen.getByText("助教")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "进入班级" }));
+  expect(nav.push).toHaveBeenCalledWith("/study/oj?site=test&view=ta");
+});
+
+it("shows the TA workbench for a review-capable site", async () => {
+  site.permission = 2;
+  search.site = "test";
+  search.view = "ta";
+  render(<OjPage />);
+  expect(await screen.findByText("助教测验")).toBeTruthy();
+  expect(screen.getByText("助教工作台")).toBeTruthy();
+});
+
+it("does not show the TA workbench to a student", async () => {
+  search.site = "test";
+  render(<OjPage />);
+  expect(await screen.findByText("查找班级")).toBeTruthy();
+  expect(screen.queryByText("助教工作台")).toBeNull();
+});
+
+it("returns from a TA problem detail to the problem list", async () => {
+  site.permission = 2;
+  search.site = "test";
+  search.view = "ta";
+  search.contest = "1";
+  search.taView = "problems";
+  search.problem = "0:1";
+  render(<OjPage />);
+  await screen.findByText(/相加/);
+  const handler = currentPageBackHandler();
+  expect(handler).toBeTypeOf("function");
+  await act(async () => {
+    await handler?.();
+  });
+  expect(nav.replace).toHaveBeenLastCalledWith(
+    "/study/oj?site=test&view=ta&contest=1&taView=problems",
+    { resetScroll: true },
+  );
 });

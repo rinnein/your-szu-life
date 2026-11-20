@@ -2,7 +2,14 @@ import { Fragment, useState } from "react";
 import { Card, Progress, Button } from "material/react";
 import { Banner, Chip, Table } from "../ui";
 import { LuCheck, LuClock, LuCircleHelp, LuX, LuChevronDown, LuChevronRight } from "react-icons/lu";
-import { judgeDetails, megabytes, milliseconds, submissionDate, verdicts } from "./judging";
+import {
+  judgeDetails,
+  firstDifference,
+  megabytes,
+  milliseconds,
+  submissionDate,
+  verdicts,
+} from "./judging";
 import { SampleField } from "./SampleField";
 import { languageName, type Submission } from "./types";
 
@@ -28,11 +35,16 @@ export function JudgeResult({
   polling,
   error,
   onRefresh,
+  expected,
+  showExpected = false,
 }: {
   submission: Submission;
   polling: boolean;
   error?: string;
   onRefresh: () => void;
+  /** 助教可见的隐藏测试点期望输出，按测试点顺序对齐。 */
+  expected?: string[];
+  showExpected?: boolean;
 }) {
   const [expandedCases, setExpandedCases] = useState<Set<string>>(new Set());
   const toggleCase = (caseId: string) => {
@@ -113,6 +125,8 @@ export function JudgeResult({
                   <Table.Body>
                     {details.cases.map((row, index) => {
                       const isExpanded = expandedCases.has(row.id);
+                      const expectedOutput = expected?.[index];
+                      const difference = firstDifference(row.output, expectedOutput);
                       return (
                         <Fragment key={`${row.id}:${index}`}>
                           <Table.Row
@@ -169,11 +183,38 @@ export function JudgeResult({
                                     placeholder="（服务端未返回测试输入）"
                                   />
                                   <SampleField
-                                    label={`测试点 ${row.id} 在线输出 (stdout)`}
+                                    label={
+                                      showExpected
+                                        ? `测试点 ${row.id} 实际输出 (stdout)`
+                                        : `测试点 ${row.id} 在线输出 (stdout)`
+                                    }
                                     ariaLabel={`测试点 ${row.id} 输出`}
                                     value={row.output}
                                     placeholder="（服务端未返回标准输出）"
                                   />
+                                  {showExpected && (
+                                    <SampleField
+                                      label={`测试点 ${row.id} 期望输出 (stdout)`}
+                                      ariaLabel={`测试点 ${row.id} 期望输出`}
+                                      value={expectedOutput}
+                                      placeholder="（服务端未返回期望输出）"
+                                    />
+                                  )}
+                                  {showExpected && row.output != null && expectedOutput != null && (
+                                    <p className="text-xs text-muted self-center">
+                                      {difference < 0
+                                        ? "实际输出与期望输出一致。"
+                                        : `与期望输出首个差异：第 ${difference + 1} 个字符。`}
+                                    </p>
+                                  )}
+                                  {row.spj && (
+                                    <SampleField
+                                      label={`测试点 ${row.id} SPJ 输出`}
+                                      ariaLabel={`测试点 ${row.id} SPJ 输出`}
+                                      value={row.spj}
+                                      placeholder="（没有 SPJ 输出）"
+                                    />
+                                  )}
                                 </div>
                               </Table.Cell>
                             </Table.Row>

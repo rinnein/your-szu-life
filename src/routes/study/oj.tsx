@@ -8,7 +8,18 @@ export const Route = createFileRoute("/study/oj")({
   head: () => ({ meta: [{ title: "OJ · 编程练习" }] }),
   validateSearch: (
     search: Record<string, unknown>,
-  ): { site?: string; group?: string; contest?: string; problem?: string; tab: string } => ({
+  ): {
+    site?: string;
+    group?: string;
+    contest?: string;
+    problem?: string;
+    tab: string;
+    view?: "ta" | "student";
+    taView?: "students" | "problems";
+    taTab?: "students" | "statement" | "judge" | "answer";
+    review?: string;
+    codeSubmission?: string;
+  } => ({
     site:
       typeof search.site === "string" && /^[a-zA-Z0-9-]{1,64}$/.test(search.site)
         ? search.site
@@ -20,6 +31,18 @@ export const Route = createFileRoute("/study/oj")({
         ? search.problem
         : undefined,
     tab: search.tab === "answer" || search.tab === "records" ? search.tab : "statement",
+    view: search.view === "ta" || search.view === "student" ? search.view : undefined,
+    taView:
+      search.taView === "students" || search.taView === "problems" ? search.taView : undefined,
+    taTab:
+      search.taTab === "students" ||
+      search.taTab === "statement" ||
+      search.taTab === "judge" ||
+      search.taTab === "answer"
+        ? search.taTab
+        : undefined,
+    review: numericId(search.review),
+    codeSubmission: numericId(search.codeSubmission),
   }),
   component: OjPage,
 });

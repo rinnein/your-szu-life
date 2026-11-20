@@ -57,6 +57,7 @@ export function judgeDetails(s: Submission) {
       memory: number(row.memory),
       output: typeof rawOutput === "string" ? rawOutput : undefined,
       input: typeof rawInput === "string" ? rawInput : undefined,
+      spj: typeof row.spj_output === "string" ? row.spj_output : undefined,
     };
   });
   const maximum = (values: (number | undefined)[]) => {
@@ -84,3 +85,13 @@ export function judgeDetails(s: Submission) {
 export const milliseconds = (v?: number) => (v === undefined ? "未提供" : `${v} ms`);
 export const megabytes = (v?: number) =>
   v === undefined ? "未提供" : `${(v / 1024 / 1024).toFixed(2)} MB`;
+
+/** 返回两段文本首个不同的字符下标；完全相同返回 -1。 */
+export function firstDifference(a?: string, b?: string): number {
+  if (a == null || b == null) return -1;
+  const end = Math.min(a.length, b.length);
+  for (let index = 0; index < end; index += 1) {
+    if (a[index] !== b[index]) return index;
+  }
+  return a.length === b.length ? -1 : end;
+}

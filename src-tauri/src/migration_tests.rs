@@ -16,6 +16,7 @@ async fn oj_persists_notice_read_state_and_group_cache() {
         url: "http://oj.test/".into(),
         builtin: false,
         reminders: true,
+        permission: None,
     };
     let mut data = szu_oj::oj::model::Data {
         sites: vec![site],

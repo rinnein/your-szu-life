@@ -4,7 +4,67 @@ The student API is derived from the publicly served frontend of the supplied
 SZU installations (inspected 2026-10-04). SZUOJ/JudgeServer is the judge worker,
 not the account/class/contest API. The adapter uses the site's `/api/` prefix,
 Django session cookies, `csrftoken`/`X-CSRFToken`, and offset/limit pagination.
-No teacher/management API is used.
+The student flow uses no management API; the teaching-assistant workbench uses
+the explicit `manage/` endpoints listed below.
+
+## Preset versions and compatibility (inspected 2026-11-20)
+
+The preset intranet sites run four frontend builds. The versions are embedded
+in each served bundle:
+
+- `v26.07.16-dcb3ccb9` — sites 53, 64
+- `v25.11.12-27290858` — sites 55, 67, 68
+- `v26.11.03-2fa0bd99` — sites 61, 62
+- `v25.03.21-b7f57607` — site 71 (closed to student login)
+
+All four expose the same API path set; `v26.11.03` only adds AI help/AI grading
+and `sample-output` endpoints. The role enum is identical everywhere:
+`ADMIN:0, TEACHER:1, ASSISTANT:2, STUDENT:3`, and `/api/user/profile/` returns
+`id/username/permission/name/nickname/email`. No version branch is needed.
+
+## Teaching-assistant workbench
+
+The workbench is available when the last confirmed profile role is `<= 2`.
+`Site.permission` is persisted alongside the site configuration so the OJ home
+card can mark the role before the next login; the value is refreshed from
+`user/profile/` on both the session-reuse and password-login paths.
+
+- `GET manage/contests/` + `GET info/time/`: manageable contests. The list has
+  no `now_time`, so phases use the server time.
+- `GET manage/contests/{id}/`: problem_json, problem_score, total_score.
+- `GET manage/contest-submission/?contest=&detail=true&ordering=user__username`:
+  student list with `judged`/`checked`.
+- `GET manage/contest-submission/{sid}/`: scores and non-coding answers.
+- `GET code-submission/{sid}/` / `code-fill-submission/{sid}/` /
+  `GET manage/qa-submission/{sid}/`: per-question answers.
+- `GET coding_problem/{pid}/`, `GET manage/choices/{pid}/`,
+  `GET manage/fill-in-problems/{pid}/`, `GET manage/qa-problems/{pid}/`:
+  reference answers. Failure is non-fatal and reported in `warnings`.
+- `PATCH manage/contest-submission/{sid}/`: score payload
+  (`coding_score`/`code_fill_score`/`qa_score` as `{pid:{sid:score}}`,
+  `choice_score`/`fill_in_score` as `{pid:score}`). The server marks `checked`.
+- `PATCH manage/code-submission/{sid}/` / `manage/qa-submission/{sid}/`:
+  per-question comment.
+- `GET code-submission/?contest=&problem=&search=&status=` (and the code-fill
+  variant): all-student submissions for one problem. Detail visibility is
+  server-gated; `can_view_detail` is honoured when present.
+- `GET code-submission/{sid}/` + `GET coding_problem/{pid}/?contest=`: actual
+  output (`result.data[].output`), expected output (`test_output`), samples and
+  SPJ output for the judge-detail view.
+
+TA data is never written to `data.groups`, `data.contests`, `data.known` or
+`data.notices`, so it does not enter the homepage todos, monitor scans or the
+notification pipeline. There is no backend TTL cache and no background refresh:
+the frontend owns a five-minute TTL for the manageable-contest and review lists
+and only invokes when entering a list whose cache is missing or expired; manual
+refresh always invokes. Single answer sheets, judge details and problem
+submission lists are read fresh on entry.
+
+Write requests never auto-retry. A transport/5xx/redirect failure returns
+`uncertain=true`; the UI keeps the page and asks the user to refresh instead of
+resubmitting. Real TA credentials were not available, so the `manage/` contract
+and score writes are covered by mock tests only and still require device
+verification.
 
 - `POST captcha/`: captcha_key, captcha_image (base64); the key stays native.
 - `POST user/login/`: username, password, captcha_key, captcha_value.

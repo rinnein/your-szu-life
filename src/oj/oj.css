@@ -361,3 +361,97 @@
   background: color-mix(in oklab, var(--szu-brand, var(--accent)) 12%, var(--surface));
   font-weight: 600;
 }
+
+/* ---- 助教工作台 --------------------------------------------------------- */
+
+.oj-ta-mode-tabs,
+.oj-ta-view-tabs,
+.oj-ta-problem-tabs {
+  margin-block-end: 1rem;
+}
+.oj-ta-workbench,
+.oj-ta-contest,
+.oj-ta-review,
+.oj-ta-problems,
+.oj-ta-problem {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+.oj-ta-toolbar {
+  align-items: flex-end;
+}
+.oj-ta-contest-head {
+  display: grid;
+  gap: 0.25rem;
+}
+.oj-ta-contest-body {
+  display: grid;
+  gap: 0.5rem;
+}
+.oj-ta-problem-head h2 {
+  margin: 0;
+}
+.oj-ta-problem-group {
+  display: grid;
+  gap: 0.5rem;
+}
+.oj-ta-review-problem {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+.oj-ta-answer {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.oj-ta-option {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.oj-ta-blank {
+  display: grid;
+  gap: 0.25rem;
+}
+.oj-ta-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--mtrl-sys-color-surface-container-low);
+  border-radius: 0.625rem;
+  padding: 0.75rem;
+  font:
+    0.875rem/1.6 "Monaspace Neon",
+    ui-monospace,
+    monospace;
+}
+.oj-ta-code {
+  margin-block: 0.75rem;
+  border: 1px solid var(--border-separator);
+  border-radius: 0.875rem;
+  overflow: hidden;
+}
+.oj-ta-comment {
+  display: grid;
+  gap: 0.5rem;
+  margin-block-start: 0.75rem;
+}
+.oj-ta-score-overview {
+  display: grid;
+  gap: 0.75rem;
+}
+.oj-ta-score-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.75rem;
+}
+.oj-ta-pagination {
+  justify-content: center;
+}
+.oj-ta-save {
+  justify-content: flex-end;
+}

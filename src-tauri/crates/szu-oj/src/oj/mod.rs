@@ -8,6 +8,7 @@ mod monitor;
 mod persistence;
 mod preferences;
 mod protocol;
+mod review;
 #[cfg(test)]
 mod tests;
 mod work;
@@ -49,6 +50,8 @@ pub struct Entry {
 struct Status {
     session: Session,
     message: String,
+    /// 登录后从 `user/profile/` 读取的平台角色；`None` 表示尚未确认。
+    permission: Option<u8>,
     captcha: Option<(String, String, String)>,
     last_sync: Option<i64>,
     next_sync: i64,
@@ -665,6 +668,12 @@ impl Service {
         } else {
             secrets.remove(&id);
         }
+        // 只有账号身份未变时才沿用上次确认的角色；换地址/换账号/清凭据都必须重新登录确认。
+        let permission = if identity_changed || secret.is_none() {
+            None
+        } else {
+            old.and_then(|s| s.permission)
+        };
         let client = secret.as_ref().map(|_| Client::new(&url, "")).transpose()?;
         let mut data = r.data.clone();
         if changed {
@@ -680,6 +689,7 @@ impl Service {
             url,
             builtin,
             reminders: input.reminders,
+            permission,
         };
         if let Some(old) = data.sites.iter_mut().find(|s| s.id == id) {
             *old = site
@@ -769,6 +779,69 @@ impl Service {
         }
         self.publish();
     }
+    /// 登录时同步平台角色。只在变化时落盘与推送，避免每次扫描重写整份状态。
+    fn apply_permission(&self, id: &str, e: &Entry, profile: &Value) {
+        let Some(raw) = profile["permission"].as_u64() else {
+            return;
+        };
+        let Ok(permission) = u8::try_from(raw) else {
+            return;
+        };
+        if permission > 3 {
+            log::warn!("[oj] 忽略未知角色值 {permission}");
+            return;
+        }
+        let mut changed_status = false;
+        {
+            let mut state = e.state.lock().unwrap();
+            if state.permission != Some(permission) {
+                state.permission = Some(permission);
+                changed_status = true;
+            }
+        }
+        let mut changed_site = false;
+        let snapshot = {
+            let mut r = self.runtime.lock().unwrap();
+            match r.data.sites.iter_mut().find(|site| site.id == id) {
+                Some(site) if site.permission != Some(permission) => {
+                    site.permission = Some(permission);
+                    changed_site = true;
+                    Some(r.data.clone())
+                }
+                _ => None,
+            }
+        };
+        if let Some(data) = snapshot {
+            if let Err(error) = persistence::write(&self.path, &data) {
+                log::warn!("保存 OJ 角色失败: {error}");
+            }
+        }
+        if changed_status || changed_site {
+            self.publish();
+        }
+    }
+    /// 助教工作台的最低角色校验：0 管理员 / 1 教师 / 2 助教。
+    fn review_permission(&self, id: &str) -> Result<u8, String> {
+        let e = self.entry(id)?;
+        let live = e.state.lock().unwrap().permission;
+        let persisted = if live.is_none() {
+            let r = self.runtime.lock().unwrap();
+            r.data
+                .sites
+                .iter()
+                .find(|site| site.id == id)
+                .and_then(|site| site.permission)
+        } else {
+            None
+        };
+        let permission = live
+            .or(persisted)
+            .ok_or_else(|| "尚未确认账号角色，请先登录".to_string())?;
+        if permission > 2 {
+            return Err("当前账号没有助教权限".into());
+        }
+        Ok(permission)
+    }
     fn save_cookies(&self, id: &str, e: &Entry) -> Result<(), String> {
         let cookies = e.client.cookies()?;
         let mut r = self.runtime.lock().unwrap();
@@ -841,6 +914,7 @@ impl Service {
                 .await
             {
                 if profile["username"].as_str() == Some(&e.username) {
+                    self.apply_permission(id, e, &profile);
                     self.update_status(id, e, Session::Ready, "");
                     return Ok(());
                 }
@@ -963,6 +1037,7 @@ impl Service {
                     self.update_status(id, e, Session::LoginFailed, "登录身份未确认");
                     return Err("登录身份未确认".into());
                 }
+                self.apply_permission(id, e, &profile);
                 self.save_cookies(id, e)?;
                 e.state.lock().unwrap().captcha = None;
                 self.update_status(id, e, Session::Ready, "");

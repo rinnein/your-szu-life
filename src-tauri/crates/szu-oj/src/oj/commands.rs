@@ -435,3 +435,118 @@ pub async fn submit_oj_companion(
     }
     service(&app)?.companion_submit(input).await
 }
+
+#[tauri::command]
+pub async fn get_oj_managed_contests(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    site_id: String,
+) -> Result<ManagedContests, String> {
+    local(&window)?;
+    service(&app)?.managed_contests(&site_id).await
+}
+
+#[tauri::command]
+pub async fn get_oj_manage_contest(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    site_id: String,
+    contest_id: String,
+) -> Result<ManagedContestDetail, String> {
+    local(&window)?;
+    service(&app)?.manage_contest(&site_id, &contest_id).await
+}
+
+#[tauri::command]
+pub async fn get_oj_review_list(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    site_id: String,
+    contest_id: String,
+    search: Option<String>,
+    offset: u32,
+    limit: u32,
+) -> Result<ReviewList, String> {
+    local(&window)?;
+    service(&app)?
+        .review_list(&site_id, &contest_id, search.as_deref(), offset, limit)
+        .await
+}
+
+#[tauri::command]
+pub async fn get_oj_review_detail(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    site_id: String,
+    contest_id: String,
+    submission_id: String,
+) -> Result<ReviewDetail, String> {
+    local(&window)?;
+    service(&app)?
+        .review_detail(&site_id, &contest_id, &submission_id)
+        .await
+}
+
+#[tauri::command]
+pub async fn save_oj_review(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    input: SaveReviewInput,
+) -> Result<SaveReviewResult, String> {
+    local(&window)?;
+    service(&app)?.save_review(input).await
+}
+
+#[tauri::command]
+pub async fn save_oj_review_comment(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    input: ReviewCommentInput,
+) -> Result<WriteResult, String> {
+    local(&window)?;
+    service(&app)?.save_review_comment(input).await
+}
+
+#[tauri::command]
+pub async fn get_oj_problem_submissions(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    site_id: String,
+    contest_id: String,
+    problem_id: String,
+    kind: u8,
+    search: Option<String>,
+    status: Option<String>,
+    offset: u32,
+    limit: u32,
+) -> Result<ProblemSubmissions, String> {
+    local(&window)?;
+    service(&app)?
+        .problem_submissions(
+            &site_id,
+            &contest_id,
+            &problem_id,
+            kind,
+            search.as_deref(),
+            status.as_deref(),
+            offset,
+            limit,
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn get_oj_ta_submission(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    site_id: String,
+    contest_id: String,
+    problem_id: String,
+    kind: u8,
+    submission_id: String,
+) -> Result<TaSubmission, String> {
+    local(&window)?;
+    service(&app)?
+        .ta_submission(&site_id, &contest_id, &problem_id, kind, &submission_id)
+        .await
+}

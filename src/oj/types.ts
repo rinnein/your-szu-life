@@ -20,6 +20,8 @@ export interface Site {
   lastSync?: number;
   /** 本地已有该站点的班级/测验缓存（会话尚未建立时也可展示）。 */
   hasCache?: boolean;
+  /** 上次登录确认的平台角色：0 管理员 / 1 教师 / 2 助教 / 3 学生。 */
+  permission?: number | null;
 }
 export interface Notice {
   id: string;
@@ -148,6 +150,134 @@ export interface Ranking {
     problems: Record<string, { accepted: boolean; errors: number; seconds: number | null }>;
   }[];
 }
+export interface ReviewUser {
+  id: string;
+  username: string;
+  name: string;
+  nickname: string;
+}
+/** 助教工作台的管理测验列表项。 */
+export interface ManagedContest {
+  id: string;
+  groupId: string;
+  groupName: string;
+  title: string;
+  description: string;
+  begin: number;
+  end: number;
+  isExam: boolean;
+  scoredStatus: string;
+  scoreStartTime?: number | null;
+  totalScore?: number | null;
+}
+export interface ManagedContests {
+  rows: ManagedContest[];
+  now: number;
+}
+export interface ManagedContestDetail extends ManagedContest {
+  problems: Problem[];
+  now: number;
+}
+export interface ReviewSummary {
+  id: string;
+  user: ReviewUser;
+  totalScore: number;
+  judged: boolean;
+  checked: boolean;
+}
+export interface ReviewList {
+  count: number;
+  rows: ReviewSummary[];
+}
+export interface ReviewProblem {
+  id: string;
+  displayLabel: string;
+  kind: number;
+  title: string;
+  description: string;
+  hint: string;
+  maxScore: number;
+  score: number;
+  submissionId?: string | null;
+  answer: string | number[] | string[] | null;
+  choices: string[];
+  multiple: boolean;
+  blanks: number;
+  code?: string | null;
+  language?: string | null;
+  status?: number | null;
+  comment: string;
+  referenceAnswer?: string | number[] | string[] | null;
+  judge?: Submission | null;
+  loadError?: string | null;
+}
+export interface ReviewDetail {
+  contest: ManagedContest;
+  submissionId: string;
+  user: ReviewUser;
+  totalScore: number;
+  judged: boolean;
+  checked: boolean;
+  problems: ReviewProblem[];
+  warnings: string[];
+}
+export interface ProblemSubmissionRow {
+  id: string;
+  user: ReviewUser;
+  language: string;
+  status?: number | null;
+  createTime?: unknown;
+  cpuTime?: number | null;
+  realTime?: number | null;
+  memory?: number | null;
+  canViewDetail: boolean;
+}
+export interface ProblemSubmissions {
+  count: number;
+  rows: ProblemSubmissionRow[];
+}
+export interface TaSubmission {
+  submission: Submission;
+  expected: string[];
+  samples: string[];
+  warnings: string[];
+}
+export interface ReviewScores {
+  coding: Record<string, Record<string, number>>;
+  codeFill: Record<string, Record<string, number>>;
+  qa: Record<string, Record<string, number>>;
+  choice: Record<string, number>;
+  fillIn: Record<string, number>;
+}
+export interface WriteResult {
+  saved: boolean;
+  uncertain: boolean;
+  message: string;
+}
+export interface SaveReviewResult extends WriteResult {
+  detail?: ReviewDetail | null;
+}
+export const roleName: Record<number, string> = {
+  0: "管理员",
+  1: "教师",
+  2: "助教",
+  3: "学生",
+};
+export const canReview = (site?: Pick<Site, "permission"> | null) =>
+  site?.permission != null && site.permission <= 2;
+export const scoredStatusName: Record<string, string> = {
+  waiting: "等待机评",
+  running: "机评中",
+  done: "已完成",
+  error: "机评失败",
+};
+export const taPhase = (contest: { begin: number; end: number }, now: number) =>
+  now < contest.begin ? 0 : now < contest.end ? 1 : 2;
+export const taPhaseName = ["未开始", "进行中", "已结束"] as const;
+export const reviewTag = (row: Pick<ReviewSummary, "judged" | "checked">) =>
+  row.judged ? (row.checked ? "已阅" : "未人工批阅") : "尚未自动评分";
+export const reviewTagColor = (row: Pick<ReviewSummary, "judged" | "checked">) =>
+  row.judged ? (row.checked ? "success" : "warning") : "default";
 export const problemKey = (p: Problem) => `${p.kind}:${p.id}`;
 export const kindName = ["编程题", "选择题", "填空题", "问答题", "代码补全"];
 export const languageName: Record<string, string> = {
