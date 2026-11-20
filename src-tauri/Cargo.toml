@@ -209,12 +209,6 @@ szu-build-support = { path = "crates/szu-build-support" }
 reqwest = { workspace = true }
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 
-# 见 `vendor/proc-macro-crate/` 与注释：glib-macros 0.18 的 proc-macro-crate 2.0.2
-# 用精确版本钉住 toml_datetime 0.6.3，与 EasyTier 依赖的 rust-i18n-support
-# （toml ^0.8.8）冲突。本地副本只放宽这两处版本约束。
-[patch.crates-io]
-proc-macro-crate = { path = "vendor/proc-macro-crate" }
-
 [dev-dependencies]
 tempfile = { workspace = true }
 

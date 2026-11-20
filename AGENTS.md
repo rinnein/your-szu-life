@@ -151,7 +151,7 @@ release. Add a tool name to select part of the graph. For example, run
 - **同步白名单**：只有 `settings_sync/items.rs::ITEM_DEFS` 里的项会同步（UOOC 登录态/AI/运行设置/题库、OJ 账号密码、宿舍区与教工区「单独配置」凭据、宿舍信息）。`fixed.account.profile`、authserver 会话、lms/jxxk 会话与 `settings.sqlite` 本地偏好永不同步。合并由 Loro CRDT 负责：单值项整项 LWW，OJ 按站点、题库按行独立合并；同一 key 的并发写入由 Loro 决定胜者，不再冻结。同步检查点位于 `mesh/sync/<account_fingerprint>.loro.enc`，使用设备主密钥加密并按账号隔离；`uooc.session` 只记录显式登录/全局退出，cookie 刷新不写入。
 - **校园网访问**：`netproxy/campus_access.rs` 是唯一决策点。在校时完全维持原有绕过/覆写逻辑；校外且存在可用在校设备时，`campus-network.json` 的直连白名单不再强制生效——校内目标先按普通策略走外网，对外探测（`host:port` 缓存 60 秒）确认不可达才改走 overlay 代理；非校内目标永远不经过 overlay。`overrides.fallback` 在校外继续生效。在校设备上的 `mesh/campus_proxy.rs` 只接受校内目标，且只在「校园网访问」开关打开时响应。
 - **日志**：EasyTier 只用 `tracing` 记录日志；仓库显式打开 `tracing` 的 `log` feature，未安装 tracing subscriber 时事件会转发给 `log`，因此与其它日志共用调试页的保留级别与 target 过滤。日志默认保留级别为 `WARN`。
-- **构建**：`no_tun` 组网依赖 `dhcp-ipv4`、`icmp-proxy` 与 `endpoint-discovery` 等 feature（前两个缺失会在创建实例时报 `this build does not include ...`，`mesh::node` 有对应的能力校验测试；`endpoint-discovery` 提供 TXT/SRV 与 HTTP(S) 节点发现，默认 STUN 的 `txt:stun*.easytier.cn` 依赖它）；`easytier-proto` 需要 `protoc`；`glib-macros` 的 `proc-macro-crate 2.0.2` 与 EasyTier 的 `rust-i18n-support` 在 `toml_datetime` 版本上冲突，仓库内 `src-tauri/vendor/proc-macro-crate` 只放宽了这两处版本约束（见 `Cargo.toml` 的 `[patch.crates-io]`），上游升级后应删除。
+- **构建**：`no_tun` 组网依赖 `dhcp-ipv4`、`icmp-proxy` 与 `endpoint-discovery` 等 feature（前两个缺失会在创建实例时报 `this build does not include ...`，`mesh::node` 有对应的能力校验测试；`endpoint-discovery` 提供 TXT/SRV 与 HTTP(S) 节点发现，默认 STUN 的 `txt:stun*.easytier.cn` 依赖它）；`easytier-proto` 需要 `protoc`。
 
 ---
 
