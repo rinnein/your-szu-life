@@ -2,8 +2,8 @@ allowBuilds:
   core-js: false
   esbuild: true
 catalog:
-  vite: npm:@voidzero-dev/vite-plus-core@1.6.0
-  vite-plus: 1.6.0
+  vite: npm:@voidzero-dev/vite-plus-core@8.3.8000
+  vite-plus: 1.7.0
 minimumReleaseAgeExclude:
   - "@tauri-apps/plugin-notification@2.7.0"
   - "@voidzero-dev/vite-plus-core@1.5.1"
@@ -18,11 +18,6 @@ minimumReleaseAgeExclude:
   - vite-plus@1.5.1
 overrides:
   vite@*: "catalog:"
-peerDependencyRules:
-  allowAny:
-    - vite
-  allowedVersions:
-    vite: "*"
 permissions:
   "@tanstack/react-router":
     skills: true
