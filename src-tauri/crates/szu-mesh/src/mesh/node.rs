@@ -248,6 +248,10 @@ pub(crate) fn build_config_named(
         "network_secret = \"{}\"\n\n",
         escape_toml(&identity.network_secret)
     ));
+    // 不写密钥：EasyTier 解析 TOML 时会调用 normalize_secure_mode_config，自己生成
+    // 随机的每设备 x25519 密钥对并经 route peer info 广播公钥（官方 --secure-mode 行为）。
+    out.push_str("[secure_mode]\n");
+    out.push_str("enabled = true\n\n");
     for peer in peers {
         out.push_str("[[peer]]\n");
         out.push_str(&format!("uri = \"{}\"\n\n", escape_toml(&peer)));
@@ -375,6 +379,24 @@ mod tests {
         assert!(toml.contains("network_name = \"your-szu-life:self:0011223344556677\""));
         assert!(toml.contains(&format!("network_secret = \"{}\"", "a".repeat(64))));
         assert!(TomlConfig::new_from_str(&toml).is_ok());
+    }
+
+    #[test]
+    fn secure_mode_is_enabled_and_easytier_generates_the_keypair() {
+        let toml = build_config(&identity(), "device", 54201, 54210);
+        assert!(toml.contains("[secure_mode]"));
+        assert!(toml.contains("enabled = true"));
+        let config = TomlConfig::new_from_str(&toml).expect("配置应能解析");
+        use easytier_core::config::toml::ConfigLoader as _;
+        let secure = config
+            .get_secure_mode()
+            .expect("EasyTier 应在解析时归一化 [secure_mode] 段");
+        assert!(secure.enabled);
+        let private = secure.local_private_key.expect("应已随机生成私钥");
+        let public = secure.local_public_key.expect("应已派生公钥");
+        assert!(!private.is_empty());
+        assert!(!public.is_empty());
+        assert_ne!(private, public);
     }
 
     #[test]
