@@ -455,11 +455,32 @@ export function OjPaper({
         await applyPreferences(pending);
     }
   };
-  const p = paper?.problems.find((p) => problemKey(p) === selected) ?? paper?.problems[0];
+  // 深链/通知明确指定的题目优先；未指定时默认落在从第一题起第一道未 AC 的题
+  // （判定色非 success，含本地「已作答」的非编程题），全部完成则落回第一题。
+  const requested = selected ? paper?.problems.find((x) => problemKey(x) === selected) : undefined;
+  const [defaultPk, setDefaultPk] = useState<string>();
+  useEffect(() => {
+    setDefaultPk(undefined);
+  }, [paper?.account, paper?.epoch, contestId]);
+  const defaulted = defaultPk
+    ? paper?.problems.find((x) => problemKey(x) === defaultPk)
+    : undefined;
+  const p = requested ?? defaulted ?? paper?.problems[0];
   const pk = p ? problemKey(p) : "";
 
   const draft = drafts[pk];
   const submissions = useSubmissions(site.id, contestId, paper, p, site);
+  // 判定目录就绪后把默认题目冻结一次：编程题判定按类型异步到达，边到边跳会让视图来回动。
+  useEffect(() => {
+    if (requested || defaultPk != null || !paper) return;
+    const coding = paper.problems.filter((x) => [0, 4].includes(x.kind));
+    if (coding.some((x) => submissions.emptyVerdict(x) === "查询中")) return;
+    const target =
+      paper.problems.find(
+        (x) => problemStatus(x, submissions.verdict, submissions.emptyVerdict).tone !== "success",
+      ) ?? paper.problems[0];
+    setDefaultPk(problemKey(target));
+  }, [paper, requested, defaultPk, submissions.verdict, submissions.emptyVerdict]);
   const { records, result, refreshRecords } = submissions;
   const completionKey = progressScopeKey(progressScope(site));
   const completion = useSelector(

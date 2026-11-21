@@ -588,6 +588,131 @@ it("keeps the newly selected instance language when switching questions", async 
   expect(screen.getByRole("combobox", { name: "编程语言" })).toHaveValue("Python 3");
   expect(screen.getByLabelText("代码编辑器")).toHaveProperty("value", "print(1)");
 });
+it("opens the first non-accepted problem by default", async () => {
+  const programming: Paper = {
+    ...paper,
+    problems: [1, 2].map((id) => ({
+      ...paper.problems[0],
+      id: String(id),
+      displayLabel: id === 1 ? "A" : "B",
+      kind: 0,
+      title: `题目 ${id}`,
+      languages: ["cpp"],
+      choices: [],
+    })),
+    drafts: {
+      "0:1": { code: "first", language: "cpp", options: null, answer: "", revision: 1 },
+      "0:2": { code: "second", language: "cpp", options: null, answer: "", revision: 1 },
+    },
+  };
+  const records = [
+    { id: 9001, problem: "1", kind: 0, status: 0 },
+    { id: 9002, problem: "2", kind: 0, status: -1 },
+  ];
+  const previous = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (cmd, args) => {
+    if (cmd === "get_oj_paper") return programming;
+    if (cmd === "get_oj_records") {
+      const { kind, problemId } = (args ?? {}) as { kind: number; problemId?: string };
+      if (kind !== 0) return { records: [], uncertain: [] };
+      return {
+        records: records.filter((r) => (problemId ? r.problem === problemId : true)),
+        uncertain: [],
+      };
+    }
+    return previous(cmd, args);
+  });
+  render(<OjPaper site={site} contestId="1" tab="statement" desktop={false} port={27121} />);
+  // A 已 AC，默认落在第一道未 AC 的 B。
+  await screen.findByRole("heading", { name: "B. 题目 2" });
+  expect(screen.queryByRole("heading", { name: "A. 题目 1" })).toBeNull();
+});
+it("keeps an explicit problem selection over the non-AC default", async () => {
+  const programming: Paper = {
+    ...paper,
+    problems: [1, 2].map((id) => ({
+      ...paper.problems[0],
+      id: String(id),
+      displayLabel: id === 1 ? "A" : "B",
+      kind: 0,
+      title: `题目 ${id}`,
+      languages: ["cpp"],
+      choices: [],
+    })),
+    drafts: {
+      "0:1": { code: "first", language: "cpp", options: null, answer: "", revision: 1 },
+      "0:2": { code: "second", language: "cpp", options: null, answer: "", revision: 1 },
+    },
+  };
+  const records = [
+    { id: 9001, problem: "1", kind: 0, status: 0 },
+    { id: 9002, problem: "2", kind: 0, status: -1 },
+  ];
+  const previous = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (cmd, args) => {
+    if (cmd === "get_oj_paper") return programming;
+    if (cmd === "get_oj_records") {
+      const { kind, problemId } = (args ?? {}) as { kind: number; problemId?: string };
+      if (kind !== 0) return { records: [], uncertain: [] };
+      return {
+        records: records.filter((r) => (problemId ? r.problem === problemId : true)),
+        uncertain: [],
+      };
+    }
+    return previous(cmd, args);
+  });
+  // 深链/通知明确选了已 AC 的 A：默认规则不覆盖显式选择。
+  render(
+    <OjPaper
+      site={site}
+      contestId="1"
+      tab="statement"
+      selected="0:1"
+      desktop={false}
+      port={27121}
+    />,
+  );
+  await screen.findByRole("heading", { name: "A. 题目 1" });
+  expect(screen.queryByRole("heading", { name: "B. 题目 2" })).toBeNull();
+});
+it("falls back to the first problem when everything is accepted", async () => {
+  const programming: Paper = {
+    ...paper,
+    problems: [1, 2].map((id) => ({
+      ...paper.problems[0],
+      id: String(id),
+      displayLabel: id === 1 ? "A" : "B",
+      kind: 0,
+      title: `题目 ${id}`,
+      languages: ["cpp"],
+      choices: [],
+    })),
+    drafts: {
+      "0:1": { code: "first", language: "cpp", options: null, answer: "", revision: 1 },
+      "0:2": { code: "second", language: "cpp", options: null, answer: "", revision: 1 },
+    },
+  };
+  const records = [
+    { id: 9001, problem: "1", kind: 0, status: 0 },
+    { id: 9002, problem: "2", kind: 0, status: 0 },
+  ];
+  const previous = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (cmd, args) => {
+    if (cmd === "get_oj_paper") return programming;
+    if (cmd === "get_oj_records") {
+      const { kind, problemId } = (args ?? {}) as { kind: number; problemId?: string };
+      if (kind !== 0) return { records: [], uncertain: [] };
+      return {
+        records: records.filter((r) => (problemId ? r.problem === problemId : true)),
+        uncertain: [],
+      };
+    }
+    return previous(cmd, args);
+  });
+  render(<OjPaper site={site} contestId="1" tab="statement" desktop={false} port={27121} />);
+  await screen.findByRole("heading", { name: "A. 题目 1" });
+  expect(screen.queryByRole("heading", { name: "B. 题目 2" })).toBeNull();
+});
 it("keeps Companion controls inside global configuration", async () => {
   render(<OjPage />);
   await screen.findByText("测试 OJ");
@@ -755,8 +880,9 @@ it("容器窄而窗口高时只出现横向题目切换，胶囊带判定", asyn
   mockElementRects({ "oj-paper": 600 });
   mockViewportHeight(900);
   serveRecords(twoCodingProblems);
+  // 布局档位测试与默认选题无关，显式钉住第一题。
   const view = render(
-    <OjPaper site={site} contestId="1" tab="records" desktop={false} port={27121} />,
+    <OjPaper site={site} contestId="1" tab="records" desktop={false} port={27121} selected="0:1" />,
   );
   await screen.findByText("#11");
   expect(layoutOf(view.container)).toBe("strip");
@@ -855,8 +981,9 @@ it("容器窄而窗口矮时用触发按钮加模态抽屉切换题目", async (
   mockElementRects({ "oj-paper": 600 });
   mockViewportHeight(500);
   serveRecords(twoCodingProblems);
+  // 布局档位测试与默认选题无关，显式钉住第一题。
   const view = render(
-    <OjPaper site={site} contestId="1" tab="records" desktop={false} port={27121} />,
+    <OjPaper site={site} contestId="1" tab="records" desktop={false} port={27121} selected="0:1" />,
   );
   await screen.findByText("#11");
   expect(layoutOf(view.container)).toBe("sheet");
