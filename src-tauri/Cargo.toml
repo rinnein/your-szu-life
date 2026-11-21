@@ -109,6 +109,10 @@ easytier = { git = "https://github.com/EasyTier/EasyTier", rev = "0d9c52b169dc21
   "ffi-dataplane",
   "aes-gcm",
   "websocket",
+  # 多协议监听器/连接器：与 websocket 一样是 instance composition 的协议 adapter
+  # feature，缺了对应的监听器 URL 会在能力校验时直接报错。
+  "quic",
+  "faketcp",
   # 组网配置使用 dhcp = true 由虚拟网分配地址；不打开该 feature 时
   # EasyTier 会在创建实例时报「this build does not include DHCP IPv4」。
   "dhcp-ipv4",

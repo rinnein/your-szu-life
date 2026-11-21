@@ -148,6 +148,22 @@ pub fn reserve_loopback(
     }
 }
 
+/// 在服务端口段内探测 `count` 个互不相同的端口后立即释放，交给外部进程自己绑定
+/// （EasyTier 的 RPC portal 与各协议监听端口组共用这一入口，避免连续单次分配拿到同号）。
+pub fn reserve_loopback_n(
+    service: PortService,
+    count: usize,
+) -> Result<Vec<PortAllocation>, PortError> {
+    let (start, end) = service.range();
+    match allocate_distinct_in_range(service, start, end, count) {
+        Ok(allocations) => Ok(allocations),
+        Err(error) => {
+            report_exhausted(service, start, end);
+            Err(error)
+        }
+    }
+}
+
 /// MCP 端口发生切换时的用户提示。
 pub fn notify_mcp_port_changed(from: u16, to: u16) {
     let message = format!(
@@ -214,6 +230,39 @@ fn try_bind(port: u16) -> Option<TcpListener> {
     let listener = TcpListener::bind(("127.0.0.1", port)).ok()?;
     listener.set_nonblocking(true).ok()?;
     Some(listener)
+}
+
+/// 在指定区间内探测 `count` 个互不相同的端口后立即释放。
+fn allocate_distinct_in_range(
+    service: PortService,
+    start: u16,
+    end: u16,
+    count: usize,
+) -> Result<Vec<PortAllocation>, PortError> {
+    let capacity = end.saturating_sub(start).saturating_add(1) as usize;
+    if count == 0 || count > capacity {
+        return Err(PortError::Exhausted { service, start, end });
+    }
+    let mut taken: Vec<(TcpListener, u16)> = Vec::with_capacity(count);
+    for port in start..=end {
+        let Some(listener) = try_bind(port) else {
+            continue;
+        };
+        taken.push((listener, port));
+        if taken.len() == count {
+            return Ok(taken
+                .into_iter()
+                .map(|(listener, port)| {
+                    drop(listener);
+                    PortAllocation {
+                        port,
+                        switched_from: None,
+                    }
+                })
+                .collect());
+        }
+    }
+    Err(PortError::Exhausted { service, start, end })
 }
 
 fn report_exhausted(service: PortService, start: u16, end: u16) {

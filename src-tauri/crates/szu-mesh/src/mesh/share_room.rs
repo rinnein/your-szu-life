@@ -481,7 +481,11 @@ mod tests {
             &identity,
             "测试设备",
             54297,
-            54296,
+            &super::super::node::ListenerPorts {
+                tcp_udp: 54296,
+                ws_quic: 54295,
+                faketcp: 54294,
+            },
         );
         let config =
             easytier_core::config::toml::TomlConfig::new_from_str(&toml).expect("配置应能解析");

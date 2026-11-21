@@ -25,11 +25,20 @@ const READY_TIMEOUT: Duration = Duration::from_secs(10);
 const DATA_PLANE_TIMEOUT: Duration = Duration::from_secs(8);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// 与 EasyTier 的默认监听端口不同，这里固定从自组网端口段里挑一个，并同时用于
-/// TCP 与 UDP。监听器必须绑 `0.0.0.0`（P2P 传输必需），这是项目中「本地服务只
-/// 监听回环」约定的唯一例外；安全性由网络密钥承担。
-const LISTENER_PORT_PREFERRED: u16 = ports::MESH_PORT_RANGE.0;
-const LISTENER_PORT_END: u16 = ports::MESH_PORT_RANGE.1;
+/// EasyTier 的各协议监听端口组。同一端口号只承载不同底层传输：tcp+udp 一组、
+/// ws（TCP）+quic（UDP）一组，faketcp 是纯 TCP 独占一组；各组由统一端口模块
+/// 分配互不相同的端口，只启用这三组（wg 面向 TUN 设备、wss 需 TLS 证书，均未
+/// 启用）。监听器绑 `0.0.0.0`（P2P 传输必需），是项目中「本地服务只监听回环」
+/// 约定的唯一例外；安全性由网络密钥承担。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ListenerPorts {
+    /// tcp + udp 共用的端口。
+    pub tcp_udp: u16,
+    /// ws 与 quic 共用的端口（分别落在 TCP 与 UDP 上，不冲突）。
+    pub ws_quic: u16,
+    /// faketcp 监听端口（同为 TCP 底座，不能与 tcp/ws 共号）。
+    pub faketcp: u16,
+}
 
 /// 主网实例名。临时房间（签到码共享等）用第二个实例，见 [`Node::start_named`]。
 pub const DEFAULT_INSTANCE_NAME: &str = "your-szu-life-mesh";
@@ -70,11 +79,19 @@ impl Node {
         hostname: &str,
         instance_name: &str,
     ) -> Result<Self, String> {
-        let rpc_port = ports::reserve_loopback(ports::PortService::Mesh, None)
+        let mut allocated = ports::reserve_loopback_n(ports::PortService::Mesh, 4)
             .map_err(|error| error.to_string())?
-            .port;
-        let listener_port = pick_listener_port();
-        let toml = build_config_named(instance_name, identity, hostname, rpc_port, listener_port);
+            .into_iter()
+            .map(|allocation| allocation.port);
+        // 首个端口给本地 RPC portal，其余三个是协议监听端口组；一次互异分配，
+        // 避免连续单次 reserve 拿到同号。
+        let rpc_port = allocated.next().expect("已请求 4 个端口");
+        let listener_ports = ListenerPorts {
+            tcp_udp: allocated.next().expect("已请求 4 个端口"),
+            ws_quic: allocated.next().expect("已请求 4 个端口"),
+            faketcp: allocated.next().expect("已请求 4 个端口"),
+        };
+        let toml = build_config_named(instance_name, identity, hostname, rpc_port, &listener_ports);
         let config = TomlConfig::new_from_str(&toml)
             .map_err(|error| format!("设备同步网络配置无效: {error:#}"))?;
         let manager = native_instance_manager();
@@ -211,14 +228,14 @@ fn build_config(
     identity: &MeshIdentity,
     hostname: &str,
     rpc_port: u16,
-    listener_port: u16,
+    listeners: &ListenerPorts,
 ) -> String {
     build_config_named(
         DEFAULT_INSTANCE_NAME,
         identity,
         hostname,
         rpc_port,
-        listener_port,
+        listeners,
     )
 }
 
@@ -228,7 +245,7 @@ pub(crate) fn build_config_named(
     identity: &MeshIdentity,
     hostname: &str,
     rpc_port: u16,
-    listener_port: u16,
+    listeners: &ListenerPorts,
 ) -> String {
     let peers = preset_peers();
     let mut out = String::new();
@@ -236,7 +253,11 @@ pub(crate) fn build_config_named(
     out.push_str(&format!("hostname = \"{}\"\n", escape_toml(hostname)));
     out.push_str("dhcp = true\n");
     out.push_str(&format!(
-        "listeners = [\"tcp://0.0.0.0:{listener_port}\", \"udp://0.0.0.0:{listener_port}\"]\n"
+        "listeners = [\"tcp://0.0.0.0:{tcp_udp}\", \"udp://0.0.0.0:{tcp_udp}\", \
+         \"ws://0.0.0.0:{ws_quic}\", \"quic://0.0.0.0:{ws_quic}\", \"faketcp://0.0.0.0:{faketcp}\"]\n",
+        tcp_udp = listeners.tcp_udp,
+        ws_quic = listeners.ws_quic,
+        faketcp = listeners.faketcp,
     ));
     out.push_str(&format!("rpc_portal = \"127.0.0.1:{rpc_port}\"\n\n"));
     out.push_str("[network_identity]\n");
@@ -280,17 +301,6 @@ fn escape_toml(value: &str) -> String {
         .collect()
 }
 
-/// 固定挑一个可用的 0.0.0.0 TCP 端口，UDP 复用同一端口号。
-pub(crate) fn pick_listener_port() -> u16 {
-    for port in LISTENER_PORT_PREFERRED..=LISTENER_PORT_END {
-        if let Ok(listener) = std::net::TcpListener::bind(("0.0.0.0", port)) {
-            drop(listener);
-            return port;
-        }
-    }
-    LISTENER_PORT_PREFERRED
-}
-
 /// 读取根目录预置的 rendezvous 节点。
 ///
 /// 列表为空或全部不可达时节点仍能启动，只是无法发现跨网设备；这里只做格式校验，
@@ -323,15 +333,17 @@ fn preset_peers() -> Vec<String> {
 }
 
 /// 只接受 `tcp://` / `udp://` / `ws://` / `wss://` / `quic://` / `faketcp://`
-/// 形式的 `host:port`，拒绝带凭据、路径或查询串的地址。
+/// 形式的 `host:port` 与无端口的 `txt://` 发现域（端点由 DNS TXT/SRV 解析），
+/// 拒绝带凭据、路径或查询串的地址。
 fn validate_peer_uri(raw: &str) -> Option<String> {
     let raw = raw.trim();
     let url = reqwest::Url::parse(raw).ok()?;
     let scheme = url.scheme();
-    if !matches!(scheme, "tcp" | "udp" | "ws" | "wss" | "quic" | "faketcp") {
+    let is_discovery = scheme == "txt";
+    if !matches!(scheme, "tcp" | "udp" | "ws" | "wss" | "quic" | "faketcp") && !is_discovery {
         return None;
     }
-    if url.host_str().is_none() || url.port().is_none() {
+    if url.host_str().is_none() || (url.port().is_none() && !is_discovery) {
         return None;
     }
     if !url.username().is_empty()
@@ -359,9 +371,17 @@ mod tests {
         }
     }
 
+    fn test_listener_ports() -> ListenerPorts {
+        ListenerPorts {
+            tcp_udp: 54210,
+            ws_quic: 54211,
+            faketcp: 54212,
+        }
+    }
+
     #[test]
     fn config_is_no_tun_and_has_no_exit_or_proxy_network() {
-        let toml = build_config(&identity(), "设备 A", 54201, 54210);
+        let toml = build_config(&identity(), "设备 A", 54201, &test_listener_ports());
         assert!(toml.contains("no_tun = true"));
         assert!(toml.contains("bind_device = false"));
         assert!(toml.contains("encryption_algorithm = \"aes-gcm\""));
@@ -374,7 +394,7 @@ mod tests {
 
     #[test]
     fn network_identity_is_serialized_in_the_identity_table() {
-        let toml = build_config(&identity(), "device", 54201, 54210);
+        let toml = build_config(&identity(), "device", 54201, &test_listener_ports());
         assert!(toml.contains("[network_identity]"));
         assert!(toml.contains("network_name = \"your-szu-life:self:0011223344556677\""));
         assert!(toml.contains(&format!("network_secret = \"{}\"", "a".repeat(64))));
@@ -382,8 +402,18 @@ mod tests {
     }
 
     #[test]
+    fn listeners_group_protocols_by_transport_port() {
+        let toml = build_config(&identity(), "device", 54201, &test_listener_ports());
+        assert!(toml.contains(
+            "listeners = [\"tcp://0.0.0.0:54210\", \"udp://0.0.0.0:54210\", \
+             \"ws://0.0.0.0:54211\", \"quic://0.0.0.0:54211\", \"faketcp://0.0.0.0:54212\"]"
+        ));
+        assert!(TomlConfig::new_from_str(&toml).is_ok());
+    }
+
+    #[test]
     fn secure_mode_is_enabled_and_easytier_generates_the_keypair() {
-        let toml = build_config(&identity(), "device", 54201, 54210);
+        let toml = build_config(&identity(), "device", 54201, &test_listener_ports());
         assert!(toml.contains("[secure_mode]"));
         assert!(toml.contains("enabled = true"));
         let config = TomlConfig::new_from_str(&toml).expect("配置应能解析");
@@ -401,7 +431,7 @@ mod tests {
 
     #[test]
     fn peering_uris_are_embedded_as_peer_tables() {
-        let toml = build_config(&identity(), "device", 54201, 54210);
+        let toml = build_config(&identity(), "device", 54201, &test_listener_ports());
         for peer in preset_peers() {
             assert!(toml.contains(&format!("uri = \"{peer}\"")));
         }
@@ -410,9 +440,18 @@ mod tests {
 
     #[test]
     fn hostname_is_escaped() {
-        let toml = build_config(&identity(), "a\"b\\c", 54201, 54210);
+        let toml = build_config(&identity(), "a\"b\\c", 54201, &test_listener_ports());
         assert!(toml.contains("hostname = \"a\\\"b\\\\c\""));
         assert!(TomlConfig::new_from_str(&toml).is_ok());
+    }
+
+    #[test]
+    fn txt_discovery_peer_uri_is_accepted() {
+        assert_eq!(
+            validate_peer_uri("txt://example.com").as_deref(),
+            Some("txt://example.com")
+        );
+        assert!(validate_peer_uri("http://example.com").is_none());
     }
 
     #[test]
@@ -441,7 +480,11 @@ mod tests {
     #[test]
     fn generated_config_passes_easytier_capability_validation() {
         let manager = native_instance_manager();
-        let toml = build_config(&identity(), "测试设备", 54299, 54298);
+        let toml = build_config(&identity(), "测试设备", 54299, &ListenerPorts {
+            tcp_udp: 54298,
+            ws_quic: 54297,
+            faketcp: 54296,
+        });
         let config = TomlConfig::new_from_str(&toml).expect("配置应能解析");
         let instance = manager
             .create(config, ())
