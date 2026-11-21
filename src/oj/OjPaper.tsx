@@ -30,6 +30,7 @@ import { notifySuccess } from "./feedback";
 import { SampleField } from "./SampleField";
 import { ProblemList } from "./ProblemList";
 import { problemStatus, statusPillHtml } from "./problem-status";
+import { openImageZoom } from "./image-zoom";
 import { useOjLayout } from "./layout";
 import { SubmissionRecord } from "./SubmissionRecord";
 import { JudgeResult } from "./JudgeResult";
@@ -93,6 +94,21 @@ export function Html({ html, base, siteId }: { html: string; base: string; siteI
         ],
       });
   }, [html, base]);
+  useEffect(() => {
+    // 容器级点击委托：题面图片加载完成后点击放大；包在链接里时保持跳转，
+    // 没加载成功（无 src 或 naturalWidth 为 0）不响应。
+    const root = element.current;
+    if (!root) return;
+    const onClick = (event: MouseEvent) => {
+      const img = (event.target as HTMLElement | null)?.closest("img");
+      if (!img || img.closest("a")) return;
+      const src = img.getAttribute("src");
+      if (!src || !img.complete || img.naturalWidth === 0) return;
+      openImageZoom({ src, alt: img.alt || undefined });
+    };
+    root.addEventListener("click", onClick);
+    return () => root.removeEventListener("click", onClick);
+  }, []);
   return (
     <div className="oj-statement" ref={element} dangerouslySetInnerHTML={{ __html: safeHtml }} />
   );

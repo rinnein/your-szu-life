@@ -9,6 +9,7 @@ import { ModuleHeader, PageShell } from "../components";
 import { useLogicalNavigation } from "../logical-navigation";
 import { usePageBackHandler } from "../page-back";
 import { OjPaper } from "./OjPaper";
+import { ImageZoomHost } from "./ImageZoomOverlay";
 import {
   type Site,
   type Snapshot,
@@ -697,6 +698,8 @@ export default function OjPage() {
             }}
           />
         )}
+        {/* 题面图片查看浮层：OJ 路由根部挂一份，学生卷与助教批阅共用。 */}
+        <ImageZoomHost />
       </div>
     </PageShell>
   );

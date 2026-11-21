@@ -223,6 +223,42 @@
   height: auto;
   border-radius: 0.5rem;
 }
+/* 加载完成的题面图片可点击放大；站内图失败时没有 src，选择器天然不匹配。 */
+.oj-statement img[src] {
+  cursor: zoom-in;
+}
+
+/*
+ * 全屏图片查看浮层：遮罩铺满视口，TransformComponent 的 wrapper（viewport
+ * 窗口）撑满容器，图片盒（content）按图片布局尺寸收缩。图片用视口单位做
+ * fit——scale 1 即完整可见，放大由 transform 负责；minScale 锁定不小于 fit。
+ */
+.oj-image-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  background-color: color-mix(in srgb, var(--mtrl-sys-color-scrim) 88%, transparent);
+}
+.oj-image-zoom .react-transform-wrapper,
+.oj-image-zoom-viewport {
+  width: 100%;
+  height: 100%;
+}
+.oj-image-zoom-content img {
+  max-width: 100vw;
+  max-height: 100dvh;
+  width: auto;
+  height: auto;
+  border-radius: 0.5rem;
+}
+/* 遮罩固定为深色，不随主题翻转，图标用常量白色；standard 图标的颜色从宿主继承。 */
+.oj-image-zoom-close {
+  --mtrl-icon-button-standard-color: #fff;
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  right: 8px;
+}
 .oj-statement table {
   border-collapse: collapse;
   display: block;
