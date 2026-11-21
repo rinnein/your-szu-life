@@ -2,6 +2,7 @@ use super::{
     model::{ProxyProbeView, ProxySettingsInput, ProxySettingsView},
     ProxyStore,
 };
+use reqwest::Url;
 use tauri::State;
 
 #[tauri::command]
@@ -33,4 +34,38 @@ pub async fn test_proxy_settings(
     })
     .await
     .map_err(|_| "代理连通性测试任务异常结束".to_owned())?
+}
+
+/// 批量判定 URL 是否属于校内资源（campus-network.json 白名单）。
+///
+/// 供前端在导出/复制内容时决定「来源行是否省略、内网图片是否内联」；
+/// 解析失败的 URL 按公网处理，调用方据此保留原行为。
+#[tauri::command]
+pub fn check_campus_targets(urls: Vec<String>) -> Vec<bool> {
+    urls.iter()
+        .map(|raw| {
+            Url::parse(raw)
+                .ok()
+                .and_then(|url| url.host_str().map(str::to_owned))
+                .is_some_and(|host| super::model::is_campus_target(&host))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::check_campus_targets;
+
+    #[test]
+    fn classifies_campus_and_public_targets() {
+        let results = check_campus_targets(vec![
+            "http://172.31.221.67/images/a.png".into(),
+            "http://net.szu.edu.cn/".into(),
+            "http://oj.szu.edu.cn/problem/1".into(),
+            "https://github.com/a.png".into(),
+            "http://8.8.8.8/a.png".into(),
+            "not a url".into(),
+        ]);
+        assert_eq!(results, vec![true, true, true, false, false, false]);
+    }
 }

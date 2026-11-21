@@ -287,6 +287,7 @@ pub(crate) fn run() {
             szu_core::netproxy::commands::get_proxy_settings,
             szu_core::netproxy::commands::save_proxy_settings,
             szu_core::netproxy::commands::test_proxy_settings,
+            szu_core::netproxy::commands::check_campus_targets,
             uooc::commands::get_uooc_snapshot,
             uooc::commands::subscribe_uooc_state,
             uooc::commands::subscribe_uooc_assessments,

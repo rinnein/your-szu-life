@@ -414,6 +414,7 @@ fn main() {
             "get_proxy_settings",
             "save_proxy_settings",
             "test_proxy_settings",
+            "check_campus_targets",
             "get_auth_state",
             "refresh_auth_session",
             "get_account_profile",

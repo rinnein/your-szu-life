@@ -1,6 +1,17 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it } from "vite-plus/test";
-import { cleanHtml, hasContestDescription, fence, htmlMarkdown, problemMarkdown } from "./content";
+import {
+  cleanHtml,
+  hasContestDescription,
+  fence,
+  htmlMarkdown,
+  problemMarkdown,
+  problemHtml,
+  collectStatementImageUrls,
+  inlineStatementImages,
+  markdownBytes,
+  MARKDOWN_INLINE_LIMIT,
+} from "./content";
 import type { Paper, Problem } from "./types";
 const p: Problem = {
   id: "1",
@@ -71,6 +82,72 @@ describe("OJ problem content", () => {
     expect(problemMarkdown({ ...p, kind: 1, choices: ["<b>甲</b>", "乙"] }, paper)).toContain(
       "A. **甲**",
     ));
+  it("keeps image data URIs on img elements only", () => {
+    const html = cleanHtml(
+      '<img src="data:image/png;base64,AAAA" alt="a"><a href="data:text/html,bad">x</a>',
+      paper.sourceUrl,
+    );
+    expect(html).toContain('src="data:image/png;base64,AAAA"');
+    expect(html).not.toContain('href="data:');
+  });
+  it("omits the source line on request", () => {
+    expect(problemMarkdown(p, paper)).toContain("来源：http://oj.test/#/contest/12/");
+    expect(problemMarkdown(p, paper, { sourceVisible: false })).not.toContain("来源：");
+  });
+  it("collects absolute image urls from statement sections", () => {
+    const withImage = { ...p, description: '<img src="/media/a.png" alt="a">' };
+    expect(collectStatementImageUrls(withImage, paper)).toEqual(["http://oj.test/media/a.png"]);
+  });
+  it("inlines resolved images and keeps the rest", async () => {
+    const withImage: Problem = {
+      ...p,
+      description: '<p>看图</p><img src="http://oj.test/media/a.png" alt="图A">',
+      choices: ['<img src="/media/b.png" alt="图B">'],
+    };
+    const resolved = await inlineStatementImages(withImage, paper, async (url) =>
+      url === "http://oj.test/media/a.png" ? "data:image/png;base64,AAAA" : undefined,
+    );
+    expect(resolved.description).toContain('src="data:image/png;base64,AAAA"');
+    // 未命中的图片保留原样，绝对化交给 problemMarkdown 内部的 cleanHtml。
+    expect(resolved.choices[0]).toBe('<img src="/media/b.png" alt="图B">');
+    const markdown = problemMarkdown(resolved, paper, { sourceVisible: false });
+    expect(markdown).toContain("![图A](data:image/png;base64,AAAA)");
+    expect(markdown).toContain("![图B](http://oj.test/media/b.png)");
+  });
+  it("measures markdown bytes against the inline limit", () => {
+    expect(markdownBytes("abc")).toBe(3);
+    expect(markdownBytes("中")).toBe(3);
+    expect(MARKDOWN_INLINE_LIMIT).toBe(2 * 1024 * 1024);
+  });
+  it("assembles rich text mirroring the markdown structure", () => {
+    const html = problemHtml(p, paper);
+    expect(html).toContain("<h1>A. 求和</h1>");
+    expect(html).toContain("来源：<a href=");
+    expect(html).toContain("<h2>题目要求</h2>");
+    expect(html).toContain("<pre>  1 2\n</pre>");
+    expect(html).toContain("<h2>代码模板（cpp）</h2>");
+    expect(html).toContain("<pre>int main() {\n}\n</pre>");
+  });
+  it("embeds data-url images and omits the source line on request", () => {
+    const withImage: Problem = {
+      ...p,
+      description: '<img src="data:image/png;base64,AAAA" alt="图A">',
+    };
+    const html = problemHtml(withImage, paper, { sourceVisible: false });
+    expect(html).toContain('<img src="data:image/png;base64,AAAA"');
+    expect(html).not.toContain("来源：");
+  });
+  it("escapes sample text and lists choices", () => {
+    const tricky: Problem = {
+      ...p,
+      samples: [{ input: "<script>alert(1)</script>", output: "3" }],
+      choices: ["<b>甲</b>"],
+    };
+    const html = problemHtml(tricky, paper, { sourceVisible: false });
+    expect(html).toContain("<pre>&lt;script&gt;alert(1)&lt;/script&gt;</pre>");
+    expect(html).toContain("<strong>A.</strong>");
+    expect(html).toContain("<b>甲</b>");
+  });
 });
 
 it("hides the bare contest deadline placeholder while preserving useful descriptions", () => {

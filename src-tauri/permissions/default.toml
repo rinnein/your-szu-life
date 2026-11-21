@@ -242,4 +242,5 @@ permissions = [
   "allow-get-proxy-settings",
   "allow-save-proxy-settings",
   "allow-test-proxy-settings",
+  "allow-check-campus-targets",
 ]

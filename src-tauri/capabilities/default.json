@@ -12,6 +12,8 @@
     "os:default",
     "log:default",
     "clipboard-manager:default",
+    "clipboard-manager:allow-write-text",
+    "clipboard-manager:allow-write-html",
     "aptabase:allow-track-event",
     "core:webview:allow-create-webview-window",
     "core:window:allow-activity-name",

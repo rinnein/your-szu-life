@@ -21,8 +21,17 @@ import { AdaptiveTabs, Banner, Chip, bindField } from "../ui";
 import renderMathInElement from "katex/contrib/auto-render";
 import "katex/dist/katex.min.css";
 import { useLogicalNavigation } from "../logical-navigation";
-import { copyText } from "../clipboard";
-import { cleanHtml, hasContestDescription, problemMarkdown } from "./content";
+import { copyRichText } from "../clipboard";
+import {
+  cleanHtml,
+  hasContestDescription,
+  problemMarkdown,
+  problemHtml,
+  collectStatementImageUrls,
+  inlineStatementImages,
+  markdownBytes,
+  MARKDOWN_INLINE_LIMIT,
+} from "./content";
 import { CodeEditor } from "./CodeEditor";
 import { CompileOptions } from "./CompileOptions";
 import { compileOptions } from "./compile-options";
@@ -560,6 +569,33 @@ export function OjPaper({
       });
       notifySuccess(`已向本机工具发送 ${response.sent} 道题。`);
     });
+  const [mcpOffer, setMcpOffer] = useState<{ markdown: string; html: string }>();
+  const deliverStatement = async (markdown: string, html: string) => {
+    const { ok, rich } = await copyRichText(markdown, html);
+    if (!ok) setManualCopy(markdown);
+    else notifySuccess(rich ? "完整题面已复制（含富文本）。" : "完整题面已复制（纯文本）。");
+  };
+  const copyProblemMarkdown = async () => {
+    if (!p || !paper) return;
+    const imageUrls = collectStatementImageUrls(p, paper);
+    const urls = [paper.sourceUrl, ...imageUrls];
+    // 判定失败按公网处理：来源行照常、图片保留原地址，与旧行为一致。
+    const checks = await invoke<boolean[]>("check_campus_targets", { urls }).catch(() =>
+      urls.map(() => false),
+    );
+    const campusImages = new Set(imageUrls.filter((_, index) => checks[index + 1]));
+    const resolved = await inlineStatementImages(p, paper, async (url) => {
+      if (!campusImages.has(url)) return undefined;
+      return invoke<string>("load_oj_image", { siteId: site.id, url }).catch(() => undefined);
+    });
+    const markdown = problemMarkdown(resolved, paper, { sourceVisible: !checks[0] });
+    const html = problemHtml(resolved, paper, { sourceVisible: !checks[0] });
+    if (markdownBytes(markdown) > MARKDOWN_INLINE_LIMIT) {
+      setMcpOffer({ markdown, html });
+      return;
+    }
+    await deliverStatement(markdown, html);
+  };
   if (!paper)
     return (
       <>
@@ -943,17 +979,8 @@ export function OjPaper({
                   {p.displayLabel}. {p.title}
                 </h2>
                 <div className="oj-actions">
-                  <Button
-                    variant="tonal"
-                    onClick={() =>
-                      void action(async () => {
-                        const markdown = problemMarkdown(p, paper);
-                        if (!(await copyText(markdown))) setManualCopy(markdown);
-                        else notifySuccess("完整题面 Markdown 已复制。");
-                      })
-                    }
-                  >
-                    复制 Markdown
+                  <Button variant="tonal" onClick={() => void action(copyProblemMarkdown)}>
+                    复制
                   </Button>
                   {desktop && [0, 4].includes(p.kind) && (
                     <Button variant="tonal" disabled={busy} onClick={() => void send()}>
@@ -1064,14 +1091,10 @@ export function OjPaper({
       {!!manualCopy &&
         typeof document !== "undefined" &&
         createPortal(
-          <Dialog
-            open={!!manualCopy}
-            headline="手动复制 Markdown"
-            onClose={() => setManualCopy(undefined)}
-          >
+          <Dialog open={!!manualCopy} headline="手动复制" onClose={() => setManualCopy(undefined)}>
             <TextField
               type="multiline"
-              aria-label="完整 Markdown"
+              aria-label="题面全文"
               readonly
               value={manualCopy ?? ""}
               className="w-full"
@@ -1082,6 +1105,44 @@ export function OjPaper({
             <div slot="actions">
               <Button variant="tonal" onClick={() => setManualCopy(undefined)}>
                 关闭
+              </Button>
+            </div>
+          </Dialog>,
+          document.body,
+        )}
+      {mcpOffer &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <Dialog open headline="图片过大" onClose={() => setMcpOffer(undefined)}>
+            <div className="space-y-3">
+              <p>
+                题面图片已转存为 base64，复制内容约
+                {(markdownBytes(mcpOffer.markdown) / 1024 / 1024).toFixed(1)} MB（上限{" "}
+                {MARKDOWN_INLINE_LIMIT / 1024 / 1024} MB），不宜直接粘贴。
+              </p>
+              <p>可开启本地 MCP 服务，由本机上的 AI 工具直接读取题面与原图。</p>
+            </div>
+            <div slot="actions">
+              <Button variant="text" onClick={() => setMcpOffer(undefined)}>
+                取消
+              </Button>
+              <Button
+                variant="tonal"
+                onClick={() => {
+                  const { markdown, html } = mcpOffer;
+                  setMcpOffer(undefined);
+                  void deliverStatement(markdown, html);
+                }}
+              >
+                仍然复制
+              </Button>
+              <Button
+                onClick={() => {
+                  setMcpOffer(undefined);
+                  void nav.push("/settings?tab=mcp");
+                }}
+              >
+                前往设置
               </Button>
             </div>
           </Dialog>,

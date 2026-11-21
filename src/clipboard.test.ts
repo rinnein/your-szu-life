@@ -1,6 +1,11 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { copyText } from "./clipboard";
+import { copyRichText, copyText } from "./clipboard";
+
+vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({
+  writeText: vi.fn(),
+  writeHtml: vi.fn(),
+}));
 
 const originalClipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
 const originalExecCommand = Object.getOwnPropertyDescriptor(document, "execCommand");
@@ -107,5 +112,62 @@ describe("shared WebView clipboard", () => {
     setFallback(vi.fn(() => true));
     await expect(copyText("complete text")).resolves.toBe(true);
     expect(document.querySelector("textarea")).toBeNull();
+  });
+});
+
+describe("rich text copy", () => {
+  beforeEach(() => {
+    document.body.replaceChildren();
+    document.getSelection()?.removeAllRanges();
+    setClipboard(undefined);
+    setFallback(undefined);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    document.body.replaceChildren();
+    if (originalClipboard) Object.defineProperty(navigator, "clipboard", originalClipboard);
+    else Reflect.deleteProperty(navigator, "clipboard");
+    if (originalExecCommand) Object.defineProperty(document, "execCommand", originalExecCommand);
+    else Reflect.deleteProperty(document, "execCommand");
+  });
+
+  it("writes both flavors through the Tauri plugin on desktop", async () => {
+    vi.stubGlobal("__TAURI_INTERNALS__", {});
+    const writeHtml = vi.mocked((await import("@tauri-apps/plugin-clipboard-manager")).writeHtml);
+    writeHtml.mockResolvedValue(undefined);
+    await expect(copyRichText("plain", "<b>rich</b>")).resolves.toEqual({ ok: true, rich: true });
+    expect(writeHtml).toHaveBeenCalledWith("<b>rich</b>", "plain");
+  });
+
+  it("falls back to the Clipboard API when the plugin rejects", async () => {
+    vi.stubGlobal("__TAURI_INTERNALS__", {});
+    vi.mocked((await import("@tauri-apps/plugin-clipboard-manager")).writeHtml).mockRejectedValue(
+      new Error("not supported"),
+    );
+    const write = vi.fn().mockResolvedValue(undefined);
+    setClipboard({ write });
+    vi.stubGlobal(
+      "ClipboardItem",
+      class {
+        constructor(public formats: Record<string, Blob>) {}
+      },
+    );
+    await expect(copyRichText("plain", "<b>rich</b>")).resolves.toEqual({ ok: true, rich: true });
+    expect(write).toHaveBeenCalledTimes(1);
+    const [items] = write.mock.calls[0] as [Array<{ formats: Record<string, Blob> }>];
+    expect(items).toHaveLength(1);
+    expect(await items[0].formats["text/plain"].text()).toBe("plain");
+    expect(await items[0].formats["text/html"].text()).toBe("<b>rich</b>");
+  });
+
+  it("degrades to plain text when no HTML writer is available", async () => {
+    setFallback(vi.fn(() => true));
+    await expect(copyRichText("plain", "<b>rich</b>")).resolves.toEqual({ ok: true, rich: false });
+  });
+
+  it("reports failure when every writer fails", async () => {
+    setFallback(vi.fn(() => false));
+    await expect(copyRichText("plain", "<b>rich</b>")).resolves.toEqual({ ok: false, rich: false });
   });
 });
