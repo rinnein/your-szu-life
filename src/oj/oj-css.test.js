@@ -42,7 +42,7 @@ describe("oj css layout contract", () => {
       /\.oj-statement-sections\s*\{[^}]*container:\s*oj-statement\s*\/\s*inline-size/,
     );
     expect(styles).toMatch(
-      /@container oj-statement \(min-width: 640px\)\s*\{[\s\S]*?\.oj-sample\s*\{[^}]*grid-template-columns:\s*1fr 1fr/,
+      /@container oj-statement \(min-width: 640px\)\s*\{[\s\S]*?\.oj-sample\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(0,\s*1fr\)/,
     );
   });
 

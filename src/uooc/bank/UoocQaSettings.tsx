@@ -272,7 +272,7 @@ export function BankQuestionCardItem({
   return (
     <div
       key={`${question.tid}-${question.questionId}`}
-      className="grid gap-3 rounded-xl border border-separator/50 bg-surface/50 p-4 transition-colors hover:border-separator"
+      className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 rounded-xl border border-separator/50 bg-surface/50 p-4 transition-colors hover:border-separator"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -308,13 +308,14 @@ export function BankQuestionCardItem({
         </div>
       </div>
 
-      <p className="font-medium whitespace-pre-wrap text-foreground">
+      {/* overflow-wrap:anywhere 让题干里的长 URL/标签 token 折行，否则会把卡片 min-content 撑爆 */}
+      <p className="font-medium [overflow-wrap:anywhere] whitespace-pre-wrap text-foreground">
         <RichText text={question.stem || "（题干未录入）"} images={question.images} />
       </p>
 
       {/* 选项列表 */}
       {question.options && question.options.length > 0 && (
-        <div className="grid gap-1.5 rounded-lg border border-separator/40 bg-surface/40 p-2.5 text-xs">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-1.5 rounded-lg border border-separator/40 bg-surface/40 p-2.5 text-xs">
           <span className="font-semibold text-muted text-[11px]">选项列表</span>
           {question.options.map((opt) => {
             const isCorrect =
@@ -336,7 +337,7 @@ export function BankQuestionCardItem({
                 }`}
               >
                 <span className="font-bold shrink-0">{opt.id}.</span>
-                <span className="flex-1">
+                <span className="min-w-0 flex-1">
                   <RichText text={opt.text} images={question.images} />
                 </span>
                 {isCorrect && (
@@ -356,7 +357,7 @@ export function BankQuestionCardItem({
       )}
 
       {/* 答案记录卡片区 */}
-      <div className="grid gap-1.5 pt-1 border-t border-separator/30 text-xs">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-1.5 pt-1 border-t border-separator/30 text-xs">
         <span className="font-semibold text-muted text-[11px]">答案记录</span>
         {displayAnswers.length > 0 ? (
           displayAnswers.map((a, aIdx) => (
@@ -994,7 +995,7 @@ export function UoocQaSettings({
   }, [searchResults, localQuestions, courseTitles]);
 
   return (
-    <div className="grid gap-6">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-6">
       {/* 题库共享平台服务与认证配置 */}
       <Card id="uooc-qa-share-settings" aria-labelledby="uooc-qa-share-title" variant="outlined">
         <div slot="headline" className="font-semibold text-lg" id="uooc-qa-share-title">
@@ -1003,7 +1004,7 @@ export function UoocQaSettings({
         <div slot="subhead">
           管理题库共享平台的连接地址、账户登录、向量同步与全量试题上传。做题前可使用题库答案直接作答或排除错误选项，答题完成后自动回传标准答案。
         </div>
-        <div className="grid gap-5 p-4">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-5 p-4">
           {loading && !vectorStatus && !accountStatus && (
             <div className="flex items-center gap-2 text-sm text-muted" role="status">
               <LoadingIndicator size={16} /> 正在检查题库状态
@@ -1011,7 +1012,7 @@ export function UoocQaSettings({
           )}
 
           {/* 题库共享后端地址配置框 */}
-          <div className="grid gap-3 rounded-xl border border-separator/60 p-4">
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-3 rounded-xl border border-separator/60 p-4">
             <div className="flex items-center gap-2">
               {debugEnabled && (
                 <Chip color="warning" size="sm">
@@ -1049,7 +1050,7 @@ export function UoocQaSettings({
           </div>
 
           {/* 账户与认证登录状态卡片 */}
-          <div className="grid gap-3 rounded-xl border border-separator/60 p-4">
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-3 rounded-xl border border-separator/60 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 font-medium">
                 <LuUser aria-hidden="true" />
@@ -1101,7 +1102,7 @@ export function UoocQaSettings({
             </div>
 
             {deviceAuthInfo && (
-              <div className="mt-2 grid gap-3 rounded-xl border border-primary/40 bg-primary/5 p-4">
+              <div className="mt-2 grid grid-cols-[minmax(0,1fr)] gap-3 rounded-xl border border-primary/40 bg-primary/5 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 font-medium text-foreground">
                     <LuLaptop aria-hidden="true" />
@@ -1270,7 +1271,7 @@ export function UoocQaSettings({
             )}
           </div>
         </div>
-        <div className="grid gap-4 p-4">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-4 p-4">
           {/* 全部课程入口卡片 */}
           <div
             className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/40 bg-primary/5 p-4 transition-colors hover:border-primary cursor-pointer"
@@ -1313,14 +1314,14 @@ export function UoocQaSettings({
               题库暂无已记录的题目。进入测验或点击“重新构建题库”可自动解析已完成测验的标准答案。
             </div>
           ) : (
-            <div className="grid gap-3.5 sm:grid-cols-2">
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-3.5 sm:grid-cols-2">
               {courseGroups.map((group) => (
                 <div
                   key={group.cid}
                   className="flex flex-col justify-between gap-3 rounded-xl border border-separator/60 bg-surface/40 p-4 transition-colors hover:border-separator cursor-pointer"
                   onClick={() => handleOpenCourseModal(group.cid)}
                 >
-                  <div className="grid gap-1">
+                  <div className="grid grid-cols-[minmax(0,1fr)] gap-1">
                     <div className="flex items-start justify-between gap-2">
                       <h4 className="font-semibold text-foreground text-sm line-clamp-2">
                         {group.title}
@@ -1400,9 +1401,9 @@ export function UoocQaSettings({
                   <span className="text-xs">HTML 标签</span>
                 </Switch>
               </div>
-              <div className="grid gap-4">
+              <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
                 {/* 搜索与筛选工具栏 */}
-                <div className="grid gap-3 rounded-xl border border-separator/50 bg-surface/30 p-3.5 text-sm">
+                <div className="grid grid-cols-[minmax(0,1fr)] gap-3 rounded-xl border border-separator/50 bg-surface/30 p-3.5 text-sm">
                   <TextField
                     className="w-full"
                     placeholder="搜索题干关键词、题号、题组 (tid) 或答案内容..."
@@ -1557,7 +1558,7 @@ export function UoocQaSettings({
                     未找到符合当前搜索或筛选条件的题目。
                   </div>
                 ) : (
-                  <div className="grid gap-3.5">
+                  <div className="grid grid-cols-[minmax(0,1fr)] gap-3.5">
                     {paginatedQuestions.map((q) => (
                       <BankQuestionCardItem
                         key={`${q.tid}-${q.questionId}`}
@@ -1603,7 +1604,7 @@ export function UoocQaSettings({
           题目搜索
         </div>
         <div slot="subhead">结合特征向量投影与服务端共享题库，支持按题干语义或关键词高速检索。</div>
-        <div className="grid gap-3 p-4">
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-3 p-4">
           <div className="flex flex-wrap items-start gap-2">
             <div className="min-w-0 flex-1 basis-72">
               <TextField
@@ -1679,7 +1680,7 @@ export function UoocQaSettings({
                   未找到与「{searchQuery}」匹配的题目。
                 </div>
               ) : (
-                <div className="grid gap-3.5">
+                <div className="grid grid-cols-[minmax(0,1fr)] gap-3.5">
                   {convertedSearchResults.map(({ question, similarity, source }) => (
                     <BankQuestionCardItem
                       key={`${question.tid}-${question.questionId}`}

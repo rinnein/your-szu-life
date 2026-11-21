@@ -967,6 +967,8 @@ p {
   border-radius: 4px;
   background: var(--mtrl-sys-color-surface-container);
   font-size: 0.92em;
+  /* 行内代码里的长 token（链接/标识符）在窄屏必须能折行。 */
+  overflow-wrap: anywhere;
 }
 
 .markdown-body pre {

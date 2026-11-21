@@ -305,7 +305,7 @@ export function PermissionSettings({
                         {item?.note != null && (
                           <span className="block text-muted">{item.note}</span>
                         )}
-                        <span className="block font-mono text-[11px] text-muted">
+                        <span className="block break-all font-mono text-[11px] text-muted">
                           {entry.permission}
                         </span>
                       </>
@@ -332,7 +332,7 @@ export function PermissionSettings({
                   description={
                     <>
                       {entry.description}
-                      <span className="block font-mono text-[11px] text-muted">
+                      <span className="block break-all font-mono text-[11px] text-muted">
                         {entry.permission}
                       </span>
                     </>

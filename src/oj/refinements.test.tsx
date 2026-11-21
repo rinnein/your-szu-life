@@ -67,8 +67,8 @@ it("marks a running contest complete only when all problems are AC, and opens on
   const view = render(
     <ContestTable contests={[contest]} query="" siteId="test" account="fixture" onOpen={open} />,
   );
-  // 「已完成」写在 overline 上，跨行可读。
-  expect(await screen.findByText("已完成")).toBeInTheDocument();
+  // 状态与「已完成」都写在 overline 上，跨行可读。
+  expect(await screen.findByText(/已完成/)).toBeInTheDocument();
   expect(screen.getByText(/进行中/)).toBeInTheDocument();
   // MD3 List 的行是一次激活（整行可点），不再有单独的「进入测验」按钮。
   fireEvent.click(screen.getAllByRole("listitem")[0]);

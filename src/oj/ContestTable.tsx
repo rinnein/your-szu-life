@@ -47,12 +47,29 @@ export function formatRemaining(milliseconds: number): string {
   return days ? `${days}天 ${clock}` : clock;
 }
 
+const pad2 = (value: number) => String(value).padStart(2, "0");
+
+/**
+ * 紧凑时间戳 MM/DD HH:mm（跨年才带年份）。MD3 List 的支持文本在 shadow DOM
+ * 内被硬裁成单行（-webkit-line-clamp:1，无 part/lines 可穿透），toLocaleString
+ * 的完整格式在 360px 屏上放不下；同年省去年份后，开始—结束区间也能单行放下。
+ */
+export function formatStamp(timestamp: number, now = Date.now()): string {
+  const date = new Date(timestamp);
+  const monthDay = `${pad2(date.getMonth() + 1)}/${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(
+    date.getMinutes(),
+  )}`;
+  return date.getFullYear() === new Date(now).getFullYear() ? monthDay : `${date.getFullYear()}/${monthDay}`;
+}
+
 /**
  * 测验列表。
  *
  * 每场测验的字段数（名称、状态、开始/截止、操作）对表格来说偏少，而窄屏下
- * 表格必然横向滚动；改用 MD3 的 List：名称是行标题，时间与状态放在支持文本里，
- * 「进入/查看」作为尾部按钮。整行可点，与浏览器的列表习惯一致。
+ * 表格必然横向滚动；改用 MD3 的 List：名称是行标题，状态放在 overline，
+ * 紧凑时间与倒计时放在支持文本里，「进入/查看」作为尾部按钮。整行可点，
+ * 与浏览器的列表习惯一致。注意 List 的三个文本槽都按单行裁剪展示，长标题
+ * 以省略号收尾是预期行为。
  */
 export function ContestTable({
   contests,
@@ -188,16 +205,14 @@ export function ContestTable({
             <ListItem
               key={contest.id}
               value={contest.id}
-              overline={complete ? "已完成" : undefined}
+              overline={complete ? `${state} · 已完成` : state}
               headline={contest.title}
               supportingText={
                 active
-                  ? `${state} · 截止 ${new Date(contest.end).toLocaleString()}（剩余 ${formatRemaining(
-                      contest.end - now,
-                    )}）`
-                  : `${state} · ${new Date(contest.begin).toLocaleString()} — ${new Date(
-                      contest.end,
-                    ).toLocaleString()}`
+                  ? `截止 ${formatStamp(contest.end, now)} · 剩余 ${formatRemaining(contest.end - now)}`
+                  : state === "未开始"
+                    ? `开始 ${formatStamp(contest.begin, now)}`
+                    : `${formatStamp(contest.begin, now)} — ${formatStamp(contest.end, now)}`
               }
               trailingText={
                 state === "已结束" ? "查看测验" : state === "未开始" ? "未开始" : "进入测验"

@@ -18,7 +18,13 @@ import { Banner, Chip, bindField, toast } from "../../ui";
 import { LuBot, LuCircleCheck, LuClock, LuDatabase, LuSparkles } from "react-icons/lu";
 import { useHtmlTagVisibility } from "./DimmedHtmlText";
 import { RichText, countRichImages, plainTextFromRich } from "./RichText";
-import type { AiSessionEntry, QuizAnswers, QuizQuestion, QuizState, UoocSnapshot } from "../state/types";
+import type {
+  AiSessionEntry,
+  QuizAnswers,
+  QuizQuestion,
+  QuizState,
+  UoocSnapshot,
+} from "../state/types";
 
 export function getQuizCacheKey(
   accountId?: string,
@@ -1075,7 +1081,7 @@ export function QuizPanel({
             return (
               <div
                 key={q.id}
-                className="grid gap-3 rounded-xl border border-separator/50 bg-surface/50 p-4 transition-colors hover:border-separator"
+                className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3 rounded-xl border border-separator/50 bg-surface/50 p-4 transition-colors hover:border-separator"
               >
                 {/* 题号与题目类型 Chip */}
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1088,8 +1094,8 @@ export function QuizPanel({
                   <span className="font-mono text-xs text-muted">ID: {q.id}</span>
                 </div>
 
-                {/* 题干文本（富文本：Markdown 图片 + 旧 HTML 淡化显示） */}
-                <p className="font-medium whitespace-pre-wrap text-foreground">
+                {/* 题干文本（富文本：Markdown 图片 + 旧 HTML 淡化显示）；anywhere 折行长 token 防 min-content 撑爆 */}
+                <p className="font-medium [overflow-wrap:anywhere] whitespace-pre-wrap text-foreground">
                   <RichText text={q.text} dataImages={q.images} imageOffset={0} />
                 </p>
 
@@ -1116,7 +1122,7 @@ export function QuizPanel({
                       if (val !== undefined && val !== "") set(q.id, [val]);
                     }}
                     disabled={disabled || quiz.stage === "passed"}
-                    className="grid gap-2"
+                    className="grid grid-cols-[minmax(0,1fr)] gap-2"
                   >
                     {q.options.map((o) => {
                       const badges = getOptionBadges(q, o.id, o.text, answers[q.id] ?? []);
@@ -1143,7 +1149,7 @@ export function QuizPanel({
                             data-option-prefix={`${o.id.toUpperCase()}.`}
                             className="option-prefix font-bold text-foreground shrink-0 text-xs"
                           />
-                          <span className="flex-1 text-xs text-foreground/90">
+                          <span className="min-w-0 flex-1 text-xs text-foreground/90">
                             <RichText
                               text={o.text}
                               dataImages={q.images}
@@ -1179,7 +1185,11 @@ export function QuizPanel({
                     })}
                   </Radios>
                 ) : q.kind === "multiple" ? (
-                  <div role="group" aria-label={`第 ${i + 1} 题答案`} className="grid gap-2">
+                  <div
+                    role="group"
+                    aria-label={`第 ${i + 1} 题答案`}
+                    className="grid grid-cols-[minmax(0,1fr)] gap-2"
+                  >
                     {q.options.map((o) => {
                       const badges = getOptionBadges(q, o.id, o.text, answers[q.id] ?? []);
                       const isBoxChecked = getSelectedCheckboxValues(q).includes(o.id);
@@ -1215,7 +1225,7 @@ export function QuizPanel({
                             data-option-prefix={`${o.id.toUpperCase()}.`}
                             className="option-prefix font-bold text-foreground shrink-0 text-xs"
                           />
-                          <span className="flex-1 text-xs text-foreground/90">
+                          <span className="min-w-0 flex-1 text-xs text-foreground/90">
                             <RichText
                               text={o.text}
                               dataImages={q.images}
@@ -1340,7 +1350,7 @@ export function QuizPanel({
                   .map((review, j) => (
                     <div
                       key={j}
-                      className={`grid gap-1 rounded-lg border p-2.5 text-xs ${
+                      className={`grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1 rounded-lg border p-2.5 text-xs ${
                         review.message.includes("排除")
                           ? "border-danger/30 bg-danger/5 text-danger"
                           : review.message.includes("题库") || review.message.includes("标准答案")
@@ -1350,7 +1360,7 @@ export function QuizPanel({
                               : "border-accent/25 bg-accent/5 text-muted"
                       }`}
                     >
-                      <p className="font-medium text-foreground whitespace-pre-wrap">
+                      <p className="font-medium [overflow-wrap:anywhere] text-foreground whitespace-pre-wrap">
                         {review.message}
                       </p>
                       {Object.keys(review.probabilities).length > 0 && (
@@ -1468,7 +1478,7 @@ export function QuizPanel({
               if (isModalFinished) setActionModal(null);
             }}
           >
-            <div className="grid gap-4 p-4 text-sm max-h-[70vh] overflow-y-auto">
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-4 p-4 text-sm max-h-[70vh] overflow-y-auto">
               <div className="rounded-xl border border-separator/50 bg-surface/40 p-4 grid gap-2.5">
                 <div className="flex items-center justify-between text-xs text-muted">
                   <span>当前执行状态</span>
@@ -1642,7 +1652,7 @@ export function QuizPanel({
                               </span>
                             </div>
 
-                            <div className="grid gap-2 pt-2 border-t border-separator/30 text-[11px]">
+                            <div className="grid grid-cols-[minmax(0,1fr)] gap-2 pt-2 border-t border-separator/30 text-[11px]">
                               <div>
                                 <span className="font-semibold text-muted">
                                   发送给 AI 的提示词 (Prompt):

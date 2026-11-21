@@ -35,15 +35,17 @@ export const mockOjSnapshot: Snapshot = {
   companionStatus: { connected: false, active: false, message: "" },
 };
 
+// id 必须是纯数字：路由的 validateSearch 用 numericId 校验 group/contest，
+// 非数字 id 会被剥掉，演示模式下就无法进入测验列表与题目详情。
 export const mockOjGroups: Group[] = [
-  { id: "g-1", name: "2026 级程序设计基础" },
-  { id: "g-2", name: "算法竞赛训练营" },
+  { id: "1", name: "2026 级程序设计基础" },
+  { id: "2", name: "算法竞赛训练营" },
 ];
 
 export const mockOjContests: Contest[] = [
   {
-    id: "ct-1",
-    groupId: "g-1",
+    id: "1",
+    groupId: "1",
     title: "第七周周赛",
     description: "模拟演示用比赛",
     begin: Date.now() - 3 * 86_400_000,
@@ -52,8 +54,8 @@ export const mockOjContests: Contest[] = [
     isExam: false,
   },
   {
-    id: "ct-2",
-    groupId: "g-1",
+    id: "2",
+    groupId: "1",
     title: "期中上机考试",
     description: "模拟演示用考试",
     begin: Date.now() + 2 * 86_400_000,

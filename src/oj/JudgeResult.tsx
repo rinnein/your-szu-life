@@ -95,7 +95,7 @@ export function JudgeResult({
         {details.message && (
           <section>
             <h3>{submission.status === -2 ? "编译信息" : "判题信息"}</h3>
-            <pre>{details.message}</pre>
+            <pre className="oj-code-block">{details.message}</pre>
           </section>
         )}
         {!!details.cases.length && (
@@ -232,7 +232,7 @@ export function JudgeResult({
           <p className="text-sm text-muted">服务器未提供测试点明细。</p>
         )}
         {details.lintScore !== undefined && <p>代码规范分：{details.lintScore}</p>}
-        {details.lintMessage && <pre>{details.lintMessage}</pre>}
+        {details.lintMessage && <pre className="oj-code-block">{details.lintMessage}</pre>}
         <Button variant="tonal" disabled={polling} onClick={onRefresh}>
           刷新判题
         </Button>

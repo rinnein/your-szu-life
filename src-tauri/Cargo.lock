@@ -9494,7 +9494,7 @@ dependencies = [
 
 [[package]]
 name = "szu-app-content"
-version = "0.17.2"
+version = "0.17.3"
 dependencies = [
  "flate2",
  "image",
@@ -9516,7 +9516,7 @@ dependencies = [
 
 [[package]]
 name = "szu-build-support"
-version = "0.17.2"
+version = "0.17.3"
 dependencies = [
  "dotenvy",
  "serde_json",
@@ -9524,7 +9524,7 @@ dependencies = [
 
 [[package]]
 name = "szu-core"
-version = "0.17.2"
+version = "0.17.3"
 dependencies = [
  "android-native-keyring-store",
  "base16384",
@@ -9578,7 +9578,7 @@ dependencies = [
 
 [[package]]
 name = "szu-download"
-version = "0.17.2"
+version = "0.17.3"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -9602,7 +9602,7 @@ dependencies = [
 
 [[package]]
 name = "szu-enrollment"
-version = "0.17.2"
+version = "0.17.3"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -9632,7 +9632,7 @@ dependencies = [
 
 [[package]]
 name = "szu-jxxk"
-version = "0.17.2"
+version = "0.17.3"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -9653,7 +9653,7 @@ dependencies = [
 
 [[package]]
 name = "szu-lms"
-version = "0.17.2"
+version = "0.17.3"
 dependencies = [
  "chrono",
  "cookie_store",
@@ -9671,7 +9671,7 @@ dependencies = [
 
 [[package]]
 name = "szu-mesh"
-version = "0.17.2"
+version = "0.17.3"
 dependencies = [
  "argon2",
  "axum",
@@ -9697,7 +9697,7 @@ dependencies = [
 
 [[package]]
 name = "szu-oj"
-version = "0.17.2"
+version = "0.17.3"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -9723,7 +9723,7 @@ dependencies = [
 
 [[package]]
 name = "szu-runtime"
-version = "0.17.2"
+version = "0.17.3"
 dependencies = [
  "ddddocr-core",
  "ddddocr-tract2",
@@ -9742,7 +9742,7 @@ dependencies = [
 
 [[package]]
 name = "szu-signin"
-version = "0.17.2"
+version = "0.17.3"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -9768,7 +9768,7 @@ dependencies = [
 
 [[package]]
 name = "szu-timetable"
-version = "0.17.2"
+version = "0.17.3"
 dependencies = [
  "chrono",
  "jni 0.21.1",
@@ -9789,7 +9789,7 @@ dependencies = [
 
 [[package]]
 name = "szu-todos"
-version = "0.17.2"
+version = "0.17.3"
 dependencies = [
  "chrono",
  "log",
@@ -9811,7 +9811,7 @@ dependencies = [
 
 [[package]]
 name = "szu-uooc"
-version = "0.17.2"
+version = "0.17.3"
 dependencies = [
  "async-openai",
  "base64 0.22.1",
@@ -12646,7 +12646,7 @@ dependencies = [
 
 [[package]]
 name = "your-szu-life"
-version = "0.17.2"
+version = "0.17.3"
 dependencies = [
  "axum",
  "base64 0.22.1",

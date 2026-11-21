@@ -140,7 +140,7 @@ describe("demo shim", () => {
     };
     // 键口径：站点 ID 与 `site:group`。
     expect(Object.keys(listPayload.data.groups)).toEqual(["npuoj"]);
-    expect(Object.keys(listPayload.data.contests)).toEqual(["npuoj:g-1"]);
+    expect(Object.keys(listPayload.data.contests)).toEqual(["npuoj:1"]);
   });
 
   it("serves an OJ paper with problems and a draft for the first one", async () => {
@@ -148,7 +148,7 @@ describe("demo shim", () => {
     const paper = await invoke<{
       problems: { id: string; kind: number }[];
       drafts: Record<string, unknown>;
-    }>("get_oj_paper", { siteId: "npuoj", contestId: "ct-1" });
+    }>("get_oj_paper", { siteId: "npuoj", contestId: "1" });
     expect(internalsInvoke).not.toHaveBeenCalled();
     expect(paper.problems.length).toBeGreaterThan(0);
     expect(Object.keys(paper.drafts)).toEqual([

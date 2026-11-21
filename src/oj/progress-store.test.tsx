@@ -207,10 +207,10 @@ it("reuses the completion label after remount, props refresh and window focus", 
     onOpen: () => {},
   };
   const first = render(<ContestTable {...props} contests={[contest]} />);
-  await screen.findByText("已完成");
+  await screen.findByText(/已完成/);
   first.unmount();
   const next = render(<ContestTable {...props} contests={[{ ...contest }]} />);
-  expect(screen.getByText("已完成")).toBeInTheDocument();
+  expect(screen.getByText(/已完成/)).toBeInTheDocument();
   fireEvent.focus(window);
   fireEvent(document, new Event("visibilitychange"));
   next.rerender(<ContestTable {...props} contests={[{ ...contest }]} />);
@@ -237,7 +237,7 @@ it("switches accounts without briefly showing another account's completed label"
     contests: [contest],
   };
   const view = render(<ContestTable {...props} account="first" sessionGeneration={1} />);
-  await screen.findByText("已完成");
+  await screen.findByText(/已完成/);
   vi.mocked(invoke).mockResolvedValue({ accepted: 0, total: 2 });
   view.rerender(<ContestTable {...props} account="second" sessionGeneration={2} />);
   // List 的行内容由 MutationObserver 在微任务里刷新，先让它跑完再断言，
@@ -245,6 +245,6 @@ it("switches accounts without briefly showing another account's completed label"
   await act(async () => {
     await Promise.resolve();
   });
-  expect(screen.queryByText("已完成")).toBeNull();
+  expect(screen.queryByText(/已完成/)).toBeNull();
   await waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
 });

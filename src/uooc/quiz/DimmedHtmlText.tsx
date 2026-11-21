@@ -88,7 +88,7 @@ export function DimmedHtmlText({
             <span
               key={index}
               data-dimmed-tag="true"
-              className="text-muted/40 font-mono text-[0.85em] select-none inline-block mx-0.5"
+              className="text-muted/40 font-mono text-[0.85em] select-none inline-block mx-0.5 [overflow-wrap:anywhere]"
             >
               {part}
             </span>

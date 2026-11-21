@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { ContestTable, formatRemaining } from "./ContestTable";
+import { ContestTable, formatRemaining, formatStamp } from "./ContestTable";
 import { mockElementRects } from "../test-layout";
 import type { Contest } from "./types";
 const now = Date.parse("2026-10-04T12:00:00Z");
@@ -69,7 +69,8 @@ it("highlights the running contest and counts down using the server clock", asyn
 it("starts highlighting and counting down when a future contest begins", async () => {
   const future = { ...contest, begin: now + 1000, end: now + 3000 };
   const view = render(<ContestTable contests={[future]} query="" onOpen={() => {}} />);
-  expect(screen.getByText("未开始")).toBeTruthy();
+  // 状态同时出现在 overline 与尾部文本，所以按多命中断言。
+  expect(screen.getAllByText("未开始").length).toBeGreaterThan(0);
   expect(screen.queryByText(/剩余/)).toBeNull();
   act(() => vi.advanceTimersByTime(1000));
   await flushList();
@@ -80,6 +81,12 @@ it("formats long and expired durations without negative countdowns", () => {
   expect(formatRemaining(90061000)).toBe("1天 01:01:01");
   expect(formatRemaining(-1000)).toBe("00:00:00");
   expect(formatRemaining(1)).toBe("00:00:01");
+});
+it("formats stamps in the local clock without seconds", () => {
+  const now = new Date(2026, 9, 4, 12, 0).getTime();
+  // 与当前同年省去年份；跨年才补上。
+  expect(formatStamp(new Date(2026, 9, 4, 12, 34).getTime(), now)).toBe("10/04 12:34");
+  expect(formatStamp(new Date(2027, 0, 5, 8, 9).getTime(), now)).toBe("2027/01/05 08:09");
 });
 
 it("supports filtering contests by status tabs", async () => {
