@@ -18,6 +18,9 @@ import type { ShareState } from "./share-state";
 import type { Building, ResolvedPoint, RollcallItem } from "./types";
 import { rollcallMethod } from "./types";
 
+/** 畅课数字点名的码固定四位，输满即自动提交。 */
+const NUMBER_CODE_LENGTH = 4;
+
 interface LmsRollcallDialogProps {
   item: RollcallItem;
   buildings: Building[];
@@ -68,8 +71,8 @@ export function LmsRollcallDialog({
     }
   };
 
-  const submitNumber = async () => {
-    const trimmed = code.trim();
+  const submitNumber = async (raw: string) => {
+    const trimmed = raw.trim();
     if (!trimmed) return;
     const outcome = await pending.run("submit", () =>
       tauriCore.invoke("signin_submit_lms_number", {
@@ -79,6 +82,14 @@ export function LmsRollcallDialog({
       }),
     );
     finishSubmit(outcome, "数字签到提交成功", "数字签到失败");
+  };
+
+  // 只保留数字，且输满四位自动提交；失焦触发的 change 只同步值、不重复提交。
+  const digitsOf = (value: string) => value.replace(/\D/g, "").slice(0, NUMBER_CODE_LENGTH);
+  const handleCodeInput = (value: string) => {
+    const digits = digitsOf(value);
+    setCode(digits);
+    if (digits.length === NUMBER_CODE_LENGTH) void submitNumber(digits);
   };
 
   const submitRadar = async () => {
@@ -116,7 +127,7 @@ export function LmsRollcallDialog({
             <Button
               variant="filled"
               disabled={!canSubmit || submitting}
-              onClick={() => void (method === "number" ? submitNumber() : submitRadar())}
+              onClick={() => void (method === "number" ? submitNumber(code) : submitRadar())}
             >
               {submitting && <LoadingIndicator size={16} />}
               提交
@@ -130,16 +141,17 @@ export function LmsRollcallDialog({
           <TextField
             label="签到数字码"
             aria-label="输入签到数字码"
-            inputMode="numeric"
-            maxlength={8}
+            type="tel"
+            pattern="[0-9]*"
+            maxlength={NUMBER_CODE_LENGTH}
             value={code}
             onKeyDown={(event: { key?: string; preventDefault?: () => void }) => {
               if (event.key === "Enter") {
                 event.preventDefault?.();
-                void submitNumber();
+                void submitNumber(code);
               }
             }}
-            {...bindField(setCode)}
+            {...bindField({ input: handleCodeInput, change: (value) => setCode(digitsOf(value)) })}
           />
         )}
         {method === "radar" && (

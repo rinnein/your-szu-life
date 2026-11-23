@@ -192,7 +192,7 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-it("lists pending rollcalls and submits a number code from the modal", async () => {
+it("accepts only digits and auto-submits the number code at four digits", async () => {
   await mount("/study/signin");
   expect(await screen.findByText("数据库系统")).toBeInTheDocument();
 
@@ -200,13 +200,18 @@ it("lists pending rollcalls and submits a number code from the modal", async () 
   await act(async () => {
     fireEvent.click(screen.getByText("数据库系统"));
   });
-  expect(await screen.findByLabelText("输入签到数字码")).toBeInTheDocument();
+  const field = await screen.findByLabelText("输入签到数字码");
+  // 数字键盘由 type/pattern 指定：type=number 会吃掉前导 0。
+  expect(field).toHaveAttribute("type", "tel");
+  expect(field).toHaveAttribute("pattern", "[0-9]*");
 
-  typeInto(screen.getByLabelText("输入签到数字码"), "0837");
-  await act(async () => {
-    fireEvent.click(screen.getByRole("button", { name: "提交" }));
-  });
+  // 非数字被过滤，只有三位时不提交。
+  typeInto(field, "08x3");
+  await act(async () => {});
+  expect(submitted.filter((entry) => entry.command === "signin_submit_lms_number")).toHaveLength(0);
 
+  // 第四位一到即自动提交，前导 0 原样保留。
+  typeInto(field, "08x37");
   await waitFor(() => {
     expect(submitted.some((entry) => entry.command === "signin_submit_lms_number")).toBe(true);
   });
@@ -218,16 +223,27 @@ it("lists pending rollcalls and submits a number code from the modal", async () 
 }, 15000);
 
 it("ignores duplicate submit triggers while a submission is pending", async () => {
+  const resolvers: Array<() => void> = [];
+  vi.mocked(invoke).mockImplementation(((command: string, args?: unknown) => {
+    if (command !== "signin_submit_lms_number") return defaultInvoke(command, args);
+    submitted.push({ command, args: (args ?? {}) as Record<string, unknown> });
+    return new Promise<unknown>((resolve) => resolvers.push(() => resolve(null)));
+  }) as unknown as typeof invoke);
+
   await mount("/study/signin");
   fireEvent.click(await screen.findByText("数据库系统"));
   const field = await screen.findByLabelText("输入签到数字码");
+  // 第四位触发自动提交；请求未返回时再回车一次会被直接忽略。
   typeInto(field, "0837");
-  const submitButton = screen.getByRole("button", { name: "提交" });
   await act(async () => {
-    fireEvent.click(submitButton);
-    fireEvent.click(submitButton);
+    fireEvent.keyDown(field, { key: "Enter" });
   });
-  await waitFor(() => expect(submitted).toHaveLength(1));
+  await waitFor(() => expect(resolvers).toHaveLength(1));
+  expect(submitted).toHaveLength(1);
+
+  await act(async () => {
+    resolvers[0]();
+  });
 }, 15000);
 
 it("radar modal resolves the default point and submits without coordinate args", async () => {
