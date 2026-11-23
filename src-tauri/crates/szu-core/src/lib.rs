@@ -18,6 +18,7 @@ pub mod campus_network;
 pub mod campus_payments;
 pub mod demo;
 pub mod device;
+pub mod hex;
 pub mod ipc_channel;
 pub mod logging;
 pub mod migrations;

@@ -57,30 +57,30 @@ reqwest = { version = "0.13", default-features = false, features = [
   # SOCKS5 代理仅在打开该 feature 时才被 reqwest 接受（见 netproxy）。
   "socks",
 ] }
-sha1 = "0.10"
-hmac = "0.12"
-md-5 = "0.10"
-base64 = "0.22"
-argon2 = "0.5"
-rand = "0.9"
-chacha20poly1305 = "0.10.1"
+sha1 = "0.11"
+hmac = "0.13"
+md-5 = "0.11"
+base64 = "0.23"
+argon2 = "0.6"
+rand = "0.10"
+chacha20poly1305 = "0.11"
 uuid = { version = "1", features = ["v4"] }
 tokio = { version = "1", features = ["sync", "time", "rt", "macros", "process"] }
 tokio-util = { version = "0.7", features = ["rt"] }
-tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect"] }
 cookie_store = "0.22"
 reqwest_cookie_store = "0.10"
 mp4 = "0.14"
 m3u8-rs = "6"
-scraper = "0.27.0"
+scraper = "0.29.0"
 ddddocr-core = "=0.2.4"
 ddddocr-tract2 = "=0.2.4"
-sha2 = "0.10"
+sha2 = "0.11"
 flate2 = "1.0"
-calamine = "0.36.1"
+calamine = "0.38.0"
 toasty = { version = "0.11", features = ["sqlite", "serde", "migration"] }
-imageproc = { version = "0.26", default-features = false }
-des = "0.8"
+imageproc = { version = "0.27", default-features = false }
+des = "0.9"
 regex = "1"
 base16384 = "0.1.0"
 async-openai = { version = "0.43.0", default-features = false, features = [
@@ -88,9 +88,9 @@ async-openai = { version = "0.43.0", default-features = false, features = [
   "model",
   "rustls",
 ] }
-rig-core = "0.44.0"
-rig-rmcp = "0.44.0"
-rmcp = { version = "2", default-features = false, features = [
+rig-core = "0.47.0"
+rig-rmcp = "0.47.0"
+rmcp = { version = "3", default-features = false, features = [
   "macros",
   "server",
   "schemars",
@@ -100,7 +100,7 @@ rmcp = { version = "2", default-features = false, features = [
 schemars = { version = "1.0", features = ["derive"] }
 axum = "0.8"
 futures-util = "0.3"
-netdev = "0.46"
+netdev = "0.48"
 # 设备自组网：进程内链接 EasyTier 核心，no-tun 模式不创建 TUN 设备、不依赖
 # Android VpnService；对等设备之间的 TCP 走 `ffi-dataplane` 的用户态数据面。
 # 固定在 2.7.1 的 tag 上，升级时需要重新核对 `mesh` 模块用到的 API。
@@ -135,22 +135,26 @@ easytier-core = { git = "https://github.com/EasyTier/EasyTier", rev = "0d9c52b16
 # 日志与其它日志一样遵守调试页的保留级别和 target 过滤。不要依赖 tower/axum
 # 偶然带上的同名 feature。
 tracing = { version = "0.1", features = ["log"] }
-keyring = { version = "3", features = [
-  "linux-native",
-  "sync-secret-service",
-  "crypto-rust",
-  "apple-native",
-  "windows-native",
-] }
+# keyring 4 起改用 keyring-core 的凭据库架构：`v1` feature 保留原来的
+# `Entry::{new,get_secret,set_secret,delete_credential}` 用法（macOS 钥匙串 /
+# Windows 凭据管理器 / *nix Secret Service），旧的 linux-native、windows-native
+# 等 feature 已不存在。
+keyring = { version = "4", features = ["v1"] }
 ssid = "0.1"
 # 桌面端文件夹选择器走系统原生实现（Linux 使用 xdg-desktop-portal）；Android 由 SAF 桥负责。
 tauri-plugin-dialog = "2"
 android-native-keyring-store = "1.0.0"
-keyring-core = "1.0.0"
+keyring-core = "1.1.0"
+# jni 0.21：`android-native-keyring-store` 1.0 依赖 jni ^0.21，应用的 JNI 桥接
+# 沿用同一版本；jni 0.22 是绑定层 API 重写（EnvUnowned / jni_str! 等），只在
+# rustls-platform-verifier 的类型转换处按独立别名引入。
 jni = "0.21"
 jni022 = { package = "jni", version = "0.22" }
 ndk-context = "0.1.1"
 rustls-platform-verifier = "0.7"
+# 这三个 GTK 绑定必须与 tauri / wry 自身的依赖保持一致（tauri 2.12 仍要求
+# gtk ^0.18、webkit2gtk =2.0.2、soup3 ^0.5）：它们用来接收 tauri 传出的
+# WebView 指针，版本不一致会在树里出现两套不兼容的 GTK 类型。
 webkit2gtk = { version = "2.0.2", features = ["v2_40"] }
 soup3 = "0.5"
 gtk = "0.18"
@@ -211,7 +215,7 @@ tauri-plugin-single-instance = { workspace = true }
 tauri-build = { version = "2", features = [] }
 szu-build-support = { path = "crates/szu-build-support" }
 reqwest = { workspace = true }
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -167,7 +167,7 @@ pub fn verify_file_hash_and_size(
                 Err(_) => return false,
             }
         }
-        let digest = format!("{:x}", hasher.finalize());
+        let digest = szu_core::hex::encode(&hasher.finalize());
         if !digest.eq_ignore_ascii_case(expected_hash) {
             return false;
         }

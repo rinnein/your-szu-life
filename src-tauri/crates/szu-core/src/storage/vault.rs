@@ -9,7 +9,7 @@ use chacha20poly1305::{
     aead::{Aead, KeyInit, Payload},
     XChaCha20Poly1305, XNonce,
 };
-use rand::RngCore;
+use rand::Rng;
 use std::{
     fs,
     io::Write,
@@ -257,7 +257,7 @@ impl Vault {
         let aad = blob_aad();
         let encrypted = XChaCha20Poly1305::new((&self.key).into())
             .encrypt(
-                XNonce::from_slice(&nonce),
+                &XNonce::from(nonce),
                 Payload {
                     msg: plain,
                     aad: &aad,
@@ -285,7 +285,7 @@ impl Vault {
         let nonce = &bytes[BLOB_HEADER_LEN..BLOB_HEADER_LEN + NONCE_LEN];
         XChaCha20Poly1305::new((&self.key).into())
             .decrypt(
-                XNonce::from_slice(nonce),
+                &XNonce::try_from(nonce).expect("nonce is 24 bytes"),
                 Payload {
                     msg: &bytes[BLOB_HEADER_LEN + NONCE_LEN..],
                     aad: &blob_aad(),
@@ -348,7 +348,7 @@ pub fn encrypt(document: &VaultDocument, key: &[u8; KEY_LEN]) -> Result<Vec<u8>,
     rand::rng().fill_bytes(&mut nonce);
     let encrypted = XChaCha20Poly1305::new(key.into())
         .encrypt(
-            XNonce::from_slice(&nonce),
+            &XNonce::from(nonce),
             Payload {
                 msg: &plain,
                 aad: &aad(),
@@ -375,7 +375,7 @@ pub fn decrypt(bytes: &[u8], key: &[u8; KEY_LEN]) -> Result<VaultDocument, Strin
     let nonce = &bytes[HEADER_LEN..HEADER_LEN + NONCE_LEN];
     let plain = XChaCha20Poly1305::new(key.into())
         .decrypt(
-            XNonce::from_slice(nonce),
+            &XNonce::try_from(nonce).expect("nonce is 24 bytes"),
             Payload {
                 msg: &bytes[HEADER_LEN + NONCE_LEN..],
                 aad: &aad(),

@@ -3,7 +3,7 @@
 //! 楼栋内置数据与服务端围栏判定都是 GCJ-02；浏览器 geolocation 读数是
 //! WGS-84，提交前必须转换（深大考勤前端企业微信分支即 type: 'gcj02'）。
 
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 const PI: f64 = std::f64::consts::PI;
 /// 克拉索夫斯基椭球长半轴。

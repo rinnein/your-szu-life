@@ -126,7 +126,7 @@ pub fn saved(
                 if !image.starts_with("data:image/") {
                     return Err("试题图片缓存格式无效".into());
                 }
-                let hash = format!("{:x}", Sha1::digest(image.as_bytes()));
+                let hash = szu_core::hex::encode(&Sha1::digest(image.as_bytes()));
                 let path = root.join("quiz-media").join(format!("{hash}.json"));
                 if !path.exists() {
                     super::persistence::write(&path, image)?;
@@ -153,7 +153,9 @@ pub fn restore_media(states: &mut BTreeMap<String, QuizState>, root: &std::path:
                         let value = super::persistence::read::<String>(&path).ok().flatten();
                         if value
                             .as_ref()
-                            .is_some_and(|v| format!("{:x}", Sha1::digest(v.as_bytes())) == hash)
+                            .is_some_and(|v| {
+                                szu_core::hex::encode(&Sha1::digest(v.as_bytes())) == hash
+                            })
                         {
                             value
                         } else {
@@ -270,13 +272,9 @@ async fn paper(
     qa::normalize_question_rich_text(&mut paper.questions, client.origin());
 
     hydrate_question_images(client, &mut paper.questions, cancel, true).await?;
-    paper.signature = format!(
-        "{:x}",
-        Sha1::digest(
-            serde_json::to_vec(&(&paper.signature, &paper.questions))
-                .map_err(|_| Error::Invalid)?
-        )
-    );
+    paper.signature = szu_core::hex::encode(&Sha1::digest(
+        serde_json::to_vec(&(&paper.signature, &paper.questions)).map_err(|_| Error::Invalid)?,
+    ));
     Ok(paper)
 }
 async fn locate(

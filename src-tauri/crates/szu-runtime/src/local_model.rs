@@ -63,7 +63,7 @@ impl Manifest {
                 Err(_) => return false,
             }
         }
-        let digest = format!("{:x}", hasher.finalize());
+        let digest = szu_core::hex::encode(&hasher.finalize());
         digest == self.sha256
     }
 }
@@ -363,7 +363,7 @@ impl LocalModelStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::Rng;
+    use rand::RngExt;
 
     #[test]
     fn test_mirror_candidates_for_huggingface() {

@@ -254,7 +254,7 @@ pub fn parse(html: &str, url: &reqwest::Url, task_id: &str) -> Result<Paper, Str
     }
     let identity =
         serde_json::to_vec(&(task_id, &questions, &bindings)).map_err(|_| "试卷格式无效")?;
-    let signature = format!("{:x}", Sha1::digest(identity));
+    let signature = szu_core::hex::encode(&Sha1::digest(identity));
     Ok(Paper {
         questions,
         signature,

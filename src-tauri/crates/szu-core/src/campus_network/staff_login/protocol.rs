@@ -4,7 +4,7 @@ use base64::{
     engine::{general_purpose, GeneralPurpose},
     Engine,
 };
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use md5::Md5;
 use reqwest::Url;
 use serde::Serialize;
@@ -91,16 +91,13 @@ pub fn login_url(
         .map(|byte| format!("{byte:02x}"))
         .collect();
     let info = encode_info(username, password, config, token);
-    let checksum = format!(
-        "{:x}",
-        Sha1::digest(
-            format!(
-                "{token}{username}{token}{hmd5}{token}{}{token}{}{token}200{token}1{token}{info}",
-                config.acid, config.ip
-            )
-            .as_bytes()
+    let checksum = crate::hex::encode(&Sha1::digest(
+        format!(
+            "{token}{username}{token}{hmd5}{token}{}{token}{}{token}200{token}1{token}{info}",
+            config.acid, config.ip
         )
-    );
+        .as_bytes(),
+    ));
     let callback = format!("szuLifeLogin_{now}");
     let (os, name) = if cfg!(target_os = "windows") {
         ("Windows", "Windows")
@@ -150,10 +147,9 @@ pub fn remember_value(username: &str, password: &str) -> Result<String, &'static
 
 pub fn credential_stamp(username: &str, password: &str) -> String {
     // Equality/version marker kept in the keyring; never emitted or used as an auth verifier.
-    format!(
-        "{:x}",
-        Sha1::digest(serde_json::to_vec(&(username, password)).expect("strings"))
-    )
+    crate::hex::encode(&Sha1::digest(
+        serde_json::to_vec(&(username, password)).expect("strings"),
+    ))
 }
 
 #[cfg(test)]

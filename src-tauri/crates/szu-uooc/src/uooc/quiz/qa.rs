@@ -842,7 +842,7 @@ pub fn hash_stem(raw: &str) -> String {
     let normalized = normalize_stem(raw);
     let mut hasher = Sha256::new();
     hasher.update(normalized.as_bytes());
-    format!("{:x}", hasher.finalize())
+    szu_core::hex::encode(&hasher.finalize())
 }
 
 /// 文本是否包含 Markdown 图片语法。
@@ -1019,7 +1019,7 @@ pub fn query_rag_candidates(
 
     let q_norm = normalize_stem(query);
 
-    for (_id, (doc, embs)) in store.iter() {
+    for (_id, doc, embs) in store.iter() {
         let mut best_sim = -1.0_f64;
         for emb in embs {
             let sim = cosine_similarity_f32_f64(&q_vec_f32, &emb.vec);

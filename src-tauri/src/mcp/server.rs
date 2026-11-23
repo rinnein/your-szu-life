@@ -35,8 +35,8 @@ impl UnifiedSzuMcpService {
 
 #[tool_handler(router = (Self::all_tools()))]
 impl ServerHandler for UnifiedSzuMcpService {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(
+    fn get_info(&self) -> ServerConfig {
+        ServerConfig::new(
             ServerCapabilities::builder()
                 .enable_tools()
                 .enable_resources()
@@ -56,18 +56,18 @@ impl ServerHandler for UnifiedSzuMcpService {
         _request: Option<PaginatedRequestParams>,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<ListResourcesResult, rmcp::ErrorData> {
-        Ok(ListResourcesResult {
-            resources: resources::list_available_resources(),
-            next_cursor: None,
-            meta: None,
-        })
+        Ok(ListResourcesResult::with_all_items(
+            resources::list_available_resources(),
+        ))
     }
 
     async fn read_resource(
         &self,
         request: ReadResourceRequestParams,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
-    ) -> Result<ReadResourceResult, rmcp::ErrorData> {
-        resources::read_resource_by_uri(&self.app, &request.uri).await
+    ) -> Result<ReadResourceResponse, rmcp::ErrorData> {
+        resources::read_resource_by_uri(&self.app, &request.uri)
+            .await
+            .map(Into::into)
     }
 }

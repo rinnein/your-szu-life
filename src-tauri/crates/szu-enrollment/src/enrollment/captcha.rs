@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
-use des::cipher::{BlockEncrypt, KeyInit};
+use des::cipher::{BlockCipherEncrypt, KeyInit};
 use image::{DynamicImage, ImageFormat, Luma};
 use std::io::Cursor;
 

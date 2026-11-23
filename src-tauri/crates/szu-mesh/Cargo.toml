@@ -14,7 +14,7 @@ szu-core = { path = "../szu-core" }
 szu-oj = { path = "../szu-oj" }
 szu-uooc = { path = "../szu-uooc" }
 tauri = { workspace = true }
-loro = "1.17"
+loro = "1.18"
 base64 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

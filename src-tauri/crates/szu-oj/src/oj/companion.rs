@@ -95,16 +95,13 @@ impl Service {
         let now = chrono::Utc::now().timestamp_millis();
         let settings_revision =
             Self::preferences_locked(&self.runtime.lock().unwrap(), &id, &e.username).revision;
-        let fingerprint = format!(
-            "{:x}",
-            Sha256::digest(
-                format!(
-                    "{}\0{}\0{}\0{}",
-                    e.epoch, settings_revision, request.url, request.source_code
-                )
-                .as_bytes()
+        let fingerprint = szu_core::hex::encode(&Sha256::digest(
+            format!(
+                "{}\0{}\0{}\0{}",
+                e.epoch, settings_revision, request.url, request.source_code
             )
-        );
+            .as_bytes(),
+        ));
         {
             let mut r = self.runtime.lock().unwrap();
             r.companion_requests.retain(|_, time| now - *time < 30_000);

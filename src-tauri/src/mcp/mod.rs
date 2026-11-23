@@ -106,7 +106,7 @@ pub fn start_mcp_server(app: &AppHandle) -> Result<u16, String> {
 
     let session_manager = Arc::new(LocalSessionManager::default());
     let config = StreamableHttpServerConfig::default()
-        .with_stateful_mode(true)
+        .with_legacy_session_mode(true)
         .with_allowed_hosts(vec![
             "localhost".to_string(),
             "127.0.0.1".to_string(),

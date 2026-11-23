@@ -99,7 +99,8 @@ fn prepare_aria2c_binary(manifest_dir: &Path) {
             let mut extracted = false;
             for i in 0..archive.len() {
                 let mut file = archive.by_index(i).expect("zip entry error");
-                if file.name().ends_with(target_file_name) {
+                // zip 9 起 `name()` 返回 `Result`（条目名可能不是合法 UTF-8）。
+                if file.name().is_ok_and(|name| name.ends_with(target_file_name)) {
                     let mut out = File::create(&dest_path).expect("failed to create dest file");
                     std::io::copy(&mut file, &mut out).expect("failed to write binary");
                     extracted = true;

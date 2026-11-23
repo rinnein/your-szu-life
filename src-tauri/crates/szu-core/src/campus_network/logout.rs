@@ -111,10 +111,9 @@ impl LogoutTarget {
                 domain,
             } if config.mac_auth => {
                 let time = (now / 1000).to_string();
-                let sign = format!(
-                    "{:x}",
-                    Sha1::digest(format!("{time}{username}{}1{time}", config.ip).as_bytes())
-                );
+                let sign = crate::hex::encode(&Sha1::digest(
+                    format!("{time}{username}{}1{time}", config.ip).as_bytes(),
+                ));
                 let mut url = staff_url("/cgi-bin/rad_user_dm");
                 url.query_pairs_mut()
                     .append_pair("callback", &callback)

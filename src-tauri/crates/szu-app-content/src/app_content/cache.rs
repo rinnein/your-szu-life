@@ -9,7 +9,7 @@ use std::{
 };
 
 pub fn cache_key(value: &str) -> String {
-    format!("{:x}", Sha1::digest(value.as_bytes()))
+    szu_core::hex::encode(&Sha1::digest(value.as_bytes()))
 }
 
 pub struct Cache {
