@@ -51,6 +51,22 @@ function githubContributor(login) {
   return { login, avatar_url: avatarUrlFor(login) };
 }
 
+// GitHub 页面（图表页与仓库侧栏）用的数据，包含只在未合并分支上提交过的人；
+// REST 的 /contributors 只统计默认分支，因此两者名单会不一致。
+function graphContributor(login, total) {
+  return { author: { login, avatar: avatarUrlFor(login) }, total, weeks: [] };
+}
+
+const GRAPH_URL = "https://github.com/rinnein/your-szu-life/graphs/contributors-data";
+
+function isGraphUrl(input) {
+  return String(input) === GRAPH_URL;
+}
+
+function isApiUrl(input) {
+  return String(input).startsWith("https://api.github.com/");
+}
+
 afterEach(() => {
   for (const dir of temporaryDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
@@ -75,8 +91,57 @@ describe("parseRepository", () => {
 });
 
 describe("fetchContributors", () => {
-  it("paginates, dedupes by login and builds GitHub profile URLs", async () => {
+  it("reads the contributors graph so non-default-branch authors are included", async () => {
     const fetchImpl = vi.fn(async (input) => {
+      expect(isGraphUrl(input)).toBe(true);
+      return jsonResponse([
+        graphContributor("alice", 1),
+        graphContributor("bob", 9),
+        graphContributor("bob", 4),
+        { author: null, total: 3 },
+        { author: { login: "no-avatar" }, total: 2 },
+        graphContributor("carol", 2),
+      ]);
+    });
+
+    const result = await fetchContributors({ repository, fetchImpl });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0]?.[1]?.headers).toMatchObject({
+      Accept: "application/json",
+    });
+    expect(result.source).toBe("graph");
+    expect(result.truncated).toBe(false);
+    expect(result.contributors).toEqual([
+      { login: "bob", url: "https://github.com/bob", avatarUrl: avatarUrlFor("bob") },
+      {
+        login: "carol",
+        url: "https://github.com/carol",
+        avatarUrl: avatarUrlFor("carol"),
+      },
+      { login: "alice", url: "https://github.com/alice", avatarUrl: avatarUrlFor("alice") },
+    ]);
+  });
+
+  it("marks the graph list truncated beyond the contributor limit", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse([
+        graphContributor("alice", 3),
+        graphContributor("bob", 2),
+        graphContributor("carol", 1),
+      ]),
+    );
+
+    const result = await fetchContributors({ repository, fetchImpl, maxContributors: 2 });
+
+    expect(result.source).toBe("graph");
+    expect(result.contributors).toHaveLength(2);
+    expect(result.truncated).toBe(true);
+  });
+
+  it("falls back to REST pagination when the graph endpoint fails", async () => {
+    const fetchImpl = vi.fn(async (input) => {
+      if (isGraphUrl(input)) return jsonResponse({ message: "gone" }, 404);
       const page = new URL(String(input)).searchParams.get("page");
       if (page === "1") return jsonResponse([githubContributor("alice"), githubContributor("bob")]);
       if (page === "2") return jsonResponse([githubContributor("bob"), githubContributor("carol")]);
@@ -85,43 +150,54 @@ describe("fetchContributors", () => {
 
     const result = await fetchContributors({ repository, fetchImpl, pageSize: 2 });
 
+    expect(result.source).toBe("api");
     expect(result.contributors).toEqual([
       { login: "alice", url: "https://github.com/alice", avatarUrl: avatarUrlFor("alice") },
       { login: "bob", url: "https://github.com/bob", avatarUrl: avatarUrlFor("bob") },
       { login: "carol", url: "https://github.com/carol", avatarUrl: avatarUrlFor("carol") },
     ]);
     expect(result.truncated).toBe(false);
-    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
   });
 
-  it("marks the list truncated when the page limit is filled", async () => {
-    const fetchImpl = vi.fn(async () =>
-      jsonResponse([githubContributor("alice"), githubContributor("bob")]),
-    );
+  it("marks the REST list truncated when the page limit is filled", async () => {
+    const fetchImpl = vi.fn(async (input) => {
+      if (isGraphUrl(input)) return jsonResponse({ message: "gone" }, 404);
+      return jsonResponse([githubContributor("alice"), githubContributor("bob")]);
+    });
 
     const result = await fetchContributors({ repository, fetchImpl, pageSize: 2, maxPages: 2 });
 
+    expect(result.source).toBe("api");
     expect(result.contributors).toHaveLength(2);
     expect(result.truncated).toBe(true);
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
-  it("sends authenticated GitHub API headers", async () => {
-    const fetchImpl = vi.fn(async () => jsonResponse([githubContributor("alice")]));
+  it("sends authenticated GitHub API headers on the REST fallback only", async () => {
+    const fetchImpl = vi.fn(async (input) => {
+      if (isGraphUrl(input)) return jsonResponse({ message: "gone" }, 500);
+      return jsonResponse([githubContributor("alice")]);
+    });
 
     await fetchContributors({ repository, fetchImpl, token: "test-token" });
 
-    const init = fetchImpl.mock.calls[0]?.[1];
-    expect(init.headers).toMatchObject({
+    const graphInit = fetchImpl.mock.calls[0]?.[1];
+    expect(graphInit.headers).not.toHaveProperty("Authorization");
+    const apiCall = fetchImpl.mock.calls.find(([input]) => isApiUrl(input));
+    expect(apiCall?.[1]?.headers).toMatchObject({
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
       Authorization: "Bearer test-token",
     });
   });
 
-  it("throws with the HTTP status on API errors", async () => {
-    const fetchImpl = vi.fn(async () => jsonResponse({ message: "rate limited" }, 403));
+  it("throws with both statuses when the graph and REST endpoints fail", async () => {
+    const fetchImpl = vi.fn(async (input) =>
+      jsonResponse({ message: "rate limited" }, isGraphUrl(input) ? 500 : 403),
+    );
 
+    await expect(fetchContributors({ repository, fetchImpl })).rejects.toThrow("500");
     await expect(fetchContributors({ repository, fetchImpl })).rejects.toThrow("403");
   });
 });
@@ -199,9 +275,7 @@ describe("githubContributorsSnapshot", () => {
   it("runs only during builds and writes list plus avatars", async () => {
     const dir = tempDir();
     const fetchImpl = vi.fn(async (input) =>
-      String(input).includes("api.github.com")
-        ? jsonResponse([githubContributor("alice")])
-        : imageResponse(),
+      isGraphUrl(input) ? jsonResponse([graphContributor("alice", 1)]) : imageResponse(),
     );
     const plugin = githubContributorsSnapshot({ dir, repository, fetchImpl });
     const warn = vi.fn();
@@ -216,6 +290,24 @@ describe("githubContributorsSnapshot", () => {
       truncated: false,
     });
     expect(readdirSync(join(dir, "avatars"))).toEqual(["alice.png"]);
+  });
+
+  it("warns about the narrower REST list when the graph endpoint is unavailable", async () => {
+    const dir = tempDir();
+    const fetchImpl = vi.fn(async (input) => {
+      if (isGraphUrl(input)) return jsonResponse({ message: "gone" }, 404);
+      if (isApiUrl(input)) return jsonResponse([githubContributor("alice")]);
+      return imageResponse();
+    });
+    const plugin = githubContributorsSnapshot({ dir, repository, fetchImpl });
+    const warn = vi.fn();
+
+    await plugin.buildStart.call({ warn }, {});
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("REST"));
+    expect(JSON.parse(readFileSync(join(dir, "contributors.json"), "utf8"))).toMatchObject({
+      contributors: [{ login: "alice" }],
+    });
   });
 
   it("clears generated data and warns instead of failing the build", async () => {

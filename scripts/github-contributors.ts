@@ -23,10 +23,15 @@ export type FetchLike = (input: string | URL | Request, init?: RequestInit) => P
 const GITHUB_HOST = "github.com";
 const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_MAX_PAGES = 10;
+const DEFAULT_MAX_CONTRIBUTORS = 1000;
 const DEFAULT_AVATAR_SIZE = 96;
 const DEFAULT_MAX_AVATAR_BYTES = 512 * 1024;
 const DEFAULT_AVATAR_CONCURRENCY = 8;
 const REQUEST_TIMEOUT_MS = 20_000;
+// GitHub 页面（贡献者图表页与仓库首页侧栏）用的就是这份数据：它按整个仓库的提交统计，
+// 因此也包含只在未合并分支上提交过的人。REST 的 /contributors 只统计默认分支，
+// 两者名单会不一致（曾出现「GitHub 上已更新、构建产物里还是旧名单」）。
+const GITHUB_GRAPH_PATH = "graphs/contributors-data";
 // GitHub 登录名只会是小写字母、数字和连字符；其它值不做头像落盘，避免非法文件路径。
 const LOGIN_PATTERN = /^[A-Za-z0-9-]+$/;
 const IMAGE_EXTENSIONS: Record<string, string> = {
@@ -92,16 +97,70 @@ function githubHeaders(token?: string, accept = "application/vnd.github+json") {
   return headers;
 }
 
-export async function fetchContributors(options: {
+export type ContributorSource = "graph" | "api";
+
+type GraphContributor = {
+  author?: { login?: unknown; avatar?: unknown } | null;
+  total?: unknown;
+};
+
+/**
+ * GitHub 页面（图表页与仓库侧栏）使用的贡献者数据，和用户在网页上看到的一致。
+ * 接口只认 `Accept: application/json`，返回 `[{ author: { login, avatar }, total }]`。
+ * 它属于网页侧接口，Bearer token 不参与鉴权（带上也一样按匿名处理），因此这里不发 token；
+ * 私有仓库读不到时由下方 REST 回退兜底。
+ */
+async function fetchContributorsFromGraph(options: {
   repository: Repository;
-  fetchImpl?: FetchLike;
-  token?: string;
-  pageSize?: number;
-  maxPages?: number;
+  fetchImpl: FetchLike;
+  maxContributors: number;
 }): Promise<{ contributors: FetchedContributor[]; truncated: boolean }> {
-  const fetchImpl = options.fetchImpl ?? fetch;
-  const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
-  const maxPages = options.maxPages ?? DEFAULT_MAX_PAGES;
+  const url = `https://${GITHUB_HOST}/${options.repository.fullName}/${GITHUB_GRAPH_PATH}`;
+  const response = await options.fetchImpl(url, {
+    headers: { Accept: "application/json", "User-Agent": "your-szu-life-build" },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error(`GitHub 贡献者图表接口返回 ${response.status}`);
+  const entries: unknown = await response.json();
+  if (!Array.isArray(entries)) throw new Error("GitHub 贡献者图表响应无效");
+
+  const ranked: Array<{ contributor: FetchedContributor; total: number }> = [];
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    const author = (entry as GraphContributor)?.author;
+    const login = author?.login;
+    const avatarUrl = author?.avatar;
+    if (typeof login !== "string" || !login || login.length > 100) continue;
+    if (typeof avatarUrl !== "string" || !avatarUrl) continue;
+    if (seen.has(login)) continue;
+    seen.add(login);
+    const total = (entry as GraphContributor)?.total;
+    ranked.push({
+      contributor: { login, url: `https://${GITHUB_HOST}/${login}`, avatarUrl },
+      total: typeof total === "number" && Number.isFinite(total) ? total : 0,
+    });
+  }
+
+  // 图表接口不保证顺序，按提交数对齐 GitHub 的展示顺序。
+  ranked.sort(
+    (left, right) =>
+      right.total - left.total || left.contributor.login.localeCompare(right.contributor.login),
+  );
+  return {
+    contributors: ranked.slice(0, options.maxContributors).map(({ contributor }) => contributor),
+    truncated: ranked.length > options.maxContributors,
+  };
+}
+
+/** REST 回退：只统计默认分支，缺少只在未合并分支上提交过的人。 */
+async function fetchContributorsFromApi(options: {
+  repository: Repository;
+  fetchImpl: FetchLike;
+  token?: string;
+  pageSize: number;
+  maxPages: number;
+}): Promise<{ contributors: FetchedContributor[]; truncated: boolean }> {
+  const { fetchImpl, pageSize, maxPages } = options;
   const contributors: FetchedContributor[] = [];
   const seen = new Set<string>();
   let truncated = false;
@@ -136,6 +195,43 @@ export async function fetchContributors(options: {
   }
 
   return { contributors, truncated };
+}
+
+export async function fetchContributors(options: {
+  repository: Repository;
+  fetchImpl?: FetchLike;
+  token?: string;
+  pageSize?: number;
+  maxPages?: number;
+  maxContributors?: number;
+}): Promise<{ contributors: FetchedContributor[]; truncated: boolean; source: ContributorSource }> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  let graphError: unknown;
+  try {
+    const result = await fetchContributorsFromGraph({
+      repository: options.repository,
+      fetchImpl,
+      maxContributors: options.maxContributors ?? DEFAULT_MAX_CONTRIBUTORS,
+    });
+    return { ...result, source: "graph" };
+  } catch (error) {
+    graphError = error;
+  }
+
+  try {
+    const result = await fetchContributorsFromApi({
+      repository: options.repository,
+      fetchImpl,
+      token: options.token,
+      pageSize: options.pageSize ?? DEFAULT_PAGE_SIZE,
+      maxPages: options.maxPages ?? DEFAULT_MAX_PAGES,
+    });
+    return { ...result, source: "api" };
+  } catch (error) {
+    throw new Error(
+      `GitHub 贡献者图表接口失败（${messageOf(graphError)}），REST 接口也失败（${messageOf(error)}）`,
+    );
+  }
 }
 
 export async function downloadAvatars(
@@ -227,11 +323,16 @@ export function githubContributorsSnapshot(
           options.repository !== undefined ? options.repository : await readPackageRepository();
         if (!repository) throw new Error("package.json 未配置可用的 GitHub repository");
         const token = options.token ?? process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
-        const { contributors, truncated } = await fetchContributors({
+        const { contributors, truncated, source } = await fetchContributors({
           repository,
           fetchImpl: options.fetchImpl,
           token,
         });
+        if (source === "api") {
+          this.warn(
+            "GitHub 贡献者图表接口不可用，已回退到 REST 接口：该名单只统计默认分支，可能缺少只在未合并分支上提交过的人。",
+          );
+        }
         const avatars = await downloadAvatars(contributors, { fetchImpl: options.fetchImpl });
         await writeContributorSnapshot(
           dir,
