@@ -20,9 +20,9 @@ import { useRegisterNextAction, type StepNextAction } from "./step-next-action";
 /**
  * 外观设置。
  *
- * 设置页使用完整形态；初始化向导通过 `onboarding` 复用同一组件，只隐藏
- * 种子色卡片，保留模式与和设置页一致的壁纸动态色彩区块，并把主操作交给
- * 向导底栏。
+ * 设置页使用完整形态；初始化向导通过 `onboarding` 复用同一组件，只保留
+ * 壁纸动态色彩卡片（隐藏深浅色模式、种子色、配色变体与检查间隔），并把
+ * 主操作交给向导底栏。
  *
  * Android 上种子色默认跟随壁纸；一旦在这里手动选色，`seedSource` 变为
  * `user`，壁纸色不再覆盖。点「恢复默认外观」可重新跟随壁纸。
@@ -130,24 +130,26 @@ export function AppearanceSettings({
 
   return (
     <>
-      <Card variant="outlined">
-        <div slot="headline">深浅色模式</div>
-        <div slot="subhead">
-          当前实际使用{resolvedMode === "dark" ? "深色" : "浅色"}。选择「跟随系统」时随操作系统的
-          外观设置自动切换。
-        </div>
-        <Radios
-          aria-label="深浅色模式"
-          value={appearance.mode}
-          onChange={(event) => setMode(event.detail.value as ThemeMode)}
-        >
-          {(Object.keys(MODE_LABELS) as ThemeMode[]).map((mode) => (
-            <Radio key={mode} value={mode}>
-              {MODE_LABELS[mode]}
-            </Radio>
-          ))}
-        </Radios>
-      </Card>
+      {!onboarding && (
+        <Card variant="outlined">
+          <div slot="headline">深浅色模式</div>
+          <div slot="subhead">
+            当前实际使用{resolvedMode === "dark" ? "深色" : "浅色"}。选择「跟随系统」时随操作系统的
+            外观设置自动切换。
+          </div>
+          <Radios
+            aria-label="深浅色模式"
+            value={appearance.mode}
+            onChange={(event) => setMode(event.detail.value as ThemeMode)}
+          >
+            {(Object.keys(MODE_LABELS) as ThemeMode[]).map((mode) => (
+              <Radio key={mode} value={mode}>
+                {MODE_LABELS[mode]}
+              </Radio>
+            ))}
+          </Radios>
+        </Card>
+      )}
 
       {!onboarding && (
         <Card variant="outlined">
@@ -237,7 +239,7 @@ export function AppearanceSettings({
                 </Banner.Description>
               </Banner>
             )}
-            {!wallpaperListeningSupported && (
+            {!wallpaperListeningSupported && !onboarding && (
               <NumberField
                 label="检查间隔（分钟）"
                 value={appearance.wallpaperPollMinutes}
@@ -248,18 +250,6 @@ export function AppearanceSettings({
                 onCommit={setWallpaperPollMinutes}
                 description="范围 1 - 1440 分钟；启用自动取色后按此间隔检查壁纸。"
               />
-            )}
-            {(platform === "android" || wallpaperAvailable) && (
-              <div>
-                <Button
-                  variant="outlined"
-                  disabled={refreshing}
-                  onClick={() => void applyDynamicColor()}
-                >
-                  {refreshing ? <LoadingIndicator size={16} /> : <LuImage aria-hidden="true" />}
-                  跟随壁纸动态取色
-                </Button>
-              </div>
             )}
             {platform !== "android" && appearance.autoWallpaper && !wallpaperAvailable && (
               <>

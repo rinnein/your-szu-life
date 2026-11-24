@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import StorageSettings from "./StorageSettings";
+import { hostOf } from "./ui/testing";
 import type { FileManagerState } from "./file-manager/api";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -166,6 +167,78 @@ describe("StorageSettings", () => {
     expect(screen.queryByText("确认保存目录")).not.toBeInTheDocument();
   });
 
+  it("asks for confirmation before falling back to the default directory", async () => {
+    let current = pickedState;
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_file_manager_state") return current;
+      if (command === "use_default_file_manager_directory") {
+        return {
+          selection: { kind: "default" },
+          selected: "/home/me/Documents/泥深",
+          selectedWasEmpty: true,
+          base: "/home/me/Documents/泥深",
+          modules: [{ id: "jxxk", label: "督导巡课录像", path: "/home/me/Documents/泥深/jxxk" }],
+          notice: null,
+        };
+      }
+      if (command === "save_file_manager_directory") {
+        current = desktopState;
+        return desktopState;
+      }
+      return undefined;
+    });
+
+    render(<StorageSettings />);
+    await screen.findByText("/home/me/Videos/泥深");
+
+    const button = screen.getByRole("button", { name: "使用默认目录" });
+    // 图标旁要有可见文字，而不是只有一个图标。
+    expect(hostOf(button)).toHaveTextContent("默认");
+    fireEvent.click(button);
+
+    expect(await screen.findByText("确认保存目录")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认" }));
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("save_file_manager_directory", {
+        selection: { kind: "default" },
+      }),
+    );
+  });
+
+  it("guides Android users to authorize the default directory through SAF", async () => {
+    const android: FileManagerState = {
+      platform: "android",
+      defaultBase: "/storage/emulated/0/Download/泥深",
+      config: null,
+      base: "/storage/emulated/0/Download/泥深",
+      usingDefault: true,
+      access: { state: "denied", detail: "尚未选择保存目录" },
+      modules: [
+        { id: "jxxk", label: "督导巡课录像", path: "/storage/emulated/0/Download/泥深/jxxk" },
+      ],
+      canUseDefault: false,
+    };
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_file_manager_state") return android;
+      if (command === "pick_file_manager_directory") return null;
+      return undefined;
+    });
+
+    render(<StorageSettings />);
+    await screen.findByText("/storage/emulated/0/Download/泥深");
+
+    fireEvent.click(screen.getByRole("button", { name: "使用默认目录" }));
+
+    // 额外一步：先说明 SAF 授权，再由系统选择器完成；不直接落库。
+    expect(await screen.findByText("使用默认目录")).toBeInTheDocument();
+    expect(screen.getByText(/应用不会申请任何存储权限/)).toBeInTheDocument();
+    expect(invoke).not.toHaveBeenCalledWith("use_default_file_manager_directory");
+
+    fireEvent.click(screen.getByRole("button", { name: "去选择目录" }));
+    await waitFor(() => expect(invoke).toHaveBeenCalledWith("pick_file_manager_directory"));
+  });
+
   it("warns when the Android folder authorization is gone", async () => {
     const broken: FileManagerState = {
       ...pickedState,
@@ -184,7 +257,7 @@ describe("StorageSettings", () => {
     expect(screen.getAllByText("系统文件夹授权已失效，请重新选择保存目录").length).toBeGreaterThan(
       0,
     );
-    // Android 不提供「恢复默认目录」：授权必须由系统选择器给出。
-    expect(screen.queryByRole("button", { name: "使用默认目录" })).not.toBeInTheDocument();
+    // Android 也提供「默认」入口，但它只负责引导用户去系统选择器授权。
+    expect(screen.getByRole("button", { name: "使用默认目录" })).toBeInTheDocument();
   });
 });

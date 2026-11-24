@@ -5,6 +5,7 @@ import { usePending } from "./use-pending";
 import type { FileManagerState } from "./file-manager/api";
 import {
   DirectoryConfirmDialog,
+  DirectoryDefaultGuideDialog,
   DirectoryPickerActions,
   useDirectoryPicker,
 } from "./file-manager/DirectoryPicker";
@@ -90,6 +91,7 @@ export default function StorageSettings() {
       )}
 
       <DirectoryConfirmDialog controller={picker} />
+      <DirectoryDefaultGuideDialog controller={picker} defaultPath={current?.defaultBase ?? ""} />
     </>
   );
 }

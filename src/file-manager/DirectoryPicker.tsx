@@ -15,10 +15,14 @@ import {
 export type DirectoryPickerController = {
   busy: boolean;
   preview: DirectoryPreview | null;
+  /** Android 上点「默认」不能直接落库，先提示用户去系统选择器授权默认目录。 */
+  guide: boolean;
   pick: () => Promise<void>;
-  useDefault: () => Promise<void>;
+  /** 「默认」的统一入口：Android 先弹引导，桌面端直接预览并等待确认。 */
+  requestDefault: (platform: string | undefined) => Promise<void>;
   confirm: () => Promise<void>;
   cancel: () => void;
+  dismissGuide: () => void;
 };
 
 /**
@@ -32,6 +36,7 @@ export function useDirectoryPicker(
 ): DirectoryPickerController {
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<DirectoryPreview | null>(null);
+  const [guide, setGuide] = useState(false);
 
   const pick = useCallback(async () => {
     setBusy(true);
@@ -56,6 +61,21 @@ export function useDirectoryPicker(
     }
   }, []);
 
+  // Android 的标准目录只能经 SAF 授权写入（应用不申请存储权限），因此这里
+  // 先说明、再由系统选择器完成授权；选择器的初始位置本身就是默认目录。
+  const requestDefault = useCallback(
+    async (platform: string | undefined) => {
+      if (platform === "android") {
+        setGuide(true);
+        return;
+      }
+      await useDefault();
+    },
+    [useDefault],
+  );
+
+  const dismissGuide = useCallback(() => setGuide(false), []);
+
   const confirm = useCallback(async () => {
     if (!preview) return;
     setBusy(true);
@@ -77,7 +97,16 @@ export function useDirectoryPicker(
     if (released) void releaseFileManagerPick(released).catch(() => undefined);
   }, [preview]);
 
-  return { busy, preview, pick, useDefault, confirm, cancel };
+  return {
+    busy,
+    preview,
+    guide,
+    pick,
+    requestDefault,
+    confirm,
+    cancel,
+    dismissGuide,
+  };
 }
 
 /** 当前目录 + 选择/恢复默认按钮。 */
@@ -92,6 +121,9 @@ export function DirectoryPickerActions({
 }) {
   const busy = controller.busy || disabled;
   const accessBroken = state != null && state.config != null && state.access.state === "denied";
+  // Android 没有「直接使用默认目录」这条路径，但入口保留：它先引导用户去
+  // 系统选择器里授权默认目录，桌面端则直接预览默认目录并等待确认。
+  const canDefault = state != null && (state.canUseDefault || state.platform === "android");
   return (
     <div className="grid gap-2">
       {accessBroken && (
@@ -109,14 +141,15 @@ export function DirectoryPickerActions({
           <LuFolderOpen aria-hidden="true" />
           选择目录
         </Button>
-        {state?.canUseDefault && (
+        {canDefault && (
           <Button
             variant="text"
             disabled={busy}
             aria-label="使用默认目录"
-            onClick={() => void controller.useDefault()}
+            onClick={() => void controller.requestDefault(state?.platform)}
           >
             <LuRotateCcw aria-hidden="true" />
+            默认
           </Button>
         )}
       </div>
@@ -173,6 +206,66 @@ export function DirectoryConfirmDialog({ controller }: { controller: DirectoryPi
               {module.label}：{module.path}
             </div>
           ))}
+        </div>
+      </div>
+    </Dialog>,
+    document.body,
+  );
+}
+
+/**
+ * Android 上「默认」的额外一步。
+ *
+ * Android 标准目录不允许应用按真实路径写入，也不申请任何存储权限，只能通过
+ * SAF 由用户授权一次。系统选择器的初始位置已经是默认目录，所以这里只需要
+ * 说明授权流程，再由用户在选择器里确认。
+ */
+export function DirectoryDefaultGuideDialog({
+  controller,
+  defaultPath,
+}: {
+  controller: DirectoryPickerController;
+  defaultPath: string;
+}) {
+  if (!controller.guide) return null;
+  return createPortal(
+    <Dialog
+      open
+      onClose={controller.dismissGuide}
+      headline="使用默认目录"
+      size="small"
+      actions={
+        <>
+          <Button variant="text" disabled={controller.busy} onClick={controller.dismissGuide}>
+            取消
+          </Button>
+          <Button
+            variant="filled"
+            disabled={controller.busy}
+            onClick={() => {
+              controller.dismissGuide();
+              void controller.pick();
+            }}
+          >
+            去选择目录
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-3 text-sm">
+        <div>
+          <div className="text-xs text-muted">默认目录</div>
+          <div className="break-all text-foreground">{defaultPath}</div>
+        </div>
+        <p className="text-xs text-muted">
+          Android
+          不允许应用直接写入标准目录，需要你在系统文件夹选择器里授权一次；应用不会申请任何存储权限，只在你确认的目录内读写。
+        </p>
+        <div className="grid gap-1">
+          <div className="text-xs text-muted">在系统选择器中</div>
+          <div className="text-xs text-foreground">1. 打开「下载 / Download」。</div>
+          <div className="text-xs text-foreground">2. 选中或新建「泥深」文件夹。</div>
+          <div className="text-xs text-foreground">3. 点击「使用此文件夹」完成授权。</div>
         </div>
       </div>
     </Dialog>,

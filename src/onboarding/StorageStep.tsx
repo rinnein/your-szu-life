@@ -3,6 +3,7 @@ import { Banner } from "../ui";
 import { usePending } from "../use-pending";
 import {
   DirectoryConfirmDialog,
+  DirectoryDefaultGuideDialog,
   DirectoryPickerActions,
   useDirectoryPicker,
 } from "../file-manager/DirectoryPicker";
@@ -13,8 +14,8 @@ import type { StepProps } from "./step-types";
 /**
  * 初始化向导的强制步骤：确认文件保存目录。
  *
- * Android 上必须由用户在系统文件夹选择器里授权目录，桌面端可以直接选目录或
- * 用默认目录（按钮旁的 reset 图标）。
+ * 底栏「下一步」在这里等同于点「默认」：尚未确认过目录时先走默认目录的确认
+ * 流程（Android 还要经系统选择器授权），确认后自动进入下一步。
  */
 export function StorageStep({ onComplete, registerNext }: StepProps) {
   const { state, error, loading, refresh } = useFileManagerState();
@@ -28,7 +29,7 @@ export function StorageStep({ onComplete, registerNext }: StepProps) {
   const configured = state?.config != null;
 
   useRegisterNextAction(registerNext, {
-    label: configured ? "保存并继续" : "选择保存位置",
+    label: configured ? "保存并继续" : "下一步",
     // 读取失败时不再永久禁用底栏：给一个重试入口，而不是让用户卡在这一步。
     disabled: picker.busy || loading || advancing,
     busy: picker.busy || advancing,
@@ -38,7 +39,8 @@ export function StorageStep({ onComplete, registerNext }: StepProps) {
         return;
       }
       if (!configured) {
-        await picker.pick();
+        // 没有主动选过目录时按「默认」处理：与点按钮一样先预览、再确认。
+        await picker.requestDefault(state?.platform);
         return;
       }
       // 失败的提示由向导统一给出，这里不重复 toast。
@@ -75,6 +77,7 @@ export function StorageStep({ onComplete, registerNext }: StepProps) {
         <DirectoryPickerActions state={state} controller={picker} />
       </div>
       <DirectoryConfirmDialog controller={picker} />
+      <DirectoryDefaultGuideDialog controller={picker} defaultPath={state?.defaultBase ?? ""} />
     </Card>
   );
 }

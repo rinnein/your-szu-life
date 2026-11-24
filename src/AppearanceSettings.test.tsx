@@ -78,12 +78,15 @@ describe("AppearanceSettings", () => {
   it("keeps the full settings surface", async () => {
     render(<AppearanceSettings />);
 
+    expect(screen.getByText("深浅色模式")).toBeInTheDocument();
     expect(screen.getByText("配色变体")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "恢复默认外观" })).toBeInTheDocument();
     expect(screen.queryByText("从壁纸取色")).not.toBeInTheDocument();
     expect(await screen.findByText("壁纸动态色彩")).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "自动从壁纸取色" })).toBeInTheDocument();
     expect(screen.getByText("壁纸变更监视为轮询")).toBeInTheDocument();
+    // 自动取色开关本身就会立即触发一次取色，不再保留手动按钮。
+    expect(screen.queryByRole("button", { name: /跟随壁纸动态取色/ })).not.toBeInTheDocument();
     expect(screen.getByText("默认")).toBeInTheDocument();
     expect(document.querySelectorAll(".monet-swatch")).toHaveLength(36);
   });
@@ -133,34 +136,30 @@ describe("AppearanceSettings", () => {
     await waitFor(() => expect(mocks.refreshWallpaperSeed).toHaveBeenCalledTimes(1));
   });
 
-  it("offers the dynamic color button after wallpaper extraction succeeded", async () => {
-    mocks.wallpaperAvailable = true;
-    render(<AppearanceSettings />);
-
-    fireEvent.click(await screen.findByRole("button", { name: /跟随壁纸动态取色/ }));
-    await waitFor(() => expect(mocks.refreshWallpaperSeed).toHaveBeenCalledTimes(1));
-  });
-
   it("registers 下一步 and hides the seed/settings-only blocks in onboarding mode", async () => {
     const onComplete = vi.fn();
     render(<Harness onComplete={onComplete} />);
 
     expect(await screen.findByText("壁纸动态色彩")).toBeInTheDocument();
+    expect(screen.queryByText("深浅色模式")).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "跟随系统" })).not.toBeInTheDocument();
     expect(screen.queryByText("种子色")).not.toBeInTheDocument();
     expect(screen.queryByText("自定义颜色")).not.toBeInTheDocument();
     expect(screen.queryByText("配色变体")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("检查间隔（分钟）")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /跟随壁纸动态取色/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "恢复默认外观" })).not.toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole("button", { name: "下一步" }));
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
 
-  it("offers the dynamic color control in onboarding when wallpaper is available", async () => {
+  it("keeps the automatic wallpaper switch in onboarding without the manual control", async () => {
     mocks.wallpaperAvailable = true;
     render(<Harness onComplete={vi.fn()} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /跟随壁纸动态取色/ }));
-    await waitFor(() => expect(mocks.refreshWallpaperSeed).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole("switch", { name: "自动从壁纸取色" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /跟随壁纸动态取色/ })).not.toBeInTheDocument();
   });
 
   it("shows the dynamic color card on the Android branch", async () => {
@@ -169,7 +168,6 @@ describe("AppearanceSettings", () => {
     render(<Harness onComplete={vi.fn()} />);
 
     expect(await screen.findByText("使用系统壁纸颜色生成 Material You 配色。")).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole("button", { name: /跟随壁纸动态取色/ }));
-    await waitFor(() => expect(mocks.refreshWallpaperSeed).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("button", { name: /跟随壁纸动态取色/ })).not.toBeInTheDocument();
   });
 });
