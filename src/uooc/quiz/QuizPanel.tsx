@@ -1480,7 +1480,7 @@ export function QuizPanel({
           <Dialog
             open={Boolean(actionModal)}
             headline={actionModal?.title || "测验运行流程"}
-            className="max-w-2xl"
+            className="max-w-2xl dialog-no-close"
             onClose={() => {
               if (isModalFinished) setActionModal(null);
             }}

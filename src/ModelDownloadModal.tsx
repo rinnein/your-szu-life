@@ -188,20 +188,8 @@ export function ModelDownloadModal({
         </Button>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="tonal"
-            size="xs"
-            disabled={isDownloading}
-            onClick={() => onOpenChange(false)}
-          >
-            {isReady ? "关闭" : "稍后再说"}
-          </Button>
           {!isReady && (
-            <Button
-              size="xs"
-              disabled={isDownloading}
-              onClick={() => void startDownload()}
-            >
+            <Button size="xs" disabled={isDownloading} onClick={() => void startDownload()}>
               <LuDownload aria-hidden="true" /> 立即下载
             </Button>
           )}

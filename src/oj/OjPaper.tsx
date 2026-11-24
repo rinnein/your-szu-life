@@ -1123,11 +1123,6 @@ export function OjPaper({
                 host?.select();
               }}
             />
-            <div slot="actions">
-              <Button variant="tonal" onClick={() => setManualCopy(undefined)}>
-                关闭
-              </Button>
-            </div>
           </Dialog>,
           document.body,
         )}
@@ -1196,7 +1191,6 @@ export function OjPaper({
               >
                 前往提交记录
               </Button>
-              <Button onClick={() => setResultModalOpen(false)}>关闭</Button>
             </div>
           </Dialog>,
           document.body,

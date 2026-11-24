@@ -103,9 +103,6 @@ export function AnnouncementModal({
             </div>
           )}
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="text" onClick={close}>
-              关闭
-            </Button>
             {linkTarget && (
               <Button
                 variant="filled"

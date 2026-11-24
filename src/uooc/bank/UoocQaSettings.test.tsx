@@ -355,8 +355,8 @@ it("browses local question bank with annotated sync status and filters", async (
   expect(screen.getByText("关于定积分与微积分基本定理")).toBeInTheDocument();
   expect(screen.queryByText("人工智能的主要研究分支包括")).not.toBeInTheDocument();
 
-  // Close modal to return to main view
-  const closeBtn = screen.getByRole("button", { name: "关闭" });
+  // Close modal to return to main view（统一由标题栏左上角叉号关闭）
+  const closeBtn = screen.getByRole("button", { name: "Close dialog" });
   fireEvent.click(closeBtn);
 
   // Test rebuilding bank button

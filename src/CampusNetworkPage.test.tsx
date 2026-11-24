@@ -840,7 +840,9 @@ describe("campus network status and logout", () => {
       const failed = await currentDialog();
       expect(failed.getAttribute("headline")).toBe(title);
       expect(within(failed).getByRole("button", { name: "重试" })).toBeInTheDocument();
-      expect(within(failed).getByRole("button", { name: "关闭" })).toBeInTheDocument();
+      // 统一由标题栏左上角的叉号关闭，footer 不再放单独的「关闭」。
+      expect(within(failed).getByRole("button", { name: "Close dialog" })).toBeInTheDocument();
+      expect(within(failed).queryByRole("button", { name: "关闭" })).not.toBeInTheDocument();
       expect(dangerToast).not.toHaveBeenCalled();
       expect(successToast).not.toHaveBeenCalled();
       expect(screen.getByRole("switch", { name: "开启宿舍区自动登录" })).not.toBeChecked();

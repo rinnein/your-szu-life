@@ -144,11 +144,6 @@ export function RankingTable({ siteId, paper }: { siteId: string; paper: Paper }
             <div className="max-h-[80vh] overflow-y-auto">
               <RankingContent siteId={siteId} paper={paper} />
             </div>
-            <div slot="actions">
-              <Button variant="tonal" onClick={() => setOpen(false)}>
-                关闭
-              </Button>
-            </div>
           </Dialog>,
           document.body,
         )}

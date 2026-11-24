@@ -8,6 +8,7 @@ import { router } from "./router";
 // 让应用的 @theme 映射覆盖基线变量。
 import "material/styles/base";
 import "material/styles/typography";
+import { applyMaterialDefaults } from "./theme/material-defaults";
 // MiSans 可变字重（家族名 "MiSans VF"）。misans 按 unicode-range 切片，
 // 浏览器只下载页面实际用到的切片，整包 4.5MB 不会一次性进内存。
 // 字体栈与其 MD3 覆盖写在 index.css 的 :root 里，这里只负责加载字形。
@@ -20,6 +21,8 @@ import "./index.css";
 if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
   void attachConsole().catch(() => {});
 }
+
+applyMaterialDefaults();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

@@ -76,9 +76,6 @@ export function LmsTodoLinkDialog({
       size="small"
       actions={
         <>
-          <Button variant="text" onClick={onClose}>
-            关闭
-          </Button>
           <Button variant="outlined" onClick={() => void handleCopy()}>
             复制链接
           </Button>

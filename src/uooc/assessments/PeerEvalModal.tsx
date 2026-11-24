@@ -328,12 +328,6 @@ export function PeerEvalModal({ isOpen, onClose, courses, defaultCid }: PeerEval
                 )}
               </div>
             </div>
-
-            <div slot="actions">
-              <Button variant="text" onClick={onClose}>
-                关闭
-              </Button>
-            </div>
           </Dialog>,
           document.body,
         )}

@@ -745,14 +745,9 @@ export default function CampusNetworkPage() {
                     </Button>
                   </>
                 ) : (
-                  <>
-                    <Button variant="text" aria-label="关闭" onClick={() => setDisconnect(null)}>
-                      关闭
-                    </Button>
-                    <Button variant="filled" onClick={() => void runDisconnect()}>
-                      重试
-                    </Button>
-                  </>
+                  <Button variant="filled" onClick={() => void runDisconnect()}>
+                    重试
+                  </Button>
                 )}
               </div>
             </Dialog>,
@@ -761,7 +756,13 @@ export default function CampusNetworkPage() {
         {load.status === "ready" &&
           disconnect?.step === "running" &&
           createPortal(
-            <Dialog open noCloseOnScrimClick noCloseOnEscape headline="正在断开校园网…">
+            <Dialog
+              open
+              className="dialog-no-close"
+              noCloseOnScrimClick
+              noCloseOnEscape
+              headline="正在断开校园网…"
+            >
               <div className="flex items-center gap-3">
                 <LoadingIndicator size={24} />
                 <span>正在注销当前设备并确认下线状态，通常需要数秒…</span>

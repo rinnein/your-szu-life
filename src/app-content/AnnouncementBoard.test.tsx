@@ -189,10 +189,11 @@ describe("AnnouncementBoard compact bar & modal", () => {
     // Modal is opened
     expect(screen.getByRole("dialog", { name: "公告一" })).toBeInTheDocument();
     expect(screen.getByText("第一条公告内容描述")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "关闭" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close dialog" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "关闭" })).not.toBeInTheDocument();
 
     // Close modal
-    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close dialog" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 

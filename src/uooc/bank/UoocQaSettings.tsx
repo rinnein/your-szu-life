@@ -1580,20 +1580,6 @@ export function UoocQaSettings({
                 )}
               </div>
             </div>
-            <div slot="actions">
-              <Button
-                variant="tonal"
-                onClick={() => {
-                  setModalCourse(null);
-                  setBankSearchQuery("");
-                  setBankStatusFilter("all");
-                  setBankTypeFilter("all");
-                  setBankPage(1);
-                }}
-              >
-                关闭
-              </Button>
-            </div>
           </Dialog>,
           document.body,
         )}
@@ -1692,11 +1678,6 @@ export function UoocQaSettings({
                   ))}
                 </div>
               )}
-            </div>
-            <div slot="actions">
-              <Button variant="tonal" onClick={() => setSearchModalOpen(false)}>
-                关闭
-              </Button>
             </div>
           </Dialog>,
           document.body,

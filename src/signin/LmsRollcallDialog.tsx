@@ -115,11 +115,7 @@ export function LmsRollcallDialog({
         if (!submitting) onClose();
       }}
       actions={
-        method === "qr" || method === "unknown" ? (
-          <Button variant="text" onClick={onClose}>
-            关闭
-          </Button>
-        ) : (
+        method === "qr" || method === "unknown" ? undefined : (
           <>
             <Button variant="text" disabled={submitting} onClick={onClose}>
               取消

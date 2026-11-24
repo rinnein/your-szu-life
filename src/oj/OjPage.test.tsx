@@ -1119,8 +1119,8 @@ it("opens judging result in a modal dialog upon submitting code and can be close
   });
   expect(dialog).toBeInTheDocument();
 
-  // 点击关闭按钮收起弹窗
-  const closeBtn = screen.getByRole("button", { name: "关闭" });
+  // 点击标题栏左上角的统一关闭叉号收起弹窗
+  const closeBtn = screen.getByRole("button", { name: "Close dialog" });
   fireEvent.click(closeBtn);
   await waitFor(() => expect(document.querySelector("m-dialog")).toBeNull());
 });

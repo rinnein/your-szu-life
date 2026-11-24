@@ -152,7 +152,7 @@ export function BankRebuildModal({
     <Dialog
       open={isOpen}
       headline="题库构建流程进度"
-      className="max-w-4xl"
+      className="max-w-4xl dialog-no-close"
       onClose={() => {
         if (!isBuilding || isCompleted) {
           onOpenChange(false);

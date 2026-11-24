@@ -1,6 +1,10 @@
 import { configure } from "@testing-library/react";
 import { afterEach } from "vite-plus/test";
 import { resetToasts } from "./ui/toast";
+import { applyMaterialDefaults } from "./theme/material-defaults";
+
+// 与 app.tsx 保持一致：测试里的对话框也要有统一的左上角关闭按钮。
+applyMaterialDefaults();
 
 if (typeof window !== "undefined" && typeof globalThis !== "undefined") {
   if (window.CustomEvent) globalThis.CustomEvent = window.CustomEvent;

@@ -70,7 +70,10 @@ export function AnnouncementPopupBridge() {
   };
 
   return createPortal(
-    <AnnouncementModal announcement={current} onClose={dismiss} />,
+    // key 必须随当前条目变化：material 的 dialog 关闭时会摘掉宿主上的 `open`，
+    // 若 React 复用同一个宿主，新条目的 `open` 属性没变化就不会被重新写入，
+    // 队列里的下一条会停留在不可见状态。
+    <AnnouncementModal key={popupKey(current)} announcement={current} onClose={dismiss} />,
     document.body,
   );
 }

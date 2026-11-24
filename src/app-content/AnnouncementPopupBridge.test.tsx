@@ -102,7 +102,7 @@ describe("AnnouncementPopupBridge global popups", () => {
 
     expect(screen.getByRole("dialog", { name: "定向公告" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close dialog" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(isAnnouncementPopupSeenInStorage("v0.12-migration")).toBe(true);
 
@@ -127,7 +127,7 @@ describe("AnnouncementPopupBridge global popups", () => {
 
     expect(screen.getByRole("dialog", { name: "紧急公告" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close dialog" }));
     mockContent([alert]);
     rerender(<AnnouncementPopupBridge />);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -143,13 +143,13 @@ describe("AnnouncementPopupBridge global popups", () => {
     render(<AnnouncementPopupBridge />);
 
     expect(screen.getByRole("dialog", { name: "第一条" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close dialog" }));
 
     expect(screen.getByRole("dialog", { name: "第二条" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close dialog" }));
 
     expect(screen.getByRole("dialog", { name: "第三条" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close dialog" }));
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });

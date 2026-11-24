@@ -56,9 +56,6 @@ export function SessionDetailDialog({
         )}
       </div>
       <div slot="actions" className="flex items-center justify-end gap-2">
-        <Button variant="text" onClick={onClose}>
-          关闭
-        </Button>
         {isPendingCheckin(checkin) && onSignin && (
           <Button
             variant="filled"
