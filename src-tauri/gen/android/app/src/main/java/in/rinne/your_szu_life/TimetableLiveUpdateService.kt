@@ -3,12 +3,10 @@ package `in`.rinne.your_szu_life
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -21,9 +19,12 @@ import androidx.core.graphics.drawable.IconCompat
 /**
  * 上课提醒的实时活动通道（Android 16 promoted Live Update；ColorOS 流体云据此渲染）。
  *
- * 与一次次定点重发通知的区别：在课前 20 分钟窗口开始时启动前台服务，每 15 秒
- * 重发一次带 `ProgressStyle` 的通知来推进进度与小图标进度环，上课时切成「已开始」，
- * 下课结束。promoted 卡片不会自己动，这个循环是唯一能让进度前进的办法。
+ * 与一次次定点重发通知的区别：在课前窗口开始时启动前台服务，每 15 秒重发一次带
+ * `ProgressStyle` 的通知来推进进度与小图标进度环，**到上课时间结束**。
+ *
+ * 这里只负责「进程活着时的顺滑路径」：每次发布都会写一条心跳，[TimetableReminderReceiver]
+ * 的分钟级闹钟发现心跳过期时会自己重发并重启本服务。即使系统冻结/回收了进程，
+ * 闹钟仍能唤醒应用把倒计时推进到下一分钟。
  *
  * 是否使用本通道由 `TimedShowLive` 决定（来自 Rust 侧的 `ClassReminderSpec.liveUpdate`），
  * 关闭或系统不支持时完全退回 [TimetableReminderReceiver] 的定点通知。
@@ -40,12 +41,12 @@ class TimetableLiveUpdateService : Service() {
     override fun run() {
       val spec = session ?: return
       val now = System.currentTimeMillis()
-      if (now >= spec.endAtMs) {
+      if (now >= spec.startAtMs) {
         stopCasting()
         return
       }
       publish(spec)
-      handler.postDelayed(this, LiveReminderSession.nextTickDelay(now, spec.endAtMs))
+      handler.postDelayed(this, LiveReminderSession.nextTickDelay(now, spec.startAtMs))
     }
   }
 
@@ -61,12 +62,15 @@ class TimetableLiveUpdateService : Service() {
       return START_NOT_STICKY
     }
     val now = System.currentTimeMillis()
-    if (now >= spec.endAtMs) {
+    if (now >= spec.startAtMs) {
       stopCasting()
       return START_NOT_STICKY
     }
     if (isReusable(spec, now)) {
-      // 同一节课的重复同步：只继续循环，不重建通知（否则 vivo/ColorOS 的展开态会被重置）。
+      // 同一节课的重复续期：不重建通知（否则 vivo/ColorOS 的展开态会被重置），
+      // 但立刻补发一次并重置循环——进程可能刚从冻结中恢复，旧的延迟已经不可信。
+      handler.removeCallbacks(tick)
+      handler.post(tick)
       return START_NOT_STICKY
     }
     session = spec
@@ -74,11 +78,14 @@ class TimetableLiveUpdateService : Service() {
     lastSessionId = spec.sessionId
     TimetableLiveUpdateBridge.markCasting(true, spec.sessionId)
     ensureChannel()
-    acquireWakeLock()
+    acquireWakeLock(spec)
     publish(spec)
     if (LiveReminderSession.needsFirstPostReinforcement(Build.MANUFACTURER.orEmpty())) {
       // ColorOS 首帖竞态：稍后再发一次同样的通知，胶囊才会稳定出现。
-      handler.postDelayed({ session?.let(::publish) }, LiveReminderSession.REINFORCE_DELAY_MS)
+      handler.postDelayed({
+        val current = session ?: return@postDelayed
+        if (System.currentTimeMillis() < current.startAtMs) publish(current)
+      }, LiveReminderSession.REINFORCE_DELAY_MS)
     }
     handler.removeCallbacks(tick)
     handler.postDelayed(tick, LiveReminderSession.TICK_MS)
@@ -90,17 +97,16 @@ class TimetableLiveUpdateService : Service() {
     return LiveReminderSession.canReuseSession(
       currentSessionId = current.sessionId,
       currentStartAtMs = current.startAtMs,
-      currentEndAtMs = current.endAtMs,
       nextSessionId = spec.sessionId,
       nextStartAtMs = spec.startAtMs,
-      nextEndAtMs = spec.endAtMs,
       casting = casting,
       now = now,
     )
   }
 
   private fun publish(spec: TimetableNotificationBridge.ClassSpec) {
-    val notification = buildLiveNotification(this, spec, System.currentTimeMillis())
+    val now = System.currentTimeMillis()
+    val notification = buildLiveNotification(this, spec, now)
     try {
       if (Build.VERSION.SDK_INT >= 29) {
         startForeground(
@@ -111,6 +117,7 @@ class TimetableLiveUpdateService : Service() {
       } else {
         startForeground(TimetableNotificationBridge.notificationId(spec.sessionId), notification)
       }
+      TimetableLiveUpdateBridge.markPublished(spec.sessionId, now)
     } catch (_: Throwable) {
       // 前台服务被系统拒绝（例如 FGS 配额）：退回定点通知，不中断提醒。
       stopCasting()
@@ -160,19 +167,22 @@ class TimetableLiveUpdateService : Service() {
     if (manager.getNotificationChannel(CHANNEL_ID) != null) return
     // MIN 重要度会失去 promoted 资格，必须是 DEFAULT 及以上。
     val channel = NotificationChannel(CHANNEL_ID, "上课实时活动", NotificationManager.IMPORTANCE_HIGH).apply {
-      description = "课前 20 分钟起以实时活动展示倒计时（Android 16 实时更新 / ColorOS 流体云）"
+      description = "课前 20 分钟起以实时活动展示倒计时，上课后自动收起（Android 16 实时更新 / ColorOS 流体云）"
       setShowBadge(false)
     }
     manager.createNotificationChannel(channel)
   }
 
-  private fun acquireWakeLock() {
+  /** 只在课前窗口内唤醒 CPU；固定 6 小时会白白耗电，也与窗口语义不符。 */
+  private fun acquireWakeLock(spec: TimetableNotificationBridge.ClassSpec) {
     if (wakeLock?.isHeld == true) return
+    val now = System.currentTimeMillis()
+    val duration = (spec.startAtMs - now + 60_000L).coerceIn(60_000L, 30 * 60_000L)
     wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager)
       .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:live-class")
       .apply {
         setReferenceCounted(false)
-        acquire(6 * 60 * 60 * 1000L)
+        acquire(duration)
       }
   }
 
@@ -222,7 +232,6 @@ class TimetableLiveUpdateService : Service() {
       spec: TimetableNotificationBridge.ClassSpec,
       now: Long,
     ): Notification {
-      val started = now >= spec.startAtMs
       val status = LiveReminderSession.statusText(spec.startAtMs, now)
       val texts = LiveReminderSession.notificationTexts(
         timeLabel = spec.timeLabel,
@@ -242,7 +251,7 @@ class TimetableLiveUpdateService : Service() {
         .setContentTitle(texts.title)
         .setContentText(texts.text)
         .setSubText(texts.subText)
-        .setContentIntent(openIntent(context, spec))
+        .setContentIntent(TimetableNotificationBridge.openHome(context, spec.sessionId))
         .setCategory(NotificationCompat.CATEGORY_PROGRESS)
         .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
         .setOngoing(true)
@@ -250,8 +259,8 @@ class TimetableLiveUpdateService : Service() {
         .setOnlyAlertOnce(true)
         .setSilent(true)
         .setProgress(100, progress, false)
-        // 系统倒计时：课前指向上课时间，上课后指向下课时间。否则表头会显示每次重发的时刻。
-        .setWhen(if (started) spec.endAtMs else spec.startAtMs)
+        // 系统倒计时：指向上课时间。否则表头会显示每次重发的时刻。
+        .setWhen(spec.startAtMs)
         .setUsesChronometer(true)
         .setChronometerCountDown(true)
         .setStyle(NotificationBrand.progressStyle(progress, accent))
@@ -273,37 +282,28 @@ class TimetableLiveUpdateService : Service() {
         false
       }
     }
-
-    private fun openIntent(
-      context: Context,
-      spec: TimetableNotificationBridge.ClassSpec,
-    ): PendingIntent {
-      val route = spec.route.ifBlank { "/study/timetable" }
-      val path = if (route.startsWith("/")) route else "/$route"
-      val uri = Uri.parse("your-szu-life://page$path")
-      val intent = Intent(Intent.ACTION_VIEW, uri)
-        .setPackage(context.packageName)
-        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-      return PendingIntent.getActivity(
-        context,
-        TimetableNotificationBridge.notificationId(spec.sessionId),
-        intent,
-        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-      )
-    }
   }
 }
 
 /**
  * 从 Rust 桥接收实时活动请求（`TimedShowLive` 之外的启动路径由接收器直接调用
- * [TimetableLiveUpdateService.start]）。
+ * [TimetableLiveUpdateService.start]），并记录发布心跳供闹钟判断进程是否停摆。
  */
 object TimetableLiveUpdateBridge {
   @Volatile
   private var castingSessionId: String? = null
 
+  /** 最近一次成功发布通知的时间；0 表示当前进程还没有发布过。 */
+  @Volatile
+  private var publishedAtMs: Long = 0L
+
   fun markCasting(value: Boolean, sessionId: String?) {
     castingSessionId = if (value) sessionId else null
+    if (!value) publishedAtMs = 0L
+  }
+
+  fun markPublished(sessionId: String, atMs: Long) {
+    if (castingSessionId == sessionId) publishedAtMs = atMs
   }
 
   /** 当前是否正在投放实时活动（进程内状态；ColorOS 回前台会自动收起胶囊）。 */
@@ -312,4 +312,7 @@ object TimetableLiveUpdateBridge {
 
   @JvmStatic
   fun castingSessionId(): String? = castingSessionId
+
+  @JvmStatic
+  fun lastPublishedAtMs(): Long = publishedAtMs
 }

@@ -6,25 +6,30 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationManagerCompat
 import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * 课表课前提醒的原生排程桥。
  *
  * Rust 侧只在课表/设置变化时调用 [sync]；Kotlin 负责把每节课拆成
- * T-20（发布常驻倒计时）、T-10/T-5（更新进度）、T0（切换为已开始）、
- * 下课（清除）五个 AlarmManager 闹钟。通知由 [TimetableReminderReceiver]
+ * T-20（发布常驻倒计时）→ 每 60 秒一次自续 tick（重算文案/进度）→ T0（收起）
+ * → 下课（兜底清理）四类 AlarmManager 闹钟。通知由 [TimetableReminderReceiver]
  * 发布，Android 16+ 使用 ProgressStyle / Live Update，低版本回退到
  * setProgress + 系统倒计时。
+ *
+ * 实时活动只覆盖课前窗口：上课后不再发布任何提醒。
  */
 object TimetableNotificationBridge {
   const val CHANNEL_ID = "class-reminder"
   const val ACTION = "in.rinne.your_szu_life.TIMETABLE_REMINDER"
   const val PREFS = "timetable_reminders"
   const val PREFS_SPECS = "specs"
+
+  /** 通知与闹钟点击统一回到应用首页。 */
+  const val HOME_URL = "your-szu-life://page/"
 
   @JvmStatic
   fun sync(context: Context, specsJson: String): Boolean = try {
@@ -54,7 +59,7 @@ object TimetableNotificationBridge {
     false
   }
 
-  /** 开机/时区变化后从 SharedPreferences 恢复排程。 */
+  /** 开机/时区变化/应用更新后从 SharedPreferences 恢复排程。 */
   fun restore(context: Context) {
     val raw = prefs(context.applicationContext).getString(PREFS_SPECS, null) ?: return
     sync(context, raw)
@@ -71,7 +76,6 @@ object TimetableNotificationBridge {
       .putExtra(EXTRA_END, spec.endAtMs)
       .putExtra(EXTRA_TIME_LABEL, spec.timeLabel)
       .putExtra(EXTRA_LOCATION, spec.location)
-      .putExtra(EXTRA_ROUTE, spec.route)
       .putExtra(EXTRA_LEAD, spec.leadMinutes)
       .putExtra(EXTRA_LIVE, spec.liveUpdate)
   }
@@ -90,10 +94,43 @@ object TimetableNotificationBridge {
       endAtMs = end,
       timeLabel = intent.getStringExtra(EXTRA_TIME_LABEL).orEmpty(),
       location = intent.getStringExtra(EXTRA_LOCATION).orEmpty(),
-      route = intent.getStringExtra(EXTRA_ROUTE).orEmpty(),
       leadMinutes = intent.getLongExtra(EXTRA_LEAD, 20L).coerceAtLeast(1L),
       liveUpdate = intent.getBooleanExtra(EXTRA_LIVE, false),
     )
+  }
+
+  /**
+   * 首页点击意图：显式指向 [MainActivity]，避免依赖深链 intent-filter 才能解析；
+   * `CLEAR_TOP` 顺带收掉叠在主页面之上的独立页面窗口。
+   */
+  fun openHome(context: Context, sessionId: String): PendingIntent {
+    val intent = Intent(context, MainActivity::class.java)
+      .setAction(Intent.ACTION_VIEW)
+      .setData(Uri.parse(HOME_URL))
+      .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+    return PendingIntent.getActivity(
+      context,
+      requestCode(sessionId, POINT_HOME),
+      intent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+  }
+
+  /** 课前窗口内每分钟续一次，由接收器收到后再次调用。 */
+  fun scheduleNextTick(context: Context, spec: ClassSpec, now: Long) {
+    val delay = LiveReminderSession.nextAlarmDelay(now, spec.startAtMs)
+    if (delay <= 0L) return
+    val intent = Intent(context, TimetableReminderReceiver::class.java)
+      .setAction(ACTION)
+      .putExtra(EXTRA_PHASE, TimetableReminderReceiver.PHASE_TICK)
+    putSpec(intent, spec)
+    val pending = PendingIntent.getBroadcast(
+      context,
+      requestCode(spec.sessionId, POINT_TICK),
+      intent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+    setAlarm(context, now + delay, pending)
   }
 
   private fun scheduleSpec(context: Context, spec: ClassSpec) {
@@ -103,21 +140,13 @@ object TimetableNotificationBridge {
     val leadMs = spec.leadMinutes.coerceAtLeast(1) * 60_000L
     val leadAt = start - leadMs
     if (leadAt <= now) {
-      // 已经进入 20 分钟窗口。实时活动开启时交给前台服务推进（每 15s 重发）；
-      // 启动失败或系统不支持时回退到定点通知。
-      if (spec.liveUpdate && TimetableLiveUpdateService.supportsPromoted(context)) {
-        if (!TimetableLiveUpdateService.start(context, spec)) {
-          TimetableReminderReceiver.post(context, spec, TimetableReminderReceiver.PHASE_REMIND)
-        }
-      } else {
-        TimetableReminderReceiver.post(context, spec, TimetableReminderReceiver.PHASE_REMIND)
-      }
+      // 已经进入课前窗口：立刻启动实时活动或发一条定点通知，并接着跑 tick 链。
+      TimetableReminderReceiver.refresh(context, spec)
     }
     schedule(context, spec, TimetableReminderReceiver.PHASE_REMIND, POINT_REMIND, leadAt)
-    schedule(context, spec, TimetableReminderReceiver.PHASE_UPDATE, POINT_UPDATE_15, start - 15 * 60_000L)
-    schedule(context, spec, TimetableReminderReceiver.PHASE_UPDATE, POINT_UPDATE_10, start - 10 * 60_000L)
-    schedule(context, spec, TimetableReminderReceiver.PHASE_UPDATE, POINT_UPDATE_5, start - 5 * 60_000L)
-    schedule(context, spec, TimetableReminderReceiver.PHASE_START, POINT_START, start)
+    // 上课即收起：实时活动与定点通知都在这一刻结束。
+    schedule(context, spec, TimetableReminderReceiver.PHASE_CLEAR, POINT_CLEAR, start)
+    // 下课的兜底清理：错过 T0 闹钟时也不会把通知留到下一节。
     schedule(context, spec, TimetableReminderReceiver.PHASE_END, POINT_END, spec.endAtMs)
   }
 
@@ -139,6 +168,10 @@ object TimetableNotificationBridge {
       intent,
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
+    setAlarm(context, atMs, pending)
+  }
+
+  private fun setAlarm(context: Context, atMs: Long, pending: PendingIntent) {
     val manager = context.getSystemService(AlarmManager::class.java)
     val exact = Build.VERSION.SDK_INT < 31 || manager.canScheduleExactAlarms()
     try {
@@ -180,7 +213,7 @@ object TimetableNotificationBridge {
       "上课提醒",
       NotificationManager.IMPORTANCE_DEFAULT,
     ).apply {
-      description = "课前 20 分钟起显示常驻倒计时，并在上课时更新"
+      description = "课前 20 分钟起显示常驻倒计时，上课后自动收起"
       setShowBadge(false)
     }
     manager.createNotificationChannel(channel)
@@ -213,7 +246,6 @@ object TimetableNotificationBridge {
           endAtMs = end,
           timeLabel = row.optString("timeLabel"),
           location = row.optString("location"),
-          route = row.optString("route"),
           leadMinutes = row.optLong("leadMinutes", 20L).coerceAtLeast(1L),
           liveUpdate = row.optBoolean("liveUpdate", false),
         )
@@ -229,7 +261,6 @@ object TimetableNotificationBridge {
     val endAtMs: Long,
     val timeLabel: String,
     val location: String,
-    val route: String,
     val leadMinutes: Long,
     /** 是否使用 Android 16 实时活动（promoted Live Update）推进展示。 */
     val liveUpdate: Boolean = false,
@@ -241,16 +272,15 @@ object TimetableNotificationBridge {
   const val EXTRA_END = "endAtMs"
   const val EXTRA_TIME_LABEL = "timeLabel"
   const val EXTRA_LOCATION = "location"
-  const val EXTRA_ROUTE = "route"
   const val EXTRA_LEAD = "leadMinutes"
   const val EXTRA_PHASE = "phase"
   const val EXTRA_LIVE = "liveUpdate"
 
   // 每个时间点必须有独立请求码；同 phase 共用请求码会让后一个闹钟覆盖前一个。
   private const val POINT_REMIND = 0
-  private const val POINT_UPDATE_15 = 1
-  private const val POINT_UPDATE_10 = 2
-  private const val POINT_UPDATE_5 = 3
-  private const val POINT_START = 4
-  private const val POINT_END = 5
+  private const val POINT_TICK = 1
+  private const val POINT_CLEAR = 2
+  private const val POINT_END = 3
+  /** 点击意图与闹钟不是同一类 PendingIntent，给一个不冲突的请求码。 */
+  private const val POINT_HOME = 4
 }

@@ -231,11 +231,10 @@ pub fn class_spec_with_live(
     }
 }
 
-/// Android 原生排程窗口：未来 72 小时内开始的课次。
-pub fn class_sync_specs(sessions: &[TimetableSession], now: i64) -> Vec<ClassReminderSpec> {
-    class_sync_specs_with_live(sessions, now, true)
-}
-
+/// Android 原生排程窗口：未来 72 小时内开始、且还没开始上课的课次。
+///
+/// 上课时刻一到就把课次从集合里剔除，`sync` 的差分逻辑随即撤掉它的闹钟、
+/// 通知与实时活动——提醒只在课前显示。
 pub fn class_sync_specs_with_live(
     sessions: &[TimetableSession],
     now: i64,
@@ -243,14 +242,20 @@ pub fn class_sync_specs_with_live(
 ) -> Vec<ClassReminderSpec> {
     sessions
         .iter()
-        .filter(|session| session.start_ms >= now && session.start_ms <= now + CLASS_SYNC_WINDOW_MS)
+        .filter(|session| session.start_ms > now && session.start_ms <= now + CLASS_SYNC_WINDOW_MS)
         .map(|session| class_spec_with_live(session, live_update))
         .collect()
 }
 
-/// 当前应放进实时活动的那节课：`start - lead ≤ now < end` 中开始时间最晚的一节。
+/// 同 [`class_sync_specs_with_live`]，实时活动默认开启。
+pub fn class_sync_specs(sessions: &[TimetableSession], now: i64) -> Vec<ClassReminderSpec> {
+    class_sync_specs_with_live(sessions, now, true)
+}
+
+/// 当前应放进实时活动的那节课：`start - lead ≤ now < start` 中开始时间最晚的一节。
 ///
-/// 实时活动是单条的（系统胶囊只有一个），连堂课或时间重叠时优先最近的课程。
+/// 实时活动是单条的（系统胶囊只有一个），连堂课或时间重叠时优先最近的课程；
+/// 上课后不再保留实时活动。
 pub fn active_live_spec<'a>(
     specs: &'a [ClassReminderSpec],
     now: i64,
@@ -260,7 +265,7 @@ pub fn active_live_spec<'a>(
         .filter(|spec| spec.live_update)
         .filter(|spec| {
             let lead = spec.lead_minutes.max(1);
-            now >= spec.start_at_ms - lead * MINUTE_MS && now < spec.end_at_ms
+            now >= spec.start_at_ms - lead * MINUTE_MS && now < spec.start_at_ms
         })
         .max_by_key(|spec| spec.start_at_ms)
 }
@@ -531,11 +536,10 @@ mod tests {
     }
 
     #[test]
-    fn active_live_spec_picks_the_nearest_class_in_window() {
+    fn active_live_spec_only_covers_the_pre_class_window() {
         let base = 1_800_000_000_000;
         let specs = vec![
             live_spec("a", base, base + 60 * MINUTE_MS, true),
-            // 与上一节重叠的高年级课：窗口内优先最近开始的一节。
             live_spec("b", base + 30 * MINUTE_MS, base + 120 * MINUTE_MS, true),
         ];
         // 窗口外（开课前 21 分钟）。
@@ -545,12 +549,15 @@ mod tests {
             active_live_spec(&specs, base - 20 * MINUTE_MS).map(|spec| spec.session_id.as_str()),
             Some("a")
         );
-        // 第二节也进入窗口后取更近的一节。
+        // 第一节上课时刻：立即收起，不再显示「上课中」。
+        assert!(active_live_spec(&specs, base).is_none());
+        // 第二节开课前 15 分钟：轮到第二节。
         assert_eq!(
-            active_live_spec(&specs, base + 45 * MINUTE_MS).map(|spec| spec.session_id.as_str()),
+            active_live_spec(&specs, base + 15 * MINUTE_MS).map(|spec| spec.session_id.as_str()),
             Some("b")
         );
-        // 都结束后没有实时活动。
+        // 第二节也上课后没有实时活动。
+        assert!(active_live_spec(&specs, base + 30 * MINUTE_MS).is_none());
         assert!(active_live_spec(&specs, base + 200 * MINUTE_MS).is_none());
     }
 
@@ -558,6 +565,18 @@ mod tests {
     fn active_live_spec_skips_specs_without_live_update() {
         let base = 1_800_000_000_000;
         let specs = vec![live_spec("a", base, base + 60 * MINUTE_MS, false)];
-        assert!(active_live_spec(&specs, base + 10 * MINUTE_MS).is_none());
+        assert!(active_live_spec(&specs, base - 10 * MINUTE_MS).is_none());
+    }
+
+    #[test]
+    fn sync_specs_drop_a_class_at_its_start() {
+        let start = 1_800_000_000_000;
+        let sessions = vec![session(start)];
+        assert_eq!(
+            class_sync_specs_with_live(&sessions, start - 1, true).len(),
+            1
+        );
+        assert!(class_sync_specs_with_live(&sessions, start, true).is_empty());
+        assert!(class_sync_specs_with_live(&sessions, start + 1, true).is_empty());
     }
 }

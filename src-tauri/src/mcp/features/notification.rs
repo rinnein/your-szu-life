@@ -7,9 +7,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct TimetableSettingsUpdate {
-    /// 课前提醒（默认提前 20 分钟；Android 上显示常驻倒计时）
+    /// 课前提醒（默认提前 20 分钟；Android 上显示常驻倒计时，上课即收起）
     pub class_reminder: Option<bool>,
-    /// 实时活动（Android 16 promoted Live Update / ColorOS 流体云）
+    /// 实时活动（Android 16 promoted Live Update / ColorOS 流体云，仅课前窗口）
     pub live_update: Option<bool>,
     /// 签到提醒（普通待签点名）
     pub checkin: Option<bool>,

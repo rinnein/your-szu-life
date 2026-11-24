@@ -31,7 +31,14 @@
         "schemes": [
           "your-szu-life"
         ]
-      }
+      },
+      "mobile": [
+        {
+          "scheme": [
+            "your-szu-life"
+          ]
+        }
+      ]
     }
   },
   "bundle": {

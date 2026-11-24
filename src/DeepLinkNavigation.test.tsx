@@ -9,6 +9,7 @@ import { supportsMultipleWindows } from "@tauri-apps/api/app";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalNavigationProvider } from "./logical-navigation";
 import { DeepLinkNavigation } from "./DeepLinkNavigation";
+import { setupDeepLinkListener } from "./deep-link";
 
 vi.mock("@tanstack/react-router", () => ({
   useRouter: vi.fn(),
@@ -35,14 +36,20 @@ type TrayEventHandler = (event: { payload?: { route?: string } }) => void;
 
 describe("DeepLinkNavigation tray bridge", () => {
   let trayHandler: TrayEventHandler | undefined;
+  let deepLinkHandler: ((route: string) => void) | undefined;
   let navigate: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     trayHandler = undefined;
+    deepLinkHandler = undefined;
     (window as { __TAURI_INTERNALS__?: object }).__TAURI_INTERNALS__ = {};
     vi.mocked(listen).mockImplementation(async (...args: Parameters<typeof listen>) => {
       trayHandler = args[1] as TrayEventHandler;
+      return () => {};
+    });
+    vi.mocked(setupDeepLinkListener).mockImplementation(async (callback) => {
+      deepLinkHandler = callback;
       return () => {};
     });
     vi.mocked(supportsMultipleWindows).mockResolvedValue(true);
@@ -75,6 +82,39 @@ describe("DeepLinkNavigation tray bridge", () => {
     await vi.waitFor(() =>
       expect(navigate).toHaveBeenCalledWith({ to: "/study/uooc?tab=exams&subtab=homework" }),
     );
+  });
+
+  it("replaces the current page when a deep link targets the app root", async () => {
+    render(
+      <LogicalNavigationProvider>
+        <DeepLinkNavigation />
+      </LogicalNavigationProvider>,
+    );
+
+    await vi.waitFor(() => expect(deepLinkHandler).toBeDefined());
+    deepLinkHandler?.("/");
+
+    // 首页必须替换当前页面，而不是 push 出新的一层（Android 上会变成独立窗口）。
+    await vi.waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({
+        to: "/",
+        replace: true,
+        resetScroll: true,
+      }),
+    );
+  });
+
+  it("pushes feature deep links as new logical pages", async () => {
+    render(
+      <LogicalNavigationProvider>
+        <DeepLinkNavigation />
+      </LogicalNavigationProvider>,
+    );
+
+    await vi.waitFor(() => expect(deepLinkHandler).toBeDefined());
+    deepLinkHandler?.("/study/uooc");
+
+    await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: "/study/uooc" }));
   });
 
   it("ignores payloads without an application route", async () => {

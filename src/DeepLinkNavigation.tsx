@@ -7,7 +7,7 @@ import { isChildDocument, useLogicalNavigation } from "./logical-navigation";
 const TRAY_OPEN_ROUTE_EVENT = "tray-open-route";
 
 export function DeepLinkNavigation() {
-  const { push } = useLogicalNavigation();
+  const { push, replace } = useLogicalNavigation();
   const child = isChildDocument();
 
   useEffect(() => {
@@ -15,7 +15,10 @@ export function DeepLinkNavigation() {
     if (child) return;
     let cleanup: (() => void) | undefined;
     void setupDeepLinkListener((route) => {
-      push(route);
+      // 根路由（课表提醒的「回首页」）要在当前窗口内替换：Android 上 push 会
+      // 走 openLogicalWindow 新开一个首页子窗口，而不是把主窗口退回首页。
+      if (route === "/") void replace("/");
+      else void push(route);
     }).then((c) => {
       cleanup = c;
     });
@@ -23,7 +26,7 @@ export function DeepLinkNavigation() {
     return () => {
       cleanup?.();
     };
-  }, [push, child]);
+  }, [push, replace, child]);
 
   useEffect(() => {
     // 托盘待办点击只投递到主窗口；复用 push 让目标逻辑页面以独立窗口打开。

@@ -56,7 +56,7 @@ const REQUESTABLE: CatalogEntry[] = [
     id: "promotedNotifications",
     title: "实时活动（流体云）",
     description:
-      "上课期间在锁屏与状态栏常驻显示当前课程进度与倒计时。Android 16 实时更新与 ColorOS 流体云依赖它。",
+      "课前 20 分钟在锁屏与状态栏显示当前课程、进度与倒计时，上课即收起。Android 16 实时更新与 ColorOS 流体云依赖它。",
     permission: "POST_PROMOTED_NOTIFICATIONS",
     icon: <LuRadio />,
     settingsTarget: "notifications",

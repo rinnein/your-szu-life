@@ -376,8 +376,7 @@ export function NotificationSettings() {
       <Card variant="outlined">
         <div slot="headline">上课提醒</div>
         <div slot="subhead">
-          课表模块的通知。课前提醒从上课前 20
-          分钟起显示常驻倒计时（Android），上课时更新，下课后自动清除。
+          课表模块的通知。课前提醒从上课前 20 分钟起显示常驻倒计时（Android），上课即收起。
         </div>
         <SettingList>
           <SettingRow
@@ -395,7 +394,7 @@ export function NotificationSettings() {
           <SettingRow
             icon={<LuRadio aria-hidden="true" />}
             title="实时活动（流体云）"
-            description="课前 20 分钟起以实时活动展示进度环与倒计时（Android 16 实时更新；ColorOS 流体云据此渲染）。需要系统的实时通知授权。"
+            description="课前 20 分钟起以实时活动展示进度环与倒计时，上课即收起；退到后台也会按分钟更新（Android 16 实时更新；ColorOS 流体云据此渲染）。需要系统的实时通知授权。"
           >
             <Switch
               checked={view.timetable.liveUpdate}

@@ -98,15 +98,16 @@ fn normalized_lead_minutes(values: Vec<i64>) -> Vec<i64> {
 
 /// 课表（上课提醒）的独立配置。
 ///
-/// 课前提醒默认提前 20 分钟，Android 上从该时刻起显示常驻倒计时通知；
-/// 签到提醒在探测到新的待签点名时发送一次；签到失败提醒在自动签到失败、
-/// 缺少照片被跳过等需要人工处理时发送。
+/// 课前提醒默认提前 20 分钟，Android 上从该时刻起显示常驻倒计时通知，
+/// 上课时刻自动收起；签到提醒在探测到新的待签点名时发送一次；签到失败提醒在
+/// 自动签到失败、缺少照片被跳过等需要人工处理时发送。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct TimetableNotificationSettings {
     /// 课前提醒
     pub class_reminder: bool,
-    /// 实时活动：Android 16+ 的 promoted Live Update（ColorOS 流体云据此渲染）
+    /// 实时活动：Android 16+ 的 promoted Live Update（ColorOS 流体云据此渲染），
+    /// 只覆盖课前窗口
     pub live_update: bool,
     /// 签到提醒（普通待签点名）
     pub checkin: bool,
