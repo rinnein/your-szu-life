@@ -24,6 +24,14 @@ pub struct AcademicRecordParams {
     pub recalculate: Option<bool>,
 }
 
+#[derive(Debug, Deserialize, Serialize, JsonSchema, Default)]
+pub struct GradeParams {
+    /// 只返回指定学期的课程成绩，例如 `2025-2026-1`；省略则返回全部学期
+    pub term: Option<String>,
+    /// 是否强制从教务系统重新拉取；默认 false，优先返回应用内已缓存的成绩
+    pub refresh: Option<bool>,
+}
+
 #[tool_router(router = enrollment_tools, vis = "pub(crate)")]
 impl UnifiedSzuMcpService {
     #[tool(
@@ -104,6 +112,40 @@ impl UnifiedSzuMcpService {
         .map_err(|_| "任务执行失败".to_string())??;
 
         serde_json::to_string_pretty(&value).map_err(|e| format!("序列化失败: {e}"))
+    }
+
+    #[tool(
+        name = "enrollment_get_grades",
+        description = "查询本科教务系统逐学期课程成绩、学分与平均学分绩点（GPA）。默认返回应用内缓存，refresh=true 时重新访问教务系统；term 可只取一个学期。成绩与 GPA 属于隐私数据，仅返回用户要求的内容。"
+    )]
+    pub async fn enrollment_get_grades(
+        &self,
+        Parameters(params): Parameters<GradeParams>,
+    ) -> Result<String, String> {
+        let store = self.app.try_state::<Store>().ok_or("教务服务存储不可用")?;
+        let service = store.0.clone();
+        let refresh = params.refresh.unwrap_or(false);
+        let cached = if refresh { None } else { service.grades() };
+        let mut report = match cached {
+            Some(report) => report,
+            None => {
+                let value = tokio::task::spawn_blocking(move || {
+                    service.execute(Action::Grades).map_err(|e| e.message)
+                })
+                .await
+                .map_err(|_| "任务执行失败".to_string())??;
+                let grades = value
+                    .get("grades")
+                    .cloned()
+                    .ok_or_else(|| "成绩快照缺失，请稍后重试".to_string())?;
+                serde_json::from_value::<szu_enrollment::enrollment::model::GradeReport>(grades)
+                    .map_err(|e| format!("成绩数据解析失败: {e}"))?
+            }
+        };
+        if let Some(term) = params.term.filter(|term| !term.trim().is_empty()) {
+            report.items.retain(|item| item.term_id == term);
+        }
+        serde_json::to_string_pretty(&report).map_err(|e| format!("序列化失败: {e}"))
     }
 
     #[tool(

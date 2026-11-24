@@ -36,6 +36,43 @@ export type Academic = {
   calculatedAt: string;
   updatedAt: number;
 };
+/** 一条课程成绩（eHall 成绩查询）。 */
+export type GradeItem = {
+  termId: string;
+  termName: string;
+  courseCode: string;
+  courseName: string;
+  nature: string;
+  credit: number | null;
+  earnedCredit: number | null;
+  score: string;
+  grade: string;
+  gradePoint: number | null;
+  creditGradePoint: number | null;
+  section: string;
+  examDate: string;
+  valid: boolean;
+};
+/** 一个学期的成绩汇总。 */
+export type GradeTerm = {
+  termId: string;
+  termName: string;
+  selectedCredits: number;
+  earnedCredits: number;
+  averageGradePoint: number | null;
+  percent: number | null;
+  itemCount: number;
+};
+/** 全部成绩与 GPA 汇总，按学期倒序。 */
+export type GradeReport = {
+  items: GradeItem[];
+  terms: GradeTerm[];
+  gpa: number | null;
+  selectedCredits: number;
+  earnedCredits: number;
+  itemCount: number;
+  updatedAt: number;
+};
 export type Snapshot = {
   mode: Mode;
   context: { student: string; term: string; batch: string; campus: string };
@@ -52,6 +89,7 @@ export type Snapshot = {
   complete: boolean;
   running: boolean;
   academic: Academic | null;
+  grades?: GradeReport | null;
   query: { category: string; keyword: string; page: number };
 };
 export type Probe = { mode: Mode; latency: number | null; needs2fa: boolean; message: string };

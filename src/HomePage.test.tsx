@@ -10,7 +10,6 @@ import { listen } from "@tauri-apps/api/event";
 import { authFailureFor, normalizeAuthState } from "./auth";
 import { registerDebugTap } from "./shell/use-debug-mode";
 import { mockElementRects } from "./test-layout";
-import { toast } from "./ui";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -192,20 +191,15 @@ describe("frontend smoke tests", () => {
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("set_debug_mode", { enabled: true }));
   });
 
-  it("keeps 成绩查询 on the study page with a placeholder toast notification", async () => {
+  it("navigates 成绩查询 to the grades page", async () => {
     mockSignedIn();
-    const infoSpy = vi.spyOn(toast, "info");
 
     const { testRouter } = renderRouterApp("/study");
     const feature = await screen.findByRole("button", { name: /^成绩查询/ });
-    expect(feature).toHaveTextContent("暂未实现 · 即将支持");
+    expect(feature).toHaveTextContent("各学期课程成绩、学分与 GPA");
     fireEvent.click(feature);
 
-    expect(infoSpy).toHaveBeenCalledWith("成绩查询功能即将支持", {
-      description: "当前仅提供入口占位",
-    });
-    expect(testRouter.state.location.pathname).toBe("/study");
-    infoSpy.mockRestore();
+    await waitFor(() => expect(testRouter.state.location.pathname).toBe("/study/grades"));
   });
 
   it("opens the accessible account menu and logout confirmation", async () => {
@@ -310,7 +304,7 @@ describe("frontend smoke tests", () => {
       ["监察巡课", "课程直播与录播回放"],
       ["选课", "查课、抢课与选课期间课表"],
       ["学业完成查询", "培养方案、学分与课程完成情况"],
-      ["成绩查询", "暂未实现 · 即将支持"],
+      ["成绩查询", "各学期课程成绩、学分与 GPA"],
     ]) {
       expect(screen.getByRole("button", { name: new RegExp(`^${label}`) })).toHaveTextContent(
         description,

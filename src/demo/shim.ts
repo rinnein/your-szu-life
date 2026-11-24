@@ -327,6 +327,7 @@ const mockHandlers: Record<string, MockHandler> = {
       // 学校信息条（班次 / 学期徽标）在页面挂载后立刻请求，缺了会弹「操作失败」。
       if (type === "batchInfo") return { dataList: mockEnrollmentBatches };
       if (type === "selected") return mockEnrollmentSnapshot.selected;
+      if (type === "grades") return mockEnrollmentSnapshot;
     }
     if (action === "probe") {
       return [{ mode: "campus", latency: 12, needs2fa: false, message: "" }];

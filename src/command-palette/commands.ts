@@ -1,5 +1,6 @@
 import {
   FaCalendarDays,
+  FaChartLine,
   FaGraduationCap,
   FaCirclePlay,
   FaVideo,
@@ -148,6 +149,16 @@ export const COMMAND_LIST: CommandItem[] = [
     target: "/study/academic",
     icon: FaGraduationCap,
     keywords: ["xueye", "xuefen", "degree"],
+  },
+  {
+    id: "grades",
+    name: "成绩查询",
+    shortcuts: ["cj", "grades"],
+    description: "各学期课程成绩、学分与 GPA",
+    category: "学习",
+    target: "/study/grades",
+    icon: FaChartLine,
+    keywords: ["chengji", "gpa", "score", "grade"],
   },
   {
     id: "home",

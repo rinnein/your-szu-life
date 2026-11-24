@@ -1,184 +1,27 @@
 use super::{
-    client::decode,
+    ehall::Ehall,
     protocol::{self, Error, Failure, Result},
-    session,
 };
 use serde_json::{json, Value};
-use std::sync::Mutex;
 
 pub struct Academic {
-    client: reqwest::blocking::Client,
-    /// 当前应用的角色入口（带 `gid_`）；模块 API 必须用它作为 Referer。
-    referer: Mutex<Option<String>>,
+    ehall: Ehall,
 }
-const EHALL_BASE: &str = "https://ehall.szu.edu.cn";
 /// eHall「我的课表」微应用。
 const WDKB_ENTRY: &str = "https://ehall.szu.edu.cn/jwapp/sys/wdkb/*default/index.do";
 const WDKB_APP_ID: &str = "4770397878132218";
 /// eHall「学业完成查询」微应用（appId 来自 `serviceCenterData.json`）。
 const XYWCX_ENTRY: &str = "https://ehall.szu.edu.cn/jwapp/sys/xywccx/*default/index.do";
 const XYWCX_APP_ID: &str = "4980269146247992";
-const MAX_REDIRECTS: usize = 15;
 
 impl Academic {
     /// 用 authserver 的统一认证 SSO 自动建立 eHall 会话。
-    ///
-    /// 与 lms/jxxk/qw 同一套机制：从 vault 投影 authserver cookie，访问
-    /// eHall 时手动跟随 CAS 跳转；CASTGC 有效时自动完成 service ticket
-    /// 登录，失效时返回 NeedsAuth 类错误。
     pub fn from_app(app: &tauri::AppHandle) -> Result<Self> {
-        let sso = szu_core::auth::reusable_sso_jar(app)
-            .map_err(|message| Error::new(Failure::Session, message))?;
         Ok(Self {
-            client: session::client(sso)?,
-            referer: Mutex::new(None),
+            ehall: Ehall::from_app(app)?,
         })
     }
 
-    /// 建立指定 eHall 应用会话。
-    ///
-    /// 顺序与真实浏览器一致：
-    /// 1. GET 应用入口并跟随 CAS，拿到 `MOD_AUTH_CAS`（最终 403 也视为 CAS 成功，
-    ///    因为应用还需要角色）；
-    /// 2. GET `appShow?appId=...` 初始化应用上下文；
-    /// 3. GET `appMultiGroupEntranceList` 取带 `gid_` 的角色入口；
-    /// 4. GET 角色入口（`gid_`）建立角色会话，并把它作为后续模块 API 的 Referer。
-    fn bootstrap(&self, entry: &str, app_id: &str) -> Result<()> {
-        let mut url = reqwest::Url::parse(entry)
-            .map_err(|_| Error::new(Failure::Protocol, "教务入口地址无效"))?;
-        let mut cas_ok = false;
-        for _ in 0..=MAX_REDIRECTS {
-            let response = self
-                .client
-                .get(url.clone())
-                .header("Referer", "https://ehall.szu.edu.cn/")
-                .send()
-                .map_err(|_| Error::new(Failure::Network, "教务系统暂时无法访问"))?;
-            let status = response.status();
-            if status.is_redirection() {
-                let location = response
-                    .headers()
-                    .get(reqwest::header::LOCATION)
-                    .and_then(|value| value.to_str().ok())
-                    .ok_or_else(|| Error::new(Failure::Protocol, "教务登录跳转缺少目标地址"))?;
-                let next = url
-                    .join(location)
-                    .map_err(|_| Error::new(Failure::Protocol, "教务登录跳转地址无效"))?;
-                if !trusted_host(&next) {
-                    return Err(Error::new(
-                        Failure::Session,
-                        "教务登录跳转到了不受信任的地址，请重新认证",
-                    ));
-                }
-                url = next;
-                continue;
-            }
-            if url.host_str() != Some("ehall.szu.edu.cn") || url.path().starts_with("/login") {
-                return Err(Error::new(
-                    Failure::Session,
-                    "统一认证会话已失效，请重新登录应用",
-                ));
-            }
-            // wdkb 入口在 CAS 成功后仍可能 403（缺应用角色），此时 CAS 会话已建立。
-            cas_ok = true;
-            break;
-        }
-        if !cas_ok {
-            return Err(Error::new(Failure::Session, "教务登录跳转次数过多，请重新认证"));
-        }
-
-        let app_show = self
-            .client
-            .get(format!("{EHALL_BASE}/appShow?appId={app_id}"))
-            .header("Referer", format!("{EHALL_BASE}/new/index.html"))
-            .send()
-            .map_err(|_| Error::new(Failure::Network, "教务应用入口暂时无法访问"))?;
-        let app_show_location = app_show
-            .headers()
-            .get(reqwest::header::LOCATION)
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_string);
-        if app_show_location.is_none() && !app_show.status().is_success() {
-            return Err(Error::new(
-                Failure::Session,
-                "教务应用入口拒绝访问，请重新登录应用",
-            ));
-        }
-
-        let roles = self
-            .client
-            .get(format!(
-                "{EHALL_BASE}/appMultiGroupEntranceList?appId={app_id}&param=&r_t={}",
-                chrono::Utc::now().timestamp_millis()
-            ))
-            .header("X-Requested-With", "XMLHttpRequest")
-            .header(
-                "Referer",
-                format!("{EHALL_BASE}/portal/html/select_role.html?appId={app_id}"),
-            )
-            .send()
-            .map_err(|_| Error::new(Failure::Network, "教务角色列表暂时无法访问"))?;
-        if !roles.status().is_success() {
-            return Err(Error::new(
-                Failure::Session,
-                "教务角色列表拒绝访问，请重新登录应用",
-            ));
-        }
-        let value: Value = roles
-            .json()
-            .map_err(|_| Error::new(Failure::Protocol, "教务角色列表格式变化"))?;
-        let groups = value["data"]["groupList"]
-            .as_array()
-            .ok_or_else(|| Error::new(Failure::Session, "当前账号没有可用的「我的课表」角色"))?;
-        let target = groups
-            .iter()
-            .find(|group| {
-                let name = protocol::text(&group["groupName"]);
-                name.contains("学生") || name.contains("本科")
-            })
-            .or_else(|| groups.first())
-            .map(|group| protocol::text(&group["targetUrl"]).replace("&amp;", "&"))
-            .filter(|url| !url.trim().is_empty())
-            .ok_or_else(|| Error::new(Failure::Session, "当前账号没有可用的「我的课表」角色"))?;
-
-        let target_url = reqwest::Url::parse(&target)
-            .map_err(|_| Error::new(Failure::Protocol, "教务角色入口地址无效"))?;
-        let mut url = target_url.clone();
-        let mut role_ok = false;
-        for _ in 0..=MAX_REDIRECTS {
-            let response = self
-                .client
-                .get(url.clone())
-                .header("Referer", format!("{EHALL_BASE}/new/index.html"))
-                .send()
-                .map_err(|_| Error::new(Failure::Network, "教务角色入口暂时无法访问"))?;
-            let status = response.status();
-            if status.is_redirection() {
-                let location = response
-                    .headers()
-                    .get(reqwest::header::LOCATION)
-                    .and_then(|value| value.to_str().ok())
-                    .ok_or_else(|| Error::new(Failure::Protocol, "教务角色跳转缺少目标地址"))?;
-                url = url
-                    .join(location)
-                    .map_err(|_| Error::new(Failure::Protocol, "教务角色跳转地址无效"))?;
-                continue;
-            }
-            if !status.is_success() || url.host_str() != Some("ehall.szu.edu.cn") {
-                return Err(Error::new(
-                    Failure::Session,
-                    "教务角色入口拒绝访问，请重新登录应用",
-                ));
-            }
-            role_ok = true;
-            break;
-        }
-        if !role_ok {
-            return Err(Error::new(Failure::Session, "教务角色跳转次数过多，请重新认证"));
-        }
-        *self.referer.lock().unwrap() = Some(target);
-        Ok(())
-    }
     /// 学业方案上下文（学号 + 培养方案 + 年级 + 学生类别）。
     ///
     /// 直接读 `cxscfa` 当前方案行：`cxxsscfa`（方案列表）在新版 eHall 会返回
@@ -191,64 +34,11 @@ impl Academic {
             .ok_or_else(|| Error::new(Failure::Protocol, "当前账号还没有可用的学业完成方案"))
     }
     pub fn post(&self, name: &str, form: &[(String, String)]) -> Result<Value> {
-        self.post_path(&format!("/jwapp/sys/xywccx/modules/xywccx/{name}.do"), form)
-    }
-
-    fn referer(&self, fallback: &str) -> String {
-        self.referer
-            .lock()
-            .unwrap()
-            .clone()
-            .unwrap_or_else(|| fallback.to_string())
-    }
-
-    /// xywccx 微应用要求 X-Requested-With 与角色入口 Referer。
-    fn post_path(&self, path: &str, form: &[(String, String)]) -> Result<Value> {
-        let response = self
-            .client
-            .post(format!("https://ehall.szu.edu.cn{path}"))
-            .header("X-Requested-With", "XMLHttpRequest")
-            .header("Referer", self.referer(XYWCX_ENTRY))
-            .form(form)
-            .send()
-            .map_err(|_| Error::new(Failure::Network, "教务系统暂时无法访问"))?;
-        let status = response.status();
-        if status.as_u16() >= 500 {
-            return Err(Error::new(Failure::Network, "教务系统暂时不可用"));
-        }
-        if status.is_redirection() || !status.is_success() {
-            return Err(Error::new(
-                Failure::Session,
-                "学业接口拒绝访问，请重新登录应用后再试",
-            ));
-        }
-        decode(response)
-    }
-
-    /// 金智 wdkb 微应用要求 X-Requested-With 与 Referer。
-    fn post_wisedu(&self, path: &str, form: &[(String, String)]) -> Result<Value> {
-        let response = self
-            .client
-            .post(format!("https://ehall.szu.edu.cn{path}"))
-            .header("X-Requested-With", "XMLHttpRequest")
-            .header("Referer", self.referer(WDKB_ENTRY))
-            .form(form)
-            .send()
-            .map_err(|_| Error::new(Failure::Network, "教务课表暂时无法访问"))?;
-        let status = response.status();
-        if status.is_redirection() {
-            return Err(Error::new(
-                Failure::Session,
-                "教务会话已失效，请重新登录应用后再试",
-            ));
-        }
-        if !status.is_success() {
-            return Err(Error::new(
-                Failure::Session,
-                format!("教务接口返回 HTTP {}，请重新登录应用后再试", status.as_u16()),
-            ));
-        }
-        decode(response)
+        self.ehall.post(
+            &format!("/jwapp/sys/xywccx/modules/xywccx/{name}.do"),
+            form,
+            XYWCX_ENTRY,
+        )
     }
 
     /// 上课期间的学期固定课表（eHall `wdkb/xskcb`）。
@@ -259,17 +49,23 @@ impl Academic {
         &self,
         preferred_term: Option<&str>,
     ) -> Result<super::model::SemesterSchedule> {
-        self.bootstrap(WDKB_ENTRY, WDKB_APP_ID)?;
+        self.ehall
+            .bootstrap(WDKB_ENTRY, WDKB_APP_ID, "我的课表")?;
 
-        let term_list = self.post_wisedu("/jwapp/sys/wdkb/modules/jshkcb/dqxnxq.do", &[])?;
+        let term_list = self.ehall.post(
+            "/jwapp/sys/wdkb/modules/jshkcb/dqxnxq.do",
+            &[],
+            WDKB_ENTRY,
+        )?;
         let rows = term_list["datas"]["dqxnxq"]["rows"]
             .as_array()
             .ok_or_else(|| Error::new(Failure::Protocol, "教务学期列表格式变化，请稍后重试"))?;
         let term = select_term(rows, preferred_term)?;
 
-        let value = self.post_wisedu(
+        let value = self.ehall.post(
             "/jwapp/sys/wdkb/modules/xskcb/xskcb.do",
             &[("XNXQDM".into(), term.clone())],
+            WDKB_ENTRY,
         )?;
         let rows = value["datas"]["xskcb"]["rows"]
             .as_array()
@@ -307,7 +103,7 @@ impl Academic {
         Ok(super::model::SemesterSchedule { term, courses })
     }
     pub fn load(&self, student: &str) -> Result<Value> {
-        self.bootstrap(XYWCX_ENTRY, XYWCX_APP_ID)?;
+        self.ehall.bootstrap(XYWCX_ENTRY, XYWCX_APP_ID, "学业完成查询")?;
         let row = self.context(student)?;
         if protocol::text(&row["XH"]) != student {
             return Err(Error::new(Failure::Permanent, "学业查询账户不匹配"));
@@ -350,7 +146,7 @@ impl Academic {
         )
     }
     pub fn recalculate(&self, student: &str) -> Result<Value> {
-        self.bootstrap(XYWCX_ENTRY, XYWCX_APP_ID)?;
+        self.ehall.bootstrap(XYWCX_ENTRY, XYWCX_APP_ID, "学业完成查询")?;
         let row = self.context(student)?;
         if protocol::text(&row["XH"]) != student {
             return Err(Error::new(Failure::Permanent, "学业账户不匹配"));
@@ -369,17 +165,10 @@ impl Academic {
         Ok(result)
     }
     pub fn progress(&self, student: &str) -> Result<Value> {
-        self.bootstrap(XYWCX_ENTRY, XYWCX_APP_ID)?;
+        self.ehall.bootstrap(XYWCX_ENTRY, XYWCX_APP_ID, "学业完成查询")?;
         self.post("byscjd", &[("ZXJDKEY".into(), format!("BYSC_{student}"))])
     }
 }
-fn trusted_host(url: &reqwest::Url) -> bool {
-    let Some(host) = url.host_str().map(|host| host.trim_end_matches('.')) else {
-        return false;
-    };
-    host == "szu.edu.cn" || host.ends_with(".szu.edu.cn")
-}
-
 /// 从 `dqxnxq.rows` 选当前学期。
 ///
 /// 优先使用调用方给的学期（应用内 qw 课表的当前学期）；否则找 SFDQ/CURRENT/SFSY

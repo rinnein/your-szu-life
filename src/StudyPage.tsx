@@ -1,4 +1,3 @@
-import { toast } from "./ui";
 import { FeatureGrid, type Feature } from "./components";
 import { PageSurface } from "./shell/PageSurface";
 import { TopAppBar } from "./shell/TopAppBar";
@@ -64,7 +63,12 @@ const STUDY_FEATURES: readonly Feature[] = [
     description: "培养方案、学分与课程完成情况",
     to: "/study/academic",
   },
-  { label: "成绩查询", icon: FaChartLine, description: "暂未实现 · 即将支持" },
+  {
+    label: "成绩查询",
+    icon: FaChartLine,
+    description: "各学期课程成绩、学分与 GPA",
+    to: "/study/grades",
+  },
 ];
 
 export default function StudyPage() {
@@ -73,12 +77,7 @@ export default function StudyPage() {
       <PageSurface maxWidth="2xl">
         <TopAppBar title="学习" description="课表、选课与编程练习等功能" showBack={false} />
 
-        <FeatureGrid
-          features={STUDY_FEATURES}
-          onPlaceholder={(label) => {
-            toast.info(`${label}功能即将支持`, { description: "当前仅提供入口占位" });
-          }}
-        />
+        <FeatureGrid features={STUDY_FEATURES} />
       </PageSurface>
     </AuthGate>
   );

@@ -6,6 +6,8 @@ mod client;
 pub mod commands;
 pub use commands::Action;
 mod contract;
+mod ehall;
+mod grades;
 #[cfg(target_os = "linux")]
 mod linux_cookies;
 mod maintenance;
@@ -545,6 +547,11 @@ impl Service {
     /// 当前教务学期（如 `2026-2027-1`），课表模块用它确定 `XNXQDM`。
     pub fn context_term(&self) -> String {
         self.snapshot().context.term
+    }
+
+    /// 已缓存的成绩与 GPA；尚未查询过时为空，读取不会访问学校接口。
+    pub fn grades(&self) -> Option<model::GradeReport> {
+        self.snapshot().grades
     }
 
     /// 拉取上课期间的学期固定课表（eHall `wdkb/xskcb`）。
@@ -1208,6 +1215,7 @@ impl Service {
                 next.admission = Admission::Unchecked;
                 next.running = false;
                 next.academic = old.academic;
+                next.grades = old.grades;
                 *self.state.lock().unwrap() = next;
             }
             Action::Labs { course } => {
@@ -1606,6 +1614,10 @@ impl Service {
                 }
                 let value = c.load(&profile.student_id)?;
                 self.state.lock().unwrap().academic = Some(value);
+            }
+            Action::Grades => {
+                let report = grades::Grades::from_app(&self.app)?.load()?;
+                self.state.lock().unwrap().grades = Some(report);
             }
             Action::AcademicProgress => {
                 let value = self

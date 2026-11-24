@@ -94,6 +94,7 @@ pub enum Action {
         recalculate: bool,
     },
     AcademicProgress,
+    Grades,
 }
 fn trusted_source(label: &str) -> bool {
     label == "main" || label.starts_with("feature-")

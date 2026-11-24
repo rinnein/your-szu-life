@@ -131,6 +131,7 @@ describe("顶栏块不被放进带 gap 的容器", () => {
     "/study/oj",
     "/study/uooc",
     "/study/academic",
+    "/study/grades",
     "/study/enrollment",
     "/life/campus-payments",
   ];

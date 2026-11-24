@@ -27,6 +27,7 @@ fn test_resources_uris_and_metadata() {
     assert!(uris.contains(&"your-szu-life://data/network/status"));
     assert!(uris.contains(&"your-szu-life://data/electricity/status"));
     assert!(uris.contains(&"your-szu-life://data/enrollment/timetable"));
+    assert!(uris.contains(&"your-szu-life://data/enrollment/grades"));
     assert!(uris.contains(&"your-szu-life://data/uooc/courses"));
     assert!(uris.contains(&"your-szu-life://data/oj/contests"));
     assert!(uris.contains(&"your-szu-life://data/todos"));

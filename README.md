@@ -90,7 +90,6 @@ paru -S your-szu-life
 
 尚未实现：
 
-- [ ] 成绩查询
 - [ ] OJ 助教自动批改
 - [ ] OJ 自动 AI 样例扩展
 

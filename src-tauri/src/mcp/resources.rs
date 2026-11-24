@@ -27,6 +27,13 @@ pub fn list_available_resources() -> Vec<Resource> {
         .with_title("本学期个人课表数据")
         .with_description("返回教务系统本学期已选课程明细与排课作息表")
         .with_mime_type("application/json"),
+        Resource::new(
+            "your-szu-life://data/enrollment/grades",
+            "enrollment_grades",
+        )
+        .with_title("本科课程成绩与 GPA")
+        .with_description("返回已缓存的逐学期课程成绩、学分与平均学分绩点；读取不访问学校接口")
+        .with_mime_type("application/json"),
         Resource::new("your-szu-life://data/uooc/courses", "uooc_courses")
             .with_title("UOOC 慕课学习进度")
             .with_description("返回优课联盟在修课程列表与综合小节学习完成进度百分比")
@@ -210,6 +217,14 @@ pub async fn read_resource_by_uri(
                     .execute(szu_enrollment::enrollment::commands::Action::Selected)
                     .ok();
                 serde_json::to_string_pretty(&selected).unwrap_or_else(|_| "{}".to_string())
+            } else {
+                "{}".to_string()
+            }
+        }
+        "your-szu-life://data/enrollment/grades" => {
+            if let Some(store) = app.try_state::<szu_enrollment::enrollment::Store>() {
+                let grades = store.0.grades();
+                serde_json::to_string_pretty(&grades).unwrap_or_else(|_| "{}".to_string())
             } else {
                 "{}".to_string()
             }

@@ -78,6 +78,66 @@ pub struct SemesterSchedule {
     pub courses: Vec<SemesterCourse>,
 }
 
+/// 一条课程成绩（eHall `cjcx/xscjcxtjgl`）。
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GradeItem {
+    pub term_id: String,
+    pub term_name: String,
+    pub course_code: String,
+    pub course_name: String,
+    /// 课程性质（必修/选修等）。
+    pub nature: String,
+    pub credit: Option<f64>,
+    /// 取得学分（`QDXF`）。
+    pub earned_credit: Option<f64>,
+    /// 总成绩；等级制课程是「优秀/良好」等文本。
+    pub score: String,
+    /// 等级成绩（`DJCJMC`），与百分制成绩并存时单独展示。
+    pub grade: String,
+    /// 课程绩点（`XFJD`）。
+    pub grade_point: Option<f64>,
+    /// 学分绩点（`JDF`），缺失时由 `credit × grade_point` 兜底。
+    pub credit_grade_point: Option<f64>,
+    /// 课序号。
+    pub section: String,
+    pub exam_date: String,
+    /// 是否有效；无效成绩保留展示但不计入 GPA。
+    pub valid: bool,
+}
+
+/// 一个学期的成绩汇总。
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GradeTerm {
+    pub term_id: String,
+    pub term_name: String,
+    /// 修读学分（`ΣXF`）。
+    pub selected_credits: f64,
+    /// 取得学分（`ΣQDXF`）。
+    pub earned_credits: f64,
+    /// 学期平均学分绩点，无有效绩点时为空。
+    pub average_grade_point: Option<f64>,
+    /// 取得学分 / 修读学分，百分比。
+    pub percent: Option<f64>,
+    pub item_count: usize,
+}
+
+/// 全部成绩与 GPA 汇总。
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GradeReport {
+    pub items: Vec<GradeItem>,
+    /// 按学期倒序。
+    pub terms: Vec<GradeTerm>,
+    /// 总平均学分绩点。
+    pub gpa: Option<f64>,
+    pub selected_credits: f64,
+    pub earned_credits: f64,
+    pub item_count: usize,
+    pub updated_at: i64,
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Context {
@@ -240,6 +300,8 @@ pub struct Snapshot {
     pub running: bool,
     pub query: Query,
     pub academic: Option<serde_json::Value>,
+    #[serde(default)]
+    pub grades: Option<GradeReport>,
     #[serde(default)]
     pub academic_recalculation: Option<i64>,
 }

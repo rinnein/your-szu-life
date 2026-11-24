@@ -19,6 +19,7 @@ import { Route as LifeCampusPaymentsRouteRouteImport } from './routes/life/campu
 import { Route as StudyIndexRouteImport } from './routes/study/index'
 import { Route as StudyAcademicRouteImport } from './routes/study/academic'
 import { Route as StudyEnrollmentRouteImport } from './routes/study/enrollment'
+import { Route as StudyGradesRouteImport } from './routes/study/grades'
 import { Route as StudyLmsRouteImport } from './routes/study/lms'
 import { Route as StudyOjRouteImport } from './routes/study/oj'
 import { Route as StudyPatrolRouteImport } from './routes/study/patrol'
@@ -88,6 +89,11 @@ const StudyAcademicRoute = StudyAcademicRouteImport.update({
 const StudyEnrollmentRoute = StudyEnrollmentRouteImport.update({
   id: '/enrollment',
   path: '/enrollment',
+  getParentRoute: () => StudyRouteRoute,
+} as any)
+const StudyGradesRoute = StudyGradesRouteImport.update({
+  id: '/grades',
+  path: '/grades',
   getParentRoute: () => StudyRouteRoute,
 } as any)
 const StudyLmsRoute = StudyLmsRouteImport.update({
@@ -204,6 +210,7 @@ export interface FileRoutesByFullPath {
   '/life/campus-network': typeof LifeCampusNetworkRoute
   '/study/academic': typeof StudyAcademicRoute
   '/study/enrollment': typeof StudyEnrollmentRouteWithChildren
+  '/study/grades': typeof StudyGradesRoute
   '/study/lms': typeof StudyLmsRoute
   '/study/oj': typeof StudyOjRoute
   '/study/patrol': typeof StudyPatrolRoute
@@ -232,6 +239,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/life/campus-network': typeof LifeCampusNetworkRoute
   '/study/academic': typeof StudyAcademicRoute
+  '/study/grades': typeof StudyGradesRoute
   '/study/lms': typeof StudyLmsRoute
   '/study/oj': typeof StudyOjRoute
   '/study/patrol': typeof StudyPatrolRoute
@@ -265,6 +273,7 @@ export interface FileRoutesById {
   '/life/campus-network': typeof LifeCampusNetworkRoute
   '/study/academic': typeof StudyAcademicRoute
   '/study/enrollment': typeof StudyEnrollmentRouteWithChildren
+  '/study/grades': typeof StudyGradesRoute
   '/study/lms': typeof StudyLmsRoute
   '/study/oj': typeof StudyOjRoute
   '/study/patrol': typeof StudyPatrolRoute
@@ -299,6 +308,7 @@ export interface FileRouteTypes {
     | '/life/campus-network'
     | '/study/academic'
     | '/study/enrollment'
+    | '/study/grades'
     | '/study/lms'
     | '/study/oj'
     | '/study/patrol'
@@ -327,6 +337,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/life/campus-network'
     | '/study/academic'
+    | '/study/grades'
     | '/study/lms'
     | '/study/oj'
     | '/study/patrol'
@@ -359,6 +370,7 @@ export interface FileRouteTypes {
     | '/life/campus-network'
     | '/study/academic'
     | '/study/enrollment'
+    | '/study/grades'
     | '/study/lms'
     | '/study/oj'
     | '/study/patrol'
@@ -460,6 +472,13 @@ declare module '@tanstack/react-router' {
       path: '/enrollment'
       fullPath: '/study/enrollment'
       preLoaderRoute: typeof StudyEnrollmentRouteImport
+      parentRoute: typeof StudyRouteRoute
+    }
+    '/study/grades': {
+      id: '/study/grades'
+      path: '/grades'
+      fullPath: '/study/grades'
+      preLoaderRoute: typeof StudyGradesRouteImport
       parentRoute: typeof StudyRouteRoute
     }
     '/study/lms': {
@@ -668,6 +687,7 @@ const StudyEnrollmentRouteWithChildren = StudyEnrollmentRoute._addFileChildren(
 interface StudyRouteRouteChildren {
   StudyAcademicRoute: typeof StudyAcademicRoute
   StudyEnrollmentRoute: typeof StudyEnrollmentRouteWithChildren
+  StudyGradesRoute: typeof StudyGradesRoute
   StudyLmsRoute: typeof StudyLmsRoute
   StudyOjRoute: typeof StudyOjRoute
   StudyPatrolRoute: typeof StudyPatrolRoute
@@ -683,6 +703,7 @@ interface StudyRouteRouteChildren {
 const StudyRouteRouteChildren: StudyRouteRouteChildren = {
   StudyAcademicRoute: StudyAcademicRoute,
   StudyEnrollmentRoute: StudyEnrollmentRouteWithChildren,
+  StudyGradesRoute: StudyGradesRoute,
   StudyLmsRoute: StudyLmsRoute,
   StudyOjRoute: StudyOjRoute,
   StudyPatrolRoute: StudyPatrolRoute,

@@ -28,4 +28,12 @@ describe("StudyPage", () => {
     fireEvent.click(ojButton);
     expect(nav.push).toHaveBeenCalledWith("/study/oj");
   });
+
+  it("点击成绩查询导航到 /study/grades", () => {
+    render(<StudyPage />);
+    const gradesButton = screen.getByRole("button", { name: /成绩查询.*各学期课程成绩/ });
+    expect(gradesButton).toBeInTheDocument();
+    fireEvent.click(gradesButton);
+    expect(nav.push).toHaveBeenCalledWith("/study/grades");
+  });
 });
