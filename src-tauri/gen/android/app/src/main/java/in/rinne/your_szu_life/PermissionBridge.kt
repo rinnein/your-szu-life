@@ -4,14 +4,17 @@ import android.Manifest
 import android.app.Activity
 import android.app.AlarmManager
 import android.app.NotificationManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import java.lang.ref.WeakReference
+import java.util.Locale
 
 private data class PermissionState(
     val id: String,
@@ -109,6 +112,8 @@ object PermissionBridge {
             cameraState(context),
             installPackagesState(context),
             exactAlarmState(context),
+            autoStartState(),
+            batteryOptimizationState(context),
         )
         .joinToString(prefix = "[", postfix = "]", separator = ",", transform = PermissionState::toJson)
   }
@@ -156,7 +161,7 @@ object PermissionBridge {
                   missing += Manifest.permission.CAMERA
                 }
               }
-              "installPackages", "exactAlarm" -> Unit
+              "installPackages", "exactAlarm", "autoStart", "batteryOptimization" -> Unit
               else -> return fail("未知的权限项：$key")
             }
           }
@@ -186,6 +191,15 @@ object PermissionBridge {
     if (current.isFinishing) return "界面正在关闭"
     val packageUri = Uri.fromParts("package", current.packageName, null)
     val appDetails = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri)
+    // 自启动没有官方入口：按品牌尝试私有页面，全部不可用时退回应用详情。
+    if (target == "autoStart") {
+      if (startVendorAutoStart(current)) return ""
+      return runCatching {
+            current.startActivity(appDetails)
+            ""
+          }
+          .getOrElse { "无法打开系统设置：${it.message ?: "未知错误"}" }
+    }
     val intent = when (target) {
       "app" -> appDetails
       "notifications" ->
@@ -208,6 +222,7 @@ object PermissionBridge {
           } else {
             appDetails
           }
+      "batteryOptimization" -> batteryOptimizationIntent(current, packageUri, appDetails)
       else -> return "未知的设置入口：$target"
     }
     if (intent.resolveActivity(current.packageManager) == null) {
@@ -365,5 +380,98 @@ object PermissionBridge {
         canRequest = false,
         note = if (grantedNow) null else "未开启时系统可能延迟几分钟触发提醒",
     )
+  }
+
+  /**
+   * 厂商「自启动 / 后台运行」没有官方接口，也无法读取是否已开启，因此状态恒为
+   * `manual`，由用户到厂商设置里确认。
+   */
+  private fun autoStartState(): PermissionState =
+      PermissionState(
+          id = "autoStart",
+          status = "manual",
+          canRequest = false,
+          note = "各厂商的「自启动 / 后台运行」入口不同，应用无法读取是否已开启；关闭时重启或清理后台后可能收不到提醒",
+      )
+
+  private fun batteryOptimizationState(context: Context): PermissionState {
+    val ignoring =
+        try {
+          (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)
+              ?.isIgnoringBatteryOptimizations(context.packageName) == true
+        } catch (_: Throwable) {
+          false
+        }
+    return PermissionState(
+        id = "batteryOptimization",
+        status = if (ignoring) "granted" else "denied",
+        canRequest = false,
+        note = if (ignoring) null else "未加入电池优化白名单时，后台提醒可能被延迟或拦截",
+    )
+  }
+
+  /** 按品牌尝试已知的私有自启动页面；全部不可用时返回 `false` 交给应用详情兜底。 */
+  private fun startVendorAutoStart(activity: Activity): Boolean {
+    val brand = "${Build.MANUFACTURER} ${Build.BRAND}".lowercase(Locale.ROOT)
+    val components = buildList {
+      if (brand.contains("xiaomi") ||
+          brand.contains("redmi") ||
+          brand.contains("poco") ||
+          brand.contains("blackshark")) {
+        add(
+            "com.miui.securitycenter" to
+                "com.miui.permcenter.autostart.AutoStartManagementActivity")
+      }
+      if (brand.contains("oppo") ||
+          brand.contains("realme") ||
+          brand.contains("oneplus") ||
+          brand.contains("oplus")) {
+        add(
+            "com.coloros.safecenter" to
+                "com.coloros.safecenter.permission.startup.StartupAppListActivity")
+        add(
+            "com.coloros.safecenter" to
+                "com.coloros.safecenter.startupapp.StartupAppListActivity")
+        add(
+            "com.oplus.safecenter" to
+                "com.oplus.safecenter.permission.startup.StartupAppListActivity")
+      }
+      if (brand.contains("vivo") || brand.contains("iqoo")) {
+        add(
+            "com.vivo.permissionmanager" to
+                "com.vivo.permissionmanager.activity.BgStartUpManagerActivity")
+        add("com.iqoo.secure" to "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity")
+      }
+      if (brand.contains("huawei") || brand.contains("honor")) {
+        add(
+            "com.huawei.systemmanager" to
+                "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity")
+        add(
+            "com.huawei.systemmanager" to
+                "com.huawei.systemmanager.optimize.process.ProtectActivity")
+      }
+    }
+    for ((packageName, className) in components) {
+      try {
+        activity.startActivity(Intent().setComponent(ComponentName(packageName, className)))
+        return true
+      } catch (_: Throwable) {
+        // 该品牌/版本可能没有这个页面，继续尝试下一个。
+      }
+    }
+    return false
+  }
+
+  /** 优先直达本应用的电池优化申请页；不可用时退回白名单列表页。 */
+  private fun batteryOptimizationIntent(
+      context: Context,
+      packageUri: Uri,
+      fallback: Intent,
+  ): Intent {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return fallback
+    val direct = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, packageUri)
+    if (direct.resolveActivity(context.packageManager) != null) return direct
+    val list = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+    return if (list.resolveActivity(context.packageManager) != null) list else fallback
   }
 }

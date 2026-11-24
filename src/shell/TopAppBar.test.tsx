@@ -184,7 +184,10 @@ describe("页面转场", () => {
   it("stays off for tab switches inside a single logical page", async () => {
     const router = renderAt("/settings");
 
-    fireEvent.click(await screen.findByRole("tab", { name: "网络" }));
+    // 设置页的 tab 列表在平台判定完成后才稳定（「后台」是桌面专属 tab），
+    // 先等它出现再取节点，避免点到列表重建前的旧节点。
+    await screen.findByRole("tab", { name: /后台/ });
+    fireEvent.click(screen.getByRole("tab", { name: "网络" }));
     await vi.waitFor(() => expect(router.state.location.href).toContain("tab=network"));
     await vi.waitFor(() =>
       expect(document.querySelector(".page-transition")?.getAttribute("data-motion")).toBe("none"),

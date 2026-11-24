@@ -24,11 +24,15 @@ pub enum PermissionId {
     Camera,
     InstallPackages,
     ExactAlarm,
+    /// 厂商「自启动/后台运行」管理：没有官方 API，只能引导用户手动开启。
+    AutoStart,
+    /// 电池优化白名单：官方 API 可检测，也只能通过系统入口申请。
+    BatteryOptimization,
 }
 
 impl PermissionId {
     /// 输出顺序固定：前端按这个顺序落位，不依赖原生数组的顺序。
-    pub const ALL: [PermissionId; 7] = [
+    pub const ALL: [PermissionId; 9] = [
         PermissionId::Notifications,
         PermissionId::PromotedNotifications,
         PermissionId::Location,
@@ -36,6 +40,8 @@ impl PermissionId {
         PermissionId::Camera,
         PermissionId::InstallPackages,
         PermissionId::ExactAlarm,
+        PermissionId::AutoStart,
+        PermissionId::BatteryOptimization,
     ];
 
     #[cfg(any(target_os = "android", test))]
@@ -48,6 +54,8 @@ impl PermissionId {
             PermissionId::Camera => "camera",
             PermissionId::InstallPackages => "installPackages",
             PermissionId::ExactAlarm => "exactAlarm",
+            PermissionId::AutoStart => "autoStart",
+            PermissionId::BatteryOptimization => "batteryOptimization",
         }
     }
 }
@@ -61,6 +69,8 @@ pub enum PermissionStatus {
     Unsupported,
     /// 权限已授予，但相关系统开关被关闭（例如系统定位服务）。
     SystemDisabled,
+    /// 只能由用户在厂商/系统设置里手动确认，应用无法读取真实状态。
+    Manual,
     Unknown,
 }
 
@@ -72,6 +82,7 @@ impl PermissionStatus {
             "denied" => Some(PermissionStatus::Denied),
             "unsupported" => Some(PermissionStatus::Unsupported),
             "systemDisabled" => Some(PermissionStatus::SystemDisabled),
+            "manual" => Some(PermissionStatus::Manual),
             "unknown" => Some(PermissionStatus::Unknown),
             _ => None,
         }
@@ -97,6 +108,8 @@ pub enum PermissionSettingsTarget {
     Location,
     InstallPackages,
     ExactAlarm,
+    AutoStart,
+    BatteryOptimization,
 }
 
 impl PermissionSettingsTarget {
@@ -108,6 +121,8 @@ impl PermissionSettingsTarget {
             PermissionSettingsTarget::Location => "location",
             PermissionSettingsTarget::InstallPackages => "installPackages",
             PermissionSettingsTarget::ExactAlarm => "exactAlarm",
+            PermissionSettingsTarget::AutoStart => "autoStart",
+            PermissionSettingsTarget::BatteryOptimization => "batteryOptimization",
         }
     }
 }
@@ -227,6 +242,30 @@ mod tests {
         let parsed: PermissionId = serde_json::from_str("\"nearbyWifi\"").unwrap();
         assert_eq!(parsed, PermissionId::NearbyWifi);
         assert!(serde_json::from_str::<PermissionId>("\"bogus\"").is_err());
+        assert_eq!(
+            serde_json::to_string(&PermissionId::AutoStart).unwrap(),
+            "\"autoStart\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PermissionId::BatteryOptimization).unwrap(),
+            "\"batteryOptimization\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PermissionSettingsTarget::BatteryOptimization).unwrap(),
+            "\"batteryOptimization\""
+        );
+    }
+
+    #[test]
+    fn manual_status_is_parsed_and_kept_in_tail_order() {
+        assert_eq!(
+            PermissionStatus::parse("manual"),
+            Some(PermissionStatus::Manual)
+        );
+        // 自启动与电池优化追加在末尾，既有项的索引不变。
+        assert_eq!(PermissionId::ALL.len(), 9);
+        assert_eq!(PermissionId::ALL[7], PermissionId::AutoStart);
+        assert_eq!(PermissionId::ALL[8], PermissionId::BatteryOptimization);
     }
 
     #[cfg(not(target_os = "android"))]

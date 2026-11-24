@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "title": "泥深",
+        "width": 800,
+        "height": 600,
+        "devtools": true,
+        "visible": true
+      }
+    ]
+  }
+}

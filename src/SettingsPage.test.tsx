@@ -136,7 +136,12 @@ describe("SettingsPage multi-tab and unified local model card", () => {
           { id: "camera", status: "granted", canRequest: false },
           { id: "installPackages", status: "granted", canRequest: false },
           { id: "exactAlarm", status: "granted", canRequest: false },
+          { id: "autoStart", status: "manual", canRequest: false },
+          { id: "batteryOptimization", status: "granted", canRequest: false },
         ];
+      }
+      if (command === "get_startup_settings") {
+        return { autostart: true, silent: false, supported: true };
       }
       if (command === "get_mcp_server_status") {
         return {
@@ -158,10 +163,13 @@ describe("SettingsPage multi-tab and unified local model card", () => {
   it("renders the settings tabs and defaults to 个人信息 without privacy storage card", async () => {
     renderRouterApp("/settings");
 
-    expect(await screen.findByRole("tab", { name: /个人信息/ })).toBeInTheDocument();
+    // 平台判定是异步的，后台 tab 出现后 tab 列表才稳定；之后都用同步查询，
+    // 避免拿到列表重建前的旧节点。
+    expect(await screen.findByRole("tab", { name: /后台/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /个人信息/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /外观/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /通知/ })).toBeInTheDocument();
-    // 权限 tab 只在 Android 出现，桌面端不渲染。
+    // 权限 tab 只在 Android 出现。
     expect(screen.queryByRole("tab", { name: /权限/ })).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /网络/ })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /本地模型/ })).toBeInTheDocument();
@@ -187,8 +195,35 @@ describe("SettingsPage multi-tab and unified local model card", () => {
     renderRouterApp("/settings?tab=permissions");
 
     expect(await screen.findByRole("tab", { name: /权限/ })).toBeInTheDocument();
+    // 后台 tab 只影响桌面端，Android 不渲染。
+    expect(screen.queryByRole("tab", { name: /后台/ })).not.toBeInTheDocument();
     expect(await screen.findByText("需要你授权的权限")).toBeInTheDocument();
     expect(screen.getByText("POST_NOTIFICATIONS")).toBeInTheDocument();
+    expect(screen.getByText("后台自启动")).toBeInTheDocument();
+    expect(screen.getByText("电池优化白名单")).toBeInTheDocument();
+  });
+
+  it("falls back to 个人信息 when ?tab=background is opened on Android", async () => {
+    vi.mocked(isAndroidPlatform).mockResolvedValue(true);
+    renderRouterApp("/settings?tab=background");
+
+    expect(await screen.findByText("账户与个人信息")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /后台/ })).not.toBeInTheDocument();
+  });
+
+  it("switches to 后台 tab and displays BackgroundSettings on desktop", async () => {
+    const { testRouter } = renderRouterApp("/settings");
+
+    await screen.findByRole("tab", { name: /后台/ });
+    fireEvent.click(screen.getByRole("tab", { name: /后台/ }));
+
+    await waitFor(() => {
+      expect(testRouter.state.location.search).toMatchObject({ tab: "background" });
+    });
+
+    expect(await screen.findByText("启动与后台")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "开机自启" })).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "静默启动" })).toBeInTheDocument();
   });
 
   it("falls back to 个人信息 when ?tab=permissions is opened on desktop", async () => {

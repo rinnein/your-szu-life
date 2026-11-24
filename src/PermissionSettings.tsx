@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, type ReactNode } from "react";
 import {
   LuAlarmClock,
+  LuBatteryCharging,
   LuBellRing,
   LuCamera,
   LuGlobe,
   LuMapPin,
   LuPackagePlus,
+  LuPower,
   LuRadio,
   LuRotateCcw,
   LuServer,
@@ -100,6 +102,24 @@ const REQUESTABLE: CatalogEntry[] = [
     permission: "SCHEDULE_EXACT_ALARM",
     icon: <LuAlarmClock />,
     settingsTarget: "exactAlarm",
+  },
+  {
+    id: "autoStart",
+    title: "后台自启动",
+    description:
+      "可选。允许系统在开机或清理后台后恢复应用，及时收到课表、签到与待办提醒。各厂商的入口名称不同，应用无法读取是否已开启，需要在下一层系统设置中手动允许。",
+    permission: "厂商自启动管理（无官方权限）",
+    icon: <LuPower />,
+    settingsTarget: "autoStart",
+  },
+  {
+    id: "batteryOptimization",
+    title: "电池优化白名单",
+    description:
+      "可选。把应用加入系统电池优化白名单，避免后台提醒被延迟或拦截。未开启时提醒仍会发送，但可能晚几分钟。",
+    permission: "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+    icon: <LuBatteryCharging />,
+    settingsTarget: "batteryOptimization",
   },
 ];
 
@@ -360,6 +380,8 @@ function statusLabel(status: PermissionStatus): {
       return { chip: "系统不支持", color: "default" };
     case "systemDisabled":
       return { chip: "系统关闭", color: "warning" };
+    case "manual":
+      return { chip: "需手动确认", color: "warning" };
     case "unknown":
       return { chip: "未知", color: "default" };
     case "denied":

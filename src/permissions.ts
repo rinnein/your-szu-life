@@ -11,9 +11,18 @@ export type PermissionKey =
   | "nearbyWifi"
   | "camera"
   | "installPackages"
-  | "exactAlarm";
+  | "exactAlarm"
+  | "autoStart"
+  | "batteryOptimization";
 
-export type PermissionStatus = "granted" | "denied" | "unsupported" | "systemDisabled" | "unknown";
+export type PermissionStatus =
+  | "granted"
+  | "denied"
+  | "unsupported"
+  | "systemDisabled"
+  /** 只能由用户在厂商/系统设置里手动确认，应用无法读取真实状态。 */
+  | "manual"
+  | "unknown";
 
 export type PermissionState = {
   id: PermissionKey;
@@ -28,7 +37,9 @@ export type PermissionSettingsTarget =
   | "notifications"
   | "location"
   | "installPackages"
-  | "exactAlarm";
+  | "exactAlarm"
+  | "autoStart"
+  | "batteryOptimization";
 
 export function getPermissionStates(): Promise<PermissionState[]> {
   return invoke<PermissionState[]>("get_permission_states");

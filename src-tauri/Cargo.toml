@@ -161,6 +161,9 @@ gtk = "0.18"
 # 子进程会在 GUI 子系统下闪控制台窗口，因此这里只要注册表 API 的 feature。
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Registry"] }
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+# 开机自启：插件内部按平台写 XDG autostart / 用户 Run 注册表；Linux 下优先读取
+# `$APPIMAGE`，AppImage 挂载点变化后重启仍能指向真实镜像。
+tauri-plugin-autostart = "2"
 wallpaper = "3.2"
 tempfile = "3"
 
@@ -210,6 +213,7 @@ tauri-plugin-barcode-scanner = "2"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = { workspace = true }
+tauri-plugin-autostart = { workspace = true }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

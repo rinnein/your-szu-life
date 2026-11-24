@@ -21,6 +21,8 @@ function makeStates(): PermissionState[] {
     { id: "camera", status: "granted", canRequest: false },
     { id: "installPackages", status: "denied", canRequest: false },
     { id: "exactAlarm", status: "granted", canRequest: false },
+    { id: "autoStart", status: "manual", canRequest: false },
+    { id: "batteryOptimization", status: "denied", canRequest: false },
   ];
 }
 
@@ -59,17 +61,24 @@ describe("PermissionSettings", () => {
     expect(screen.getByText("相机")).toBeInTheDocument();
     expect(screen.getByText("安装未知应用")).toBeInTheDocument();
     expect(screen.getByText("精确闹钟")).toBeInTheDocument();
+    // 可选的两项后台引导：自启动无法检测、电池优化可检测。
+    expect(screen.getByText("后台自启动")).toBeInTheDocument();
+    expect(screen.getByText("电池优化白名单")).toBeInTheDocument();
 
     // 主标题下的用途说明与权限名都展示给用户。
     expect(screen.getByText("POST_NOTIFICATIONS")).toBeInTheDocument();
     expect(screen.getByText("SCHEDULE_EXACT_ALARM")).toBeInTheDocument();
+    expect(screen.getByText("REQUEST_IGNORE_BATTERY_OPTIMIZATIONS")).toBeInTheDocument();
     expect(screen.getAllByText("安装时授予")).toHaveLength(3);
 
     expect(screen.getByText("系统不支持")).toBeInTheDocument();
     expect(screen.getByText("系统关闭")).toBeInTheDocument();
-    expect(screen.getAllByText("未授予")).toHaveLength(2);
+    expect(screen.getByText("需手动确认")).toBeInTheDocument();
+    // 未授予：附近的设备、安装未知应用、电池优化。
+    expect(screen.getAllByText("未授予")).toHaveLength(3);
     expect(screen.getByRole("button", { name: /^授权/ })).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /^去设置/ })).toHaveLength(2);
+    // 去设置：位置（系统关闭）、安装未知应用、后台自启动、电池优化。
+    expect(screen.getAllByRole("button", { name: /^去设置/ })).toHaveLength(4);
   });
 
   it("requests a runtime permission and applies the returned state", async () => {
@@ -81,7 +90,7 @@ describe("PermissionSettings", () => {
         keys: ["nearbyWifi"],
       }),
     );
-    await waitFor(() => expect(screen.getAllByText("未授予")).toHaveLength(1));
+    await waitFor(() => expect(screen.getAllByText("未授予")).toHaveLength(2));
   });
 
   it("opens the related system settings when the permission cannot be requested", async () => {

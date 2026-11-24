@@ -137,6 +137,19 @@ fn open_todo(app: &tauri::AppHandle, index: usize) {
 }
 
 pub(crate) fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    // 主窗口在配置里是隐藏创建的（避免静默启动时闪一下）。这里先决定本次是否
+    // 显示，再同步系统自启项：即使随后的托盘初始化失败，用户也不会面对一个
+    // 看不见的进程。
+    szu_core::startup::sync_at_launch(app.handle());
+    if !szu_core::startup::should_start_hidden_now() {
+        if let Some(window) = app.get_webview_window("main") {
+            if let Err(error) = window.show() {
+                log::warn!("显示主窗口失败: {error}");
+            }
+            let _ = window.set_focus();
+        }
+    }
+
     let menu = build_menu(app.app_handle(), &[])?;
     let tray = TrayIconBuilder::new()
         .icon(TRAY_ICON)

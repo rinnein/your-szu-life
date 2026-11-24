@@ -10,6 +10,7 @@ import {
   LuInfo,
   LuKeyboard,
   LuPalette,
+  LuPower,
   LuRefreshCw,
   LuServer,
   LuShieldCheck,
@@ -29,6 +30,7 @@ import SettingsSync from "./SettingsSync";
 import { LocalModelsSettings } from "./LocalModelSettings";
 import McpSettings from "./McpSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
+import { BackgroundSettings } from "./BackgroundSettings";
 import { NotificationSettings } from "./NotificationSettings";
 import { PermissionSettings } from "./PermissionSettings";
 import { NetworkSettings } from "./NetworkSettings";
@@ -47,6 +49,7 @@ const SETTINGS_TABS = [
   { id: "profile", label: "个人信息", icon: LuUser },
   { id: "appearance", label: "外观", icon: LuPalette },
   { id: "notifications", label: "通知", icon: LuBell },
+  { id: "background", label: "后台", icon: LuPower, desktopOnly: true },
   { id: "permissions", label: "权限", icon: LuShieldCheck, androidOnly: true },
   { id: "network", label: "网络", icon: LuGlobe },
   { id: "storage", label: "储存", icon: LuHardDrive },
@@ -63,6 +66,7 @@ const SETTINGS_TABS = [
   icon: typeof LuUser;
   debugOnly?: boolean;
   androidOnly?: boolean;
+  desktopOnly?: boolean;
 }>;
 
 export default function SettingsPage() {
@@ -75,7 +79,8 @@ export default function SettingsPage() {
   const tabs = SETTINGS_TABS.filter(
     (item) =>
       (!("debugOnly" in item) || debugEnabled) &&
-      (!("androidOnly" in item) || android === "android"),
+      (!("androidOnly" in item) || android === "android") &&
+      (!("desktopOnly" in item) || android === "desktop"),
   );
   const requestedTab: SettingsTab = queryTab ?? (focus ? "models" : "profile");
   const activeTab: SettingsTab = tabs.some((item) => item.id === requestedTab)
@@ -142,6 +147,8 @@ export default function SettingsPage() {
         return <AppearanceSettings />;
       case "notifications":
         return <NotificationSettings />;
+      case "background":
+        return <BackgroundSettings />;
       case "permissions":
         return <PermissionSettings />;
       case "network":

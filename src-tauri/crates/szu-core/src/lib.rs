@@ -34,5 +34,6 @@ pub mod resource_proxy;
 pub mod settings;
 pub mod settings_sync_items;
 pub mod settings_sync_signal;
+pub mod startup;
 pub mod storage;
 pub mod webview_cookies;

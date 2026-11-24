@@ -69,6 +69,9 @@ windows-sys = { workspace = true }
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 wallpaper = { workspace = true }
+# 开机自启只在桌面端可用：插件跨平台编译，但底层 auto-launch 仅实现
+# Linux / macOS / Windows，因此只在桌面目标引入。
+tauri-plugin-autostart = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

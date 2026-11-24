@@ -461,6 +461,8 @@ fn main() {
             "get_permission_states",
             "request_permissions",
             "open_permission_settings",
+            "get_startup_settings",
+            "save_startup_settings",
             "get_debug_mode",
             "set_debug_mode",
             "clear_debug_logs",

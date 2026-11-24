@@ -55,9 +55,22 @@ pub(crate) fn run() {
         .manage(netproxy::ProxyStore::new(proxy_credentials));
     // 必须最先注册：重复启动的进程在这里把参数交给已运行实例后退出。
     #[cfg(desktop)]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-        crate::desktop::focus_main_window(app);
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+        // 自启拉起的第二个实例（例如登录时与手动启动撞上）不应把驻留窗口弹出。
+        if !szu_core::startup::launched_by_autostart(&args) {
+            crate::desktop::focus_main_window(app);
+        }
     }));
+
+    // 开机自启：条目固定带 `--autostart`，由启动流程结合「静默启动」偏好决定
+    // 是否显示主窗口。Linux 下插件优先写 `$APPIMAGE` 路径。
+    #[cfg(desktop)]
+    let builder = builder.plugin(
+        tauri_plugin_autostart::Builder::new()
+            .app_name("泥深")
+            .arg(szu_core::startup::AUTOSTART_ARG)
+            .build(),
+    );
 
     // 桌面端文件夹选择器。Android 由 SAF 桥负责，不注册该插件。
     #[cfg(not(target_os = "android"))]
@@ -288,6 +301,8 @@ pub(crate) fn run() {
             szu_core::permissions::commands::get_permission_states,
             szu_core::permissions::commands::request_permissions,
             szu_core::permissions::commands::open_permission_settings,
+            szu_core::startup::commands::get_startup_settings,
+            szu_core::startup::commands::save_startup_settings,
             szu_core::analytics::commands::get_analytics_settings,
             szu_core::analytics::commands::save_analytics_settings,
             szu_todos::todos::commands::subscribe_todos,
