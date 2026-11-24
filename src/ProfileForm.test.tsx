@@ -33,15 +33,19 @@ describe("ProfileForm toast error notifications", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("sends toast.danger when campus card number is invalid", () => {
+  it("marks an invalid campus card number with a red error instead of a toast", async () => {
     const dangerSpy = vi.spyOn(toast, "danger").mockReturnValue("toast-id");
     render(<ProfileForm initial={{ studentId: "1234567890" }} onSaved={vi.fn()} />);
 
-    const submitBtn = screen.getByRole("button", { name: "保存" });
-    fireEvent.click(submitBtn);
+    const field = document.querySelectorAll("m-text-field")[2] as HTMLElement;
+    await waitForUpgrade(field);
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
-    expect(dangerSpy).toHaveBeenCalledWith("校园卡号必须是 6 位数字");
+    expect(dangerSpy).not.toHaveBeenCalled();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(field.shadowRoot!.querySelector(".mtrl-text-field__helper--error")?.textContent).toBe(
+      "校园卡号必须是 6 位数字",
+    );
   });
 
   it("sends toast.danger when password is empty for initial setup", () => {

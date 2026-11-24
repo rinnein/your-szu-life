@@ -7,6 +7,12 @@ import { usePending } from "../use-pending";
 import { authFailureFor, beginAuthentication, useAuth } from "../auth";
 import { ProfileForm } from "../ProfileForm";
 import { useRegisterNextAction, type StepNextAction } from "../step-next-action";
+import {
+  CAMPUS_CARD_LENGTH,
+  campusCardDigits,
+  campusCardError,
+  isCampusCardComplete,
+} from "../campus-card";
 import type { StepProps } from "./step-types";
 import { authStepView, isTerminalAuthFailure, type AutoAttempt } from "./auth-view";
 import { beginSetupAuthentication, cancelAuthentication, consumeAuthFailureNotice } from "./api";
@@ -15,6 +21,7 @@ export function AuthStep({ onComplete, registerNext, reauth }: StepProps) {
   const { state, profile, userData } = useAuth();
   const [campusCard, setCampusCard] = useState(profile?.campusCardNumber ?? "");
   const [password, setPassword] = useState("");
+  const [cardSubmitted, setCardSubmitted] = useState(false);
   const [manual, setManual] = useState(false);
   const [autoAttempt, setAutoAttempt] = useState<AutoAttempt>("idle");
   const [profileWaitExpired, setProfileWaitExpired] = useState(false);
@@ -109,8 +116,8 @@ export function AuthStep({ onComplete, registerNext, reauth }: StepProps) {
 
   // 键盘回车与底栏按钮走同一个入口；重复提交由 usePending 的同键拦截挡住。
   const submitCredentials = async () => {
-    if (!/^\d{6}$/.test(campusCard.trim())) {
-      toast.danger("校园卡号必须是 6 位数字");
+    if (!isCampusCardComplete(campusCard)) {
+      setCardSubmitted(true);
       return;
     }
     if (!password) {
@@ -131,6 +138,8 @@ export function AuthStep({ onComplete, registerNext, reauth }: StepProps) {
     event.preventDefault();
     void submitCredentials();
   };
+
+  const cardError = campusCardError(campusCard, cardSubmitted);
 
   const view = authStepView(state, { reauth, autoAttempt });
 
@@ -246,12 +255,16 @@ export function AuthStep({ onComplete, registerNext, reauth }: StepProps) {
           <form className="settings-form" onSubmit={onSubmit}>
             <TextField
               label="校园卡号"
+              type="tel"
+              inputmode="numeric"
+              pattern="[0-9]*"
+              maxlength={CAMPUS_CARD_LENGTH}
               value={campusCard}
-              inputMode="numeric"
               required
               disabled={submitPending}
-              supportingText="6 位数字"
-              {...bindField(setCampusCard)}
+              error={cardError !== undefined}
+              supportingText={cardError ?? "6 位数字"}
+              {...bindField((value) => setCampusCard(campusCardDigits(value)))}
             />
             <TextField
               label="登录密码"

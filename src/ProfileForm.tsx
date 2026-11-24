@@ -5,6 +5,12 @@ import { bindField, toast } from "./ui";
 import { errorMessage } from "./async-state";
 import { usePending } from "./use-pending";
 import { useRegisterNextAction, type StepNextAction } from "./step-next-action";
+import {
+  CAMPUS_CARD_LENGTH,
+  campusCardDigits,
+  campusCardError,
+  isCampusCardComplete,
+} from "./campus-card";
 import type { Profile } from "./auth";
 
 export function ProfileForm({
@@ -26,6 +32,7 @@ export function ProfileForm({
   const [campusCardNumber, setCampusCardNumber] = useState(initial?.campusCardNumber ?? "");
   const [displayName, setDisplayName] = useState(name ?? initial?.name ?? "");
   const [password, setPassword] = useState("");
+  const [cardSubmitted, setCardSubmitted] = useState(false);
   const pending = usePending();
   const saving = pending.isPending("save");
 
@@ -34,8 +41,8 @@ export function ProfileForm({
       toast.danger("学号必须是 10 位数字");
       return;
     }
-    if (!/^\d{6}$/.test(campusCardNumber)) {
-      toast.danger("校园卡号必须是 6 位数字");
+    if (!isCampusCardComplete(campusCardNumber)) {
+      setCardSubmitted(true);
       return;
     }
     if (!onlyCampusCard && !initial?.hasPassword && !password) {
@@ -63,6 +70,8 @@ export function ProfileForm({
     event.preventDefault();
     void submit();
   };
+
+  const cardError = campusCardError(campusCardNumber, cardSubmitted);
 
   useRegisterNextAction(
     registerNext,
@@ -107,10 +116,16 @@ export function ProfileForm({
         <TextField
           name="campusCardNumber"
           label="校园卡号"
+          type="tel"
+          inputmode="numeric"
+          pattern="[0-9]*"
+          maxlength={CAMPUS_CARD_LENGTH}
           required
           value={campusCardNumber}
           disabled={saving}
-          {...bindField(setCampusCardNumber)}
+          error={cardError !== undefined}
+          supportingText={cardError ?? "6 位数字"}
+          {...bindField((value) => setCampusCardNumber(campusCardDigits(value)))}
         />
         {!onlyCampusCard && (
           <TextField

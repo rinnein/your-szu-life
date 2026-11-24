@@ -59,6 +59,22 @@ function fill(container: HTMLElement, campusCard: string, password: string) {
   typeInto(fields[1] as HTMLElement, password);
 }
 
+function cardField(container: HTMLElement): HTMLElement {
+  return container.querySelectorAll("m-text-field")[0] as HTMLElement;
+}
+
+function cardInput(container: HTMLElement): HTMLInputElement {
+  const input = cardField(container).shadowRoot?.querySelector("input");
+  if (!input) throw new Error("校园卡号字段尚未升级");
+  return input;
+}
+
+/** material 把校验文案放在 shadow root 的 supporting 行里，标红靠 `--error` 类。 */
+function cardErrorText(container: HTMLElement): string | null {
+  const helper = cardField(container).shadowRoot?.querySelector(".mtrl-text-field__helper--error");
+  return helper?.textContent ?? null;
+}
+
 /**
  * 只走真实键盘会发出的那一层事件：inner input 的 `input`。
  *
@@ -119,14 +135,52 @@ describe("AuthStep", () => {
     });
   });
 
-  it("rejects a campus card that is not six digits", async () => {
+  it("marks an incomplete campus card with a red error instead of submitting", async () => {
     const danger = vi.spyOn(toast, "danger").mockReturnValue("toast-id");
     const { container } = render(<Harness />);
     fill(container, "12345", "<PASSWORD>");
     fireEvent.click(await screen.findByRole("button", { name: "登录并继续" }));
 
-    expect(danger).toHaveBeenCalledWith("校园卡号必须是 6 位数字");
+    expect(danger).not.toHaveBeenCalled();
     expect(api.beginSetupAuthentication).not.toHaveBeenCalled();
+    expect(cardErrorText(container)).toBe("校园卡号必须是 6 位数字");
+    expect(cardInput(container).getAttribute("aria-invalid")).toBe("true");
+
+    // 补齐 6 位后错误立即撤销，无需再次提交。
+    typeInto(cardField(container), "123456");
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(cardErrorText(container)).toBeNull();
+    expect(cardInput(container).getAttribute("aria-invalid")).toBeNull();
+  });
+
+  it("rejects a campus card longer than six digits as soon as it is typed", async () => {
+    const { container } = render(<Harness />);
+    const field = cardField(container);
+    await waitForUpgrade(field);
+
+    typeInto(field, "1234567");
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(cardErrorText(container)).toBe("校园卡号必须是 6 位数字");
+    expect(cardInput(container).getAttribute("maxlength")).toBe("6");
+  });
+
+  it("keeps only digits in the campus card field", async () => {
+    const { container } = render(<Harness />);
+    const field = cardField(container);
+    await waitForUpgrade(field);
+
+    typeInto(field, "12ab34");
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(cardInput(container).value).toBe("1234");
+    expect(cardErrorText(container)).toBeNull();
   });
 
   it("shows the consumed failure notice as a snackbar", async () => {
