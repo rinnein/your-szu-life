@@ -41,69 +41,33 @@ pub async fn refresh_uooc_assessments(app: tauri::AppHandle) -> Result<(), Strin
 pub fn get_uooc_ai_config(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
-) -> Result<super::ai::ConfigView, String> {
-    login::local_app_parent(&window)?;
-    Ok(service(&app)?.ai.lock().unwrap().view())
-}
-#[tauri::command]
-pub fn get_uooc_ai_connections(
-    window: tauri::WebviewWindow,
-    app: tauri::AppHandle,
-) -> Result<super::ai::ConnectionsView, String> {
-    login::local_app_parent(&window)?;
-    Ok(service(&app)?.ai.lock().unwrap().connections())
-}
-#[tauri::command]
-pub fn save_uooc_ai_connections(
-    window: tauri::WebviewWindow,
-    app: tauri::AppHandle,
-    connections: super::ai::ConnectionsInput,
-) -> Result<super::ai::ConnectionsView, String> {
+) -> Result<super::ai::PrefsView, String> {
     login::local_app_parent(&window)?;
     let service = service(&app)?;
-    let mut old = service.ai.lock().unwrap();
-    let next = old.update_connections(connections)?;
-    service
-        .credentials
-        .save_uooc_ai(&serde_json::to_string(&next).map_err(|_| "无法序列化 AI 配置")?)
-        .map_err(|_| "AI 配置无法写入系统密钥存储")?;
-    *old = next;
-    szu_core::settings_sync_signal::mark_dirty(szu_core::settings_sync_items::UOOC_AI);
-    Ok(old.connections())
+    let prefs = service.ai_prefs.lock().unwrap().clone();
+    let selected = szu_ai::store::load(service.credentials.as_ref())?
+        .selected()
+        .map(|(provider, model)| (provider.clone(), model));
+    Ok(prefs.view(selected))
 }
+
 #[tauri::command]
 pub fn save_uooc_ai_preferences(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
-    preferences: super::ai::PreferencesInput,
-) -> Result<super::ai::ConfigView, String> {
+    preferences: super::ai::PrefsInput,
+) -> Result<super::ai::PrefsView, String> {
     login::local_app_parent(&window)?;
     let service = service(&app)?;
-    let mut old = service.ai.lock().unwrap();
-    let next = old.update_preferences(preferences)?;
-    service
-        .credentials
-        .save_uooc_ai(&serde_json::to_string(&next).map_err(|_| "无法序列化 AI 配置")?)
-        .map_err(|_| "AI 配置无法写入系统密钥存储")?;
-    *old = next;
-    szu_core::settings_sync_signal::mark_dirty(szu_core::settings_sync_items::UOOC_AI);
-    Ok(old.view())
-}
-#[tauri::command]
-pub async fn list_uooc_ai_models(
-    window: tauri::WebviewWindow,
-    app: tauri::AppHandle,
-    provider: super::ai::ProviderKind,
-) -> Result<Vec<String>, String> {
-    login::local_app_parent(&window)?;
-    let service = service(&app)?;
-    let config = service.ai.lock().unwrap().clone();
-    super::ai::models(
-        &config,
-        provider,
-        &tokio_util::sync::CancellationToken::new(),
-    )
-    .await
+    let mut prefs = service.ai_prefs.lock().unwrap().clone();
+    prefs.update(preferences)?;
+    let prefs = prefs.normalized();
+    prefs.save(service.credentials.as_ref())?;
+    *service.ai_prefs.lock().unwrap() = prefs.clone();
+    let selected = szu_ai::store::load(service.credentials.as_ref())?
+        .selected()
+        .map(|(provider, model)| (provider.clone(), model));
+    Ok(prefs.view(selected))
 }
 #[tauri::command]
 pub fn save_uooc_quiz_mode(
@@ -682,10 +646,17 @@ pub async fn match_uooc_paper_qa(
 pub async fn solve_uooc_paper_ai(
     app: tauri::AppHandle,
     questions: Vec<super::quiz::model::Question>,
+    wrong_options: Option<std::collections::BTreeMap<String, Vec<String>>>,
     on_event: tauri::ipc::Channel<super::quiz::model::AiSessionEntry>,
 ) -> Result<(super::quiz::model::Answers, Vec<super::quiz::model::Review>), String> {
     let service = service(&app)?;
-    service.solve_paper_ai_with_channel(questions, Some(on_event)).await
+    service
+        .solve_paper_ai_with_channel(
+            questions,
+            wrong_options.unwrap_or_default(),
+            Some(on_event),
+        )
+        .await
 }
 
 #[tauri::command]

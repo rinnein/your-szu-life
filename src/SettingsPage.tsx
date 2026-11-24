@@ -24,7 +24,7 @@ import { useAndroid } from "./use-android";
 import { useAuth } from "./auth";
 import { AdaptiveTabs, toast } from "./ui";
 import { errorMessage } from "./async-state";
-import AiConnectionSettings from "./AiConnectionSettings";
+import AiSettingsPage from "./ai/AiSettingsPage";
 import SettingsSync from "./SettingsSync";
 import { LocalModelsSettings } from "./LocalModelSettings";
 import McpSettings from "./McpSettings";
@@ -151,7 +151,7 @@ export default function SettingsPage() {
       case "models":
         return <LocalModelsSettings autoReturnKind={focus} />;
       case "ai":
-        return <AiConnectionSettings />;
+        return <AiSettingsPage />;
       case "mcp":
         return <McpSettings />;
       case "sync":

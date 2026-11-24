@@ -43,7 +43,8 @@ const syncStatus = {
     { id: "uooc.session", label: "UOOC 登录态", collection: false, state: "loggedOut" },
     { id: "oj.accounts", label: "OJ 账号密码", collection: false, state: "waiting" },
     { id: "uooc.qa_bank", label: "UOOC 题库", collection: true, state: "synced" },
-    { id: "uooc.ai", label: "UOOC AI 配置", collection: false, state: "disabled" },
+    { id: "ai.config", label: "AI 配置", collection: false, state: "synced" },
+    { id: "uooc.ai", label: "UOOC AI 运行设置", collection: false, state: "disabled" },
   ],
 };
 

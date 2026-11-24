@@ -74,7 +74,7 @@ pub struct Service {
     durations: DurationCache,
     progress_requests: progress::ProgressRequests,
     native_session: Arc<tokio::sync::Mutex<()>>,
-    ai: Mutex<ai::Config>,
+    ai_prefs: Mutex<ai::Prefs>,
     ai_permits: Semaphore,
     discussion_lock: tokio::sync::Mutex<()>,
     pub bank_building: Arc<tokio::sync::Mutex<()>>,
@@ -160,12 +160,12 @@ impl Service {
                 session::load(None)?
             }
         };
-        let ai = credentials
-            .load_uooc_ai()
-            .ok()
-            .flatten()
-            .and_then(|v| serde_json::from_str(&v).ok())
-            .unwrap_or_default();
+        // 启动时触发一次全局 AI 配置迁移：旧 fixed.uooc.ai 的 main/jev 会被
+        // 转成新 provider 并清掉，避免旧 Jev 密钥继续留在凭据库里。
+        if let Err(error) = szu_ai::store::load(credentials.as_ref()) {
+            log::warn!("迁移全局 AI 配置失败: {error}");
+        }
+        let ai_prefs = ai::Prefs::load(credentials.as_ref());
         Ok(Arc::new(Self {
             app,
             credentials,
@@ -174,7 +174,7 @@ impl Service {
             state_db,
             progress_requests: progress::ProgressRequests::default(),
             native_session: Arc::new(tokio::sync::Mutex::new(())),
-            ai: Mutex::new(ai),
+            ai_prefs: Mutex::new(ai_prefs),
             ai_permits: Semaphore::new(2),
             discussion_lock: tokio::sync::Mutex::new(()),
             bank_building: Arc::new(tokio::sync::Mutex::new(())),
@@ -1791,9 +1791,9 @@ impl Service {
     pub async fn solve_paper_ai(
         &self,
         questions: Vec<quiz::model::Question>,
+        wrong_map: std::collections::BTreeMap<String, Vec<String>>,
     ) -> Result<(quiz::model::Answers, Vec<quiz::model::Review>), String> {
         let cancel = CancellationToken::new();
-        let wrong_map = std::collections::BTreeMap::new();
         let callback = |entry: &quiz::model::AiSessionEntry| {
             self.emit_ai_session(entry);
         };
@@ -1809,10 +1809,11 @@ impl Service {
     pub async fn solve_paper_ai_with_channel(
         &self,
         questions: Vec<quiz::model::Question>,
+        wrong_map: std::collections::BTreeMap<String, Vec<String>>,
         channel: Option<tauri::ipc::Channel<quiz::model::AiSessionEntry>>,
     ) -> Result<(quiz::model::Answers, Vec<quiz::model::Review>), String> {
         *self.ai_channel.lock().unwrap() = channel;
-        let res = self.solve_paper_ai(questions).await;
+        let res = self.solve_paper_ai(questions, wrong_map).await;
         let _ = self.ai_channel.lock().unwrap().take();
         res
     }
@@ -2022,9 +2023,9 @@ pub fn apply_synced_settings(
     service(app)?.set_settings(settings)
 }
 
-/// 设备同步：AI 配置写入安全存储后刷新运行时缓存。
+/// 设备同步：UOOC AI 运行偏好写入安全存储后刷新运行时缓存。
 pub fn reload_synced_ai(app: &tauri::AppHandle) -> Result<(), String> {
-    service(app)?.reload_ai_from_store()
+    service(app)?.reload_ai_prefs_from_store()
 }
 
 /// 设备同步：UOOC 是否处于服务端已验证的登录态。
@@ -2151,13 +2152,9 @@ pub async fn qa_sync_apply_papers(
 }
 
 impl Service {
-    fn reload_ai_from_store(&self) -> Result<(), String> {
-        let ai = self
-            .credentials
-            .load_uooc_ai()?
-            .and_then(|raw| serde_json::from_str(&raw).ok())
-            .unwrap_or_default();
-        *self.ai.lock().map_err(|_| "UOOC AI 配置锁失败")? = ai;
+    fn reload_ai_prefs_from_store(&self) -> Result<(), String> {
+        let prefs = ai::Prefs::load(self.credentials.as_ref());
+        *self.ai_prefs.lock().map_err(|_| "UOOC AI 设置锁失败")? = prefs;
         Ok(())
     }
 

@@ -10,6 +10,7 @@ fn command_names_match_handlers_manifest_and_local_permissions() {
         include_str!("../crates/szu-core/src/onboarding/commands.rs"),
         include_str!("../crates/szu-core/src/storage/commands.rs"),
         include_str!("../crates/szu-core/src/settings/commands.rs"),
+        include_str!("../crates/szu-ai/src/commands.rs"),
         include_str!("../crates/szu-core/src/campus_network/commands.rs"),
         include_str!("../crates/szu-core/src/demo/commands.rs"),
         include_str!("../crates/szu-core/src/campus_payments/commands.rs"),

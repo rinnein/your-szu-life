@@ -1,0 +1,27 @@
+[package]
+name = "szu-ai"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "泥深全局 AI provider 配置、协议探测与 rig 模型工厂"
+
+[lib]
+name = "szu_ai"
+path = "src/lib.rs"
+
+[dependencies]
+szu-core = { path = "../szu-core" }
+tauri = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true }
+futures-util = { workspace = true }
+reqwest = { workspace = true }
+http = { workspace = true }
+uuid = { workspace = true }
+rig-core = { workspace = true }
+rig-reqwest = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

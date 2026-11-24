@@ -4,6 +4,8 @@
 //! 字面量漂移。
 
 pub const UOOC_SESSION: &str = "uooc.session";
+pub const AI_CONFIG: &str = "ai.config";
+pub const AI_DEFAULT: &str = "ai.default";
 pub const UOOC_AI: &str = "uooc.ai";
 pub const OJ_ACCOUNTS: &str = "oj.accounts";
 pub const DORM_CREDENTIALS: &str = "network.dorm.credentials";

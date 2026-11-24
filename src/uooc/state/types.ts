@@ -1,3 +1,5 @@
+import type { AiProtocol, AiVendor } from "../../ai/types";
+
 export { DEFAULT_QA_SERVER_URL } from "./constants";
 
 export type UoocCourse = {
@@ -310,19 +312,24 @@ export type ReferenceExample = {
   answers: string[];
   similarity: number;
 };
-export type AiProvider = { baseUrl: string; model: string; hasKey: boolean };
-export type AiConnectionProvider = { baseUrl: string; hasKey: boolean };
-export type AiConnections = { main: AiConnectionProvider; jev: AiConnectionProvider };
-export type AiConfig = {
-  main: AiProvider;
-  jev: AiProvider;
-  jevEnabled: boolean;
-  confidence: number;
+export type UoocAiProvider = {
+  id: string;
+  name: string;
+  vendor: AiVendor;
+  protocol: AiProtocol;
+  baseUrl: string;
+  model: string;
+  modelName: string;
+  hasKey: boolean;
+  builtin: boolean;
+};
+export type UoocAiConfig = {
+  provider: UoocAiProvider | null;
+  batchSize: number;
+  reasoningEffort: string;
+  includeReasoning: boolean;
+  webSearch: boolean;
   defaultMode: QuizMode;
-  batchSize?: number;
-  reasoningEffort?: string;
-  includeReasoning?: boolean;
-  webSearch?: boolean;
 };
 
 export type CourseTaskItem =

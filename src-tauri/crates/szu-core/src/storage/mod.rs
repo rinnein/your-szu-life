@@ -30,6 +30,8 @@ pub enum SecretKey {
     LmsSession,
     JxxkSession,
     QwSession,
+    AiConfig,
+    AiDefault,
     UoocAi,
     OjAccounts,
     AcademicSessions,
@@ -53,6 +55,8 @@ impl SecretKey {
             Self::LmsSession => entries::LMS_SESSION,
             Self::JxxkSession => entries::JXXK_SESSION,
             Self::QwSession => entries::QW_SESSION,
+            Self::AiConfig => entries::AI_CONFIG,
+            Self::AiDefault => entries::AI_DEFAULT,
             Self::UoocAi => entries::UOOC_AI,
             Self::OjAccounts => entries::OJ_ACCOUNTS,
             Self::AcademicSessions => entries::ACADEMIC_SESSIONS,
@@ -78,6 +82,8 @@ impl SecretKey {
             Self::LmsSession => "lms-session",
             Self::JxxkSession => "jxxk-session",
             Self::QwSession => "qw-session",
+            Self::AiConfig => "ai-config",
+            Self::AiDefault => "ai-default",
             Self::UoocAi => "uooc-ai",
             Self::OjAccounts => "oj-accounts",
             Self::AcademicSessions => "academic-sessions",
@@ -97,6 +103,7 @@ impl SecretKey {
             "profile" => Self::Profile,
             "pending-auth" => Self::PendingAuth,
             "auth-session" => Self::AuthSession,
+            "ai-config" => Self::AiConfig,
             "uooc-ai" => Self::UoocAi,
             "uooc-session" => Self::UoocSession,
             "lms-session" => Self::LmsSession,
@@ -125,6 +132,10 @@ pub trait CredentialStore: Send + Sync {
     fn save_oj_accounts(&self, value: &String) -> Result<(), String>;
     fn load_uooc_ai(&self) -> Result<Option<String>, String>;
     fn save_uooc_ai(&self, value: &String) -> Result<(), String>;
+    fn load_ai_config(&self) -> Result<Option<String>, String>;
+    fn save_ai_config(&self, value: &String) -> Result<(), String>;
+    fn load_ai_default(&self) -> Result<Option<String>, String>;
+    fn save_ai_default(&self, value: &String) -> Result<(), String>;
     fn load_uooc_session(&self) -> Result<Option<String>, String>;
     fn save_uooc_session(&self, session: &String) -> Result<(), String>;
     fn delete_uooc_session(&self) -> Result<(), String>;
@@ -289,6 +300,8 @@ impl CredentialStore for PlatformCredentialStore {
         AcademicSessions
     );
     stored_value!(load_uooc_ai, save_uooc_ai, String, UoocAi);
+    stored_value!(load_ai_config, save_ai_config, String, AiConfig);
+    stored_value!(load_ai_default, save_ai_default, String, AiDefault);
     stored_value!(load_uooc_session, save_uooc_session, String, UoocSession);
     stored_value!(load_lms_session, save_lms_session, String, LmsSession);
     stored_value!(load_qw_session, save_qw_session, String, QwSession);

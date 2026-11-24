@@ -76,10 +76,31 @@ describe("SettingsPage multi-tab and unified local model card", () => {
           source: "cache",
         };
       }
-      if (command === "get_uooc_ai_connections") {
+      if (command === "get_ai_config") {
         return {
-          main: { baseUrl: "https://example.org/v1", hasKey: true },
-          jev: { baseUrl: "https://api.typesafe.ai/v1", hasKey: false },
+          providers: [
+            {
+              id: "p",
+              vendor: "openai",
+              name: "Test Provider",
+              protocol: "openAiCompatible",
+              baseUrl: "https://example.org/v1",
+              models: [
+                {
+                  id: "test-model",
+                  name: "Test Model",
+                  url: "https://example.org/v1/chat/completions",
+                  toolCalling: true,
+                  vision: false,
+                  maxInputTokens: 119808,
+                  maxOutputTokens: 8192,
+                },
+              ],
+              hasKey: true,
+              builtin: false,
+            },
+          ],
+          default: { providerId: "p", model: "test-model" },
         };
       }
       if (command === "get_proxy_settings") {
@@ -222,7 +243,7 @@ describe("SettingsPage multi-tab and unified local model card", () => {
     expect(screen.getAllByText(/UOOC 题库检索与语义相似度计算/).length).toBeGreaterThan(0);
   });
 
-  it("switches to AI配置 tab and displays AiConnectionSettings", async () => {
+  it("switches to AI配置 tab and displays the provider manager", async () => {
     const { testRouter } = renderRouterApp("/settings");
 
     await screen.findByRole("tab", { name: /AI 配置/ });
@@ -232,8 +253,8 @@ describe("SettingsPage multi-tab and unified local model card", () => {
       expect(testRouter.state.location.search).toMatchObject({ tab: "ai" });
     });
 
-    expect(await screen.findByText("AI 连接")).toBeInTheDocument();
-    expect(await screen.findByLabelText("主模型 API 地址")).toBeInTheDocument();
+    expect(await screen.findByText("模型提供商")).toBeInTheDocument();
+    expect((await screen.findAllByText("Test Provider")).length).toBeGreaterThan(0);
   });
 
   it("switches to MCP tab and displays MCP endpoint and prompt", async () => {
@@ -297,7 +318,7 @@ describe("SettingsPage multi-tab and unified local model card", () => {
   it("direct navigation to /settings?tab=ai opens the AI配置 tab directly", async () => {
     renderRouterApp("/settings?tab=ai");
 
-    expect(await screen.findByText("AI 连接")).toBeInTheDocument();
+    expect(await screen.findByText("模型提供商")).toBeInTheDocument();
   });
 
   it("opens the about tab directly and renders the app info panel", async () => {

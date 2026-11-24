@@ -349,7 +349,7 @@ pub async fn run(
     cancel: CancellationToken,
 ) -> Result<TaskStatus, Error> {
     let ctx = context(&service, &cid, generation)?;
-    let default_mode = service.ai.lock().unwrap().default_mode;
+    let default_mode = service.ai_prefs.lock().unwrap().default_mode;
     if !allowed(&service, &cid, &cancel).await? {
         update(&service, &ctx, |q| {
             q.stage = Stage::Disabled;

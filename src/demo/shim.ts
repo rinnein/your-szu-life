@@ -24,7 +24,7 @@ import {
   mockStaffStatus,
 } from "./fixtures/campus-network";
 import { mockUoocAssessments, mockUoocSnapshot } from "./fixtures/uooc";
-import { mockUoocAiConfig } from "./fixtures/uooc";
+import { mockUoocAiConfig, mockAiConfig } from "./fixtures/uooc";
 import {
   mockOjContests,
   mockOjGroups,
@@ -144,6 +144,42 @@ const mockHandlers: Record<string, MockHandler> = {
     return null;
   },
   get_uooc_ai_config: () => mockUoocAiConfig,
+  save_uooc_ai_preferences: () => mockUoocAiConfig,
+  get_ai_config: () => mockAiConfig,
+  reset_ai_config: () => mockAiConfig,
+  detect_ai_provider: () => ({
+    protocol: "openAiCompatible",
+    vendor: "openai",
+    baseUrl: "https://api.example.org/v1",
+    models: [
+      {
+        id: "demo-model",
+        name: "Demo Model",
+        url: "https://api.example.org/v1/chat/completions",
+        toolCalling: true,
+        vision: false,
+        maxInputTokens: 119808,
+        maxOutputTokens: 8192,
+      },
+    ],
+    verified: true,
+  }),
+  preview_ai_model: (args) => {
+    const model = String((args as any)?.input?.model ?? "demo-model");
+    return {
+      id: model,
+      name: model,
+      url: "https://api.example.org/v1/chat/completions",
+      toolCalling: true,
+      vision: false,
+      maxInputTokens: 119808,
+      maxOutputTokens: 8192,
+    };
+  },
+  upsert_ai_provider: () => mockAiConfig,
+  remove_ai_provider: () => mockAiConfig,
+  list_ai_models: () => ["demo-model"],
+  set_ai_default: () => mockAiConfig,
   get_debug_mode: () => ({ enabled: false }),
   get_uooc_local_bank_count: () => 12,
   get_uooc_embedding_status: () => ({

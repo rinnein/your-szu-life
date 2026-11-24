@@ -155,12 +155,14 @@ export function ExamPaperModal({
             onSolveAi={async (
               questions: QuizQuestion[],
               onSessionEntry?: (entry: AiSessionEntry) => void,
+              wrongOptions?: QuizAnswers,
             ) => {
               const channel = createTaskChannel<AiSessionEntry>((entry) => {
                 onSessionEntry?.(entry);
               });
               const res = await invoke<[QuizAnswers, QuizReview[]]>("solve_uooc_paper_ai", {
                 questions,
+                wrongOptions: wrongOptions ?? {},
                 onEvent: channel,
               });
               return { answers: res[0], reviews: res[1] };

@@ -151,9 +151,46 @@ export const mockUoocAssessments = {
 };
 
 export const mockUoocAiConfig = {
-  main: { baseUrl: "https://api.example.org/v1", model: "demo-model", hasKey: true },
-  jev: { baseUrl: "https://api.typesafe.ai/v1", model: "jev-demo", hasKey: false },
-  jevEnabled: false,
-  confidence: 0.8,
+  provider: {
+    id: "demo",
+    name: "Demo Provider",
+    vendor: "openai",
+    protocol: "openAiCompatible",
+    baseUrl: "https://api.example.org/v1",
+    model: "demo-model",
+    modelName: "Demo Model",
+    hasKey: true,
+    builtin: false,
+  },
+  batchSize: 5,
+  reasoningEffort: "default",
+  includeReasoning: true,
+  webSearch: true,
   defaultMode: "supervised",
+} as const;
+
+export const mockAiConfig = {
+  providers: [
+    {
+      id: "demo",
+      vendor: "openai",
+      name: "Demo Provider",
+      protocol: "openAiCompatible",
+      baseUrl: "https://api.example.org/v1",
+      models: [
+        {
+          id: "demo-model",
+          name: "Demo Model",
+          url: "https://api.example.org/v1/chat/completions",
+          toolCalling: true,
+          vision: false,
+          maxInputTokens: 119808,
+          maxOutputTokens: 8192,
+        },
+      ],
+      hasKey: true,
+      builtin: false,
+    },
+  ],
+  default: { providerId: "demo", model: "demo-model" },
 } as const;

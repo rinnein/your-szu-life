@@ -204,6 +204,7 @@ describe("ExamPaperModal", () => {
           expect.objectContaining({ id: "q2" }),
           expect.objectContaining({ id: "q3" }),
         ]),
+        wrongOptions: {},
         onEvent: expect.any(Object),
       });
       // 检查 q1 不在发送给 AI 的问题列表中

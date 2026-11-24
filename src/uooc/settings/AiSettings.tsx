@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, Checkbox, LoadingIndicator, Select, SelectOption, Button } from "material/react";
-import { Banner, NumberField, bindField, toast } from "../../ui";
-import type { AiConfig, QuizMode } from "../state/types";
+import { Banner, NumberField, SettingList, SettingRow, toast } from "../../ui";
+import { errorMessage, useAsyncLoad } from "../../async-state";
+import { usePending } from "../../use-pending";
+import type { QuizMode, UoocAiConfig } from "../state/types";
+import { aiVendorNeedsKey } from "../../ai/types";
 
 export const modeLabels: Record<QuizMode, string> = {
   supervised: "手动答题",
@@ -84,6 +87,7 @@ export function QuizModePicker({
     </div>
   );
 }
+
 export function AiSettings({
   onMode,
   onOpenAiSettings,
@@ -91,213 +95,124 @@ export function AiSettings({
   onMode: (mode: QuizMode) => void;
   onOpenAiSettings: () => void;
 }) {
-  const [config, setConfig] = useState<AiConfig>();
-  const [models, setModels] = useState<{ main: string[]; jev: string[] }>({ main: [], jev: [] });
-  const [busy, setBusy] = useState(false);
-  const [loadError, setLoadError] = useState("");
+  const { state, reload } = useAsyncLoad<UoocAiConfig>(() => invoke("get_uooc_ai_config"));
+  const [draft, setDraft] = useState<UoocAiConfig>();
+  const pending = usePending();
+  const saving = pending.isPending("save");
+
   useEffect(() => {
-    let live = true;
-    void invoke<AiConfig>("get_uooc_ai_config")
-      .then((v) => {
-        if (live && v?.main) {
-          setConfig(v);
-          onMode(v.defaultMode);
-        }
-      })
-      .catch((cause) => {
-        if (live)
-          setLoadError(
-            typeof cause === "string"
-              ? cause
-              : cause instanceof Error
-                ? cause.message
-                : "无法读取 AI 配置",
-          );
-      });
-    return () => {
-      live = false;
-    };
-  }, []);
+    if (state.status !== "ready" || draft) return;
+    setDraft(state.data);
+    onMode(state.data.defaultMode);
+  }, [state, draft, onMode]);
+
   const save = async () => {
-    if (!config) return;
-    const preferences = {
-      mainModel: config.main.model,
-      jevModel: config.jev.model,
-      jevEnabled: config.jevEnabled,
-      confidence: config.confidence,
-      defaultMode: config.defaultMode,
-      batchSize: config.batchSize ?? 5,
-      reasoningEffort: config.reasoningEffort ?? "default",
-      includeReasoning: config.includeReasoning ?? true,
-      webSearch: config.webSearch ?? true,
-    };
-    const next = await invoke<AiConfig>("save_uooc_ai_preferences", { preferences });
-    setConfig(next);
-    onMode(next.defaultMode);
-    return next;
-  };
-  const handleSave = async () => {
-    setBusy(true);
-    try {
-      await save();
-      toast.success("配置已保存");
-    } catch (e) {
-      const msg =
-        typeof e === "string" ? e : e instanceof Error ? e.message : "保存配置失败，请检查配置";
-      toast.danger("保存配置失败", { description: msg });
-    } finally {
-      setBusy(false);
+    if (!draft) return;
+    const outcome = await pending.run("save", () =>
+      invoke<UoocAiConfig>("save_uooc_ai_preferences", {
+        preferences: {
+          batchSize: draft.batchSize,
+          reasoningEffort: draft.reasoningEffort,
+          includeReasoning: draft.includeReasoning,
+          webSearch: draft.webSearch,
+          defaultMode: draft.defaultMode,
+        },
+      }),
+    );
+    if (!outcome.ok) {
+      if (!outcome.skipped) {
+        toast.danger("保存测验 AI 设置失败", { description: errorMessage(outcome.error) });
+      }
+      return;
     }
+    setDraft(outcome.value);
+    onMode(outcome.value.defaultMode);
+    toast.success("测验 AI 设置已保存");
   };
-  const handleLoadModels = async (provider: "main" | "jev") => {
-    setBusy(true);
-    try {
-      const found = await invoke<string[]>("list_uooc_ai_models", { provider });
-      setModels((old) => ({ ...old, [provider]: found }));
-      toast.success(`已加载 ${found.length} 个模型，选择后保存配置`);
-    } catch (e) {
-      const msg = typeof e === "string" ? e : e instanceof Error ? e.message : "加载模型列表失败";
-      toast.danger("加载模型列表失败", { description: msg });
-    } finally {
-      setBusy(false);
-    }
-  };
-  if (!config)
+
+  if (!draft) {
     return (
       <Card variant="outlined">
         <div slot="headline">测验 AI</div>
-        <div className="p-4">
-          {loadError ? (
-            <Banner status="danger" role="alert">
-              <Banner.Title>AI 配置出错</Banner.Title>
-              <Banner.Description>{loadError}</Banner.Description>
-            </Banner>
+        <div className="grid gap-3">
+          {state.status === "error" ? (
+            <>
+              <Banner status="danger" role="alert">
+                <Banner.Title>无法读取测验 AI 设置</Banner.Title>
+                <Banner.Description>{state.message}</Banner.Description>
+              </Banner>
+              <div>
+                <Button variant="outlined" onClick={() => void reload()}>
+                  重新读取
+                </Button>
+              </div>
+            </>
           ) : (
-            <p role="status">正在读取 AI 配置…</p>
+            <p className="status-line" role="status">
+              <LoadingIndicator size={16} aria-hidden="true" />
+              正在读取测验 AI 设置…
+            </p>
           )}
         </div>
       </Card>
     );
+  }
+
+  const provider = draft.provider;
+
   return (
     <Card variant="outlined">
-      <div slot="headline" className="flex flex-wrap items-center justify-between gap-2 w-full">
-        <span className="font-semibold">测验 AI</span>
-        <Button variant="outlined" onClick={onOpenAiSettings}>
-          前往 AI 连接设置
-        </Button>
+      <div slot="headline">测验 AI</div>
+      <div slot="subhead">
+        模型由「设置 → AI 配置」统一管理；这里只调整答题批次、推理与联网等运行参数。
       </div>
-      <div slot="subhead">API 地址和 Key 在全局设置中管理。测验内容会发送给你配置的供应商。</div>
-      <div className="grid gap-4 p-4">
-        {(["main", "jev"] as const).map((provider) => (
-          <div className="grid gap-3" key={provider}>
-            <h3 className="font-semibold">
-              {provider === "main" ? "主模型 · OpenAI 兼容接口" : "Jev · TypeSafe System One"}
-            </h3>
-            {/*
-              输入框与「加载列表」按钮同一行；空间不足时按钮换到下一行，
-              而不是被压窄或溢出。`min-w-0` 让输入框可以真正收缩。
-            */}
-            <div className="flex flex-wrap items-end gap-3">
-              <div
-                className="min-w-0 flex-1 basis-64"
-                {...bindField((model) =>
-                  setConfig((old) =>
-                    old ? { ...old, [provider]: { ...old[provider], model } } : old,
-                  ),
-                )}
-                onClick={() => {
-                  if (
-                    models[provider].length === 0 &&
-                    !busy &&
-                    config[provider].baseUrl &&
-                    config[provider].hasKey
-                  ) {
-                    void handleLoadModels(provider);
-                  }
-                }}
-                onFocus={() => {
-                  if (
-                    models[provider].length === 0 &&
-                    !busy &&
-                    config[provider].baseUrl &&
-                    config[provider].hasKey
-                  ) {
-                    void handleLoadModels(provider);
-                  }
-                }}
-              >
-                <Select
-                  label={`${provider === "main" ? "主模型" : "Jev"}名称`}
-                  value={config[provider].model}
-                  disabled={busy || !config[provider].baseUrl || !config[provider].hasKey}
-                  onChange={(event: any) => {
-                    const model = event.detail?.value ?? event.target?.value ?? "";
-                    setConfig({ ...config, [provider]: { ...config[provider], model } });
-                  }}
-                >
-                  {models[provider].map((model) => (
-                    <SelectOption key={model} value={model}>
-                      {model}
-                    </SelectOption>
-                  ))}
-                  {config[provider].model && !models[provider].includes(config[provider].model) && (
-                    <SelectOption value={config[provider].model}>
-                      {config[provider].model}
-                    </SelectOption>
-                  )}
-                </Select>
-              </div>
-              <Button
-                variant="tonal"
-                disabled={busy}
-                onClick={() => void handleLoadModels(provider)}
-                className="shrink-0"
-              >
-                加载{provider === "main" ? "主模型" : "Jev"}列表
-              </Button>
-            </div>
-          </div>
-        ))}
-        <Checkbox
-          checked={config.jevEnabled}
-          disabled={busy}
-          onChange={(e: any) =>
-            setConfig({ ...config, jevEnabled: Boolean(e.detail?.checked ?? e.target?.checked) })
-          }
-        >
-          启用 Jev 选择题辅助复核
-        </Checkbox>
-        <NumberField
-          minValue={0.5}
-          maxValue={1}
-          step={0.05}
-          value={config.confidence}
-          onChange={(confidence) => setConfig({ ...config, confidence })}
-          disabled={busy}
-          label="Jev 判断阈值"
-          description="阈值用于转交人工，不代表答案正确率；图片题不经过 Jev 复核。"
-        />
+      <div className="grid gap-4">
+        {!provider && (
+          <Banner status="warning">
+            <Banner.Title>尚未配置默认模型</Banner.Title>
+            <Banner.Description>
+              题库匹配后仍有未确定题目时，AI 答题会提示缺少默认模型；手动答题不受影响。
+            </Banner.Description>
+          </Banner>
+        )}
+        <SettingList>
+          <SettingRow
+            title="默认模型"
+            description={
+              provider
+                ? `${provider.name} · ${provider.modelName}${
+                    aiVendorNeedsKey(provider.vendor) && !provider.hasKey ? " · 缺少 API Key" : ""
+                  }`
+                : "尚未选择默认模型"
+            }
+          >
+            <Button variant="tonal" onClick={onOpenAiSettings}>
+              前往 AI 配置
+            </Button>
+          </SettingRow>
+        </SettingList>
+
         <NumberField
           minValue={1}
           maxValue={20}
           step={1}
-          value={config.batchSize ?? 10}
-          onChange={(batchSize) => setConfig({ ...config, batchSize })}
-          disabled={busy}
+          value={draft.batchSize}
+          onChange={(batchSize) => setDraft({ ...draft, batchSize })}
+          disabled={saving}
           label="题目合并批次大小"
-          description="每次向 AI 发起请求时合并处理的最大题目数量（1-20，默认 10）。合并题目可减少多轮会话反复新开并注入上下文的开销。"
+          description="每次通过 ACP 子部件处理的题目数量（1-20，默认 5）。合并题目可减少多轮会话反复新开并注入上下文的开销。"
         />
         <ReasoningEffortPicker
-          value={config.reasoningEffort ?? "default"}
-          onChange={(reasoningEffort) => setConfig({ ...config, reasoningEffort })}
-          disabled={busy}
+          value={draft.reasoningEffort}
+          onChange={(reasoningEffort) => setDraft({ ...draft, reasoningEffort })}
+          disabled={saving}
         />
         <Checkbox
-          checked={config.includeReasoning ?? true}
-          disabled={busy}
+          checked={draft.includeReasoning}
+          disabled={saving}
           onChange={(e: any) =>
-            setConfig({
-              ...config,
+            setDraft({
+              ...draft,
               includeReasoning: Boolean(e.detail?.checked ?? e.target?.checked),
             })
           }
@@ -308,34 +223,33 @@ export function AiSettings({
           启用后，AI 判题将在每道题目下方展示得出该结论的理由/解析，便于人工复核与审查。
         </p>
         <Checkbox
-          checked={config.webSearch ?? true}
-          disabled={busy}
+          checked={draft.webSearch}
+          disabled={saving}
           onChange={(e: any) =>
-            setConfig({
-              ...config,
-              webSearch: Boolean(e.detail?.checked ?? e.target?.checked),
-            })
+            setDraft({ ...draft, webSearch: Boolean(e.detail?.checked ?? e.target?.checked) })
           }
         >
-          要求 AI 使用联网搜索工具
+          允许 ACP 答题子部件使用联网搜索工具
         </Checkbox>
         <p className="text-xs text-muted -mt-2">
           在遇到有疑问的题目或冷门知识点时，允许 AI 自动发起 web_search
-          工具调用检索互联网权威资料后再作答。
+          检索互联网权威资料后再作答；模型不支持工具调用时会自动降级。
         </p>
         <QuizModePicker
-          value={config.defaultMode}
-          disabled={busy}
-          onChange={(defaultMode) => setConfig({ ...config, defaultMode })}
+          value={draft.defaultMode}
+          disabled={saving}
+          onChange={(defaultMode) => setDraft({ ...draft, defaultMode })}
         />
         <p className="field-description">
           默认手动答题：需自行作答或在弹窗中选择 AI
           答题。请求批准：先生成整卷答案，确认后才提交。YOLO 未通过时停止当前课程，其他课程继续。
         </p>
-        <Button disabled={busy} onClick={() => void handleSave()}>
-          保存运行设置
-        </Button>
-        {busy && <LoadingIndicator size={24} aria-label="正在处理 AI 配置" />}
+        <div>
+          <Button disabled={saving} onClick={() => void save()}>
+            {saving && <LoadingIndicator size={16} />}
+            {saving ? "保存中…" : "保存运行设置"}
+          </Button>
+        </div>
       </div>
     </Card>
   );

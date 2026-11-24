@@ -215,6 +215,7 @@ export interface QuizPanelProps {
   onSolveAi?: (
     questions: QuizQuestion[],
     onSessionEntry?: (entry: AiSessionEntry) => void,
+    wrongOptions?: QuizAnswers,
   ) => Promise<{ answers: QuizAnswers; reviews: QuizReview[] }>;
   onSubmit?: (answers: QuizAnswers) => Promise<void>;
   onSaveDraft?: (answers: QuizAnswers) => Promise<void>;
@@ -636,13 +637,15 @@ export function QuizPanel({
       if (action === "generate" && onSolveAi) {
         const confirmedQids = new Set(
           reviews
-            .filter(
-              (r) =>
-                (r.message.includes("题库") || r.message.includes("标准答案")) &&
-                !r.message.includes("排除"),
-            )
+            .filter((r) => r.answers.length > 0 && !r.message.includes("排除"))
             .map((r) => r.questionId),
         );
+        const wrongOptions: QuizAnswers = {};
+        for (const review of reviews) {
+          if (review.answers.length > 0 && review.message.includes("排除")) {
+            wrongOptions[review.questionId] = review.answers;
+          }
+        }
         const questionsForAi = quiz.questions.filter((q) => !confirmedQids.has(q.id));
         if (questionsForAi.length === 0) {
           setActionModal((prev) =>
@@ -659,18 +662,22 @@ export function QuizPanel({
           return;
         }
 
-        const result = await onSolveAi(questionsForAi, (entry) => {
-          setLiveSessions((prev) => {
-            const next = [...prev];
-            const idx = next.findIndex((s) => s.batchIndex === entry.batchIndex);
-            if (idx >= 0) {
-              next[idx] = entry;
-            } else {
-              next.push(entry);
-            }
-            return next;
-          });
-        });
+        const result = await onSolveAi(
+          questionsForAi,
+          (entry) => {
+            setLiveSessions((prev) => {
+              const next = [...prev];
+              const idx = next.findIndex((s) => s.batchIndex === entry.batchIndex);
+              if (idx >= 0) {
+                next[idx] = entry;
+              } else {
+                next.push(entry);
+              }
+              return next;
+            });
+          },
+          wrongOptions,
+        );
         const nextAnswers = { ...answers };
         for (const [qid, ans] of Object.entries(result.answers)) {
           if (!confirmedQids.has(qid)) {
@@ -1340,7 +1347,7 @@ export function QuizPanel({
                   </div>
                 )}
 
-                {/* 题库命中说明 / AI 推荐解析 / Jev 概率分布或错误排除说明（如果有） */}
+                {/* 题库命中说明 / AI 推荐解析或错误排除说明（如果有） */}
                 {reviews
                   .filter(
                     (r) =>

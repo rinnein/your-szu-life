@@ -132,14 +132,16 @@ impl UnifiedSzuMcpService {
 
     #[tool(
         name = "uooc_solve_question_with_ai",
-        description = "结合 UOOC 题库 RAG 知识检索与配置的 AI 大模型推理，自动解答试卷题目并生成解析；题目 images 会按题目/选项归属注入模型上下文，模型不支持图片时自动降级为纯文本"
+        description = "通过应用内进程内 ACP 答题子部件（rig Agent + 内置 web_search/web_fetch 工具）解答试卷题目；题目 images 会按题目/选项归属注入模型上下文，模型不支持图片或工具时自动降级"
     )]
     pub async fn uooc_solve_question_with_ai(
         &self,
         Parameters(params): Parameters<SolveQuestionParams>,
     ) -> Result<String, String> {
         let service = service(&self.app)?;
-        let (answers, reviews) = service.solve_paper_ai(params.questions).await?;
+        let (answers, reviews) = service
+            .solve_paper_ai(params.questions, Default::default())
+            .await?;
         serde_json::to_string_pretty(&serde_json::json!({
             "answers": answers,
             "reviews": reviews,

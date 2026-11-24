@@ -35,21 +35,48 @@ pub fn collect_existing_settings_facts(local_models_ready: bool) -> ExistingSett
         .ok()
         .flatten()
         .is_some();
-    let has_ai_connection = crate::storage::PlatformCredentialStore
-        .load_uooc_ai()
+    let has_ai_providers = crate::storage::PlatformCredentialStore
+        .load_ai_config()
         .ok()
         .flatten()
         .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
         .is_some_and(|config| {
-            let main = &config["main"];
-            main.get("baseUrl")
+            config
+                .as_array()
+                .is_some_and(|providers| !providers.is_empty())
+        });
+    let has_ai_default = crate::storage::PlatformCredentialStore
+        .load_ai_default()
+        .ok()
+        .flatten()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        .is_some_and(|default| {
+            default
+                .get("providerId")
                 .and_then(|value| value.as_str())
                 .is_some_and(|value| !value.is_empty())
-                && main
-                    .get("key")
+                && default
+                    .get("model")
                     .and_then(|value| value.as_str())
                     .is_some_and(|value| !value.is_empty())
         });
+    let has_ai_connection = (has_ai_providers && has_ai_default)
+        // 新键尚未迁移时仍按旧 main 判断，避免已有用户重新走 AI 向导。
+        || crate::storage::PlatformCredentialStore
+            .load_uooc_ai()
+            .ok()
+            .flatten()
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+            .is_some_and(|config| {
+                let main = &config["main"];
+                main.get("baseUrl")
+                    .and_then(|value| value.as_str())
+                    .is_some_and(|value| !value.is_empty())
+                    && main
+                        .get("key")
+                        .and_then(|value| value.as_str())
+                        .is_some_and(|value| !value.is_empty())
+            });
 
     ExistingSettingsFacts {
         has_profile,

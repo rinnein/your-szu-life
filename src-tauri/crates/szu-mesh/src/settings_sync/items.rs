@@ -16,8 +16,8 @@ use szu_uooc::uooc::model::Settings as UoocSettings;
 use szu_uooc::uooc::quiz::qa::{LocalBankQuestion, SubmittedPaperRecord};
 
 pub use szu_core::settings_sync_items::{
-    DORM_CREDENTIALS, ELECTRICITY_LOCATION, OJ_ACCOUNTS, STAFF_CREDENTIALS, UOOC_AI, UOOC_QA_BANK,
-    UOOC_SESSION, UOOC_SETTINGS,
+    AI_CONFIG, AI_DEFAULT, DORM_CREDENTIALS, ELECTRICITY_LOCATION, OJ_ACCOUNTS, STAFF_CREDENTIALS,
+    UOOC_AI, UOOC_QA_BANK, UOOC_SESSION, UOOC_SETTINGS,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -28,15 +28,25 @@ pub struct ItemDef {
     pub collection: bool,
 }
 
-pub const ITEM_DEFS: [ItemDef; 8] = [
+pub const ITEM_DEFS: [ItemDef; 10] = [
     ItemDef {
         id: UOOC_SESSION,
         label: "UOOC 登录态",
         collection: false,
     },
     ItemDef {
+        id: AI_CONFIG,
+        label: "AI 配置",
+        collection: false,
+    },
+    ItemDef {
+        id: AI_DEFAULT,
+        label: "AI 默认模型",
+        collection: false,
+    },
+    ItemDef {
         id: UOOC_AI,
-        label: "UOOC AI 配置",
+        label: "UOOC AI 运行设置",
         collection: false,
     },
     ItemDef {
@@ -85,6 +95,8 @@ impl ItemContext {
     pub async fn read(&self, id: &str) -> Result<Option<Value>, String> {
         match id {
             UOOC_SESSION => Ok(self.credentials.load_uooc_session()?.map(Value::String)),
+            AI_CONFIG => Ok(self.credentials.load_ai_config()?.map(Value::String)),
+            AI_DEFAULT => Ok(self.credentials.load_ai_default()?.map(Value::String)),
             UOOC_AI => Ok(self.credentials.load_uooc_ai()?.map(Value::String)),
             OJ_ACCOUNTS => {
                 let Some(raw) = self.credentials.load_oj_accounts()? else {
@@ -127,6 +139,16 @@ impl ItemContext {
                 let raw = expect_string(id, value)?;
                 self.credentials.save_uooc_session(&raw)?;
                 szu_uooc::uooc::reload_synced_session(&self.app)?;
+                Ok(())
+            }
+            AI_CONFIG => {
+                let raw = expect_string(id, value)?;
+                self.credentials.save_ai_config(&raw)?;
+                Ok(())
+            }
+            AI_DEFAULT => {
+                let raw = expect_string(id, value)?;
+                self.credentials.save_ai_default(&raw)?;
                 Ok(())
             }
             UOOC_AI => {
@@ -282,7 +304,8 @@ mod tests {
         ids.sort();
         ids.dedup();
         assert_eq!(ids.len(), ITEM_DEFS.len());
-        assert_eq!(ids.len(), 8);
+        assert_eq!(ids.len(), 10);
+        assert_eq!(item_def(AI_CONFIG).unwrap().label, "AI 配置");
         assert!(item_def(UOOC_QA_BANK).unwrap().collection);
         assert!(!item_def(OJ_ACCOUNTS).unwrap().collection);
         assert!(item_def("fixed.account.profile").is_none());

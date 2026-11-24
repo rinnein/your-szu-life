@@ -134,7 +134,7 @@ pub fn validate_value(key: &str, value: Value) -> Result<(), String> {
                 sessions.validate_cookie_snapshots()?;
             }
         }
-        UOOC_AI | LMS_SESSION | JXXK_SESSION | QW_SESSION => {
+        UOOC_AI | AI_CONFIG | AI_DEFAULT | LMS_SESSION | JXXK_SESSION | QW_SESSION => {
             serde_json::from_value::<String>(value).map_err(|_| "设置格式无效")?;
         }
         OJ_ACCOUNTS => {
@@ -187,6 +187,11 @@ struct OjAccount {
 pub const PROFILE: &str = "fixed.account.profile";
 pub const PENDING_AUTH: &str = "runtime.account.pending";
 pub const AUTH_SESSION: &str = "runtime.auth.session";
+/// 全局 AI provider 列表。属于用户配置，随设置迁移导出。
+pub const AI_CONFIG: &str = "fixed.ai.config";
+/// 全局默认模型（providerId + model）。与 provider 列表分开存放，使
+/// `fixed.ai.config` 本身就是 VS Code `chatLanguageModels.json` 的数组形式。
+pub const AI_DEFAULT: &str = "fixed.ai.default";
 pub const UOOC_AI: &str = "fixed.uooc.ai";
 pub const UOOC_SESSION: &str = "runtime.uooc.session";
 /// 畅课（lms.szu.edu.cn）会话 jar。仅由 authserver CAS 会话派生，可随时重建。
@@ -209,10 +214,12 @@ pub const ELECTRICITY_MONITOR: &str = "runtime.electricity.monitor";
 pub const PROXY_SETTINGS: &str = "fixed.network.proxy";
 
 /// 设置导出与本地凭据文档共享的完整键集合。
-pub const ALL_KEYS: [&str; 18] = [
+pub const ALL_KEYS: [&str; 20] = [
     PROFILE,
     PENDING_AUTH,
     AUTH_SESSION,
+    AI_CONFIG,
+    AI_DEFAULT,
     UOOC_AI,
     UOOC_SESSION,
     LMS_SESSION,
@@ -357,6 +364,8 @@ pub fn read_entry(store: &dyn CredentialStore, key: &str) -> Result<Option<Value
         PROFILE => value!(store.load_profile()),
         PENDING_AUTH => value!(store.load_pending()),
         AUTH_SESSION => value!(store.load_session()),
+        AI_CONFIG => value!(store.load_ai_config()),
+        AI_DEFAULT => value!(store.load_ai_default()),
         UOOC_AI => value!(store.load_uooc_ai()),
         UOOC_SESSION => value!(store.load_uooc_session()),
         LMS_SESSION => value!(store.load_lms_session()),

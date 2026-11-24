@@ -10,6 +10,8 @@
 ```
 szu-build-support        build.rs 复用逻辑（平台 cfg、.env 注入），不参与运行
 szu-core                 平台基础 / 凭据与统一认证 / 网络代理 / 校园网 / 电费 / 通知 / 向导
+  ├─ szu-ai              全局 AI provider、协议探测、rig 模型工厂
+  │    └─ szu-uooc       UOOC（含进程内 ACP 答题子部件）
   ├─ szu-download        aria2 进程与 RPC、统一下载目录
   │    └─ szu-runtime    本地模型下载校验、OCR、向量模型
   ├─ szu-app-content     公告、贡献者、应用内更新
@@ -17,7 +19,6 @@ szu-core                 平台基础 / 凭据与统一认证 / 网络代理 / �
   ├─ szu-jxxk            监察巡课（回放、拉流、下载）
   ├─ szu-lms             畅课（点名/签到接口在此）
   ├─ szu-oj              OJ 刷题伴侣
-  ├─ szu-uooc            UOOC
   ├─ szu-todos           待办聚合（依赖 oj / lms / uooc）
   ├─ szu-timetable       课表（依赖 signin 的考勤课表/待签视图与 enrollment 的已选课程缓存）
   ├─ szu-mesh            EasyTier 组网 + 设置同步（依赖 uooc）

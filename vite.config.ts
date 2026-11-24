@@ -53,6 +53,13 @@ export default defineConfig(async () => ({
     // jsdom 没有实现 form-associated custom element 那半套 ElementInternals，
     // material 的每个表单控件在挂载时都会调用 setFormValue，缺了会直接抛错。
     setupFiles: ["./src/test-setup-element-internals.ts"],
+    // 0.4.0 的 ESM 产物内部使用无扩展名的相对导入，Node 直接解析会失败；
+    // 交给 Vite 转译后按 bundler 规则解析（仅测试期间需要）。
+    server: {
+      deps: {
+        inline: ["@material/material-color-utilities"],
+      },
+    },
     // 整套测试几乎都是 jsdom + 自定义元素。并行度拉满时 CPU 争用会让
     // 元素内部的事件派发与 React 的批次更新错位，出现「点了没反应」的偶发
     // 失败（换成 6 个 worker 后连续多轮全绿，总耗时只多约 1 秒）。

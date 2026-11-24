@@ -106,10 +106,21 @@ beforeEach(() => {
       return structuredClone(snapshot);
     if (name === "get_uooc_ai_config")
       return {
-        main: { baseUrl: "https://example.org/v1", model: "main", hasKey: true },
-        jev: { baseUrl: "https://api.typesafe.ai/v1", model: "jev", hasKey: false },
-        jevEnabled: false,
-        confidence: 0.8,
+        provider: {
+          id: "p",
+          name: "Provider",
+          vendor: "openai",
+          protocol: "openAiCompatible",
+          baseUrl: "https://example.org/v1",
+          model: "main",
+          modelName: "Main",
+          hasKey: true,
+          builtin: false,
+        },
+        batchSize: 5,
+        reasoningEffort: "default",
+        includeReasoning: true,
+        webSearch: true,
         defaultMode: "supervised",
       };
     if (name === "get_auth_state")
@@ -281,14 +292,14 @@ it("saves settings immediately when a switch changes and shows command errors", 
 
 it("opens global AI connection settings from UOOC runtime settings", async () => {
   const router = mount("/study/uooc?tab=settings");
-  await screen.findByRole("button", { name: "前往 AI 连接设置" });
-  fireEvent.click(screen.getByRole("button", { name: "前往 AI 连接设置" }));
+  await screen.findByRole("button", { name: "前往 AI 配置" });
+  fireEvent.click(screen.getByRole("button", { name: "前往 AI 配置" }));
   await waitFor(() => expect(router.state.location.pathname).toBe("/settings"));
 });
 
 it("does not display qa server url field on settings tab", async () => {
   mount("/study/uooc?tab=settings");
-  await screen.findByRole("button", { name: "前往 AI 连接设置" });
+  await screen.findByRole("button", { name: "前往 AI 配置" });
   expect(screen.queryByLabelText(/题库共享后端地址/)).not.toBeInTheDocument();
 });
 
@@ -319,10 +330,21 @@ it("displays and saves qa server url field on qa tab", async () => {
     if (name === "get_uooc_local_bank_questions") return [];
     if (name === "get_uooc_ai_config")
       return {
-        main: { baseUrl: "https://example.org/v1", model: "main", hasKey: true },
-        jev: { baseUrl: "https://api.typesafe.ai/v1", model: "jev", hasKey: false },
-        jevEnabled: false,
-        confidence: 0.8,
+        provider: {
+          id: "p",
+          name: "Provider",
+          vendor: "openai",
+          protocol: "openAiCompatible",
+          baseUrl: "https://example.org/v1",
+          model: "main",
+          modelName: "Main",
+          hasKey: true,
+          builtin: false,
+        },
+        batchSize: 5,
+        reasoningEffort: "default",
+        includeReasoning: true,
+        webSearch: true,
         defaultMode: "supervised",
       };
     return undefined;

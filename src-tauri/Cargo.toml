@@ -57,6 +57,7 @@ reqwest = { version = "0.13", default-features = false, features = [
   # SOCKS5 代理仅在打开该 feature 时才被 reqwest 接受（见 netproxy）。
   "socks",
 ] }
+http = "1"
 sha1 = "0.11"
 hmac = "0.13"
 md-5 = "0.11"
@@ -83,13 +84,11 @@ imageproc = { version = "0.27", default-features = false }
 des = "0.9"
 regex = "1"
 base16384 = "0.1.0"
-async-openai = { version = "0.43.0", default-features = false, features = [
-  "chat-completion",
-  "model",
-  "rustls",
-] }
 rig-core = "0.47.0"
+rig-agent = "0.47.0"
+rig-reqwest = "0.47.0"
 rig-rmcp = "0.47.0"
+agent-client-protocol = "5.5"
 rmcp = { version = "3", default-features = false, features = [
   "macros",
   "server",
@@ -199,6 +198,7 @@ rig-rmcp = { workspace = true }
 rmcp = { workspace = true }
 schemars = { workspace = true }
 axum = { workspace = true }
+szu-ai = { path = "crates/szu-ai" }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 tauri-plugin-dialog = { workspace = true }

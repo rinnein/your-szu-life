@@ -49,16 +49,42 @@ impl SettingsStore {
     }
 
     pub fn snapshot(&self) -> Result<SettingsSnapshot, String> {
+        let mut document = self.document()?;
+        // 快照经 MCP 暴露给外部客户端，必须剔除带密钥/会话的条目；否则
+        // fixed.ai.config 与 fixed.uooc.ai 会把 API Key 一起送出去。
+        document
+            .entries
+            .retain(|key, _| !SENSITIVE_SNAPSHOT_KEYS.contains(&key.as_str()));
         Ok(SettingsSnapshot {
-            entries: self.document()?.entries,
+            entries: document.entries,
         })
     }
 }
+
+const SENSITIVE_SNAPSHOT_KEYS: &[&str] = &[
+    entries::PROFILE,
+    entries::PENDING_AUTH,
+    entries::AUTH_SESSION,
+    entries::AI_CONFIG,
+    entries::AI_DEFAULT,
+    entries::UOOC_AI,
+    entries::UOOC_SESSION,
+    entries::LMS_SESSION,
+    entries::JXXK_SESSION,
+    entries::QW_SESSION,
+    entries::OJ_ACCOUNTS,
+    entries::OJ_SESSIONS,
+    entries::ACADEMIC_SESSIONS,
+    entries::DORM_CREDENTIALS,
+    entries::STAFF_CREDENTIALS,
+    entries::PROXY_SETTINGS,
+];
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::storage::testing::MemoryCredentialStore;
+    use crate::storage::CredentialStore;
     use std::sync::Arc;
 
     #[test]
@@ -66,5 +92,24 @@ mod tests {
         let store = SettingsStore::new(Arc::new(MemoryCredentialStore::default()));
         let snapshot = store.snapshot().unwrap();
         assert!(snapshot.entries.is_empty());
+    }
+
+    #[test]
+    fn snapshot_omits_ai_and_session_secrets() {
+        let store = Arc::new(MemoryCredentialStore::default());
+        store
+            .save_ai_config(
+                &r#"{"providers":[{"id":"p","name":"p","protocol":"openAiCompatible","baseUrl":"https://example.com/v1","apiKey":"secret-key","models":[]}],"default":{"providerId":"p","model":"m"}}"#
+                    .to_string(),
+            )
+            .unwrap();
+        store
+            .save_uooc_ai(&r#"{"batchSize":5,"webSearch":true}"#.to_string())
+            .unwrap();
+        let snapshot = SettingsStore::new(store).snapshot().unwrap();
+        assert!(!snapshot.entries.contains_key(entries::AI_CONFIG));
+        assert!(!snapshot.entries.contains_key(entries::UOOC_AI));
+        let json = serde_json::to_string(&snapshot).unwrap();
+        assert!(!json.contains("secret-key"));
     }
 }

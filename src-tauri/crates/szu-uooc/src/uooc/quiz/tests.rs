@@ -30,6 +30,28 @@ fn ready(service: &Service) {
         s.settings.qa_server_url = "http://127.0.0.1:1".into();
     });
 }
+
+fn set_ai(service: &Service, base_url: &str, key: &str) {
+    let mut config = szu_ai::Config::default();
+    config
+        .upsert(szu_ai::UpsertProviderInput {
+            id: None,
+            name: "test".into(),
+            vendor: szu_ai::Vendor::OpenAi,
+            base_url: base_url.into(),
+            api_key: Some(key.into()),
+            clear_key: false,
+            models: Some(vec![szu_ai::ModelConfig {
+                id: "test".into(),
+                ..szu_ai::ModelConfig::default()
+            }]),
+            model: Some("test".into()),
+        })
+        .unwrap();
+    let id = config.providers[0].id.clone();
+    config.set_default(&id, "test").unwrap();
+    szu_ai::store::save(service.credentials.as_ref(), &config).unwrap();
+}
 #[test]
 fn parses_verified_form_without_exposing_hidden_fields_or_executing_script() {
     let url = "https://www.uooc.net.cn/exam/99".parse().unwrap();
@@ -77,7 +99,7 @@ async fn approval_flow_is_atomic_and_never_leaks_credentials_to_ai() {
     let submits = Arc::new(AtomicUsize::new(0));
     let posted = submits.clone();
     let server = Server::bytes(move |request| {
-        if request.path == "/chat/completions" {
+        if request.path.ends_with("/chat/completions") {
             assert!(!request.headers.contains_key("cookie"));
             assert_eq!(request.headers["authorization"], "Bearer test-ai-key");
             assert!(!request.body.contains("private-form-token"));
@@ -127,12 +149,8 @@ async fn approval_flow_is_atomic_and_never_leaks_credentials_to_ai() {
     *service.client.write().unwrap() = Arc::new(
         Client::with_base(crate::uooc::session::load(None).unwrap(), &server.base).unwrap(),
     );
-    service.ai.lock().unwrap().main = ai::Provider {
-        base_url: server.base.clone(),
-        model: "test".into(),
-        key: "test-ai-key".into(),
-    };
-    service.ai.lock().unwrap().default_mode = Mode::Approval;
+    set_ai(&service, &server.base, "test-ai-key");
+    service.ai_prefs.lock().unwrap().default_mode = Mode::Approval;
     service.start(vec!["42".into()]).unwrap();
     wait_finished(&service).await;
     let q = service.snapshot().quizzes["7/42"].clone();
@@ -227,53 +245,6 @@ async fn supervised_dry_run_never_calls_ai_or_submits_without_user_choice() {
     std::fs::remove_dir_all(root).unwrap();
 }
 #[test]
-fn jev_choice_and_multiple_validation_keeps_uncertainty_visible() {
-    let mut q = protocol::parse(
-        HTML,
-        &"https://www.uooc.net.cn/exam/99".parse().unwrap(),
-        "99",
-    )
-    .unwrap()
-    .questions
-    .remove(0);
-    let result = json!({"answers":{"choice":{"choice":"a","confidence":0.95,"probabilities":{"a":0.99,"b":0.01}}}});
-    assert_eq!(ai::interpret_jev(&q, &result, 0.8).unwrap().answers, ["a"]);
-    assert!(ai::interpret_jev(&q, &result, 0.99).is_err());
-    q.kind = Kind::Multiple;
-    let result = json!({"answers":{"option_0":{"noul":0.95},"option_1":{"noul":0.05}}});
-    assert_eq!(ai::interpret_jev(&q, &result, 0.8).unwrap().answers, ["a"]);
-    assert!(ai::interpret_jev(
-        &q,
-        &json!({"answers":{"option_0":{"noul":0.5},"option_1":{"noul":0.1}}}),
-        0.8
-    )
-    .is_err());
-}
-#[test]
-fn provider_normalization_and_secret_view_are_safe() {
-    assert_eq!(
-        ai::normalize_url("https://example.org/api/v3/chat/completions/").unwrap(),
-        "https://example.org/api/v3"
-    );
-    assert_eq!(
-        ai::normalize_url("http://192.168.1.20:8000/v1/").unwrap(),
-        "http://192.168.1.20:8000/v1"
-    );
-    for url in [
-        "https://user:key@example.org/v1",
-        "https://example.org/v1?key=secret",
-        "file:///tmp/key",
-    ] {
-        assert!(ai::normalize_url(url).is_err());
-    }
-    let mut config = ai::Config::default();
-    config.main.key = "private-provider-key".into();
-    let view = serde_json::to_string(&config.view()).unwrap();
-    assert!(!view.contains("private-provider-key"));
-    assert!(view.contains("hasKey"));
-}
-
-#[test]
 fn cached_question_images_restore_and_corruption_invalidates_approval() {
     let root = root();
     let image = "data:image/png;base64,aGVsbG8=".to_owned();
@@ -358,7 +329,7 @@ async fn yolo_gate_resumes_video_only_after_confirmed_quiz_completion() {
     let video_two = Arc::new(AtomicBool::new(false));
     let second = video_two.clone();
     let server = Server::bytes(move |request| {
-        if request.path == "/chat/completions" {
+        if request.path.ends_with("/chat/completions") {
             return json_response(completion("a"));
         }
         if request.path.starts_with("/home/course/progress?") {
@@ -423,13 +394,8 @@ async fn yolo_gate_resumes_video_only_after_confirmed_quiz_completion() {
         Client::with_base(crate::uooc::session::load(None).unwrap(), &server.base).unwrap(),
     );
     {
-        let mut ai = service.ai.lock().unwrap();
-        ai.default_mode = Mode::Yolo;
-        ai.main = ai::Provider {
-            base_url: server.base.clone(),
-            model: "test".into(),
-            key: "test-key".into(),
-        };
+        set_ai(&service, &server.base, "test-key");
+        service.ai_prefs.lock().unwrap().default_mode = Mode::Yolo;
     }
     for rid in ["20", "22"] {
         service
@@ -446,58 +412,6 @@ async fn yolo_gate_resumes_video_only_after_confirmed_quiz_completion() {
 }
 
 #[tokio::test]
-async fn jev_uses_systemone_and_requests_only_one_main_model_recheck() {
-    let root = root();
-    let service = service_test(root.clone());
-    ready(&service);
-    let calls = Arc::new(AtomicUsize::new(0));
-    let n = calls.clone();
-    let server = Server::new(move |request| {
-        assert!(!request.headers.contains_key("cookie"));
-        let body: Value = serde_json::from_str(&request.body).unwrap();
-        if request.path == "/chat/completions" {
-            let count = n.fetch_add(1, Ordering::SeqCst);
-            assert!(count < 2);
-            return completion(if count == 0 { "a" } else { "b" });
-        }
-        assert_eq!(request.path, "/systemone");
-        assert_eq!(body["questions"]["choice"]["type"], "choice");
-        assert_eq!(body["model"], "jev-latest");
-        assert!(body.get("messages").is_none());
-        assert!(body["state"].get("review").is_none());
-        json!({"answers":{"choice":{"type":"choice","choice":"b","confidence":0.98,"probabilities":{"a":0.01,"b":0.99}}}})
-    });
-    {
-        let mut c = service.ai.lock().unwrap();
-        c.main = ai::Provider {
-            base_url: server.base.clone(),
-            model: "test".into(),
-            key: "main-key".into(),
-        };
-        c.jev = ai::Provider {
-            base_url: server.base.clone(),
-            model: "jev-latest".into(),
-            key: "jev-key".into(),
-        };
-        c.jev_enabled = true;
-    }
-    let questions = protocol::parse(
-        HTML,
-        &"https://www.uooc.net.cn/exam/99".parse().unwrap(),
-        "99",
-    )
-    .unwrap()
-    .questions;
-    let (answers, reviews, _sessions, error) =
-        ai::generate(&service, &questions, &std::collections::BTreeMap::new(), &CancellationToken::new(), None).await;
-    assert!(error.is_none());
-    assert_eq!(answers["q1"], ["b"]);
-    assert_eq!(reviews.len(), 1);
-    assert_eq!(calls.load(Ordering::SeqCst), 2);
-    std::fs::remove_dir_all(root).unwrap();
-}
-
-#[tokio::test]
 async fn ai_injects_labeled_question_images_and_degrades_when_unsupported() {
     let root = root();
     let service = service_test(root.clone());
@@ -507,7 +421,7 @@ async fn ai_injects_labeled_question_images_and_degrades_when_unsupported() {
     let n = calls.clone();
     let recorded = bodies.clone();
     let server = Server::bytes(move |request| {
-        if request.path != "/chat/completions" {
+        if !request.path.ends_with("/chat/completions") {
             return (404, b"".to_vec(), String::new());
         }
         let body: Value = serde_json::from_str(&request.body).unwrap();
@@ -534,14 +448,8 @@ async fn ai_injects_labeled_question_images_and_degrades_when_unsupported() {
         )
     });
     {
-        let mut c = service.ai.lock().unwrap();
-        c.main = ai::Provider {
-            base_url: server.base.clone(),
-            model: "test".into(),
-            key: "main-key".into(),
-        };
-        c.jev_enabled = false;
-        c.web_search = false;
+        set_ai(&service, &server.base, "main-key");
+        service.ai_prefs.lock().unwrap().web_search = false;
     }
     let question = Question {
         id: "q1".into(),

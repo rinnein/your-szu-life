@@ -25,7 +25,7 @@ import { taskActive } from "./state/status";
 import {
   isUoocSnapshot,
   newerSnapshot,
-  type AiConfig,
+  type UoocAiConfig,
   type QuizMode,
   type QuizState,
   type UoocSnapshot,
@@ -178,7 +178,7 @@ export default function UoocPage() {
   }, [ready, apply]);
 
   useEffect(() => {
-    void invoke<AiConfig>("get_uooc_ai_config")
+    void invoke<UoocAiConfig>("get_uooc_ai_config")
       .then((v) => {
         if (v?.defaultMode) setDefaultMode(v.defaultMode);
       })
@@ -268,7 +268,9 @@ export default function UoocPage() {
         items: { id: string; state: string }[];
       }>("get_sync_status");
       const item = sync.items.find((entry) => entry.id === "uooc.session");
-      return !sync.enabled || item?.state === "disabled" ? ("direct" as const) : ("confirm" as const);
+      return !sync.enabled || item?.state === "disabled"
+        ? ("direct" as const)
+        : ("confirm" as const);
     });
     if (outcome.ok) {
       if (outcome.value === "direct") {
@@ -309,8 +311,9 @@ export default function UoocPage() {
 
   const openQuiz = (quiz: QuizState) => setDialog({ kind: "quiz", quiz });
   const closeDialog = () => setDialog({ kind: "none" });
-  const requestDialog = (next: { kind: "deleteTask"; task: UoocTask } | { kind: "deleteCompleted" }) =>
-    setDialog(next);
+  const requestDialog = (
+    next: { kind: "deleteTask"; task: UoocTask } | { kind: "deleteCompleted" },
+  ) => setDialog(next);
 
   const activeModalQuiz =
     dialog.kind === "quiz"
@@ -556,10 +559,9 @@ export default function UoocPage() {
                 disabled={deleting}
                 onClick={async () => {
                   const isSingle = dialog.kind === "deleteTask";
-                  const courseIds =
-                    isSingle
-                      ? [dialog.task.course.id]
-                      : tasks.filter((t) => t.status === "completed").map((t) => t.course.id);
+                  const courseIds = isSingle
+                    ? [dialog.task.course.id]
+                    : tasks.filter((t) => t.status === "completed").map((t) => t.course.id);
                   const title = isSingle ? dialog.task.course.title : "";
                   if (isSingle) closeDialog();
                   const ok = await action("delete-tasks", "control_uooc_tasks", {
@@ -569,7 +571,9 @@ export default function UoocPage() {
                   if (ok) {
                     if (!isSingle) closeDialog();
                     toast.success(
-                      isSingle ? `已删除课程「${title}」的任务` : `已删除 ${courseIds.length} 个已完成任务`,
+                      isSingle
+                        ? `已删除课程「${title}」的任务`
+                        : `已删除 ${courseIds.length} 个已完成任务`,
                     );
                   } else if (!isSingle) {
                     closeDialog();

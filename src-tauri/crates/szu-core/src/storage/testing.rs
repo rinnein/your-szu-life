@@ -85,6 +85,8 @@ impl CredentialStore for MemoryCredentialStore {
     );
     stored_value!(load_oj_accounts, save_oj_accounts, String, OjAccounts);
     stored_value!(load_uooc_ai, save_uooc_ai, String, UoocAi);
+    stored_value!(load_ai_config, save_ai_config, String, AiConfig);
+    stored_value!(load_ai_default, save_ai_default, String, AiDefault);
     stored_value!(load_uooc_session, save_uooc_session, String, UoocSession);
     stored_value!(load_lms_session, save_lms_session, String, LmsSession);
     stored_value!(load_qw_session, save_qw_session, String, QwSession);
