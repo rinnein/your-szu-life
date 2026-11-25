@@ -1,8 +1,8 @@
 /**
- * 扫码入口：Android 走官方 tauri-plugin-barcode-scanner（原生相机界面）。
- * 桌面端不提供扫码 UI（匹配共享码由 Rust 房间完成），这里对桌面调用直接抛错。
+ * 通用扫码入口：Android 走官方 tauri-plugin-barcode-scanner（原生相机界面）。
+ * 桌面端不提供扫码 UI，调用直接抛错。
  */
-import { isAndroidPlatform } from "../os-info";
+import { isAndroidPlatform } from "./os-info";
 
 type ScanModule = typeof import("@tauri-apps/plugin-barcode-scanner");
 
@@ -33,7 +33,7 @@ export async function cancelScan(): Promise<void> {
 }
 
 /**
- * 持续扫码循环（「共享签到码」模式）：每次识别到新内容就回调并立即
+ * 持续扫码循环（如「共享签到码」）：每次识别到新内容就回调并立即
  * 重新打开取景器，直到调用方停止。识别到相同内容时跳过。
  */
 export async function runScanLoop(

@@ -221,7 +221,7 @@ fn campus_status(app: &tauri::AppHandle) -> (bool, String, String, Option<String
 }
 
 /// 常量时间比较，避免用长度/前缀差异推断 token。
-fn authorized(headers: &HeaderMap, expected: &str) -> bool {
+pub(crate) fn authorized(headers: &HeaderMap, expected: &str) -> bool {
     let Some(actual) = headers.get(TOKEN_HEADER).and_then(|value| value.to_str().ok()) else {
         return false;
     };

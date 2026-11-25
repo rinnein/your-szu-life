@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LifeRouteRouteImport } from './routes/life/route'
+import { Route as PairLoginRouteImport } from './routes/pair-login'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as StudyRouteRouteImport } from './routes/study/route'
 import { Route as LifeIndexRouteImport } from './routes/life/index'
@@ -49,6 +50,11 @@ const IndexRoute = IndexRouteImport.update({
 const LifeRouteRoute = LifeRouteRouteImport.update({
   id: '/life',
   path: '/life',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PairLoginRoute = PairLoginRouteImport.update({
+  id: '/pair-login',
+  path: '/pair-login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -205,6 +211,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/life': typeof LifeRouteRouteWithChildren
   '/study': typeof StudyRouteRouteWithChildren
+  '/pair-login': typeof PairLoginRoute
   '/settings': typeof SettingsRoute
   '/life/campus-payments': typeof LifeCampusPaymentsRouteRouteWithChildren
   '/life/campus-network': typeof LifeCampusNetworkRoute
@@ -236,6 +243,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/pair-login': typeof PairLoginRoute
   '/settings': typeof SettingsRoute
   '/life/campus-network': typeof LifeCampusNetworkRoute
   '/study/academic': typeof StudyAcademicRoute
@@ -268,6 +276,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/life': typeof LifeRouteRouteWithChildren
   '/study': typeof StudyRouteRouteWithChildren
+  '/pair-login': typeof PairLoginRoute
   '/settings': typeof SettingsRoute
   '/life/campus-payments': typeof LifeCampusPaymentsRouteRouteWithChildren
   '/life/campus-network': typeof LifeCampusNetworkRoute
@@ -303,6 +312,7 @@ export interface FileRouteTypes {
     | '/'
     | '/life'
     | '/study'
+    | '/pair-login'
     | '/settings'
     | '/life/campus-payments'
     | '/life/campus-network'
@@ -334,6 +344,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/pair-login'
     | '/settings'
     | '/life/campus-network'
     | '/study/academic'
@@ -365,6 +376,7 @@ export interface FileRouteTypes {
     | '/'
     | '/life'
     | '/study'
+    | '/pair-login'
     | '/settings'
     | '/life/campus-payments'
     | '/life/campus-network'
@@ -399,6 +411,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LifeRouteRoute: typeof LifeRouteRouteWithChildren
   StudyRouteRoute: typeof StudyRouteRouteWithChildren
+  PairLoginRoute: typeof PairLoginRoute
   SettingsRoute: typeof SettingsRoute
 }
 
@@ -416,6 +429,13 @@ declare module '@tanstack/react-router' {
       path: '/life'
       fullPath: '/life'
       preLoaderRoute: typeof LifeRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pair-login': {
+      id: '/pair-login'
+      path: '/pair-login'
+      fullPath: '/pair-login'
+      preLoaderRoute: typeof PairLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -724,6 +744,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LifeRouteRoute: LifeRouteRouteWithChildren,
   StudyRouteRoute: StudyRouteRouteWithChildren,
+  PairLoginRoute: PairLoginRoute,
   SettingsRoute: SettingsRoute,
 }
 export const routeTree = rootRouteImport

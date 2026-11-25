@@ -22,12 +22,40 @@ const api = vi.hoisted(() => ({
   consumeAuthFailureNotice: vi.fn(),
 }));
 
+const pairApi = vi.hoisted(() => ({
+  pairLoginHostStart: vi.fn(),
+}));
+
 vi.mock("../auth", () => ({
   useAuth: () => auth,
   beginAuthentication: auth.beginAuthentication,
 }));
 
 vi.mock("./api", () => api);
+
+vi.mock("../pair-login/api", () => pairApi);
+
+vi.mock("../pair-login/HostPanel", () => ({
+  PairHostPanel: ({
+    onCancel,
+    onAuthorized,
+  }: {
+    onCancel: () => void;
+    onAuthorized: (credentials: { campusCardNumber: string; password: string }) => void;
+  }) => (
+    <div>
+      <button
+        type="button"
+        onClick={() => onAuthorized({ campusCardNumber: "654321", password: "remote-pass" })}
+      >
+        交付凭据
+      </button>
+      <button type="button" onClick={onCancel}>
+        取消配对
+      </button>
+    </div>
+  ),
+}));
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn().mockResolvedValue(() => {}),
@@ -238,5 +266,43 @@ describe("AuthStep", () => {
     expect(await screen.findByText("补充校园卡号")).toBeInTheDocument();
     expect(screen.queryByText("账户与个人信息")).not.toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "保存并继续" })).toBeInTheDocument();
+  });
+
+  it("starts remote pairing and submits the credentials handed over by the peer", async () => {
+    pairApi.pairLoginHostStart.mockResolvedValue({
+      status: "waiting",
+      code: "A1B2C3",
+      deepLink: "your-szu-life://page/pair-login?secret=" + "a".repeat(64),
+      expiresAtMs: 1,
+    });
+    render(<Harness />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "远程授权登录" }));
+    await vi.waitFor(() => expect(pairApi.pairLoginHostStart).toHaveBeenCalledTimes(1));
+    // 配对期间底栏不提供「登录并继续」。
+    await vi.waitFor(() =>
+      expect(screen.queryByRole("button", { name: "登录并继续" })).not.toBeInTheDocument(),
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "交付凭据" }));
+    await vi.waitFor(() => {
+      expect(api.beginSetupAuthentication).toHaveBeenCalledWith("654321", "remote-pass");
+    });
+  });
+
+  it("returns to the manual form when pairing is cancelled", async () => {
+    pairApi.pairLoginHostStart.mockResolvedValue({
+      status: "waiting",
+      code: "A1B2C3",
+      deepLink: "your-szu-life://page/pair-login?secret=" + "a".repeat(64),
+      expiresAtMs: 1,
+    });
+    const { container } = render(<Harness />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "远程授权登录" }));
+    fireEvent.click(await screen.findByRole("button", { name: "取消配对" }));
+
+    await vi.waitFor(() => expect(container.querySelectorAll("m-text-field").length).toBe(2));
+    expect(screen.getByRole("button", { name: "登录并继续" })).toBeInTheDocument();
   });
 });

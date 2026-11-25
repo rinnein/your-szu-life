@@ -4,15 +4,21 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { useRouter } from "@tanstack/react-router";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { supportsMultipleWindows } from "@tauri-apps/api/app";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { LogicalNavigationProvider } from "./logical-navigation";
 import { DeepLinkNavigation } from "./DeepLinkNavigation";
 import { setupDeepLinkListener } from "./deep-link";
+import { pairLoginAcceptUrl } from "./pair-login/api";
 
 vi.mock("@tanstack/react-router", () => ({
   useRouter: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -30,6 +36,10 @@ vi.mock("@tauri-apps/api/webviewWindow", () => ({
 
 vi.mock("./deep-link", () => ({
   setupDeepLinkListener: vi.fn(async () => () => {}),
+}));
+
+vi.mock("./pair-login/api", () => ({
+  pairLoginAcceptUrl: vi.fn(),
 }));
 
 type TrayEventHandler = (event: { payload?: { route?: string } }) => void;
@@ -57,6 +67,8 @@ describe("DeepLinkNavigation tray bridge", () => {
       onCloseRequested: vi.fn(() => Promise.resolve(() => {})),
     } as unknown as ReturnType<typeof getCurrentWebviewWindow>);
     navigate = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(invoke).mockImplementation(async () => ({ Authenticated: { name: "test" } }));
+    vi.mocked(pairLoginAcceptUrl).mockResolvedValue(undefined);
     vi.mocked(useRouter).mockReturnValue({
       history: { canGoBack: () => true, back: vi.fn() },
       navigate,
@@ -129,6 +141,38 @@ describe("DeepLinkNavigation tray bridge", () => {
     trayHandler?.({ payload: {} });
 
     await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("accepts a pair invite into Rust state without putting the secret in the route", async () => {
+    render(
+      <LogicalNavigationProvider>
+        <DeepLinkNavigation />
+      </LogicalNavigationProvider>,
+    );
+
+    await vi.waitFor(() => expect(deepLinkHandler).toBeDefined());
+    const invite = "/pair-login?secret=" + "a".repeat(64);
+    deepLinkHandler?.(invite);
+
+    await vi.waitFor(() => expect(pairLoginAcceptUrl).toHaveBeenCalledWith(invite));
+    await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: "/pair-login" }));
+    expect(JSON.stringify(vi.mocked(navigate).mock.calls)).not.toContain("secret=");
+  });
+
+  it("refuses to open the authorize page when the device is not signed in", async () => {
+    vi.mocked(invoke).mockImplementation(async () => ({ Unauthenticated: null }));
+    render(
+      <LogicalNavigationProvider>
+        <DeepLinkNavigation />
+      </LogicalNavigationProvider>,
+    );
+
+    await vi.waitFor(() => expect(deepLinkHandler).toBeDefined());
+    deepLinkHandler?.("/pair-login?secret=" + "b".repeat(64));
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(pairLoginAcceptUrl).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
   });
 });

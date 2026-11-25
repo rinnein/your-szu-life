@@ -4,6 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 import { Button, Card, List, ListItem, LoadingIndicator, Switch, TextField } from "material/react";
 import { Banner, Chip, SettingList, SettingRow, bindField, toast } from "./ui";
 import { errorMessage } from "./async-state";
+import { platformLabel } from "./platform-label";
+import { PairAuthorizeEntry } from "./pair-login/AuthorizeEntry";
 import { usePending } from "./use-pending";
 import { LuRefreshCw } from "react-icons/lu";
 
@@ -58,23 +60,6 @@ export type SyncStatus = {
   summary: SyncSummary;
   items: SyncItem[];
 };
-
-function platformLabel(platform: string) {
-  switch (platform) {
-    case "android":
-      return "Android";
-    case "windows":
-      return "Windows";
-    case "macos":
-      return "macOS";
-    case "linux":
-      return "Linux";
-    case "ios":
-      return "iOS";
-    default:
-      return platform || "未知平台";
-  }
-}
 
 export default function SettingsSync() {
   const pending = usePending();
@@ -346,6 +331,8 @@ export default function SettingsSync() {
           </List>
         )}
       </Card>
+
+      <PairAuthorizeEntry />
 
       <Card variant="outlined">
         <div slot="headline">同步内容</div>

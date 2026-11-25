@@ -16,6 +16,8 @@ szu-uooc = { path = "../szu-uooc" }
 tauri = { workspace = true }
 loro = "1.18"
 base64 = { workspace = true }
+chacha20poly1305 = { workspace = true }
+rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }

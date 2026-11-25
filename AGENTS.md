@@ -126,7 +126,7 @@ release. Add a tool name to select part of the graph. For example, run
 - **协议框架**：统一使用 `rmcp` 宏体系（`#[rmcp::tool]` 与 `#[rmcp::tool_router]`），参数统一封装于 `rmcp::handler::server::wrapper::Parameters<T>`。
 - **端口与安全限制**：所有需要监听本机回环端口的本地服务统一由 `src-tauri/crates/szu-core/src/ports` 分配，端口段互不重叠：MCP `53901..=54000`、aria2 RPC `54001..=54100`、JXXK 录像下载入口 `54101..=54200`、设备自组网 `54201..=54300`。MCP 优先使用设置中持久化的端口（`mcp.port`），被占用时切换到段内其它端口、永久保存新端口并通过 `app://port-notice` 弹模态框告知；任一端口段耗尽时记录 `log::error!` 并同样弹模态框。所有服务**仅监听本地回环地址 `127.0.0.1` / `localhost`**，绝对禁止对外网或局域网广播。唯一显式例外是 EasyTier 的 P2P 监听器（必须绑 `0.0.0.0` 才能被对端直连），它只承载虚拟网握手与加密隧道，安全性由网络密钥承担。
 - **协议 URI Scheme 规范**：所有通过协议暴露的端点统一注册为 `your-szu-life://`，并严格区分两大 route 空间：
-  - `your-szu-life://page/...`：用于控制客户端打开/激活特定前端页面（如 `page/workbench`, `page/auth`, `page/electricity` 等）。
+  - `your-szu-life://page/...`：用于控制客户端打开/激活特定前端页面（如 `page/study/uooc`、`page/life/campus-payments/electricity` 等）。`page/pair-login?secret=<64hex>` 是远程授权登录的一次性邀请，由新设备的二维码或设置页产生；它**不加入** MCP `open_page` 列表，secret 也不得写进路由、WebView URL 或日志。
   - `your-szu-life://data/...`：用于传递与订阅结构化数据/MCP Resources 资源（如 `data/auth/profile`, `data/electricity/status` 等）。
 - **类型契约**：所有工具入参和出参必须 `derive(Serialize, Deserialize, schemars::JsonSchema)`，并提供清晰详尽的中文描述字段，杜绝任何未定义结构或无提示的 JSON Value。
 - **子路由导出**：工具胶水统一放在 app crate 的 `src/mcp/features/<功能>.rs`（导出命名的 `pub(crate) fn xxx_tools(...) -> ToolRouter`），并在 `src/mcp/server.rs` 中合并接入全局路由器。`rmcp` 的 `ToolRouter<H>` 由处理者类型决定，所有工具必须与 `UnifiedSzuMcpService` 处在同一个 crate，因此**不要**把 `mcp.rs` 分散回各功能 crate。
@@ -151,6 +151,7 @@ release. Add a tool name to select part of the graph. For example, run
 - **身份**：`mesh/identity.rs` 由 vault `fixed.account.profile` 派生 `network_name = your-szu-life:self:<sha256(学号)前16位>` 与 `network_secret = Argon2id(密码, salt=学号+校园卡号)`。改统一认证密码等于换网络，其它设备需先用新密码登录才能重新入网。
 - **同步白名单**：只有 `settings_sync/items.rs::ITEM_DEFS` 里的项会同步（UOOC 登录态/AI/运行设置/题库、OJ 账号密码、宿舍区与教工区「单独配置」凭据、宿舍信息）。`fixed.account.profile`、authserver 会话、lms/jxxk 会话与 `settings.sqlite` 本地偏好永不同步。合并由 Loro CRDT 负责：单值项整项 LWW，OJ 按站点、题库按行独立合并；同一 key 的并发写入由 Loro 决定胜者，不再冻结。同步检查点位于 `mesh/sync/<account_fingerprint>.loro.enc`，使用设备主密钥加密并按账号隔离；`uooc.session` 只记录显式登录/全局退出，cookie 刷新不写入。
 - **校园网访问**：`netproxy/campus_access.rs` 是唯一决策点。在校时完全维持原有绕过/覆写逻辑；校外且存在可用在校设备时，`campus-network.json` 的直连白名单不再强制生效——校内目标先按普通策略走外网，对外探测（`host:port` 缓存 60 秒）确认不可达才改走 overlay 代理；非校内目标永远不经过 overlay。`overrides.fallback` 在校外继续生效。在校设备上的 `mesh/campus_proxy.rs` 只接受校内目标，且只在「校园网访问」开关打开时响应。
+- **远程授权登录**：未登录设备在初始化向导 `auth` 步骤经 `szu-mesh::mesh::pair_login` 启动第二个临时 EasyTier 实例（网络名 `your-szu-life:login/pair:<hash>`，密钥与 6 位码由二维码里的随机 secret 派生）。已登录设备通过深链或设置页扫码/粘贴加入同一网络，确认后把 vault 里的校园卡号 + 密码用 AEAD 加密后一次性 POST 给新设备；新设备继续走原 `begin_setup_authentication`。配对网络不进入正式设备列表/同步/校园网出口，也不对 MCP 开放（凭据外泄口）。
 - **日志**：EasyTier 只用 `tracing` 记录日志；仓库显式打开 `tracing` 的 `log` feature，未安装 tracing subscriber 时事件会转发给 `log`，因此与其它日志共用调试页的保留级别与 target 过滤。日志默认保留级别为 `WARN`。
 - **构建**：`no_tun` 组网依赖 `dhcp-ipv4`、`icmp-proxy` 与 `endpoint-discovery` 等 feature（前两个缺失会在创建实例时报 `this build does not include ...`，`mesh::node` 有对应的能力校验测试；`endpoint-discovery` 提供 TXT/SRV 与 HTTP(S) 节点发现，默认 STUN 的 `txt:stun*.easytier.cn` 依赖它）；`easytier-proto` 需要 `protoc`。
 

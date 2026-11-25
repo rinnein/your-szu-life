@@ -11,7 +11,7 @@ import { toast } from "../ui";
 import { errorMessage } from "../async-state";
 import { useChannelSubscription } from "../tauri-channel";
 import { usePending } from "../use-pending";
-import { runScanLoop, scanQrOnce, stopScanLoop } from "./qr-scan";
+import { runScanLoop, scanQrOnce, stopScanLoop } from "../qr-scan";
 import { shareActionFromEvent, shareReducer, type ShareState } from "./share-state";
 import type { ShareEvent } from "./types";
 

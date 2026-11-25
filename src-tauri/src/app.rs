@@ -51,6 +51,7 @@ pub(crate) fn run() {
             PlatformCredentialStore,
         )))
         .manage(Arc::new(szu_mesh::mesh::MeshStore::new()))
+        .manage(Arc::new(szu_mesh::mesh::pair_login::PairLoginStore::new()))
         .manage(Arc::new(szu_mesh::settings_sync::engine::SyncStore::new()))
         .manage(netproxy::ProxyStore::new(proxy_credentials));
     // 必须最先注册：重复启动的进程在这里把参数交给已运行实例后退出。
@@ -223,6 +224,13 @@ pub(crate) fn run() {
             szu_mesh::mesh::commands::set_mesh_enabled,
             szu_mesh::mesh::commands::set_mesh_campus_access,
             szu_mesh::mesh::commands::set_mesh_device_name,
+            szu_mesh::mesh::pair_login::commands::pair_login_host_start,
+            szu_mesh::mesh::pair_login::commands::pair_login_host_cancel,
+            szu_mesh::mesh::pair_login::commands::pair_login_take_credentials,
+            szu_mesh::mesh::pair_login::commands::pair_login_client_accept_url,
+            szu_mesh::mesh::pair_login::commands::pair_login_client_connect,
+            szu_mesh::mesh::pair_login::commands::pair_login_client_authorize,
+            szu_mesh::mesh::pair_login::commands::pair_login_client_cancel,
             szu_mesh::settings_sync::commands::get_sync_status,
             szu_mesh::settings_sync::commands::get_sync_items,
             szu_mesh::settings_sync::commands::trigger_sync,

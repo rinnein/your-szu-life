@@ -26,6 +26,7 @@ pub mod commands;
 pub mod devices;
 pub mod identity;
 pub mod node;
+pub mod pair_login;
 pub mod share_room;
 
 /// 虚拟网内的同步接口端口（只在 overlay 命名空间里使用，不占本机端口）。

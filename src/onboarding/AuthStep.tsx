@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Button, Card, LoadingIndicator, TextField } from "material/react";
 import { Banner, bindField, toast } from "../ui";
@@ -13,6 +13,9 @@ import {
   campusCardError,
   isCampusCardComplete,
 } from "../campus-card";
+import { PairHostPanel } from "../pair-login/HostPanel";
+import { pairLoginHostStart } from "../pair-login/api";
+import type { PairCredentials, PairHostView } from "../pair-login/types";
 import type { StepProps } from "./step-types";
 import { authStepView, isTerminalAuthFailure, type AutoAttempt } from "./auth-view";
 import { beginSetupAuthentication, cancelAuthentication, consumeAuthFailureNotice } from "./api";
@@ -25,9 +28,11 @@ export function AuthStep({ onComplete, registerNext, reauth }: StepProps) {
   const [manual, setManual] = useState(false);
   const [autoAttempt, setAutoAttempt] = useState<AutoAttempt>("idle");
   const [profileWaitExpired, setProfileWaitExpired] = useState(false);
+  const [pairing, setPairing] = useState<PairHostView | null>(null);
   const lastFailure = useRef<string | undefined>(undefined);
-  const pending = usePending();
-  const submitPending = pending.isPending("submit");
+  const { run, isPending } = usePending();
+  const submitPending = isPending("submit");
+  const pairPending = isPending("pair");
 
   useEffect(() => {
     void consumeAuthFailureNotice()
@@ -114,7 +119,20 @@ export function AuthStep({ onComplete, registerNext, reauth }: StepProps) {
     };
   }, []);
 
-  // 键盘回车与底栏按钮走同一个入口；重复提交由 usePending 的同键拦截挡住。
+  // 键盘回车、底栏按钮与远程授权共用同一个登录入口；重复提交由 usePending 拦截。
+  const startAuthentication = useCallback(
+    async (card: string, loginPassword: string) => {
+      setManual(false);
+      lastFailure.current = undefined;
+      const outcome = await run("submit", () => beginSetupAuthentication(card, loginPassword));
+      if (!outcome.ok && !outcome.skipped) {
+        toast.danger("无法开始统一认证", { description: errorMessage(outcome.error) });
+      }
+      return outcome.ok;
+    },
+    [run],
+  );
+
   const submitCredentials = async () => {
     if (!isCampusCardComplete(campusCard)) {
       setCardSubmitted(true);
@@ -124,14 +142,28 @@ export function AuthStep({ onComplete, registerNext, reauth }: StepProps) {
       toast.danger("密码不能为空");
       return;
     }
-    setManual(false);
-    lastFailure.current = undefined;
-    const outcome = await pending.run("submit", () =>
-      beginSetupAuthentication(campusCard.trim(), password),
-    );
-    if (!outcome.ok && !outcome.skipped) {
-      toast.danger("无法开始统一认证", { description: errorMessage(outcome.error) });
+    await startAuthentication(campusCard.trim(), password);
+  };
+
+  // 配对成功后由 HostPanel 一次性交出凭据，仍走标准 authserver 登录流程。
+  const handleAuthorized = useCallback(
+    (credentials: PairCredentials) => {
+      setCampusCard(credentials.campusCardNumber);
+      setPairing(null);
+      void startAuthentication(credentials.campusCardNumber, credentials.password);
+    },
+    [startAuthentication],
+  );
+
+  const startPairing = async () => {
+    const result = await run("pair", () => pairLoginHostStart());
+    if (!result.ok) {
+      if (!result.skipped) {
+        toast.danger("无法开始远程授权", { description: errorMessage(result.error) });
+      }
+      return;
     }
+    setPairing(result.value);
   };
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -146,7 +178,7 @@ export function AuthStep({ onComplete, registerNext, reauth }: StepProps) {
   let nextAction: StepNextAction | null = null;
   if (view.kind === "authenticated") {
     nextAction = { label: "继续", run: onComplete };
-  } else if (view.kind === "credentials") {
+  } else if (view.kind === "credentials" && !pairing) {
     nextAction = {
       label: "登录并继续",
       disabled: submitPending,
@@ -246,6 +278,15 @@ export function AuthStep({ onComplete, registerNext, reauth }: StepProps) {
       );
 
     case "credentials":
+      if (pairing) {
+        return (
+          <PairHostPanel
+            initial={pairing}
+            onCancel={() => setPairing(null)}
+            onAuthorized={handleAuthorized}
+          />
+        );
+      }
       return (
         <Card variant="outlined">
           <div slot="headline">账户与个人信息</div>
@@ -276,6 +317,13 @@ export function AuthStep({ onComplete, registerNext, reauth }: StepProps) {
               {...bindField(setPassword)}
             />
           </form>
+          <div className="mt-1 grid justify-items-start gap-1">
+            <Button variant="text" disabled={pairPending} onClick={() => void startPairing()}>
+              {pairPending && <LoadingIndicator size={16} />}
+              远程授权登录
+            </Button>
+            <p className="text-xs text-muted">在已登录的设备上确认，免去在本机输入统一认证密码。</p>
+          </div>
         </Card>
       );
   }
