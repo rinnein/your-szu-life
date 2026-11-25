@@ -10,10 +10,6 @@ import { typeInto } from "./ui/testing";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
-// 授权入口依赖 AuthProvider 与逻辑导航，单独在 AuthorizeEntry.test.tsx 覆盖。
-vi.mock("./pair-login/AuthorizeEntry", () => ({
-  PairAuthorizeEntry: () => <div data-testid="pair-authorize-entry" />,
-}));
 
 afterEach(() => {
   cleanup();

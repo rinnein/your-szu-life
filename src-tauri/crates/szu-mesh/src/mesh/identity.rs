@@ -1,9 +1,15 @@
-//! 同一账号的设备自组网身份派生。
+//! 设备自组网身份派生。
 //!
-//! EasyTier 用 `network_name` + `network_secret` 标识一个虚拟网络：名字会出现在
-//! peer 列表里，因此由学号单向散列得到；密钥参与握手与数据面加密，由账户资料
-//! （学号、校园卡号、统一认证密码）派生。两台设备只有在资料完全一致时才会落到
-//! 同一个网络 —— 这正是「已经用 authserver 登录过」的等价物。
+//! 有两种身份：
+//!
+//! - **账号网络**（[`derive`]）：EasyTier 用 `network_name` + `network_secret` 标识
+//!   一个虚拟网络，名字会出现在 peer 列表里，因此由学号单向散列得到；密钥参与
+//!   握手与数据面加密，由账户资料（学号、校园卡号、统一认证密码）派生。两台设备
+//!   只有在资料完全一致时才会落到同一个网络 —— 这正是「已经用 authserver 登录过」
+//!   的等价物。
+//! - **公共中继网络**（[`public_identity`]）：与账号无关的固定身份，所有安装都
+//!   加入同一个网络，只用于互相发现与中转；它不承载本机应用数据面，因此不知道
+//!   任何账号网络的密钥。
 //!
 //! 这里是全应用**唯一**一处派生组网身份的地方：网络名/密钥的算法、分隔符与长度
 //! 都只在这里定义，其它模块只消费 [`MeshIdentity`]。
@@ -15,6 +21,11 @@ use sha2::{Digest, Sha256};
 
 /// 网络名固定前缀；后面接学号散列的前 16 个十六进制字符。
 const NETWORK_NAME_PREFIX: &str = "your-szu-life:self:";
+/// 常驻公共中继网络的固定网络名；所有安装都加入同一个网络。
+pub const PUBLIC_NETWORK_NAME: &str = "your-szu-life:public:init";
+/// 公共网络密钥的派生种子。密钥本身是公开的（任何人都能加入这个中继网络），
+/// 但必须跨版本、跨设备完全一致，因此固定成常量而不是随机生成。
+const PUBLIC_SECRET_SEED: &str = "your-szu-life:public-init:v1";
 const NAME_HASH_LEN: usize = 8;
 const SECRET_LEN: usize = 32;
 const SECRET_SALT_LEN: usize = 16;
@@ -36,6 +47,19 @@ pub fn derive_current() -> Result<MeshIdentity, String> {
         .map_err(|error| format!("读取账户资料失败: {error}"))?
         .ok_or_else(|| "尚未登录，无法启用设备同步".to_string())?;
     derive(&profile)
+}
+
+/// 常驻公共中继身份：网络名固定，密钥由固定种子散列得到。
+///
+/// 任何安装都能算出同一份密钥并加入该网络，这是设计的一部分——它只负责互相
+/// 发现与中转。账号网络的数据对它是端到端加密的（secure-mode），它也拿不到
+/// 账号网络的密钥。
+pub fn public_identity() -> MeshIdentity {
+    MeshIdentity {
+        network_name: PUBLIC_NETWORK_NAME.to_owned(),
+        network_secret: hash_hex(PUBLIC_SECRET_SEED),
+        student_id: String::new(),
+    }
 }
 
 /// 由账户资料派生身份。纯函数，便于测试固定输入。
@@ -165,5 +189,22 @@ mod tests {
     fn secret_is_32_bytes_of_hex() {
         let identity = derive(&profile("20240001", "12345678", "password-1")).unwrap();
         assert_eq!(identity.network_secret.len(), 64);
+    }
+
+    #[test]
+    fn public_identity_is_fixed_and_account_independent() {
+        let a = public_identity();
+        let b = public_identity();
+        assert_eq!(a, b);
+        assert_eq!(a.network_name, PUBLIC_NETWORK_NAME);
+        assert_eq!(a.network_name, "your-szu-life:public:init");
+        assert_eq!(a.network_secret.len(), SECRET_LEN * 2);
+        assert!(a.network_secret.chars().all(|c| c.is_ascii_hexdigit()));
+        assert!(a.student_id.is_empty());
+
+        // 公共身份不能和任何账号网络撞名，否则账号设备会被并进公共网络。
+        let account = derive(&profile("20240001", "12345678", "password-1")).unwrap();
+        assert_ne!(a.network_name, account.network_name);
+        assert_ne!(a.network_secret, account.network_secret);
     }
 }

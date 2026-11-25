@@ -86,7 +86,7 @@ impl MeshDeviceView {
     }
 }
 
-/// 后台刷新循环。由 [`super::start_with`] 启动，随节点一起 abort。
+/// 后台刷新循环。由 [`super::start`] 启动，随功能实例一起 abort。
 pub async fn refresh_loop(
     app: tauri::AppHandle,
     store: Arc<MeshStore>,

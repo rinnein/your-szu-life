@@ -1,8 +1,9 @@
 //! 临时消息房间：短生命周期的多设备消息交换（当前用于签到码共享）。
 //!
-//! 与主网（每账号一个固定网络）不同，房间按需创建**第二个** EasyTier
-//! 实例：`network_name` / `network_secret` 由调用方给定（如按课程隔离的
-//! 签到码房间），安全边界就是网络密钥本身，因此房间内协议不做额外鉴权。
+//! 与主网（每账号一个固定网络）不同，房间按需创建**一个临时 EasyTier 实例**：
+//! `network_name` / `network_secret` 由调用方给定（如按课程隔离的签到码房间），
+//! 安全边界就是网络密钥本身，因此房间内协议不做额外鉴权。实例本身零监听端口，
+//! 只经 `ring://` 连本机常驻公共中继，跨设备数据由公共网络转发。
 //!
 //! 数据面与主网一致：overlay 端口经 [`bridge::inbound`] 桥到本机回环上的
 //! axum 服务；发给对端时用 [`bridge::outbound`] 建立每 peer 的出站桥。
@@ -205,8 +206,8 @@ pub struct RoomHandle {
 }
 
 impl RoomHandle {
-    /// 加入房间：创建第二个 EasyTier 实例、桥接 overlay 端口、启动回环服务
-    /// 与 peer 刷新循环。
+    /// 加入房间：创建一个零端口的临时 EasyTier 实例（经 `ring://` 连本机公共中继）、
+    /// 桥接 overlay 端口、启动回环服务与 peer 刷新循环。
     pub async fn join(
         network_name: &str,
         network_secret: &str,
@@ -469,7 +470,7 @@ mod tests {
 
     #[test]
     fn named_config_passes_easytier_validation() {
-        // 房间用第二个实例时也必须通过 EasyTier 的能力校验（feature 齐全）。
+        // 房间实例也是零端口的功能实例：只连本机公共中继的 ring://。
         let identity = MeshIdentity {
             network_name: "your-szu-life:study/signin/lms:42".into(),
             network_secret: "a".repeat(64),
@@ -480,13 +481,11 @@ mod tests {
             "your-szu-life-signin-room",
             &identity,
             "测试设备",
-            54297,
-            &super::super::node::ListenerPorts {
-                tcp_udp: 54296,
-                ws_quic: 54295,
-                faketcp: 54294,
+            super::super::node::MeshRole::Client {
+                relay_peer: "ring://00000000-0000-0000-0000-000000000001",
             },
         );
+        assert!(toml.contains("listeners = []"));
         let config =
             easytier_core::config::toml::TomlConfig::new_from_str(&toml).expect("配置应能解析");
         let instance = manager

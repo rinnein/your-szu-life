@@ -410,20 +410,18 @@ mod tests {
 
     #[test]
     fn pair_network_config_passes_easytier_validation() {
-        use crate::mesh::node::{build_config_named, ListenerPorts};
+        use crate::mesh::node::{build_config_named, MeshRole};
 
         let pair = PairSecret::from_hex(&"a".repeat(64)).unwrap();
         let toml = build_config_named(
             crate::mesh::pair_login::HOST_INSTANCE,
             &pair.identity(),
             "测试设备",
-            54293,
-            &ListenerPorts {
-                tcp_udp: 54292,
-                ws_quic: 54291,
-                faketcp: 54290,
+            MeshRole::Client {
+                relay_peer: "ring://00000000-0000-0000-0000-000000000001",
             },
         );
+        assert!(toml.contains("listeners = []"));
         let config =
             easytier_core::config::toml::TomlConfig::new_from_str(&toml).expect("配置应能解析");
         let manager = easytier::instance::factory::native_instance_manager();

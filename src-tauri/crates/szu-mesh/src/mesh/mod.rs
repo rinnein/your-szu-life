@@ -1,6 +1,13 @@
 //! 设备自组网与设置同步的骨架。
 //!
-//! 生命周期只有两种状态：节点未运行 / 节点运行中。运行中意味着：
+//! 进程内有两种 EasyTier 实例：
+//!
+//! 1. 常驻公共中继（[`public_node`]）：应用启动即拉起，不随同步/校园网开关停止，
+//!    是本机唯一的入站节点，也是功能实例之间、设备之间的中转；
+//! 2. 按需功能实例（主自组网）：同步或校园网访问任一开启时运行，零监听端口，
+//!    经 `ring://` 连本机公共中继。
+//!
+//! 功能实例运行中意味着：
 //!
 //! 1. 进程内有一个 `no_tun` 的 EasyTier 节点；
 //! 2. 本机回环上有一个只接受 mesh token 的 HTTP 接口；
@@ -27,6 +34,7 @@ pub mod devices;
 pub mod identity;
 pub mod node;
 pub mod pair_login;
+pub mod public_node;
 pub mod share_room;
 
 /// 虚拟网内的同步接口端口（只在 overlay 命名空间里使用，不占本机端口）。
@@ -283,7 +291,8 @@ fn emit_status(app: &AppHandle, store: &MeshStore) {
     let _ = app.emit(STATUS_EVENT, status(store));
 }
 
-/// 启动时按本地开关决定是否拉起节点。失败只记录日志并写进状态，不影响应用启动。
+/// 启动时拉起常驻公共中继；主组网实例按本地开关决定是否启动。
+/// 失败只记录日志并写进状态，不影响应用启动。
 pub fn initialize(app: &AppHandle) {
     let store = app
         .try_state::<Arc<MeshStore>>()
@@ -292,6 +301,12 @@ pub fn initialize(app: &AppHandle) {
         return;
     };
     let _ = store.device_id();
+    // 公共中继与登录状态、同步/校园网开关都无关：先拉起它，功能实例才有 ring 对端。
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = public_node::ensure().await {
+            log::error!("公共组网初始化节点启动失败: {error}");
+        }
+    });
     if !enabled() && !campus_access_enabled() {
         return;
     }

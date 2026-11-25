@@ -5,7 +5,6 @@ import { Button, Card, List, ListItem, LoadingIndicator, Switch, TextField } fro
 import { Banner, Chip, SettingList, SettingRow, bindField, toast } from "./ui";
 import { errorMessage } from "./async-state";
 import { platformLabel } from "./platform-label";
-import { PairAuthorizeEntry } from "./pair-login/AuthorizeEntry";
 import { usePending } from "./use-pending";
 import { LuRefreshCw } from "react-icons/lu";
 
@@ -331,8 +330,6 @@ export default function SettingsSync() {
           </List>
         )}
       </Card>
-
-      <PairAuthorizeEntry />
 
       <Card variant="outlined">
         <div slot="headline">同步内容</div>

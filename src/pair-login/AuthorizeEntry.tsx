@@ -11,7 +11,7 @@ import { scanQrOnce } from "../qr-scan";
 import { pairLoginAcceptUrl } from "./api";
 
 /**
- * 设置-同步里的「授权其他设备登录」入口。
+ * 设置-个人信息里的「授权其他设备登录」入口。
  *
  * 深链在部分机型上会被系统相机/浏览器拦下，这里提供应用内扫码（Android）
  * 与粘贴链接两种兜底；两者最终都走同一条 Rust 侧 accept → 授权页流程。

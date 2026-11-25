@@ -18,6 +18,7 @@ import {
   LuUser,
 } from "react-icons/lu";
 import { ProfileForm } from "./ProfileForm";
+import { PairAuthorizeEntry } from "./pair-login/AuthorizeEntry";
 import { PageShell } from "./components";
 import { TopAppBar } from "./shell/TopAppBar";
 import { useDebugMode } from "./shell/use-debug-mode";
@@ -129,19 +130,22 @@ export default function SettingsPage() {
     switch (tab) {
       case "profile":
         return (
-          <ProfileForm
-            initial={profile}
-            name={profile?.name}
-            onSaved={async () => {
-              // 保存后留在当前页：用户可能接着调其它设置，跳回首页像被踢出去。
-              try {
-                setProfile((await invoke("get_account_profile")) as typeof profile);
-                toast.success("账户资料已保存");
-              } catch (cause) {
-                toast.danger("资料已保存，但未能刷新显示", { description: errorMessage(cause) });
-              }
-            }}
-          />
+          <>
+            <ProfileForm
+              initial={profile}
+              name={profile?.name}
+              onSaved={async () => {
+                // 保存后留在当前页：用户可能接着调其它设置，跳回首页像被踢出去。
+                try {
+                  setProfile((await invoke("get_account_profile")) as typeof profile);
+                  toast.success("账户资料已保存");
+                } catch (cause) {
+                  toast.danger("资料已保存，但未能刷新显示", { description: errorMessage(cause) });
+                }
+              }}
+            />
+            <PairAuthorizeEntry />
+          </>
         );
       case "appearance":
         return <AppearanceSettings />;

@@ -183,6 +183,9 @@ describe("SettingsPage multi-tab and unified local model card", () => {
 
     // Default tab shows ProfileForm
     expect(screen.getByText("账户与个人信息")).toBeInTheDocument();
+    // 远程授权入口属于个人信息页，不在同步页。
+    expect(screen.getByText("授权其他设备登录")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "开始授权" })).toBeInTheDocument();
 
     // Privacy storage card must NOT be present
     expect(screen.queryByText("隐私信息存储")).not.toBeInTheDocument();
@@ -320,6 +323,7 @@ describe("SettingsPage multi-tab and unified local model card", () => {
 
     expect(await screen.findByText("设备同步")).toBeInTheDocument();
     expect(screen.getByText("网络内的设备")).toBeInTheDocument();
+    expect(screen.queryByText("授权其他设备登录")).not.toBeInTheDocument();
   });
 
   it("switches to 快捷键 tab and displays ShortcutsTable", async () => {
