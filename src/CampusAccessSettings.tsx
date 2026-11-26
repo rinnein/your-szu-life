@@ -10,6 +10,7 @@ import { LuCheck, LuWifi } from "react-icons/lu";
 export type CampusMeshStatus = {
   enabled: boolean;
   campusAccess: boolean;
+  campusReachable: boolean;
   running: boolean;
   deviceId: string;
   deviceName: string;
@@ -27,6 +28,7 @@ export type CampusMeshDevice = {
   isSelf: boolean;
   reachable: boolean;
   campusAccess: boolean;
+  campusReachable: boolean;
   onCampus: boolean;
   region: string;
   networkState: string;
@@ -35,13 +37,16 @@ export type CampusMeshDevice = {
 
 type CampusSnapshot = { status: CampusMeshStatus; devices: CampusMeshDevice[] };
 
+function reachLabel(device: CampusMeshDevice) {
+  if (!device.campusReachable) return "不可达";
+  return device.onCampus ? "校内" : "可经 VPN 访问";
+}
+
 function campusLabel(device: CampusMeshDevice) {
-  if (device.isSelf) {
-    return device.onCampus ? "校内" : "校外";
-  }
+  if (device.isSelf) return reachLabel(device);
   if (!device.reachable) return "离线";
   if (!device.campusAccess) return "未开启共享";
-  return device.onCampus ? "校内" : "校外";
+  return reachLabel(device);
 }
 
 export function CampusAccessSettings() {
@@ -97,10 +102,10 @@ export function CampusAccessSettings() {
     }
     // 开关不做乐观更新：保持服务端值直到命令返回。
     setSnapshot((current) => (current ? { ...current, status: result.value } : current));
-    toast.success(enabled ? "已开启校园网访问" : "已关闭校园网访问", {
+    toast.success(enabled ? "已开启同账户校园网共享" : "已关闭同账户校园网共享", {
       description: enabled
-        ? "在校设备会把校园网出口共享给本账号的其它设备。"
-        : "已恢复本机原有的出网逻辑。",
+        ? "本机会把校园网出口共享给同一账号的其它设备。"
+        : "本机不再共享校园网，但仍会自动借用其它设备的校园网。",
     });
   };
 
@@ -108,8 +113,12 @@ export function CampusAccessSettings() {
   const devices = snapshot?.devices ?? [];
   const self = devices.find((device) => device.isSelf);
   const localOnCampus = Boolean(self?.onCampus);
+  // 设备列表按活动档位周期刷新，比只在启停/切换时推送的状态更及时；
+  // 节点没在跑时退回状态里的本机判定。
+  const localReachable =
+    status?.running && self ? Boolean(self.campusReachable) : Boolean(status?.campusReachable);
   const campusDevices = devices.filter(
-    (device) => !device.isSelf && device.reachable && device.campusAccess && device.onCampus,
+    (device) => !device.isSelf && device.reachable && device.campusAccess && device.campusReachable,
   );
   const enabled = Boolean(status?.campusAccess);
   const switching = pending.isPending("toggle");
@@ -119,8 +128,8 @@ export function CampusAccessSettings() {
     <Card variant="outlined">
       <div slot="headline">校园网访问</div>
       <div slot="subhead">
-        开启后，同一账号的在校设备会共享校园网出口。只影响本应用的校内请求，不会代理其它软件，也不需要
-        VPN。
+        本机可把校园网共享给同一账号的其它设备；校外且够不着校园网时会自动借用它们，不需要
+        VPN。只影响本应用的校内请求，不会代理其它软件。
       </div>
 
       {state.status === "error" && (
@@ -138,8 +147,8 @@ export function CampusAccessSettings() {
       <SettingList>
         <SettingRow
           icon={<LuWifi aria-hidden="true" />}
-          title="启用校园网访问"
-          description="只影响本应用的校内请求，不需要 VPN。"
+          title="同账户校园网共享"
+          description="关闭只影响共享：本机不再把校园网共享出去，但仍会自动借用其它设备的校园网。"
         >
           <Switch
             checked={enabled}
@@ -148,11 +157,15 @@ export function CampusAccessSettings() {
               const next = Boolean(event.detail?.checked ?? event.target?.checked);
               void toggle(next);
             }}
-            aria-label="启用校园网访问"
+            aria-label="同账户校园网共享"
           />
         </SettingRow>
-        <SettingRow title="本机网络">
-          {localOnCampus ? <Chip color="success">校内</Chip> : <Chip color="default">校外</Chip>}
+        <SettingRow title="校园网">
+          {localReachable ? (
+            <Chip color="success">{localOnCampus ? "可达 · 校内" : "可达 · VPN"}</Chip>
+          ) : (
+            <Chip color="default">不可达</Chip>
+          )}
         </SettingRow>
         <SettingRow title="当前出口">
           <span className="flex items-center gap-2 text-sm">
@@ -162,20 +175,18 @@ export function CampusAccessSettings() {
                 {status.campusEgress}
               </>
             ) : (
-              <span className="text-muted">
-                {localOnCampus ? "本机在校内，直接访问" : "未使用"}
-              </span>
+              <span className="text-muted">{localReachable ? "本机可直连校园网" : "未使用"}</span>
             )}
-            {switching && <LoadingIndicator size={16} aria-label="正在切换校园网访问" />}
+            {switching && <LoadingIndicator size={16} aria-label="正在切换同账户校园网共享" />}
           </span>
         </SettingRow>
       </SettingList>
 
-      {enabled && !localOnCampus && campusDevices.length === 0 && (
+      {!localReachable && campusDevices.length === 0 && (
         <Banner status="warning" className="mt-4">
           <Banner.Title>没有可用的校园网出口</Banner.Title>
           <Banner.Description>
-            需要另一台已登录同一账号、开启校园网访问且当前处于校园网的设备。发现设备后会自动使用延迟最低的一台。
+            需要另一台已登录同一账号、开启「同账户校园网共享」且当前能访问校园网的设备。发现设备后会自动使用延迟最低的一台。
           </Banner.Description>
         </Banner>
       )}
@@ -183,9 +194,7 @@ export function CampusAccessSettings() {
       <div className="card-group mt-4">
         <p className="card-group-title">账号内的设备</p>
         {devices.length === 0 ? (
-          <p className="text-sm text-muted">
-            {enabled ? "正在等待其它设备加入…" : "开启后这里会列出同账号设备及其校园网状态。"}
-          </p>
+          <p className="text-sm text-muted">登录同一账号的其它设备上线后会出现在这里。</p>
         ) : (
           <List aria-label="校园网访问设备列表">
             {devices.map((device) => (

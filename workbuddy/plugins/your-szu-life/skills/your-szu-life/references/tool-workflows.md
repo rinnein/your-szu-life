@@ -65,7 +65,7 @@ UOOC 未登录时，`ensure --need uooc` 会打开 `/study/uooc`，让用户点�
 
 - 快照：`settings_get_snapshot`；储存：`settings_get_storage_status`
 - 同步：`sync_get_status`、`sync_list_items`
-- 自组网：`mesh_get_status`、`mesh_list_devices`、`mesh_get_campus_access`
+- 自组网：`mesh_get_status`、`mesh_list_devices`、`mesh_get_campus_access`（「同账户校园网共享」只决定本机是否共享校园网；借用同账号设备的出口始终自动，`campusReachable` 表示本机此刻能否直接到达校园网）
 - 文件目录：`file_manager_get_state`
 - 通知：`notification_get_settings` / `notification_set_settings`
 

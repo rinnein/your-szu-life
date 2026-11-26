@@ -31,6 +31,8 @@ pub struct MeshDeviceView {
     pub latency_ms: Option<u64>,
     pub sync_enabled: bool,
     pub campus_access: bool,
+    /// 该设备能否直接到达校园网（区域判定或探测命中）；借用出口看它。
+    pub campus_reachable: bool,
     pub on_campus: bool,
     pub region: String,
     pub network_state: String,
@@ -55,6 +57,9 @@ impl MeshDeviceView {
             latency_ms,
             sync_enabled: status.sync_enabled,
             campus_access: status.campus_access,
+            // 旧版本只上报 onCampus：校内区域本身就是可达，按可达处理以免升级
+            // 过渡期里对端突然不能捐赠。
+            campus_reachable: status.campus_reachable || status.on_campus,
             on_campus: status.on_campus,
             region: status.region,
             network_state: status.network_state,
@@ -78,6 +83,7 @@ impl MeshDeviceView {
             latency_ms,
             sync_enabled: false,
             campus_access: false,
+            campus_reachable: false,
             on_campus: false,
             region: "unknown".into(),
             network_state: "unknown".into(),
@@ -121,7 +127,7 @@ pub async fn refresh_loop(
                     }
                 }
                 // 设备/本机校园网状态都可能变化：每轮都重新决定是否借用出口。
-                super::campus::refresh(&app, &store, &node);
+                super::campus::refresh(&store, &node);
             }
             Err(error) => log::warn!("刷新设备列表失败: {error}"),
         }
@@ -210,6 +216,8 @@ pub fn offline_self(device_id: &str, device_name: &str, app_version: &str) -> Me
         latency_ms: None,
         sync_enabled: false,
         campus_access: false,
+        // 本机视图：可达性直接取当前判定，别让首轮刷新前的占位值误导界面。
+        campus_reachable: szu_core::netproxy::campus_reachable(),
         on_campus: false,
         region: "unknown".into(),
         network_state: "unknown".into(),
@@ -260,6 +268,7 @@ mod tests {
             latency_ms,
             sync_enabled,
             campus_access: false,
+            campus_reachable: false,
             on_campus: false,
             region: "none".into(),
             network_state: "unknown".into(),

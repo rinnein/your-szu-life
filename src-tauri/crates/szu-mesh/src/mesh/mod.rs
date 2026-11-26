@@ -62,7 +62,10 @@ const FALLBACK_NAMES: &[&str] = &[
 #[serde(rename_all = "camelCase")]
 pub struct MeshStatusView {
     pub enabled: bool,
+    /// 「同账户校园网共享」：本机是否把校园网共享给同账号设备。
     pub campus_access: bool,
+    /// 本机此刻能否直接到达校园网（区域判定或探测命中）。
+    pub campus_reachable: bool,
     pub running: bool,
     pub device_id: String,
     pub device_name: String,
@@ -254,10 +257,16 @@ pub fn is_running(app: &AppHandle) -> bool {
 }
 
 pub fn campus_access_enabled() -> bool {
-    szu_core::preferences::load::<bool>(szu_core::preferences::SYNC_CAMPUS_ACCESS)
-        .ok()
-        .flatten()
-        .unwrap_or(false)
+    resolve_share_enabled(
+        szu_core::preferences::load::<bool>(szu_core::preferences::SYNC_CAMPUS_ACCESS)
+            .ok()
+            .flatten(),
+    )
+}
+
+/// 「同账户校园网共享」默认开启；用户显式关闭过就尊重保存值。
+fn resolve_share_enabled(saved: Option<bool>) -> bool {
+    saved.unwrap_or(true)
 }
 
 pub fn status(store: &MeshStore) -> MeshStatusView {
@@ -277,6 +286,7 @@ pub fn status(store: &MeshStore) -> MeshStatusView {
     MeshStatusView {
         enabled: enabled(),
         campus_access: campus_access_enabled(),
+        campus_reachable: szu_core::netproxy::campus_reachable(),
         running: store.running(),
         device_id: store.device_id().unwrap_or_default(),
         device_name: store.device_name(),
@@ -291,7 +301,7 @@ fn emit_status(app: &AppHandle, store: &MeshStore) {
     let _ = app.emit(STATUS_EVENT, status(store));
 }
 
-/// 启动时拉起常驻公共中继；主组网实例按本地开关决定是否启动。
+/// 启动时拉起常驻公共中继；主组网实例登录后常驻。
 /// 失败只记录日志并写进状态，不影响应用启动。
 pub fn initialize(app: &AppHandle) {
     let store = app
@@ -301,20 +311,56 @@ pub fn initialize(app: &AppHandle) {
         return;
     };
     let _ = store.device_id();
-    // 公共中继与登录状态、同步/校园网开关都无关：先拉起它，功能实例才有 ring 对端。
+    listen_for_profile(app.clone());
+    // 公共中继与登录状态、同步/共享开关都无关：先拉起它，功能实例才有 ring 对端。
+    let app = app.clone();
     tauri::async_runtime::spawn(async move {
         if let Err(error) = public_node::ensure().await {
             log::error!("公共组网初始化节点启动失败: {error}");
         }
+        // 功能实例登录后常驻：借用同账号设备的校园网出口不经过任何开关，
+        // 没有它就无法发现与桥接出口设备。
+        ensure_running(&app).await;
     });
-    if !enabled() && !campus_access_enabled() {
+}
+
+/// 账户资料就绪后拉起功能实例；已运行或还没有资料时直接返回。
+pub async fn ensure_running(app: &AppHandle) {
+    let Some(store) = app
+        .try_state::<Arc<MeshStore>>()
+        .map(|state| state.inner().clone())
+    else {
+        return;
+    };
+    if store.running() || identity::profile_present() != Some(true) {
         return;
     }
-    let app = app.clone();
-    tauri::async_runtime::spawn(async move {
-        if let Err(error) = start(&app, &store).await {
-            log::error!("设备同步网络启动失败: {error}");
-        }
+    if let Err(error) = start(app, &store).await {
+        log::warn!("设备自组网启动失败: {error}");
+    }
+}
+
+/// 登录/登出后重新评估功能实例要不要在跑。
+fn listen_for_profile(app: AppHandle) {
+    use tauri::Listener;
+
+    let event_app = app.clone();
+    app.listen("auth-state-changed", move |_| {
+        let app = event_app.clone();
+        tauri::async_runtime::spawn(async move {
+            let Some(store) = app
+                .try_state::<Arc<MeshStore>>()
+                .map(|state| state.inner().clone())
+            else {
+                return;
+            };
+            match identity::profile_present() {
+                Some(true) => ensure_running(&app).await,
+                // 账户资料已经不存在（例如重新初始化），继续留在旧网络里没有意义。
+                Some(false) => stop(&app, &store).await,
+                None => {}
+            }
+        });
     });
 }
 
@@ -422,7 +468,7 @@ pub async fn stop(app: &AppHandle, store: &Arc<MeshStore>) {
     emit_status(app, store);
 }
 
-/// 设置开关并立即生效。`enabled` 与 `campus_access` 任一为真时都需要节点在跑。
+/// 保存开关。功能实例登录后常驻，因此这里不再启停节点。
 pub async fn set_switches(
     app: &AppHandle,
     store: &Arc<MeshStore>,
@@ -432,14 +478,10 @@ pub async fn set_switches(
     szu_core::preferences::save(szu_core::preferences::SYNC_ENABLED, &sync_enabled)
         .map_err(|error| format!("保存同步开关失败: {error}"))?;
     szu_core::preferences::save(szu_core::preferences::SYNC_CAMPUS_ACCESS, &campus_access)
-        .map_err(|error| format!("保存校园网访问开关失败: {error}"))?;
-    if sync_enabled || campus_access {
-        start(app, store).await?;
-    } else {
-        stop(app, store).await;
-    }
+        .map_err(|error| format!("保存校园网共享开关失败: {error}"))?;
+    ensure_running(app).await;
     if let Some(node) = store.node() {
-        campus::refresh(app, store, &node);
+        campus::refresh(store, &node);
     }
     emit_status(app, store);
     Ok(())
@@ -486,6 +528,13 @@ fn fallback_word(device_id: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sharing_is_on_by_default_and_respects_an_explicit_off() {
+        assert!(resolve_share_enabled(None));
+        assert!(resolve_share_enabled(Some(true)));
+        assert!(!resolve_share_enabled(Some(false)));
+    }
 
     #[test]
     fn device_name_is_trimmed_and_bounded() {

@@ -440,18 +440,20 @@ pub async fn read_resource_by_uri(
                     let self_device = devices.iter().find(|device| device.is_self);
                     let campus_devices: Vec<_> = devices
                         .iter()
-                        .filter(|device| !device.is_self && device.reachable && device.on_campus)
+                        .filter(|device| !device.is_self && device.reachable && device.campus_reachable)
                         .map(|device| {
                             serde_json::json!({
                                 "deviceId": device.device_id,
                                 "name": device.name,
                                 "overlayIp": device.overlay_ip,
                                 "campusAccess": device.campus_access,
+                                "campusReachable": device.campus_reachable,
                             })
                         })
                         .collect();
                     serde_json::to_string_pretty(&serde_json::json!({
                         "enabled": szu_mesh::mesh::campus_access_enabled(),
+                        "campusReachable": szu_core::netproxy::campus_reachable(),
                         "running": szu_mesh::mesh::is_running(app),
                         "localOnCampus": self_device.is_some_and(|device| device.on_campus),
                         "egress": store.campus_peer().map(|ip| ip.to_string()),

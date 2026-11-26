@@ -49,6 +49,17 @@ pub fn derive_current() -> Result<MeshIdentity, String> {
     derive(&profile)
 }
 
+/// 本机是否已有账户资料。只做存在性检查，不派生身份、不跑 Argon2。
+///
+/// 返回 `None` 表示读取本身失败（例如密钥库暂时不可用），调用方应当保持现状
+/// 而不是据此启停组网。
+pub fn profile_present() -> Option<bool> {
+    PlatformCredentialStore
+        .load_profile()
+        .ok()
+        .map(|profile| profile.is_some())
+}
+
 /// 常驻公共中继身份：网络名固定，密钥由固定种子散列得到。
 ///
 /// 任何安装都能算出同一份密钥并加入该网络，这是设计的一部分——它只负责互相

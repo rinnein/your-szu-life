@@ -26,3 +26,5 @@ uuid = { workspace = true }
 toasty = { workspace = true }
 axum = { workspace = true }
 
+[dev-dependencies]
+szu-core = { path = "../szu-core", features = ["test-support"] }

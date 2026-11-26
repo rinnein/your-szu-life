@@ -58,14 +58,14 @@ impl Resolve for CampusResolver {
             //    目标；origin 形态（含 scheme/端口）的改写在 `netproxy::rewrite_origin`
             //    里完成，不经过解析器。
             if let Some(rule) = model::find_override(&host) {
-                let raw = if is_in_campus_network() {
+                let raw = if super::campus_reachable() {
                     &rule.on_campus
                 } else {
                     &rule.fallback
                 };
                 if let Some(model::OverrideTarget::Host(target)) = model::parse_override_target(raw)
                 {
-                    if let Ok(addrs) = resolve_target(&target).await {
+                    if let Ok(addrs) = resolve_system(&target).await {
                         if !addrs.is_empty() {
                             return Ok(Box::new(addrs.into_iter().map(socket_addr)) as Addrs);
                         }
@@ -96,12 +96,23 @@ pub async fn resolve_host(host: &str) -> Result<Vec<IpAddr>, String> {
     if let Ok(ip) = host.trim().parse::<IpAddr>() {
         return Ok(vec![ip]);
     }
-    if model::is_campus_domain(host) && is_in_campus_network() {
+    if model::is_campus_domain(host) && super::campus_reachable() {
         if let Ok(addrs) = campus_lookup(host).await {
             if !addrs.is_empty() {
                 return Ok(addrs);
             }
         }
+    }
+    resolve_system(host).await
+}
+
+/// 只用系统解析器（getaddrinfo）解析，不问校内 DNS、不套 override 规则。
+///
+/// 可达性探测与 override 目标解析都走这里：它们本身就是「校内 DNS 能不能
+/// 用」的前提，不能反过来依赖校内 DNS。
+pub(super) async fn resolve_system(host: &str) -> Result<Vec<IpAddr>, String> {
+    if let Ok(ip) = host.trim().parse::<IpAddr>() {
+        return Ok(vec![ip]);
     }
     let host = host.to_owned();
     tokio::task::spawn_blocking(move || {
@@ -112,22 +123,6 @@ pub async fn resolve_host(host: &str) -> Result<Vec<IpAddr>, String> {
     .await
     .map_err(|error| error.to_string())?
     .map_err(|error| error.to_string())
-}
-
-/// 解析特殊重写规则指定的目标（支持直接填写 IP，或填写跳转域名如 c46.szu.edu.cn）。
-async fn resolve_target(target: &str) -> Result<Vec<IpAddr>, BoxError> {
-    if let Ok(ip) = target.trim().parse::<IpAddr>() {
-        return Ok(vec![ip]);
-    }
-    let target = target.to_owned();
-    let addrs = tokio::task::spawn_blocking(move || {
-        (target.as_str(), 0)
-            .to_socket_addrs()
-            .map(|addrs| addrs.map(|s| s.ip()).collect::<Vec<_>>())
-    })
-    .await
-    .map_err(|error| -> BoxError { Box::new(error) })??;
-    Ok(addrs)
 }
 
 /// 系统解析器（getaddrinfo）。与覆盖前的行为一致。
@@ -579,6 +574,7 @@ mod tests {
         // `netproxy::rewrite_origin` 整体替换请求 URL，解析器不再插手 ——
         // 因此校内状态下解析结果绝不能出现 172.31.63.8（否则 https:443 会
         // 直连那个没有 TLS 服务的端口，正是本次 override 引入前的问题）。
+        crate::netproxy::reachability::set_reachable(None);
         set_in_campus_network(true);
         let name_on = "jxxk.szu.edu.cn".parse::<Name>().unwrap();
         let addrs_on = CampusResolver
@@ -595,6 +591,7 @@ mod tests {
 
         // 处于非校内网络时，fallback 仍是裸主机形态，解析到 c46.szu.edu.cn（210.39.4.1）。
         set_in_campus_network(false);
+        crate::netproxy::reachability::set_reachable(Some(false));
         let name_off = "jxxk.szu.edu.cn".parse::<Name>().unwrap();
         let addrs_off = CampusResolver
             .resolve(name_off)
@@ -607,5 +604,6 @@ mod tests {
                 .any(|s| s.ip() == "210.39.4.1".parse::<IpAddr>().unwrap()),
             "校外解析 jxxk.szu.edu.cn 应解析到 c46.szu.edu.cn（210.39.4.1），实际：{addrs_off:?}"
         );
+        crate::netproxy::reachability::set_reachable(None);
     }
 }

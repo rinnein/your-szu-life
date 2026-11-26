@@ -37,9 +37,12 @@ pub struct PeerStatus {
     /// 对端是否开启了设置同步（未开启时不会响应同步请求）。
     #[serde(default)]
     pub sync_enabled: bool,
-    /// 对端是否开启了「校园网访问」。
+    /// 对端是否开启了「同账户校园网共享」。
     #[serde(default)]
     pub campus_access: bool,
+    /// 对端此刻能否直接到达校园网（区域判定或探测命中）。
+    #[serde(default)]
+    pub campus_reachable: bool,
     #[serde(default)]
     pub on_campus: bool,
     #[serde(default)]
@@ -181,10 +184,8 @@ pub async fn local_status(
             .ok()
             .flatten()
             .unwrap_or(false),
-        campus_access: preferences::load::<bool>(preferences::SYNC_CAMPUS_ACCESS)
-            .ok()
-            .flatten()
-            .unwrap_or(false),
+        campus_access: super::campus_access_enabled(),
+        campus_reachable: szu_core::netproxy::campus_reachable(),
         on_campus,
         region,
         network_state,

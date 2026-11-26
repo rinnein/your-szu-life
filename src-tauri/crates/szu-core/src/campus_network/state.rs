@@ -224,6 +224,8 @@ impl CampusNetworkStore {
         }
         if changed {
             crate::netproxy::set_in_campus_network(current.region != NetworkRegion::None);
+            // 区域判定变了就让可达性探针补一次，避免「校外但 VPN 可达」被缓存成不可达。
+            crate::netproxy::reachability::refresh();
             let next = current.clone();
             drop(current);
             events.overview_changed(&next);
@@ -247,6 +249,7 @@ impl CampusNetworkStore {
                 drop(current);
                 if changed {
                     crate::netproxy::set_in_campus_network(overview.region != NetworkRegion::None);
+                    crate::netproxy::reachability::refresh();
                     events.overview_changed(&overview);
                 }
                 Some(overview)
@@ -286,6 +289,7 @@ impl NetworkEvents for AppNetworkEvents<'_> {
     }
     fn overview_changed(&self, overview: &NetworkOverviewView) {
         crate::netproxy::set_in_campus_network(overview.region != NetworkRegion::None);
+        crate::netproxy::reachability::refresh();
         let _ = self.0.emit("network-overview-changed", overview);
     }
     fn settings_changed(&self, settings: &DormNetworkSettings) {

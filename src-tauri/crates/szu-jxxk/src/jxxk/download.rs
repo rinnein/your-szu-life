@@ -389,6 +389,19 @@ pub fn task_core_from_record(
 static DOWNLOAD_SERVER_PORT: OnceLock<u16> = OnceLock::new();
 static DOWNLOAD_SERVER_GUARD: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+/// 交给 aria2 的直链必须先经过出网重写。
+///
+/// 校外时 `jxxk.szu.edu.cn` 只有校内 DNS 才解析得出来，override 的 fallback
+/// （`c46.szu.edu.cn`）才是公开出口；把原始域名塞进缓存等于让 aria2 在最初
+/// 五分钟里直接连一个不存在的地址。
+pub(super) fn rewritten_file_url(raw: &str) -> String {
+    let Ok(mut url) = reqwest::Url::parse(raw) else {
+        return raw.to_owned();
+    };
+    szu_core::netproxy::rewrite_origin(&mut url);
+    url.to_string()
+}
+
 /// 解析本地下载请求：返回该任务当前有效的下载直链（每次实时获取，永不过期）。
 async fn resolve_download_url(app: AppHandle, task_id: String) -> Result<String, String> {
     let service = super::service(&app)?;
@@ -561,7 +574,7 @@ pub async fn start_download(
         control: szu_download::aria2::DownloadControl::new(),
         done: Mutex::new(None),
         needs_respawn: std::sync::atomic::AtomicBool::new(false),
-        latest_url: Mutex::new((params.file_url, Instant::now())),
+        latest_url: Mutex::new((rewritten_file_url(&params.file_url), Instant::now())),
         state: Mutex::new(TaskState {
             status: TaskStatus::Preparing,
             downloaded: 0,

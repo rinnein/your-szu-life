@@ -1,30 +1,28 @@
 //! 选择「校园网访问」的出口设备。
 //!
-//! 只在同时满足以下条件时建立出口：本机不在校园网、开关打开、网络里有其它
-//! 在线且处于校园网、自己也开启了校园网访问的设备。选中延迟最低的一台，把它的
-//! `CAMPUS_PROXY_PORT` 桥接到本机回环，并把它交给 `netproxy` 作为校内目标的
-//! 回退出口。任何条件不满足都立即拆除，回到原来的出网逻辑。
+//! 只要满足以下条件就建立出口：本机够不着校园网（区域判定与可达性探测都不
+//! 成立）、网络里有其它在线、自己也开启了「同账户校园网共享」并且够得着校园网
+//! 的设备。选中延迟最低的一台，把它的 `CAMPUS_PROXY_PORT` 桥接到本机回环，
+//! 并把它交给 `netproxy` 作为校内目标的兜底出口。任何条件不满足都立即拆除。
+//!
+//! 借用不经过本机开关：开关只决定本机是否把校园网共享出去。
 
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 
-use tauri::AppHandle;
-use tauri::Manager;
-
 use super::node::Node;
 use super::{bridge, MeshStore, CAMPUS_PROXY_PORT};
 
-pub fn refresh(app: &AppHandle, store: &Arc<MeshStore>, node: &Arc<Node>) {
-    if !super::campus_access_enabled() || local_on_campus(app) {
+pub fn refresh(store: &Arc<MeshStore>, node: &Arc<Node>) {
+    if szu_core::netproxy::campus_reachable() {
         clear(store);
         return;
     }
     let best = store
         .devices()
         .into_iter()
-        .filter(|device| {
-            !device.is_self && device.reachable && device.campus_access && device.on_campus
-        })
+        .filter(|device| !device.is_self && device.reachable && device.campus_access)
+        .filter(|device| device.campus_reachable)
         .filter_map(|device| {
             let ip: Ipv4Addr = device.overlay_ip?.parse().ok()?;
             Some((ip, device.latency_ms.unwrap_or(u64::MAX)))
@@ -61,13 +59,4 @@ pub fn clear(store: &MeshStore) {
         store.set_campus_bridge(None);
         szu_core::netproxy::campus_access::set_egress(None);
     }
-}
-
-fn local_on_campus(app: &AppHandle) -> bool {
-    let Some(store) = app.try_state::<szu_core::campus_network::CampusNetworkStore>() else {
-        return false;
-    };
-    szu_core::campus_network::service::get_network_overview(&store)
-        .map(|overview| overview.region != szu_core::campus_network::model::NetworkRegion::None)
-        .unwrap_or(false)
 }

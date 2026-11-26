@@ -35,7 +35,7 @@ impl UnifiedSzuMcpService {
 
     #[tool(
         name = "mesh_get_campus_access",
-        description = "获取「校园网访问」状态：开关、本机是否在校内、当前借用的出口设备，以及网络内各设备的校内检测结果。对应资源 your-szu-life://data/mesh/campus-access"
+        description = "获取「同账户校园网共享」状态：本机是否共享校园网、本机此刻能否直接到达校园网、当前借用的出口设备，以及网络内各设备的校园网状态。借用不受共享开关限制。对应资源 your-szu-life://data/mesh/campus-access"
     )]
     pub async fn mesh_get_campus_access(&self) -> Result<String, String> {
         let store = self
@@ -46,18 +46,20 @@ impl UnifiedSzuMcpService {
         let self_device = devices.iter().find(|device| device.is_self);
         let campus_devices: Vec<_> = devices
             .iter()
-            .filter(|device| !device.is_self && device.reachable && device.on_campus)
+            .filter(|device| !device.is_self && device.reachable && device.campus_reachable)
             .map(|device| {
                 serde_json::json!({
                     "deviceId": device.device_id,
                     "name": device.name,
                     "overlayIp": device.overlay_ip,
                     "campusAccess": device.campus_access,
+                    "campusReachable": device.campus_reachable,
                 })
             })
             .collect();
         serde_json::to_string_pretty(&serde_json::json!({
             "enabled": szu_mesh::mesh::campus_access_enabled(),
+            "campusReachable": szu_core::netproxy::campus_reachable(),
             "running": szu_mesh::mesh::is_running(&self.app),
             "localOnCampus": self_device.is_some_and(|device| device.on_campus),
             "egress": store.campus_peer().map(|ip| ip.to_string()),

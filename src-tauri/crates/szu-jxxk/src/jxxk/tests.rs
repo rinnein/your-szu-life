@@ -636,19 +636,23 @@ async fn trusted_redirects_cover_szu_subdomains_only() {
     .unwrap();
     let trusted_prod = |raw: &str| prod_client.is_trusted_redirect(&raw.parse().unwrap());
 
-    szu_core::netproxy::set_in_campus_network(true);
+    // 够得着校园网时，overrides 规则配置的内部入口（172.31.63.8）也是受信任的跳转目标。
+    szu_core::netproxy::set_in_campus_network(false);
+    szu_core::netproxy::reachability::set_reachable(Some(true));
     assert!(trusted_prod("http://172.31.63.8:80/university-sso/ava/sso"));
     assert!(trusted_prod("http://172.31.63.8/university-sso/ava/sso"));
 
-    // 校外网络下，不产生 origin override，非深大域的目标不被信任。
-    szu_core::netproxy::set_in_campus_network(false);
+    // 够不着校园网时，不产生 origin override，非深大域的目标不被信任。
+    szu_core::netproxy::reachability::set_reachable(Some(false));
     assert!(!trusted_prod("http://172.31.63.8:80/"));
+    szu_core::netproxy::reachability::set_reachable(None);
 }
 
 #[tokio::test]
 async fn cookies_preserves_override_target_cookies_on_campus() {
     let _guard = szu_core::netproxy::TEST_ENV_LOCK.lock().unwrap();
-    szu_core::netproxy::set_in_campus_network(true);
+    szu_core::netproxy::set_in_campus_network(false);
+    szu_core::netproxy::reachability::set_reachable(Some(true));
     let client = Client::new(
         super::client::JXXK_ORIGIN,
         super::client::AUTH_LOGIN,
@@ -666,6 +670,7 @@ async fn cookies_preserves_override_target_cookies_on_campus() {
     assert!(json.contains("test-jwt-token"));
 
     szu_core::netproxy::set_in_campus_network(false);
+    szu_core::netproxy::reachability::set_reachable(None);
 }
 
 #[test]
@@ -988,4 +993,27 @@ fn jxxk_strictly_follows_campus_dns_and_netproxy_egress() {
             .any(|ip| ip.to_string() == "192.168.247.6"),
         "校内 DNS 服务器列表必须包含深圳大学指定 DNS 192.168.247.6"
     );
+}
+
+#[test]
+fn cached_download_urls_apply_the_egress_override() {
+    // 新任务写入下载缓存前必须先过 `rewrite_origin`，否则最先五分钟交给 aria2 的
+    // 是只有校内 DNS 才解析得出来的原始域名。
+    let _guard = szu_core::netproxy::TEST_ENV_LOCK.lock().unwrap();
+    szu_core::netproxy::set_in_campus_network(false);
+    // 够不着校园网：fallback 是裸主机形态，URL 保持不变（由解析层换成 c46）。
+    szu_core::netproxy::reachability::set_reachable(Some(false));
+    assert_eq!(
+        super::download::rewritten_file_url("https://jxxk.szu.edu.cn/play/a.mp4?t=1"),
+        "https://jxxk.szu.edu.cn/play/a.mp4?t=1"
+    );
+    // 够得着校园网（校内或经外部 VPN）：整体改写到内网 HTTP 入口。
+    szu_core::netproxy::reachability::set_reachable(Some(true));
+    assert_eq!(
+        super::download::rewritten_file_url("https://jxxk.szu.edu.cn/play/a.mp4?t=1"),
+        "http://172.31.63.8/play/a.mp4?t=1"
+    );
+    szu_core::netproxy::reachability::set_reachable(None);
+    // 解析不了的地址原样返回，不因为重写失败丢掉下载任务。
+    assert_eq!(super::download::rewritten_file_url("not a url"), "not a url");
 }

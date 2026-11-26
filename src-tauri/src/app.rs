@@ -193,6 +193,9 @@ pub(crate) fn run() {
                     netproxy::set_in_campus_network(
                         overview.region != campus_network::model::NetworkRegion::None,
                     );
+                    // 启动就补一次校内可达性探测：校外经 SecureLink 等 VPN 可达时，
+                    // 第一批校内请求不必先走一次公网出口再切换。
+                    netproxy::reachability::refresh();
                 }
             }
             if let Some(store) = app.try_state::<campus_payments::CampusPaymentsStore>() {

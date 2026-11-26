@@ -9,6 +9,10 @@ description = "泥深应用核心域：平台基础、凭据与统一认证、�
 name = "szu_core"
 path = "src/lib.rs"
 
+[features]
+# 测试专用：让依赖 crate 的测试能注入校园网可达性，并关闭真实探测。
+test-support = []
+
 [build-dependencies]
 szu-build-support = { path = "../szu-build-support" }
 

@@ -25,9 +25,10 @@ mod dns;
 mod linux;
 #[cfg(any(target_os = "macos", test))]
 mod macos;
+pub mod model;
+pub mod reachability;
 #[cfg(any(target_os = "windows", test))]
 mod windows;
-pub mod model;
 mod system;
 
 #[cfg(test)]
@@ -36,6 +37,7 @@ pub use dns::is_in_campus_network;
 pub use dns::TEST_ENV_LOCK;
 pub use dns::set_in_campus_network;
 pub use model::{ProxyProbeView, ProxySettings, ProxySettingsInput, ProxySettingsView};
+pub use reachability::campus_reachable;
 
 use crate::storage::{CredentialStore, SharedCredentialStore};
 use reqwest::{Proxy, Url};
@@ -155,7 +157,7 @@ pub fn rewrite_origin(url: &mut Url) {
     let Some(rule) = model::find_override(url.host_str().unwrap_or_default()) else {
         return;
     };
-    let raw = if dns::is_in_campus_network() {
+    let raw = if reachability::campus_reachable() {
         &rule.on_campus
     } else {
         &rule.fallback
@@ -179,7 +181,7 @@ pub fn rewrite_origin(url: &mut Url) {
 /// 只影响 DNS，不产生新的 origin，返回 `None`。
 pub fn origin_override_target(host: &str) -> Option<Url> {
     let rule = model::find_override(host)?;
-    let raw = if dns::is_in_campus_network() {
+    let raw = if reachability::campus_reachable() {
         &rule.on_campus
     } else {
         &rule.fallback
@@ -377,11 +379,12 @@ mod tests {
     }
 
     #[test]
-    fn rewrite_origin_swaps_scheme_host_and_port_on_campus() {
-        let _guard = dns::TEST_ENV_LOCK.lock().unwrap();
-        // 随包配置：jxxk.szu.edu.cn 校内改写到 http://172.31.63.8:80。
+    fn rewrite_origin_swaps_scheme_host_and_port_when_campus_is_reachable() {
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        crate::netproxy::set_in_campus_network(false);
+        reachability::set_reachable(Some(true));
+        // 随包配置：jxxk.szu.edu.cn 校内（或经外部 VPN 可达）改写到 http://172.31.63.8:80。
         // （Url 在端口为默认值 80 时序列化省略端口，因此 as_str() 为 http://172.31.63.8/...）
-        dns::set_in_campus_network(true);
         let mut url = target("https://jxxk.szu.edu.cn/university-sso/ava/sso?ticket=ST-1");
         rewrite_origin(&mut url);
         assert_eq!(url.as_str(), "http://172.31.63.8/university-sso/ava/sso?ticket=ST-1");
@@ -399,29 +402,33 @@ mod tests {
         rewrite_origin(&mut url);
         assert_eq!(url.as_str(), "https://authserver.szu.edu.cn/authserver/login");
 
-        dns::set_in_campus_network(false);
+        // 够不着校园网：关闭校内优化，请求保持原样，由解析层落到公网出口。
+        reachability::set_reachable(Some(false));
         let mut url = target("https://jxxk.szu.edu.cn/university-live/protect/course/page");
         rewrite_origin(&mut url);
         assert_eq!(
             url.as_str(),
             "https://jxxk.szu.edu.cn/university-live/protect/course/page"
         );
+        reachability::set_reachable(None);
     }
 
     #[test]
     fn origin_override_target_only_applies_to_origin_rules() {
-        let _guard = dns::TEST_ENV_LOCK.lock().unwrap();
-        dns::set_in_campus_network(true);
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        crate::netproxy::set_in_campus_network(false);
+        reachability::set_reachable(Some(true));
         let on = origin_override_target("jxxk.szu.edu.cn").expect("校内有 origin 规则");
         assert_eq!(on.as_str(), "http://172.31.63.8/");
         assert_eq!(on.scheme(), "http");
         assert_eq!(on.port_or_known_default(), Some(80));
 
         // fallback 是裸主机，只改 DNS，不产生新 origin。
-        dns::set_in_campus_network(false);
+        reachability::set_reachable(Some(false));
         assert_eq!(origin_override_target("jxxk.szu.edu.cn"), None);
         // 无规则的域名返回 None。
         assert_eq!(origin_override_target("authserver.szu.edu.cn"), None);
+        reachability::set_reachable(None);
     }
 
     #[test]

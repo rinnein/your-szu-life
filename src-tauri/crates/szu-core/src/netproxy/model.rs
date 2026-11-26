@@ -297,6 +297,8 @@ pub fn parse_override_target(raw: &str) -> Option<OverrideTarget> {
 /// 开关决定，`dns` 是校内域名专用的主 DNS，`overrides` 是针对特定域名的出网重写规则。
 struct CampusNetwork {
     always_direct: AddressSet,
+    /// `alwaysDirect` 的原始条目，用作校园网可达性探测目标（校内门户地址）。
+    probe_targets: Vec<(String, u16)>,
     campus: AddressSet,
     /// 校内域名专用的 DNS 服务器。空列表表示不做覆盖，全部交给系统解析器。
     dns: Vec<std::net::IpAddr>,
@@ -308,6 +310,7 @@ impl Default for CampusNetwork {
     fn default() -> Self {
         Self {
             always_direct: AddressSet::default(),
+            probe_targets: Vec::new(),
             campus: AddressSet::default(),
             dns: Vec::new(),
             overrides: Vec::new(),
@@ -357,8 +360,27 @@ impl From<CampusNetworkSource> for CampusNetwork {
         // 网段与域名是同一份「校内网名单」的两种写法，合成一个集合。
         let mut campus = source.cidrs;
         campus.extend(source.hosts);
+        // 门户地址既是「永不走代理」名单，也是校园网可达性的探测目标：
+        // IP 字面量按 HTTP 门户的 80 端口，域名按 HTTPS 门户的 443 端口。
+        let probe_targets = source
+            .always_direct
+            .iter()
+            .filter_map(|entry| {
+                let entry = entry.trim();
+                if entry.is_empty() {
+                    return None;
+                }
+                let port = if entry.parse::<std::net::IpAddr>().is_ok() {
+                    80
+                } else {
+                    443
+                };
+                Some((entry.to_owned(), port))
+            })
+            .collect();
         Self {
             always_direct: compile_set(&source.always_direct),
+            probe_targets,
             campus: compile_set(&campus),
             // 只有能当作地址用的条目才是 DNS 服务器。
             dns: source
@@ -380,6 +402,14 @@ impl From<CampusNetworkSource> for CampusNetwork {
 /// 校内域名专用的 DNS 服务器。空列表表示不做覆盖，全部交给系统解析器。
 pub fn campus_dns_servers() -> &'static [std::net::IpAddr] {
     &campus_network().dns
+}
+
+/// 校园网可达性探测目标：`alwaysDirect` 里的校内门户地址。
+///
+/// 这些地址只在校园网（或能把校园网路由过来的 VPN）内可达，因此能连上就是
+/// 「本机现在够得着校园网」的直接证据；不做 HTTP 请求，只看 TCP 能否建立。
+pub fn campus_probe_targets() -> &'static [(String, u16)] {
+    &campus_network().probe_targets
 }
 
 /// 查找特定域名是否配置了出网重写规则。
