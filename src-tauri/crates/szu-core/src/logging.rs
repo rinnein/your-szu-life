@@ -145,7 +145,29 @@ pub fn get_log_state() -> Arc<LogState> {
 /// 日志——放行它们会在几秒内把主线程压到 ANR。逐条的 DEBUG/TRACE 应用日志仍然写进
 /// 日志文件（由用户的保留级别控制）。
 pub fn quiet_targets(metadata: &log::Metadata) -> bool {
-    metadata.level() <= log::Level::Warn
+    metadata.level() <= log::Level::Warn && !retry_noise_muted(metadata)
+}
+
+/// 上游重试循环产生的固定噪声目标。
+///
+/// EasyTier 的 peer center 每 5–10 秒向「当前网络中 peer id 最小的成员」同步一次
+/// 全局 peer 信息。对端掉线或被系统挂起（手机端最常见）后，上游既不退避也不降级，
+/// 会在路由过期前把同一条 `get global info from center server ... Timeout` /
+/// `report peers to center server ... Timeout` 刷满整段日志；本应用对这条重试没有
+/// 任何可执行的处置（数据面照常按路由走中继）。因此默认保留级别（ERROR/WARN）下
+/// 丢弃它，用户主动把级别调到 INFO/DEBUG/TRACE 排查组网时再完整记录。
+const RETRY_NOISE_TARGETS: &[&str] = &["easytier_core::peers::peer_center::instance"];
+
+fn is_retry_noise(metadata: &log::Metadata) -> bool {
+    metadata.level() == log::Level::Error && RETRY_NOISE_TARGETS.contains(&metadata.target())
+}
+
+fn retry_noise_muted(metadata: &log::Metadata) -> bool {
+    if !is_retry_noise(metadata) {
+        return false;
+    }
+    let active = get_log_state().active_level.load(Ordering::Relaxed);
+    level_from_u8(active) <= log::LevelFilter::Warn
 }
 
 pub fn create_daily_writer() -> (
@@ -162,7 +184,7 @@ pub fn create_daily_writer() -> (
     let filter = move |metadata: &log::Metadata| {
         let max_val = filter_state.active_level.load(Ordering::Relaxed);
         let max_level = level_from_u8(max_val);
-        metadata.level() <= max_level
+        metadata.level() <= max_level && !retry_noise_muted(metadata)
     };
 
     (writer, filter)
@@ -513,6 +535,42 @@ mod tests {
             Some(NaiveDate::from_ymd_opt(2026, 10, 25).unwrap())
         );
         assert_eq!(parse_date_from_file_name("invalid.log"), None);
+    }
+
+    fn metadata<'a>(level: log::Level, target: &'a str) -> log::Metadata<'a> {
+        log::MetadataBuilder::new().level(level).target(target).build()
+    }
+
+    /// 默认保留级别下屏蔽 EasyTier peer center 的重试 ERROR；用户主动降级到
+    /// INFO/DEBUG/TRACE 排查组网时必须重新放行，其它目标/级别不受影响。
+    #[test]
+    fn retry_noise_only_muted_at_default_levels() {
+        let state = get_log_state();
+        let previous = state.active_level.load(Ordering::Relaxed);
+
+        let center = metadata(
+            log::Level::Error,
+            "easytier_core::peers::peer_center::instance",
+        );
+        let other = metadata(log::Level::Error, "easytier_core::peers::peer_manager");
+        let center_warn = metadata(
+            log::Level::Warn,
+            "easytier_core::peers::peer_center::instance",
+        );
+
+        state
+            .active_level
+            .store(log::LevelFilter::Warn as usize as u8, Ordering::Relaxed);
+        assert!(retry_noise_muted(&center));
+        assert!(!retry_noise_muted(&other), "其它目标的重试日志不能被吞掉");
+        assert!(!retry_noise_muted(&center_warn), "只屏蔽 ERROR 级别");
+
+        state
+            .active_level
+            .store(log::LevelFilter::Debug as usize as u8, Ordering::Relaxed);
+        assert!(!retry_noise_muted(&center), "调试级别下必须完整记录");
+
+        state.active_level.store(previous, Ordering::Relaxed);
     }
 
     #[test]

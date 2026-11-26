@@ -392,6 +392,14 @@ pub(crate) fn build_config_named(
     out.push_str("enable_encryption = true\n");
     out.push_str("encryption_algorithm = \"aes-gcm\"\n");
     out.push_str("latency_first = true\n");
+    // 只在真的有数据要发给某个 peer 时才尝试 P2P（EasyTier 会按最近 30s 的数据流量
+    // 记一条“有流量”标记）。默认的积极打洞会在这里变成持续噪声：常驻公共中继处在
+    // 「所有安装共用一个公共网络」的全局网络里，功能实例则只有本机中继一个固定
+    // peer，空闲时也会每 5 秒对网络里每个已知 peer 发起 TCP/UDP 打洞；失败后上游
+    // 不会退避（`hole_punch::tcp` 的 blacklist 只在 InvalidServiceKey 时写入），
+    // 于是手机被系统挂起、对端处于对称 NAT / 家庭路由不做 hairpin 等情况下，同一条
+    // `hole punching task failed ... Timeout` 会一直刷到路由过期才停。
+    out.push_str("lazy_p2p = true\n");
     out.push_str(&format!(
         "relay_network_whitelist = \"{}\"\n",
         escape_toml(relay_whitelist)
@@ -541,6 +549,9 @@ mod tests {
             assert!(toml.contains("no_tun = true"));
             assert!(toml.contains("bind_device = false"));
             assert!(toml.contains("encryption_algorithm = \"aes-gcm\""));
+            // 空闲时不盲目打洞：TCP 打洞失败在上游不退避，会在对端不可达期间每 5 秒
+            // 刷一条 ERROR。两种角色都要保留「有流量才 P2P」的语义。
+            assert!(toml.contains("lazy_p2p = true"));
             assert!(!toml.contains("proxy_network"));
             assert!(!toml.contains("exit_node"));
         }
