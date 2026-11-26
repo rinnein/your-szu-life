@@ -1,6 +1,6 @@
 {
   "name": "your-szu-life",
-  "version": "0.18.0",
+  "version": "0.18.1",
   "private": true,
   "repository": {
     "type": "git",
@@ -12,6 +12,8 @@
     "build": "tsc && vp build",
     "preview": "vp preview",
     "demos": "vpx scripts/demos/capture.ts",
+    "workbuddy:test": "vpx workbuddy/scripts/test.mjs",
+    "workbuddy:build": "vpx workbuddy/scripts/build.mjs",
     "tauri": "tauri",
     "prepare": "vp config"
   },

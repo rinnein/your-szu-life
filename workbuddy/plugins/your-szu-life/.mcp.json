@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "your-szu-life": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${CODEBUDDY_PLUGIN_ROOT}/bin/szu-life.mjs",
+        "mcp"
+      ],
+      "cwd": "${CODEBUDDY_PLUGIN_ROOT}",
+      "x-workbuddy": {
+        "displayName": {
+          "zh": "泥深",
+          "en": "Your SZU Life"
+        },
+        "description": {
+          "zh": "连接本机泥深桌面端，使用课表、成绩、电费、待办、UOOC 等能力。",
+          "en": "Connect to the local Your SZU Life desktop app for campus data and actions."
+        },
+        "icon": "./avatars/your-szu-life.png",
+        "auth": {
+          "type": "none"
+        }
+      }
+    }
+  }
+}

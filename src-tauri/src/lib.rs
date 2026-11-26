@@ -3,6 +3,7 @@
 mod app;
 #[cfg(desktop)]
 mod desktop;
+mod integration;
 pub mod mcp;
 
 pub use szu_core::auth::{

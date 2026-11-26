@@ -50,6 +50,9 @@ export default defineConfig(async () => ({
   ]),
 
   test: {
+    // WorkBuddy 的桥测试使用 Node 内置 test runner（vp run workbuddy:test），
+    // 不要让 Vitest 去收集它们；这里只跑前端与 scripts 的 Vitest 用例。
+    include: ["src/**/*.test.{js,jsx,ts,tsx}", "scripts/**/*.test.{js,mjs,ts}"],
     // jsdom 没有实现 form-associated custom element 那半套 ElementInternals，
     // material 的每个表单控件在挂载时都会调用 setFormValue，缺了会直接抛错。
     setupFiles: ["./src/test-setup-element-internals.ts"],

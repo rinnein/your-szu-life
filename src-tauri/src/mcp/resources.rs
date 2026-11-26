@@ -142,6 +142,15 @@ pub fn list_available_resources() -> Vec<Resource> {
         .with_description("返回初始化设置的步骤顺序、完成/跳过状态与下一步")
         .with_mime_type("application/json"),
         Resource::new(
+            "your-szu-life://data/app/integration",
+            "app_integration",
+        )
+        .with_title("外部集成状态")
+        .with_description(
+            "返回 WorkBuddy 等外部工具接入所需的本地状态：MCP 开关/端口/端点、初始化进度、统一认证与 UOOC 登录状态；不含姓名、学号、Cookie、密码或密钥",
+        )
+        .with_mime_type("application/json"),
+        Resource::new(
             "your-szu-life://data/file-manager/state",
             "file_manager_state",
         )
@@ -381,6 +390,10 @@ pub async fn read_resource_by_uri(
             Ok(state) => serde_json::to_string_pretty(&state).unwrap_or_else(|_| "{}".to_string()),
             Err(_) => "{}".to_string(),
         },
+        "your-szu-life://data/app/integration" => {
+            let status = crate::integration::build(app);
+            serde_json::to_string_pretty(&status).unwrap_or_else(|_| "{}".to_string())
+        }
         "your-szu-life://data/file-manager/state" => match szu_download::file_manager::state(app) {
             Ok(state) => serde_json::to_string_pretty(&state).unwrap_or_else(|_| "{}".to_string()),
             Err(_) => "{}".to_string(),

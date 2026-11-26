@@ -1,0 +1,76 @@
+{
+  "name": "your-szu-life",
+  "version": "1.0.0",
+  "description": "Install, launch, and connect the Your SZU Life desktop app, then use its local MCP tools for SZU campus life.",
+  "author": {
+    "name": "Rinne",
+    "email": "rinnein@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/rinnein/your-szu-life",
+  "license": "MIT",
+  "keywords": [
+    "shenzhen-university",
+    "campus",
+    "timetable",
+    "electricity",
+    "mcp"
+  ],
+  "agents": [
+    "./agents/szu-life-assistant.md"
+  ],
+  "skills": [
+    "./skills/your-szu-life"
+  ],
+  "expertType": "agent",
+  "agentName": "szu-life-assistant",
+  "displayName": {
+    "zh": "泥深助手",
+    "en": "Your SZU Life Assistant"
+  },
+  "profession": {
+    "zh": "深大校园生活助手",
+    "en": "SZU Campus Life Assistant"
+  },
+  "displayDescription": {
+    "zh": "安装并连接泥深桌面端，查询课表、成绩、电费与待办，自动完成登录、校园网和 MCP 配置。",
+    "en": "Install and connect the Your SZU Life desktop app for timetables, grades, electricity, todos, campus network, and MCP setup."
+  },
+  "avatar": "avatars/your-szu-life.png",
+  "categoryId": "15-Education",
+  "defaultInitPrompt": {
+    "zh": "帮我安装并连接泥深，然后看看今天的课表和待办。",
+    "en": "Install and connect Your SZU Life, then show today's timetable and todos."
+  },
+  "plugin": "your-szu-life",
+  "tags": [
+    {
+      "zh": "校园生活",
+      "en": "Campus Life"
+    },
+    {
+      "zh": "课表成绩",
+      "en": "Timetable & Grades"
+    },
+    {
+      "zh": "电费待办",
+      "en": "Electricity & Todos"
+    }
+  ],
+  "quickPrompts": [
+    {
+      "zh": "帮我安装并连接泥深，然后看看今天的课表和待办。",
+      "en": "Install and connect Your SZU Life, then show today's timetable and todos."
+    },
+    {
+      "zh": "我这周的作业和考试什么时候截止？",
+      "en": "What assignments and exams are due this week?"
+    },
+    {
+      "zh": "我的宿舍电费还剩多少？",
+      "en": "How much dorm electricity balance do I have left?"
+    }
+  ],
+  "dependencies": {
+    "mcpServers": "./.mcp.json"
+  }
+}

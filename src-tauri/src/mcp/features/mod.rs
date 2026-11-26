@@ -13,6 +13,7 @@ pub(crate) mod campus_payments;
 pub(crate) mod embedding_model;
 pub(crate) mod enrollment;
 pub(crate) mod file_manager;
+pub(crate) mod integration;
 pub(crate) mod jxxk;
 pub(crate) mod lms;
 pub(crate) mod mesh;

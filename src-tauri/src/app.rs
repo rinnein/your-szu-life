@@ -57,8 +57,8 @@ pub(crate) fn run() {
     // 必须最先注册：重复启动的进程在这里把参数交给已运行实例后退出。
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-        // 自启拉起的第二个实例（例如登录时与手动启动撞上）不应把驻留窗口弹出。
-        if !szu_core::startup::launched_by_autostart(&args) {
+        // 自启或外部集成（--silent）拉起的第二个实例不应把驻留窗口弹出。
+        if !szu_core::startup::launched_silently(&args) {
             crate::desktop::focus_main_window(app);
         }
     }));
@@ -211,6 +211,16 @@ pub(crate) fn run() {
             }
             if let Err(error) = crate::mcp::initialize(app.handle()) {
                 log::error!("MCP 本地服务启动失败: {error}");
+            }
+            // 外部集成（WorkBuddy 专家）依赖这里写出的 integration.json。
+            crate::integration::setup(app.handle());
+            // 已安装的旧版本也补一次协议注册；失败不影响启动，安装器另有兜底。
+            #[cfg(any(target_os = "linux", windows))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                if let Err(error) = app.deep_link().register_all() {
+                    log::warn!("注册 your-szu-life:// 协议失败: {error}");
+                }
             }
             szu_mesh::mesh::initialize(app.handle());
             szu_mesh::settings_sync::initialize(app.handle(), sync_credentials);

@@ -38,6 +38,7 @@ fn test_resources_uris_and_metadata() {
     assert!(uris.contains(&"your-szu-life://data/network/proxy"));
     assert!(uris.contains(&"your-szu-life://data/settings/snapshot"));
     assert!(uris.contains(&"your-szu-life://data/onboarding/status"));
+    assert!(uris.contains(&"your-szu-life://data/app/integration"));
     assert!(uris.contains(&"your-szu-life://data/mesh/status"));
     assert!(uris.contains(&"your-szu-life://data/mesh/devices"));
     assert!(uris.contains(&"your-szu-life://data/mesh/campus-access"));
@@ -119,6 +120,9 @@ fn test_all_tools_registered() {
 
     // 13. 初始化设置进度
     assert!(tool_names.contains(&"onboarding_get_status"));
+
+    // 14. 外部集成状态（WorkBuddy 等）
+    assert!(tool_names.contains(&"integration_get_status"));
 
     // 14. 待办聚合与截止提醒
     assert!(tool_names.contains(&"todos_list"));

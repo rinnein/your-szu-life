@@ -79,10 +79,21 @@ Windows、Android、Linux 全平台支持。下载地址：
 ### ArchLinux
 
 ```bash
-yay -S your-szu-life
+yay -S your-szu-life-bin
 # or
-paru -S your-szu-life
+paru -S your-szu-life-bin
 ```
+
+AUR 包名是 `your-szu-life-bin`（provides `your-szu-life`），由 CI 跟随 canary 更新。
+
+### WorkBuddy 专家
+
+仓库内置 WorkBuddy 专家包「泥深助手」，可在 WorkBuddy 中自动完成安装、启动、MCP 接入与初始化引导：
+
+- 源码与构建说明：[workbuddy/README.md](workbuddy/README.md)
+- 构建：`vp run workbuddy:build`，产物在 `workbuddy/dist/`
+
+专家在 Debian/Arch 上输出安装命令由你执行；其它 Linux 发行版会自动安装 XDG AppImage，Windows 走 MSI + UAC。
 
 ## 正在迭代
 

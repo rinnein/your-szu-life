@@ -5,14 +5,16 @@
 //! 插件优先读取 `$APPIMAGE`，因此每次启动都重写一次条目可以顺带修正镜像被移动后
 //! 的失效路径。
 //!
-//! 「静默启动」只影响由自启拉起的那一次：自启条目固定带 [`AUTOSTART_ARG`]，
+//! 「静默启动」偏好只影响由自启拉起的那一次：自启条目固定带 [`AUTOSTART_ARG`]，
 //! 应用据此判断启动来源，再结合 `silent` 偏好决定是否显示主窗口。手动启动不带该
 //! 参数，因此永远显示窗口。
+//!
+//! 外部集成可以在任意一次启动时追加 [`SILENT_ARG`]，只让本次启动隐藏窗口，不写入
+//! 偏好、也不改变自启条目；它与 `--autostart` 一样阻断第二实例抢焦点。
 
 pub mod commands;
 
 use serde::{Deserialize, Serialize};
-use std::ffi::OsStr;
 use tauri::AppHandle;
 
 use crate::preferences;
@@ -21,6 +23,8 @@ pub const AUTOSTART: &str = "startup.autostart";
 pub const SILENT: &str = "startup.silent";
 /// 写进系统自启条目的启动参数，只表示「由开机自启拉起」。
 pub const AUTOSTART_ARG: &str = "--autostart";
+/// 只对本次启动生效的静默参数，供外部集成（如 WorkBuddy 专家）临时隐藏窗口。
+pub const SILENT_ARG: &str = "--silent";
 
 const DEFAULT_AUTOSTART: bool = true;
 const DEFAULT_SILENT: bool = false;
@@ -140,28 +144,24 @@ pub fn launched_by_autostart(args: &[String]) -> bool {
     args.iter().any(|arg| arg == AUTOSTART_ARG)
 }
 
-/// 本次启动是否应保持隐藏：由自启拉起且用户开启了静默启动。
+/// 启动参数是否要求本次不抢焦点：自启拉起或显式 `--silent`。
+pub fn launched_silently(args: &[String]) -> bool {
+    launched_by_autostart(args) || args.iter().any(|arg| arg == SILENT_ARG)
+}
+
+/// 本次启动是否应保持隐藏：显式 `--silent`，或自启拉起且用户开启了静默启动。
 pub fn should_start_hidden(args: &[String], settings: &StartupSettings) -> bool {
-    launched_by_autostart(args) && settings.silent
+    args.iter().any(|arg| arg == SILENT_ARG) || (launched_by_autostart(args) && settings.silent)
 }
 
-/// 读取当前进程参数并判断启动来源。
-pub fn current_launch_is_autostart() -> bool {
-    std::env::args_os()
-        .skip(1)
-        .any(|arg| arg.as_os_str() == OsStr::new(AUTOSTART_ARG))
-}
-
-/// 桌面启动流程使用：带自启参数且偏好为静默时返回 `true`。
+/// 桌面启动流程使用：显式 `--silent`，或带自启参数且偏好为静默时返回 `true`。
 pub fn should_start_hidden_now() -> bool {
-    if !current_launch_is_autostart() {
-        return false;
-    }
+    let args: Vec<String> = std::env::args().skip(1).collect();
     match load() {
-        Ok(settings) => settings.silent,
+        Ok(settings) => should_start_hidden(&args, &settings),
         Err(error) => {
             log::warn!("读取静默启动设置失败，按显示窗口处理: {error}");
-            false
+            args.iter().any(|arg| arg == SILENT_ARG)
         }
     }
 }
@@ -193,6 +193,30 @@ mod tests {
         assert!(should_start_hidden(&args, &settings(true, true)));
         assert!(!should_start_hidden(&args, &settings(true, false)));
         assert!(!should_start_hidden(&[], &settings(true, true)));
+    }
+
+    #[test]
+    fn silent_arg_hides_only_this_launch() {
+        let args = vec![SILENT_ARG.to_string()];
+        assert!(should_start_hidden(&args, &settings(true, false)));
+        assert!(should_start_hidden(&args, &settings(false, false)));
+        assert!(!should_start_hidden(
+            &["--silence".to_string()],
+            &settings(true, true)
+        ));
+        assert!(!should_start_hidden(&[], &settings(true, false)));
+    }
+
+    #[test]
+    fn launched_silently_covers_autostart_and_silent_arg() {
+        assert!(launched_silently(&[AUTOSTART_ARG.to_string()]));
+        assert!(launched_silently(&[SILENT_ARG.to_string()]));
+        assert!(launched_silently(&[
+            "--foo".to_string(),
+            SILENT_ARG.to_string()
+        ]));
+        assert!(!launched_silently(&["--silently".to_string()]));
+        assert!(!launched_silently(&[]));
     }
 
     #[test]

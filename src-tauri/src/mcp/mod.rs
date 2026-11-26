@@ -185,6 +185,8 @@ pub fn set_mcp_server_enabled(app: AppHandle, enabled: bool) -> Result<McpStatus
         stop_mcp_server()?;
         save_persisted_enabled(false);
     }
+    // 让外部集成状态文件立即反映新的开关/端口，专家不必等待兜底刷新。
+    crate::integration::schedule(&app);
     Ok(get_mcp_server_status())
 }
 

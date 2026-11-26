@@ -204,3 +204,22 @@ release. Add a tool name to select part of the graph. For example, run
 6. 若 Android lint 报 `EnsureInitializerMetadata`，检查生成的 `SplitInitializer` 与 `AndroidManifest.xml` 的 `<meta-data>` 配对，不要用无关的 lint baseline 掩盖问题。
 
 当前参考实现已经验证了应用级逻辑导航栈、memory history、tab `replace`、深链接 root 补齐、独立网费窗口及统一返回桥接；但此前记录中 Android 真机返回键和真实网费账户流程仍需单独验收，后续工作应明确区分自动化检查、原生设备验收和真实账户验收。
+
+---
+
+## WorkBuddy 专家接入
+
+专家包源码在 `workbuddy/plugins/your-szu-life/`，构建产物在 `workbuddy/dist/`（已 gitignore）。常用命令：
+
+- `vp run workbuddy:test`
+- `vp run workbuddy:build`
+
+不可破坏的契约：
+
+- `app_data_dir/integration.json` 是外部程序唯一的状态契约。只写版本/平台、MCP 开关与端口、初始化步骤状态、认证/UOOC 布尔值与枚举标签；**不得写姓名、学号、校园卡号、Cookie、密码或密钥**。Unix 权限 0600，原子替换。新增字段时同步 `src-tauri/src/integration.rs`、MCP 工具 `integration_get_status`、资源 `your-szu-life://data/app/integration` 与 `workbuddy/.../bin/lib/status.mjs`。
+- `--silent` 只对本次启动生效（隐藏窗口、第二实例不抢焦点），不写 `startup.silent` 偏好；开机自启仍只写 `--autostart`。不要把它并进 `AUTOSTART_ARG`。
+- 桌面端启动时会调用 deep-link `register_all()`；Linux 桌面模板带 `%u` 与 `MimeType=x-scheme-handler/your-szu-life;`，Windows 安装器写 HKCU URL protocol 兜底。这些是外部专家能打开设置/首页/UOOC 的基础，不要移除。
+- Linux 安装必须按发行版分流：Debian 系只输出 deb 安装 bash 命令、Arch 系只输出 AUR（`your-szu-life-bin`）命令，二者由用户执行，agent 不执行 sudo/AUR；其它发行版才由 agent 把 AppImage 安装到 XDG 用户目录。
+- 新增/修改 MCP 工具或资源时，同步更新 `workbuddy/plugins/your-szu-life/skills/your-szu-life/references/tool-workflows.md`；若影响状态机或桥管理工具，同步 `bin/lib/bridge.mjs` 与 `bin/lib/status.mjs`。
+- 专家包内不得硬编码 token；`vp run workbuddy:build` 会校验 manifest/双语字段/头像/章节结构/密钥形态。WorkBuddy 市场发布是手工动作，本仓库不自动发布。
+- 自动化测试覆盖不到 WorkBuddy 客户端导入、Windows MSI/UAC、Linux 真实发行版安装与 UOOC 官方登录；这些属于手工验收，未实际执行前不得声称已验证。
