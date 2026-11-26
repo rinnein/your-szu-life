@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import StudyPage from "./StudyPage";
 
@@ -43,5 +43,44 @@ describe("StudyPage", () => {
     expect(evaluationButton).toBeInTheDocument();
     fireEvent.click(evaluationButton);
     expect(nav.push).toHaveBeenCalledWith("/study/evaluation");
+  });
+
+  it("按日常/周期分组，各自只包含本组入口", () => {
+    render(<StudyPage />);
+    const daily = screen.getByRole("region", { name: "日常" });
+    const periodic = screen.getByRole("region", { name: "周期" });
+
+    for (const label of ["课表", "签到/打卡", "畅课 lms", "UOOC刷课", "OJ", "监察巡课"]) {
+      expect(
+        within(daily).getByRole("button", { name: new RegExp(`^${label}`) }),
+      ).toBeInTheDocument();
+    }
+    expect(within(daily).getAllByRole("button")).toHaveLength(6);
+    // 组内按常用度排列：课表在最前，监察巡课在最后。
+    const dailyButtons = within(daily).getAllByRole("button");
+    expect(dailyButtons[0]).toHaveTextContent("课表");
+    expect(dailyButtons[5]).toHaveTextContent("监察巡课");
+
+    for (const label of ["选课", "学业完成查询", "成绩查询", "教学评价"]) {
+      expect(
+        within(periodic).getByRole("button", { name: new RegExp(`^${label}`) }),
+      ).toBeInTheDocument();
+    }
+    expect(within(periodic).getAllByRole("button")).toHaveLength(4);
+  });
+
+  it("两组之间只有一条分隔线，且落在日常组与周期组之间", () => {
+    const { container } = render(<StudyPage />);
+    const dividers = container.querySelectorAll(".feature-groups-divider");
+    expect(dividers).toHaveLength(1);
+
+    const daily = screen.getByRole("region", { name: "日常" });
+    const periodic = screen.getByRole("region", { name: "周期" });
+    const divider = dividers[0];
+
+    expect(daily.compareDocumentPosition(divider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      divider.compareDocumentPosition(periodic) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });

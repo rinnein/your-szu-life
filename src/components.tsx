@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import type { NavigateOptions } from "@tanstack/react-router";
 import type { IconType } from "react-icons";
 import { LuRefreshCw } from "react-icons/lu";
@@ -221,5 +221,32 @@ export function FeatureGrid({
         </button>
       ))}
     </div>
+  );
+}
+
+/**
+ * 带组名的功能入口区块。
+ *
+ * 学习页按使用频率把入口分成「日常」「周期」两组。组名用次级标签而不是页面级
+ * 标题，避免与顶栏抢层级；组与组之间的分隔由调用方插 material 的 `Divider`。
+ * `<section>` 带上可访问名后是隐式的 `region` 角色，测试可按组断言入口归属。
+ */
+export function FeatureGroup({
+  label,
+  features,
+  onPlaceholder,
+}: {
+  label: string;
+  features: readonly Feature[];
+  onPlaceholder?: (label: string) => void;
+}) {
+  const labelId = useId();
+  return (
+    <section className="feature-group" aria-labelledby={labelId}>
+      <h2 id={labelId} className="feature-group-label">
+        {label}
+      </h2>
+      <FeatureGrid features={features} onPlaceholder={onPlaceholder} />
+    </section>
   );
 }

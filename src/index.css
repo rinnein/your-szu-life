@@ -317,6 +317,27 @@ p {
   gap: 14px;
 }
 
+/*
+ * 功能入口分组。组名是次级标签（0.875rem / 500），不抢顶栏的层级；
+ * 组与组之间用 material 的 m-divider 分隔，上下各留 24px 与页面区块节奏对齐。
+ */
+.feature-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.feature-group-label {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--mtrl-sys-color-on-surface-variant);
+}
+
+.feature-groups-divider {
+  margin-block: 24px;
+}
+
 .feature-button {
   display: flex;
   min-height: 88px;
