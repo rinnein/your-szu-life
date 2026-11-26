@@ -6,21 +6,23 @@ import { errorMessage } from "../async-state";
 import { usePending } from "../use-pending";
 import { useAuth } from "../auth";
 import { useLogicalNavigation } from "../logical-navigation";
-import { useAndroid } from "../use-android";
-import { scanQrOnce } from "../qr-scan";
+import { isScanCancelled, scanQrOnce, useCameraAvailability } from "../qr-scan";
 import { pairLoginAcceptUrl } from "./api";
 
 /**
  * 设置-个人信息里的「授权其他设备登录」入口。
  *
- * 深链在部分机型上会被系统相机/浏览器拦下，这里提供应用内扫码（Android）
- * 与粘贴链接两种兜底；两者最终都走同一条 Rust 侧 accept → 授权页流程。
+ * 深链在部分机型上会被系统相机/浏览器拦下，这里提供应用内扫码与粘贴链接
+ * 两种兜底；扫码在检测到摄像头的设备上出现（桌面与 Android 同一套 Web
+ * 取景器），两者最终都走同一条 Rust 侧 accept → 授权页流程。
  */
 export function PairAuthorizeEntry() {
   const { state } = useAuth();
   const signedIn = "Authenticated" in state;
   const navigation = useLogicalNavigation();
-  const platform = useAndroid();
+  const camera = useCameraAvailability();
+  const canScan = camera.status === "ready" && camera.data;
+  const noCamera = camera.status === "ready" && !camera.data;
   const [open, setOpen] = useState(false);
   const [link, setLink] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -56,8 +58,8 @@ export function PairAuthorizeEntry() {
       await submit(content);
     } catch (cause) {
       // 用户取消取景器是正常路径，不当作失败提示。
-      const message = errorMessage(cause, "");
-      if (message) toast.warning("无法扫码", { description: message });
+      if (isScanCancelled(cause)) return;
+      toast.danger("无法扫码", { description: errorMessage(cause) });
     }
   };
 
@@ -113,13 +115,14 @@ export function PairAuthorizeEntry() {
                 supportingText={error ?? "以 your-szu-life://page/pair-login 开头"}
                 {...bindField(setLink)}
               />
-              {platform === "android" && (
+              {canScan && (
                 <div>
                   <Button variant="tonal" disabled={busy} onClick={() => void scan()}>
                     扫描二维码
                   </Button>
                 </div>
               )}
+              {noCamera && <p className="text-xs text-muted">未检测到摄像头，可粘贴配对链接。</p>}
             </div>
           </Dialog>,
           document.body,

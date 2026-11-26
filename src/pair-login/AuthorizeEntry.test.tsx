@@ -5,10 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { PairAuthorizeEntry } from "./AuthorizeEntry";
 import * as api from "./api";
 import { scanQrOnce } from "../qr-scan";
+import type { Async } from "../async-state";
 import { typeInto } from "../ui/testing";
 
 const auth = vi.hoisted(() => ({
   state: { Authenticated: { name: "测试用户" } } as Record<string, unknown>,
+}));
+
+const camera = vi.hoisted(() => ({
+  state: { status: "ready", data: true } as Async<boolean>,
 }));
 
 const navigation = vi.hoisted(() => ({
@@ -19,8 +24,14 @@ const navigation = vi.hoisted(() => ({
 
 vi.mock("../auth", () => ({ useAuth: () => auth }));
 vi.mock("../logical-navigation", () => ({ useLogicalNavigation: () => navigation }));
-vi.mock("../use-android", () => ({ useAndroid: () => "android" }));
-vi.mock("../qr-scan", () => ({ scanQrOnce: vi.fn() }));
+vi.mock("../qr-scan", () => ({
+  scanQrOnce: vi.fn(),
+  useCameraAvailability: () => camera.state,
+  isScanCancelled: (cause: unknown) =>
+    typeof cause === "object" && cause !== null && "code" in cause
+      ? cause.code === "cancelled"
+      : false,
+}));
 vi.mock("./api", () => ({ pairLoginAcceptUrl: vi.fn() }));
 
 const invite = "your-szu-life://page/pair-login?secret=" + "a".repeat(64);
@@ -28,6 +39,7 @@ const invite = "your-szu-life://page/pair-login?secret=" + "a".repeat(64);
 beforeEach(() => {
   vi.clearAllMocks();
   auth.state = { Authenticated: { name: "测试用户" } };
+  camera.state = { status: "ready", data: true };
   vi.mocked(api.pairLoginAcceptUrl).mockResolvedValue(undefined);
   vi.mocked(scanQrOnce).mockResolvedValue(invite);
 });
@@ -47,7 +59,7 @@ describe("PairAuthorizeEntry", () => {
     expect(navigation.push).toHaveBeenCalledWith("/pair-login");
   });
 
-  it("scans the QR on Android and submits it directly", async () => {
+  it("scans the QR whenever a camera is available", async () => {
     render(<PairAuthorizeEntry />);
 
     fireEvent.click(screen.getByRole("button", { name: "开始授权" }));
@@ -56,6 +68,16 @@ describe("PairAuthorizeEntry", () => {
     await waitFor(() => expect(scanQrOnce).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(api.pairLoginAcceptUrl).toHaveBeenCalledWith(invite));
     expect(navigation.push).toHaveBeenCalledWith("/pair-login");
+  });
+
+  it("falls back to pasting when no camera is detected", async () => {
+    camera.state = { status: "ready", data: false };
+    render(<PairAuthorizeEntry />);
+
+    fireEvent.click(screen.getByRole("button", { name: "开始授权" }));
+
+    expect(await screen.findByText("未检测到摄像头，可粘贴配对链接。")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "扫描二维码" })).not.toBeInTheDocument();
   });
 
   it("shows the backend error inside the dialog", async () => {

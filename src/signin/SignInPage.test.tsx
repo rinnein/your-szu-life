@@ -359,11 +359,11 @@ it("shows only a banner when the SZU session needs auth, without reading the tim
   );
 }, 15000);
 
-it("desktop QR section joins the room for matching", async () => {
+it("QR section joins the room for matching", async () => {
   await mount("/study/signin");
   // 大学英语是二维码类型点名，模态框内才有匹配区。
   fireEvent.click(await screen.findByText("大学英语"));
-  const matchButton = await screen.findByRole("button", { name: "开始匹配共享签到码" });
+  const matchButton = await screen.findByRole("button", { name: "等待他人共享" });
   expect(matchButton).toBeInTheDocument();
   await act(async () => {
     fireEvent.click(matchButton);
@@ -373,14 +373,14 @@ it("desktop QR section joins the room for matching", async () => {
       vi.mocked(invoke).mock.calls.some(([command]) => command === "signin_share_room_join"),
     ).toBe(true);
   });
-  expect(await screen.findByText("共享签到码匹配中…")).toBeInTheDocument();
+  expect(await screen.findByText(/共享签到码匹配中/)).toBeInTheDocument();
 }, 15000);
 
 it("opens the rollcall dialog from the open=1 deep link", async () => {
   // 默认搜索解析器把 open=1 解析成数字 1（TanStack JSON.parse），
   // 路由必须同时接受数字；自动打开只触发一次。
   await mount("/study/signin?tab=lms&course=大学英语&open=1");
-  expect(await screen.findByRole("button", { name: "开始匹配共享签到码" })).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "等待他人共享" })).toBeInTheDocument();
 }, 15000);
 
 it("surfaces a received shared number code result", async () => {

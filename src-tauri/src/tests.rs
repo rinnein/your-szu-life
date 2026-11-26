@@ -89,3 +89,22 @@ fn command_names_match_handlers_manifest_and_local_permissions() {
         .collect();
     assert_eq!(commands, permissions);
 }
+
+/// 扫码取景器只需要相机；麦克风、屏幕共享等仍交给各平台默认行为。
+#[test]
+fn webview_permission_allows_camera_only() {
+    use tauri::webview::{PermissionKind, PermissionResponse};
+
+    assert_eq!(
+        crate::app::webview_permission(PermissionKind::Camera),
+        PermissionResponse::Allow
+    );
+    assert_eq!(
+        crate::app::webview_permission(PermissionKind::Microphone),
+        PermissionResponse::Default
+    );
+    assert_eq!(
+        crate::app::webview_permission(PermissionKind::DisplayCapture),
+        PermissionResponse::Default
+    );
+}

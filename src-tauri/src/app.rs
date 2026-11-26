@@ -13,6 +13,21 @@ use szu_uooc::uooc;
 use std::sync::Arc;
 use tauri::Manager;
 
+/// WebView 的媒体权限请求：只放行相机（扫码取景器由用户手势主动打开）。
+///
+/// - Linux WebKitGTK 在没有 permission handler 时默认 Deny，必须显式允许；
+/// - Windows WebView2 由此跳过浏览器自带的询问；
+/// - Android 仍会走系统 CAMERA 运行时权限，wry 的 WebChromeClient 负责申请。
+pub(crate) fn webview_permission(
+    kind: tauri::webview::PermissionKind,
+) -> tauri::webview::PermissionResponse {
+    if matches!(kind, tauri::webview::PermissionKind::Camera) {
+        tauri::webview::PermissionResponse::Allow
+    } else {
+        tauri::webview::PermissionResponse::Default
+    }
+}
+
 pub(crate) fn run() {
     let credentials: SharedCredentialStore = Arc::new(PlatformCredentialStore);
     let electricity_credentials = credentials.clone();
@@ -35,7 +50,8 @@ pub(crate) fn run() {
             "\n",
         ));
 
-    let builder = tauri::Builder::default();
+    let builder =
+        tauri::Builder::default().on_permission_request(|_webview, kind| webview_permission(kind));
     let builder = builder
         .manage(auth::AuthStore::new(credentials.clone()))
         .manage(uooc::UoocStore::new(credentials.clone()))
@@ -169,12 +185,6 @@ pub(crate) fn run() {
             signin::start_probe_loop(app.handle());
             if let Err(error) = timetable::initialize(app.handle()) {
                 log::error!("课表服务初始化失败: {error}");
-            }
-            #[cfg(mobile)]
-            {
-                app.handle()
-                    .plugin(tauri_plugin_barcode_scanner::init())
-                    .unwrap_or_else(|error| log::error!("条码扫描插件注册失败: {error}"));
             }
             if let Err(error) = szu_todos::todos::initialize(app.handle()) {
                 log::error!("待办服务初始化失败: {error}");

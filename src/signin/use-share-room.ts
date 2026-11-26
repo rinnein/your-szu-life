@@ -11,7 +11,7 @@ import { toast } from "../ui";
 import { errorMessage } from "../async-state";
 import { useChannelSubscription } from "../tauri-channel";
 import { usePending } from "../use-pending";
-import { runScanLoop, scanQrOnce, stopScanLoop } from "../qr-scan";
+import { isScanCancelled, runScanLoop, scanQrOnce, stopScanLoop } from "../qr-scan";
 import { shareActionFromEvent, shareReducer, type ShareState } from "./share-state";
 import type { ShareEvent } from "./types";
 
@@ -39,13 +39,18 @@ export function useShareRoom() {
   });
 
   // 持续共享的扫码循环：进入 sharing 时启动，离开该状态时停掉本地循环。
+  // `run` 是 usePending 里稳定的回调；不能依赖整个 pending 对象，否则每次
+  // keys 变化都会重启取景器（相机会跟着闪断）。
+  const shareRun = pending.run;
   const sharingRef = useRef(false);
+  const sharingCourseId = state.stage === "sharing" ? state.courseId : undefined;
   useEffect(() => {
-    if (state.stage !== "sharing") return;
+    if (sharingCourseId === undefined) return;
+    const courseId = sharingCourseId;
     sharingRef.current = true;
     void runScanLoop(
       async (content) => {
-        const outcome = await pending.run("share", () =>
+        const outcome = await shareRun("share", () =>
           tauriCore.invoke<{ shared: boolean }>("signin_share_room_share_qr", { raw: content }),
         );
         if (outcome.ok) {
@@ -55,12 +60,18 @@ export function useShareRoom() {
         }
       },
       () => sharingRef.current,
-    );
+      // 用户在取景器里关闭/停止共享：回到 matching，房间保留给被动匹配。
+      () => dispatch({ type: "shareStopped", courseId }),
+    ).catch((cause) => {
+      if (isScanCancelled(cause)) return;
+      toast.danger("无法开始扫码", { description: errorMessage(cause) });
+      dispatch({ type: "shareStopped", courseId });
+    });
     return () => {
       sharingRef.current = false;
-      void stopScanLoop().catch(() => undefined);
+      stopScanLoop();
     };
-  }, [state.stage, pending]);
+  }, [sharingCourseId, shareRun]);
 
   const scanOnce = useCallback(async (rollcallId: number) => {
     dispatch({ type: "scanStarted" });
@@ -73,9 +84,9 @@ export function useShareRoom() {
         toast.danger("扫码签到失败", { description: errorMessage(cause) });
       }
     } catch (cause) {
-      // 平台不支持是真错误；用户取消取景器不提示。
-      if (String(cause).includes("不支持扫码")) {
-        toast.danger(errorMessage(cause));
+      // 用户取消取景器是正常路径，不提示。
+      if (!isScanCancelled(cause)) {
+        toast.danger("无法扫码", { description: errorMessage(cause) });
       }
     } finally {
       dispatch({ type: "scanFinished" });

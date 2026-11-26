@@ -235,9 +235,6 @@ importers:
       '@tauri-apps/api':
         specifier: ^2.12.5
         version: 2.12.5
-      '@tauri-apps/plugin-barcode-scanner':
-        specifier: ^2.5.3
-        version: 2.5.3
       '@tauri-apps/plugin-clipboard-manager':
         specifier: ^2.5.0
         version: 2.5.0
@@ -292,6 +289,9 @@ importers:
       motion:
         specifier: ^14.14.0
         version: 14.14.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      qr-scanner:
+        specifier: ^1.4.2
+        version: 1.4.2
       qrcode.react:
         specifier: ^4.2.0
         version: 4.2.0(react@19.3.1)
@@ -350,6 +350,9 @@ importers:
       '@types/node':
         specifier: ^26.6.10
         version: 26.6.10
+      '@types/offscreencanvas':
+        specifier: ^2019.7.3
+        version: 2019.7.3
       '@types/react':
         specifier: ^19.3.2
         version: 19.3.2
@@ -1792,9 +1795,6 @@ packages:
     engines: {node: '>= 10'}
     hasBin: true
 
-  '@tauri-apps/plugin-barcode-scanner@2.5.3':
-    resolution: {integrity: sha512-Ienqx/XkIcxkf6oM7CCy5FnWNUtiuWC5mkLtM7GughgrYvd5EIGPGxuISboFhvtgiNSJZF8hSan8+dSznlsdBQ==}
-
   '@tauri-apps/plugin-clipboard-manager@2.5.0':
     resolution: {integrity: sha512-dibUy1nKURYDXRMvjNk4deAbTZ5jPQ8wCE4nolt5xniryWgXQ4sK2GkFXoXlHbRdPzfZptZj95BRLfalA7m/2Q==}
 
@@ -1962,6 +1962,9 @@ packages:
 
   '@types/node@26.6.10':
     resolution: {integrity: sha512-WJuPHoGB8WNQuTksNF7SOQpnH02PXeDYz4iueWbBT6/hTWnShY5F3T/hoJA3fY9+uYReDZ7pyTKKx83jQa7aGg==}
+
+  '@types/offscreencanvas@2019.7.3':
+    resolution: {integrity: sha512-ieXiYmgSRXUDeOntE1InxjWyvEelZGP63M+cGuquuRLuIKKT1osnkXjxev9B7d1nXSug5vpunx+gNlbVxMlC9A==}
 
   '@types/react-dom@19.3.0':
     resolution: {integrity: sha512-ZI7bU42mZXXKHn/qNLEw2IrbiINU7X5+vfgdixBHkCNpYWXjKgfQ/P+uyGb5CjOLB9UcnTeg3rylQtV2hym44Q==}
@@ -3187,6 +3190,9 @@ packages:
   punycode@2.3.1:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
+
+  qr-scanner@1.4.2:
+    resolution: {integrity: sha512-kV1yQUe2FENvn59tMZW6mOVfpq9mGxGf8l6+EGaXUOd4RBOLg7tRC83OrirM5AtDvZRpdjdlXURsHreAOSPOUw==}
 
   qrcode.react@4.2.0:
     resolution: {integrity: sha512-QpgqWi8rD9DsS9EP3z7BT+5lY5SFhsqGjpgW5DY/i3mK4M9DTBNz3ErMi8BWYEfI3L0d8GIbGmcdFAS1uIRGjA==}
@@ -4795,10 +4801,6 @@ snapshots:
       '@tauri-apps/cli-win32-ia32-msvc': 2.12.6
       '@tauri-apps/cli-win32-x64-msvc': 2.12.6
 
-  '@tauri-apps/plugin-barcode-scanner@2.5.3':
-    dependencies:
-      '@tauri-apps/api': 2.12.5
-
   '@tauri-apps/plugin-clipboard-manager@2.5.0':
     dependencies:
       '@tauri-apps/api': 2.12.5
@@ -4946,6 +4948,8 @@ snapshots:
   '@types/node@26.6.10':
     dependencies:
       undici-types: 8.9.0
+
+  '@types/offscreencanvas@2019.7.3': {}
 
   '@types/react-dom@19.3.0(@types/react@19.3.2)':
     dependencies:
@@ -6036,6 +6040,10 @@ snapshots:
       react-is: 17.0.2
 
   punycode@2.3.1: {}
+
+  qr-scanner@1.4.2:
+    dependencies:
+      '@types/offscreencanvas': 2019.7.3
 
   qrcode.react@4.2.0(react@19.3.1):
     dependencies:

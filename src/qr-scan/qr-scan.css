@@ -1,0 +1,56 @@
+/*
+ * 扫码取景器：全屏 material 对话框的内容区默认有 24px 内边距并允许滚动，
+ * 这里改成铺满的黑色取景区域。视频与提示层都是 light DOM 子节点，
+ * 用绝对定位相对内容区（::part(content) 设了 position: relative）定位。
+ */
+m-dialog.qr-scan-dialog::part(content) {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  background-color: var(--mtrl-sys-color-scrim);
+}
+
+.qr-scan-viewport {
+  position: absolute;
+  inset: 0;
+  background-color: var(--mtrl-sys-color-scrim);
+}
+
+.qr-scan-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.qr-scan-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  color: #fff;
+  background-color: color-mix(in srgb, var(--mtrl-sys-color-scrim) 72%, transparent);
+}
+
+.qr-scan-status .banner {
+  max-width: 420px;
+}
+
+/* 取景提示压在画面底部；遮罩固定深色，文字用常量白色（与 OJ 图片浮层一致）。 */
+.qr-scan-hint {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  padding: 24px;
+  color: #fff;
+  font-size: 14px;
+  text-align: center;
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--mtrl-sys-color-scrim) 65%, transparent),
+    transparent
+  );
+}

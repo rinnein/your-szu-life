@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- 签到二维码扫码（tauri-plugin-barcode-scanner）与拍照签到（WebView 文件选择 capture）。 -->
+    <!-- 扫码取景器（WebView getUserMedia）与拍照签到（文件选择 capture）。 -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
@@ -23,6 +23,8 @@
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
+    <!-- 摄像头只用于扫码，没有摄像头的设备仍可安装（等待他人共享签到码）。 -->
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
     <!-- extractNativeLibs is derived from packaging.jniLibs.useLegacyPackaging in app/build.gradle.kts. -->
     <application

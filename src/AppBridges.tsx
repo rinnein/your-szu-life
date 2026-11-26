@@ -7,6 +7,7 @@ import { NotificationCenter } from "./notifications/NotificationCenter";
 import { OjCompanionBridge } from "./oj/OjCompanionBridge";
 import { OjProgressBridge } from "./oj/OjProgressBridge";
 import { PortNoticeBridge } from "./PortNoticeBridge";
+import { QrScannerHost } from "./qr-scan/QrScannerHost";
 
 /**
  * 根级无界面桥接集合。
@@ -19,7 +20,8 @@ import { PortNoticeBridge } from "./PortNoticeBridge";
  * - NotificationCenter：应用内通知展示与通知点击跳转的唯一出口；
  * - PortNoticeBridge：本地服务端口切换/耗尽的模态框出口；
  * - OjProgressBridge：每个 WebView 都要同步原生共享的 OJ 进度缓存；
- * - OjCompanionBridge：CPH 伴侣通道只在主文档建立，但不能依赖用户停在 OJ 页。
+ * - OjCompanionBridge：CPH 伴侣通道只在主文档建立，但不能依赖用户停在 OJ 页；
+ * - QrScannerHost：全屏扫码取景器的唯一出口，配对授权与签到共享共用。
  *
  * 集中成一个组件，根布局只表达「应用基础设施 + 内容」两层结构。
  */
@@ -35,6 +37,7 @@ export function AppBridges() {
       <PortNoticeBridge />
       <OjProgressBridge />
       <OjCompanionBridge />
+      <QrScannerHost />
     </>
   );
 }
