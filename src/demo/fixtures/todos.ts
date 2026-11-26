@@ -61,4 +61,14 @@ export const mockTodoItems: MockTodoItem[] = [
     externalUrl: null,
     urgent: false,
   },
+  {
+    id: `evaluation-pending-${mockProfile.studentId}`,
+    kind: "evaluation-pending",
+    title: "评教未完成",
+    subtitle: "点击一键完成 · 2 位教师待评",
+    dueAtMs: daysFromNow(0),
+    route: "/study/evaluation",
+    externalUrl: null,
+    urgent: true,
+  },
 ];

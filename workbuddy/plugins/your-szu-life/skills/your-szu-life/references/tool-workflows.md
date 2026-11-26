@@ -15,6 +15,12 @@
 - 成绩明细/已选课程：`enrollment_get_academic_record`、`enrollment_get_selected_courses`
 - 选课快照：`enrollment_get_snapshot`；搜课：`enrollment_search_courses`
 
+## 教学评价
+
+- 待评清单：`evaluation_list_pending`（缓存 30 分钟）
+- 一键评教：`evaluation_run`（默认 `dryRun=true` 只预览；`dryRun=false` 会真实提交且不可撤销，必须先向用户确认）
+- 档位为每题选项分值区间的次高档（4 档时即良好/比较清楚/比较符合/比较满意）；开放题默认「无」
+
 ## 宿舍电费
 
 - 余额/度数：`electricity_query_balance`
@@ -77,6 +83,7 @@ UOOC 未登录时，`ensure --need uooc` 会打开 `/study/uooc`，让用户点�
 - `your-szu-life://data/auth/profile`
 - `your-szu-life://data/uooc/courses`（完整 UOOC 快照，含 session/user）
 - `your-szu-life://data/todos`、`your-szu-life://data/enrollment/timetable`、`your-szu-life://data/enrollment/grades`
+- `your-szu-life://data/evaluation/pending`（学生评教待评清单）
 - `your-szu-life://data/network/status`、`your-szu-life://data/electricity/status`
 - `your-szu-life://data/mesh/status`、`your-szu-life://data/sync/status`
 - `your-szu-life://data/app/integration`（新版本）

@@ -36,4 +36,12 @@ describe("StudyPage", () => {
     fireEvent.click(gradesButton);
     expect(nav.push).toHaveBeenCalledWith("/study/grades");
   });
+
+  it("点击教学评价导航到 /study/evaluation", () => {
+    render(<StudyPage />);
+    const evaluationButton = screen.getByRole("button", { name: /教学评价.*学生评教/ });
+    expect(evaluationButton).toBeInTheDocument();
+    fireEvent.click(evaluationButton);
+    expect(nav.push).toHaveBeenCalledWith("/study/evaluation");
+  });
 });

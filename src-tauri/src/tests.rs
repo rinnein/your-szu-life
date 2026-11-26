@@ -20,6 +20,7 @@ fn command_names_match_handlers_manifest_and_local_permissions() {
         include_str!("../crates/szu-signin/src/signin/commands.rs"),
         include_str!("../crates/szu-jxxk/src/jxxk/commands.rs"),
         include_str!("../crates/szu-enrollment/src/enrollment/commands.rs"),
+        include_str!("../crates/szu-enrollment/src/enrollment/evaluation/commands.rs"),
         include_str!("../crates/szu-download/src/file_manager/commands.rs"),
         include_str!("../crates/szu-runtime/src/ocr/commands.rs"),
         include_str!("../crates/szu-runtime/src/embedding_model/commands.rs"),

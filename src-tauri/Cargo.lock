@@ -10035,6 +10035,7 @@ dependencies = [
  "sha2 0.11.1",
  "szu-build-support",
  "szu-core",
+ "szu-enrollment",
  "szu-lms",
  "szu-oj",
  "szu-uooc",

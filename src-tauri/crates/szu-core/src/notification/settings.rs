@@ -22,7 +22,7 @@ pub enum NotificationCategory {
 
 /// 待办类通知的统一配置。
 ///
-/// 六个注册项与首页日历的六类待办一一对应；`discovery` 控制「初次探测到」事件，
+/// 七个注册项与首页日历的七类待办一一对应；`discovery` 控制「初次探测到」事件，
 /// 「任务开始」事件始终开启，`lead_minutes` 是模块级统一阈值，同一待办在每档各提醒一次。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -43,6 +43,8 @@ pub struct TodoNotificationSettings {
     pub lms_homework: bool,
     /// 电费预估断电日期
     pub electricity_outage: bool,
+    /// 学生评教未完成
+    pub evaluation_pending: bool,
     /// 已启用的提前量（分钟）
     pub lead_minutes: Vec<i64>,
 }
@@ -58,6 +60,7 @@ impl Default for TodoNotificationSettings {
             uooc_course_end: true,
             lms_homework: true,
             electricity_outage: true,
+            evaluation_pending: true,
             lead_minutes: DEFAULT_TODO_LEAD_MINUTES.to_vec(),
         }
     }
@@ -81,6 +84,7 @@ impl TodoNotificationSettings {
             TodoKind::UoocCourseEnd => self.uooc_course_end,
             TodoKind::LmsHomework => self.lms_homework,
             TodoKind::ElectricityOutage => self.electricity_outage,
+            TodoKind::EvaluationPending => self.evaluation_pending,
         }
     }
 }
@@ -226,6 +230,7 @@ mod tests {
             TodoKind::UoocCourseEnd,
             TodoKind::LmsHomework,
             TodoKind::ElectricityOutage,
+            TodoKind::EvaluationPending,
         ] {
             assert!(todo.is_kind_enabled(kind), "{kind:?} should be enabled");
         }
@@ -354,6 +359,7 @@ mod tests {
                 uooc_course_end: false,
                 lms_homework: true,
                 electricity_outage: false,
+                evaluation_pending: true,
                 lead_minutes: vec![60, 5],
             },
             timetable: TimetableNotificationSettings {

@@ -7,6 +7,7 @@ pub mod commands;
 pub use commands::Action;
 mod contract;
 mod ehall;
+pub mod evaluation;
 mod grades;
 #[cfg(target_os = "linux")]
 mod linux_cookies;
@@ -92,6 +93,7 @@ pub fn initialize(
     });
     platform::initialize(&service);
     app.manage(Store(service.clone()));
+    evaluation::initialize(app);
     let auth_owner = Arc::downgrade(&service);
     app.listen("auth-state-changed", move |_| {
         let Some(service) = auth_owner.upgrade() else {

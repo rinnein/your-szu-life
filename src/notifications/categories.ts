@@ -1,6 +1,7 @@
 import type { IconType } from "react-icons";
 import {
   LuBookOpen,
+  LuClipboardCheck,
   LuClipboardList,
   LuCode,
   LuFileText,
@@ -67,7 +68,8 @@ export type TodoConfigKey =
   | "uoocHomework"
   | "uoocCourseEnd"
   | "lmsHomework"
-  | "electricityOutage";
+  | "electricityOutage"
+  | "evaluationPending";
 
 export interface TodoNotificationItemMeta {
   key: TodoConfigKey;
@@ -112,6 +114,12 @@ export const TODO_NOTIFICATION_ITEMS: readonly TodoNotificationItemMeta[] = [
     title: "宿舍电费预警",
     description: "电量偏低或预计即将耗尽时提醒（无估算时按当天截止）",
     icon: LuZap,
+  },
+  {
+    key: "evaluationPending",
+    title: "评教未完成",
+    description: "教学质量综合评价有未完成记录时提醒，按当天截止",
+    icon: LuClipboardCheck,
   },
 ];
 

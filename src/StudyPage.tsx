@@ -7,6 +7,7 @@ import {
   FaCalendarDays,
   FaChartLine,
   FaCirclePlay,
+  FaClipboardCheck,
   FaClipboardList,
   FaCode,
   FaGraduationCap,
@@ -68,6 +69,12 @@ const STUDY_FEATURES: readonly Feature[] = [
     icon: FaChartLine,
     description: "各学期课程成绩、学分与 GPA",
     to: "/study/grades",
+  },
+  {
+    label: "教学评价",
+    icon: FaClipboardCheck,
+    description: "学生评教、待评清单与一键完成",
+    to: "/study/evaluation",
   },
 ];
 

@@ -1,16 +1,17 @@
 use std::collections::HashSet;
 
-use chrono::{Local, TimeZone};
+use chrono::{Local, TimeZone, Timelike};
 
 use super::aggregate::{
-    electricity_trusted, from_electricity, from_lms, from_oj, from_uooc, lms_trusted,
-    parse_uooc_datetime, uooc_trusted_kinds,
+    electricity_trusted, from_electricity, from_evaluation, from_lms, from_oj, from_uooc,
+    lms_trusted, parse_uooc_datetime, uooc_trusted_kinds,
 };
 use super::model::{item_key, ReminderState, TodoItem, TodoKind};
 use super::reminder::{establish_discovery_baseline, plan_reminders, prune_closed, ReminderEvent};
 use szu_core::campus_payments::ElectricityStatusView;
 use szu_lms::lms::model::{SessionState, Snapshot as LmsSnapshot, Todo as LmsTodo};
 use szu_core::notification::settings::NotificationSettings;
+use szu_enrollment::enrollment::evaluation::PendingSummary;
 use szu_oj::oj::OjDeadline;
 use szu_uooc::uooc::model::{Course, ExamTask, SessionStatus, Snapshot as UoocSnapshot};
 use szu_uooc::uooc::Assessments;
@@ -803,4 +804,41 @@ fn home_subscription_auto_logs_in_only_a_cold_needs_auth_snapshot() {
             "session={session:?} has_cache={has_cache} source={source:?}"
         );
     }
+}
+
+/// 评教待办：0 条不出项；有未评时出一条当天截止、固定 id 的提醒。
+#[test]
+fn evaluation_todo_is_a_single_due_today_item() {
+    assert!(from_evaluation(PendingSummary::default(), now()).is_empty());
+
+    let summary = PendingSummary {
+        pending_targets: 2,
+        pending_records: 5,
+        trusted: true,
+    };
+    let items = from_evaluation(summary, now());
+    assert_eq!(items.len(), 1);
+    let item = &items[0];
+    assert_eq!(item.id, "evaluation:pending");
+    assert_eq!(item.kind, TodoKind::EvaluationPending);
+    assert_eq!(item.title, "评教未完成");
+    assert_eq!(
+        item.subtitle.as_deref(),
+        Some("点击一键完成 · 5 位教师待评")
+    );
+    assert_eq!(item.route, "/study/evaluation");
+    assert!(item.start_at_ms.is_none());
+    assert!(item.urgent);
+    // 当天 23:59:59.999（本地时区）。
+    let due = Local.timestamp_millis_opt(item.due_at_ms).single().unwrap();
+    let now_local = Local.timestamp_millis_opt(now()).single().unwrap();
+    assert_eq!(due.date_naive(), now_local.date_naive());
+    assert_eq!((due.hour(), due.minute()), (23, 59));
+    let expected = Local
+        .from_local_datetime(&now_local.date_naive().succ_opt().unwrap().and_hms_opt(0, 0, 0).unwrap())
+        .single()
+        .unwrap()
+        .timestamp_millis()
+        - 1;
+    assert_eq!(item.due_at_ms, expected);
 }

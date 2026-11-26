@@ -42,6 +42,7 @@ it("sets the document title from each route and updates it on tab replacement an
     ["/study/oj", "OJ · 编程练习"],
     ["/study/academic", "学业完成查询"],
     ["/study/grades", "成绩查询"],
+    ["/study/evaluation", "教学评价"],
     ["/study/enrollment", "查找课程"],
     ["/life/campus-network", "校园网"],
     ["/life/campus-payments/card", "校园卡"],

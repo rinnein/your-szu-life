@@ -17,7 +17,7 @@ pub struct OpenPageParams {
 impl UnifiedSzuMcpService {
     #[tool(
         name = "open_page",
-        description = "打开或激活your-szu-life桌面窗口，并导航到指定的 your-szu-life://page/... 页面。可用页面：空路径(首页)、study、life、settings、study/timetable、study/oj、study/uooc、study/lms、study/signin、study/academic、study/grades、study/patrol（含 patrol/course、patrol/downloads、patrol/watch）、study/enrollment（含 enrollment/login、enrollment/selected、enrollment/tasks、enrollment/timetable、enrollment/settings）、life/campus-network、life/campus-payments（含 card、network、electricity、recharge）。设置页的外观、通知、后台、权限、网络、储存、本地模型、AI、MCP、同步、快捷键、关于与调试是 tab，使用 settings?tab=profile、appearance、notifications、background、permissions、network、storage、models、ai、mcp、sync、shortcuts、about 与 debug。"
+        description = "打开或激活your-szu-life桌面窗口，并导航到指定的 your-szu-life://page/... 页面。可用页面：空路径(首页)、study、life、settings、study/timetable、study/oj、study/uooc、study/lms、study/signin、study/academic、study/grades、study/evaluation、study/patrol（含 patrol/course、patrol/downloads、patrol/watch）、study/enrollment（含 enrollment/login、enrollment/selected、enrollment/tasks、enrollment/timetable、enrollment/settings）、life/campus-network、life/campus-payments（含 card、network、electricity、recharge）。设置页的外观、通知、后台、权限、网络、储存、本地模型、AI、MCP、同步、快捷键、关于与调试是 tab，使用 settings?tab=profile、appearance、notifications、background、permissions、network、storage、models、ai、mcp、sync、shortcuts、about 与 debug。"
     )]
     pub async fn open_page(
         &self,

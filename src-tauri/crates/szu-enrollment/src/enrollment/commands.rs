@@ -99,8 +99,7 @@ pub enum Action {
 fn trusted_source(label: &str) -> bool {
     label == "main" || label.starts_with("feature-")
 }
-fn local(window: &tauri::WebviewWindow) -> Result<(), String> {
-    if !trusted_source(window.label()) {
+pub(super) fn local(window: &tauri::WebviewWindow) -> Result<(), String> {    if !trusted_source(window.label()) {
         return Err("当前窗口无法访问本地服务，请从工作台重新打开".into());
     }
     Ok(())

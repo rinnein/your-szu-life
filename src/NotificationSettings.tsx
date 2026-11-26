@@ -21,6 +21,7 @@ export interface TodoNotificationConfig {
   uoocCourseEnd: boolean;
   lmsHomework: boolean;
   electricityOutage: boolean;
+  evaluationPending: boolean;
   leadMinutes: number[];
 }
 
@@ -50,6 +51,7 @@ const DEFAULT_TODO_CONFIG: TodoNotificationConfig = {
   uoocCourseEnd: true,
   lmsHomework: true,
   electricityOutage: true,
+  evaluationPending: true,
   leadMinutes: Array.from(DEFAULT_TODO_LEAD_MINUTES),
 };
 

@@ -225,4 +225,29 @@ describe("HomeCalendarWidget", () => {
     expect(screen.getByRole("status", { name: "正在读取待办" })).toBeInTheDocument();
     expect(screen.queryByText("近期暂无待办事项，一切就绪")).not.toBeInTheDocument();
   });
+
+  it("colors the evaluation todo with the seventh palette slot and links to the page", () => {
+    const testDate = new Date(2026, 9, 28, 12, 0, 0);
+    const item: ScheduleItem = {
+      id: "evaluation:pending",
+      category: "evaluation-pending",
+      title: "评教未完成",
+      subtitle: "点击一键完成 · 2 位教师待评",
+      targetDate: new Date(2026, 9, 28, 23, 59, 0),
+      dateKey: "2026-10-28",
+      actionUrl: "/study/evaluation",
+      urgent: true,
+    };
+    renderWidget([item], new Map([["2026-10-28", ["evaluation-pending"]]]), testDate);
+
+    // 待办列表 chip 与图例使用同一档 accent-7；日历圆点同样如此。
+    expect(screen.getAllByText("评教").length).toBeGreaterThanOrEqual(2);
+    const legend = screen.getByText("评教", { selector: ".flex.items-center > span:last-child" });
+    expect(legend.previousElementSibling).toHaveClass("bg-accent-7");
+    const day28 = screen.getByRole("button", { name: "2026年10月28日" });
+    expect(day28.querySelector(".bg-accent-7")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /评教：评教未完成/ }));
+    expect(pushMock).toHaveBeenCalledWith("/study/evaluation");
+  });
 });

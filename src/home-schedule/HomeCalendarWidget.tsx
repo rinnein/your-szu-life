@@ -36,7 +36,7 @@ function formatDeadlineText(date: Date, now: Date = new Date()): string {
 }
 
 // 全部待办类别统一使用种子色生成的分类色板（accent-01…12），
-// 按类别声明顺序取前六档，保证彼此可区分且随主题变化。
+// 按类别声明顺序取前七档，保证彼此可区分且随主题变化。
 function getCategoryDotClass(category: ScheduleCategory): string {
   switch (category) {
     case "oj-quiz":
@@ -51,6 +51,8 @@ function getCategoryDotClass(category: ScheduleCategory): string {
       return "bg-accent-5";
     case "lms-homework":
       return "bg-accent-6";
+    case "evaluation-pending":
+      return "bg-accent-7";
   }
 }
 
@@ -92,6 +94,12 @@ function renderCategoryChip(category: ScheduleCategory) {
           畅课作业
         </Chip>
       );
+    case "evaluation-pending":
+      return (
+        <Chip size="sm" color="accent-7" variant="soft">
+          评教
+        </Chip>
+      );
   }
 }
 
@@ -109,8 +117,24 @@ function getCategoryAriaLabel(category: ScheduleCategory): string {
       return "UOOC结课";
     case "lms-homework":
       return "畅课作业";
+    case "evaluation-pending":
+      return "评教";
   }
 }
+
+/**
+ * 日历图例：与 `ScheduleCategory` 一一对应，漏项会被 TypeScript 拦下；
+ * 圆点颜色直接复用 `getCategoryDotClass`，不再手写第二份色板。
+ */
+const CATEGORY_LEGEND: Record<ScheduleCategory, string> = {
+  "oj-quiz": "OJ 测验",
+  "electricity-outage": "电量预警",
+  "uooc-exam": "UOOC 考试",
+  "uooc-homework": "UOOC 作业",
+  "uooc-course-end": "UOOC 结课",
+  "lms-homework": "畅课作业",
+  "evaluation-pending": "评教",
+};
 
 /** 首页「日历与待办」卡片的展示数据，由 `HomePage` 统一订阅后传入。 */
 export interface HomeCalendarWidgetProps {
@@ -304,30 +328,15 @@ export function HomeCalendarWidget({
 
           {/* 图例说明 */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-3 px-1 text-xs text-muted">
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-accent-1" aria-hidden="true" />
-              <span>OJ 测验</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-accent-2" aria-hidden="true" />
-              <span>电量预警</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-accent-3" aria-hidden="true" />
-              <span>UOOC 考试</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-accent-4" aria-hidden="true" />
-              <span>UOOC 作业</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-accent-5" aria-hidden="true" />
-              <span>UOOC 结课</span>
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-accent-6" aria-hidden="true" />
-              <span>畅课作业</span>
-            </span>
+            {(Object.keys(CATEGORY_LEGEND) as ScheduleCategory[]).map((category) => (
+              <span key={category} className="flex items-center gap-1">
+                <span
+                  className={`w-2 h-2 rounded-full ${getCategoryDotClass(category)}`}
+                  aria-hidden="true"
+                />
+                <span>{CATEGORY_LEGEND[category]}</span>
+              </span>
+            ))}
           </div>
         </div>
 

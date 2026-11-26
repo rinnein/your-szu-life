@@ -30,6 +30,7 @@ const DEFAULT_TEST_SETTINGS: NotificationConfig = {
     uoocCourseEnd: true,
     lmsHomework: true,
     electricityOutage: true,
+    evaluationPending: true,
     leadMinutes: [10080, 4320, 1440, 120],
   },
   timetable: {

@@ -28,6 +28,7 @@ fn test_resources_uris_and_metadata() {
     assert!(uris.contains(&"your-szu-life://data/electricity/status"));
     assert!(uris.contains(&"your-szu-life://data/enrollment/timetable"));
     assert!(uris.contains(&"your-szu-life://data/enrollment/grades"));
+    assert!(uris.contains(&"your-szu-life://data/evaluation/pending"));
     assert!(uris.contains(&"your-szu-life://data/uooc/courses"));
     assert!(uris.contains(&"your-szu-life://data/oj/contests"));
     assert!(uris.contains(&"your-szu-life://data/todos"));
@@ -76,6 +77,8 @@ fn test_all_tools_registered() {
     assert!(tool_names.contains(&"enrollment_search_courses"));
     assert!(tool_names.contains(&"enrollment_get_academic_record"));
     assert!(tool_names.contains(&"enrollment_get_academic_progress"));
+    assert!(tool_names.contains(&"evaluation_list_pending"));
+    assert!(tool_names.contains(&"evaluation_run"));
 
     // 5. UOOC 模块工具
     assert!(tool_names.contains(&"uooc_get_courses"));

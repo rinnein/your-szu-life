@@ -144,6 +144,9 @@ pub async fn refresh_sources(app: &AppHandle, source: RefreshSource) {
             let _ = service.refresh_assessments().await;
         }
     }
+    // 评教摘要自带 30 分钟 TTL：待办引擎刷新得再勤也不会反复打 jxpj；
+    // 用户点「刷新」时也不强制绕过（页面自己的刷新按钮会显式 force）。
+    szu_enrollment::enrollment::evaluation::refresh(app, false).await;
 }
 
 /// 首页订阅是否应该为畅课自动登录：只有「完全没有缓存 + 明确未登录 + 页面订阅」。

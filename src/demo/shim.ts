@@ -44,6 +44,7 @@ import {
 } from "./fixtures/signin";
 import { mockJxxkSnapshot } from "./fixtures/patrol";
 import { mockEnrollmentBatches, mockEnrollmentSnapshot } from "./fixtures/enrollment";
+import { mockEvaluationOverview, mockEvaluationRunOutcome } from "./fixtures/evaluation";
 import { mockTodoItems } from "./fixtures/todos";
 import { mockTimetableSnapshot } from "./fixtures/timetable";
 
@@ -123,6 +124,32 @@ const mockHandlers: Record<string, MockHandler> = {
     return null;
   },
   refresh_todos: () => undefined,
+
+  // 学生评教：直接复用固定 fixture，提交只回放成功结果。
+  evaluation_overview: () => mockEvaluationOverview,
+  evaluation_save_config: (args) => ({
+    comment: String((args as { comment?: unknown } | undefined)?.comment ?? ""),
+  }),
+  evaluation_run: (args) => {
+    const channel = channelFrom(args);
+    if (channel) {
+      push(channel, {
+        type: "target",
+        data: {
+          index: 1,
+          total: 1,
+          targetName: mockEvaluationOverview.targets[0]?.targetName ?? "演示评教",
+          state: "ok",
+          message: null,
+        },
+      });
+      push(channel, {
+        type: "done",
+        data: { summary: mockEvaluationRunOutcome.summary, dryRun: false },
+      });
+    }
+    return mockEvaluationRunOutcome;
+  },
 
   // 课表：与后端 initial/snapshot 事件形状一致。
   subscribe_timetable: (args) => {

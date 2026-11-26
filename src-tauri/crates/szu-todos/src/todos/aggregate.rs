@@ -5,6 +5,7 @@ use tauri::Manager;
 
 use super::model::{TodoItem, TodoKind};
 use szu_core::campus_payments::ElectricityStatusView;
+use szu_enrollment::enrollment::evaluation::{self as teaching_evaluation, PendingSummary};
 use szu_lms::lms::model::Snapshot as LmsSnapshot;
 use szu_oj::oj::OjDeadline;
 use szu_uooc::uooc::model::{SessionStatus, Snapshot as UoocSnapshot};
@@ -57,6 +58,18 @@ pub fn aggregate(app: &tauri::AppHandle) -> Aggregate {
             trusted.insert(TodoKind::ElectricityOutage);
         }
         items.extend(from_electricity(&status, now));
+    }
+    if app
+        .try_state::<teaching_evaluation::EvaluationStore>()
+        .is_some()
+    {
+        // 评教摘要由 jxpj 模块的 30 分钟缓存派生；失败时 trusted 为 false，
+        // 保留已有待办但不清理提醒记录。
+        let summary = teaching_evaluation::summary(app);
+        if summary.trusted {
+            trusted.insert(TodoKind::EvaluationPending);
+        }
+        items.extend(from_evaluation(summary, now));
     }
 
     items.sort_by_key(|item| item.due_at_ms);
@@ -318,6 +331,30 @@ pub fn from_electricity(status: &ElectricityStatusView, now: i64) -> Vec<TodoIte
         route: "/life/campus-payments/recharge".into(),
         external_url: None,
         urgent,
+    }]
+}
+
+/// 评教未完成：始终是一条「当天截止」的提醒，点进评教页一键完成。
+///
+/// `due_at_ms` 跟随当天 23:59:59.999 变化而 `kind|id` 保持稳定，因此初次探测只
+/// 触发一次，提前量提醒每天重新上膛；全部评完后由可信来源确认关闭。
+pub fn from_evaluation(summary: PendingSummary, now: i64) -> Vec<TodoItem> {
+    if summary.pending_records == 0 {
+        return Vec::new();
+    }
+    vec![TodoItem {
+        id: "evaluation:pending".into(),
+        kind: TodoKind::EvaluationPending,
+        title: "评教未完成".into(),
+        subtitle: Some(format!(
+            "点击一键完成 · {} 位教师待评",
+            summary.pending_records
+        )),
+        start_at_ms: None,
+        due_at_ms: end_of_local_day(now),
+        route: "/study/evaluation".into(),
+        external_url: None,
+        urgent: true,
     }]
 }
 

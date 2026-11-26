@@ -3,7 +3,7 @@ name = "szu-todos"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-description = "泥深待办聚合：OJ/UOOC/畅课/电费统一待办与提醒"
+description = "泥深待办聚合：OJ/UOOC/畅课/电费/评教统一待办与提醒"
 
 [lib]
 name = "szu_todos"
@@ -14,6 +14,7 @@ szu-build-support = { path = "../szu-build-support" }
 
 [dependencies]
 szu-core = { path = "../szu-core" }
+szu-enrollment = { path = "../szu-enrollment" }
 szu-lms = { path = "../szu-lms" }
 szu-oj = { path = "../szu-oj" }
 szu-uooc = { path = "../szu-uooc" }

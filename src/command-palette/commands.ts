@@ -1,6 +1,7 @@
 import {
   FaCalendarDays,
   FaChartLine,
+  FaClipboardCheck,
   FaGraduationCap,
   FaCirclePlay,
   FaVideo,
@@ -159,6 +160,16 @@ export const COMMAND_LIST: CommandItem[] = [
     target: "/study/grades",
     icon: FaChartLine,
     keywords: ["chengji", "gpa", "score", "grade"],
+  },
+  {
+    id: "evaluation",
+    name: "教学评价",
+    shortcuts: ["pj", "evaluation"],
+    description: "学生评教、待评清单与一键完成",
+    category: "学习",
+    target: "/study/evaluation",
+    icon: FaClipboardCheck,
+    keywords: ["pingjiao", "评教", "evaluation"],
   },
   {
     id: "home",

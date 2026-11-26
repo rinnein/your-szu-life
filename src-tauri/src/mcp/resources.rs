@@ -34,6 +34,13 @@ pub fn list_available_resources() -> Vec<Resource> {
         .with_title("本科课程成绩与 GPA")
         .with_description("返回已缓存的逐学期课程成绩、学分与平均学分绩点；读取不访问学校接口")
         .with_mime_type("application/json"),
+        Resource::new(
+            "your-szu-life://data/evaluation/pending",
+            "evaluation_pending",
+        )
+        .with_title("学生评教待评清单")
+        .with_description("返回当前学期待评目标、记录、题目与一键评教将采用档位；缓存 30 分钟")
+        .with_mime_type("application/json"),
         Resource::new("your-szu-life://data/uooc/courses", "uooc_courses")
             .with_title("UOOC 慕课学习进度")
             .with_description("返回优课联盟在修课程列表与综合小节学习完成进度百分比")
@@ -236,6 +243,20 @@ pub async fn read_resource_by_uri(
                 serde_json::to_string_pretty(&grades).unwrap_or_else(|_| "{}".to_string())
             } else {
                 "{}".to_string()
+            }
+        }
+        "your-szu-life://data/evaluation/pending" => {
+            let handle = app.clone();
+            match tokio::task::spawn_blocking(move || {
+                szu_enrollment::enrollment::evaluation::overview(&handle, false)
+            })
+            .await
+            {
+                Ok(Ok(overview)) => {
+                    serde_json::to_string_pretty(&overview).unwrap_or_else(|_| "{}".to_string())
+                }
+                Ok(Err(error)) => serde_json::json!({ "error": error.message }).to_string(),
+                Err(_) => "{}".to_string(),
             }
         }
         "your-szu-life://data/uooc/courses" => {

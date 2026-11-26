@@ -18,6 +18,7 @@ pub enum TodoKind {
     UoocCourseEnd,
     LmsHomework,
     ElectricityOutage,
+    EvaluationPending,
 }
 
 impl TodoKind {
@@ -29,6 +30,7 @@ impl TodoKind {
             Self::UoocCourseEnd => "uooc-course-end",
             Self::LmsHomework => "lms-homework",
             Self::ElectricityOutage => "electricity-outage",
+            Self::EvaluationPending => "evaluation-pending",
         }
     }
 

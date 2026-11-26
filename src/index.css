@@ -2420,6 +2420,15 @@ m-top-app-bar::part(trailing) {
   color: var(--mtrl-sys-color-accent-06);
 }
 
+.md-chip[data-color="accent-7"] {
+  background: color-mix(
+    in srgb,
+    var(--mtrl-sys-color-accent-07) 20%,
+    var(--mtrl-sys-color-surface)
+  );
+  color: var(--mtrl-sys-color-accent-07);
+}
+
 /* variant="primary" 语义着色（AC/WA/TLE/Judging 等以实心显色，不被设置页主题主色覆盖） */
 .md-chip[data-variant="primary"][data-color="success"] {
   background: var(--mtrl-sys-color-success);

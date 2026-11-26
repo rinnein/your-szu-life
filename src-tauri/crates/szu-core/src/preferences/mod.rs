@@ -36,6 +36,8 @@ pub const UOOC_LOGIN_PENDING: &str = "uooc.sync.login_pending";
 /// 签到自动化开关（畅课雷达自动签到、SZU 签到提醒与自动签到的总开关）。
 /// 设备本地行为，不参与设备同步。
 pub const SIGNIN_AUTOMATION: &str = "signin.automation";
+/// 学生评教开放题回答。设备本地偏好，不参与设备同步。
+pub const EVALUATION_COMMENT: &str = "evaluation.comment";
 
 static DATABASE: OnceLock<db::SettingsDatabase> = OnceLock::new();
 

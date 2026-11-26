@@ -294,7 +294,7 @@ describe("frontend smoke tests", () => {
 
     renderRouterApp("/study");
     expect(await screen.findByRole("heading", { name: "学习" })).toBeInTheDocument();
-    expect(document.querySelectorAll(".feature-icon svg")).toHaveLength(9);
+    expect(document.querySelectorAll(".feature-icon svg")).toHaveLength(10);
     for (const [label, description] of [
       ["课表", "本周课程、学期课表与待签提醒"],
       ["签到/打卡", "畅课与 SZU 考勤签到"],
@@ -305,6 +305,7 @@ describe("frontend smoke tests", () => {
       ["选课", "查课、抢课与选课期间课表"],
       ["学业完成查询", "培养方案、学分与课程完成情况"],
       ["成绩查询", "各学期课程成绩、学分与 GPA"],
+      ["教学评价", "学生评教、待评清单与一键完成"],
     ]) {
       expect(screen.getByRole("button", { name: new RegExp(`^${label}`) })).toHaveTextContent(
         description,
