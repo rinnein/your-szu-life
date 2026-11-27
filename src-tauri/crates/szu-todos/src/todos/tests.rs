@@ -89,6 +89,26 @@ fn oj_filters_finished_and_completed_contests() {
     assert!(items[0].urgent);
 }
 
+#[test]
+fn oj_skips_contests_marked_as_not_graded() {
+    // 标题含「不计分」的测验不计入成绩，不该出现在首页待办里（也不该触发提醒）。
+    let mut ungraded = oj_deadline("ungraded", now() + HOUR, 0, 0);
+    ungraded.title = "第一章练习（不计分）".into();
+    let mut ungraded_exam = oj_deadline("ungraded-exam", now() + 2 * HOUR, 0, 0);
+    ungraded_exam.title = "不计分 模拟测试".into();
+    ungraded_exam.is_exam = true;
+    let items = from_oj(
+        vec![
+            ungraded,
+            ungraded_exam,
+            oj_deadline("graded", now() + 3 * HOUR, 0, 0),
+        ],
+        now(),
+    );
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].id, "oj:site:graded");
+}
+
 fn course(id: &str, end_date: &str) -> Course {
     Course {
         id: id.into(),

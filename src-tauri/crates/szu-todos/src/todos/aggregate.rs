@@ -105,10 +105,14 @@ pub fn electricity_trusted(status: &ElectricityStatusView) -> bool {
     !status.expired && status.remaining.is_some()
 }
 
+/// 标题含此标记的测验不计入成绩，因此不进入首页待办，也不触发截止提醒。
+const UNGRADED_MARKER: &str = "不计分";
+
 pub fn from_oj(deadlines: Vec<OjDeadline>, now: i64) -> Vec<TodoItem> {
     deadlines
         .into_iter()
         .filter(|contest| contest.end > now)
+        .filter(|contest| !contest.title.contains(UNGRADED_MARKER))
         .filter(|contest| {
             !(contest.has_progress && contest.total > 0 && contest.accepted >= contest.total)
         })
