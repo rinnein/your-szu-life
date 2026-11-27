@@ -5,6 +5,8 @@ name: Build and publish packages
 #   - push 版本 tag（v*）→ 发布正式 release（latest），并把同一次构建的资产
 #     同步到 canary，让测试版频道与 AUR 立刻拿到这个版本
 # 两种入口都会派发 AUR（只消费 canary tag）并回调 CNB 同步。
+# 两条通道的 release 正文都用 changelogen 按「上一个版本 tag → 当前提交」生成
+# commit 概要（没有版本 tag 时退回自动正文）。
 #
 # tag 与 canary 的去重：同一提交先随 main push 构建发布过 canary，之后再补推
 # 版本 tag 时整套构建是重复劳动。detect job 用「canary tag 指向本次提交 +
@@ -18,7 +20,7 @@ name: Build and publish packages
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
@@ -204,17 +206,42 @@ jobs:
           TAG: ${{ github.ref_name }}
           VERSION: ${{ needs.detect.outputs.version }}
           TITLE: v${{ needs.detect.outputs.version }}
-          PRERELEASE: 'false'
-          MAKE_LATEST: 'true'
+          PRERELEASE: "false"
+          MAKE_LATEST: "true"
           TARGET_COMMITISH: ${{ github.sha }}
           BODY_FILE: release-notes.md
           ASSET_DIR: packages
         run: vpx .ci/publish-github-release.mjs
 
+      - name: Generate canary release notes
+        # canary 正文：changelogen 按「上一个版本 tag → 本次构建提交」生成 commit
+        # 概要，让测试版频道也能看到自上个正式版以来的更新。找不到版本 tag（首个
+        # 发布）就不产出文件，发布时走自动正文；失败不阻断发布（BODY_FILE 缺失
+        # 时 .ci/publish-github-release.mjs 会回退）。本步骤与「Generate stable
+        # release notes」按事件类型互斥、共用 release-notes.md：tag push 重发
+        # canary 时直接复用正式版那份正文（区间同为「上一个版本 tag → 当前提交」）。
+        if: github.ref_type != 'tag'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          from_tag="$(git tag --sort=-v:refname | grep -E '^v[0-9]' | head -1 || true)"
+          if [ -z "$from_tag" ]; then
+            echo "::notice::找不到任何版本 tag，跳过 changelogen，发布时走自动正文"
+            exit 0
+          fi
+          echo "生成 $from_tag..$GITHUB_SHA 的 commit 概要"
+          vpx changelogen@latest --dir "$GITHUB_WORKSPACE" \
+            --from "$from_tag" --to "$GITHUB_SHA" --noAuthors \
+            --output "$GITHUB_WORKSPACE/release-notes.md"
+          # 文件输出会带一行「# Changelog」大标题，release 正文里是噪音，去掉。
+          sed -i '1{/^# Changelog$/d}' "$GITHUB_WORKSPACE/release-notes.md"
+
       - name: Publish canary release
         # 滚动 tag 指向本次构建的提交，旧资产全部替换，只保留本次的产物。
         # tag push 时这里也让测试版频道与 AUR 直接拿到同一个版本；复用 canary
         # 资产时 canary 已经就是这份内容，重发一遍纯属多余，跳过。
+        # 正文优先取 release-notes.md（changelogen 按「上一个版本 tag → 当前
+        # 提交」生成的 commit 概要，见上面两个生成步骤），缺失时退回自动正文。
         if: github.ref_type != 'tag' || needs.detect.outputs.reuse != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -222,11 +249,12 @@ jobs:
           TAG: canary
           VERSION: ${{ needs.detect.outputs.version }}
           TITLE: canary v${{ needs.detect.outputs.version }}
-          PRERELEASE: 'true'
-          MAKE_LATEST: 'false'
-          GENERATE_NOTES: 'false'
-          MOVE_TAG: 'true'
+          PRERELEASE: "true"
+          MAKE_LATEST: "false"
+          GENERATE_NOTES: "false"
+          MOVE_TAG: "true"
           TARGET_COMMITISH: ${{ github.sha }}
+          BODY_FILE: release-notes.md
           ASSET_DIR: packages
         run: vpx .ci/publish-github-release.mjs
 

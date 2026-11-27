@@ -4,7 +4,9 @@
 //         TARGET_COMMITISH=<构建提交>；正文优先取 BODY_FILE（changelogen 按
 //         tag 差异生成的 commit 概要），其次 GitHub generate-notes。
 // canary ：TAG=canary、PRERELEASE=true、MAKE_LATEST=false、MOVE_TAG=true，
-//         把滚动 tag 强推到本次构建的提交。
+//         把滚动 tag 强推到本次构建的提交；正文同样优先取 BODY_FILE
+//         （changelogen 按「上一个版本 tag → 当前提交」生成的 commit 概要），
+//         缺失时退回自动正文（canary 不走 GitHub generate-notes）。
 //
 // 同名 release 已存在时先删光旧资产再上传本次资产，所以「同一个 tag 重发」
 // 等价于覆盖；最后再删一遍残留资产，防止半途失败留下混血内容。
