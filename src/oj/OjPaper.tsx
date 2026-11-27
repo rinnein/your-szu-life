@@ -1132,7 +1132,7 @@ export function OjPaper({
           <Dialog open headline="图片过大" onClose={() => setMcpOffer(undefined)}>
             <div className="space-y-3">
               <p>
-                题面图片已转存为 base64，复制内容约
+                题面图片会以内联 base64 的形式随复制内容一起写入，共约
                 {(markdownBytes(mcpOffer.markdown) / 1024 / 1024).toFixed(1)} MB（上限{" "}
                 {MARKDOWN_INLINE_LIMIT / 1024 / 1024} MB），不宜直接粘贴。
               </p>

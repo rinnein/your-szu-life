@@ -3,6 +3,16 @@ import Turndown from "turndown";
 import { gfm } from "turndown-plugin-gfm";
 import type { Paper, Problem } from "./types";
 import { kindName } from "./types";
+
+/**
+ * `<img src>` 可用的内联图片 data URI。不限定子类型：现实题面里常见编辑器导出的
+ * `image/jpg`、`image/bmp`、`image/svg+xml`，而 `<img>` 上下文不会执行图片里的脚本；
+ * 非图片 data URI（`data:text/html` 等）仍然拒绝。
+ */
+function isImageDataUri(value: string): boolean {
+  return /^data:image\/[a-z0-9.+-]+(;[a-z0-9=.+-]+)*,/i.test(value);
+}
+
 export function cleanHtml(html: string, base: string): string {
   const fragment = DOMPurify.sanitize(html, {
     RETURN_DOM_FRAGMENT: true,
@@ -14,14 +24,9 @@ export function cleanHtml(html: string, base: string): string {
     for (const attr of ["href", "src"]) {
       const value = el.getAttribute(attr);
       if (!value) continue;
-      // 复制链路会把内网图片改写成 data URL 再转 markdown；只为 img 放行
-      // 图片 data URI（与 load_oj_image 的 mime 白名单一致），其余仍然只认 http(s)。
-      if (
-        el.tagName === "IMG" &&
-        attr === "src" &&
-        /^data:image\/(png|jpeg|gif|webp);/i.test(value)
-      )
-        continue;
+      // 复制链路会把内网图片改写成 data URL 再转 markdown，题面本身也可能直接内联 base64；
+      // 只为 img 放行图片 data URI，其余仍然只认 http(s)。
+      if (el.tagName === "IMG" && attr === "src" && isImageDataUri(value)) continue;
       try {
         const url = new URL(value, base);
         if (!["http:", "https:"].includes(url.protocol)) el.removeAttribute(attr);
@@ -183,7 +188,12 @@ export function collectStatementImageUrls(p: Problem, paper: Paper): string[] {
   for (const html of statementSections(p)) {
     const el = document.createElement("div");
     el.innerHTML = cleanHtml(html, paper.sourceUrl);
-    for (const img of el.querySelectorAll("img[src]")) urls.add(img.getAttribute("src") as string);
+    for (const img of el.querySelectorAll("img[src]")) {
+      const src = img.getAttribute("src") as string;
+      // 已内联的 base64 图不需要巡检校园网，也不必再经 IPC 送回后端取图。
+      if (isImageDataUri(src)) continue;
+      urls.add(src);
+    }
   }
   return [...urls];
 }

@@ -12,6 +12,10 @@ import {
   subscribeImageZoom,
 } from "./image-zoom";
 
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn().mockResolvedValue("data:image/png;base64,ZZZ"),
+}));
+
 afterEach(() => {
   cleanup();
   closeImageZoom();
@@ -123,6 +127,23 @@ describe("image zoom overlay shell", () => {
 });
 
 describe("problem statement image delegation", () => {
+  it("keeps inline base64 images instead of proxying them by site", () => {
+    render(
+      <Html
+        html={
+          '<p><img src="data:image/jpg;base64,AAAA" alt="内联图">' +
+          '<img src="https://oj.example/img/b.png" alt="同源图"></p>'
+        }
+        base="https://oj.example/contest/1"
+        siteId="site-1"
+      />,
+    );
+    const [inline, remote] = document.querySelectorAll(".oj-statement img");
+    // 题面直接内联的 base64 图片已经是可显示的地址，不能送去站点图片代理。
+    expect(inline).toHaveAttribute("src", "data:image/jpg;base64,AAAA");
+    expect(inline).not.toHaveAttribute("data-oj-image");
+    expect(remote).toHaveAttribute("data-oj-image", "https://oj.example/img/b.png");
+  });
   it("opens the overlay for a loaded image", async () => {
     render(
       <>

@@ -74,9 +74,9 @@ const paper: Paper = {
 };
 
 /** mock：checks[0] 是来源行判定，其余依次对应题面图片地址。 */
-function mockBackend(options: { checks: boolean[]; imageDataUrl: string }) {
+function mockBackend(options: { checks: boolean[]; imageDataUrl: string; paper?: Paper }) {
   vi.mocked(invoke).mockImplementation(async (command: string) => {
-    if (command === "get_oj_paper") return structuredClone(paper);
+    if (command === "get_oj_paper") return structuredClone(options.paper ?? paper);
     if (command === "get_oj_records") return { records: [], uncertain: [] };
     if (command === "check_campus_targets") return options.checks;
     if (command === "load_oj_image") return options.imageDataUrl;
@@ -123,6 +123,37 @@ it("inlines campus images and keeps the source line for public problems", async 
   expect(markdown).toContain("来源：http://oj.test/#/contest/1/");
   expect(html).toContain('<img src="data:image/png;base64,AAAA"');
   expect(html).toContain('来源：<a href="http://oj.test/#/contest/1/"');
+});
+
+it("copies already-inline base64 images without re-resolving them", async () => {
+  const mixed = structuredClone(paper);
+  mixed.problems[0].description =
+    '<p>看图</p><img src="data:image/jpg;base64,BBBB" alt="图B">' +
+    '<img src="http://oj.test/media/a.png" alt="图A">';
+  mockBackend({ checks: [false, true], imageDataUrl: "data:image/png;base64,CCCC", paper: mixed });
+  await openStatement();
+  fireEvent.click(screen.getByRole("button", { name: "复制" }));
+  await waitFor(() => expect(copyRichText).toHaveBeenCalled());
+  const [markdown, html] = vi.mocked(copyRichText).mock.calls[0];
+  // 题面自带的 base64 图原样进入 markdown 与富文本。
+  expect(markdown).toContain("![图B](data:image/jpg;base64,BBBB)");
+  expect(html).toContain('<img src="data:image/jpg;base64,BBBB"');
+  // 同源图仍然内联成后端返回的 data URL，且索引不受前面被跳过的 base64 图影响。
+  expect(markdown).toContain("![图A](data:image/png;base64,CCCC)");
+  const checks = vi
+    .mocked(invoke)
+    .mock.calls.find(([command]) => command === "check_campus_targets");
+  expect(checks?.[1]).toEqual({ urls: [paper.sourceUrl, "http://oj.test/media/a.png"] });
+  // 图片代理只为同源图服务（题面显示与复制各一次），内联 base64 图一次都不送。
+  const proxied = [
+    ...new Set(
+      vi
+        .mocked(invoke)
+        .mock.calls.filter(([command]) => command === "load_oj_image")
+        .map(([, args]) => (args as { url: string }).url),
+    ),
+  ];
+  expect(proxied).toEqual(["http://oj.test/media/a.png"]);
 });
 
 it("omits the source line when it points to the campus network", async () => {

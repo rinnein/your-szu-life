@@ -88,7 +88,28 @@ describe("OJ problem content", () => {
       paper.sourceUrl,
     );
     expect(html).toContain('src="data:image/png;base64,AAAA"');
-    expect(html).not.toContain('href="data:');
+    expect(html).not.toContain('href="data:"');
+  });
+  it("keeps every image data URI subtype on img elements", () => {
+    // 题面里常见编辑器导出的 `image/jpg` 等非标准子类型，不能只认 png/jpeg/gif/webp。
+    const html = cleanHtml(
+      [
+        '<img src="data:image/jpg;base64,AAAA" alt="jpg">',
+        '<img src="data:image/bmp;base64,BBBB" alt="bmp">',
+        '<img src="data:image/svg+xml;base64,CCCC" alt="svg">',
+      ].join(""),
+      paper.sourceUrl,
+    );
+    for (const value of [
+      "data:image/jpg;base64,AAAA",
+      "data:image/bmp;base64,BBBB",
+      "data:image/svg+xml;base64,CCCC",
+    ])
+      expect(html).toContain(`src="${value}"`);
+  });
+  it("still drops non-image data URIs", () => {
+    const html = cleanHtml('<img src="data:text/html,<b>x</b>" alt="x">', paper.sourceUrl);
+    expect(html).not.toContain("src=");
   });
   it("omits the source line on request", () => {
     expect(problemMarkdown(p, paper)).toContain("来源：http://oj.test/#/contest/12/");
@@ -97,6 +118,14 @@ describe("OJ problem content", () => {
   it("collects absolute image urls from statement sections", () => {
     const withImage = { ...p, description: '<img src="/media/a.png" alt="a">' };
     expect(collectStatementImageUrls(withImage, paper)).toEqual(["http://oj.test/media/a.png"]);
+  });
+  it("skips already-inline image data URIs when collecting", () => {
+    // data URI 不需要巡检校园网可达性，也不必经 IPC 送去后端取图。
+    const withImage = {
+      ...p,
+      description: '<img src="data:image/jpg;base64,AAAA" alt="a"><img src="/media/b.png" alt="b">',
+    };
+    expect(collectStatementImageUrls(withImage, paper)).toEqual(["http://oj.test/media/b.png"]);
   });
   it("inlines resolved images and keeps the rest", async () => {
     const withImage: Problem = {
