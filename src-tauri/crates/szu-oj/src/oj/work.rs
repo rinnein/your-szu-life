@@ -409,6 +409,13 @@ impl Service {
         if e.epoch != input.epoch || e.username != input.account {
             return Err("账号已变化，请重新加载".into());
         }
+        // 空白代码（含只有空白字符）必须在落盘与联网之前拒绝：IDE / MCP / cph-ng
+        // 的一次误触不能把已保存的草稿替换成空串，也不该发出任何请求。
+        if let Some(code) = &source_code {
+            if code.trim().is_empty() {
+                return Err("请先填写代码再提交".into());
+            }
+        }
         // Persist IDE code before any network request, including rejected or uncertain submissions.
         if let Some(code) = &source_code {
             let pk = input.problem_key.as_deref().ok_or("题目编号缺失")?;

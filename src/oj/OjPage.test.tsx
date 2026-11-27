@@ -1125,6 +1125,54 @@ it("opens judging result in a modal dialog upon submitting code and can be close
   await waitFor(() => expect(document.querySelector("m-dialog")).toBeNull());
 });
 
+it("blocks submitting blank code without sending any request", async () => {
+  const programming: Paper = {
+    ...paper,
+    problems: [{ ...paper.problems[0], kind: 0, languages: ["cpp"] }],
+    drafts: {
+      "0:1": { code: "", language: "cpp", options: null, answer: "", revision: 1 },
+    },
+  };
+  const previous = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (cmd, args) => {
+    if (cmd === "get_oj_paper") return programming;
+    if (cmd === "submit_oj") return { id: 999, status: 0, language: "cpp" };
+    return previous(cmd, args);
+  });
+  render(
+    <OjPaper site={site} contestId="1" tab="answer" desktop={false} port={27121} selected="0:1" />,
+  );
+  const submitBtn = await screen.findByRole("button", { name: "提交代码" });
+  // 空代码时按钮直接禁用，用户不会误触。
+  expect(submitBtn).toBeDisabled();
+  fireEvent.click(submitBtn);
+  // 即使点到了（快捷键、状态竞态），也不会发出提交。
+  await act(async () => {});
+  expect(vi.mocked(invoke).mock.calls.some(([cmd]) => cmd === "submit_oj")).toBe(false);
+});
+
+it("blocks submitting whitespace-only code", async () => {
+  const programming: Paper = {
+    ...paper,
+    problems: [{ ...paper.problems[0], kind: 0, languages: ["cpp"] }],
+    drafts: {
+      "0:1": { code: "  \n\t\n ", language: "cpp", options: null, answer: "", revision: 1 },
+    },
+  };
+  const previous = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (cmd, args) => {
+    if (cmd === "get_oj_paper") return programming;
+    if (cmd === "submit_oj") return { id: 999, status: 0, language: "cpp" };
+    return previous(cmd, args);
+  });
+  render(
+    <OjPaper site={site} contestId="1" tab="answer" desktop={false} port={27121} selected="0:1" />,
+  );
+  expect(await screen.findByRole("button", { name: "提交代码" })).toBeDisabled();
+  await act(async () => {});
+  expect(vi.mocked(invoke).mock.calls.some(([cmd]) => cmd === "submit_oj")).toBe(false);
+});
+
 it("marks a review-capable site and enters the workbench by default", async () => {
   site.permission = 2;
   render(<OjPage />);
@@ -1168,4 +1216,43 @@ it("returns from a TA problem detail to the problem list", async () => {
     "/study/oj?site=test&view=ta&contest=1&taView=problems",
     { resetScroll: true },
   );
+});
+
+it("explains why the coding submit button is disabled while the code is blank", async () => {
+  const programming: Paper = {
+    ...paper,
+    problems: [{ ...paper.problems[0], kind: 0, languages: ["cpp"] }],
+    drafts: { "0:1": { code: "   \n", language: "cpp", options: null, answer: "", revision: 1 } },
+  };
+  const previous = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (cmd, args) => {
+    if (cmd === "get_oj_paper") return programming;
+    return previous(cmd, args);
+  });
+  render(
+    <OjPaper site={site} contestId="1" tab="answer" desktop={false} port={27121} selected="0:1" />,
+  );
+  expect(await screen.findByRole("button", { name: "提交代码" })).toBeDisabled();
+  // 只有空白字符也算未填写，并且页面直接说明原因，避免「点了没反应」的误解。
+  expect(screen.getByText("请先填写代码再提交。")).toBeInTheDocument();
+});
+
+it("hides the blank-code hint once the code is filled in", async () => {
+  const programming: Paper = {
+    ...paper,
+    problems: [{ ...paper.problems[0], kind: 0, languages: ["cpp"] }],
+    drafts: {
+      "0:1": { code: "int main(){}", language: "cpp", options: null, answer: "", revision: 1 },
+    },
+  };
+  const previous = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (cmd, args) => {
+    if (cmd === "get_oj_paper") return programming;
+    return previous(cmd, args);
+  });
+  render(
+    <OjPaper site={site} contestId="1" tab="answer" desktop={false} port={27121} selected="0:1" />,
+  );
+  expect(await screen.findByRole("button", { name: "提交代码" })).not.toBeDisabled();
+  expect(screen.queryByText("请先填写代码再提交。")).toBeNull();
 });

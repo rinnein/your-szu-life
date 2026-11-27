@@ -81,8 +81,11 @@ impl Service {
         if cfg!(mobile) {
             return Err("手机端不提供 cph-ng 联动".into());
         }
-        if request.source_code.trim().is_empty() || request.source_code.len() > 512 * 1024 {
-            return Err("代码为空或超过 512 KB".into());
+        if request.source_code.trim().is_empty() {
+            return Err("cph-ng 发来的代码为空，已忽略本次提交".into());
+        }
+        if request.source_code.len() > 512 * 1024 {
+            return Err("cph-ng 发来的代码超过 512 KB，已忽略本次提交".into());
         }
         let (id, cid, pk) = {
             let r = self.runtime.lock().unwrap();

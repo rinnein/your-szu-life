@@ -469,6 +469,8 @@ export function OjPaper({
   const pk = p ? problemKey(p) : "";
 
   const draft = drafts[pk];
+  // 提交与按钮禁用共用同一判据：空白代码（含只有空白字符）一律视为未填写。
+  const codeReady = !!draft?.code.trim();
   const submissions = useSubmissions(site.id, contestId, paper, p, site);
   // 判定目录就绪后把默认题目冻结一次：编程题判定按类型异步到达，边到边跳会让视图来回动。
   useEffect(() => {
@@ -559,6 +561,11 @@ export function OjPaper({
   };
   const submit = (whole: boolean) =>
     action(async () => {
+      // 防误触：按钮已按 codeReady 禁用，这里兜住快捷键、状态竞态与旧草稿。
+      if (!whole) {
+        if (!codeReady) throw new Error("请先填写代码再提交");
+        if (!p?.languages.includes(draft.language)) throw new Error("请选择题目允许的编程语言");
+      }
       await flush();
       const value = await invoke<Submission>("submit_oj", {
         input: {
@@ -793,13 +800,18 @@ export function OjPaper({
                 submissions.polling ||
                 !writable ||
                 !!incomingDrafts[pk] ||
-                !draft.code.trim() ||
+                !codeReady ||
                 !p.languages.includes(draft.language)
               }
               onClick={() => void submit(false)}
             >
               提交代码
             </Button>
+            {!codeReady && !busy && writable && (
+              // 按钮禁用本身不解释原因，空代码是最容易被误判成「点了没反应」的一种。
+              // 不用 role="status"：页面上已有保存状态这一个 live region。
+              <p className="oj-muted">请先填写代码再提交。</p>
+            )}
           </>
         ) : p.kind === 1 ? (
           p.multiple ? (

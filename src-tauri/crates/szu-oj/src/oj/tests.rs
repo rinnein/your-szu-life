@@ -830,6 +830,81 @@ fn companion_urls_are_resolved_only_with_exact_instance_and_problem() {
     }
 }
 #[tokio::test]
+async fn cph_blank_code_is_rejected_without_touching_the_saved_draft() {
+    // cph-ng 的误触（编辑器里还没写代码就按提交）不能覆盖应用内已保存的代码。
+    let (url, requests) = probing_server(vec![]);
+    let (_dir, s) = setup();
+    let id = s.save_site(input(&url)).unwrap();
+    let e = s.entry(&id).unwrap();
+    e.state.lock().unwrap().session = Session::Ready;
+    s.save_draft(DraftInput {
+        site_id: id.clone(),
+        account: e.username.clone(),
+        epoch: e.epoch,
+        contest_id: "12".into(),
+        problem_key: "0:1".into(),
+        draft: Draft {
+            language: "cpp".into(),
+            code: "int main() { return 0; }".into(),
+            revision: 1,
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    s.companion_status(
+        27121,
+        CompanionStatus {
+            connected: true,
+            active: true,
+            message: String::new(),
+        },
+    );
+    let source_url = format!("{url}#/contest/12/?problem=1&type=0");
+    for blank in ["", "   ", "\n\t\n"] {
+        let error = s
+            .companion_submit(CompanionSubmission {
+                url: source_url.clone(),
+                source_code: blank.into(),
+            })
+            .await
+            .unwrap_err();
+        assert!(error.contains("为空"), "{blank:?} => {error}");
+    }
+    assert_eq!(
+        s.draft_for_language(&id, "12", "0:1", "cpp")
+            .unwrap()
+            .unwrap()
+            .code,
+        "int main() { return 0; }"
+    );
+    // 空代码在联网之前就被拦下，连题面都不会去拉。
+    assert!(requests.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn cph_oversized_code_reports_the_size_limit_separately() {
+    let (url, _requests) = probing_server(vec![]);
+    let (_dir, s) = setup();
+    s.save_site(input(&url)).unwrap();
+    s.companion_status(
+        27121,
+        CompanionStatus {
+            connected: true,
+            active: true,
+            message: String::new(),
+        },
+    );
+    let error = s
+        .companion_submit(CompanionSubmission {
+            url: format!("{url}#/contest/12/?problem=1&type=0"),
+            source_code: "x".repeat(512 * 1024 + 1),
+        })
+        .await
+        .unwrap_err();
+    assert!(error.contains("512 KB"), "{error}");
+}
+
+#[tokio::test]
 async fn cph_submission_uses_instance_options_and_caches_ide_code() {
     let mut raw = fixture();
     raw["problem_json"] = json!({"0":raw["problem_json"]["0"].clone()});
@@ -930,6 +1005,62 @@ fn saving_unchanged_companion_configuration_keeps_active_connection() {
     assert!(s.snapshot().companion_status.active);
     s.configure_companion(false, 27121).unwrap();
     assert!(!s.snapshot().companion_status.active);
+}
+
+#[tokio::test]
+async fn blank_code_is_rejected_before_any_request_or_draft_write() {
+    // 空白代码（含只有空白字符）必须在落盘与联网之前被拒：否则 IDE/MCP 的一次
+    // 误触会先把用户已保存的代码替换成空串，再返回一个无关的网络错误。
+    let (url, requests) = probing_server(vec![]);
+    let (_dir, s) = setup();
+    let id = s.save_site(input(&url)).unwrap();
+    let e = s.entry(&id).unwrap();
+    e.state.lock().unwrap().session = Session::Ready;
+    s.save_draft(DraftInput {
+        site_id: id.clone(),
+        account: e.username.clone(),
+        epoch: e.epoch,
+        contest_id: "12".into(),
+        problem_key: "0:1".into(),
+        draft: Draft {
+            language: "cpp".into(),
+            code: "int main() { return 0; }".into(),
+            revision: 1,
+            ..Default::default()
+        },
+    })
+    .unwrap();
+    for blank in ["", "   ", "\n\t\n"] {
+        let error = s
+            .submit_with_code(
+                SubmitInput {
+                    site_id: id.clone(),
+                    contest_id: "12".into(),
+                    problem_key: Some("0:1".into()),
+                    account: e.username.clone(),
+                    epoch: e.epoch,
+                },
+                Some(blank.into()),
+            )
+            .await
+            .unwrap_err();
+        assert!(error.contains("代码"), "{blank:?} => {error}");
+    }
+    // 原草稿必须原封不动。
+    assert_eq!(
+        s.draft_for_language(&id, "12", "0:1", "cpp")
+            .unwrap()
+            .unwrap()
+            .code,
+        "int main() { return 0; }"
+    );
+    assert_eq!(
+        persistence::read(&s.path).unwrap().drafts[&draft_key(&id, &e.username, "12", "0:1", "cpp")]
+            .code,
+        "int main() { return 0; }"
+    );
+    // 一次请求都不该发出。
+    assert!(requests.lock().unwrap().is_empty());
 }
 
 #[tokio::test]
