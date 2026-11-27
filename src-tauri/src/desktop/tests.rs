@@ -1,5 +1,6 @@
-use super::{todo_menu_label, todo_menu_specs, TODO_MENU_LIMIT};
+use super::{should_open_on_click, todo_menu_label, todo_menu_specs, TODO_MENU_LIMIT};
 use szu_todos::todos::model::{TodoItem, TodoKind};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
 
 fn item(title: &str, due_at_ms: i64) -> TodoItem {
     TodoItem {
@@ -81,4 +82,45 @@ fn label_formats_due_date_as_month_day() {
 fn label_falls_back_to_title_when_due_date_invalid() {
     let item = item("电费预警", i64::MAX / 2);
     assert_eq!(todo_menu_label(&item), "电费预警");
+}
+
+fn click(button: MouseButton, button_state: MouseButtonState) -> TrayIconEvent {
+    TrayIconEvent::Click {
+        id: tauri::tray::TrayIconId::new("test"),
+        position: tauri::PhysicalPosition::new(0.0, 0.0),
+        rect: tauri::Rect::default(),
+        button,
+        button_state,
+    }
+}
+
+#[test]
+fn left_click_release_opens_window() {
+    assert!(should_open_on_click(&click(
+        MouseButton::Left,
+        MouseButtonState::Up
+    )));
+}
+
+#[test]
+fn other_clicks_do_not_open_window() {
+    // 左键按下不重复处理（只认抬起），右键留给菜单，中键无动作。
+    assert!(!should_open_on_click(&click(
+        MouseButton::Left,
+        MouseButtonState::Down
+    )));
+    assert!(!should_open_on_click(&click(
+        MouseButton::Right,
+        MouseButtonState::Up
+    )));
+    assert!(!should_open_on_click(&click(
+        MouseButton::Middle,
+        MouseButtonState::Up
+    )));
+    assert!(!should_open_on_click(&TrayIconEvent::DoubleClick {
+        id: tauri::tray::TrayIconId::new("test"),
+        position: tauri::PhysicalPosition::new(0.0, 0.0),
+        rect: tauri::Rect::default(),
+        button: MouseButton::Left,
+    }));
 }

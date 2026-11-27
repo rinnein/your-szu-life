@@ -210,6 +210,15 @@ tauri-plugin-dialog = { workspace = true }
 tauri-plugin-single-instance = { workspace = true }
 tauri-plugin-autostart = { workspace = true }
 
+# 托盘左键点击只有 ksni 后端会上报（默认的 libappindicator 后端明确不发
+# TrayIconEvent，D-Bus Activate 直接返回 UnknownMethod）。这里直接依赖
+# tray-icon 只为把 feature 并进 tauri 内部那一份：两边版本必须一致（tauri
+# 2.12 要求 ^0.25），否则会出现两个 tray-icon crate、feature 不会合并，左键
+# 又退回被吞掉的状态。ksni 分支优先于 libappindicator，见 tray-icon 的
+# platform_impl/mod.rs。
+[target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd"))'.dependencies]
+tray-icon = { version = "0.25", default-features = false, features = ["ksni", "serde"] }
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 szu-build-support = { path = "crates/szu-build-support" }

@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager};
 
 use szu_todos::todos::model::TodoItem;
@@ -154,7 +154,15 @@ pub(crate) fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
     let tray = TrayIconBuilder::new()
         .icon(TRAY_ICON)
         .menu(&menu)
+        .show_menu_on_left_click(false)
         .tooltip("泥深")
+        .on_tray_icon_event(|tray, event| {
+            // 左键单击直接打开窗口，菜单只在右键弹出。三个平台走同一个事件：
+            // Linux 由 ksni 后端把 D-Bus Activate 翻译成 Click { Left }。
+            if should_open_on_click(&event) {
+                focus_main_window(tray.app_handle());
+            }
+        })
         .on_menu_event(|app, event| match event.id().as_ref() {
             "show" => focus_main_window(app),
             "exit" => app.exit(0),
@@ -166,13 +174,35 @@ pub(crate) fn setup(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> 
                 }
             }
         })
-        .build(app)?;
+        .build(app);
+
+    // 托盘建不起来不该拖垮整个应用：没有 StatusNotifier 宿主（精简窗口管理器、
+    // 无桌面会话）时仍然要能正常启动，只是没有托盘入口。
+    let tray = match tray {
+        Ok(tray) => tray,
+        Err(error) => {
+            log::warn!("托盘图标创建失败，本次运行没有托盘入口: {error}");
+            return Ok(());
+        }
+    };
     app.manage(TrayState {
         tray,
         todos: Mutex::new(Vec::new()),
     });
 
     Ok(())
+}
+
+/// 托盘是否应在这次事件里打开主窗口：只认「左键抬起」。
+fn should_open_on_click(event: &TrayIconEvent) -> bool {
+    matches!(
+        event,
+        TrayIconEvent::Click {
+            button: MouseButton::Left,
+            button_state: MouseButtonState::Up,
+            ..
+        }
+    )
 }
 
 pub(crate) fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
