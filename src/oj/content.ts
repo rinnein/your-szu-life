@@ -75,6 +75,15 @@ export function htmlMarkdown(html: string, base: string): string {
   });
   return converter.turndown(cleanHtml(html, base));
 }
+/**
+ * 统一成 LF。仅用于富文本：浏览器解析 `<pre>` 时本来就会把 `\r\n` 归一成 `\n`，
+ * 显式做一遍可以保证我们发的 HTML 与接收端解析结果一致。Markdown 一侧保留原始
+ * 换行（与 SampleField 的单样例复制按钮一致，都是逐字节原样）。
+ */
+function normalizeNewlines(text: string): string {
+  return text.replace(/\r\n?/g, "\n");
+}
+
 export function fence(text: string): string {
   const longest = Math.max(2, ...Array.from(text.matchAll(/`+/g), (m) => m[0].length));
   const mark = "`".repeat(longest + 1);
@@ -129,6 +138,15 @@ function escapeHtml(text: string): string {
 }
 
 /**
+ * 富文本里的代码块。内容必须包在 `<code>` 里：HTML 解析器会丢弃 `<pre>` 开始标签
+ * 后紧跟的第一个换行，裸 `<pre>` 会把以空行开头的样例吃掉一行；标签隔开之后
+ * 首尾换行、行末空格、制表符都能原样往返。
+ */
+export function codeBlock(text: string): string {
+  return `<pre><code>${escapeHtml(normalizeNewlines(text))}</code></pre>`;
+}
+
+/**
  * 与 `problemMarkdown` 平行的富文本组装器，供剪贴板 text/html flavor：
  * 结构一致，图片沿用题面 HTML（内联后的 data URL 已被 cleanHtml 放行）。
  * 数学公式保持 LaTeX 源文本——KaTeX 渲染版在接收端没有样式表会错乱。
@@ -167,13 +185,13 @@ export function problemHtml(
   p.samples.forEach((s, i) =>
     parts.push(
       `<h3>样例 ${i + 1}</h3>`,
-      `<p>输入：</p><pre>${escapeHtml(s.input)}</pre>`,
-      `<p>输出：</p><pre>${escapeHtml(s.output)}</pre>`,
+      `<p>输入：</p>${codeBlock(s.input)}`,
+      `<p>输出：</p>${codeBlock(s.output)}`,
     ),
   );
   if (p.hint) parts.push(`<h2>提示</h2>`, cleanHtml(p.hint, paper.sourceUrl));
   for (const [language, template] of Object.entries(p.templates))
-    parts.push(`<h2>代码模板（${language}）</h2>`, `<pre>${escapeHtml(template)}</pre>`);
+    parts.push(`<h2>代码模板（${language}）</h2>`, codeBlock(template));
   return parts.join("\n");
 }
 

@@ -156,6 +156,27 @@ it("copies already-inline base64 images without re-resolving them", async () => 
   expect(proxied).toEqual(["http://oj.test/media/a.png"]);
 });
 
+it("copies samples as code blocks with whitespace intact", async () => {
+  const withSamples = structuredClone(paper);
+  withSamples.problems[0].samples = [{ input: "\n 1 2 \t\n3  \n", output: "4\n" }];
+  mockBackend({ checks: [false], imageDataUrl: "", paper: withSamples });
+  await openStatement();
+  fireEvent.click(screen.getByRole("button", { name: "复制" }));
+  await waitFor(() => expect(copyRichText).toHaveBeenCalled());
+  const [markdown, html] = vi.mocked(copyRichText).mock.calls[0];
+  // Markdown：样例在 ```text 代码块里，前导空行、行末空格、制表符都原样保留。
+  expect(markdown).toContain("```text\n\n 1 2 \t\n3  \n```");
+  // 富文本：样例包在 <pre><code> 里，粘贴到文档/聊天框是代码块而不是普通段落。
+  expect(html).toContain("<pre><code>\n 1 2 \t\n3  \n</code></pre>");
+  expect(html).toContain("<pre><code>4\n</code></pre>");
+  // 逐字节往返：浏览器解析我们发出去的 HTML 后内容不变。
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  expect([...doc.querySelectorAll("pre")].map((pre) => pre.textContent)).toEqual([
+    "\n 1 2 \t\n3  \n",
+    "4\n",
+  ]);
+});
+
 it("omits the source line when it points to the campus network", async () => {
   mockBackend({ checks: [true, false], imageDataUrl: "data:image/png;base64,AAAA" });
   await openStatement();

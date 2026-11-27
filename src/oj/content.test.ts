@@ -153,9 +153,9 @@ describe("OJ problem content", () => {
     expect(html).toContain("<h1>A. 求和</h1>");
     expect(html).toContain("来源：<a href=");
     expect(html).toContain("<h2>题目要求</h2>");
-    expect(html).toContain("<pre>  1 2\n</pre>");
+    expect(html).toContain("<pre><code>  1 2\n</code></pre>");
     expect(html).toContain("<h2>代码模板（cpp）</h2>");
-    expect(html).toContain("<pre>int main() {\n}\n</pre>");
+    expect(html).toContain("<pre><code>int main() {\n}\n</code></pre>");
   });
   it("embeds data-url images and omits the source line on request", () => {
     const withImage: Problem = {
@@ -173,9 +173,102 @@ describe("OJ problem content", () => {
       choices: ["<b>甲</b>"],
     };
     const html = problemHtml(tricky, paper, { sourceVisible: false });
-    expect(html).toContain("<pre>&lt;script&gt;alert(1)&lt;/script&gt;</pre>");
+    expect(html).toContain("<pre><code>&lt;script&gt;alert(1)&lt;/script&gt;</code></pre>");
     expect(html).toContain("<strong>A.</strong>");
     expect(html).toContain("<b>甲</b>");
+  });
+});
+
+/** 从复制出的片段里把样例内容抠回来，用于判断空白是否逐字节保真。 */
+function sampleBlocks(html: string): string[] {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  return [...doc.querySelectorAll("pre")].map((pre) => pre.textContent ?? "");
+}
+
+/**
+ * 抠出围栏代码块内容。fence() 保证正文恒以恰好一个换行收尾、随后是行首关闭围栏，
+ * 因此按"下一个行首反引号行"切分即可（不存在嵌套围栏：题目样例里没有反引号行）。
+ */
+function fencedBlocks(markdown: string): string[] {
+  const blocks: string[] = [];
+  const open = "```text\n";
+  let from = 0;
+  for (;;) {
+    const start = markdown.indexOf(open, from);
+    if (start < 0) return blocks;
+    const bodyStart = start + open.length;
+    const close = /\n`{3,}(?=\n|$)/g;
+    close.lastIndex = bodyStart;
+    const match = close.exec(markdown);
+    if (!match) return blocks;
+    blocks.push(markdown.slice(bodyStart, match.index + 1));
+    from = match.index + match[0].length - 1;
+  }
+}
+
+describe("OJ sample copy fidelity", () => {
+  const cases: [name: string, input: string][] = [
+    ["行末空格", "1 2 \n3\n"],
+    ["末行行末空格且无换行", "1 2\n3  "],
+    ["末行行末空格且有换行", "1 2\n3  \n"],
+    ["前导空行", "\n1 2\n"],
+    ["前导空格", "   1 2\n"],
+    ["制表符", "a\tb\n"],
+    ["空行结尾", "1 2\n\n"],
+    ["CRLF", "1 2\r\n3\r\n"],
+    ["空样例", ""],
+  ];
+
+  it("keeps every sample byte in the Markdown code block", () => {
+    for (const [name, input] of cases) {
+      const markdown = problemMarkdown(
+        { ...p, templates: {}, samples: [{ input, output: "o" }] },
+        paper,
+        { sourceVisible: false },
+      );
+      // 代码块内容恒以恰好一个换行收尾（围栏必须独占一行），其余字节原样保留：
+      // 行末空格、前导空行、制表符、CRLF 都在。
+      const expected = input.endsWith("\n") ? input : `${input}\n`;
+      expect(fencedBlocks(markdown), name).toEqual([expected, "o\n"]);
+    }
+  });
+
+  it("keeps every sample byte in the rich-text code block", () => {
+    for (const [name, input] of cases) {
+      const html = problemHtml({ ...p, templates: {}, samples: [{ input, output: "o" }] }, paper, {
+        sourceVisible: false,
+      });
+      // 浏览器解析 HTML 时会吞掉 `<pre>` 开始标签后紧跟的第一个换行，因此样例必须
+      // 包在 `<code>` 里（标签隔开），否则以空行开头的样例粘贴出来会少一行。
+      // CRLF 同时归一到 LF。
+      expect(sampleBlocks(html)[0], name).toBe(input.replace(/\r\n?/g, "\n"));
+    }
+  });
+
+  it("wraps samples in a code element so chat clients treat them as code", () => {
+    const html = problemHtml(
+      { ...p, templates: {}, samples: [{ input: "1 2\n", output: "3\n" }] },
+      paper,
+      { sourceVisible: false },
+    );
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const blocks = [...doc.querySelectorAll("pre")];
+    expect(blocks).toHaveLength(2);
+    for (const block of blocks) expect(block.querySelector("code")).not.toBeNull();
+  });
+
+  it("keeps CRLF verbatim in Markdown but normalizes it in rich text", () => {
+    const sample = { input: "1\r\n2\r\n", output: "o" };
+    const markdown = problemMarkdown({ ...p, templates: {}, samples: [sample] }, paper, {
+      sourceVisible: false,
+    });
+    // Markdown 一侧与单样例复制按钮一致，逐字节原样（不解码 CRLF）。
+    expect(fencedBlocks(markdown)[0]).toBe("1\r\n2\r\n");
+    // 浏览器解析 <pre> 时本来就把 CRLF 读成 LF，这里显式对齐解析后的结果。
+    const html = problemHtml({ ...p, templates: {}, samples: [sample] }, paper, {
+      sourceVisible: false,
+    });
+    expect(sampleBlocks(html)[0]).toBe("1\n2\n");
   });
 });
 
