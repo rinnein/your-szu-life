@@ -24,7 +24,7 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.18.3"
+version = "0.18.4"
 edition = "2021"
 authors = ["you"]
 
@@ -111,7 +111,11 @@ easytier = { git = "https://github.com/EasyTier/EasyTier", rev = "0d9c52b169dc21
   # 多协议监听器/连接器：与 websocket 一样是 instance composition 的协议 adapter
   # feature，缺了对应的监听器 URL 会在能力校验时直接报错。
   "quic",
-  "faketcp",
+  # 刻意不开 `faketcp`：它是唯一拉起 `pnet_datalink` 的 feature，而后者在 Windows
+  # 上 `#[link(name = "Packet")]`，会让 exe 静态依赖 WinPcap/Npcap 的 packet.dll
+  # （没装驱动的机器上是「缺少 packet.dll」，编译期则是缺 Packet.lib）。faketcp 在
+  # Windows 还必须借 Npcap 内核驱动才能发包，收益远不及这个强依赖；tcp/udp/ws/quic
+  # 已覆盖公共中继的全部用途。
   # 组网配置使用 dhcp = true 由虚拟网分配地址；不打开该 feature 时
   # EasyTier 会在创建实例时报「this build does not include DHCP IPv4」。
   "dhcp-ipv4",

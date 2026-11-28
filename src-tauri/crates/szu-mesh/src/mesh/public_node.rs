@@ -43,7 +43,7 @@ pub async fn ensure() -> Result<Arc<Node>, String> {
         Node::start_public(&identity::public_identity(), HOSTNAME, INSTANCE_NAME).await?,
     );
     log::info!(
-        "公共组网初始化节点已就绪（ring://{}，监听 3 个协议端口）",
+        "公共组网初始化节点已就绪（ring://{}，监听 2 个协议端口）",
         node.instance_id()
     );
     *guard = Some(node.clone());

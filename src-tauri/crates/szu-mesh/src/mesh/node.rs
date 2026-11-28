@@ -7,7 +7,7 @@
 //!
 //! 实例分两种角色（见 [`MeshRole`]）：
 //!
-//! - **公共中继**（[`super::public_node`]）：常驻、开放三组真实监听端口、连预置
+//! - **公共中继**（[`super::public_node`]）：常驻、开放两组真实监听端口、连预置
 //!   rendezvous，并为 `your-szu-life:*` 网络转发；
 //! - **功能实例**（主自组网、配对、签到房间）：零监听端口，唯一初始 peer 是本机
 //!   公共中继的 `ring://<instance-id>`，跨设备数据全部经公共网络中转。
@@ -46,17 +46,15 @@ fn instance_manager() -> Arc<NativeInstanceManager> {
 }
 
 /// EasyTier 的各协议监听端口组。同一端口号只承载不同底层传输：tcp+udp 一组、
-/// ws（TCP）+quic（UDP）一组，faketcp 是纯 TCP 独占一组；各组由统一端口模块
-/// 分配互不相同的端口，只启用这三组（wg 面向 TUN 设备、wss 需 TLS 证书，均未
-/// 启用）。只有常驻公共中继会绑定这些端口，功能实例零监听。
+/// ws（TCP）+quic（UDP）一组；各组由统一端口模块分配互不相同的端口，只启用这
+/// 两组（wg 面向 TUN 设备、wss 需 TLS 证书、faketcp 依赖 WinPcap/Npcap 的
+/// `packet.dll`，均未启用）。只有常驻公共中继会绑定这些端口，功能实例零监听。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ListenerPorts {
     /// tcp + udp 共用的端口。
     pub tcp_udp: u16,
     /// ws 与 quic 共用的端口（分别落在 TCP 与 UDP 上，不冲突）。
     pub ws_quic: u16,
-    /// faketcp 监听端口（同为 TCP 底座，不能与 tcp/ws 共号）。
-    pub faketcp: u16,
 }
 
 /// 实例角色：决定监听端口、初始 peer 与中继白名单。
@@ -128,7 +126,7 @@ impl Node {
         Self::launch(instance_name, &toml).await
     }
 
-    /// 启动常驻公共中继实例（见 [`super::public_node`]）。三组协议监听端口由端口
+    /// 启动常驻公共中继实例（见 [`super::public_node`]）。两组协议监听端口由端口
     /// 模块互异分配，是本项目唯一一处 `0.0.0.0` 监听。
     pub(crate) async fn start_public(
         identity: &MeshIdentity,
@@ -146,14 +144,13 @@ impl Node {
         instance_name: &str,
         peers: Vec<String>,
     ) -> Result<Self, String> {
-        let mut allocated = ports::reserve_loopback_n(ports::PortService::Mesh, 3)
+        let mut allocated = ports::reserve_loopback_n(ports::PortService::Mesh, 2)
             .map_err(|error| error.to_string())?
             .into_iter()
             .map(|allocation| allocation.port);
         let listeners = ListenerPorts {
-            tcp_udp: allocated.next().expect("已请求 3 个端口"),
-            ws_quic: allocated.next().expect("已请求 3 个端口"),
-            faketcp: allocated.next().expect("已请求 3 个端口"),
+            tcp_udp: allocated.next().expect("已请求 2 个端口"),
+            ws_quic: allocated.next().expect("已请求 2 个端口"),
         };
         let toml = build_config_named(
             instance_name,
@@ -329,7 +326,7 @@ fn build_client_config(identity: &MeshIdentity, hostname: &str, relay_peer: &str
 
 /// 组装一份 EasyTier TOML 配置；`instance_name` 只用于管理器内的展示区分。
 ///
-/// 两种角色的差异全部在这里：公共中继用固定的大子网、三组协议监听、预置
+/// 两种角色的差异全部在这里：公共中继用固定的大子网、两组协议监听、预置
 /// rendezvous 与 `your-szu-life:*` 中继白名单；功能实例零监听、只连本机公共中继
 /// 的 `ring://`，并显式把中继白名单设为空（EasyTier 默认是 `"*"`，会给任意网络
 /// 做中继）。
@@ -344,11 +341,9 @@ pub(crate) fn build_config_named(
             format!("dhcp = \"{}\"", super::public_node::DHCP_CIDR),
             format!(
                 "listeners = [\"tcp://0.0.0.0:{tcp_udp}\", \"udp://0.0.0.0:{tcp_udp}\", \
-                 \"ws://0.0.0.0:{ws_quic}\", \"quic://0.0.0.0:{ws_quic}\", \
-                 \"faketcp://0.0.0.0:{faketcp}\"]",
+                 \"ws://0.0.0.0:{ws_quic}\", \"quic://0.0.0.0:{ws_quic}\"]",
                 tcp_udp = listeners.tcp_udp,
                 ws_quic = listeners.ws_quic,
-                faketcp = listeners.faketcp,
             ),
             peers.clone(),
             super::public_node::RELAY_WHITELIST,
@@ -451,15 +446,16 @@ fn preset_peers() -> Vec<String> {
         .collect()
 }
 
-/// 只接受 `tcp://` / `udp://` / `ws://` / `wss://` / `quic://` / `faketcp://`
+/// 只接受 `tcp://` / `udp://` / `ws://` / `wss://` / `quic://`
 /// 形式的 `host:port` 与无端口的 `txt://` 发现域（端点由 DNS TXT/SRV 解析），
-/// 拒绝带凭据、路径或查询串的地址。
+/// 拒绝带凭据、路径或查询串的地址。`faketcp://` 不在白名单里：该 feature 未编译
+/// 进本应用（见 workspace `Cargo.toml` 的说明），连它只会在运行时失败。
 fn validate_peer_uri(raw: &str) -> Option<String> {
     let raw = raw.trim();
     let url = reqwest::Url::parse(raw).ok()?;
     let scheme = url.scheme();
     let is_discovery = scheme == "txt";
-    if !matches!(scheme, "tcp" | "udp" | "ws" | "wss" | "quic" | "faketcp") && !is_discovery {
+    if !matches!(scheme, "tcp" | "udp" | "ws" | "wss" | "quic") && !is_discovery {
         return None;
     }
     if url.host_str().is_none() || (url.port().is_none() && !is_discovery) {
@@ -494,7 +490,6 @@ mod tests {
         ListenerPorts {
             tcp_udp: 54210,
             ws_quic: 54211,
-            faketcp: 54212,
         }
     }
 
@@ -513,8 +508,11 @@ mod tests {
         assert!(toml.contains("dhcp = \"10.127.0.0/16\""));
         assert!(toml.contains(
             "listeners = [\"tcp://0.0.0.0:54210\", \"udp://0.0.0.0:54210\", \
-             \"ws://0.0.0.0:54211\", \"quic://0.0.0.0:54211\", \"faketcp://0.0.0.0:54212\"]"
+             \"ws://0.0.0.0:54211\", \"quic://0.0.0.0:54211\"]"
         ));
+        // faketcp 会把 pnet_datalink 链进产物（Windows 上强依赖 WinPcap 的
+        // packet.dll），因此监听列表里不允许再出现它。
+        assert!(!toml.contains("faketcp"));
         assert!(toml.contains("relay_network_whitelist = \"your-szu-life:*\""));
         // rpc_portal 不在当前 EasyTier 的 TOML schema 里，写了也会被忽略；不要再输出。
         assert!(!toml.contains("rpc_portal"));
@@ -614,6 +612,8 @@ mod tests {
         assert!(validate_peer_uri("tcp://example.com").is_none());
         assert!(validate_peer_uri("tcp://user:pw@example.com:11010").is_none());
         assert!(validate_peer_uri("tcp://example.com:11010/path").is_none());
+        // 该 feature 未编译进产物，配置里出现也只会到运行时才失败，直接拒掉。
+        assert!(validate_peer_uri("faketcp://example.com:11010").is_none());
     }
 
     #[test]
@@ -647,7 +647,6 @@ mod tests {
             &ListenerPorts {
                 tcp_udp: 54298,
                 ws_quic: 54297,
-                faketcp: 54296,
             },
         ));
     }

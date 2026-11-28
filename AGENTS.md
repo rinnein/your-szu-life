@@ -148,7 +148,7 @@ release. Add a tool name to select part of the graph. For example, run
 ## 设备自组网、设置同步与校园网访问
 
 - **组网实现**：`src-tauri/crates/szu-mesh/src/mesh` 把 `easytier`（git 依赖，固定 rev）链进进程，始终 `no_tun`，不创建 TUN 设备、不使用 Android VpnService、不改系统路由/代理。进程内有两种实例（`node::MeshRole`）：
-  - **常驻公共中继**（`mesh/public_node.rs`）：网络名固定 `your-szu-life:public:init`、密钥由固定种子散列得到，应用启动即拉起、不随同步/校园网开关停止。它开放三个协议监听端口组（同一端口号只承载不同底层传输：tcp+udp、ws+quic、faketcp 各一组，经 `ports::reserve_loopback_n` 一次互异分配；wg 面向 TUN、wss 需 TLS 证书，均未启用），子网为 `10.127.0.0/16`（避开 EasyTier 默认的 `10.126.126.0/24` 引导子网），`relay_network_whitelist = "your-szu-life:*"`（默认值 `"*"` 会给任意网络做中继，必须显式收紧）。预置 rendezvous 节点在根目录 `easytier-peers.json`，只由它消费；EasyTier 没有局域网自动发现，列表全部不可达时公共中继之间无法互相发现。
+  - **常驻公共中继**（`mesh/public_node.rs`）：网络名固定 `your-szu-life:public:init`、密钥由固定种子散列得到，应用启动即拉起、不随同步/校园网开关停止。它开放两个协议监听端口组（同一端口号只承载不同底层传输：tcp+udp、ws+quic 各一组，经 `ports::reserve_loopback_n` 一次互异分配；wg 面向 TUN、wss 需 TLS 证书、faketcp 依赖 WinPcap/Npcap 的 `packet.dll`，均未启用），子网为 `10.127.0.0/16`（避开 EasyTier 默认的 `10.126.126.0/24` 引导子网），`relay_network_whitelist = "your-szu-life:*"`（默认值 `"*"` 会给任意网络做中继，必须显式收紧）。预置 rendezvous 节点在根目录 `easytier-peers.json`，只由它消费；EasyTier 没有局域网自动发现，列表全部不可达时公共中继之间无法互相发现。
   - **功能实例**（主自组网、配对 host/client、签到房间）：零监听端口（`listeners = []`），唯一初始 peer 是本机公共中继的 `ring://<instance-id>`，中继白名单为空；跨设备数据全部经公共网络转发（EasyTier foreign-network owner map 原生支持跨中继转发）。
   - 两种实例共用一个进程级 `NativeInstanceManager`：`ring://` 注册表挂在 manager 内部的 `CoreProcessRuntime` 上，每个 Node 各建一个 manager 会连不通。功能实例只依赖本机公共中继，起不来时直接报错，不回落预置 peer。
   - EasyTier secure-mode 常开（配置只写 `[secure_mode] enabled = true`：x25519 密钥对由 EasyTier 解析 TOML 时随机生成、不持久化，节点重启即换新，公钥经 route peer info 动态广播；不支持的对端优雅回退为不加密会话）。它是**按 peer 对的端到端**加密，中继只转发密文，看不到同步/门户明文。
